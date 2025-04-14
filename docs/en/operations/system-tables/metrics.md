@@ -1,14 +1,9 @@
 ---
-description: 'System table containing metrics which can be calculated instantly, or
-  have a current value.'
-keywords: ['system table', 'metrics']
-slug: /operations/system-tables/metrics
-title: 'system.metrics'
+slug: /en/operations/system-tables/metrics
 ---
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
 
-import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
-
-# system.metrics
+# metrics
 
 <SystemTableCloud/>
 
@@ -25,11 +20,11 @@ You can find all supported metrics in source file [src/Common/CurrentMetrics.cpp
 
 **Example**
 
-```sql
+``` sql
 SELECT * FROM system.metrics LIMIT 10
 ```
 
-```text
+``` text
 ┌─metric───────────────────────────────┬─value─┬─description────────────────────────────────────────────────────────────┐
 │ Query                                │     1 │ Number of executing queries                                            │
 │ Merge                                │     0 │ Number of executing background merges                                  │
@@ -44,719 +39,719 @@ SELECT * FROM system.metrics LIMIT 10
 └──────────────────────────────────────┴───────┴────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Metric descriptions {#metric-descriptions}
+## Metric descriptions
 
-### AggregatorThreads {#aggregatorthreads}
+### AggregatorThreads
 
 Number of threads in the Aggregator thread pool.
 
-### AggregatorThreadsActive {#aggregatorthreadsactive}
+### AggregatorThreadsActive
 
 Number of threads in the Aggregator thread pool running a task.
 
-### TablesLoaderForegroundThreads {#tablesloaderforegroundthreads}
+### TablesLoaderForegroundThreads
 
 Number of threads in the async loader foreground thread pool.
 
-### TablesLoaderForegroundThreadsActive {#tablesloaderforegroundthreadsactive}
+### TablesLoaderForegroundThreadsActive
 
 Number of threads in the async loader foreground thread pool running a task.
 
-### TablesLoaderBackgroundThreads {#tablesloaderbackgroundthreads}
+### TablesLoaderBackgroundThreads
 
 Number of threads in the async loader background thread pool.
 
-### TablesLoaderBackgroundThreadsActive {#tablesloaderbackgroundthreadsactive}
+### TablesLoaderBackgroundThreadsActive
 
 Number of threads in the async loader background thread pool running a task.
 
-### AsyncInsertCacheSize {#asyncinsertcachesize}
+### AsyncInsertCacheSize
 
 Number of async insert hash id in cache
 
-### AsynchronousInsertThreads {#asynchronousinsertthreads}
+### AsynchronousInsertThreads
 
 Number of threads in the AsynchronousInsert thread pool.
 
-### AsynchronousInsertThreadsActive {#asynchronousinsertthreadsactive}
+### AsynchronousInsertThreadsActive
 
 Number of threads in the AsynchronousInsert thread pool running a task.
 
-### AsynchronousReadWait {#asynchronousreadwait}
+### AsynchronousReadWait
 
 Number of threads waiting for asynchronous read.
 
-### BackgroundBufferFlushSchedulePoolSize {#backgroundbufferflushschedulepoolsize}
+### BackgroundBufferFlushSchedulePoolSize
 
 Limit on number of tasks in BackgroundBufferFlushSchedulePool
 
-### BackgroundBufferFlushSchedulePoolTask {#backgroundbufferflushschedulepooltask}
+### BackgroundBufferFlushSchedulePoolTask
 
 Number of active tasks in BackgroundBufferFlushSchedulePool. This pool is used for periodic Buffer flushes
 
-### BackgroundCommonPoolSize {#backgroundcommonpoolsize}
+### BackgroundCommonPoolSize
 
 Limit on number of tasks in an associated background pool
 
-### BackgroundCommonPoolTask {#backgroundcommonpooltask}
+### BackgroundCommonPoolTask
 
 Number of active tasks in an associated background pool
 
-### BackgroundDistributedSchedulePoolSize {#backgrounddistributedschedulepoolsize}
+### BackgroundDistributedSchedulePoolSize
 
 Limit on number of tasks in BackgroundDistributedSchedulePool
 
-### BackgroundDistributedSchedulePoolTask {#backgrounddistributedschedulepooltask}
+### BackgroundDistributedSchedulePoolTask
 
 Number of active tasks in BackgroundDistributedSchedulePool. This pool is used for distributed sends that is done in background.
 
-### BackgroundFetchesPoolSize {#backgroundfetchespoolsize}
+### BackgroundFetchesPoolSize
 
 Limit on number of simultaneous fetches in an associated background pool
 
-### BackgroundFetchesPoolTask {#backgroundfetchespooltask}
+### BackgroundFetchesPoolTask
 
 Number of active fetches in an associated background pool
 
-### BackgroundMergesAndMutationsPoolSize {#backgroundmergesandmutationspoolsize}
+### BackgroundMergesAndMutationsPoolSize
 
 Limit on number of active merges and mutations in an associated background pool
 
-### BackgroundMergesAndMutationsPoolTask {#backgroundmergesandmutationspooltask}
+### BackgroundMergesAndMutationsPoolTask
 
 Number of active merges and mutations in an associated background pool
 
-### BackgroundMessageBrokerSchedulePoolSize {#backgroundmessagebrokerschedulepoolsize}
+### BackgroundMessageBrokerSchedulePoolSize
 
 Limit on number of tasks in BackgroundProcessingPool for message streaming
 
-### BackgroundMessageBrokerSchedulePoolTask {#backgroundmessagebrokerschedulepooltask}
+### BackgroundMessageBrokerSchedulePoolTask
 
 Number of active tasks in BackgroundProcessingPool for message streaming
 
-### BackgroundMovePoolSize {#backgroundmovepoolsize}
+### BackgroundMovePoolSize
 
 Limit on number of tasks in BackgroundProcessingPool for moves
 
-### BackgroundMovePoolTask {#backgroundmovepooltask}
+### BackgroundMovePoolTask
 
 Number of active tasks in BackgroundProcessingPool for moves
 
-### BackgroundSchedulePoolSize {#backgroundschedulepoolsize}
+### BackgroundSchedulePoolSize
 
 Limit on number of tasks in BackgroundSchedulePool. This pool is used for periodic ReplicatedMergeTree tasks, like cleaning old data parts, altering data parts, replica re-initialization, etc.
 
-### BackgroundSchedulePoolTask {#backgroundschedulepooltask}
+### BackgroundSchedulePoolTask
 
 Number of active tasks in BackgroundSchedulePool. This pool is used for periodic ReplicatedMergeTree tasks, like cleaning old data parts, altering data parts, replica re-initialization, etc.
 
-### BackupsIOThreads {#backupsiothreads}
+### BackupsIOThreads
 
 Number of threads in the BackupsIO thread pool.
 
-### BackupsIOThreadsActive {#backupsiothreadsactive}
+### BackupsIOThreadsActive
 
 Number of threads in the BackupsIO thread pool running a task.
 
-### BackupsThreads {#backupsthreads}
+### BackupsThreads
 
 Number of threads in the thread pool for BACKUP.
 
-### BackupsThreadsActive {#backupsthreadsactive}
+### BackupsThreadsActive
 
 Number of threads in thread pool for BACKUP running a task.
 
-### BrokenDistributedFilesToInsert {#brokendistributedfilestoinsert}
+### BrokenDistributedFilesToInsert
 
 Number of files for asynchronous insertion into Distributed tables that has been marked as broken. This metric will starts from 0 on start. Number of files for every shard is summed.
 
-### CacheDetachedFileSegments {#cachedetachedfilesegments}
+### CacheDetachedFileSegments
 
 Number of existing detached cache file segments
 
-### CacheDictionaryThreads {#cachedictionarythreads}
+### CacheDictionaryThreads
 
 Number of threads in the CacheDictionary thread pool.
 
-### CacheDictionaryThreadsActive {#cachedictionarythreadsactive}
+### CacheDictionaryThreadsActive
 
 Number of threads in the CacheDictionary thread pool running a task.
 
-### CacheDictionaryUpdateQueueBatches {#cachedictionaryupdatequeuebatches}
+### CacheDictionaryUpdateQueueBatches
 
 Number of 'batches' (a set of keys) in update queue in CacheDictionaries.
 
-### CacheDictionaryUpdateQueueKeys {#cachedictionaryupdatequeuekeys}
+### CacheDictionaryUpdateQueueKeys
 
 Exact number of keys in update queue in CacheDictionaries.
 
-### CacheFileSegments {#cachefilesegments}
+### CacheFileSegments
 
 Number of existing cache file segments
 
-### ContextLockWait {#contextlockwait}
+### ContextLockWait
 
 Number of threads waiting for lock in Context. This is global lock.
 
-### DDLWorkerThreads {#ddlworkerthreads}
+### DDLWorkerThreads
 
 Number of threads in the DDLWorker thread pool for ON CLUSTER queries.
 
-### DDLWorkerThreadsActive {#ddlworkerthreadsactive}
+### DDLWorkerThreadsActive
 
 Number of threads in the DDLWORKER thread pool for ON CLUSTER queries running a task.
 
-### DatabaseCatalogThreads {#databasecatalogthreads}
+### DatabaseCatalogThreads
 
 Number of threads in the DatabaseCatalog thread pool.
 
-### DatabaseCatalogThreadsActive {#databasecatalogthreadsactive}
+### DatabaseCatalogThreadsActive
 
 Number of threads in the DatabaseCatalog thread pool running a task.
 
-### DatabaseOnDiskThreads {#databaseondiskthreads}
+### DatabaseOnDiskThreads
 
 Number of threads in the DatabaseOnDisk thread pool.
 
-### DatabaseOnDiskThreadsActive {#databaseondiskthreadsactive}
+### DatabaseOnDiskThreadsActive
 
 Number of threads in the DatabaseOnDisk thread pool running a task.
 
-### DelayedInserts {#delayedinserts}
+### DelayedInserts
 
 Number of INSERT queries that are throttled due to high number of active data parts for partition in a MergeTree table.
 
-### DestroyAggregatesThreads {#destroyaggregatesthreads}
+### DestroyAggregatesThreads
 
 Number of threads in the thread pool for destroy aggregate states.
 
-### DestroyAggregatesThreadsActive {#destroyaggregatesthreadsactive}
+### DestroyAggregatesThreadsActive
 
 Number of threads in the thread pool for destroy aggregate states running a task.
 
-### DictCacheRequests {#dictcacherequests}
+### DictCacheRequests
 
 Number of requests in fly to data sources of dictionaries of cache type.
 
-### DiskObjectStorageAsyncThreads {#diskobjectstorageasyncthreads}
+### DiskObjectStorageAsyncThreads
 
 Number of threads in the async thread pool for DiskObjectStorage.
 
-### DiskObjectStorageAsyncThreadsActive {#diskobjectstorageasyncthreadsactive}
+### DiskObjectStorageAsyncThreadsActive
 
 Number of threads in the async thread pool for DiskObjectStorage running a task.
 
-### DiskSpaceReservedForMerge {#diskspacereservedformerge}
+### DiskSpaceReservedForMerge
 
 Disk space reserved for currently running background merges. It is slightly more than the total size of currently merging parts.
 
-### DistributedFilesToInsert {#distributedfilestoinsert}
+### DistributedFilesToInsert
 
 Number of pending files to process for asynchronous insertion into Distributed tables. Number of files for every shard is summed.
 
-### DistributedSend {#distributedsend}
+### DistributedSend
 
 Number of connections to remote servers sending data that was INSERTed into Distributed tables. Both synchronous and asynchronous mode.
 
-### EphemeralNode {#ephemeralnode}
+### EphemeralNode
 
 Number of ephemeral nodes hold in ZooKeeper.
 
-### FilesystemCacheElements {#filesystemcacheelements}
+### FilesystemCacheElements
 
 Filesystem cache elements (file segments)
 
-### FilesystemCacheReadBuffers {#filesystemcachereadbuffers}
+### FilesystemCacheReadBuffers
 
 Number of active cache buffers
 
-### FilesystemCacheSize {#filesystemcachesize}
+### FilesystemCacheSize
 
 Filesystem cache size in bytes
 
-### GlobalThread {#globalthread}
+### GlobalThread
 
 Number of threads in global thread pool.
 
-### GlobalThreadActive {#globalthreadactive}
+### GlobalThreadActive
 
 Number of threads in global thread pool running a task.
 
-### HTTPConnection {#httpconnection}
+### HTTPConnection
 
 Number of connections to HTTP server
 
-### HashedDictionaryThreads {#hasheddictionarythreads}
+### HashedDictionaryThreads
 
 Number of threads in the HashedDictionary thread pool.
 
-### HashedDictionaryThreadsActive {#hasheddictionarythreadsactive}
+### HashedDictionaryThreadsActive
 
 Number of threads in the HashedDictionary thread pool running a task.
 
-### IOPrefetchThreads {#ioprefetchthreads}
+### IOPrefetchThreads
 
 Number of threads in the IO prefetch thread pool.
 
-### IOPrefetchThreadsActive {#ioprefetchthreadsactive}
+### IOPrefetchThreadsActive
 
 Number of threads in the IO prefetch thread pool running a task.
 
-### IOThreads {#iothreads}
+### IOThreads
 
 Number of threads in the IO thread pool.
 
-### IOThreadsActive {#iothreadsactive}
+### IOThreadsActive
 
 Number of threads in the IO thread pool running a task.
 
-### IOUringInFlightEvents {#iouringinflightevents}
+### IOUringInFlightEvents
 
 Number of io_uring SQEs in flight
 
-### IOUringPendingEvents {#iouringpendingevents}
+### IOUringPendingEvents
 
 Number of io_uring SQEs waiting to be submitted
 
-### IOWriterThreads {#iowriterthreads}
+### IOWriterThreads
 
 Number of threads in the IO writer thread pool.
 
-### IOWriterThreadsActive {#iowriterthreadsactive}
+### IOWriterThreadsActive
 
 Number of threads in the IO writer thread pool running a task.
 
-### InterserverConnection {#interserverconnection}
+### InterserverConnection
 
 Number of connections from other replicas to fetch parts
 
-### KafkaAssignedPartitions {#kafkaassignedpartitions}
+### KafkaAssignedPartitions
 
 Number of partitions Kafka tables currently assigned to
 
-### KafkaBackgroundReads {#kafkabackgroundreads}
+### KafkaBackgroundReads
 
 Number of background reads currently working (populating materialized views from Kafka)
 
-### KafkaConsumers {#kafkaconsumers}
+### KafkaConsumers
 
 Number of active Kafka consumers
 
-### KafkaConsumersInUse {#kafkaconsumersinuse}
+### KafkaConsumersInUse
 
 Number of consumers which are currently used by direct or background reads
 
-### KafkaConsumersWithAssignment {#kafkaconsumerswithassignment}
+### KafkaConsumersWithAssignment
 
 Number of active Kafka consumers which have some partitions assigned.
 
-### KafkaLibrdkafkaThreads {#kafkalibrdkafkathreads}
+### KafkaLibrdkafkaThreads
 
 Number of active librdkafka threads
 
-### KafkaProducers {#kafkaproducers}
+### KafkaProducers
 
 Number of active Kafka producer created
 
-### KafkaWrites {#kafkawrites}
+### KafkaWrites
 
 Number of currently running inserts to Kafka
 
-### KeeperAliveConnections {#keeperaliveconnections}
+### KeeperAliveConnections
 
 Number of alive connections
 
-### KeeperOutstandingRequests {#keeperoutstandingrequests}
+### KeeperOutstandingRequests
 
 Number of outstanding requests
 
-### LocalThread {#localthread}
+### LocalThread
 
 Number of threads in local thread pools. The threads in local thread pools are taken from the global thread pool.
 
-### LocalThreadActive {#localthreadactive}
+### LocalThreadActive
 
 Number of threads in local thread pools running a task.
 
-### MMappedAllocBytes {#mmappedallocbytes}
+### MMappedAllocBytes
 
 Sum bytes of mmapped allocations
 
-### MMappedAllocs {#mmappedallocs}
+### MMappedAllocs
 
 Total number of mmapped allocations
 
-### MMappedFileBytes {#mmappedfilebytes}
+### MMappedFileBytes
 
 Sum size of mmapped file regions.
 
-### MMappedFiles {#mmappedfiles}
+### MMappedFiles
 
 Total number of mmapped files.
 
-### MarksLoaderThreads {#marksloaderthreads}
+### MarksLoaderThreads
 
 Number of threads in thread pool for loading marks.
 
-### MarksLoaderThreadsActive {#marksloaderthreadsactive}
+### MarksLoaderThreadsActive
 
 Number of threads in the thread pool for loading marks running a task.
 
-### MaxDDLEntryID {#maxddlentryid}
+### MaxDDLEntryID
 
 Max processed DDL entry of DDLWorker.
 
-### MaxPushedDDLEntryID {#maxpushedddlentryid}
+### MaxPushedDDLEntryID
 
 Max DDL entry of DDLWorker that pushed to zookeeper.
 
-### MemoryTracking {#memorytracking}
+### MemoryTracking
 
 Total amount of memory (bytes) allocated by the server.
 
-### Merge {#merge}
+### Merge
 
 Number of executing background merges
 
-### MergeTreeAllRangesAnnouncementsSent {#mergetreeallrangesannouncementssent}
+### MergeTreeAllRangesAnnouncementsSent
 
 The current number of announcement being sent in flight from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.
 
-### MergeTreeBackgroundExecutorThreads {#mergetreebackgroundexecutorthreads}
+### MergeTreeBackgroundExecutorThreads
 
 Number of threads in the MergeTreeBackgroundExecutor thread pool.
 
-### MergeTreeBackgroundExecutorThreadsActive {#mergetreebackgroundexecutorthreadsactive}
+### MergeTreeBackgroundExecutorThreadsActive
 
 Number of threads in the MergeTreeBackgroundExecutor thread pool running a task.
 
-### MergeTreeDataSelectExecutorThreads {#mergetreedataselectexecutorthreads}
+### MergeTreeDataSelectExecutorThreads
 
 Number of threads in the MergeTreeDataSelectExecutor thread pool.
 
-### MergeTreeDataSelectExecutorThreadsActive {#mergetreedataselectexecutorthreadsactive}
+### MergeTreeDataSelectExecutorThreadsActive
 
 Number of threads in the MergeTreeDataSelectExecutor thread pool running a task.
 
-### MergeTreePartsCleanerThreads {#mergetreepartscleanerthreads}
+### MergeTreePartsCleanerThreads
 
 Number of threads in the MergeTree parts cleaner thread pool.
 
-### MergeTreePartsCleanerThreadsActive {#mergetreepartscleanerthreadsactive}
+### MergeTreePartsCleanerThreadsActive
 
 Number of threads in the MergeTree parts cleaner thread pool running a task.
 
-### MergeTreePartsLoaderThreads {#mergetreepartsloaderthreads}
+### MergeTreePartsLoaderThreads
 
 Number of threads in the MergeTree parts loader thread pool.
 
-### MergeTreePartsLoaderThreadsActive {#mergetreepartsloaderthreadsactive}
+### MergeTreePartsLoaderThreadsActive
 
 Number of threads in the MergeTree parts loader thread pool running a task.
 
-### MergeTreeReadTaskRequestsSent {#mergetreereadtaskrequestssent}
+### MergeTreeReadTaskRequestsSent
 
 The current number of callback requests in flight from the remote server back to the initiator server to choose the read task (for MergeTree tables). Measured on the remote server side.
 
-### Move {#move}
+### Move
 
 Number of currently executing moves
 
-### MySQLConnection {#mysqlconnection}
+### MySQLConnection
 
 Number of client connections using MySQL protocol
 
-### NetworkReceive {#networkreceive}
+### NetworkReceive
 
 Number of threads receiving data from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.
 
-### NetworkSend {#networksend}
+### NetworkSend
 
 Number of threads sending data to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.
 
-### OpenFileForRead {#openfileforread}
+### OpenFileForRead
 
 Number of files open for reading
 
-### OpenFileForWrite {#openfileforwrite}
+### OpenFileForWrite
 
 Number of files open for writing
 
-### ParallelFormattingOutputFormatThreads {#parallelformattingoutputformatthreads}
+### ParallelFormattingOutputFormatThreads
 
 Number of threads in the ParallelFormattingOutputFormatThreads thread pool.
 
-### ParallelFormattingOutputFormatThreadsActive {#parallelformattingoutputformatthreadsactive}
+### ParallelFormattingOutputFormatThreadsActive
 
 Number of threads in the ParallelFormattingOutputFormatThreads thread pool running a task.
 
-### ParallelParsingInputFormatThreads {#parallelparsinginputformatthreads}
+### ParallelParsingInputFormatThreads
 
 Number of threads in the ParallelParsingInputFormat thread pool.
 
-### ParallelParsingInputFormatThreadsActive {#parallelparsinginputformatthreadsactive}
+### ParallelParsingInputFormatThreadsActive
 
 Number of threads in the ParallelParsingInputFormat thread pool running a task.
 
-### PartMutation {#partmutation}
+### PartMutation
 
 Number of mutations (ALTER DELETE/UPDATE)
 
-### PartsActive {#partsactive}
+### PartsActive
 
 Active data part, used by current and upcoming SELECTs.
 
-### PartsCommitted {#partscommitted}
+### PartsCommitted
 
 Deprecated. See PartsActive.
 
-### PartsCompact {#partscompact}
+### PartsCompact
 
 Compact parts.
 
-### PartsDeleteOnDestroy {#partsdeleteondestroy}
+### PartsDeleteOnDestroy
 
 Part was moved to another disk and should be deleted in own destructor.
 
-### PartsDeleting {#partsdeleting}
+### PartsDeleting
 
 Not active data part with identity refcounter, it is deleting right now by a cleaner.
 
-### PartsOutdated {#partsoutdated}
+### PartsOutdated
 
 Not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes.
 
-### PartsPreActive {#partspreactive}
+### PartsPreActive
 
 The part is in data_parts, but not used for SELECTs.
 
-### PartsPreCommitted {#partsprecommitted}
+### PartsPreCommitted
 
 Deprecated. See PartsPreActive.
 
-### PartsTemporary {#partstemporary}
+### PartsTemporary
 
 The part is generating now, it is not in data_parts list.
 
-### PartsWide {#partswide}
+### PartsWide
 
 Wide parts.
 
-### PendingAsyncInsert {#pendingasyncinsert}
+### PendingAsyncInsert
 
 Number of asynchronous inserts that are waiting for flush.
 
-### PostgreSQLConnection {#postgresqlconnection}
+### PostgreSQLConnection
 
 Number of client connections using PostgreSQL protocol
 
-### Query {#query}
+### Query
 
 Number of executing queries
 
-### QueryPreempted {#querypreempted}
+### QueryPreempted
 
 Number of queries that are stopped and waiting due to 'priority' setting.
 
-### QueryThread {#querythread}
+### QueryThread
 
 Number of query processing threads
 
-### RWLockActiveReaders {#rwlockactivereaders}
+### RWLockActiveReaders
 
 Number of threads holding read lock in a table RWLock.
 
-### RWLockActiveWriters {#rwlockactivewriters}
+### RWLockActiveWriters
 
 Number of threads holding write lock in a table RWLock.
 
-### RWLockWaitingReaders {#rwlockwaitingreaders}
+### RWLockWaitingReaders
 
 Number of threads waiting for read on a table RWLock.
 
-### RWLockWaitingWriters {#rwlockwaitingwriters}
+### RWLockWaitingWriters
 
 Number of threads waiting for write on a table RWLock.
 
-### Read {#read}
+### Read
 
 Number of read (read, pread, io_getevents, etc.) syscalls in fly
 
-### ReadTaskRequestsSent {#readtaskrequestssent}
+### ReadTaskRequestsSent
 
 The current number of callback requests in flight from the remote server back to the initiator server to choose the read task (for s3Cluster table function and similar). Measured on the remote server side.
 
-### ReadonlyReplica {#readonlyreplica}
+### ReadonlyReplica
 
 Number of Replicated tables that are currently in readonly state due to re-initialization after ZooKeeper session loss or due to startup without ZooKeeper configured.
 
-### RemoteRead {#remoteread}
+### RemoteRead
 
 Number of read with remote reader in fly
 
-### ReplicatedChecks {#replicatedchecks}
+### ReplicatedChecks
 
 Number of data parts checking for consistency
 
-### ReplicatedFetch {#replicatedfetch}
+### ReplicatedFetch
 
 Number of data parts being fetched from replica
 
-### ReplicatedSend {#replicatedsend}
+### ReplicatedSend
 
 Number of data parts being sent to replicas
 
-### RestartReplicaThreads {#restartreplicathreads}
+### RestartReplicaThreads
 
 Number of threads in the RESTART REPLICA thread pool.
 
-### RestartReplicaThreadsActive {#restartreplicathreadsactive}
+### RestartReplicaThreadsActive
 
 Number of threads in the RESTART REPLICA thread pool running a task.
 
-### RestoreThreads {#restorethreads}
+### RestoreThreads
 
 Number of threads in the thread pool for RESTORE.
 
-### RestoreThreadsActive {#restorethreadsactive}
+### RestoreThreadsActive
 
 Number of threads in the thread pool for RESTORE running a task.
 
-### Revision {#revision}
+### Revision
 
 Revision of the server. It is a number incremented for every release or release candidate except patch releases.
 
-### S3Requests {#s3requests}
+### S3Requests
 
 S3 requests
 
-### SendExternalTables {#sendexternaltables}
+### SendExternalTables
 
 Number of connections that are sending data for external tables to remote servers. External tables are used to implement GLOBAL IN and GLOBAL JOIN operators with distributed subqueries.
 
-### SendScalars {#sendscalars}
+### SendScalars
 
 Number of connections that are sending data for scalars to remote servers.
 
-### StorageBufferBytes {#storagebufferbytes}
+### StorageBufferBytes
 
 Number of bytes in buffers of Buffer tables
 
-### StorageBufferRows {#storagebufferrows}
+### StorageBufferRows
 
 Number of rows in buffers of Buffer tables
 
-### StorageDistributedThreads {#storagedistributedthreads}
+### StorageDistributedThreads
 
 Number of threads in the StorageDistributed thread pool.
 
-### StorageDistributedThreadsActive {#storagedistributedthreadsactive}
+### StorageDistributedThreadsActive
 
 Number of threads in the StorageDistributed thread pool running a task.
 
-### StorageHiveThreads {#storagehivethreads}
+### StorageHiveThreads
 
 Number of threads in the StorageHive thread pool.
 
-### StorageHiveThreadsActive {#storagehivethreadsactive}
+### StorageHiveThreadsActive
 
 Number of threads in the StorageHive thread pool running a task.
 
-### StorageS3Threads {#storages3threads}
+### StorageS3Threads
 
 Number of threads in the StorageS3 thread pool.
 
-### StorageS3ThreadsActive {#storages3threadsactive}
+### StorageS3ThreadsActive
 
 Number of threads in the StorageS3 thread pool running a task.
 
-### SystemReplicasThreads {#systemreplicasthreads}
+### SystemReplicasThreads
 
 Number of threads in the system.replicas thread pool.
 
-### SystemReplicasThreadsActive {#systemreplicasthreadsactive}
+### SystemReplicasThreadsActive
 
 Number of threads in the system.replicas thread pool running a task.
 
-### TCPConnection {#tcpconnection}
+### TCPConnection
 
 Number of connections to TCP server (clients with native interface), also included server-server distributed query connections
 
-### TablesToDropQueueSize {#tablestodropqueuesize}
+### TablesToDropQueueSize
 
 Number of dropped tables, that are waiting for background data removal.
 
-### TemporaryFilesForAggregation {#temporaryfilesforaggregation}
+### TemporaryFilesForAggregation
 
 Number of temporary files created for external aggregation
 
-### TemporaryFilesForJoin {#temporaryfilesforjoin}
+### TemporaryFilesForJoin
 
 Number of temporary files created for JOIN
 
-### TemporaryFilesForSort {#temporaryfilesforsort}
+### TemporaryFilesForSort
 
 Number of temporary files created for external sorting
 
-### TemporaryFilesUnknown {#temporaryfilesunknown}
+### TemporaryFilesUnknown
 
 Number of temporary files created without known purpose
 
-### ThreadPoolFSReaderThreads {#threadpoolfsreaderthreads}
+### ThreadPoolFSReaderThreads
 
 Number of threads in the thread pool for local_filesystem_read_method=threadpool.
 
-### ThreadPoolFSReaderThreadsActive {#threadpoolfsreaderthreadsactive}
+### ThreadPoolFSReaderThreadsActive
 
 Number of threads in the thread pool for local_filesystem_read_method=threadpool running a task.
 
-### ThreadPoolRemoteFSReaderThreads {#threadpoolremotefsreaderthreads}
+### ThreadPoolRemoteFSReaderThreads
 
 Number of threads in the thread pool for remote_filesystem_read_method=threadpool.
 
-### ThreadPoolRemoteFSReaderThreadsActive {#threadpoolremotefsreaderthreadsactive}
+### ThreadPoolRemoteFSReaderThreadsActive
 
 Number of threads in the thread pool for remote_filesystem_read_method=threadpool running a task.
 
-### ThreadsInOvercommitTracker {#threadsinovercommittracker}
+### ThreadsInOvercommitTracker
 
 Number of waiting threads inside of OvercommitTracker
 
-### TotalTemporaryFiles {#totaltemporaryfiles}
+### TotalTemporaryFiles
 
 Number of temporary files created
 
-### VersionInteger {#versioninteger}
+### VersionInteger
 
 Version of the server in a single integer number in base-1000. For example, version 11.22.33 is translated to 11022033.
 
-### Write {#write}
+### Write
 
 Number of write (write, pwrite, io_getevents, etc.) syscalls in fly
 
-### ZooKeeperRequest {#zookeeperrequest}
+### ZooKeeperRequest
 
 Number of requests to ZooKeeper in fly.
 
-### ZooKeeperSession {#zookeepersession}
+### ZooKeeperSession
 
 Number of sessions (connections) to ZooKeeper. Should be no more than one, because using more than one connection to ZooKeeper may lead to bugs due to lack of linearizability (stale reads) that ZooKeeper consistency model allows.
 
-### ZooKeeperWatch {#zookeeperwatch}
+### ZooKeeperWatch
 
 Number of watches (event subscriptions) in ZooKeeper.
 
-### ConcurrencyControlAcquired {#concurrencycontrolacquired}
+### ConcurrencyControlAcquired
 
 Total number of acquired CPU slots.
 
-### ConcurrencyControlSoftLimit {#concurrencycontrolsoftlimit}
+### ConcurrencyControlSoftLimit
 
 Value of soft limit on number of CPU slots.
 
 **See Also**
 
-- [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) — Contains periodically calculated metrics.
-- [system.events](/operations/system-tables/events) — Contains a number of events that occurred.
-- [system.metric_log](/operations/system-tables/metric_log) — Contains a history of metrics values from tables `system.metrics` and `system.events`.
+- [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+- [system.events](../../operations/system-tables/events.md#system_tables-events) — Contains a number of events that occurred.
+- [system.metric_log](../../operations/system-tables/metric_log.md#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` and `system.events`.
 - [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.

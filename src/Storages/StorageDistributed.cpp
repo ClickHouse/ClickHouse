@@ -7,7 +7,6 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/ObjectUtils.h>
@@ -66,7 +65,6 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -109,9 +107,6 @@
 #include <memory>
 #include <filesystem>
 #include <cassert>
-
-#include <boost/algorithm/string/find_iterator.hpp>
-#include <boost/algorithm/string/finder.hpp>
 
 
 namespace fs = std::filesystem;
@@ -951,7 +946,7 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
     }
 
     /// Force sync insertion if it is remote() table function
-    bool insert_sync = settings[Setting::distributed_foreground_insert] || settings[Setting::insert_shard_id] || owned_cluster || relative_data_path.empty();
+    bool insert_sync = settings[Setting::distributed_foreground_insert] || settings[Setting::insert_shard_id] || owned_cluster;
     auto timeout = settings[Setting::distributed_background_insert_timeout];
 
     Names columns_to_send;
@@ -1112,7 +1107,7 @@ static std::optional<ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextP
                 plan.explainPlan(buf, {});
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Found multiple source steps for query\n{}\nPlan\n{}",
-                    ast->formatForErrorMessage(), buf.str());
+                    queryToString(ast), buf.str());
             }
 
             source = with_filter;
@@ -1318,7 +1313,7 @@ void StorageDistributed::initializeFromDisk()
         if (inc > file_names_increment.value)
             file_names_increment.value.store(inc);
     }
-    LOG_DEBUG(log, "Auto-increment is {}", file_names_increment.value.load());
+    LOG_DEBUG(log, "Auto-increment is {}", file_names_increment.value);
 }
 
 
@@ -1513,7 +1508,7 @@ Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name) 
     return addresses;
 }
 
-std::optional<UInt64> StorageDistributed::totalBytes(ContextPtr) const
+std::optional<UInt64> StorageDistributed::totalBytes(const Settings &) const
 {
     UInt64 total_bytes = 0;
     for (const auto & status : getDirectoryQueueStatuses())
@@ -1686,7 +1681,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
             log,
             "Number of values for sharding key exceeds optimize_skip_unused_shards_limit={}, "
             "try to increase it, but note that this may increase query processing time.",
-            local_context->getSettingsRef()[Setting::optimize_skip_unused_shards_limit].value);
+            local_context->getSettingsRef()[Setting::optimize_skip_unused_shards_limit]);
         return nullptr;
     }
 
@@ -1837,7 +1832,7 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
         !(*distributed_settings)[DistributedSetting::bytes_to_delay_insert])
         return;
 
-    UInt64 total_bytes = *totalBytes(getContext());
+    UInt64 total_bytes = *totalBytes(getContext()->getSettingsRef());
 
     if ((*distributed_settings)[DistributedSetting::bytes_to_throw_insert] && total_bytes > (*distributed_settings)[DistributedSetting::bytes_to_throw_insert])
     {
@@ -1858,12 +1853,12 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
         do {
             delayed_ms += step_ms;
             std::this_thread::sleep_for(std::chrono::milliseconds(step_ms));
-        } while (*totalBytes(getContext()) > (*distributed_settings)[DistributedSetting::bytes_to_delay_insert] && delayed_ms < (*distributed_settings)[DistributedSetting::max_delay_to_insert]*1000);
+        } while (*totalBytes(getContext()->getSettingsRef()) > (*distributed_settings)[DistributedSetting::bytes_to_delay_insert] && delayed_ms < (*distributed_settings)[DistributedSetting::max_delay_to_insert]*1000);
 
         ProfileEvents::increment(ProfileEvents::DistributedDelayedInserts);
         ProfileEvents::increment(ProfileEvents::DistributedDelayedInsertsMilliseconds, delayed_ms);
 
-        UInt64 new_total_bytes = *totalBytes(getContext());
+        UInt64 new_total_bytes = *totalBytes(getContext()->getSettingsRef());
         LOG_INFO(log, "Too many bytes pending for async INSERT: was {}, now {}, INSERT was delayed to {} ms",
             formatReadableSizeWithBinarySuffix(total_bytes),
             formatReadableSizeWithBinarySuffix(new_total_bytes),

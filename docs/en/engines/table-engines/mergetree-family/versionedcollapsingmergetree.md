@@ -1,10 +1,7 @@
 ---
-description: 'Allows for quick writing of object states that are continually changing,
-  and deleting old object states in the background.'
-sidebar_label: 'VersionedCollapsingMergeTree'
+slug: /en/engines/table-engines/mergetree-family/versionedcollapsingmergetree
 sidebar_position: 80
-slug: /engines/table-engines/mergetree-family/versionedcollapsingmergetree
-title: 'VersionedCollapsingMergeTree'
+sidebar_label:  VersionedCollapsingMergeTree
 ---
 
 # VersionedCollapsingMergeTree
@@ -16,11 +13,11 @@ This engine:
 
 See the section [Collapsing](#table_engines_versionedcollapsingmergetree) for details.
 
-The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree) and adds the logic for collapsing rows to the algorithm for merging data parts. `VersionedCollapsingMergeTree` serves the same purpose as [CollapsingMergeTree](../../../engines/table-engines/mergetree-family/collapsingmergetree.md) but uses a different collapsing algorithm that allows inserting the data in any order with multiple threads. In particular, the `Version` column helps to collapse the rows properly even if they are inserted in the wrong order. In contrast, `CollapsingMergeTree` allows only strictly consecutive insertion.
+The engine inherits from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) and adds the logic for collapsing rows to the algorithm for merging data parts. `VersionedCollapsingMergeTree` serves the same purpose as [CollapsingMergeTree](../../../engines/table-engines/mergetree-family/collapsingmergetree.md) but uses a different collapsing algorithm that allows inserting the data in any order with multiple threads. In particular, the `Version` column helps to collapse the rows properly even if they are inserted in the wrong order. In contrast, `CollapsingMergeTree` allows only strictly consecutive insertion.
 
 ## Creating a Table {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -35,18 +32,18 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 For a description of query parameters, see the [query description](../../../sql-reference/statements/create/table.md).
 
-### Engine Parameters {#engine-parameters}
+### Engine Parameters
 
-```sql
+``` sql
 VersionedCollapsingMergeTree(sign, version)
 ```
 
 | Parameter | Description                                                                            | Type                                                                                                                                                                                                                                                                                    |
 |-----------|----------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `sign`    | Name of the column with the type of row: `1` is a "state" row, `-1` is a "cancel" row. | [`Int8`](/sql-reference/data-types/int-uint)                                                                                                                                                                                                                                    |
-| `version` | Name of the column with the version of the object state.                               | [`Int*`](/sql-reference/data-types/int-uint), [`UInt*`](/sql-reference/data-types/int-uint), [`Date`](/sql-reference/data-types/date), [`Date32`](/sql-reference/data-types/date32), [`DateTime`](/sql-reference/data-types/datetime) or [`DateTime64`](/sql-reference/data-types/datetime64) |
+| `sign`    | Name of the column with the type of row: `1` is a “state” row, `-1` is a “cancel” row. | [`Int8`](/docs/en/sql-reference/data-types/int-uint)                                                                                                                                                                                                                                    |
+| `version` | Name of the column with the version of the object state.                               | [`UInt*`](/docs/en/sql-reference/data-types/int-uint), [`Date`](/docs/en/sql-reference/data-types/date), [`Date32`](/docs/en/sql-reference/data-types/date32), [`DateTime`](/docs/en/sql-reference/data-types/datetime) or [`DateTime64`](/docs/en/sql-reference/data-types/datetime64) |
 
-### Query Clauses {#query-clauses}
+### Query Clauses
 
 When creating a `VersionedCollapsingMergeTree` table, the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required as when creating a `MergeTree` table.
 
@@ -58,7 +55,7 @@ When creating a `VersionedCollapsingMergeTree` table, the same [clauses](../../.
 Do not use this method in new projects. If possible, switch old projects to the method described above.
 :::
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -69,7 +66,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 All of the parameters except `sign` and `version` have the same meaning as in `MergeTree`.
 
-- `sign` — Name of the column with the type of row: `1` is a "state" row, `-1` is a "cancel" row.
+- `sign` — Name of the column with the type of row: `1` is a “state” row, `-1` is a “cancel” row.
 
     Column Data Type — `Int8`.
 
@@ -85,11 +82,11 @@ All of the parameters except `sign` and `version` have the same meaning as in `M
 
 Consider a situation where you need to save continually changing data for some object. It is reasonable to have one row for an object and update the row whenever there are changes. However, the update operation is expensive and slow for a DBMS because it requires rewriting the data in the storage. Update is not acceptable if you need to write data quickly, but you can write the changes to an object sequentially as follows.
 
-Use the `Sign` column when writing the row. If `Sign = 1` it means that the row is a state of an object (let's call it the "state" row). If `Sign = -1` it indicates the cancellation of the state of an object with the same attributes (let's call it the "cancel" row). Also use the `Version` column, which should identify each state of an object with a separate number.
+Use the `Sign` column when writing the row. If `Sign = 1` it means that the row is a state of an object (let’s call it the “state” row). If `Sign = -1` it indicates the cancellation of the state of an object with the same attributes (let’s call it the “cancel” row). Also use the `Version` column, which should identify each state of an object with a separate number.
 
 For example, we want to calculate how many pages users visited on some site and how long they were there. At some point in time we write the following row with the state of user activity:
 
-```text
+``` text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
 │ 4324182021466249494 │         5 │      146 │    1 │       1 |
 └─────────────────────┴───────────┴──────────┴──────┴─────────┘
@@ -97,7 +94,7 @@ For example, we want to calculate how many pages users visited on some site and 
 
 At some point later we register the change of user activity and write it with the following two rows.
 
-```text
+``` text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
 │ 4324182021466249494 │         5 │      146 │   -1 │       1 |
 │ 4324182021466249494 │         6 │      185 │    1 │       2 |
@@ -110,7 +107,7 @@ The second row contains the current state.
 
 Because we need only the last state of user activity, the rows
 
-```text
+``` text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
 │ 4324182021466249494 │         5 │      146 │    1 │       1 |
 │ 4324182021466249494 │         5 │      146 │   -1 │       1 |
@@ -123,7 +120,7 @@ To find out why we need two rows for each change, see [Algorithm](#table_engines
 
 **Notes on Usage**
 
-1.  The program that writes the data should remember the state of an object to be able to cancel it. "Cancel" string should contain copies of the primary key fields and the version of the "state" string and the opposite `Sign`. It increases the initial size of storage but allows to write the data quickly.
+1.  The program that writes the data should remember the state of an object to be able to cancel it. “Cancel” string should contain copies of the primary key fields and the version of the “state” string and the opposite `Sign`. It increases the initial size of storage but allows to write the data quickly.
 2.  Long growing arrays in columns reduce the efficiency of the engine due to the load for writing. The more straightforward the data, the better the efficiency.
 3.  `SELECT` results depend strongly on the consistency of the history of object changes. Be accurate when preparing data for inserting. You can get unpredictable results with inconsistent data, such as negative values for non-negative metrics like session depth.
 
@@ -135,19 +132,19 @@ When ClickHouse inserts data, it orders rows by the primary key. If the `Version
 
 ## Selecting Data {#selecting-data}
 
-ClickHouse does not guarantee that all of the rows with the same primary key will be in the same resulting data part or even on the same physical server. This is true both for writing the data and for subsequent merging of the data parts. In addition, ClickHouse processes `SELECT` queries with multiple threads, and it cannot predict the order of rows in the result. This means that aggregation is required if there is a need to get completely "collapsed" data from a `VersionedCollapsingMergeTree` table.
+ClickHouse does not guarantee that all of the rows with the same primary key will be in the same resulting data part or even on the same physical server. This is true both for writing the data and for subsequent merging of the data parts. In addition, ClickHouse processes `SELECT` queries with multiple threads, and it cannot predict the order of rows in the result. This means that aggregation is required if there is a need to get completely “collapsed” data from a `VersionedCollapsingMergeTree` table.
 
 To finalize collapsing, write a query with a `GROUP BY` clause and aggregate functions that account for the sign. For example, to calculate quantity, use `sum(Sign)` instead of `count()`. To calculate the sum of something, use `sum(Sign * x)` instead of `sum(x)`, and add `HAVING sum(Sign) > 0`.
 
-The aggregates `count`, `sum` and `avg` can be calculated this way. The aggregate `uniq` can be calculated if an object has at least one non-collapsed state. The aggregates `min` and `max` can't be calculated because `VersionedCollapsingMergeTree` does not save the history of values of collapsed states.
+The aggregates `count`, `sum` and `avg` can be calculated this way. The aggregate `uniq` can be calculated if an object has at least one non-collapsed state. The aggregates `min` and `max` can’t be calculated because `VersionedCollapsingMergeTree` does not save the history of values of collapsed states.
 
-If you need to extract the data with "collapsing" but without aggregation (for example, to check whether rows are present whose newest values match certain conditions), you can use the `FINAL` modifier for the `FROM` clause. This approach is inefficient and should not be used with large tables.
+If you need to extract the data with “collapsing” but without aggregation (for example, to check whether rows are present whose newest values match certain conditions), you can use the `FINAL` modifier for the `FROM` clause. This approach is inefficient and should not be used with large tables.
 
 ## Example of Use {#example-of-use}
 
 Example data:
 
-```text
+``` text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
 │ 4324182021466249494 │         5 │      146 │    1 │       1 |
 │ 4324182021466249494 │         5 │      146 │   -1 │       1 |
@@ -157,7 +154,7 @@ Example data:
 
 Creating the table:
 
-```sql
+``` sql
 CREATE TABLE UAct
 (
     UserID UInt64,
@@ -172,11 +169,11 @@ ORDER BY UserID
 
 Inserting the data:
 
-```sql
+``` sql
 INSERT INTO UAct VALUES (4324182021466249494, 5, 146, 1, 1)
 ```
 
-```sql
+``` sql
 INSERT INTO UAct VALUES (4324182021466249494, 5, 146, -1, 1),(4324182021466249494, 6, 185, 1, 2)
 ```
 
@@ -184,11 +181,11 @@ We use two `INSERT` queries to create two different data parts. If we insert the
 
 Getting the data:
 
-```sql
+``` sql
 SELECT * FROM UAct
 ```
 
-```text
+``` text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
 │ 4324182021466249494 │         5 │      146 │    1 │       1 │
 └─────────────────────┴───────────┴──────────┴──────┴─────────┘
@@ -204,7 +201,7 @@ Collapsing did not occur because the data parts have not been merged yet. ClickH
 
 This is why we need aggregation:
 
-```sql
+``` sql
 SELECT
     UserID,
     sum(PageViews * Sign) AS PageViews,
@@ -215,7 +212,7 @@ GROUP BY UserID, Version
 HAVING sum(Sign) > 0
 ```
 
-```text
+``` text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Version─┐
 │ 4324182021466249494 │         6 │      185 │       2 │
 └─────────────────────┴───────────┴──────────┴─────────┘
@@ -223,14 +220,14 @@ HAVING sum(Sign) > 0
 
 If we do not need aggregation and want to force collapsing, we can use the `FINAL` modifier for the `FROM` clause.
 
-```sql
+``` sql
 SELECT * FROM UAct FINAL
 ```
 
-```text
+``` text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
 │ 4324182021466249494 │         6 │      185 │    1 │       2 │
 └─────────────────────┴───────────┴──────────┴──────┴─────────┘
 ```
 
-This is a very inefficient way to select data. Don't use it for large tables.
+This is a very inefficient way to select data. Don’t use it for large tables.

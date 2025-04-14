@@ -30,7 +30,6 @@ function wait_for_delete_inactive_parts()
         res=$(${CLICKHOUSE_CLIENT} --query="SELECT count() FROM system.parts WHERE database='$database' AND table='$table' AND not active")
         [[ $res -eq 0 ]] && return 0
 
-
         sleep 2
         timeout=$((timeout - 2))
     done

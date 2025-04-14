@@ -34,8 +34,6 @@ public:
 
     bool hasQueryParameters() const;
 
-    NameToNameMap getQueryParameters() const;
-
 private:
     /// This variable is optional as we want to set it on the first call to hasQueryParameters
     /// and return the same variable on future calls to hasQueryParameters

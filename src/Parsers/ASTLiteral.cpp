@@ -1,4 +1,3 @@
-
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
@@ -75,8 +74,8 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
     /// Special case for very large arrays and tuples. Instead of listing all elements, will use hash of them.
     /// (Otherwise column name will be too long, that will lead to significant slowdown of expression analysis.)
     auto type = value.getType();
-    if ((type == Field::Types::Array && value.safeGet<Array>().size() > min_elements_for_hashing)
-        || (type == Field::Types::Tuple && value.safeGet<Tuple>().size() > min_elements_for_hashing))
+    if ((type == Field::Types::Array && value.safeGet<const Array &>().size() > min_elements_for_hashing)
+        || (type == Field::Types::Tuple && value.safeGet<const Tuple &>().size() > min_elements_for_hashing))
     {
         SipHash hash;
         applyVisitor(FieldVisitorHash(hash), value);
@@ -113,7 +112,7 @@ void ASTLiteral::appendColumnNameImplLegacy(WriteBuffer & ostr) const
     /// Special case for very large arrays. Instead of listing all elements, will use hash of them.
     /// (Otherwise column name will be too long, that will lead to significant slowdown of expression analysis.)
     auto type = value.getType();
-    if ((type == Field::Types::Array && value.safeGet<Array>().size() > min_elements_for_hashing))
+    if ((type == Field::Types::Array && value.safeGet<const Array &>().size() > min_elements_for_hashing))
     {
         SipHash hash;
         applyVisitor(FieldVisitorHash(hash), value);

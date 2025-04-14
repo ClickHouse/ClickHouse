@@ -17,9 +17,8 @@
 #include <Processors/Formats/Impl/JSONCompactRowInputFormat.h>
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
-
 #include <fmt/format.h>
-#include <fmt/ranges.h>
+
 
 namespace DB
 {
@@ -76,7 +75,7 @@ RowInputFormatWithNamesAndTypes<FormatReaderImpl>::RowInputFormatWithNamesAndTyp
     , try_detect_header(try_detect_header_)
     , allow_variable_number_of_columns(allow_variable_number_of_columns_)
 {
-    column_indexes_by_names = getNamesToIndexesMap(getPort().getHeader());
+    column_indexes_by_names = getPort().getHeader().getNamesToIndexesMap();
 }
 
 template <typename FormatReaderImpl>

@@ -72,7 +72,7 @@ static DataTypePtr create(const ASTPtr & arguments)
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
             "Object data type family must have a const string as its schema name parameter");
 
-    return std::make_shared<DataTypeObjectDeprecated>(literal->value.safeGet<String>(), is_nullable);
+    return std::make_shared<DataTypeObjectDeprecated>(literal->value.safeGet<const String &>(), is_nullable);
 }
 
 void registerDataTypeObjectDeprecated(DataTypeFactory & factory)

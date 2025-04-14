@@ -1,14 +1,9 @@
 ---
-description: 'System table containing information about and status of recent asynchronous
-  jobs (e.g. for tables which are loading). The table contains a row for every job.'
-keywords: ['system table', 'asynchronous_loader']
-slug: /operations/system-tables/asynchronous_loader
-title: 'system.asynchronous_loader'
+slug: /en/operations/system-tables/asynchronous_loader
 ---
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
 
-import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
-
-# system.asynchronous_loader
+# asynchronous_loader
 
 <SystemTableCloud/>
 
@@ -16,11 +11,14 @@ Contains information and status for recent asynchronous jobs (e.g. for tables lo
 
 Example:
 
-```sql
+``` sql
 SELECT *
 FROM system.asynchronous_loader
-LIMIT 1
 FORMAT Vertical
+LIMIT 1
+```
+
+``` text
 ```
 
 Columns:

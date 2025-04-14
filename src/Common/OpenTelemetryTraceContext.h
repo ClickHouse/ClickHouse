@@ -1,14 +1,10 @@
 #pragma once
 
-#include <Common/OpenTelemetryTracingContext.h>
 #include <Core/Field.h>
-
-#include <exception>
 
 namespace DB
 {
 
-class Exception;
 struct Settings;
 class OpenTelemetrySpanLog;
 class WriteBuffer;
@@ -73,6 +69,35 @@ private:
     bool addAttributeImpl(std::string_view name, std::string_view value) noexcept;
 };
 
+/// See https://www.w3.org/TR/trace-context/ for trace_flags definition
+enum TraceFlags : UInt8
+{
+    TRACE_FLAG_NONE = 0,
+    TRACE_FLAG_SAMPLED = 1,
+};
+
+/// The runtime info we need to create new OpenTelemetry spans.
+struct TracingContext
+{
+    UUID trace_id;
+    UInt64 span_id = 0;
+    // The incoming tracestate header and the trace flags, we just pass them
+    // downstream. See https://www.w3.org/TR/trace-context/
+    String tracestate;
+    UInt8 trace_flags = TRACE_FLAG_NONE;
+
+    // Parse/compose OpenTelemetry traceparent header.
+    bool parseTraceparentHeader(std::string_view traceparent, String & error);
+    String composeTraceparentHeader() const;
+
+    bool isTraceEnabled() const
+    {
+        return trace_id != UUID();
+    }
+
+    void deserialize(ReadBuffer & buf);
+    void serialize(WriteBuffer & buf) const;
+};
 
 /// Tracing context kept on each thread
 struct TracingContextOnThread : TracingContext

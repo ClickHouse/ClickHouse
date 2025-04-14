@@ -1,7 +1,7 @@
 #include <Client/BuzzHouse/Utils/HugeInt.h>
 #include <Client/BuzzHouse/Utils/UHugeInt.h>
-#include <base/defines.h>
 
+#include <cassert>
 #include <cmath>
 
 namespace BuzzHouse
@@ -184,12 +184,12 @@ static UHugeInt multiply(UHugeInt lhs, UHugeInt rhs)
     result.upper = uint64_t(result_u128 >> 64);
     result.lower = uint64_t(result_u128 & 0xffffffffffffffff);
 #else
-    /// Split values into 4 32-bit parts
+    // split values into 4 32-bit parts
     uint64_t top[4] = {lhs.upper >> 32, lhs.upper & 0xffffffff, lhs.lower >> 32, lhs.lower & 0xffffffff};
     uint64_t bottom[4] = {rhs.upper >> 32, rhs.upper & 0xffffffff, rhs.lower >> 32, rhs.lower & 0xffffffff};
     uint64_t products[4][4];
 
-    /// Multiply each component of the values
+    // multiply each component of the values
     for (int y = 3; y > -1; y--)
     {
         for (int x = 3; x > -1; x--)
@@ -198,36 +198,36 @@ static UHugeInt multiply(UHugeInt lhs, UHugeInt rhs)
         }
     }
 
-    /// First row
+    // first row
     uint64_t fourth32 = (products[0][3] & 0xffffffff);
     uint64_t third32 = (products[0][2] & 0xffffffff) + (products[0][3] >> 32);
     uint64_t second32 = (products[0][1] & 0xffffffff) + (products[0][2] >> 32);
     uint64_t first32 = (products[0][0] & 0xffffffff) + (products[0][1] >> 32);
 
-    /// Second row
+    // second row
     third32 += (products[1][3] & 0xffffffff);
     second32 += (products[1][2] & 0xffffffff) + (products[1][3] >> 32);
     first32 += (products[1][1] & 0xffffffff) + (products[1][2] >> 32);
 
-    /// Third row
+    // third row
     second32 += (products[2][3] & 0xffffffff);
     first32 += (products[2][2] & 0xffffffff) + (products[2][3] >> 32);
 
-    /// Fourth row
+    // fourth row
     first32 += (products[3][3] & 0xffffffff);
 
-    /// Move carry to next digit
+    // move carry to next digit
     third32 += fourth32 >> 32;
     second32 += third32 >> 32;
     first32 += second32 >> 32;
 
-    //. Remove carry from current digit
+    // remove carry from current digit
     fourth32 &= 0xffffffff;
     third32 &= 0xffffffff;
     second32 &= 0xffffffff;
     first32 &= 0xffffffff;
 
-    /// Combine components
+    // combine components
     result.lower = (third32 << 32) | fourth32;
     result.upper = (first32 << 32) | second32;
 #endif
@@ -313,9 +313,7 @@ static UHugeInt divide(UHugeInt lhs, UHugeInt rhs)
 static UHugeInt modulo(UHugeInt lhs, UHugeInt rhs)
 {
     UHugeInt remainder;
-    /// Here it is interested in the remainder only
-    auto u = divMod(lhs, rhs, remainder);
-    UNUSED(u);
+    (void)divMod(lhs, rhs, remainder);
     return remainder;
 }
 
@@ -396,9 +394,9 @@ UHugeInt::operator bool() const
     return *this != UHugeInt(0);
 }
 
-String UHugeInt::toString() const
+void UHugeInt::toString(std::string & res) const
 {
-    String res;
+    std::string in;
     UHugeInt input = *this;
     UHugeInt remainder;
 
@@ -409,10 +407,17 @@ String UHugeInt::toString() const
             break;
         }
         input = divMod(input, UHugeInt(10), remainder);
-        res.insert(0, String(1, static_cast<char>('0' + remainder.lower)));
+        in.insert(0, std::string(1, static_cast<char>('0' + remainder.lower)));
     }
-    /// If empty then value is zero
-    return res.empty() ? "0" : res;
+    if (in.empty())
+    {
+        // value is zero
+        res += "0";
+    }
+    else
+    {
+        res += in;
+    }
 }
 
 }

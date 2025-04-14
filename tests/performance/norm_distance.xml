@@ -9,7 +9,6 @@
                 <!-- <value>Int16</value> -->
                 <!-- <value>Int32</value> -->
                 <!-- <value>Int64</value> -->
-                <value>BFloat16</value>
                 <value>Float32</value>
                 <value>Float64</value>
             </values>

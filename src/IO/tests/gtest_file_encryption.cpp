@@ -236,7 +236,7 @@ TEST(FileEncryptionPositionUpdateTest, Decryption)
     wb.finalize();
 
     auto lrb = std::make_unique<ReadBufferFromFile>(tmp_path);
-    ReadBufferFromEncryptedFile rb(tmp_path, 10, std::move(lrb), key, header);
+    ReadBufferFromEncryptedFile rb(10, std::move(lrb), key, header);
     rb.ignore(5);
     rb.ignore(5);
     rb.ignore(5);

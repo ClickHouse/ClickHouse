@@ -5,7 +5,6 @@
 #include <Databases/IDatabase.h>
 #include <IO/HTTPCommon.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>

@@ -28,18 +28,11 @@
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
-namespace DB::AzureBlobStorage
-{
-class ContainerClientWrapper;
-using ContainerClient = ContainerClientWrapper;
-}
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #endif
 
 #if USE_AWS_S3
-namespace DB::S3
-{
-class Client;
-}
+#include <IO/S3/Client.h>
 #endif
 
 namespace DB
@@ -233,10 +226,6 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'generateObjectKeyPrefixForDirectoryPath' is not implemented");
     }
-
-    /// Returns whether this object storage generates a random blob name for each object.
-    /// This function returns false if this object storage just adds some constant string to a passed path to generate a blob name.
-    virtual bool areObjectKeysRandom() const = 0;
 
     /// Get unique id for passed absolute path in object storage.
     virtual std::string getUniqueId(const std::string & path) const { return path; }

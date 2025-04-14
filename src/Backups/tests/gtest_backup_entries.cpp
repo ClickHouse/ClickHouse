@@ -75,7 +75,7 @@ protected:
 
     static const constexpr std::string_view NO_CHECKSUM = "no checksum";
 
-    static String getPartialChecksum(const BackupEntryPtr & backup_entry, UInt64 prefix_length)
+    static String getPartialChecksum(const BackupEntryPtr & backup_entry, size_t prefix_length)
     {
         auto partial_checksum = backup_entry->getPartialChecksum(prefix_length, {});
         if (!partial_checksum)
@@ -115,7 +115,7 @@ TEST_F(BackupEntriesTest, BackupEntryFromImmutableFile)
     auto entry = std::make_shared<BackupEntryFromImmutableFile>(local_disk, "a.txt");
     EXPECT_EQ(entry->getSize(), 9);
     EXPECT_EQ(getChecksum(entry), SOME_TEXT_CHECKSUM);
-    EXPECT_EQ(getPartialChecksum(entry, 0), NO_CHECKSUM);
+    EXPECT_EQ(getPartialChecksum(entry, 0), ZERO_CHECKSUM);
     EXPECT_EQ(getPartialChecksum(entry, 1), NO_CHECKSUM);
     EXPECT_EQ(getPartialChecksum(entry, 8), NO_CHECKSUM);
     EXPECT_EQ(getPartialChecksum(entry, 9), SOME_TEXT_CHECKSUM);
@@ -136,7 +136,7 @@ TEST_F(BackupEntriesTest, BackupEntryFromImmutableFile)
     EXPECT_EQ(precalculated_entry->getSize(), PRECALCULATED_SIZE);
 
     EXPECT_EQ(getChecksum(precalculated_entry), PRECALCULATED_CHECKSUM);
-    EXPECT_EQ(getPartialChecksum(precalculated_entry, 0), NO_CHECKSUM);
+    EXPECT_EQ(getPartialChecksum(precalculated_entry, 0), ZERO_CHECKSUM);
     EXPECT_EQ(getPartialChecksum(precalculated_entry, 1), NO_CHECKSUM);
     EXPECT_EQ(getPartialChecksum(precalculated_entry, PRECALCULATED_SIZE - 1), NO_CHECKSUM);
     EXPECT_EQ(getPartialChecksum(precalculated_entry, PRECALCULATED_SIZE), PRECALCULATED_CHECKSUM);
@@ -247,7 +247,7 @@ TEST_F(BackupEntriesTest, DecryptedEntriesFromEncryptedDisk)
         {
             EXPECT_EQ(entry->getSize(), 9);
             EXPECT_EQ(getChecksum(entry), SOME_TEXT_CHECKSUM);
-            EXPECT_EQ(getPartialChecksum(entry, 0), partial_checksum_allowed ? ZERO_CHECKSUM : NO_CHECKSUM);
+            EXPECT_EQ(getPartialChecksum(entry, 0), ZERO_CHECKSUM);
             EXPECT_EQ(getPartialChecksum(entry, 1), partial_checksum_allowed ? S_CHECKSUM : NO_CHECKSUM);
             EXPECT_EQ(getPartialChecksum(entry, 8), partial_checksum_allowed ? SOME_TEX_CHECKSUM : NO_CHECKSUM);
             EXPECT_EQ(getPartialChecksum(entry, 9), SOME_TEXT_CHECKSUM);
@@ -276,7 +276,7 @@ TEST_F(BackupEntriesTest, DecryptedEntriesFromEncryptedDisk)
         auto precalculated_entry = std::make_shared<BackupEntryFromImmutableFile>(encrypted_disk, "a.txt", false, PRECALCULATED_SIZE, PRECALCULATED_CHECKSUM_UINT128);
         EXPECT_EQ(precalculated_entry->getSize(), PRECALCULATED_SIZE);
         EXPECT_EQ(getChecksum(precalculated_entry), PRECALCULATED_CHECKSUM);
-        EXPECT_EQ(getPartialChecksum(precalculated_entry, 0), NO_CHECKSUM);
+        EXPECT_EQ(getPartialChecksum(precalculated_entry, 0), ZERO_CHECKSUM);
         EXPECT_EQ(getPartialChecksum(precalculated_entry, 1), NO_CHECKSUM);
         EXPECT_EQ(getPartialChecksum(precalculated_entry, PRECALCULATED_SIZE), PRECALCULATED_CHECKSUM);
         EXPECT_EQ(getPartialChecksum(precalculated_entry, 1000), PRECALCULATED_CHECKSUM);
@@ -312,6 +312,7 @@ TEST_F(BackupEntriesTest, EncryptedEntriesFromEncryptedDisk)
         {
             EXPECT_EQ(entry->getSize(), 9 + FileEncryption::Header::kSize);
             EXPECT_EQ(getChecksum(entry), encrypted_checksum);
+            EXPECT_EQ(getPartialChecksum(entry, 0), ZERO_CHECKSUM);
             auto encrypted_checksum_9 = getPartialChecksum(entry, 9);
             EXPECT_TRUE(encrypted_checksum_9 == NO_CHECKSUM || encrypted_checksum_9 == partial_checksum);
             EXPECT_EQ(getPartialChecksum(entry, 9 + FileEncryption::Header::kSize), encrypted_checksum);
@@ -346,7 +347,7 @@ TEST_F(BackupEntriesTest, EncryptedEntriesFromEncryptedDisk)
         EXPECT_NE(encrypted_checksum, SOME_TEXT_CHECKSUM);
         EXPECT_NE(encrypted_checksum, PRECALCULATED_CHECKSUM);
 
-        EXPECT_EQ(getPartialChecksum(precalculated_entry, 0), NO_CHECKSUM);
+        EXPECT_EQ(getPartialChecksum(precalculated_entry, 0), ZERO_CHECKSUM);
         EXPECT_EQ(getPartialChecksum(precalculated_entry, 1), NO_CHECKSUM);
         EXPECT_EQ(getPartialChecksum(precalculated_entry, PRECALCULATED_SIZE), NO_CHECKSUM);
         EXPECT_EQ(getPartialChecksum(precalculated_entry, PRECALCULATED_SIZE + FileEncryption::Header::kSize), encrypted_checksum);

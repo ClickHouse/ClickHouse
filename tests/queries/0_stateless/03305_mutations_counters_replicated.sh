@@ -10,13 +10,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-counters_query="SELECT active_on_fly_data_mutations FROM system.tables WHERE database = currentDatabase() AND table = 't_mutations_counters_2'"
+value_before=`$CLICKHOUSE_CLIENT --query "SELECT value FROM system.metrics WHERE metric = 'ActiveDataMutations'"`
 
 function wait_for_mutation_cleanup()
 {
     for _ in {0..50}; do
-        res=`$CLICKHOUSE_CLIENT --query "$counters_query"`
-        if [[ $res == "0" ]]; then
+        res=`$CLICKHOUSE_CLIENT --query "SELECT value FROM system.metrics WHERE metric = 'ActiveDataMutations'"`
+        if [[ $res == "$value_before" ]]; then
             break
         fi
         sleep 0.5
@@ -38,7 +38,7 @@ $CLICKHOUSE_CLIENT --query "
 
     SYSTEM SYNC REPLICA t_mutations_counters_2 LIGHTWEIGHT;
 
-    $counters_query;
+    SELECT metric, value - $value_before FROM system.metrics WHERE metric = 'ActiveDataMutations';
     SYSTEM START MERGES t_mutations_counters_2;
 "
 
@@ -46,7 +46,7 @@ wait_for_mutation "t_mutations_counters_2" "0000000001"
 wait_for_mutation_cleanup
 
 $CLICKHOUSE_CLIENT --query "
-    $counters_query;
+    SELECT metric, value - $value_before FROM system.metrics WHERE metric = 'ActiveDataMutations';
     SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_mutations_counters_2' AND NOT is_done;
     SELECT * FROM t_mutations_counters_2 ORDER BY a;
 
@@ -55,10 +55,9 @@ $CLICKHOUSE_CLIENT --query "
 
     SYSTEM SYNC REPLICA t_mutations_counters_2 LIGHTWEIGHT;
 
-    $counters_query;
+    SELECT metric, value - $value_before FROM system.metrics WHERE metric = 'ActiveDataMutations';
     KILL MUTATION WHERE mutation_id = '0000000002' SYNC FORMAT Null;
-    SYSTEM SYNC REPLICA t_mutations_counters_2 LIGHTWEIGHT;
-    $counters_query;
+    SELECT metric, value - $value_before FROM system.metrics WHERE metric = 'ActiveDataMutations';
 
     DROP TABLE t_mutations_counters_2;
 "

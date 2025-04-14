@@ -6,7 +6,7 @@ set max_threads=0;
 set use_concurrency_control=0;
 
 WITH 01091 AS id SELECT 1;
-SYSTEM FLUSH LOGS query_log, query_thread_log;
+SYSTEM FLUSH LOGS;
 
 WITH
     (
@@ -21,7 +21,7 @@ FROM system.query_thread_log
 WHERE (event_date >= (today() - 1)) AND (query_id = id) AND (thread_id != master_thread_id);
 
 with 01091 as id select sum(number) from numbers(1000000);
-SYSTEM FLUSH LOGS query_log, query_thread_log;
+SYSTEM FLUSH LOGS;
 
 WITH
     (
@@ -36,7 +36,7 @@ FROM system.query_thread_log
 WHERE (event_date >= (today() - 1)) AND (query_id = id) AND (thread_id != master_thread_id);
 
 with 01091 as id select sum(number) from numbers_mt(1000000);
-SYSTEM FLUSH LOGS query_log, query_thread_log;
+SYSTEM FLUSH LOGS;
 
 WITH
     (

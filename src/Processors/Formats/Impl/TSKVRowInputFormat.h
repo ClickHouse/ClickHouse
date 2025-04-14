@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>

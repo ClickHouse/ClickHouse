@@ -2,7 +2,7 @@
 
 #include <Common/assert_cast.h>
 #include <Common/IPv6ToBinary.h>
-#include <base/memcmpSmall.h>
+#include <Common/memcmpSmall.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>

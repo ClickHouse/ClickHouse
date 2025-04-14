@@ -6,8 +6,6 @@
 namespace DB
 {
 
-class Block;
-
 /** Has arbitrary non zero number of inputs and one output.
   * All of them have the same structure.
   *

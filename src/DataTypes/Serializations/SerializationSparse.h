@@ -57,7 +57,6 @@ public:
     /// Allows to read only ColumnSparse.
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
-        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -96,7 +95,7 @@ private:
             : offsets(offsets_), size(size_) {}
 
         DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
-        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
+        SerializationPtr create(const SerializationPtr & prev) const override;
         ColumnPtr create(const ColumnPtr & prev) const override;
     };
 

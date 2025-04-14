@@ -10,8 +10,7 @@ def test_startup_scripts():
             "configs/config.d/query_log.xml",
             "configs/config.d/startup_scripts.xml",
         ],
-        macros={"replica": "node", "shard": "node"},
-        with_zookeeper=True,
+        with_zookeeper=False,
     )
 
     try:
@@ -26,7 +25,5 @@ def test_startup_scripts():
             == "0\t0\n"
         )
 
-        tables = node.query("SHOW TABLES FROM replicated")
-        assert "test_replica" in tables
     finally:
         cluster.shutdown()

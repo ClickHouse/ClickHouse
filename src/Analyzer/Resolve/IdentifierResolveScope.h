@@ -137,7 +137,7 @@ struct IdentifierResolveScope
     ContextPtr context;
 
     /// Identifier lookup to result
-    std::unordered_map<IdentifierLookup, IdentifierResolveState, IdentifierLookupHash> identifier_in_lookup_process;
+    std::unordered_map<IdentifierLookup, IdentifierResolveState, IdentifierLookupHash> identifier_lookup_to_resolve_state;
 
     /// Argument can be expression like constant, column, function or table expression
     std::unordered_map<std::string, QueryTreeNodePtr> expression_argument_name_to_node;
@@ -159,6 +159,9 @@ struct IdentifierResolveScope
     /// Table expressions in resolve process
     std::unordered_set<const IQueryTreeNode *> table_expressions_in_resolve_process;
 
+    /// Current scope expression
+    std::unordered_set<IdentifierLookup, IdentifierLookupHash> non_cached_identifier_lookups_during_expression_resolve;
+
     /// Table expression node to data
     std::unordered_map<QueryTreeNodePtr, AnalysisTableExpressionData> table_expression_node_to_data;
 
@@ -166,6 +169,12 @@ struct IdentifierResolveScope
     std::unordered_set<QueryTreeNodePtr> registered_table_expression_nodes;
 
     QueryTreeNodePtrWithHashIgnoreTypesSet nullable_group_by_keys;
+    /// Here we count the number of nullable GROUP BY keys we met resolving expression.
+    /// E.g. for a query `SELECT tuple(tuple(number)) FROM numbers(10) GROUP BY (number, tuple(number)) with cube`
+    /// both `number` and `tuple(number)` would be in nullable_group_by_keys.
+    /// But when we resolve `tuple(tuple(number))` we should figure out that `tuple(number)` is already a key,
+    /// and we should not convert `number` to nullable.
+    size_t found_nullable_group_by_key_in_scope = 0;
 
     /** It's possible that after a JOIN, a column in the projection has a type different from the column in the source table.
       * (For example, after join_use_nulls or USING column cast to supertype)
@@ -173,6 +182,9 @@ struct IdentifierResolveScope
       * This map is used to revert these columns back to their original columns in the source table.
       */
     QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> join_columns_with_changed_types;
+
+    /// Use identifier lookup to result cache
+    bool use_identifier_lookup_to_result_cache = true;
 
     /// Apply nullability to aggregation keys
     bool group_by_use_nulls = false;

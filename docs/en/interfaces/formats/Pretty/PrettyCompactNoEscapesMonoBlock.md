@@ -1,11 +1,10 @@
 ---
-alias: []
-description: 'Documentation for the PrettyCompactNoEscapesMonoBlock format'
+title : PrettyCompactNoEscapesMonoBlock
+slug : /en/interfaces/formats/PrettyCompactNoEscapesMonoBlock
+keywords : [PrettyCompactNoEscapesMonoBlock]
 input_format: false
-keywords: ['PrettyCompactNoEscapesMonoBlock']
 output_format: true
-slug: /interfaces/formats/PrettyCompactNoEscapesMonoBlock
-title: 'PrettyCompactNoEscapesMonoBlock'
+alias: []
 ---
 
 import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
@@ -14,13 +13,13 @@ import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
 |-------|---------|-------|
 | ✗     | ✔       |       |
 
-## Description {#description}
+## Description
 
 Differs from the [`PrettyCompactNoEscapes`](./PrettyCompactNoEscapes.md) format in that up to `10,000` rows are buffered, 
-and then output as a single table, and not by [blocks](/development/architecture#block).
+and then output as a single table, and not by [blocks](../../../development/architecture.md/#block-block).
 
-## Example Usage {#example-usage}
+## Example Usage
 
-## Format Settings {#format-settings}
+## Format Settings
 
 <PrettyFormatSettings/>

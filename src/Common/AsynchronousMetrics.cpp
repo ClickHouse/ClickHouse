@@ -1,20 +1,23 @@
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
 #include <IO/UncompressedCache.h>
-#include <Interpreters/Context.h>
 #include <base/cgroupsv2.h>
+#include <base/errnoToString.h>
 #include <base/find_symbols.h>
+#include <base/getPageSize.h>
 #include <sys/resource.h>
 #include <Common/AsynchronousMetrics.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/Jemalloc.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Core/ServerSettings.h>
 
 #include <boost/locale/date_time_facet.hpp>
 
+#include <chrono>
 #include <string_view>
 
 #include "config.h"
@@ -26,11 +29,6 @@
 
 namespace DB
 {
-
-namespace ServerSetting
-{
-    extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
-}
 
 namespace ErrorCodes
 {
@@ -73,14 +71,12 @@ AsynchronousMetrics::AsynchronousMetrics(
     unsigned update_period_seconds,
     const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
     bool update_jemalloc_epoch_,
-    bool update_rss_,
-    const ContextPtr & context_)
+    bool update_rss_)
     : update_period(update_period_seconds)
     , log(getLogger("AsynchronousMetrics"))
     , protocol_server_metrics_func(protocol_server_metrics_func_)
     , update_jemalloc_epoch(update_jemalloc_epoch_)
     , update_rss(update_rss_)
-    , context(context_)
 {
 #if defined(OS_LINUX)
     openFileIfExists("/proc/cpuinfo", cpuinfo);
@@ -330,12 +326,6 @@ AsynchronousMetricValues AsynchronousMetrics::getValues() const
 {
     SharedLockGuard lock(values_mutex);
     return values;
-}
-
-auto AsynchronousMetrics::tryGetMetricValue(const AsynchronousMetricValues & metric_values, const String & metric, size_t default_value)
-{
-    const auto it = metric_values.find(metric);
-    return it != metric_values.end() ? it->second.value : default_value;
 }
 
 namespace
@@ -736,24 +726,6 @@ void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
            "non-uniform, and still get the average resource utilization metric."};
 }
 #endif
-
-// Warnings for pending mutations
-void AsynchronousMetrics::processWarningForMutationStats(const AsynchronousMetricValues & new_values) const
-{
-    // The following warnings are base on asynchronous metrics, and they are populated into the system.warnings table
-    // Warnings for part mutations
-    auto num_pending_mutations = tryGetMetricValue(new_values, "NumberOfPendingMutations");
-    auto max_pending_mutations_to_warn = context->getMaxPendingMutationsToWarn();
-
-    if (num_pending_mutations > max_pending_mutations_to_warn)
-    {
-        context->addOrUpdateWarningMessage(
-            Context::WarningType::MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT,
-            PreformattedMessage::create("The number of pending mutations is more than {}.", max_pending_mutations_to_warn));
-    }
-    if (num_pending_mutations <= max_pending_mutations_to_warn)
-        context->removeWarningMessage(Context::WarningType::MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT);
-}
 
 void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 {
@@ -1395,7 +1367,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             static constexpr size_t sector_size = 512;
 
             /// Always in milliseconds according to the docs.
-            static constexpr double time_multiplier = 1e-3;
+            static constexpr double time_multiplier = 1e-6;
 
 #define BLOCK_DEVICE_EXPLANATION \
     " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." \
@@ -1826,8 +1798,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
-    new_values["OSCPUOverload"] = { ProfileEvents::global_counters.getCPUOverload(context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold], /*reset*/ true), "Relative CPU deficit, calculated as: how many threads are waiting for CPU relative to the number of threads, using CPU. If it is greater than zero, the server would benefit from more CPU. If it is significantly greater than zero, the server could become unresponsive. The metric is accumulated between the updates of asynchronous metrics." };
-
     /// Add more metrics as you wish.
 
     updateImpl(update_time, current_time, force_update, first_run, new_values);
@@ -1838,14 +1808,10 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
     first_run = false;
 
-    // Finally, update the current metrics and warnings
+    // Finally, update the current metrics.
     {
         std::lock_guard values_lock(values_mutex);
         values.swap(new_values);
-
-        // These methods look at Asynchronous metrics and add,update or remove warnings
-        // which later get inserted into the system.warnings table:
-        processWarningForMutationStats(new_values);
     }
 }
 

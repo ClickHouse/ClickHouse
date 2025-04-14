@@ -2,7 +2,7 @@
 
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
-#include <Columns/IColumn_fwd.h>
+#include <Columns/IColumn.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 
 #include <list>
@@ -127,10 +127,6 @@ public:
     };
 
     using Nodes = std::list<Node>;
-
-    /// Extract subplan from plan from the root node.
-    /// The root node and all the children will be removed from the nodes.
-    static QueryPlan extractSubplan(Node * root, Nodes & nodes);
 
     Node * getRootNode() const { return root; }
     static std::pair<Nodes, QueryPlanResourceHolder> detachNodesAndResources(QueryPlan && plan);

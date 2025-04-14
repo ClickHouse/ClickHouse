@@ -1,14 +1,9 @@
 ---
-description: 'System table containing profiling information on the processors level
-  (which can be found in `EXPLAIN PIPELINE`)'
-keywords: ['system table', 'processors_profile_log', 'EXPLAIN PIPELINE']
-slug: /operations/system-tables/processors_profile_log
-title: 'system.processors_profile_log'
+slug: /en/operations/system-tables/processors_profile_log
 ---
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
 
-import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
-
-# system.processors_profile_log
+# processors_profile_log
 
 <SystemTableCloud/>
 
@@ -38,7 +33,7 @@ Columns:
 
 Query:
 
-```sql
+``` sql
 EXPLAIN PIPELINE
 SELECT sleep(1)
 ┌─explain─────────────────────────┐
@@ -69,7 +64,7 @@ ORDER BY name ASC
 
 Result:
 
-```text
+``` text
 ┌─name────────────────────┬─elapsed_us─┬─input_wait_elapsed_us─┬─output_wait_elapsed_us─┐
 │ ExpressionTransform     │    1000497 │                  2823 │                    197 │
 │ LazyOutputFormat        │         36 │               1002188 │                      0 │

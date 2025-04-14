@@ -240,7 +240,7 @@ SELECT name, auth_type, auth_params FROM system.users WHERE name = 'u1_01292' OR
 DROP USER u1_01292;
 
 SELECT '-- no passwords or hashes in query_log';
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 SELECT query
 FROM system.query_log
 WHERE

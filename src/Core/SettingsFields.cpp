@@ -1,14 +1,13 @@
-#include <Columns/IColumn.h>
-#include <Core/AccurateComparison.h>
-#include <Core/Field.h>
 #include <Core/SettingsFields.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeString.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+#include <Core/Field.h>
+#include <Core/AccurateComparison.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <cctz/time_zone.h>
@@ -27,19 +26,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+
 namespace
 {
-    template<typename T>
-    void validateFloatingPointSettingValue(T value)
-    {
-        if constexpr (std::is_floating_point_v<T>)
-        {
-            if (!std::isfinite(value))
-                throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
-                    "Float setting value must be finite, got {}", value);
-        }
-    }
-
     template <typename T>
     T stringToNumber(const String & str)
     {
@@ -56,11 +45,7 @@ namespace
             throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse bool from string '{}'", str);
         }
         else
-        {
-            T value = parseWithSizeSuffix<T>(str);
-            validateFloatingPointSettingValue(value);
-            return value;
-        }
+            return parseWithSizeSuffix<T>(str);
     }
 
     template <typename T>
@@ -68,24 +53,22 @@ namespace
     {
         if (f.getType() == Field::Types::String)
         {
-            return stringToNumber<T>(f.safeGet<String>());
+            return stringToNumber<T>(f.safeGet<const String &>());
         }
         if (f.getType() == Field::Types::UInt64)
         {
             T result;
             if (!accurate::convertNumeric(f.safeGet<UInt64>(), result))
-                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
-                                "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
-            validateFloatingPointSettingValue(result);
+                throw Exception(
+                    ErrorCodes::CANNOT_CONVERT_TYPE, "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
             return result;
         }
         if (f.getType() == Field::Types::Int64)
         {
             T result;
             if (!accurate::convertNumeric(f.safeGet<Int64>(), result))
-                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
-                                "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
-            validateFloatingPointSettingValue(result);
+                throw Exception(
+                    ErrorCodes::CANNOT_CONVERT_TYPE, "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
             return result;
         }
         if (f.getType() == Field::Types::Bool)
@@ -95,7 +78,6 @@ namespace
         if (f.getType() == Field::Types::Float64)
         {
             Float64 x = f.safeGet<Float64>();
-            validateFloatingPointSettingValue(x);
             if constexpr (std::is_floating_point_v<T>)
             {
                 return T(x);
@@ -140,29 +122,13 @@ namespace
         if (f.getType() == Field::Types::String)
         {
             /// Allow to parse Map from string field. For the convenience.
-            const auto & str = f.safeGet<String>();
+            const auto & str = f.safeGet<const String &>();
             return stringToMap(str);
         }
 
-        return f.safeGet<Map>();
+        return f.safeGet<const Map &>();
     }
 
-}
-
-template <typename T>
-SettingFieldNumber<T>::SettingFieldNumber(Type x)
-{
-    validateFloatingPointSettingValue(x);
-    value = x;
-};
-
-template <typename T>
-SettingFieldNumber<T> & SettingFieldNumber<T>::operator=(Type x)
-{
-    validateFloatingPointSettingValue(x);
-    value = x;
-    changed = true;
-    return *this;
 }
 
 template <typename T>
@@ -254,7 +220,7 @@ namespace
     UInt64 fieldToMaxThreads(const Field & f)
     {
         if (f.getType() == Field::Types::String)
-            return stringToMaxThreads(f.safeGet<String>());
+            return stringToMaxThreads(f.safeGet<const String &>());
         return fieldToNumber<UInt64>(f);
     }
 }
@@ -470,7 +436,7 @@ namespace
 
     char fieldToChar(const Field & f)
     {
-        return stringToChar(f.safeGet<String>());
+        return stringToChar(f.safeGet<const String &>());
     }
 }
 

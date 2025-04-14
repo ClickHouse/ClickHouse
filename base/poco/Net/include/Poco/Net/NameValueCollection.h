@@ -19,7 +19,6 @@
 
 
 #include <cstddef>
-#include <vector>
 #include "Poco/ListMap.h"
 #include "Poco/Net/Net.h"
 #include "Poco/String.h"

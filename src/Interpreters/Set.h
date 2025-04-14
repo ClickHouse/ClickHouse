@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
@@ -18,10 +19,6 @@ struct Range;
 class Context;
 class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
-using Sizes = std::vector<size_t>;
-
-struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
 class Chunk;
 

@@ -3,7 +3,6 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
@@ -90,7 +89,7 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
                 LOG_WARNING(log, "Database got stuck at processing task {}: it failed {} times in a row with the same error. "
                                  "Will reset digest to mark our replica as lost, and trigger recovery from the most up-to-date metadata "
                                  "from ZooKeeper. See max_retries_before_automatic_recovery setting. The error: {}",
-                            current_task, subsequent_errors_count.load(), last_unexpected_error);
+                            current_task, subsequent_errors_count, last_unexpected_error);
 
                 String digest_str;
                 zookeeper->tryGet(database->replica_path + "/digest", digest_str);
@@ -191,7 +190,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
 
     {
         std::lock_guard lock{database->metadata_mutex};
-        if (!database->checkDigestValid(context))
+        if (!database->checkDigestValid(context, false))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent database metadata after reconnection to ZooKeeper");
     }
 
@@ -308,7 +307,7 @@ String DatabaseReplicatedDDLWorker::enqueueQueryImpl(const ZooKeeperPtr & zookee
     return node_path;
 }
 
-String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context, bool internal_query)
+String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context)
 {
     /// NOTE Possibly it would be better to execute initial query on the most up-to-date node,
     /// but it requires more complex logic around /try node.
@@ -369,7 +368,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     if (entry.parent_table_uuid.has_value() && !checkParentTableExists(entry.parent_table_uuid.value()))
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Parent table doesn't exist");
 
-    processTask(*task, zookeeper, internal_query);
+    processTask(*task, zookeeper);
 
     if (!task->was_executed)
     {

@@ -1,11 +1,9 @@
 ---
-description: 'System table containing information about Kafka consumers.'
-keywords: ['system table', 'kafka_consumers']
-slug: /operations/system-tables/kafka_consumers
-title: 'system.kafka_consumers'
+slug: /en/operations/system-tables/kafka_consumers
 ---
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
 
-import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+# kafka_consumers
 
 <SystemTableCloud/>
 
@@ -35,13 +33,13 @@ Columns:
 
 Example:
 
-```sql
+``` sql
 SELECT *
 FROM system.kafka_consumers
 FORMAT Vertical
 ```
 
-```text
+``` text
 Row 1:
 ──────
 database:                   test

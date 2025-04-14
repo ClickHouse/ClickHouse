@@ -118,7 +118,6 @@ public:
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
-        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -187,20 +186,14 @@ private:
         CompactDiscriminatorsGranuleFormat granule_format = CompactDiscriminatorsGranuleFormat::PLAIN;
         size_t remaining_rows_in_granule = 0;
         ColumnVariant::Discriminator compact_discr = 0;
-
-        ISerialization::DeserializeBinaryBulkStatePtr clone() const override
-        {
-            return std::make_shared<DeserializeBinaryBulkStateVariantDiscriminators>(*this);
-        }
     };
 
     static DeserializeBinaryBulkStatePtr deserializeDiscriminatorsStatePrefix(
         DeserializeBinaryBulkSettings & settings,
         SubstreamsDeserializeStatesCache * cache);
 
-    std::pair<std::vector<size_t>, std::vector<size_t>> deserializeCompactDiscriminators(
+    std::vector<size_t> deserializeCompactDiscriminators(
         ColumnPtr & discriminators_column,
-        size_t rows_offset,
         size_t limit,
         ReadBuffer * stream,
         bool continuous_reading,

@@ -934,7 +934,7 @@ FixedString 被简单地表示为字节序列。
 
 这是 `INSERT INTO t VALUES ...` 中可以使用的格式，但您也可以将其用于查询结果。
 
-另见：[input_format_values_interpret_expressions](/operations/settings/settings/#settings-input_format_values_interpret_expressions)和[input_format_values_deduce_templates_of_expressions](/operations/settings/settings/#settings-input_format_values_deduce_templates_of_expressions)。
+另见：[input_format_values_interpret_expressions](https://clickhouse.com/docs/en/operations/settings/settings/#settings-input_format_values_interpret_expressions)和[input_format_values_deduce_templates_of_expressions](https://clickhouse.com/docs/en/operations/settings/settings/#settings-input_format_values_deduce_templates_of_expressions)。
 
 ## Vertical {#vertical}
 
@@ -1162,7 +1162,7 @@ $ cat file.avro | clickhouse-client --query="INSERT INTO {some_table} FORMAT Avr
 
 Clickhouse通过字段名称来对应架构的列名称。字段名称区分大小写。未使用的字段会被跳过。
 
-ClickHouse表列的数据类型可能与插入的Avro数据的相应字段不同。 插入数据时，ClickHouse根据上表解释数据类型，然后通过 [Cast](/sql-reference/functions/type-conversion-functions#cast) 将数据转换为相应的列类型。
+ClickHouse表列的数据类型可能与插入的Avro数据的相应字段不同。 插入数据时，ClickHouse根据上表解释数据类型，然后通过 [Cast](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) 将数据转换为相应的列类型。
 
 ### 选择数据 {#selecting-data}
 
@@ -1259,7 +1259,7 @@ ClickHouse支持对 `Decimal` 类型设置精度。 `INSERT` 查询将 Parquet `
 
 不支持的Parquet数据类型: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-ClickHouse表列的数据类型可能与插入的Parquet数据的相应字段不同。 插入数据时，ClickHouse根据上表解释数据类型，然后 [Cast](/sql-reference/functions/type-conversion-functions#cast) 为ClickHouse表列设置的数据类型的数据。
+ClickHouse表列的数据类型可能与插入的Parquet数据的相应字段不同。 插入数据时，ClickHouse根据上表解释数据类型，然后 [Cast](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) 为ClickHouse表列设置的数据类型的数据。
 
 ### 插入和选择数据 {#inserting-and-selecting-data}
 
@@ -1315,7 +1315,7 @@ ClickHouse支持的可配置精度的 `Decimal` 类型。 `INSERT` 查询将ORC�
 
 不支持的ORC数据类型: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-ClickHouse表列的数据类型不必匹配相应的ORC数据字段。 插入数据时，ClickHouse根据上表解释数据类型，然后 [Cast](/sql-reference/functions/type-conversion-functions#cast) 将数据转换为ClickHouse表列的数据类型集。
+ClickHouse表列的数据类型不必匹配相应的ORC数据字段。 插入数据时，ClickHouse根据上表解释数据类型，然后 [Cast](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) 将数据转换为ClickHouse表列的数据类型集。
 
 ### 插入数据 {#inserting-data-1}
 
@@ -1336,7 +1336,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT ORC" > {filename.
 要与Hadoop交换数据，您可以使用 [HDFS表引擎](../engines/table-engines/integrations/hdfs.md).
 
 ## LineAsString {#lineasstring}
-这种格式下，每行输入数据都会当做一个字符串。这种格式仅适用于仅有一列[String](/sql-reference/data-types/string/)类型的列的表。其余列必须设置为[DEFAULT](/sql-reference/statements/create/table/#default)、[MATERIALIZED](/sql-reference/statements/create/table/#materialized)或者被忽略。
+这种格式下，每行输入数据都会当做一个字符串。这种格式仅适用于仅有一列[String](https://clickhouse.com/docs/en/sql-reference/data-types/string/)类型的列的表。其余列必须设置为[DEFAULT](https://clickhouse.com/docs/en/sql-reference/statements/create/table/#default)、[MATERIALIZED](https://clickhouse.com/docs/en/sql-reference/statements/create/table/#materialized)或者被忽略。
 
 ### 示例：
 查询如下：
@@ -1355,8 +1355,8 @@ SELECT * FROM line_as_string;
 ## Regexp {#regexp}
 每一列输入数据根据正则表达式解析。使用`Regexp`格式时，可以使用如下设置：
 
--  `format_regexp`，[String](/sql-reference/data-types/string/)类型。包含[re2](https://github.com/google/re2/wiki/Syntax)格式的正则表达式。
-- `format_regexp_escaping_rule`，[String](/sql-reference/data-types/string/)类型。支持如下转义规则：
+-  `format_regexp`，[String](https://clickhouse.com/docs/en/sql-reference/data-types/string/)类型。包含[re2](https://github.com/google/re2/wiki/Syntax)格式的正则表达式。
+- `format_regexp_escaping_rule`，[String](https://clickhouse.com/docs/en/sql-reference/data-types/string/)类型。支持如下转义规则：
   - CSV(规则相同于[CSV](https://clickhouse.com/docs/zh/interfaces/formats/#csv))
   - JSON(相同于[JSONEachRow](https://clickhouse.com/docs/zh/interfaces/formats/#jsoneachrow))
   - Escaped(相同于[TSV](https://clickhouse.com/docs/zh/interfaces/formats/#tabseparated))

@@ -1,10 +1,8 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/Kusto/KqlFunctionBase.h>

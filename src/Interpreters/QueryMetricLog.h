@@ -3,7 +3,7 @@
 #include <base/defines.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Interpreters/PeriodicLog.h>
@@ -47,7 +47,7 @@ struct QueryMetricLogStatusInfo
     std::chrono::system_clock::time_point last_collect_time;
     std::chrono::system_clock::time_point next_collect_time;
     std::vector<ProfileEvents::Count> last_profile_events = std::vector<ProfileEvents::Count>(ProfileEvents::end());
-    BackgroundSchedulePoolTaskHolder task;
+    BackgroundSchedulePool::TaskHolder task;
 };
 
 struct QueryMetricLogStatus

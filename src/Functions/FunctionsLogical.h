@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
+#include <type_traits>
 #include <Interpreters/Context_fwd.h>
 
 

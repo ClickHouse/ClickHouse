@@ -3,7 +3,6 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
-#include <Core/BackgroundSchedulePool.h>
 
 #include <unordered_set>
 
@@ -78,12 +77,6 @@ void AsyncBlockIDsCache<TStorage>::start()
 {
     if ((*storage.getSettings())[MergeTreeSetting::use_async_block_ids_cache])
         task->activateAndSchedule();
-}
-
-template <typename TStorage>
-void AsyncBlockIDsCache<TStorage>::stop()
-{
-    task->deactivate();
 }
 
 template <typename TStorage>
