@@ -172,6 +172,21 @@ JoinConditionPart createConditionPart(const ActionsDAG::Node * lhs, const Action
     return JoinConditionPart{ .left = std::move(lhs_dag), .right = std::move(rhs_dag) };
 };
 
+const ActionsDAG::Node & createResultPredicate(
+    ActionsDAG & filter_dag,
+    const ActionsDAG::Node * original_predicate,
+    const ActionsDAG::Node * new_predicate_expr)
+{
+    if (!original_predicate->result_type->equals(*new_predicate_expr->result_type))
+    {
+        return filter_dag.addCast(*new_predicate_expr, original_predicate->result_type, original_predicate->result_name);
+    }
+    else
+    {
+        return filter_dag.addAlias(*new_predicate_expr, original_predicate->result_name);
+    }
+};
+
 
 std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
     ActionsDAG & filter_dag,
@@ -250,13 +265,17 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
 
         if (rejected_conjuncts.size() == 1)
         {
-            filter_dag.addOrReplaceInOutputs(filter_dag.addAlias(*rejected_conjuncts[0], filter_name));
+            filter_dag.addOrReplaceInOutputs(createResultPredicate(filter_dag, predicate, rejected_conjuncts.front()));
         }
         else if (rejected_conjuncts.size() > 1)
         {
             FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-            filter_dag.addOrReplaceInOutputs(filter_dag.addFunction(func_builder_and, std::move(rejected_conjuncts), filter_name));
+            filter_dag.addOrReplaceInOutputs(createResultPredicate(
+                filter_dag,
+                predicate,
+                &filter_dag.addFunction(func_builder_and, std::move(rejected_conjuncts), {})));
         }
+
         filter_dag.removeUnusedActions(/*allow_remove_inputs=*/false);
     }
 
@@ -284,11 +303,15 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     const auto & join_expressions = join_step->getExpressionActions();
     auto & join_info = join_step->getJoinInfo();
 
-    if (join_info.kind == JoinKind::Full || join_info.kind == JoinKind::Left || join_info.kind == JoinKind::Right)
+    auto kind = join_info.kind;
+    if (kind != JoinKind::Inner && kind != JoinKind::Cross && kind != JoinKind::Comma)
         return 0;
 
+    /// Pushing filter codition into the JOIN can affect the result in case of ANY join.
+    /// In ClickHouse all JOINs return columns of both tables, but for SEMI, ANTI joins
+    /// it works as ANY join.
     auto strictness = join_info.strictness;
-    if (strictness == JoinStrictness::Anti || strictness == JoinStrictness::Asof || strictness == JoinStrictness::Any)
+    if (strictness != JoinStrictness::Unspecified && strictness != JoinStrictness::All)
         return 0;
 
     const auto & join_header = child->getOutputHeader();
@@ -298,19 +321,18 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     auto get_available_columns = [&join_header](const Block & input_header)
     {
         Names available_input_columns_for_filter;
-        const auto & input_columns_names = input_header.getNames();
-        available_input_columns_for_filter.reserve(input_columns_names.size());
+        available_input_columns_for_filter.reserve(input_header.columns());
 
-        for (const auto & name : input_columns_names)
+        for (const auto & input_column : input_header.getColumnsWithTypeAndName())
         {
-            if (!join_header.has(name))
+            if (!join_header.has(input_column.name))
                 continue;
 
             /// Skip if type is changed. Push down expression expect equal types.
-            if (!input_header.getByName(name).type->equals(*join_header.getByName(name).type))
+            if (!input_column.type->equals(*join_header.getByName(input_column.name).type))
                 continue;
 
-            available_input_columns_for_filter.push_back(name);
+            available_input_columns_for_filter.push_back(input_column.name);
         }
 
         return available_input_columns_for_filter;
@@ -344,7 +366,7 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
         });
     }
 
-    if (join_info.kind == JoinKind::Cross)
+    if (kind == JoinKind::Cross || kind == JoinKind::Comma)
         join_info.kind = JoinKind::Inner;
 
     /// Remove FilterStep if filter expression is always true
