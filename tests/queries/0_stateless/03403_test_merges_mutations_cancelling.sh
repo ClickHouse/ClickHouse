@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: replica, no-fasttest
+# Tags: replica, no-fasttest, long
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
@@ -22,7 +22,7 @@ ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREF
 ORDER BY (c1, c2, c3);
 """
 
-# Insert 4 million rows into test_mutations_kill.
+# Insert 6.5 million rows =  ~100 blocks of the default size, we will sleep ~3 seconds on each block, so we have 5 minutes to do all needed checks
 ${CLICKHOUSE_CLIENT} --query="""
 INSERT INTO test_mutations_kill
 SELECT
@@ -30,15 +30,15 @@ SELECT
     concat('string_', toString(number)) AS c2,
     number % 100 AS c3,
     number * 2 AS c4
-FROM numbers(4000000)
-SETTINGS min_insert_block_size_rows = 4000000, min_insert_block_size_bytes = 0;
+FROM numbers(6500000)
+SETTINGS min_insert_block_size_rows = 6500000, min_insert_block_size_bytes = 0;
 """
 
-# Apply a mutation that deletes rows; the sleepEachRow function slightly delays processing.
-${CLICKHOUSE_CLIENT} --query="ALTER TABLE test_mutations_kill DELETE WHERE c1 > sleepEachRow(0.00001)"
+# Apply a mutation that deletes rows; 0.000044 * default_block_size = 2.87 sec < 3 sec limit
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE test_mutations_kill DELETE WHERE c1 > sleepEachRow(0.000044)"
 
 # Wait until the mutation is in progress.
-for i in {1..100}; do
+for i in {1..600}; do
     # Check if the mutation merge started data reading (rows_read > 0), the cancelling didn't work at that phase before the fix in PR#77766
     mutation_count=$(${CLICKHOUSE_CLIENT} --query="SELECT count() FROM system.merges WHERE table = 'test_mutations_kill' AND database = '$CLICKHOUSE_DATABASE' AND is_mutation AND rows_read > 0")
 
@@ -47,7 +47,8 @@ for i in {1..100}; do
         break
     fi
 
-    if [[ "$i" -eq 100 ]]; then
+    # 0.1 * 600 = 60 sec (builds with sanitizers can be slow)
+    if [[ "$i" -eq 600 ]]; then
         echo "Mutation did not start in time."
         exit 1
     fi
@@ -62,7 +63,7 @@ done
 ${CLICKHOUSE_CLIENT} --query="SYSTEM STOP MERGES test_mutations_kill"
 
 # Polling loop with a timeout to ensure the mutation merge has stopped.
-for i in {1..50}; do
+for i in {1..600}; do
     active_merges=$(${CLICKHOUSE_CLIENT} --query="SELECT count() FROM system.merges WHERE table = 'test_mutations_kill' AND database = '$CLICKHOUSE_DATABASE' AND is_mutation")
 
     if [[ "$active_merges" -eq 0 ]]; then
@@ -70,19 +71,21 @@ for i in {1..50}; do
         break
     fi
 
-    if [[ "$i" -eq 50 ]]; then
+    # 0.1 * 600 = 60 sec.
+    if [[ "$i" -eq 600 ]]; then
         echo "Timeout: Mutation still active in system.merges after waiting."
         exit 1
     fi
 
-    sleep 0.5
+    sleep 0.1
 done
 
 ${CLICKHOUSE_CLIENT} --query="SYSTEM FLUSH LOGS"
 
 # Check the part log for mutation cancellation status.
+# if the feature works properly the mutation should be stopped BEFORE finishing readin all 6500000 rows
 ${CLICKHOUSE_CLIENT} --query="""
-SELECT if(read_rows < 4000000 AND error = 236 AND exception LIKE '%Cancelled mutating parts%', 'OK',
+SELECT if(read_rows < 6500000 AND error = 236 AND exception LIKE '%Cancelled mutating parts%', 'OK',
        format('FAIL! read_rows: {}, error: {}, exception: {}', read_rows, error, exception))
 FROM system.part_log
 WHERE table = 'test_mutations_kill'
@@ -116,18 +119,18 @@ INSERT INTO test_merges_kill
 SELECT
     1 AS c1,
     0 AS c2
-FROM numbers(4000000)
-SETTINGS min_insert_block_size_rows = 4000000, min_insert_block_size_bytes = 0, optimize_on_insert = 0;
+FROM numbers(6500000)
+SETTINGS min_insert_block_size_rows = 6500000, min_insert_block_size_bytes = 0, optimize_on_insert = 0;
 """
 
 # Add a materialized column to slow down the subsequent merge.
-${CLICKHOUSE_CLIENT} --query="ALTER TABLE test_merges_kill ADD COLUMN c3 UInt64 MATERIALIZED sleepEachRow(0.00001)"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE test_merges_kill ADD COLUMN c3 UInt64 MATERIALIZED sleepEachRow(0.000044)"
 
 # Trigger the merge by optimizing the table.
 ${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE test_merges_kill FINAL SETTINGS alter_sync = 0"
 
 # Wait until the merge is in progress.
-for i in {1..100}; do
+for i in {1..600}; do
     merge_count=$(${CLICKHOUSE_CLIENT} --query="SELECT count() FROM system.merges WHERE table = 'test_merges_kill' AND database = '$CLICKHOUSE_DATABASE' AND rows_read > 0")
 
     if [[ "$merge_count" -gt 0 ]]; then
@@ -135,7 +138,7 @@ for i in {1..100}; do
         break
     fi
 
-    if [[ "$i" -eq 100 ]]; then
+    if [[ "$i" -eq 600 ]]; then
         echo "Merge did not start in time."
         break
     fi
@@ -148,7 +151,7 @@ ${CLICKHOUSE_CLIENT} --query="SYSTEM STOP MERGES test_merges_kill"
 
 
 # Polling loop with a timeout to ensure the merge has stopped.
-for i in {1..50}; do
+for i in {1..600}; do
     active_merges=$(${CLICKHOUSE_CLIENT} --query="SELECT count() FROM system.merges WHERE table = 'test_merges_kill' AND database = '$CLICKHOUSE_DATABASE'")
 
     if [[ "$active_merges" -eq 0 ]]; then
@@ -156,19 +159,19 @@ for i in {1..50}; do
         break
     fi
 
-    if [[ "$i" -eq 50 ]]; then
+    if [[ "$i" -eq 600 ]]; then
         echo "Timeout: Merge still active after waiting."
         break
     fi
 
-    sleep 0.5
+    sleep 0.1
 done
 
 ${CLICKHOUSE_CLIENT} --query="SYSTEM FLUSH LOGS"
 
 # Check the part log for merge cancellation status.
 ${CLICKHOUSE_CLIENT} --query="""
-SELECT if(read_rows < 4000000 AND error = 236 AND exception LIKE '%Cancelled merging parts%', 'OK',
+SELECT if(read_rows < 6500000 AND error = 236 AND exception LIKE '%Cancelled merging parts%', 'OK',
        format('FAIL! read_rows: {}, error: {}, exception: {}', read_rows, error, exception))
 FROM system.part_log
 WHERE table = 'test_merges_kill'
