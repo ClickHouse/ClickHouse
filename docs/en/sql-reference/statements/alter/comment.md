@@ -1,9 +1,7 @@
 ---
-description: 'Documentation for ALTER TABLE ... MODIFY COMMENT'
-sidebar_label: 'COMMENT'
-sidebar_position: 51
 slug: /sql-reference/statements/alter/comment
-title: 'ALTER TABLE ... MODIFY COMMENT'
+sidebar_position: 51
+sidebar_label: COMMENT
 ---
 
 # ALTER TABLE ... MODIFY COMMENT
@@ -12,15 +10,15 @@ Adds, modifies, or removes comment to the table, regardless if it was set before
 
 **Syntax**
 
-```sql
+``` sql
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 ```
 
 **Examples**
 
-Creating a table with comment (for more information, see the [COMMENT](/sql-reference/statements/create/table#comment-clause) clause):
+Creating a table with comment (for more information, see the [COMMENT](../../../sql-reference/statements/create/table.md#comment-table) clause):
 
-```sql
+``` sql
 CREATE TABLE table_with_comment
 (
     `k` UInt64,
@@ -32,7 +30,7 @@ COMMENT 'The temporary table';
 
 Modifying the table comment:
 
-```sql
+``` sql
 ALTER TABLE table_with_comment MODIFY COMMENT 'new comment on a table';
 SELECT comment FROM system.tables WHERE database = currentDatabase() AND name = 'table_with_comment';
 ```
@@ -47,7 +45,7 @@ Output of a new comment:
 
 Removing the table comment:
 
-```sql
+``` sql
 ALTER TABLE table_with_comment MODIFY COMMENT '';
 SELECT comment FROM system.tables WHERE database = currentDatabase() AND name = 'table_with_comment';
 ```

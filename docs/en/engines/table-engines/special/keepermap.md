@@ -1,10 +1,7 @@
 ---
-description: 'This engine allows you to use Keeper/ZooKeeper cluster as consistent
-  key-value store with linearizable writes and sequentially consistent reads.'
-sidebar_label: 'KeeperMap'
-sidebar_position: 150
 slug: /engines/table-engines/special/keeper-map
-title: 'KeeperMap'
+sidebar_position: 150
+sidebar_label: KeeperMap
 ---
 
 # KeeperMap {#keepermap}
@@ -25,7 +22,7 @@ where path can be any other valid ZooKeeper path.
 
 ## Creating a Table {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -49,7 +46,7 @@ This limit is a soft limit and it can be possible that more keys will end up in 
 
 Example:
 
-```sql
+``` sql
 CREATE TABLE keeper_map_table
 (
     `key` String,
@@ -79,7 +76,7 @@ Of course, it's possible to manually run `CREATE TABLE` with same path on unrela
 
 ## Supported operations {#supported-operations}
 
-### Inserts {#inserts}
+### Inserts
 
 When new rows are inserted into `KeeperMap`, if the key does not exist, a new entry for the key is created.
 If the key exists, and setting `keeper_map_strict_mode` is set to `true`, an exception is thrown, otherwise, the value for the key is overwritten.
@@ -90,7 +87,7 @@ Example:
 INSERT INTO keeper_map_table VALUES ('some key', 1, 'value', 3.2);
 ```
 
-### Deletes {#deletes}
+### Deletes
 
 Rows can be deleted using `DELETE` query or `TRUNCATE`. 
 If the key exists, and setting `keeper_map_strict_mode` is set to `true`, fetching and deleting data will succeed only if it can be executed atomically.
@@ -107,7 +104,7 @@ ALTER TABLE keeper_map_table DELETE WHERE key LIKE 'some%' AND v1 > 1;
 TRUNCATE TABLE keeper_map_table;
 ```
 
-### Updates {#updates}
+### Updates
 
 Values can be updated using `ALTER TABLE` query. Primary key cannot be updated.
 If setting `keeper_map_strict_mode` is set to `true`, fetching and updating data will succeed only if it's executed atomically.
@@ -116,6 +113,6 @@ If setting `keeper_map_strict_mode` is set to `true`, fetching and updating data
 ALTER TABLE keeper_map_table UPDATE v1 = v1 * 10 + 2 WHERE key LIKE 'some%' AND v3 > 3.1;
 ```
 
-## Related content {#related-content}
+## Related content
 
 - Blog: [Building a Real-time Analytics Apps with ClickHouse and Hex](https://clickhouse.com/blog/building-real-time-applications-with-clickhouse-and-hex-notebook-keeper-engine)

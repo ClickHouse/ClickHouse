@@ -83,21 +83,9 @@ WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
 {
     LOG_TRACE(limited_log, "Close WriteBufferFromAzureBlobStorage. {}.", blob_path);
 
-    if (canceled)
+    /// That destructor could be call with finalized=false in case of exceptions
+    if (!finalized)
     {
-        if (!isEmpty())
-        {
-            LOG_INFO(
-                log,
-                "WriteBufferFromAzureBlobStorage was canceled."
-                "The file might not be written to AzureBlobStorage. "
-                "{}.",
-                blob_path);
-        }
-    }
-    else if (!finalized)
-    {
-        /// That destructor could be call with finalized=false in case of exceptions
         LOG_INFO(
             log,
             "WriteBufferFromAzureBlobStorage is not finalized in destructor. "

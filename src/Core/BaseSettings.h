@@ -1,15 +1,14 @@
 #pragma once
 
+#include <unordered_map>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsTierType.h>
 #include <Core/SettingsWriteFormat.h>
 #include <IO/Operators.h>
+#include <base/range.h>
+#include <boost/blank.hpp>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
-
-#include <unordered_map>
-
-#include <boost/blank.hpp>
 
 
 namespace boost::program_options
@@ -327,7 +326,7 @@ template <typename TTraits>
 void BaseSettings<TTraits>::resetToDefault()
 {
     const auto & accessor = Traits::Accessor::instance();
-    for (size_t i = 0; i < accessor.size(); i++)
+    for (size_t i : collections::range(accessor.size()))
     {
         if (accessor.isValueChanged(*this, i))
             accessor.resetValueToDefault(*this, i);
@@ -1009,7 +1008,7 @@ struct DefineAliases
             constexpr int IMPORTANT = 0x01; \
             UNUSED(IMPORTANT); \
             LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_TRAITS_, SKIP_ALIAS) \
-            for (size_t i = 0; i < res.field_infos.size(); i++) \
+            for (size_t i : collections::range(res.field_infos.size())) \
             { \
                 const auto & info = res.field_infos[i]; \
                 res.name_to_index_map.emplace(info.name, i); \

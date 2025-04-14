@@ -1,5 +1,4 @@
 #include <base/getFQDNOrHostName.h>
-#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -106,7 +105,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
             "MergePartsStart — Merging of data parts has started, "
             "MergeParts — Merging of data parts has finished, "
             "DownloadPart — Downloading a data part, "
-            "RemovePart — Removing or detaching a data part using [DETACH PARTITION](/sql-reference/statements/alter/partition#detach-partitionpart)."
+            "RemovePart — Removing or detaching a data part using [DETACH PARTITION](../../sql-reference/statements/alter/partition.md#alter_detach-partition)."
             "MutatePartStart — Mutating of a data part has started, "
             "MutatePart — Mutating of a data part has finished, "
             "MovePart — Moving the data part from the one disk to another one."},

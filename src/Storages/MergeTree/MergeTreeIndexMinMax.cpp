@@ -2,12 +2,12 @@
 
 #include <Interpreters/ExpressionAnalyzer.h>
 
-#include <Common/FieldAccurateComparison.h>
+#include <Parsers/ASTFunction.h>
+
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/quoteString.h>
 
 #include <Columns/ColumnNullable.h>
-
-#include <IO/ReadHelpers.h>
 
 namespace DB
 {
@@ -22,8 +22,7 @@ namespace ErrorCodes
 MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(const String & index_name_, const Block & index_sample_block_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
-{
-}
+{}
 
 MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(
     const String & index_name_,
@@ -31,9 +30,7 @@ MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(
     std::vector<Range> && hyperrectangle_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
-    , hyperrectangle(std::move(hyperrectangle_))
-{
-}
+    , hyperrectangle(std::move(hyperrectangle_)) {}
 
 void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
 {
@@ -115,8 +112,7 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
 MergeTreeIndexAggregatorMinMax::MergeTreeIndexAggregatorMinMax(const String & index_name_, const Block & index_sample_block_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
-{
-}
+{}
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorMinMax::getGranuleAndReset()
 {
@@ -149,9 +145,9 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
         else
         {
             hyperrectangle[i].left
-                = accurateLess(hyperrectangle[i].left, field_min) ? hyperrectangle[i].left : field_min;
+                = applyVisitor(FieldVisitorAccurateLess(), hyperrectangle[i].left, field_min) ? hyperrectangle[i].left : field_min;
             hyperrectangle[i].right
-                = accurateLess(hyperrectangle[i].right, field_max) ? field_max : hyperrectangle[i].right;
+                = applyVisitor(FieldVisitorAccurateLess(), hyperrectangle[i].right, field_max) ? field_max : hyperrectangle[i].right;
         }
     }
 
@@ -182,8 +178,11 @@ bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
 
 bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
-    const MergeTreeIndexGranuleMinMax & granule = typeid_cast<const MergeTreeIndexGranuleMinMax &>(*idx_granule);
-    return condition.checkInHyperrectangle(granule.hyperrectangle, index_data_types).can_be_true;
+    std::shared_ptr<MergeTreeIndexGranuleMinMax> granule
+        = std::dynamic_pointer_cast<MergeTreeIndexGranuleMinMax>(idx_granule);
+    if (!granule)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Minmax index condition got a granule with the wrong type.");
+    return condition.checkInHyperrectangle(granule->hyperrectangle, index_data_types).can_be_true;
 }
 
 

@@ -204,6 +204,8 @@ private:
 
     std::shared_ptr<const IKeyValueEntity> right_kv_storage;
 
+    std::string right_storage_name;
+
     bool is_join_with_constant = false;
 
     bool enable_analyzer = false;
@@ -246,7 +248,7 @@ public:
     TableJoin() = default;
 
     TableJoin(const Settings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_);
-    TableJoin(const JoinSettings & settings, bool join_use_nulls_, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_);
+    TableJoin(const JoinSettings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_, ContextPtr query_context);
 
     /// for StorageJoin
     TableJoin(SizeLimits limits, bool use_nulls, JoinKind kind, JoinStrictness strictness,
@@ -263,8 +265,8 @@ public:
 
     VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
 
-    bool enableAnalyzer() const { return enable_analyzer; }
-    void assertEnableAnalyzer() const;
+    bool enableEnalyzer() const { return enable_analyzer; }
+    void assertEnableEnalyzer() const;
     TemporaryDataOnDiskScopePtr getTempDataOnDisk() { return tmp_data ? tmp_data->childScope(CurrentMetrics::TemporaryFilesForJoin) : nullptr; }
 
     ActionsDAG createJoinedBlockActions(ContextPtr context, PreparedSetsPtr prepared_sets) const;
@@ -428,22 +430,20 @@ public:
 
     std::unordered_map<String, String> leftToRightKeyRemap() const;
 
+    /// Remember storage name in case of joining with dictionary or another special storage
+    void setRightStorageName(const std::string & storage_name);
+    const std::string & getRightStorageName() const;
+
     void setStorageJoin(std::shared_ptr<const IKeyValueEntity> storage);
     void setStorageJoin(std::shared_ptr<StorageJoin> storage);
 
     std::shared_ptr<StorageJoin> getStorageJoin() const { return right_storage_join; }
 
-    bool isSpecialStorage() const { return right_storage_join || right_kv_storage; }
+    bool isSpecialStorage() const { return !right_storage_name.empty() || right_storage_join || right_kv_storage; }
 
     std::shared_ptr<const IKeyValueEntity> getStorageKeyValue() { return right_kv_storage; }
 
     NamesAndTypesList correctedColumnsAddedByJoin() const;
 };
 
-bool allowParallelHashJoin(
-    const std::vector<JoinAlgorithm> & join_algorithms,
-    JoinKind kind,
-    JoinStrictness strictness,
-    bool is_special_storage,
-    bool one_disjunct);
 }

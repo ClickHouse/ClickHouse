@@ -229,7 +229,7 @@ configure
 if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
     # But we still need default disk because some tables loaded only into it
     sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml \
-      | sed "s|<main><disk>cached_s3</disk></main>|<main><disk>cached_s3</disk></main><default><disk>default</disk></default>|" \
+      | sed "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" \
       > /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp
     mv /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
     sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
@@ -237,7 +237,7 @@ if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
 elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
     # But we still need default disk because some tables loaded only into it
     sudo cat /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml \
-      | sed "s|<main><disk>cached_azure</disk></main>|<main><disk>cached_azure</disk></main><default><disk>default</disk></default>|" \
+      | sed "s|<main><disk>azure</disk></main>|<main><disk>azure</disk></main><default><disk>default</disk></default>|" \
       > /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml.tmp
     mv /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml
     sudo chown clickhouse /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml
@@ -258,8 +258,8 @@ if [ "$cache_policy" = "SLRU" ]; then
 fi
 
 # Randomize async_load_databases
-if [ $(( $(date +%-d) % 2 )) -eq 0 ]; then
-    sudo echo "<clickhouse><async_load_databases>false</async_load_databases></clickhouse>" \
+if [ $(( $(date +%-d) % 2 )) -eq 1 ]; then
+    sudo echo "<clickhouse><async_load_databases>true</async_load_databases></clickhouse>" \
         > /etc/clickhouse-server/config.d/enable_async_load_databases.xml
 fi
 

@@ -1,22 +1,21 @@
 ---
-alias: []
-description: 'Documentation for the JSONStrings format'
-input_format: true
-keywords: ['JSONStrings']
-output_format: true
+title : JSONStrings
 slug: /interfaces/formats/JSONStrings
-title: 'JSONStrings'
+keywords : [JSONStrings]
+input_format: true
+output_format: true
+alias: []
 ---
 
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description {#description}
+## Description
 
 Differs from the [JSON](./JSON.md) format only in that data fields are output as strings, not as typed JSON values.
 
-## Example Usage {#example-usage}
+## Example Usage
 
 Example:
 
@@ -70,5 +69,5 @@ Example:
 }
 ```
 
-## Format Settings {#format-settings}
+## Format Settings
 

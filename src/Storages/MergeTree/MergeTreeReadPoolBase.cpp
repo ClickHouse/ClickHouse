@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 
 #include <Core/Settings.h>
-#include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -153,7 +152,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
         }
 
         read_task_info.part_index_in_query = part_with_ranges.part_index_in_query;
-        read_task_info.alter_conversions = MergeTreeData::getAlterConversionsForPart(part_with_ranges.data_part, mutations_snapshot, getContext());
+        read_task_info.alter_conversions = MergeTreeData::getAlterConversionsForPart(part_with_ranges.data_part, mutations_snapshot, storage_snapshot->metadata, getContext());
 
         LoadedMergeTreeDataPartInfoForReader part_info(part_with_ranges.data_part, read_task_info.alter_conversions);
 
@@ -171,7 +170,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
                 .withSubcolumns();
 
             auto columns_list = storage_snapshot->getColumnsByNames(options, column_names);
-            auto mutation_steps = read_task_info.alter_conversions->getMutationSteps(part_info, columns_list, storage_snapshot->metadata, getContext());
+            auto mutation_steps = read_task_info.alter_conversions->getMutationSteps(part_info, columns_list);
             std::move(mutation_steps.begin(), mutation_steps.end(), std::back_inserter(read_task_info.mutation_steps));
         }
 

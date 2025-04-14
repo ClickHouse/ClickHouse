@@ -3,7 +3,6 @@ import logging
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.config_cluster import minio_secret_key
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -37,10 +36,10 @@ def test_s3_table_functions(started_cluster):
     Simple test to check s3 table function functionalities
     """
     node.query(
-        f"""
+        """
             INSERT INTO FUNCTION s3
                 (
-                    'minio://data/test_file.tsv.gz', 'minio', '{minio_secret_key}'
+                    'minio://data/test_file.tsv.gz', 'minio', 'minio123'
                 )
             SELECT * FROM numbers(1000000);
         """
@@ -48,10 +47,10 @@ def test_s3_table_functions(started_cluster):
 
     assert (
         node.query(
-            f"""
+            """
             SELECT count(*) FROM s3
             (
-                'minio://data/test_file.tsv.gz', 'minio', '{minio_secret_key}'
+                'minio://data/test_file.tsv.gz', 'minio', 'minio123'
             );
         """
         )
@@ -61,10 +60,10 @@ def test_s3_table_functions(started_cluster):
 
 def test_s3_table_functions_line_as_string(started_cluster):
     node.query(
-        f"""
+        """
             INSERT INTO FUNCTION s3
                 (
-                    'minio://data/test_file_line_as_string.tsv.gz', 'minio', '{minio_secret_key}'
+                    'minio://data/test_file_line_as_string.tsv.gz', 'minio', 'minio123'
                 )
             SELECT * FROM numbers(1000000);
         """
@@ -72,18 +71,18 @@ def test_s3_table_functions_line_as_string(started_cluster):
 
     assert (
         node.query(
-            f"""
+            """
             SELECT _file FROM s3
             (
-                'minio://data/*as_string.tsv.gz', 'minio', '{minio_secret_key}', 'LineAsString'
+                'minio://data/*as_string.tsv.gz', 'minio', 'minio123', 'LineAsString'
             ) LIMIT 1;
         """
         )
         == node.query(
-            f"""
+            """
             SELECT _file FROM s3
             (
-                'http://minio1:9001/root/data/*as_string.tsv.gz', 'minio', '{minio_secret_key}', 'LineAsString'
+                'http://minio1:9001/root/data/*as_string.tsv.gz', 'minio', 'minio123', 'LineAsString'
             ) LIMIT 1;
         """
         )

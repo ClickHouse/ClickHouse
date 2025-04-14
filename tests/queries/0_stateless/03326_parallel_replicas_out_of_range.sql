@@ -3,7 +3,7 @@
 
 SET enable_analyzer=1;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT
     count(materialize(toLowCardinality(1))) IGNORE NULLS AS num,
