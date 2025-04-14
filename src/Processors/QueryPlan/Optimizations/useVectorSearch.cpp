@@ -44,7 +44,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
 {
     QueryPlan::Node * node = parent_node;
 
-    /// This optimization pass doesn't change the structure of the query plan.
+    /// This optimization pass can change the ReadFromMergeTree & Expression steps of the query plan.
     size_t updated_layers = 0;
 
     /// Expect this query plan:
@@ -62,53 +62,26 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     auto * limit_step = typeid_cast<LimitStep *>(node->step.get());
     if (!limit_step)
         return updated_layers;
-#if 0
-    LOG_TRACE(getLogger("optimizeUseProjections"), "limit step input_header = {}",  limit_step->getInputHeaders().front().dumpNames());
-    LOG_TRACE(getLogger("optimizeUseProjections"), "limit step input_header = {}",  limit_step->getInputHeaders().front().dumpIndex());
-    LOG_TRACE(getLogger("optimizeUseProjections"), "limit step output_header = {}",  limit_step->getOutputHeader().dumpNames());
-    LOG_TRACE(getLogger("optimizeUseProjections"), "limit step output_header = {}",  limit_step->getOutputHeader().dumpIndex());
-#endif
+
     if (node->children.size() != 1)
         return updated_layers;
     node = node->children.front();
     auto * sorting_step = typeid_cast<SortingStep *>(node->step.get());
     if (!sorting_step)
         return updated_layers;
-#if 0
-    LOG_TRACE(getLogger("optimizeUseProjections"), "sort step input_header = {}",  sorting_step->getInputHeaders().front().dumpNames());
-    LOG_TRACE(getLogger("optimizeUseProjections"), "sort step input_header = {}",  sorting_step->getInputHeaders().front().dumpIndex());
-    LOG_TRACE(getLogger("optimizeUseProjections"), "sort step output_header = {}",  sorting_step->getOutputHeader().dumpNames());
-    LOG_TRACE(getLogger("optimizeUseProjections"), "sort step output_header = {}",  sorting_step->getOutputHeader().dumpIndex());
-#endif
 
     if (node->children.size() != 1)
         return updated_layers;
     node = node->children.front();
-    /// auto expr_step_node = node;
     auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
     if (!expression_step)
         return updated_layers;
-#if 0
-    LOG_TRACE(getLogger("optimizeUseProjections"), "expr step input_header = {}",  expression_step->getInputHeaders().front().dumpNames());
-    LOG_TRACE(getLogger("optimizeUseProjections"), "expr step input_header = {}",  expression_step->getInputHeaders().front().dumpIndex());
-    LOG_TRACE(getLogger("optimizeUseProjections"), "expr step output_header = {}",  expression_step->getOutputHeader().dumpNames());
-    LOG_TRACE(getLogger("optimizeUseProjections"), "expr step output_header = {}",  expression_step->getOutputHeader().dumpIndex());
-#endif
     if (node->children.size() != 1)
         return updated_layers;
     node = node->children.front();
     auto * read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
     if (!read_from_mergetree_step)
         return updated_layers;
-
-    /// LOG_TRACE(getLogger("optimizeUseProjections"), "rmt step input_header = {}",  read_from_mergetree_step->getInputHeaders().front().dumpNames());
-    /// LOG_TRACE(getLogger("optimizeUseProjections"), "rmt step input_header = {}",  read_from_mergetree_step->getInputHeaders().front().dumpIndex());
-    /// LOG_TRACE(getLogger("optimizeUseProjections"), "rmt step output_header = {}",  read_from_mergetree_step->getOutputHeader().dumpNames());
-    /// LOG_TRACE(getLogger("optimizeUseProjections"), "rmt step output_header = {}",  read_from_mergetree_step->getOutputHeader().dumpIndex());
-
-    /// read_from_mergetree_step->replaceVectorColumnWithDistance("vector");
-    /// LOG_TRACE(getLogger("optimizeUseProjections"), "rmt step updated output_header = {}",  read_from_mergetree_step->getOutputHeader().dumpNames());
-    /// LOG_TRACE(getLogger("optimizeUseProjections"), "rmt step updated output_header = {}",  read_from_mergetree_step->getOutputHeader().dumpIndex());
 
     /// Extract N
     size_t n = limit_step->getLimitForSorting();
@@ -128,28 +101,12 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
         return updated_layers;
     const String & sort_column = sort_description.front().column_name;
 
-    /// LOG_TRACE(getLogger("optimizeUseProjections"), "sort column full name is {}", sort_column);
-
     /// The ActionDAG of the ExpressionStep underneath SortingStep may have arbitrary output nodes (e.g. stuff
     /// in the SELECT clause). Find the output node which corresponds to the first ORDER BY clause.
     ActionsDAG & expression = expression_step->getExpression();
     const ActionsDAG::Node * sort_column_node = expression.tryFindInOutputs(sort_column);
     if (sort_column_node == nullptr || sort_column_node->type != ActionsDAG::ActionType::FUNCTION)
         return updated_layers;
-    
-    /// LOG_TRACE(getLogger("optimizeUseProjections"), "sort column node full name is {}", sort_column_node->result_name);
-
-
-   ///  auto e = expression;
-/*
-    auto new_expr = std::make_unique<ExpressionStep>(read_from_mergetree_step->getOutputHeader(), std::move(expression));
-
-    LOG_TRACE(getLogger("optimizeUseProjections"), "new expr step input_header = {}",  new_expr->getInputHeaders().front().dumpNames());
-    LOG_TRACE(getLogger("optimizeUseProjections"), "new expr step input_header = {}",  new_expr->getInputHeaders().front().dumpIndex());
-    LOG_TRACE(getLogger("optimizeUseProjections"), "new expr step output_header = {}",  new_expr->getOutputHeader().dumpNames());
-    LOG_TRACE(getLogger("optimizeUseProjections"), "new expr step output_header = {}",  new_expr->getOutputHeader().dumpIndex());
-*/
-    /// expr_step_node->step = std::make_unique<ExpressionStep>(read_from_mergetree_step->getOutputHeader(), std::move(expression));
 
     /// Extract distance_function
     const String & function_name = sort_column_node->function_base->getName();
@@ -216,22 +173,28 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     if (search_column.empty() || reference_vector.empty())
         return updated_layers;
 
-
     auto context = read_from_mergetree_step->getContext();
     const auto & settings_ref = context->getSettingsRef();
     bool return_distances = false;
     if (settings_ref[Setting::use_vector_index_only_ann])
     {
-        //// LOG_TRACE(getLogger("optimizUseProjections"), "DAG before {}", expression.dumpDAG());
+        /// 2 rewrites in the plan :-
+        /// 1. Remove the vector physical column from the ReadFromMergeTreeStep and add _distance virtual column
+        /// 2. Replace the "cosineDistance(vector_column,[1.0, 2.0...])" node in the DAG with "_distance" node
+        LOG_DEBUG(getLogger("optimizUseProjections"), "DAG before {}", expression.dumpDAG());
+        LOG_DEBUG(getLogger("optimizUseProjections"), "DAG names before {}", expression.dumpNames());
         read_from_mergetree_step->replaceVectorColumnWithDistance(search_column);
-        expression.removeUnusedResult(sort_column);
-        /// auto new_output = &expression.addInput("newid",std::make_shared<DataTypeFloat32>());
-        auto new_output = &expression.addInput("_distance",std::make_shared<DataTypeFloat32>());
-        auto new_output2 = &expression.addAlias(*new_output, sort_column);
-        expression.getOutputs().push_back(new_output2);
-        /// LOG_TRACE(getLogger("optimizUseProjections"), "DAG after {}", expression.dumpDAG());
+
+        expression.removeUnusedResult(sort_column); /// Remove the OUPUT cosineDistance(...) FUNCTION Node
+        expression.removeUnusedActions(); /// Remove the vector column INPUT node because it is no longer needed
+        auto distance_node = &expression.addInput("_distance",std::make_shared<DataTypeFloat32>());
+        auto new_output = &expression.addAlias(*distance_node, sort_column);
+        expression.getOutputs().push_back(new_output);
+
+        LOG_DEBUG(getLogger("optimizUseProjections"), "DAG after {}", expression.dumpDAG());
+        LOG_DEBUG(getLogger("optimizUseProjections"), "DAG names after{}", expression.dumpNames());
         return_distances = true;
-	updated_layers = 2;
+        updated_layers = 2;
     }
 
     auto vector_search_parameters = std::make_optional<VectorSearchParameters>(search_column, distance_function, n, reference_vector, return_distances);

@@ -85,7 +85,7 @@ private:
         const Settings & settings,
         LoggerPtr log);
 
-    static std::pair<MarkRanges, RangesInDataPartOptionals>  filterMarksUsingIndex(
+    static std::pair<MarkRanges, RangesInDataPartFastPath>  filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
         MergeTreeData::DataPartPtr part,

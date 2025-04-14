@@ -61,22 +61,14 @@ public:
 
     MergeTreeData::DataPartPtr getDataPart() const { return data_part; }
 
-    void setExtraReadInfo(const RangesInDataPartOptionals & extra_read_info_) override { extra_read_info = extra_read_info_; }
+    void setFastPathInfo(const RangesInDataPartFastPath & fastpath_info_) override { fastpath_info = fastpath_info_; }
 
-    const RangesInDataPartOptionals & getExtraReadInfo() const override { return extra_read_info; }
-/*
-    void setPartOffsets(const PartOffsets & part_offsets_) override { part_offsets = part_offsets_; }
+    const RangesInDataPartFastPath & getFastPathInfo() const override { return fastpath_info; }
 
-    PartOffsets getPartOffsets() const override { return part_offsets; }
-
-    void setDistances(const std::vector<float> & distances_) override { distances = distances_; }
-
-    std::vector<float> getDistances() const override { return distances; }
-*/
 private:
     MergeTreeData::DataPartPtr data_part;
     AlterConversionsPtr alter_conversions;
-    RangesInDataPartOptionals extra_read_info;
+    RangesInDataPartFastPath fastpath_info;
 };
 
 }

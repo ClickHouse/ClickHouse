@@ -81,8 +81,8 @@ struct MergeTreeReadTaskInfo
     size_t approx_size_of_mark = 0;
     /// Cache of the columns prefixes for this part.
     DeserializationPrefixesCachePtr deserialization_prefixes_cache{};
-    /// exact row offsets and corresponding distances
-    RangesInDataPartOptionals data_part_read_optionals;
+    /// Extra info for optimizations - exact row processing, calculated virtual columns.
+    RangesInDataPartFastPath fastpath_info;
 };
 
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
