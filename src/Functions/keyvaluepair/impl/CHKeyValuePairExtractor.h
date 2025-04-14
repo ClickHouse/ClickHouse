@@ -6,7 +6,6 @@
 
 #include <Functions/keyvaluepair/impl/StateHandler.h>
 #include <Functions/keyvaluepair/impl/StateHandlerImpl.h>
-#include <Functions/keyvaluepair/impl/KeyValuePairExtractor.h>
 #include <absl/container/flat_hash_map.h>
 
 namespace DB
@@ -22,7 +21,7 @@ namespace ErrorCodes
  * Handle state transitions and a few states like `FLUSH_PAIR` and `END`.
  * */
 template <typename StateHandler>
-class CHKeyValuePairExtractor : public KeyValuePairExtractor
+class CHKeyValuePairExtractor
 {
     using State = typename DB::extractKV::StateHandler::State;
     using NextState = DB::extractKV::StateHandler::NextState;
@@ -39,12 +38,12 @@ public:
         return extract(data, pair_writer);
     }
 
-    uint64_t extract(const std::string & data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values) override
+    uint64_t extract(const std::string & data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values)
     {
         return extract(std::string_view {data}, keys, values);
     }
 
-    uint64_t extract(std::string_view data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values) override
+    uint64_t extract(std::string_view data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values)
     {
         auto pair_writer = typename StateHandler::StringWriter(keys.get(), values.get(), nullptr);
         return extract(data, pair_writer);
