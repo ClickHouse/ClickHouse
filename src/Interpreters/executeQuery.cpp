@@ -1038,6 +1038,18 @@ static BlockIO executeQueryImpl(
 
                 chassert(ast2);
 
+                if (ast->getTreeHash(false) != ast2->getTreeHash(false))
+                {
+                    WriteBufferFromOwnString ast_tree1;
+                    WriteBufferFromOwnString ast_tree2;
+                    ast->dumpTree(ast_tree1);
+                    ast2->dumpTree(ast_tree2);
+
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Inconsistent AST formatting: the original AST:\n{}\n differs from the result of parsing back formatted AST:\n{}\n",
+                        ast_tree1.str(), ast_tree2.str());
+                }
+
                 String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(
                     /*max_length=*/0,
                     /*one_line=*/true,
@@ -1057,35 +1069,6 @@ static BlockIO executeQueryImpl(
                 if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
                     throw;
             }
-
-            chassert(ast2);
-
-            if (ast->getTreeHash(false) != ast2->getTreeHash(false))
-            {
-                WriteBufferFromOwnString ast_tree1;
-                WriteBufferFromOwnString ast_tree2;
-                ast->dumpTree(ast_tree1);
-                ast2->dumpTree(ast_tree2);
-
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Inconsistent AST formatting: the original AST:\n{}\n differs from the result of parsing back formatted AST:\n{}\n",
-                    ast_tree1.str(), ast_tree2.str());
-            }
-
-            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(
-                /*max_length=*/0,
-                /*one_line=*/true,
-                /*show_secrets=*/true,
-                /*print_pretty_type_names=*/false,
-                /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
-                /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
-
-            if (formatted1 != formatted2)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Inconsistent AST formatting: the query:\n{}\nWas parsed and formatted back as:\n{}",
-                    formatted1, formatted2);
-=======
->>>>>>> master
 #endif
         }
 
