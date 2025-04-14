@@ -436,7 +436,12 @@ std::pair<std::string, std::string> LocalServer::getInitialCreateTableQuery()
         table_file = quoteString(file_name);
     }
 
-    String data_format = backQuoteIfNeed(default_input_format);
+    String data_format;
+
+    if (default_input_format == "auto" && getClientConfiguration().has("table-structure"))
+        data_format = "TabSeparated";   /// Compatibility with older versions when format inference was not available.
+    else
+        data_format = backQuoteIfNeed(default_input_format);
 
     if (table_structure == "auto")
         table_structure = "";
