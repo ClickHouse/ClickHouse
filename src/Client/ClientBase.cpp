@@ -877,10 +877,11 @@ void ClientBase::initClientContext()
     client_context->setQueryParameters(query_parameters);
 }
 
-bool ClientBase::isRegularFile(int fd)
+bool ClientBase::isFileDescriptorSuitableForInput(int fd)
 {
     struct stat file_stat;
-    return fstat(fd, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
+    return fstat(fd, &file_stat) == 0
+        && (S_ISREG(file_stat.st_mode) || S_ISLNK(file_stat.st_mode) || S_ISFIFO(file_stat.st_mode));
 }
 
 void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
@@ -900,7 +901,7 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
         default_output_format = "Vertical";
         is_default_format = false;
     }
-    else if (isRegularFile(stdout_fd))
+    else if (isFileDescriptorSuitableForInput(stdout_fd))
     {
         std::optional<String> format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(stdout_fd);
         if (format_from_file_name)
