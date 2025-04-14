@@ -47,24 +47,29 @@ struct ThreadStack
 {
     ThreadStack()
     {
-        data = aligned_alloc(getPageSize(), getSize());
+        auto page_size = getPageSize();
+        data = aligned_alloc(page_size, getSize());
         if (!data)
             throw ErrnoException(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate ThreadStack");
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
         try
         {
             /// Since the stack grows downward, we need to protect the first page
-            memoryGuardInstall(data, getPageSize());
+            memoryGuardInstall(data, page_size);
         }
         catch (...)
         {
             free(data);
             throw;
         }
+#endif
     }
     ~ThreadStack()
     {
+#ifdef DEBUG_OR_SANITIZER_BUILD
         memoryGuardRemove(data, getPageSize());
+#endif
         free(data);
     }
 
