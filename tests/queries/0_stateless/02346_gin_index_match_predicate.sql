@@ -8,7 +8,7 @@ CREATE TABLE tab
 (
     id UInt32,
     str String,
-    INDEX inv_idx(str) TYPE full_text(0) GRANULARITY 1
+    INDEX inv_idx(str) TYPE gin(0) GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY id
@@ -22,7 +22,7 @@ SELECT * FROM tab WHERE match(str, ' Hello (ClickHouse|World) ') ORDER BY id;
 -- Required string: ' Hello '
 -- Alternatives: ' Hello ClickHouse ', ' Hello World '
 
-SELECT *
+SELECT trim(explain)
 FROM
 (
     EXPLAIN PLAN indexes=1
@@ -33,7 +33,7 @@ WHERE
 SETTINGS
     enable_analyzer = 0;
 
-SELECT *
+SELECT trim(explain)
 FROM
 (
     EXPLAIN PLAN indexes=1
@@ -52,7 +52,7 @@ SELECT * FROM tab WHERE match(str, '.* (ClickHouse|World) ') ORDER BY id;
 -- Required string: -
 -- Alternatives: ' ClickHouse ', ' World '
 
-SELECT *
+SELECT trim(explain)
 FROM
 (
     EXPLAIN PLAN indexes = 1
@@ -63,7 +63,7 @@ WHERE
 SETTINGS
     enable_analyzer = 0;
 
-SELECT *
+SELECT trim(explain)
 FROM
 (
     EXPLAIN PLAN indexes = 1
@@ -82,7 +82,7 @@ SELECT * FROM tab WHERE match(str, ' OLAP .*') ORDER BY id;
 -- Required string: ' OLAP '
 -- Alternatives: -
 
-SELECT *
+SELECT trim(explain)
 FROM
 (
     EXPLAIN PLAN indexes = 1
@@ -93,7 +93,7 @@ WHERE
 SETTINGS
     enable_analyzer = 0;
 
-SELECT *
+SELECT trim(explain)
 FROM
 (
     EXPLAIN PLAN indexes = 1
