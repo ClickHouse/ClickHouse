@@ -42,6 +42,7 @@
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicas.h>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicasInOrder.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -186,6 +187,7 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool read_in_order_use_virtual_row;
     extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBool query_condition_cache_store_conditions_as_plaintext;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool merge_tree_use_deserialization_prefixes_cache;
     extern const SettingsBool merge_tree_use_prefixes_deserialization_thread_pool;
@@ -220,6 +222,7 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
         .enable_multiple_prewhere_read_steps = settings[Setting::enable_multiple_prewhere_read_steps],
         .force_short_circuit_execution = settings[Setting::query_plan_merge_filters],
         .use_query_condition_cache = settings[Setting::use_query_condition_cache] && settings[Setting::allow_experimental_analyzer],
+        .query_condition_cache_store_conditions_as_plaintext = settings[Setting::query_condition_cache_store_conditions_as_plaintext],
         .use_deserialization_prefixes_cache = settings[Setting::merge_tree_use_deserialization_prefixes_cache],
         .use_prefixes_deserialization_thread_pool = settings[Setting::merge_tree_use_prefixes_deserialization_thread_pool],
     };
@@ -1125,6 +1128,20 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         return new_ranges;
     };
 
+    if (num_streams > 1)
+    {
+        /// Reduce num_streams if requested value is unnecessarily large.
+        ///
+        /// Additional increase of streams number in case of skewed parts, like it's
+        /// done in `spreadMarkRangesAmongStreams` won't affect overall performance
+        /// due to the single downstream `MergingSortedTransform`.
+        if (info.sum_marks < num_streams * info.min_marks_for_concurrent_read && parts_with_ranges.size() < num_streams)
+        {
+            num_streams = std::max(
+                (info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read, parts_with_ranges.size());
+        }
+    }
+
     const size_t min_marks_per_stream = (info.sum_marks - 1) / num_streams + 1;
     bool need_preliminary_merge = (parts_with_ranges.size() > settings[Setting::read_in_order_two_level_merge_threshold]);
 
@@ -1282,7 +1299,7 @@ static void addMergingFinal(
     Pipe & pipe,
     const SortDescription & sort_description,
     MergeTreeData::MergingParams merging_params,
-    Names partition_key_columns,
+    const StorageMetadataPtr & metadata_snapshot,
     size_t max_block_size_rows,
     bool enable_vertical_final)
 {
@@ -1303,9 +1320,12 @@ static void addMergingFinal(
                 return std::make_shared<CollapsingSortedTransform>(header, num_outputs,
                             sort_description, merging_params.sign_column, true, max_block_size_rows, /*max_block_size_bytes=*/0);
 
-            case MergeTreeData::MergingParams::Summing:
+            case MergeTreeData::MergingParams::Summing: {
+                auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
+                required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<SummingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.columns_to_sum, partition_key_columns, max_block_size_rows, /*max_block_size_bytes=*/0);
+                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0);
+            }
 
             case MergeTreeData::MergingParams::Aggregating:
                 return std::make_shared<AggregatingSortedTransform>(header, num_outputs,
@@ -1517,8 +1537,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         size_t sort_columns_size = sort_columns.size();
         sort_description.reserve(sort_columns_size);
 
-        Names partition_key_columns = storage_snapshot->metadata->getPartitionKey().column_names;
-
         for (size_t i = 0; i < sort_columns_size; ++i)
         {
             if (!reverse_flags.empty() && reverse_flags[i])
@@ -1532,7 +1550,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 pipe,
                 sort_description,
                 data.merging_params,
-                partition_key_columns,
+                storage_snapshot->metadata,
                 block_size.max_block_size_rows,
                 enable_vertical_final);
 
@@ -2276,17 +2294,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     if (lazily_read_info)
     {
-        chassert(lazily_read_info->data_parts_info);
-        for (auto & ranges_in_data_part : result.parts_with_ranges)
+        for (const auto & ranges_in_data_part : result.parts_with_ranges)
         {
-            lazily_read_info->data_parts_info->emplace(
-                ranges_in_data_part.part_index_in_query,
-                DataPartInfo
-                {
-                    .data_part = ranges_in_data_part.data_part,
-                    .alter_conversions = MergeTreeData::getAlterConversionsForPart(
-                        ranges_in_data_part.data_part, mutations_snapshot, storage_snapshot->metadata, getContext())
-                });
+            auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges_in_data_part.data_part, mutations_snapshot, getContext());
+            auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(ranges_in_data_part.data_part, std::move(alter_conversions));
+            lazily_read_info->data_part_infos->emplace(ranges_in_data_part.part_index_in_query, std::move(part_info));
         }
     }
 

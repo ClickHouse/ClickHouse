@@ -49,7 +49,7 @@ public:
                     "Argument {} of function {} must be array. Found {} instead.",
                     toString(index + 1),
                     getName(),
-                    arguments[0].type->getName());
+                    arguments[index].type->getName());
 
             auto nested_type = array_type->getNestedType();
             if constexpr (allow_unaligned)

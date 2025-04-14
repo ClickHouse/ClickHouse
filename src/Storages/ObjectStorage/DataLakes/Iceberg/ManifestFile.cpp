@@ -4,14 +4,16 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 
+#include <DataTypes/DataTypesDecimal.h>
 #include <Poco/JSON/Parser.h>
 #include <Storages/ColumnsDescription.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Common/logger_useful.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 
 namespace DB::ErrorCodes
 {
@@ -22,6 +24,86 @@ namespace DB::ErrorCodes
 
 namespace Iceberg
 {
+
+namespace
+{
+    /// Iceberg stores lower_bounds and upper_bounds serialized with some custom deserialization as bytes array
+    /// https://iceberg.apache.org/spec/#appendix-d-single-value-serialization
+    std::optional<DB::Field> deserializeFieldFromBinaryRepr(std::string str, DB::DataTypePtr expected_type, bool lower_bound)
+    {
+        auto non_nullable_type = DB::removeNullable(expected_type);
+        auto column = non_nullable_type->createColumn();
+        if (DB::WhichDataType(non_nullable_type).isDecimal())
+        {
+            /// Iceberg store decimal values as unscaled value with two’s-complement big-endian binary
+            /// using the minimum number of bytes for the value
+            /// Our decimal binary representation is little endian
+            /// so we cannot reuse our default code for parsing it.
+            int64_t unscaled_value = 0;
+
+            // Convert from big-endian to signed int
+            for (const auto byte : str)
+                unscaled_value = (unscaled_value << 8) | static_cast<uint8_t>(byte);
+
+            /// Add sign
+            if (str[0] & 0x80)
+            {
+                int64_t sign_extension = -1;
+                sign_extension <<= (str.size() * 8);
+                unscaled_value |= sign_extension;
+            }
+
+            /// NOTE: It's very weird, but Decimal values for lower bound and upper bound
+            /// are stored rounded, without fractional part. What is more strange
+            /// the integer part is rounded mathematically correctly according to fractional part.
+            /// Example: 17.22 -> 17, 8888.999 -> 8889, 1423.77 -> 1424.
+            /// I've checked two implementations: Spark and Amazon Athena and both of them
+            /// do this.
+            ///
+            /// The problem is -- we cannot use rounded values for lower bounds and upper bounds.
+            /// Example: upper_bound(x) = 17.22, but it's rounded 17.00, now condition WHERE x >= 17.21 will
+            /// check rounded value and say: "Oh largest value is 17, so values bigger than 17.21 cannot be in this file,
+            /// let's skip it". But it will produce incorrect result since actual value (17.22 >= 17.21) is stored in this file.
+            ///
+            /// To handle this issue we subtract 1 from the integral part for lower_bound and add 1 to integral
+            /// part of upper_bound. This produces: 17.22 -> [16.0, 18.0]. So this is more rough boundary,
+            /// but at least it doesn't lead to incorrect results.
+            {
+                int64_t scaler = lower_bound ? -10 : 10;
+                int32_t scale = DB::getDecimalScale(*non_nullable_type);
+                while (--scale)
+                    scaler *= 10;
+
+                unscaled_value += scaler;
+            }
+
+            if (const auto * decimal_type = DB::checkDecimal<DB::Decimal32>(*non_nullable_type))
+            {
+                DB::DecimalField<DB::Decimal32> result(unscaled_value, decimal_type->getScale());
+                return result;
+            }
+            if (const auto * decimal_type = DB::checkDecimal<DB::Decimal64>(*non_nullable_type))
+            {
+                DB::DecimalField<DB::Decimal64> result(unscaled_value, decimal_type->getScale());
+                return result;
+            }
+            else
+            {
+                return std::nullopt;
+            }
+        }
+        else
+        {
+            /// For all other types except decimal binary representation
+            /// matches our internal representation
+            column->insertData(str.data(), str.length());
+            DB::Field result;
+            column->get(0, result);
+            return result;
+        }
+    }
+
+}
 
 constexpr const char * COLUMN_STATUS_NAME = "status";
 constexpr const char * COLUMN_TUPLE_DATA_FILE_NAME = "data_file";
@@ -55,12 +137,14 @@ ManifestFileContent::ManifestFileContent(
     Int32 format_version_,
     const String & common_path,
     Int32 schema_id_,
+    Poco::JSON::Object::Ptr schema_object_,
     const IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number,
     const String & table_location,
     DB::ContextPtr context)
 {
     this->schema_id = schema_id_;
+    this->schema_object = schema_object_;
 
     for (const auto & column_name : {COLUMN_STATUS_NAME, COLUMN_TUPLE_DATA_FILE_NAME})
     {
@@ -104,10 +188,9 @@ ManifestFileContent::ManifestFileContent(
 
         partition_key_ast->arguments->children.emplace_back(std::move(partition_ast));
         partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics.type));
-        this->partition_column_ids.push_back(source_id);
     }
 
-    if (!partition_column_ids.empty())
+    if (!partition_columns_description.empty())
         this->partition_key_description.emplace(DB::KeyDescription::getKeyFromAST(std::move(partition_key_ast), ColumnsDescription(partition_columns_description), context));
 
     for (size_t i = 0; i < manifest_file_deserializer.rows(); ++i)
@@ -165,6 +248,7 @@ ManifestFileContent::ManifestFileContent(
             }
         }
 
+        std::unordered_map<Int32, std::pair<Field, Field>> value_for_bounds;
         for (const auto & path : {SUBCOLUMN_LOWER_BOUNDS_NAME, SUBCOLUMN_UPPER_BOUNDS_NAME})
         {
             if (manifest_file_deserializer.hasPath(path))
@@ -175,12 +259,33 @@ ManifestFileContent::ManifestFileContent(
                     const auto & column_number_and_bound = column_stats.safeGet<Tuple>();
                     Int32 number = column_number_and_bound[0].safeGet<Int32>();
                     const Field & bound_value = column_number_and_bound[1];
+
                     if (path == SUBCOLUMN_LOWER_BOUNDS_NAME)
-                        columns_infos[number].lower_bound = bound_value;
+                        value_for_bounds[number].first = bound_value;
                     else
-                        columns_infos[number].upper_bound = bound_value;
+                        value_for_bounds[number].second = bound_value;
+
+                    column_ids_which_have_bounds.insert(number);
                 }
             }
+        }
+
+        for (const auto & [column_id, bounds] : value_for_bounds)
+        {
+            DB::NameAndTypePair name_and_type = schema_processor.getFieldCharacteristics(schema_id, column_id);
+
+            String left_str;
+            String right_str;
+            /// lower_bound and upper_bound may be NULL.
+            if (!bounds.first.tryGet(left_str) || !bounds.second.tryGet(right_str))
+                continue;
+
+            auto left = deserializeFieldFromBinaryRepr(left_str, name_and_type.type, true);
+            auto right = deserializeFieldFromBinaryRepr(right_str, name_and_type.type, false);
+            if (!left || !right)
+                continue;
+
+            columns_infos[column_id].hyperrectangle.emplace(*left, true, *right, true);
         }
 
         FileEntry file = FileEntry{DataFileEntry{file_path}};
@@ -215,7 +320,7 @@ ManifestFileContent::ManifestFileContent(
 
 bool ManifestFileContent::hasPartitionKey() const
 {
-    return !partition_column_ids.empty();
+    return partition_key_description.has_value();
 }
 
 const DB::KeyDescription & ManifestFileContent::getPartitionKeyDescription() const
@@ -225,9 +330,24 @@ const DB::KeyDescription & ManifestFileContent::getPartitionKeyDescription() con
     return *(partition_key_description);
 }
 
-const std::vector<Int32> & ManifestFileContent::getPartitionKeyColumnIDs() const
+bool ManifestFileContent::hasBoundsInfoInManifests() const
 {
-    return partition_column_ids;
+    return !column_ids_which_have_bounds.empty();
+}
+
+const std::set<Int32> & ManifestFileContent::getColumnsIDsWithBounds() const
+{
+    return column_ids_which_have_bounds;
+}
+
+size_t ManifestFileContent::getSizeInMemory() const
+{
+    size_t total_size = sizeof(ManifestFileContent);
+    if (partition_key_description)
+        total_size += sizeof(DB::KeyDescription);
+    total_size += column_ids_which_have_bounds.size() * sizeof(Int32);
+    total_size += files.capacity() * sizeof(ManifestFileEntry);
+    return total_size;
 }
 
 std::optional<Int64> ManifestFileContent::getRowsCountInAllDataFilesExcludingDeleted() const
@@ -275,7 +395,6 @@ std::optional<Int64> ManifestFileContent::getBytesCountInAllDataFiles() const
             return std::nullopt;
     }
     return result;
-
 }
 
 }

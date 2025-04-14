@@ -84,7 +84,7 @@ void NativeReader::resetParser()
     use_index = false;
 }
 
-static void readData(const ISerialization & serialization, ColumnPtr & column, ReadBuffer & istr, const std::optional<FormatSettings> & format_settings, size_t rows, double avg_value_size_hint)
+void NativeReader::readData(const ISerialization & serialization, ColumnPtr & column, ReadBuffer & istr, const std::optional<FormatSettings> & format_settings, size_t rows, double avg_value_size_hint)
 {
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
@@ -196,7 +196,10 @@ Block NativeReader::read()
             {
                 serialization = column_lazy->getDefaultSerialization();
                 const auto & tmp_columns = column_lazy->getColumns();
-                read_column = ColumnTuple::create(tmp_columns)->cloneEmpty();
+
+                auto new_column = ColumnTuple::create(tmp_columns)->cloneEmpty();
+                new_column->reserve(rows);
+                read_column = std::move(new_column);
             }
             else
             {
@@ -214,12 +217,16 @@ Block NativeReader::read()
                 info->deserializeFromKindsBinary(istr);
 
             serialization = column.type->getSerialization(*info);
-            read_column = column.type->createColumn(*serialization);
+            auto new_column = column.type->createColumn(*serialization);
+            new_column->reserve(rows);
+            read_column = std::move(new_column);
         }
         else
         {
             serialization = column.type->getDefaultSerialization();
-            read_column = column.type->createColumn(*serialization);
+            auto new_column = column.type->createColumn(*serialization);
+            new_column->reserve(rows);
+            read_column = std::move(new_column);
         }
 
         if (use_index)
@@ -231,9 +238,12 @@ Block NativeReader::read()
                 throw Exception(ErrorCodes::INCORRECT_INDEX, "Index points to column with wrong type: corrupted index or data");
         }
 
-        double avg_value_size_hint = avg_value_size_hints.empty() ? 0 : avg_value_size_hints[i];
-        if (!skip_reading && rows)    /// If no rows, nothing to read.
+        /// If no rows, nothing to read.
+        if (!skip_reading && rows)
+        {
+            double avg_value_size_hint = avg_value_size_hints.empty() ? 0 : avg_value_size_hints[i];
             readData(*serialization, read_column, istr, format_settings, rows, avg_value_size_hint);
+        }
 
         column.column = std::move(read_column);
 
