@@ -63,16 +63,17 @@ def started_cluster():
 
 def test_query_settings_in_create_recover_lost_replica(started_cluster):
     old_node = started_cluster.instances["old_node"]
-    old_node.query("DROP DATABASE IF EXISTS replicated_lost_replica")
+    old_node.query("DROP DATABASE IF EXISTS replicated_lost_replica SYNC")
     old_node.query(
         "CREATE DATABASE replicated_lost_replica ENGINE = Replicated('/test/replicated_lost_replica', 'shard1', 'replica' || '1');"
     )
+    old_node.query("DROP TABLE IF EXISTS replicated_lost_replica.b")
     old_node.query(
         f"""CREATE TABLE replicated_lost_replica.b Engine = S3('http://minio1:9001/root/data/clickhouse/part1.csv', 'minio', '{minio_secret_key}') SETTINGS s3_create_new_file_on_insert = 1;"""
     )
 
     new_node = started_cluster.instances["new_node"]
-    new_node.query("DROP DATABASE IF EXISTS replicated_lost_replica")
+    new_node.query("DROP DATABASE IF EXISTS replicated_lost_replica SYNC")
     # Adding new replica will trigger the `recoverLostReplica` method.
     new_node.query(
         "CREATE DATABASE replicated_lost_replica ENGINE = Replicated('/test/replicated_lost_replica', 'shard1', 'replica' || '2');"
