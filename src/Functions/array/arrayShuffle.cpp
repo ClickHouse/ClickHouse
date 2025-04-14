@@ -219,7 +219,7 @@ It is possible to override the seed to produce stable results:
                 {"explicit_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2, 41)", ""},
                 {"materialize",
                  "SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffle([1, 2, 3], 2, 42) FROM numbers(10)", ""}},
-            .category{"Arrays"}},
+            .category=FunctionDocumentation::Category::Array},
         FunctionFactory::Case::Insensitive);
 }
 

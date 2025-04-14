@@ -46,30 +46,73 @@ REGISTER_FUNCTION(CutToFirstSignificantSubdomain)
     factory.registerFunction<FunctionCutToFirstSignificantSubdomain>(
         FunctionDocumentation{
         .description=R"(Returns the part of the domain that includes top-level subdomains up to the "first significant subdomain" (see documentation of the `firstSignificantSubdomain`).)",
+        .syntax="cutToFirstSignificantSubdomain(url)",
+        .arguments={
+            {"url", "URL. String"}
+        },
+        .returned_value="Part of the domain that includes top-level subdomains up to the first significant subdomain if possible, otherwise returns an empty string. String.",
         .examples{
             {"cutToFirstSignificantSubdomain1", "SELECT cutToFirstSignificantSubdomain('https://news.clickhouse.com.tr/')", ""},
             {"cutToFirstSignificantSubdomain2", "SELECT cutToFirstSignificantSubdomain('www.tr')", ""},
             {"cutToFirstSignificantSubdomain3", "SELECT cutToFirstSignificantSubdomain('tr')", ""},
         },
-        .category{"URLs"}
+        .category=FunctionDocumentation::Category::URL
         });
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainWithWWW>(
         FunctionDocumentation{
             .description=R"(Returns the part of the domain that includes top-level subdomains up to the "first significant subdomain", without stripping "www".)",
-            .examples{},
-            .category{"URLs"}
+            .syntax="cutToFirstSignificantSubdomainWithWWW(url)",
+            .arguments={{"url", "URL. String."}},
+            .returned_value="Part of the domain that includes top-level subdomains up to the first significant subdomain (with www) if possible, otherwise returns an empty string. String.",
+            .examples{
+                {
+                    "Usage example",
+                    R"(
+SELECT
+    cutToFirstSignificantSubdomainWithWWW('https://news.clickhouse.com.tr/'),
+    cutToFirstSignificantSubdomainWithWWW('www.tr'),
+    cutToFirstSignificantSubdomainWithWWW('tr');                    
+                    )",
+                    R"(
+┌─cutToFirstSignificantSubdomainWithWWW('https://news.clickhouse.com.tr/')─┬─cutToFirstSignificantSubdomainWithWWW('www.tr')─┬─cutToFirstSignificantSubdomainWithWWW('tr')─┐
+│ clickhouse.com.tr                                                        │ www.tr                                          │                                             │
+└──────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────┴─────────────────────────────────────────────┘                    
+                    )"
+                }
+            },
+            .category=FunctionDocumentation::Category::URL
         });
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainRFC>(
         FunctionDocumentation{
             .description=R"(Similar to `cutToFirstSignificantSubdomain` but follows stricter rules to be compatible with RFC 3986 and less performant.)",
-            .examples{},
-            .category{"URLs"}
+            .syntax="cutToFirstSignificantSubdomainRFC(url)",
+            .arguments={{"url", "URL. String."}},
+            .returned_value="Part of the domain that includes top-level subdomains up to the first significant subdomain if possible, otherwise returns an empty string. String.",
+            .examples{
+                {
+                    "Usage example",
+                    R"(
+SELECT
+    cutToFirstSignificantSubdomain('http://user:password@example.com:8080'),
+    cutToFirstSignificantSubdomainRFC('http://user:password@example.com:8080');                    
+                    )", 
+                    R"(
+┌─cutToFirstSignificantSubdomain('http://user:password@example.com:8080')─┬─cutToFirstSignificantSubdomainRFC('http://user:password@example.com:8080')─┐
+│                                                                         │ example.com                                                                │
+└─────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────┘                    
+                    )"
+                }
+            },
+            .category=FunctionDocumentation::Category::URL
         });
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainWithWWWRFC>(
         FunctionDocumentation{
             .description=R"(Similar to `cutToFirstSignificantSubdomainWithWWW` but follows stricter rules to be compatible with RFC 3986 and less performant.)",
-            .examples{},
-            .category{"URLs"}
+            .syntax="cutToFirstSignificantSubdomainWithWWWRFC(url)",
+            .arguments={{"url","URL. String."}},
+            .returned_value="Part of the domain that includes top-level subdomains up to the first significant subdomain (with \"www\") if possible, otherwise returns an empty string. String.",
+            .examples{{"","",""}},
+            .category=FunctionDocumentation::Category::URL
         });
 }
 

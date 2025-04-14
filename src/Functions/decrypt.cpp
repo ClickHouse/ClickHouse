@@ -32,7 +32,7 @@ This function decrypts ciphertext into a plaintext using these modes:
 - aes-128-gcm, aes-192-gcm, aes-256-gcm
 - aes-128-ctr, aes-192-ctr, aes-256-ctr
 - aes-128-cfb, aes-128-cfb1, aes-128-cfb8        
-        )"
+        )",
         .syntax="decrypt('mode', 'ciphertext', 'key' [, iv, aad])",
         .arguments={
             {"mode", "Decryption mode. [String](/sql-reference/data-types/string)."},
@@ -42,9 +42,11 @@ This function decrypts ciphertext into a plaintext using these modes:
             {"aad", "Additional authenticated data. Won't decrypt if this value is incorrect. Works only in `-gcm` modes, for others would throw an exception. [String](/sql-reference/data-types/string)."}
         },
         .returned_value="Decrypted String. [String](/sql-reference/data-types/string).",
-        .examples={{
-            "Example",
-            R"(
+        .examples=
+        {
+            {
+                "Example",
+                R"(
 Re-using table from [encrypt](#encrypt).
 
 Query:
@@ -75,8 +77,8 @@ Query:
 ```sql
 SELECT comment, decrypt('aes-256-cfb128', secret, '12345678910121314151617181920212') as plaintext FROM encryption_test
 ```  
-            )",
-            R"(
+                )",
+                R"(
 Result:
 
 ```text
@@ -96,12 +98,12 @@ Result:
 ```
 
 Notice how only a portion of the data was properly decrypted, and the rest is gibberish since either `mode`, `key`, or `iv` were different upon encryption.        
-            )"    
-        }}
+                )"    
+            }
+        },
         .category=FunctionDocumentation::Category::Encryption
     });
 }
 
 }
-
 #endif

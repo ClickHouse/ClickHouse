@@ -49,10 +49,16 @@ Returns the part of the domain that includes top-level subdomains up to the firs
 
 Can be useful if you need fresh TLD list or you have custom.
         )",
-        .examples{
-            {"cutToFirstSignificantSubdomainCustom", "SELECT cutToFirstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list');", ""},
+        .syntax="cutToFirstSignificantSubdomain(url, tld)",
+        .arguments={
+            {"url", "URL. [String](../../sql-reference/data-types/string.md)."},
+            {"tld", "Custom TLD list name. [String](../../sql-reference/data-types/string.md)."}
         },
-        .category{"URLs"}
+        .returned_value="Part of the domain that includes top-level subdomains up to the first significant subdomain. [String](../../sql-reference/data-types/string.md).",
+        .examples={
+            {"cutToFirstSignificantSubdomainCustom", "SELECT cutToFirstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list');", ""}
+        },
+        .category=FunctionDocumentation::Category::URL
         });
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainCustomWithWWW>(
         FunctionDocumentation{
@@ -62,20 +68,37 @@ Accepts custom TLD list name from config.
 
 Can be useful if you need fresh TLD list or you have custom.
         )",
+        .syntax="cutToFirstSignificantSubdomainWithWWW(url)",
+        .arguments={
+            {"url", "URL. [String](../../sql-reference/data-types/string.md)."}
+        },
+        .returned_value="Part of the domain that includes top-level subdomains up to the first significant subdomain (with `www`) if possible, otherwise returns an empty string. [String](../data-types/string.md).",
         .examples{{"cutToFirstSignificantSubdomainCustomWithWWW", "SELECT cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_list')", ""}},
-        .category{"URLs"}
+        .category=FunctionDocumentation::Category::URL
         });
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainCustomRFC>(
         FunctionDocumentation{
         .description=R"(Similar to `cutToFirstSignificantSubdomainCustom` but follows stricter rules according to RFC 3986.)",
-        .examples{},
-        .category{"URLs"}
+        .syntax="cutToFirstSignificantSubdomainRFC(url, tld)",
+        .arguments={
+            {"url", "URL. [String](../../sql-reference/data-types/string.md)."},
+            {"tld", "Custom TLD list name. [String](../../sql-reference/data-types/string.md)."}
+        },
+        .returned_value="Part of the domain that includes top-level subdomains up to the first significant subdomain. [String](../../sql-reference/data-types/string.md).",
+        .examples{{"", "", ""}},
+        .category=FunctionDocumentation::Category::URL
         });
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainCustomWithWWWRFC>(
         FunctionDocumentation{
         .description=R"(Similar to `cutToFirstSignificantSubdomainCustomWithWWW` but follows stricter rules according to RFC 3986.)",
-        .examples{},
-        .category{"URLs"}
+        .syntax="cutToFirstSignificantSubdomainCustomWithWWWRFC(url, tld)",
+        .arguments={
+            {"url", "URL. String."},
+            {"tld", "Custom TLD list name. String."}
+        },
+        .returned_value="Part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`. String.",
+        .examples{{"","",""}},
+        .category=FunctionDocumentation::Category::URL
         });
 }
 

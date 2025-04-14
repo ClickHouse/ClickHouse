@@ -112,7 +112,24 @@ struct NameSoundex
 REGISTER_FUNCTION(Soundex)
 {
     factory.registerFunction<FunctionStringToString<SoundexImpl, NameSoundex>>(
-        FunctionDocumentation{.description="Returns Soundex code of a string."}, FunctionFactory::Case::Insensitive);
+        FunctionDocumentation{
+            .description="Returns Soundex code of a string.",
+            .syntax="soundex(x)",
+            .arguments={{"x", "Input value. String."}},
+            .returned_value="The Soundex code of the input value. String.",
+            .examples={
+                {
+                    "Usage example",
+                    "SELECT soundex('aksel')",
+                    R"(
+┌─soundex('aksel')─┐
+│ A240             │
+└──────────────────┘
+                    )"
+                }
+            },
+            .category=FunctionDocumentation::Category::Strings
+        }, FunctionFactory::Case::Insensitive);
 }
 
 

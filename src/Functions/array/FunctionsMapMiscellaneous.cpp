@@ -420,99 +420,236 @@ REGISTER_FUNCTION(MapMiscellaneous)
     factory.registerFunction<FunctionMapConcat>(
     FunctionDocumentation{
         .description="The same as arrayConcat.",
+        .syntax="mapConcat(maps)",
+        .arguments={{"maps","Arbitrarily many [Maps](../data-types/map.md)."}},
+        .returned_value="Returns a map with concatenated maps passed as arguments.",
         .examples{{"mapConcat", "SELECT mapConcat(map('k1', 'v1'), map('k2', 'v2'))", ""}},
-        .category{"Maps"},
+        .category=FunctionDocumentation::Category::Map,
     });
 
     factory.registerFunction<FunctionMapKeys>(
     FunctionDocumentation{
         .description="Returns an array with the keys of map.",
+        .syntax="mapKeys(map)",
+        .arguments={{"map","Map. [Map](../data-types/map.md)."}},
+        .returned_value="Array containing all keys from the `map`. [Array](../data-types/array.md).",
         .examples{{"mapKeys", "SELECT mapKeys(map('k1', 'v1', 'k2', 'v2'))", ""}},
-        .category{"Maps"},
+        .category=FunctionDocumentation::Category::Map,
     });
 
     factory.registerFunction<FunctionMapValues>(
     FunctionDocumentation{
         .description="Returns an array with the values of map.",
+        .syntax="mapValues(map)",
+        .arguments={{"map","Map. [Map](../data-types/map.md)."}},
+        .returned_value="Array containing all the values from `map`. [Array](../data-types/array.md).",
         .examples{{"mapValues", "SELECT mapValues(map('k1', 'v1', 'k2', 'v2'))", ""}},
-        .category{"Maps"},
+        .category=FunctionDocumentation::Category::Map,
     });
 
     factory.registerFunction<FunctionMapContains>(
     FunctionDocumentation{
         .description="Checks whether the map has the specified key.",
+        .syntax="mapContains(map, key)",
+        .arguments={
+            {
+                "map",
+                "Map. [Map](../data-types/map.md)."
+            },
+            {
+                "key",
+                "Key. Type must match the key type of `map`."
+            }    
+        },
+        .returned_value="`1` if `map` contains `key`, `0` if not. [UInt8](../data-types/int-uint.md).",
         .examples{{"mapContains", "SELECT mapContains(map('k1', 'v1', 'k2', 'v2'), 'k1')", ""}},
-        .category{"Maps"},
+        .category=FunctionDocumentation::Category::Map,
     });
 
     factory.registerFunction<FunctionMapFilter>(
     FunctionDocumentation{
         .description="The same as arrayFilter.",
+        .syntax="mapFilter([func,] map)",
+        .arguments={
+            {
+                "func",
+                "Optional function to apply to the keys and values of the map. [Lambda function](/sql-reference/functions/overview#higher-order-functions)."
+            },
+            {
+                "map",
+                "Map to sort. [Map](../data-types/map.md)."
+            }    
+        },
+        .returned_value="Returns a map containing only the elements in `map` for which `func(map1[i], ..., mapN[i])` returns something other than 0.",
         .examples{{"mapFilter", "SELECT mapFilter((k, v) -> v > 1, map('k1', 1, 'k2', 2))", ""}},
-        .category{"Maps"},
+        .category=FunctionDocumentation::Category::Map,
     });
 
     factory.registerFunction<FunctionMapApply>(
     FunctionDocumentation{
         .description="The same as arrayMap.",
+        .syntax="mapApply([func,] map)",
+        .arguments={
+            {
+                "func",
+                "Optional function to apply to the keys and values of the map. [Lambda function](/sql-reference/functions/overview#higher-order-functions)."
+            },
+            {
+                "map",
+                "Map to sort. [Map](../data-types/map.md)."
+            }    
+        },
+        .returned_value="Returns a map obtained from the original map by application of `func(map1[i], ..., mapN[i])` for each element.",
         .examples{{"mapApply", "SELECT mapApply((k, v) -> (k, v * 2), map('k1', 1, 'k2', 2))", ""}},
-        .category{"Maps"},
+        .category=FunctionDocumentation::Category::Map,
     });
 
     factory.registerFunction<FunctionMapExists>(
     FunctionDocumentation{
         .description="The same as arrayExists.",
+        .syntax="mapExists([func,] map)",
+        .arguments={
+            {
+                "func",
+                "Optional function to apply to the keys and values of the map. [Lambda function](/sql-reference/functions/overview#higher-order-functions)."
+            },
+            {
+                "map",
+                "Map to sort. [Map](../data-types/map.md)."
+            }    
+        },
+        .returned_value="Returns `1` if at least one key-value pair in `map` exists for which `func(key, value)` returns something other than `0`. Otherwise, it returns `0`.",
         .examples{{"mapExists", "SELECT mapExists((k, v) -> v = 1, map('k1', 1, 'k2', 2))", ""}},
-        .category{"Maps"},
+        .category=FunctionDocumentation::Category::Map,
     });
 
     factory.registerFunction<FunctionMapAll>(
     FunctionDocumentation{
         .description="The same as arrayAll.",
+        .syntax="mapAll([func,] map)",
+        .arguments={
+            {
+                "func",
+                "Optional function to apply to the keys and values of the map. [Lambda function](/sql-reference/functions/overview#higher-order-functions)."
+            },
+            {
+                "map",
+                "Map to sort. [Map](../data-types/map.md)."
+            }    
+        },
+        .returned_value="Returns `1` if `func(key, value)` returns something other than `0` for all key-value pairs in `map`. Otherwise, it returns `0`.",
         .examples{{"mapAll", "SELECT mapAll((k, v) -> v = 1, map('k1', 1, 'k2', 2))", ""}},
-        .category{"Maps"},
+        .category=FunctionDocumentation::Category::Map,
     });
 
     factory.registerFunction<FunctionMapSort>(
     FunctionDocumentation{
         .description="The same as arraySort.",
+        .syntax="mapSort([func,] map)",
+        .arguments={
+            {
+                "func",
+                "Optional function to apply to the keys and values of the map. [Lambda function](/sql-reference/functions/overview#higher-order-functions)."
+            },
+            {
+                "map",
+                "Map to sort. [Map](../data-types/map.md)."
+            }    
+        },
+        .returned_value="Map with keys sorted ascending by value. [Map](../data-types/map.md).",
         .examples{{"mapSort", "SELECT mapSort((k, v) -> v, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
-        .category{"Maps"},
+        .category=FunctionDocumentation::Category::Map,
     });
 
     factory.registerFunction<FunctionMapReverseSort>(
     FunctionDocumentation{
         .description="The same as arrayReverseSort.",
+        .syntax="mapReverseSort([func,], map)",
+        .arguments={
+            {
+                "func",
+                "Optional function to apply to the keys and values of the map. [Lambda function](/sql-reference/functions/overview#higher-order-functions)."
+            },
+            {
+                "map",
+                "Map to sort. [Map](../data-types/map.md)."
+            }    
+        },
+        .returned_value="Reverse sorted map. [Map](../data-types/map.md).",
         .examples{{"mapReverseSort", "SELECT mapReverseSort((k, v) -> v, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
-        .category{"Maps"},
+        .category=FunctionDocumentation::Category::Map,
     });
 
     factory.registerFunction<FunctionMapPartialSort>(
     FunctionDocumentation{
         .description="The same as arrayReverseSort.",
+        .syntax="mapPartialSort([func,] limit, map)",
+        .arguments={
+            {
+                "func",
+                "Optional function to apply to the keys and values of the map. [Lambda function](/sql-reference/functions/overview#higher-order-functions)."
+            },
+            {
+                "limit",
+                "Elements in range [1..limit] are sorted. [(U)Int](../data-types/int-uint.md)."
+            },
+            {
+                "map",
+                "Map to sort. [Map](../data-types/map.md)."
+            }    
+        },
+        .returned_value="Partially sorted map. [Map](../data-types/map.md).",
         .examples{{"mapPartialSort", "SELECT mapPartialSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
-        .category{"Maps"},
+        .category=FunctionDocumentation::Category::Map,
     });
 
     factory.registerFunction<FunctionMapPartialReverseSort>(
     FunctionDocumentation{
         .description="The same as arrayPartialReverseSort.",
+        .syntax="mapPartialReverseSort([func,] limit, map)",
+        .arguments={
+            {
+                "func",
+                "Optional function to apply to the keys and values of the map. [Lambda function](/sql-reference/functions/overview#higher-order-functions)."
+            },
+            {
+                "limit",
+                "Elements in range [1..limit] are sorted. [(U)Int](../data-types/int-uint.md)."
+            },
+            {
+                "map",
+                "Map to sort. [Map](../data-types/map.md)."
+            }
+        },
+        .returned_value="Partially sorted map. [Map](../data-types/map.md).",
         .examples{{"mapPartialReverseSort", "SELECT mapPartialReverseSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
-        .category{"Maps"},
+        .category=FunctionDocumentation::Category::Map,
     });
 
     factory.registerFunction<FunctionMapContainsKeyLike>(
     FunctionDocumentation{
         .description="Checks whether map contains key LIKE specified pattern.",
+        .syntax="mapContainsKeyLike(map, pattern)",
+        .arguments={
+            {"map", "Map. [Map](../data-types/map.md)."},
+            {"pattern", "String pattern to match."}
+        },
+        .returned_value="`1` if `map` contains `key` like specified pattern, `0` if not.",
         .examples{{"mapContainsKeyLike", "SELECT mapContainsKeyLike(map('k1-1', 1, 'k2-1', 2), 'k1%')", ""}},
-        .category{"Maps"},
+        .category=FunctionDocumentation::Category::Map,
     });
 
     factory.registerFunction<FunctionMapExtractKeyLike>(
     FunctionDocumentation{
         .description="Returns a map with elements which key matches the specified pattern.",
+        .syntax="mapExtractKeyLike(map, pattern)",
+        .arguments={
+            {"map", "Map. [Map](../data-types/map.md)."},
+            {"pattern", "String pattern to match."}
+        },
+        .returned_value="A map containing elements the key matching the specified pattern. If no elements match the pattern, an empty map is returned.",
         .examples{{"mapExtractKeyLike", "SELECT mapExtractKeyLike(map('k1-1', 1, 'k2-1', 2), 'k1%')", ""}},
-        .category{"Maps"},
+        .category=FunctionDocumentation::Category::Map,
     });
 }
 

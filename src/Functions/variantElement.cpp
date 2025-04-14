@@ -161,27 +161,31 @@ REGISTER_FUNCTION(VariantElement)
     factory.registerFunction<FunctionVariantElement>(FunctionDocumentation{
         .description = R"(
 Extracts a column with specified type from a `Variant` column.
-)",
+        )",
         .syntax{"variantElement(variant, type_name, [, default_value])"},
         .arguments{
             {"variant", "Variant column"},
             {"type_name", "The name of the variant type to extract"},
             {"default_value", "The default value that will be used if variant doesn't have variant with specified type. Can be any type. Optional"}},
-        .examples{{{
-            "Example",
-            R"(
+        .returned_value="Subcolumn of a Variant column with specified type.",
+        .examples={
+            {
+                "Example",
+                R"(
 CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
 SELECT v, variantElement(v, 'String'), variantElement(v, 'UInt64'), variantElement(v, 'Array(UInt64)') FROM test;)",
-            R"(
+                R"(
 ┌─v─────────────┬─variantElement(v, 'String')─┬─variantElement(v, 'UInt64')─┬─variantElement(v, 'Array(UInt64)')─┐
 │ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ                        │                        ᴺᵁᴸᴸ │ []                                 │
 │ 42            │ ᴺᵁᴸᴸ                        │                          42 │ []                                 │
 │ Hello, World! │ Hello, World!               │                        ᴺᵁᴸᴸ │ []                                 │
 │ [1,2,3]       │ ᴺᵁᴸᴸ                        │                        ᴺᵁᴸᴸ │ [1,2,3]                            │
 └───────────────┴─────────────────────────────┴─────────────────────────────┴────────────────────────────────────┘
-)"}}},
-        .category{"Variants"},
+                )"
+            }
+        },
+        .category=FunctionDocumentation::Category::Other,
     });
 }
 

@@ -26,15 +26,37 @@ For example, firstSignificantSubdomain('https://news.clickhouse.com/') = 'clickh
 
 The list of "insignificant" second-level domains and other implementation details may change in the future.
         )",
+        .syntax="firstSignificantSubdomain(url)",
+        .arguments={
+            {"url", "URL. [String](../../sql-reference/data-types/string.md)."}
+        },
+        .returned_value="The first significant subdomain. [String](../data-types/string.md).",
         .examples{{"firstSignificantSubdomain", "SELECT firstSignificantSubdomain('https://news.clickhouse.com/')", ""}},
-        .category{"URLs"}
+        .category=FunctionDocumentation::Category::URL
         });
 
     factory.registerFunction<FunctionFirstSignificantSubdomainRFC>(
         FunctionDocumentation{
         .description=R"(Returns the "first significant subdomain" according to RFC 1034.)",
-        .examples{},
-        .category{"URLs"}
+        .syntax="firstSignificantSubdomainRFC(url)",
+        .arguments={{"url", "URL. [String](../../sql-reference/data-types/string.md)."}},
+        .returned_value="The first significant subdomain. [String](../data-types/string.md).",
+        .examples{
+            {
+                "Usage example",
+                R"(
+SELECT
+    firstSignificantSubdomain('http://user:password@example.com:8080/path?query=value#fragment'),
+    firstSignificantSubdomainRFC('http://user:password@example.com:8080/path?query=value#fragment');                
+                )",
+                R"(
+┌─firstSignificantSubdomain('http://user:password@example.com:8080/path?query=value#fragment')─┬─firstSignificantSubdomainRFC('http://user:password@example.com:8080/path?query=value#fragment')─┐
+│                                                                                              │ example                                                                                         │
+└──────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────┘                
+                )"
+            }
+        },
+        .category=FunctionDocumentation::Category::URL
         });
 }
 

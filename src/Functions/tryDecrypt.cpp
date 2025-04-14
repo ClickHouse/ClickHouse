@@ -25,7 +25,7 @@ struct TryDecryptImpl
 REGISTER_FUNCTION(TryDecrypt)
 {
     factory.registerFunction<FunctionDecrypt<TryDecryptImpl>>(FunctionDocumentation{
-        .description="Similar to `decrypt`, but returns NULL if decryption fails because of using the wrong key."
+        .description="Similar to `decrypt`, but returns NULL if decryption fails because of using the wrong key.",
         .syntax="tryDecrypt('mode', 'ciphertext', 'key' [, iv, aad])",
         .arguments={
             {"mode", "Decryption mode. [String](/sql-reference/data-types/string)."},
@@ -76,7 +76,7 @@ ORDER BY user_id ASC
 └─────────────────────┴─────────┴────────┘
 ```            
             )"    
-        }}
+        }},
         .category=FunctionDocumentation::Category::Encryption
     });
 }

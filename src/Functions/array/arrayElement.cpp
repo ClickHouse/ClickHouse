@@ -2210,7 +2210,33 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
 
 If the index falls outside of the bounds of an array, it returns some default value (0 for numbers, an empty string for strings, etc.), except for the case with a non-constant array and a constant index 0 (in this case there will be an error `Array indices are 1-based`).
         )",
-        .category{"Array"}});
+        .syntax="arrayElement(arr, n)",
+        .arguments={
+            {"arr", "The array from which to get the nth element. [Array](/sql-reference/data-types/array)."},
+            {"n", "Index of the array. (U)Int8/16/32/64."}
+        },
+        .returned_value="Returns the nth element of the array, or the default value if the index falls outside of the bounds of the array.",
+        .examples={
+            {
+                "Valid usage",
+                "SELECT arrayElement(['a', 'b', 'c'], 2)",
+                R"(
+┌─arrayElement(['a', 'b', 'c'], 2)─┐
+│ b                                │
+└──────────────────────────────────┘                
+                )"
+            },
+            {
+                "Invalid usage",
+                "SELECT arrayElement([2, 4, 6], 6)",
+                R"(
+┌─arrayElement([2, 4, 6], 6)─┐
+│                          0 │
+└────────────────────────────┘                
+                )"
+            }
+        },
+        .category=FunctionDocumentation::Category::Array});
     factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Null>>(FunctionDocumentation{
         .description = R"(
 Get the element with the index `n`from the array `arr`. `n` must be any integer type. Indexes in an array begin from one.
@@ -2219,6 +2245,32 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
 
 If the index falls outside of the bounds of an array, it returns `NULL` instead of a default value.
         )",
-        .category{"Array"}});
+        .syntax="arrayElementOrNull(arr, n)",
+        .arguments={
+            {"arr", "The array from which to get the nth element. [Array](/sql-reference/data-types/array)."},
+            {"n", "Index of the array. (U)Int8/16/32/64."}
+        },
+        .returned_value="Returns the nth element of the array, or NULL if the index falls outside of the bounds of the array.",
+        .examples={
+            {
+                "Valid usage",
+                "SELECT arrayElementOrNull(['a', 'b', 'c'], 2)",
+                R"(
+┌─arrayElementOrNull(['a', 'b', 'c'], 2)─┐
+│ b                                      │
+└────────────────────────────────────────┘               
+                )"
+            },
+            {
+                "Invalid usage",
+                "SELECT arrayElementOrNull(['a', 'b', 'c'], 6)",
+                R"(
+┌─arrayElementOrNull(['a', 'b', 'c'], 6)─┐
+│ ᴺᵁᴸᴸ                                   │
+└────────────────────────────────────────┘                
+                )"
+            }
+        },
+        .category=FunctionDocumentation::Category::Array});
 }
 }

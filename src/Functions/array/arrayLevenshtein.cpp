@@ -573,22 +573,23 @@ ColumnPtr FunctionArrayLevenshtein<Similarity>::execute(std::vector<const Column
 REGISTER_FUNCTION(ArrayLevenshtein)
 {
     factory.registerFunction<FunctionArrayLevenshtein<SimpleLevenshtein>>(
-        {.description = R"(
+        {
+            .description = R"(
 Calculates Levenshtein distance for two arrays.
-)",
-         .syntax{"arrayLevenshteinDistance(from, to)"},
-         .arguments{{"from", "first array"}, {"to", "second array"}},
-         .returned_value{"Levenshtein distance between the first and the second arrays"},
-         .examples{{{
-             "Query",
-             "SELECT arrayLevenshteinDistance([1, 2, 4], [1, 2, 3])",
-             R"(
+            )",
+            .syntax{"arrayLevenshteinDistance(from, to)"},
+            .arguments{{"from", "first array"}, {"to", "second array"}},
+            .returned_value{"Levenshtein distance between the first and the second arrays"},
+            .examples{{{
+                "Query",
+                "SELECT arrayLevenshteinDistance([1, 2, 4], [1, 2, 3])",
+                R"(
 ┌─arrayLevenshteinDistance([1, 2, 4], [1, 2, 3])─┐
 │                                              1 │
 └────────────────────────────────────────────────┘
-)",
-         }}},
-         .category{"Arrays"}});
+                )",
+            }}},
+            .category=FunctionDocumentation::Category::Array});
 
     factory.registerFunction<FunctionArrayLevenshtein<Weighted>>(
         {.description = R"(
@@ -611,7 +612,7 @@ Calculates Levenshtein distance for two arrays with custom weights for each elem
 └──────────────────────────────────────────────────────────────────────────────────────────────┘
 )",
          }}},
-         .category{"Arrays"}});
+         .category=FunctionDocumentation::Category::Array});
 
     factory.registerFunction<FunctionArrayLevenshtein<Similarity>>(
         {.description = R"(
@@ -634,7 +635,7 @@ Calculates arrays' similarity from 0 to 1 based on weighed Levenshtein distance.
 └─────────────────────────────────────────────────────────────────────────────┘
 )",
          }}},
-         .category{"Arrays"}});
+         .category=FunctionDocumentation::Category::Array});
 
 }
 }

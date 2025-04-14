@@ -87,24 +87,28 @@ REGISTER_FUNCTION(VariantType)
     factory.registerFunction<FunctionVariantType>(FunctionDocumentation{
         .description = R"(
 Returns the variant type name for each row of `Variant` column. If row contains NULL, it returns 'None' for it.
-)",
+        )",
         .syntax = {"variantType(variant)"},
         .arguments = {{"variant", "Variant column"}},
-        .examples = {{{
-            "Example",
-            R"(
+        .returned_value="Enum8 column with variant type name for each row.",
+        .examples = {
+            {
+                "Example",
+                R"(
 CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
 SELECT variantType(v) FROM test;)",
-            R"(
+                R"(
 ┌─variantType(v)─┐
 │ None           │
 │ UInt64         │
 │ String         │
 │ Array(UInt64)  │
 └────────────────┘
-)"}}},
-        .category::FunctionDocumentation::Other,
+                )"
+            }
+        },
+        .category=FunctionDocumentation::Category::Other,
     });
 }
 

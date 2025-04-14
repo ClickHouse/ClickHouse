@@ -24,8 +24,7 @@ The calculation is the same as in MySQL's TO_DAYS() function.
         .returned_value="The number of days passed since date 0000-01-01. [UInt32](../data-types/int-uint.md).",
         .examples{{"typical", "SELECT toDaysSinceYearZero(toDate('2023-09-08'))", "713569"}},
         .category=FunctionDocumentation::Category::DateAndTime,
-        .related={"[fromDaysSinceYearZero](#fromdayssinceyearzero)"}     
-        )"
+        .related={"[fromDaysSinceYearZero](#fromdayssinceyearzero)"}
     });
 
     /// MySQL compatibility alias.
