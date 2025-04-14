@@ -57,7 +57,7 @@ namespace ErrorCodes
     for this setting.
     )", 0) \
     DECLARE(UInt64, max_compress_block_size, 0, R"(
-    Maximum size of blocks of uncompressed data before compressing for writing
+    The maximum size of blocks of uncompressed data before compressing for writing
     to a table. You can also specify this setting in the global settings
     (see [max_compress_block_size](/operations/settings/merge-tree-settings#max_compress_block_size)
     setting). The value specified when the table is created overrides the global
@@ -1274,6 +1274,10 @@ namespace ErrorCodes
     Background task which reduces blocking parts for shared merge tree tables.
     Only in ClickHouse Cloud
     )", 0) \
+    DECLARE(Seconds, refresh_parts_interval, 0, R"(
+    If it is greater than zero - refresh the list of data parts from the underlying filesystem to check if the data was updated under the hood.
+    It can be set only if the table is located on readonly disks (which means that this is a readonly replica, while data is being written by another replica).
+    )", 0) \
     \
     /** Check delay of replicas settings. */ \
     DECLARE(UInt64, min_relative_delay_to_measure, 120, R"(
@@ -1456,7 +1460,7 @@ namespace ErrorCodes
     Possible values:
     - Any positive integer.
 
-    You can also specify a query complexity setting [max_partitions_to_read](query-complexity#max_partitions_to_read)
+    You can also specify a query complexity setting [max_partitions_to_read](/operations/settings/settings#max_partitions_to_read)
     at a query / session / profile level.
     )", 0) \
     DECLARE(UInt64, max_concurrent_queries, 0, R"(

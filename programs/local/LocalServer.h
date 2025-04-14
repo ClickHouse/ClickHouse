@@ -34,7 +34,7 @@ protected:
 
     void connect() override;
 
-    void processError(const String & query) const override;
+    void processError(std::string_view query) const override;
 
     String getName() const override { return "local"; }
 

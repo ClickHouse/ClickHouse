@@ -334,15 +334,15 @@ private:
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
                 {
                     // 1.a.1: Init CTX with custom IV length and optionally with AAD
-                    if (!EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr))
+                    if (EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
                         onError("EVP_EncryptInit_ex");
 
-                    if (!EVP_CIPHER_CTX_ctrl(evp_ctx, EVP_CTRL_AEAD_SET_IVLEN, safe_cast<int>(iv_value.size), nullptr))
+                    if (EVP_CIPHER_CTX_ctrl(evp_ctx, EVP_CTRL_AEAD_SET_IVLEN, safe_cast<int>(iv_value.size), nullptr) != 1)
                         onError("EVP_CIPHER_CTX_ctrl");
 
-                    if (!EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr,
+                    if (EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr,
                             reinterpret_cast<const unsigned char*>(key_value.data),
-                            reinterpret_cast<const unsigned char*>(iv_value.data)))
+                            reinterpret_cast<const unsigned char*>(iv_value.data)) != 1)
                         onError("EVP_EncryptInit_ex");
 
                     // 1.a.2 Set AAD
@@ -350,8 +350,8 @@ private:
                     {
                         const auto aad_data = aad_column->getDataAt(row_idx);
                         int tmp_len = 0;
-                        if (aad_data.size != 0 && !EVP_EncryptUpdate(evp_ctx, nullptr, &tmp_len,
-                                reinterpret_cast<const unsigned char *>(aad_data.data), safe_cast<int>(aad_data.size)))
+                        if (aad_data.size != 0 && EVP_EncryptUpdate(evp_ctx, nullptr, &tmp_len,
+                                reinterpret_cast<const unsigned char *>(aad_data.data), safe_cast<int>(aad_data.size)) != 1)
                             onError("EVP_EncryptUpdate");
                     }
                 }
@@ -360,23 +360,23 @@ private:
                     // 1.b: Init CTX
                     validateIV<mode>(iv_value, iv_size);
 
-                    if (!EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr,
+                    if (EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr,
                             reinterpret_cast<const unsigned char*>(key_value.data),
-                            reinterpret_cast<const unsigned char*>(iv_value.data)))
+                            reinterpret_cast<const unsigned char*>(iv_value.data)) != 1)
                         onError("EVP_EncryptInit_ex");
                 }
 
                 int output_len = 0;
                 // 2: Feed the data to the cipher
-                if (!EVP_EncryptUpdate(evp_ctx,
+                if (EVP_EncryptUpdate(evp_ctx,
                         reinterpret_cast<unsigned char*>(encrypted), &output_len,
-                        reinterpret_cast<const unsigned char*>(input_value.data), static_cast<int>(input_value.size)))
+                        reinterpret_cast<const unsigned char*>(input_value.data), static_cast<int>(input_value.size)) != 1)
                     onError("EVP_EncryptUpdate");
                 __msan_unpoison(encrypted, output_len); /// OpenSSL uses assembly which evades msan's analysis
                 encrypted += output_len;
 
                 // 3: retrieve encrypted data (ciphertext)
-                if (!EVP_EncryptFinal_ex(evp_ctx, reinterpret_cast<unsigned char*>(encrypted), &output_len))
+                if (EVP_EncryptFinal_ex(evp_ctx, reinterpret_cast<unsigned char*>(encrypted), &output_len) != 1)
                     onError("EVP_EncryptFinal_ex");
                 __msan_unpoison(encrypted, output_len); /// OpenSSL uses assembly which evades msan's analysis
                 encrypted += output_len;
@@ -385,7 +385,7 @@ private:
                 // https://tools.ietf.org/html/rfc5116#section-5.1
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
                 {
-                    if (!EVP_CIPHER_CTX_ctrl(evp_ctx, EVP_CTRL_AEAD_GET_TAG, tag_size, encrypted))
+                    if (EVP_CIPHER_CTX_ctrl(evp_ctx, EVP_CTRL_AEAD_GET_TAG, tag_size, encrypted) != 1)
                         onError("EVP_CIPHER_CTX_ctrl");
                     encrypted += tag_size;
                 }
@@ -635,17 +635,17 @@ private:
                 // 1: Init CTX
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
                 {
-                    if (!EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr))
+                    if (EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
                         onError("EVP_DecryptInit_ex");
 
                     // 1.a.1 : Set custom IV length
-                    if (!EVP_CIPHER_CTX_ctrl(evp_ctx, EVP_CTRL_AEAD_SET_IVLEN, safe_cast<int>(iv_value.size), nullptr))
+                    if (EVP_CIPHER_CTX_ctrl(evp_ctx, EVP_CTRL_AEAD_SET_IVLEN, safe_cast<int>(iv_value.size), nullptr) != 1)
                         onError("EVP_CIPHER_CTX_ctrl");
 
                     // 1.a.1 : Init CTX with key and IV
-                    if (!EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr,
+                    if (EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr,
                             reinterpret_cast<const unsigned char*>(key_value.data),
-                            reinterpret_cast<const unsigned char*>(iv_value.data)))
+                            reinterpret_cast<const unsigned char*>(iv_value.data)) != 1)
                         onError("EVP_DecryptInit_ex");
 
                     // 1.a.2: Set AAD if present
@@ -653,8 +653,8 @@ private:
                     {
                         StringRef aad_data = aad_column->getDataAt(row_idx);
                         int tmp_len = 0;
-                        if (aad_data.size != 0 && !EVP_DecryptUpdate(evp_ctx, nullptr, &tmp_len,
-                                reinterpret_cast<const unsigned char *>(aad_data.data), safe_cast<int>(aad_data.size)))
+                        if (aad_data.size != 0 && EVP_DecryptUpdate(evp_ctx, nullptr, &tmp_len,
+                                reinterpret_cast<const unsigned char *>(aad_data.data), safe_cast<int>(aad_data.size)) != 1)
                         onError("EVP_DecryptUpdate");
                     }
                 }
@@ -663,17 +663,17 @@ private:
                     // 1.b: Init CTX
                     validateIV<mode>(iv_value, iv_size);
 
-                    if (!EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr,
+                    if (EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr,
                             reinterpret_cast<const unsigned char*>(key_value.data),
-                            reinterpret_cast<const unsigned char*>(iv_value.data)))
+                            reinterpret_cast<const unsigned char*>(iv_value.data)) != 1)
                         onError("EVP_DecryptInit_ex");
                 }
 
                 // 2: Feed the data to the cipher
                 int output_len = 0;
-                if (!EVP_DecryptUpdate(evp_ctx,
+                if (EVP_DecryptUpdate(evp_ctx,
                         reinterpret_cast<unsigned char*>(decrypted), &output_len,
-                        reinterpret_cast<const unsigned char*>(input_value.data), static_cast<int>(input_value.size)))
+                        reinterpret_cast<const unsigned char*>(input_value.data), static_cast<int>(input_value.size)) != 1)
                 {
                     if constexpr (!use_null_when_decrypt_fail)
                         onError("EVP_DecryptUpdate");
@@ -687,12 +687,12 @@ private:
                     if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
                     {
                         void * tag = const_cast<void *>(reinterpret_cast<const void *>(input_value.data + input_value.size));
-                        if (!EVP_CIPHER_CTX_ctrl(evp_ctx, EVP_CTRL_AEAD_SET_TAG, tag_size, tag))
+                        if (EVP_CIPHER_CTX_ctrl(evp_ctx, EVP_CTRL_AEAD_SET_TAG, tag_size, tag) != 1)
                             onError("EVP_CIPHER_CTX_ctrl");
                     }
 
                     // 4: retrieve encrypted data (ciphertext)
-                    if (!decrypt_fail && !EVP_DecryptFinal_ex(evp_ctx, reinterpret_cast<unsigned char*>(decrypted), &output_len))
+                    if (!decrypt_fail && EVP_DecryptFinal_ex(evp_ctx, reinterpret_cast<unsigned char*>(decrypted), &output_len) != 1)
                     {
                         if constexpr (!use_null_when_decrypt_fail)
                             onError("EVP_DecryptFinal_ex");
