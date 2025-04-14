@@ -1804,7 +1804,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
         CreateTableAs * cta = ct->mutable_table_as();
         const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(tableLikeLambda));
         const uint32_t limit
-            = rg.nextSmallNumber() < 8 ? 3 : (likeEngs.size() - (next.is_deterministic ? 3 : (fc.allow_infinite_tables ? 2 : 1)));
+            = rg.nextSmallNumber() < 8 ? 3 : (likeEngs.size() - (next.is_deterministic ? 3 : (fc.allow_infinite_tables ? 1 : 2)));
         std::uniform_int_distribution<size_t> table_engine(0, limit);
         TableEngineValues val = likeEngs[table_engine(rg.generator)];
 
