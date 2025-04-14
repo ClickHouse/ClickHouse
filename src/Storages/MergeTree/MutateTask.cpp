@@ -1463,7 +1463,7 @@ private:
 
         bool secondary_indices_on_columns_alter = false;
         std::unordered_set<String> alter_column_names;
-        if (ctx->commands->size() == 1)
+        if (ctx->commands->size() == 1 && ctx->commands->front().ast)
         {
             if (auto * alter_cmd = ctx->commands->front().ast->as<ASTAlterCommand>();
                 alter_cmd && alter_cmd->type==ASTAlterCommand::MODIFY_COLUMN)
@@ -1481,8 +1481,13 @@ private:
             }
         }
 
-        bool secondary_indices_on_columns_alter_drop = secondary_indices_on_columns_alter
-            && (*ctx->data->getSettings())[MergeTreeSetting::secondary_indices_on_columns_alter] == SecondaryIndicesOnColumnsAlter::DROP;
+        bool secondary_indices_on_columns_alter_drop = secondary_indices_on_columns_alter &&
+                (*ctx->data->getSettings())[MergeTreeSetting::secondary_indices_on_columns_alter]
+                    == SecondaryIndicesOnColumnsAlter::DROP;
+
+        bool secondary_indices_on_columns_alter_rebuild = secondary_indices_on_columns_alter &&
+                (*ctx->data->getSettings())[MergeTreeSetting::secondary_indices_on_columns_alter]
+                    == SecondaryIndicesOnColumnsAlter::REBUILD;
 
         MergeTreeIndices skip_indices;
         for (const auto & idx : indices)
@@ -1493,9 +1498,17 @@ private:
             if (secondary_indices_on_columns_alter_drop &&
                 std::any_of(idx.column_names.begin(),
                             idx.column_names.end(),
-                            [&](String s) { return alter_column_names.contains(s); })
-                )
+                            [&](String s) { return alter_column_names.contains(s); }))
                 continue;
+
+            if (secondary_indices_on_columns_alter_rebuild &&
+                std::any_of(idx.column_names.begin(),
+                            idx.column_names.end(),
+                            [&](String s) { return alter_column_names.contains(s); }))
+            {
+                skip_indices.push_back(MergeTreeIndexFactory::instance().get(idx));
+                continue;
+            }
 
             bool need_recalculate =
                 ctx->materialized_indices.contains(idx.name)
@@ -1555,8 +1568,9 @@ private:
         }
 
         bool lightweight_delete_mode = ctx->updated_header.has(RowExistsColumn::name);
-        bool lightweight_delete_drop = lightweight_delete_mode
-            && (*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode] == LightweightMutationProjectionMode::DROP;
+        bool lightweight_delete_drop = lightweight_delete_mode &&
+                (*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode]
+                    == LightweightMutationProjectionMode::DROP;
 
         const auto & projections = ctx->metadata_snapshot->getProjections();
         for (const auto & projection : projections)
