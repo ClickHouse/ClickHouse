@@ -114,7 +114,7 @@ def create_s3_table(node, table_name):
         ) 
         ENGINE=MergeTree
         ORDER BY number
-        SETTINGS storage_policy='s3'
+        SETTINGS disk='s3'
         """.format(
             table_name=table_name
         )

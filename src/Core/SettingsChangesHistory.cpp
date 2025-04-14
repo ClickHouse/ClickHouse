@@ -69,6 +69,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.5",
         {
             {"secondary_indices_enable_bulk_filtering", false, true, "A new algorithm for filtering by data skipping indices"},
+            {"allow_experimental_drop_detached_table", true, false, "Enable drop detach table."},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
@@ -100,7 +101,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_variant_type", false, true, "Variant data type is production-ready"},
             {"allow_experimental_database_unity_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'"},
             {"allow_experimental_database_glue_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'"},
-            {"allow_experimental_drop_detached_table", true, false, "Enable drop detach table."},
             {"use_page_cache_with_distributed_cache", false, false, "New setting"},
             {"use_iceberg_metadata_files_cache", true, true, "New setting"},
             {"use_query_condition_cache", false, false, "New setting."},
