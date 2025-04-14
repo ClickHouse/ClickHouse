@@ -3380,12 +3380,31 @@ CONV_FN(OptimizeTable, ot)
     }
 }
 
-CONV_FN(ExchangeTables, et)
+CONV_FN(Exchange, et)
 {
-    ret += "EXCHANGE TABLES ";
-    ExprSchemaTableToString(ret, et.est1());
+    ret += "EXCHANGE ";
+    switch (et.sobject())
+    {
+        case SQLObject::TABLE:
+            ret += "TABLES";
+            break;
+        case SQLObject::VIEW:
+            ret += "VIEWS";
+            break;
+        case SQLObject::DICTIONARY:
+            ret += "DICTIONARIES";
+            break;
+        case SQLObject::DATABASE:
+            ret += "DATABASES";
+            break;
+        case SQLObject::FUNCTION:
+            ret += "FUNCTIONS";
+            break;
+    }
+    ret += " ";
+    SQLObjectNameToString(ret, et.object1());
     ret += " AND ";
-    ExprSchemaTableToString(ret, et.est2());
+    SQLObjectNameToString(ret, et.object2());
     if (et.has_cluster())
     {
         ClusterToString(ret, et.cluster());
@@ -4583,7 +4602,7 @@ CONV_FN(SQLQueryInner, query)
             DescTableToString(ret, query.desc());
             break;
         case QueryType::kExchange:
-            ExchangeTablesToString(ret, query.exchange());
+            ExchangeToString(ret, query.exchange());
             break;
         case QueryType::kAlter:
             AlterToString(ret, query.alter());

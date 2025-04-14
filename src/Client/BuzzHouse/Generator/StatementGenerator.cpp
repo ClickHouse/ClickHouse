@@ -868,31 +868,87 @@ void StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * t
 static const auto exchange_table_lambda = [](const SQLTable & t)
 {
     /// I would need to track the table clusters to do this correctly, ie ensure tables to be exchanged are on same cluster
-    return t.isAttached() && !t.is_deterministic && !t.getCluster() && !t.hasDatabasePeer();
+    return t.isAttached() && !t.is_deterministic && !t.hasDatabasePeer();
 };
 
-void StatementGenerator::generateNextExchangeTables(RandomGenerator & rg, ExchangeTables * et)
+void StatementGenerator::generateNextExchange(RandomGenerator & rg, Exchange * exc)
 {
-    const auto & input = filterCollection<SQLTable>(exchange_table_lambda);
+    ExprSchemaTable * est1 = exc->mutable_object1()->mutable_est();
+    ExprSchemaTable * est2 = exc->mutable_object2()->mutable_est();
+    const uint32_t exchange_table = 10 * static_cast<uint32_t>(collectionHas<SQLTable>(exchange_table_lambda));
+    const uint32_t exchange_view = 10 * static_cast<uint32_t>(collectionHas<SQLView>(attached_views));
+    const uint32_t exchange_dictionary = 10 * static_cast<uint32_t>(collectionHas<SQLDictionary>(attached_dictionaries));
+    const uint32_t prob_space = exchange_table + exchange_view + exchange_dictionary;
+    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+    const uint32_t nopt = next_dist(rg.generator);
+    std::optional<String> cluster1, cluster2;
 
-    for (const auto & entry : input)
+    if (exchange_table && nopt < (exchange_table + 1))
     {
-        this->ids.push_back(entry.get().tname);
+        const auto & input = filterCollection<SQLTable>(exchange_table_lambda);
+
+        exc->set_sobject(SQLObject::TABLE);
+        for (const auto & entry : input)
+        {
+            this->ids.push_back(entry.get().tname);
+        }
+        std::shuffle(this->ids.begin(), this->ids.end(), rg.generator);
+        const SQLTable & t1 = this->tables[this->ids[0]];
+        const SQLTable & t2 = this->tables[this->ids[1]];
+
+        cluster1 = t1.cluster;
+        cluster2 = t2.cluster;
+        t1.setName(est1, false);
+        t2.setName(est2, false);
     }
-    std::shuffle(this->ids.begin(), this->ids.end(), rg.generator);
-    const SQLTable & t1 = this->tables[this->ids[0]];
-    const SQLTable & t2 = this->tables[this->ids[1]];
-
-    t1.setName(et->mutable_est1(), false);
-    t2.setName(et->mutable_est2(), false);
-    this->ids.clear();
-    if (t1.cluster.has_value() && t2.cluster.has_value() && t1.cluster == t2.cluster)
+    else if (exchange_view && nopt < (exchange_table + exchange_view + 1))
     {
-        et->mutable_cluster()->set_cluster(t1.cluster.value());
+        const auto & input = filterCollection<SQLView>(attached_views);
+
+        exc->set_sobject(SQLObject::TABLE);
+        for (const auto & entry : input)
+        {
+            this->ids.push_back(entry.get().tname);
+        }
+        std::shuffle(this->ids.begin(), this->ids.end(), rg.generator);
+        const SQLView & v1 = this->views[this->ids[0]];
+        const SQLView & v2 = this->views[this->ids[1]];
+
+        cluster1 = v1.cluster;
+        cluster2 = v2.cluster;
+        v1.setName(est1, false);
+        v2.setName(est2, false);
+    }
+    else if (exchange_dictionary && nopt < (exchange_table + exchange_view + exchange_dictionary + 1))
+    {
+        const auto & input = filterCollection<SQLDictionary>(attached_dictionaries);
+
+        exc->set_sobject(SQLObject::DICTIONARY);
+        for (const auto & entry : input)
+        {
+            this->ids.push_back(entry.get().tname);
+        }
+        std::shuffle(this->ids.begin(), this->ids.end(), rg.generator);
+        const SQLDictionary & d1 = this->dictionaries[this->ids[0]];
+        const SQLDictionary & d2 = this->dictionaries[this->ids[1]];
+
+        cluster1 = d1.cluster;
+        cluster2 = d2.cluster;
+        d1.setName(est1, false);
+        d2.setName(est2, false);
+    }
+    else
+    {
+        chassert(0);
+    }
+    this->ids.clear();
+    if (cluster1.has_value() && cluster2.has_value() && cluster1 == cluster2)
+    {
+        exc->mutable_cluster()->set_cluster(cluster1.value());
     }
     if (rg.nextSmallNumber() < 3)
     {
-        generateSettingValues(rg, serverSettings, et->mutable_setting_values());
+        generateSettingValues(rg, serverSettings, exc->mutable_setting_values());
     }
 }
 
@@ -3181,13 +3237,11 @@ void StatementGenerator::generateNextBackupOrRestore(RandomGenerator & rg, Backu
     br->set_async(rg.nextSmallNumber() < 4);
 }
 
-static const auto rename_table_lambda = [](const SQLTable & t) { return t.isAttached() && !t.is_deterministic && !t.hasDatabasePeer(); };
-
 void StatementGenerator::generateNextRename(RandomGenerator & rg, Rename * ren)
 {
     SQLObjectName * oldn = ren->mutable_old_object();
     SQLObjectName * newn = ren->mutable_new_object();
-    const uint32_t rename_table = 10 * static_cast<uint32_t>(collectionHas<SQLTable>(rename_table_lambda));
+    const uint32_t rename_table = 10 * static_cast<uint32_t>(collectionHas<SQLTable>(exchange_table_lambda));
     const uint32_t rename_view = 10 * static_cast<uint32_t>(collectionHas<SQLView>(attached_views));
     const uint32_t rename_dictionary = 10 * static_cast<uint32_t>(collectionHas<SQLDictionary>(attached_dictionaries));
     const uint32_t rename_database = 10 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases));
@@ -3198,7 +3252,7 @@ void StatementGenerator::generateNextRename(RandomGenerator & rg, Rename * ren)
 
     if (rename_table && nopt < (rename_table + 1))
     {
-        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(rename_table_lambda));
+        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(exchange_table_lambda));
 
         cluster = t.getCluster();
         ren->set_sobject(SQLObject::TABLE);
@@ -3266,7 +3320,9 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
     const uint32_t optimize_table = 2 * static_cast<uint32_t>(collectionHas<SQLTable>(optimize_table_lambda));
     const uint32_t check_table = 2 * static_cast<uint32_t>(has_tables);
     const uint32_t desc_table = 2;
-    const uint32_t exchange_tables = 1 * static_cast<uint32_t>(collectionCount<SQLTable>(exchange_table_lambda) > 1);
+    const uint32_t exchange = 1
+        * static_cast<uint32_t>(collectionCount<SQLTable>(exchange_table_lambda) > 1 || collectionCount<SQLView>(attached_views) > 1
+                                || collectionCount<SQLDictionary>(attached_dictionaries) > 1);
     const uint32_t alter = 6
         * static_cast<uint32_t>(
                                collectionHas<SQLTable>(alter_table_lambda) || collectionHas<SQLView>(attached_views)
@@ -3286,11 +3342,11 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
     const uint32_t backup_or_restore = 1;
     const uint32_t create_dictionary = 10 * static_cast<uint32_t>(static_cast<uint32_t>(dictionaries.size()) < this->fc.max_dictionaries);
     const uint32_t rename
-        = 1 * static_cast<uint32_t>(collectionHas<SQLTable>(rename_table_lambda) || has_views || has_dictionaries || has_databases);
+        = 1 * static_cast<uint32_t>(collectionHas<SQLTable>(exchange_table_lambda) || has_views || has_dictionaries || has_databases);
     const uint32_t select_query = 800;
     const uint32_t prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table
-        + desc_table + exchange_tables + alter + set_values + attach + detach + create_database + create_function + system_stmt
-        + backup_or_restore + create_dictionary + rename + select_query;
+        + desc_table + exchange + alter + set_values + attach + detach + create_database + create_function + system_stmt + backup_or_restore
+        + create_dictionary + rename + select_query;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -3335,102 +3391,101 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
         generateNextDescTable(rg, sq->mutable_desc());
     }
     else if (
-        exchange_tables
+        exchange
         && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
-               + exchange_tables + 1))
+            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
+               + 1))
     {
-        generateNextExchangeTables(rg, sq->mutable_exchange());
+        generateNextExchange(rg, sq->mutable_exchange());
     }
     else if (
         alter
         && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
-               + exchange_tables + alter + 1))
+            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
+               + alter + 1))
     {
         generateAlter(rg, sq->mutable_alter());
     }
     else if (
         set_values
         && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
-               + exchange_tables + alter + set_values + 1))
+            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
+               + alter + set_values + 1))
     {
         generateSettingValues(rg, serverSettings, sq->mutable_setting_values());
     }
     else if (
         attach
         && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
-               + exchange_tables + alter + set_values + attach + 1))
+            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
+               + alter + set_values + attach + 1))
     {
         generateAttach(rg, sq->mutable_attach());
     }
     else if (
         detach
         && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
-               + exchange_tables + alter + set_values + attach + detach + 1))
+            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
+               + alter + set_values + attach + detach + 1))
     {
         generateDetach(rg, sq->mutable_detach());
     }
     else if (
         create_database
         && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
-               + exchange_tables + alter + set_values + attach + detach + create_database + 1))
+            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
+               + alter + set_values + attach + detach + create_database + 1))
     {
         generateNextCreateDatabase(rg, sq->mutable_create_database());
     }
     else if (
         create_function
         && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
-               + exchange_tables + alter + set_values + attach + detach + create_database + create_function + 1))
+            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
+               + alter + set_values + attach + detach + create_database + create_function + 1))
     {
         generateNextCreateFunction(rg, sq->mutable_create_function());
     }
     else if (
         system_stmt
         && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
-               + exchange_tables + alter + set_values + attach + detach + create_database + create_function + system_stmt + 1))
+            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
+               + alter + set_values + attach + detach + create_database + create_function + system_stmt + 1))
     {
         generateNextSystemStatement(rg, true, sq->mutable_system_cmd());
     }
     else if (
         backup_or_restore
         && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
-               + exchange_tables + alter + set_values + attach + detach + create_database + create_function + system_stmt
-               + backup_or_restore + 1))
+            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
+               + alter + set_values + attach + detach + create_database + create_function + system_stmt + backup_or_restore + 1))
     {
         generateNextBackupOrRestore(rg, sq->mutable_backup_restore());
     }
     else if (
         create_dictionary
         && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
-               + exchange_tables + alter + set_values + attach + detach + create_database + create_function + system_stmt
-               + backup_or_restore + create_dictionary + 1))
+            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
+               + alter + set_values + attach + detach + create_database + create_function + system_stmt + backup_or_restore
+               + create_dictionary + 1))
     {
         generateNextCreateDictionary(rg, sq->mutable_create_dictionary());
     }
     else if (
         rename
         && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
-               + exchange_tables + alter + set_values + attach + detach + create_database + create_function + system_stmt
-               + backup_or_restore + create_dictionary + rename + 1))
+            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
+               + alter + set_values + attach + detach + create_database + create_function + system_stmt + backup_or_restore
+               + create_dictionary + rename + 1))
     {
         generateNextRename(rg, sq->mutable_rename());
     }
     else if (
         select_query
         && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
-               + exchange_tables + alter + set_values + attach + detach + create_database + create_function + system_stmt
-               + backup_or_restore + create_dictionary + rename + select_query + 1))
+            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
+               + alter + set_values + attach + detach + create_database + create_function + system_stmt + backup_or_restore
+               + create_dictionary + rename + select_query + 1))
     {
         generateTopSelect(rg, false, std::numeric_limits<uint32_t>::max(), sq->mutable_select());
     }
@@ -3721,18 +3776,52 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
     }
     else if (sq.has_explain() && !sq.explain().is_explain() && query.has_exchange() && success)
     {
-        const uint32_t tname1 = static_cast<uint32_t>(std::stoul(query.exchange().est1().table().table().substr(1)));
-        const uint32_t tname2 = static_cast<uint32_t>(std::stoul(query.exchange().est2().table().table().substr(1)));
-        SQLTable tx = std::move(this->tables.at(tname1));
-        SQLTable ty = std::move(this->tables.at(tname2));
-        auto db_tmp = tx.db;
+        const Exchange & ex = query.exchange();
+        const bool istable = ex.object1().has_est() && ex.object1().est().table().table()[0] == 't';
+        const bool isview = ex.object1().has_est() && ex.object1().est().table().table()[0] == 'v';
+        const bool isdictionary = ex.object1().has_est() && ex.object1().est().table().table()[0] == 'd';
+        const uint32_t tname1 = static_cast<uint32_t>(std::stoul(query.exchange().object1().est().table().table().substr(1)));
+        const uint32_t tname2 = static_cast<uint32_t>(std::stoul(query.exchange().object2().est().table().table().substr(1)));
 
-        tx.tname = tname2;
-        tx.db = ty.db;
-        ty.tname = tname1;
-        ty.db = db_tmp;
-        this->tables[tname2] = std::move(tx);
-        this->tables[tname1] = std::move(ty);
+        if (istable)
+        {
+            SQLTable tx = std::move(this->tables.at(tname1));
+            SQLTable ty = std::move(this->tables.at(tname2));
+            auto db_tmp = tx.db;
+
+            tx.tname = tname2;
+            tx.db = ty.db;
+            ty.tname = tname1;
+            ty.db = db_tmp;
+            this->tables[tname2] = std::move(tx);
+            this->tables[tname1] = std::move(ty);
+        }
+        else if (isview)
+        {
+            SQLView tx = std::move(this->views.at(tname1));
+            SQLView ty = std::move(this->views.at(tname2));
+            auto db_tmp = tx.db;
+
+            tx.tname = tname2;
+            tx.db = ty.db;
+            ty.tname = tname1;
+            ty.db = db_tmp;
+            this->views[tname2] = std::move(tx);
+            this->views[tname1] = std::move(ty);
+        }
+        else if (isdictionary)
+        {
+            SQLDictionary tx = std::move(this->dictionaries.at(tname1));
+            SQLDictionary ty = std::move(this->dictionaries.at(tname2));
+            auto db_tmp = tx.db;
+
+            tx.tname = tname2;
+            tx.db = ty.db;
+            ty.tname = tname1;
+            ty.db = db_tmp;
+            this->dictionaries[tname2] = std::move(tx);
+            this->dictionaries[tname1] = std::move(ty);
+        }
     }
     else if (sq.has_explain() && !sq.explain().is_explain() && query.has_rename() && success)
     {

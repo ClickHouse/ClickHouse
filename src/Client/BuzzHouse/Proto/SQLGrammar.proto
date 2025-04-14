@@ -3302,11 +3302,12 @@ message OptimizeTable {
     optional SettingValues setting_values = 7;
 }
 
-message ExchangeTables {
-    required ExprSchemaTable est1 = 1;
-    required ExprSchemaTable est2 = 2;
-    optional Cluster cluster = 3;
-    optional SettingValues setting_values = 4;
+message Exchange {
+    required SQLObject sobject = 1;
+    required SQLObjectName object1 = 2;
+    required SQLObjectName object2 = 3;
+    optional Cluster cluster = 4;
+    optional SettingValues setting_values = 5;
 }
 
 message UpdateSet {
@@ -3773,7 +3774,7 @@ message SQLQueryInner {
         OptimizeTable opt = 7;
         CheckTable check = 8;
         DescTable desc = 9;
-        ExchangeTables exchange = 10;
+        Exchange exchange = 10;
         Alter alter = 11;
         SettingValues setting_values = 12;
         CreateView create_view = 13;

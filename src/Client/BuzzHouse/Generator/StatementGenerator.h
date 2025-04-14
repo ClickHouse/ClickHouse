@@ -329,7 +329,7 @@ private:
     void generateNextCheckTable(RandomGenerator & rg, CheckTable * ct);
     void generateNextDescTable(RandomGenerator & rg, DescTable * dt);
     void generateNextRename(RandomGenerator & rg, Rename * ren);
-    void generateNextExchangeTables(RandomGenerator & rg, ExchangeTables * et);
+    void generateNextExchange(RandomGenerator & rg, Exchange * exc);
     void generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr);
     void generateAlter(RandomGenerator & rg, Alter * at);
     void setRandomSetting(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SetValue * set);
