@@ -875,9 +875,9 @@ void StatementGenerator::generateNextExchange(RandomGenerator & rg, Exchange * e
 {
     ExprSchemaTable * est1 = exc->mutable_object1()->mutable_est();
     ExprSchemaTable * est2 = exc->mutable_object2()->mutable_est();
-    const uint32_t exchange_table = 10 * static_cast<uint32_t>(collectionHas<SQLTable>(exchange_table_lambda));
-    const uint32_t exchange_view = 10 * static_cast<uint32_t>(collectionHas<SQLView>(attached_views));
-    const uint32_t exchange_dictionary = 10 * static_cast<uint32_t>(collectionHas<SQLDictionary>(attached_dictionaries));
+    const uint32_t exchange_table = 10 * static_cast<uint32_t>(collectionCount<SQLTable>(exchange_table_lambda) > 1);
+    const uint32_t exchange_view = 10 * static_cast<uint32_t>(collectionCount<SQLView>(attached_views) > 1);
+    const uint32_t exchange_dictionary = 10 * static_cast<uint32_t>(collectionCount<SQLDictionary>(attached_dictionaries) > 1);
     const uint32_t prob_space = exchange_table + exchange_view + exchange_dictionary;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
@@ -3811,10 +3811,11 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
     else if (sq.has_explain() && !sq.explain().is_explain() && query.has_exchange() && success)
     {
         const Exchange & ex = query.exchange();
-        const bool istable = ex.object1().has_est() && ex.object1().est().table().table()[0] == 't';
-        const bool isview = ex.object1().has_est() && ex.object1().est().table().table()[0] == 'v';
-        const bool isdictionary = ex.object1().has_est() && ex.object1().est().table().table()[0] == 'd';
-        const uint32_t tname1 = static_cast<uint32_t>(std::stoul(query.exchange().object1().est().table().table().substr(1)));
+        const SQLObjectName & obj1 = ex.object1();
+        const bool istable = obj1.has_est() && obj1.est().table().table()[0] == 't';
+        const bool isview = obj1.has_est() && obj1.est().table().table()[0] == 'v';
+        const bool isdictionary = obj1.has_est() && obj1.est().table().table()[0] == 'd';
+        const uint32_t tname1 = static_cast<uint32_t>(std::stoul(obj1.est().table().table().substr(1)));
         const uint32_t tname2 = static_cast<uint32_t>(std::stoul(query.exchange().object2().est().table().table().substr(1)));
 
         if (istable)
