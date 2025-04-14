@@ -883,7 +883,7 @@ bool ClientBase::isFileDescriptorSuitableForInput(int fd)
     int res = fstat(fd, &file_stat);
     if (res != 0)
         return false;
-    if (S_ISREG(file_stat.st_mode) || S_ISFIFO(file_stat.st_mode))
+    if (S_ISREG(file_stat.st_mode))
         return true;
     return false;
 }
