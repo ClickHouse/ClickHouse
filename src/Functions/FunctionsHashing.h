@@ -13,14 +13,13 @@
 #pragma clang diagnostic ignored "-Wused-but-marked-unused"
 #include <xxhash.h>
 
-#include <Common/OpenSSLHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/safe_cast.h>
 #include <Common/HashTable/Hash.h>
 
 #if USE_SSL
-#    include <openssl/evp.h>
+#    include <openssl/md5.h>
 #endif
 
 #include <bit>
@@ -63,7 +62,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
-    extern const int OPENSSL_ERROR;
 }
 
 namespace impl
@@ -247,22 +245,12 @@ struct HalfMD5Impl
             uint64_t uint64_data;
         } buf;
 
-        using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
-        const auto ctx = EVP_MD_CTX_ptr(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+        MD5_CTX ctx;
+        MD5_Init(&ctx);
+        MD5_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+        MD5_Final(buf.char_data, &ctx);
 
-        if (!ctx)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
-
-        if (EVP_DigestInit_ex(ctx.get(), EVP_md5(), nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
-
-        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed: {}", getOpenSSLErrors());
-
-        if (EVP_DigestFinal_ex(ctx.get(), buf.char_data, nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed: {}", getOpenSSLErrors());
-
-        /// Compatibility with existing code. Cast is necessary for old poco AND macos where UInt64 != uint64_t
+        /// Compatibility with existing code. Cast need for old poco AND macos where UInt64 != uint64_t
         transformEndianness<std::endian::big>(buf.uint64_data);
         return buf.uint64_data;
     }
@@ -344,14 +332,13 @@ struct SipHash128ReferenceKeyedImpl
 
     static UInt128 combineHashesKeyed(const Key & key, UInt128 h1, UInt128 h2)
     {
-        if constexpr (std::endian::native == std::endian::big)
-        {
-            UInt128 tmp;
-            reverseMemcpy(&tmp, &h1, sizeof(UInt128));
-            h1 = tmp;
-            reverseMemcpy(&tmp, &h2, sizeof(UInt128));
-            h2 = tmp;
-        }
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        UInt128 tmp;
+        reverseMemcpy(&tmp, &h1, sizeof(UInt128));
+        h1 = tmp;
+        reverseMemcpy(&tmp, &h2, sizeof(UInt128));
+        h2 = tmp;
+#endif
         UInt128 hashes[] = {h1, h2};
         return applyKeyed(key, reinterpret_cast<const char *>(hashes), 2 * sizeof(UInt128));
     }
@@ -752,9 +739,9 @@ private:
 
             return col_to;
         }
-
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                arguments[0].column->getName(), Name::name);
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    arguments[0].column->getName(), Name::name);
     }
 
 public:
@@ -774,11 +761,6 @@ public:
         return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
-    }
-
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
@@ -790,35 +772,35 @@ public:
 
         if (which.isUInt8())
             return executeType<UInt8>(arguments);
-        if (which.isUInt16())
+        else if (which.isUInt16())
             return executeType<UInt16>(arguments);
-        if (which.isUInt32())
+        else if (which.isUInt32())
             return executeType<UInt32>(arguments);
-        if (which.isUInt64())
+        else if (which.isUInt64())
             return executeType<UInt64>(arguments);
-        if (which.isInt8())
+        else if (which.isInt8())
             return executeType<Int8>(arguments);
-        if (which.isInt16())
+        else if (which.isInt16())
             return executeType<Int16>(arguments);
-        if (which.isInt32())
+        else if (which.isInt32())
             return executeType<Int32>(arguments);
-        if (which.isInt64())
+        else if (which.isInt64())
             return executeType<Int64>(arguments);
-        if (which.isDate())
+        else if (which.isDate())
             return executeType<UInt16>(arguments);
-        if (which.isDate32())
+        else if (which.isDate32())
             return executeType<Int32>(arguments);
-        if (which.isDateTime())
+        else if (which.isDateTime())
             return executeType<UInt32>(arguments);
-        if (which.isDecimal32())
+        else if (which.isDecimal32())
             return executeType<Decimal32>(arguments);
-        if (which.isDecimal64())
+        else if (which.isDecimal64())
             return executeType<Decimal64>(arguments);
-        if (which.isIPv4())
+        else if (which.isIPv4())
             return executeType<IPv4>(arguments);
-
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-            arguments[0].type->getName(), getName());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[0].type->getName(), getName());
     }
 };
 
@@ -1323,16 +1305,6 @@ public:
             return std::make_shared<DataTypeNumber<ToType>>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        if constexpr (std::is_same_v<ToType, UInt128>) /// backward-compatible
-        {
-            return std::make_shared<DataTypeFixedString>(sizeof(UInt128));
-        }
-        else
-            return std::make_shared<DataTypeNumber<ToType>>();
-    }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_to = ColumnVector<ToType>::create(input_rows_count);
@@ -1462,7 +1434,8 @@ struct URLHierarchyHashImpl
         {
             return 0 == level ? end - begin : 0;
         }
-        pos += 3;
+        else
+            pos += 3;
 
         /// The domain for simplicity is everything that after the protocol and the two slashes, until the next slash or before `?` or `#`
         while (pos < end && !(*pos == '/' || *pos == '?' || *pos == '#'))
@@ -1535,11 +1508,6 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeUInt64>();
-    }
-
     bool useDefaultImplementationForConstants() const override { return true; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
@@ -1548,9 +1516,10 @@ public:
 
         if (arg_count == 1)
             return executeSingleArg(arguments);
-        if (arg_count == 2)
+        else if (arg_count == 2)
             return executeTwoArgs(arguments);
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "got into IFunction::execute with unexpected number of arguments");
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "got into IFunction::execute with unexpected number of arguments");
     }
 
 private:
@@ -1579,8 +1548,9 @@ private:
 
             return col_to;
         }
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                arguments[0].column->getName(), getName());
     }
 
     ColumnPtr executeTwoArgs(const ColumnsWithTypeAndName & arguments) const
@@ -1610,7 +1580,7 @@ private:
 
             return col_to;
         }
-        if (const auto * col_const_from = checkAndGetColumnConstData<ColumnString>(col_untyped))
+        else if (const auto * col_const_from = checkAndGetColumnConstData<ColumnString>(col_untyped))
         {
             auto col_to = ColumnUInt64::create(size);
             auto & out = col_to->getData();
@@ -1620,13 +1590,17 @@ private:
 
             for (size_t i = 0; i < size; ++i)
             {
-                out[i] = URLHierarchyHashImpl::apply(level_col->getUInt(i), reinterpret_cast<const char *>(chars.data()), offsets[0] - 1);
+                out[i] = URLHierarchyHashImpl::apply(
+                    level_col->getUInt(i),
+                    reinterpret_cast<const char *>(chars.data()),
+                    offsets[0] - 1);
             }
 
             return col_to;
         }
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                arguments[0].column->getName(), getName());
     }
 };
 

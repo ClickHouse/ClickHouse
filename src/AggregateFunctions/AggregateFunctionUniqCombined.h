@@ -111,7 +111,7 @@ public:
                 /// Initially UInt128 was introduced only for UUID, and then the other big-integer types were added.
                 hash = static_cast<HashValueType>(sipHash64(value));
             }
-            else if constexpr (is_floating_point<T>)
+            else if constexpr (std::is_floating_point_v<T>)
             {
                 hash = static_cast<HashValueType>(intHash64(bit_cast<UInt64>(value)));
             }
@@ -235,40 +235,34 @@ AggregateFunctionPtr createAggregateFunctionWithK(const DataTypes & argument_typ
         WhichDataType which(argument_type);
         if (res)
             return res;
-        if (which.isDate())
-            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeDate::FieldType>>(
-                argument_types, params);
-        if (which.isDate32())
-            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeDate32::FieldType>>(
-                argument_types, params);
-        if (which.isDateTime())
-            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeDateTime::FieldType>>(
-                argument_types, params);
-        if (which.isStringOrFixedString())
+        else if (which.isDate())
+            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeDate::FieldType>>(argument_types, params);
+        else if (which.isDate32())
+            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeDate32::FieldType>>(argument_types, params);
+        else if (which.isDateTime())
+            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeDateTime::FieldType>>(argument_types, params);
+        else if (which.isStringOrFixedString())
             return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<String>>(argument_types, params);
-        if (which.isUUID())
-            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeUUID::FieldType>>(
-                argument_types, params);
-        if (which.isIPv4())
-            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeIPv4::FieldType>>(
-                argument_types, params);
-        if (which.isIPv6())
-            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeIPv6::FieldType>>(
-                argument_types, params);
-        if (which.isTuple())
+        else if (which.isUUID())
+            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeUUID::FieldType>>(argument_types, params);
+        else if (which.isIPv4())
+            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeIPv4::FieldType>>(argument_types, params);
+        else if (which.isIPv6())
+            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeIPv6::FieldType>>(argument_types, params);
+        else if (which.isTuple())
         {
             if (use_exact_hash_function)
-                return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunctionVariadic<true, true>>(
-                    argument_types, params);
-            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunctionVariadic<false, true>>(
-                argument_types, params);
+                return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunctionVariadic<true, true>>(argument_types, params);
+            else
+                return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunctionVariadic<false, true>>(argument_types, params);
         }
     }
 
     /// "Variadic" method also works as a fallback generic case for a single argument.
     if (use_exact_hash_function)
         return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunctionVariadic<true, false>>(argument_types, params);
-    return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunctionVariadic<false, false>>(argument_types, params);
+    else
+        return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunctionVariadic<false, false>>(argument_types, params);
 }
 
 template <UInt8 K>
@@ -276,7 +270,8 @@ AggregateFunctionPtr createAggregateFunctionWithHashType(bool use_64_bit_hash, c
 {
     if (use_64_bit_hash)
         return createAggregateFunctionWithK<K, UInt64>(argument_types, params);
-    return createAggregateFunctionWithK<K, UInt32>(argument_types, params);
+    else
+        return createAggregateFunctionWithK<K, UInt32>(argument_types, params);
 }
 
 /// Let's instantiate these templates in separate translation units,

@@ -1,7 +1,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Core/Field.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
 
 namespace DB
 {

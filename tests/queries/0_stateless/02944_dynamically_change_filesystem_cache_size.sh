@@ -8,9 +8,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 disk_name="s3_cache_02944"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE"
-$CLICKHOUSE_CLIENT --query "select max_size, max_elements from system.filesystem_cache_settings where cache_name = '${disk_name}'"
+$CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"
 
-$CLICKHOUSE_CLIENT -m --query "
+$CLICKHOUSE_CLIENT -nm --query "
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (a String) engine=MergeTree() ORDER BY tuple() SETTINGS disk = '$disk_name';
 INSERT INTO test SELECT randomString(100);
@@ -33,10 +33,10 @@ cat $config_path \
 > $config_path_tmp
 mv $config_path_tmp $config_path
 
-$CLICKHOUSE_CLIENT -m --query "
+$CLICKHOUSE_CLIENT -nm --query "
 set send_logs_level='fatal';
 SYSTEM RELOAD CONFIG"
-$CLICKHOUSE_CLIENT --query "select max_size, max_elements from system.filesystem_cache_settings where cache_name = '${disk_name}'"
+$CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"
 
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache WHERE state = 'DOWNLOADED'"
 $CLICKHOUSE_CLIENT --query "SELECT sum(size) FROM system.filesystem_cache WHERE state = 'DOWNLOADED'"
@@ -47,10 +47,10 @@ cat $config_path \
 > $config_path_tmp
 mv $config_path_tmp $config_path
 
-$CLICKHOUSE_CLIENT -m --query "
+$CLICKHOUSE_CLIENT -nm --query "
 set send_logs_level='fatal';
 SYSTEM RELOAD CONFIG"
-$CLICKHOUSE_CLIENT --query "select max_size, max_elements from system.filesystem_cache_settings where cache_name = '${disk_name}'"
+$CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"
 
 $CLICKHOUSE_CLIENT --query "SELECT * FROM test FORMAT Null"
 
@@ -63,10 +63,10 @@ cat $config_path \
 > $config_path_tmp
 mv $config_path_tmp $config_path
 
-$CLICKHOUSE_CLIENT -m --query "
+$CLICKHOUSE_CLIENT -nm --query "
 set send_logs_level='fatal';
 SYSTEM RELOAD CONFIG"
-$CLICKHOUSE_CLIENT --query "select max_size, max_elements from system.filesystem_cache_settings where cache_name = '${disk_name}'"
+$CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"
 
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache WHERE state = 'DOWNLOADED'"
 $CLICKHOUSE_CLIENT --query "SELECT sum(size) FROM system.filesystem_cache WHERE state = 'DOWNLOADED'"
@@ -77,10 +77,10 @@ cat $config_path \
 > $config_path_tmp
 mv $config_path_tmp $config_path
 
-$CLICKHOUSE_CLIENT -m --query "
+$CLICKHOUSE_CLIENT -nm --query "
 set send_logs_level='fatal';
 SYSTEM RELOAD CONFIG"
-$CLICKHOUSE_CLIENT --query "select max_size, max_elements from system.filesystem_cache_settings where cache_name = '${disk_name}'"
+$CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"
 
 $CLICKHOUSE_CLIENT --query "SELECT * FROM test FORMAT Null"
 

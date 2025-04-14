@@ -8,7 +8,7 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/iota.h>
 
-#include <algorithm>
+#include <numeric>
 
 #ifdef __SSE4_2__
 #    include <nmmintrin.h>
@@ -138,8 +138,7 @@ void parseUTF8String(const char * __restrict data, size_t size, std::function<vo
             }
             else
             {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS, "Illegal UTF-8 sequence, while processing '{}'", std::string_view(data, end - data));
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal UTF-8 sequence, while processing '{}'", StringRef(data, end - data));
             }
         }
     }
@@ -285,7 +284,7 @@ struct ByteEditDistanceImpl
                     if (*(needle + pos_needle) != *(haystack + pos_haystack))
                         substitution += 1;
                 }
-                distances1[pos_haystack + 1] = std::min({deletion, substitution, insertion});
+                distances1[pos_haystack + 1] = std::min(deletion, std::min(substitution, insertion));
             }
             distances0.swap(distances1);
         }
@@ -344,11 +343,10 @@ struct ByteDamerauLevenshteinDistanceImpl
             for (size_t j = 1; j <= needle_size; ++j)
             {
                 int cost = (haystack[i - 1] == needle[j - 1]) ? 0 : 1;
-                starts[i][j] = std::min(
-                    {starts[i - 1][j] + 1, /// deletion
-                     starts[i][j - 1] + 1, /// insertion
-                     starts[i - 1][j - 1] + cost} /// substitution
-                );
+                starts[i][j] = std::min(starts[i - 1][j] + 1,                  /// deletion
+                                        std::min(starts[i][j - 1] + 1,         /// insertion
+                                                 starts[i - 1][j - 1] + cost)  /// substitution
+                               );
                 if (i > 1 && j > 1 && haystack[i - 1] == needle[j - 2] && haystack[i - 2] == needle[j - 1])
                     starts[i][j] = std::min(starts[i][j], starts[i - 2][j - 2] + 1); /// transposition
             }
@@ -458,7 +456,7 @@ struct ByteJaroWinklerSimilarityImpl
 
         if (jaro_winkler_similarity > boost_threshold)
         {
-            const int common_length = std::min({max_prefix_length, s1len, s2len});
+            const int common_length = std::min(max_prefix_length, std::min(s1len, s2len));
             int common_prefix = 0;
             while (common_prefix < common_length && haystack[common_prefix] == needle[common_prefix])
                 common_prefix++;

@@ -133,7 +133,8 @@ public:
     {
         if (revision >= STATE_VERSION_1_MIN_REVISION)
             return 1;
-        return 0;
+        else
+            return 0;
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override

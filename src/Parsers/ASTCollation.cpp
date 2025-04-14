@@ -9,10 +9,13 @@ namespace DB
         return res;
     }
 
-    void ASTCollation::formatImpl(WriteBuffer & ostr, const FormatSettings &s, FormatState &state, FormatStateStacked frame) const
+    void ASTCollation::formatImpl(const FormatSettings &s, FormatState &state, FormatStateStacked frame) const
     {
         if (collation)
-            collation->format(ostr, s, state, frame);
+        {
+            collation->formatImpl(s, state, frame);
+        }
+
     }
 
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
+#include <Columns/ColumnArray.h>
 #include <IO/WriteSettings.h>
 #include <Storages/Statistics/Statistics.h>
 
@@ -21,19 +22,16 @@ public:
         const MergeTreeIndices & skip_indices,
         const ColumnsStatistics & statistics,
         CompressionCodecPtr default_codec_,
-        MergeTreeIndexGranularityPtr index_granularity_ptr,
         TransactionID tid,
-        size_t part_uncompressed_bytes,
         bool reset_columns_ = false,
         bool blocks_are_granules_size = false,
-        const WriteSettings & write_settings = {});
+        const WriteSettings & write_settings = {},
+        const MergeTreeIndexGranularity & computed_index_granularity = {});
 
     Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
 
     /// If the data is pre-sorted.
     void write(const Block & block) override;
-
-    void cancel() noexcept override;
 
     /** If the data is not sorted, but we have previously calculated the permutation, that will sort it.
       * This method is used to save RAM, since you do not need to keep two blocks at once - the original one and the sorted one.
@@ -54,7 +52,6 @@ public:
         ~Finalizer();
 
         void finish();
-        void cancel() noexcept;
     };
 
     /// Finalize writing part and fill inner structures

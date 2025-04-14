@@ -74,7 +74,7 @@ bool compareWithThreshold(const ColumnRawPtrs & raw_block_columns, size_t min_bl
 
         if (res < 0)
             return true;
-        if (res > 0)
+        else if (res > 0)
             return false;
     }
 

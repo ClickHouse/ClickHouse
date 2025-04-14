@@ -1,9 +1,7 @@
 ---
-description: 'Documentation for arrayJoin function'
-sidebar_label: 'arrayJoin'
+slug: /en/sql-reference/functions/array-join
 sidebar_position: 15
-slug: /sql-reference/functions/array-join
-title: 'arrayJoin function'
+sidebar_label: arrayJoin
 ---
 
 # arrayJoin function
@@ -19,11 +17,11 @@ All the values in columns are simply copied, except the values in the column whe
 
 Example:
 
-```sql
+``` sql
 SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
 ```
 
-```text
+``` text
 ┌─dst─┬─\'Hello\'─┬─src─────┐
 │   1 │ Hello     │ [1,2,3] │
 │   2 │ Hello     │ [1,2,3] │
@@ -44,7 +42,7 @@ FROM
 WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
 ```
 
-```text
+``` text
 ┌─impressions─┐
 │           2 │
 └─────────────┘
@@ -70,7 +68,7 @@ GROUP BY
     3
 ```
 
-```text
+``` text
 ┌─impressions─┬─city─────┬─browser─┐
 │           2 │ Istanbul │ Chrome  │
 │           1 │ Istanbul │ Firefox │
@@ -80,7 +78,7 @@ GROUP BY
 │           1 │ Bobruisk │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
-### Important note! {#important-note}
+### Important note!
 Using multiple `arrayJoin` with same expression may not produce expected results due to optimizations.
 For that cases, consider modifying repeated array expression with extra operations that do not affect join result - e.g. `arrayJoin(arraySort(arr))`, `arrayJoin(arrayConcat(arr, []))`
 
@@ -121,7 +119,7 @@ GROUP BY
     3
 ```
 
-```text
+``` text
 ┌─impressions─┬─city─────┬─browser─┐
 │           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │
@@ -149,7 +147,7 @@ GROUP BY
     3
 ```
 
-```text
+``` text
 ┌─impressions─┬─city─────┬─browser─┐
 │           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │

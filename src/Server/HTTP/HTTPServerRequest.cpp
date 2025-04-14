@@ -60,7 +60,8 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     else if (hasContentLength())
     {
         size_t content_length = getContentLength();
-        stream = std::make_unique<LimitReadBuffer>(std::move(in), LimitReadBuffer::Settings{.read_no_less = content_length, .read_no_more = content_length, .expect_eof = true});
+        stream = std::make_unique<LimitReadBuffer>(std::move(in), content_length,
+                                                   /* trow_exception */ true, /* exact_limit */ content_length);
     }
     else if (getMethod() != HTTPRequest::HTTP_GET && getMethod() != HTTPRequest::HTTP_HEAD && getMethod() != HTTPRequest::HTTP_DELETE)
     {
@@ -157,7 +158,7 @@ void HTTPServerRequest::readRequest(ReadBuffer & in)
         version += ch;
 
     if (version.size() > MAX_VERSION_LENGTH)
-        throw Poco::Net::MessageException(fmt::format("Invalid HTTP version string: {}", version));
+        throw Poco::Net::MessageException("Invalid HTTP version string");
 
     // since HTTP always use Windows-style EOL '\r\n' we always can safely skip to '\n'
 

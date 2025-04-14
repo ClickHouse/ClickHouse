@@ -60,7 +60,8 @@ public:
         if (enable_named_columns && name_set.size() == names.size()
             && std::all_of(names.cbegin(), names.cend(), [](const auto & n) { return isUnquotedIdentifier(n); }))
             return std::make_shared<DataTypeTuple>(types, names);
-        return std::make_shared<DataTypeTuple>(types);
+        else
+            return std::make_shared<DataTypeTuple>(types);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

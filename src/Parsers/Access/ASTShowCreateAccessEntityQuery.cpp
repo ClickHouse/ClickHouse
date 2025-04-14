@@ -8,14 +8,14 @@ namespace DB
 {
 namespace
 {
-    void formatNames(const Strings & names, WriteBuffer & ostr)
+    void formatNames(const Strings & names, const IAST::FormatSettings & settings)
     {
         bool need_comma = false;
         for (const auto & name : names)
         {
             if (std::exchange(need_comma, true))
-                ostr << ',';
-            ostr << ' ' << backQuoteIfNeed(name);
+                settings.ostr << ',';
+            settings.ostr << ' ' << backQuoteIfNeed(name);
         }
     }
 }
@@ -47,29 +47,29 @@ ASTPtr ASTShowCreateAccessEntityQuery::clone() const
 }
 
 
-void ASTShowCreateAccessEntityQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTShowCreateAccessEntityQuery::formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "SHOW CREATE " << getKeyword() << (settings.hilite ? hilite_none : "");
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW CREATE " << getKeyword() << (settings.hilite ? hilite_none : "");
 
     if (!names.empty())
-        formatNames(names, ostr);
+        formatNames(names, settings);
 
     if (row_policy_names)
     {
-        ostr << " ";
-        row_policy_names->format(ostr, settings);
+        settings.ostr << " ";
+        row_policy_names->format(settings);
     }
 
     if (!short_name.empty())
-        ostr << " " << backQuoteIfNeed(short_name);
+        settings.ostr << " " << backQuoteIfNeed(short_name);
 
     if (database_and_table_name)
     {
         const String & database = database_and_table_name->first;
         const String & table_name = database_and_table_name->second;
-        ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "");
-        ostr << (database.empty() ? "" : backQuoteIfNeed(database) + ".");
-        ostr << (table_name.empty() ? "*" : backQuoteIfNeed(table_name));
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "");
+        settings.ostr << (database.empty() ? "" : backQuoteIfNeed(database) + ".");
+        settings.ostr << (table_name.empty() ? "*" : backQuoteIfNeed(table_name));
     }
 }
 

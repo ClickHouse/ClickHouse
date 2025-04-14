@@ -13,16 +13,14 @@
 #include "config_tools.h"
 
 #include <Common/EnvironmentChecks.h>
-#include <Common/Exception.h>
 #include <Common/Coverage.h>
 
 #include <Common/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/IO.h>
 
-#include <base/coverage.h>
 #include <base/phdr_cache.h>
-#include <base/scope_guard.h>
+#include <base/coverage.h>
 
 
 int mainEntryClickHouseKeeper(int argc, char ** argv);
@@ -65,7 +63,7 @@ int printHelp(int, char **)
 }
 
 
-static bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
+bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
 {
     /// Use app if the first arg 'app' is passed (the arg should be quietly removed)
     if (argv.size() >= 2)
@@ -127,29 +125,6 @@ extern "C"
 #if USE_JEMALLOC && defined(NDEBUG) && !defined(SANITIZER)
 extern "C" void (*malloc_message)(void *, const char *s);
 __attribute__((constructor(0))) void init_je_malloc_message() { malloc_message = [](void *, const char *){}; }
-#elif USE_JEMALLOC
-#include <unordered_set>
-/// Ignore messages which can be safely ignored, e.g. EAGAIN on pthread_create
-extern "C" void (*malloc_message)(void *, const char * s);
-__attribute__((constructor(0))) void init_je_malloc_message()
-{
-    malloc_message = [](void *, const char * str)
-    {
-        using namespace std::literals;
-        static const std::unordered_set<std::string_view> ignore_messages{
-            "<jemalloc>: background thread creation failed (11)\n"sv};
-
-        std::string_view message_view{str};
-        if (ignore_messages.contains(message_view))
-            return;
-
-#    if defined(SYS_write)
-        syscall(SYS_write, 2 /*stderr*/, message_view.data(), message_view.size());
-#    else
-        write(STDERR_FILENO, message_view.data(), message_view.size());
-#    endif
-    };
-}
 #endif
 
 /// This allows to implement assert to forbid initialization of a class in static constructors.
@@ -157,7 +132,7 @@ __attribute__((constructor(0))) void init_je_malloc_message()
 ///
 /// extern bool inside_main;
 /// class C { C() { assert(inside_main); } };
-static bool inside_main = false;
+bool inside_main = false;
 
 int main(int argc_, char ** argv_)
 {

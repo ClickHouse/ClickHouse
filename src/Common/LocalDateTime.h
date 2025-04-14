@@ -1,13 +1,15 @@
 #pragma once
 
+#include <string>
+#include <iomanip>
+#include <exception>
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
 
-#include <string>
 
 /** Stores calendar date and time in broken-down form.
   * Could be initialized from date and time in text form like '2011-01-01 00:00:00' or from time_t.
-  * Could be implicitly cast to time_t.
+  * Could be implicitly casted to time_t.
   * NOTE: Transforming between time_t and LocalDate is done in local time zone!
   *
   * When local time was shifted backwards (due to daylight saving time or whatever reason)
@@ -27,7 +29,19 @@ private:
     /// NOTE We may use attribute packed instead, but it is less portable.
     unsigned char pad = 0;
 
-    void init(time_t time, const DateLUTImpl & time_zone);
+    void init(time_t time, const DateLUTImpl & time_zone)
+    {
+        DateLUTImpl::DateTimeComponents components = time_zone.toDateTimeComponents(static_cast<DateLUTImpl::Time>(time));
+
+        m_year = components.date.year;
+        m_month = components.date.month;
+        m_day = components.date.day;
+        m_hour = components.time.hour;
+        m_minute = components.time.minute;
+        m_second = components.time.second;
+
+        (void)pad;  /// Suppress unused private field warning.
+    }
 
     void init(const char * s, size_t length)
     {
@@ -94,7 +108,10 @@ public:
     LocalDate toDate() const { return LocalDate(m_year, m_month, m_day); }
     LocalDateTime toStartOfDate() const { return LocalDateTime(m_year, m_month, m_day, 0, 0, 0); }
 
-    time_t to_time_t(const DateLUTImpl & time_zone = DateLUT::instance()) const;
+    time_t to_time_t(const DateLUTImpl & time_zone = DateLUT::instance()) const /// NOLINT
+    {
+        return time_zone.makeDateTime(m_year, m_month, m_day, m_hour, m_minute, m_second);
+    }
 
     std::string toString() const
     {

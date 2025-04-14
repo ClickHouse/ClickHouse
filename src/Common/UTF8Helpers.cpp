@@ -133,9 +133,11 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
                 i += num_regular_chars;
                 break;
             }
-
-            i += 16;
-            width += 16;
+            else
+            {
+                i += 16;
+                width += 16;
+            }
         }
 #endif
 
@@ -164,43 +166,40 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
         if (mode == BytesBeforeLimit && width > limit)
             return i - (width - limit);
 
-        if (i < size)
+        switch (decoder.decode(data[i]))
         {
-            switch (decoder.decode(data[i]))
+            case UTF8Decoder::REJECT:
             {
-                case UTF8Decoder::REJECT:
-                {
-                    decoder.reset();
-                    // invalid sequences seem to have zero width in modern terminals
-                    // tested in libvte-based, alacritty, urxvt and xterm
-                    i -= rollback;
-                    rollback = 0;
-                    break;
-                }
-                case UTF8Decoder::ACCEPT:
-                {
-                    // TODO: multiline support for '\n'
-
-                    // special treatment for '\t' and for ESC
-                    size_t next_width = width;
-                    if (decoder.codepoint == '\x1b')
-                        is_escape_sequence = true;
-                    else if (decoder.codepoint == '\t')
-                        next_width += 8 - (prefix + width) % 8;
-                    else
-                        next_width += wcwidth(decoder.codepoint);
-
-                    if (mode == BytesBeforeLimit && next_width > limit)
-                        return i - rollback;
-                    width = next_width;
-
-                    rollback = 0;
-                    break;
-                }
-                // continue if we meet other values here
-                default:
-                    ++rollback;
+                decoder.reset();
+                // invalid sequences seem to have zero width in modern terminals
+                // tested in libvte-based, alacritty, urxvt and xterm
+                i -= rollback;
+                rollback = 0;
+                break;
             }
+            case UTF8Decoder::ACCEPT:
+            {
+                // TODO: multiline support for '\n'
+
+                // special treatment for '\t' and for ESC
+                size_t next_width = width;
+                if (decoder.codepoint == '\x1b')
+                    is_escape_sequence = true;
+                else if (decoder.codepoint == '\t')
+                    next_width += 8 - (prefix + width) % 8;
+                else
+                    next_width += wcwidth(decoder.codepoint);
+
+                if (mode == BytesBeforeLimit && next_width > limit)
+                    return i - rollback;
+                width = next_width;
+
+                rollback = 0;
+                break;
+            }
+            // continue if we meet other values here
+            default:
+                ++rollback;
         }
     }
 

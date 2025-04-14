@@ -20,8 +20,6 @@ public:
         WITH,
         SELECT,
         TABLES,
-        ALIASES,
-        CTE_ALIASES,
         PREWHERE,
         WHERE,
         GROUP_BY,
@@ -48,10 +46,6 @@ public:
                 return "SELECT";
             case Expression::TABLES:
                 return "TABLES";
-            case Expression::ALIASES:
-                return "ALIASES";
-            case Expression::CTE_ALIASES:
-                return "CTE_ALIASES";
             case Expression::PREWHERE:
                 return "PREWHERE";
             case Expression::WHERE:
@@ -102,8 +96,6 @@ public:
 
     ASTPtr & refSelect()    { return getExpression(Expression::SELECT); }
     ASTPtr & refTables()    { return getExpression(Expression::TABLES); }
-    ASTPtr & refAliases()   { return getExpression(Expression::ALIASES); }
-    ASTPtr & refCteAliases()   { return getExpression(Expression::CTE_ALIASES); }
     ASTPtr & refPrewhere()  { return getExpression(Expression::PREWHERE); }
     ASTPtr & refWhere()     { return getExpression(Expression::WHERE); }
     ASTPtr & refHaving()    { return getExpression(Expression::HAVING); }
@@ -112,8 +104,6 @@ public:
     ASTPtr with()           const { return getExpression(Expression::WITH); }
     ASTPtr select()         const { return getExpression(Expression::SELECT); }
     ASTPtr tables()         const { return getExpression(Expression::TABLES); }
-    ASTPtr aliases()        const { return getExpression(Expression::ALIASES); }
-    ASTPtr cteAliases()        const { return getExpression(Expression::CTE_ALIASES); }
     ASTPtr prewhere()       const { return getExpression(Expression::PREWHERE); }
     ASTPtr where()          const { return getExpression(Expression::WHERE); }
     ASTPtr groupBy()        const { return getExpression(Expression::GROUP_BY); }
@@ -161,9 +151,8 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Select; }
     bool hasQueryParameters() const;
 
-    NameToNameMap getQueryParameters() const;
-
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+protected:
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
 private:
     std::unordered_map<Expression, size_t> positions;

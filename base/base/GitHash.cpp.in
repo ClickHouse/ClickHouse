@@ -1,3 +1,0 @@
-/// Only edit the `.in` file, as it is the source for autogeneration by CMake
-
-const char * GIT_HASH = "@GIT_HASH@";

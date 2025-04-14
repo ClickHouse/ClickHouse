@@ -25,11 +25,6 @@ void IColumnDummy::get(size_t, Field &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName());
 }
 
-std::pair<String, DataTypePtr> IColumnDummy::getValueNameAndType(size_t) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value name and type from {}", getName());
-}
-
 void IColumnDummy::insert(const Field &)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert element into {}", getName());

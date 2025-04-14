@@ -3,17 +3,12 @@
 import os
 import time
 
-import pytest
-
 import helpers.client as client
+import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import get_retry_number
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance(
-    "node1",
-    with_zookeeper=True,
-)
+node1 = cluster.add_instance("node1", with_zookeeper=True)
 
 
 @pytest.fixture(scope="module")
@@ -30,28 +25,20 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_part_finally_removed(started_cluster, request):
-    node1.query("DROP TABLE IF EXISTS drop_outdated_part")
-    retry = get_retry_number(request)
+def test_part_finally_removed(started_cluster):
     node1.query(
-        f"""
-        CREATE TABLE drop_outdated_part (Key UInt64) ENGINE = ReplicatedMergeTree('/table/d{retry}', '1') ORDER BY tuple()
-        SETTINGS old_parts_lifetime=10, cleanup_delay_period=10, cleanup_delay_period_random_add=1, cleanup_thread_preferred_points_per_iteration=0
-        """
+        "CREATE TABLE drop_outdated_part (Key UInt64) ENGINE = ReplicatedMergeTree('/table/d', '1') ORDER BY tuple() "
+        "SETTINGS old_parts_lifetime=10, cleanup_delay_period=10, cleanup_delay_period_random_add=1, cleanup_thread_preferred_points_per_iteration=0"
     )
     node1.query("INSERT INTO drop_outdated_part VALUES (1)")
 
     node1.query("OPTIMIZE TABLE drop_outdated_part FINAL")
 
-    data_path = node1.query(
-        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='drop_outdated_part'"
-    ).strip()
-
     node1.exec_in_container(
         [
             "bash",
             "-c",
-            f"chown -R root:root {data_path}/all_0_0_0",
+            "chown -R root:root /var/lib/clickhouse/data/default/drop_outdated_part/all_0_0_0",
         ],
         privileged=True,
         user="root",
@@ -70,7 +57,7 @@ def test_part_finally_removed(started_cluster, request):
         [
             "bash",
             "-c",
-            f"chown -R {os.getuid()}:{os.getgid()} {data_path}/*",
+            f"chown -R {os.getuid()}:{os.getgid()} /var/lib/clickhouse/data/default/drop_outdated_part/*",
         ],
         privileged=True,
         user="root",
@@ -87,7 +74,7 @@ def test_part_finally_removed(started_cluster, request):
                 [
                     "bash",
                     "-c",
-                    f"ls {data_path} | grep '_' | grep 'all'",
+                    "ls /var/lib/clickhouse/data/default/drop_outdated_part | grep '_' | grep 'all'",
                 ],
                 privileged=True,
                 user="root",
@@ -99,5 +86,3 @@ def test_part_finally_removed(started_cluster, request):
 
             break
         time.sleep(0.5)
-
-    node1.query("DROP TABLE drop_outdated_part")

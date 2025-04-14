@@ -1,7 +1,4 @@
--- Tags: zookeeper, no-shared-merge-tree
--- no-shared-merge-tree: shared merge tree doesn't loose data parts
-
-SET max_rows_to_read = 0; -- system.text_log can be really big
+-- Tags: zookeeper
 
 create table rmt1 (d DateTime, n int) engine=ReplicatedMergeTree('/test/01165/{database}/rmt', '1') order by n partition by toYYYYMMDD(d);
 create table rmt2 (d DateTime, n int) engine=ReplicatedMergeTree('/test/01165/{database}/rmt', '2') order by n partition by toYYYYMMDD(d);
@@ -15,7 +12,7 @@ drop table rmt1;
 system sync replica rmt2;
 select lost_part_count from system.replicas where database = currentDatabase() and table = 'rmt2';
 drop table rmt2;
-SYSTEM FLUSH LOGS text_log;
+SYSTEM FLUSH LOGS;
 select count() from system.text_log where logger_name like '%' || currentDatabase() || '%' and message ilike '%table with non-zero lost_part_count equal to%';
 
 
@@ -29,7 +26,7 @@ drop table rmt1;
 system sync replica rmt2;
 select lost_part_count from system.replicas where database = currentDatabase() and table = 'rmt2';
 drop table rmt2;
-SYSTEM FLUSH LOGS text_log;
+SYSTEM FLUSH LOGS;
 select count() from system.text_log where logger_name like '%' || currentDatabase() || '%' and message ilike '%table with non-zero lost_part_count equal to%';
 
 

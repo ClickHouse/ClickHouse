@@ -1,6 +1,4 @@
 #include "config.h"
-
-#include <Columns/IColumn.h>
 #include <Common/re2.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>

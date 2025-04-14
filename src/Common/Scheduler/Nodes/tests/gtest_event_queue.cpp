@@ -13,12 +13,6 @@ public:
         , log(log_)
     {}
 
-    const String & getTypeName() const override
-    {
-        static String type_name("fake");
-        return type_name;
-    }
-
     void attachChild(const SchedulerNodePtr & child) override
     {
         log += " +" + child->basename;

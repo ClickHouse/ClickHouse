@@ -17,4 +17,4 @@ sidebar_label: Операции
 Загляните в другие подразделы F.A.Q. или поищите в остальных разделах документации, ориентируйтесь по оглавлению слева.
 :::
 
-[Original article](/faq/operations/)
+[Original article](https://clickhouse.com/docs/en/faq/operations/)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from bottle import request, response, route, run
+from bottle import request, route, run, response
 
 
 # Handle for MultipleObjectsDelete.

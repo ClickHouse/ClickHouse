@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-shared-merge-tree
-# no-shared-merge-tree: custom storage policy, operations with queue/fetches
+# Tags: no-fasttest
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --query "
+$CLICKHOUSE_CLIENT -n --query "
 DROP TABLE IF EXISTS wikistat1 SYNC;
 DROP TABLE IF EXISTS wikistat2 SYNC;
 "
@@ -61,7 +60,7 @@ wait
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM wikistat1 WHERE NOT ignore(*)"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM wikistat2 WHERE NOT ignore(*)"
 
-$CLICKHOUSE_CLIENT --query "
+$CLICKHOUSE_CLIENT -n --query "
 DROP TABLE IF EXISTS wikistat1 SYNC;
 DROP TABLE IF EXISTS wikistat2 SYNC;
 "

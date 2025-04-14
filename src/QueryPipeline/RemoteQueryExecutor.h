@@ -1,5 +1,7 @@
 #pragma once
 
+#include <variant>
+
 #include <Client/ConnectionPool.h>
 #include <Client/IConnections.h>
 #include <Client/ConnectionPoolWithFailover.h>
@@ -59,8 +61,7 @@ public:
         const Scalars & scalars_ = Scalars(),
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
-        std::optional<Extension> extension_ = std::nullopt,
-        ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr);
+        std::optional<Extension> extension_ = std::nullopt);
 
     /// Takes already set connection.
     RemoteQueryExecutor(
@@ -259,6 +260,11 @@ private:
     /// Initiator identifier for distributed task processing
     std::shared_ptr<TaskIterator> task_iterator;
 
+    /// This is needed only for parallel reading from replicas, because
+    /// we create a RemoteQueryExecutor per replica and have to store additional info
+    /// about the number of the current replica or the count of replicas at all.
+    IConnections::ReplicaInfo replica_info;
+
     /// Streams for reading from temporary tables and following sending of data
     /// to remote servers for GLOBAL-subqueries
     std::vector<ExternalTablesData> external_tables_data;
@@ -299,7 +305,7 @@ private:
       */
     bool got_duplicated_part_uuids = false;
 
-    bool packet_in_progress = false;
+    bool has_postponed_packet = false;
 
     /// Parts uuids, collected from remote replicas
     std::vector<UUID> duplicated_part_uuids;
@@ -310,8 +316,6 @@ private:
     LoggerPtr log = nullptr;
 
     GetPriorityForLoadBalancing::Func priority_func;
-
-    const bool read_packet_type_separately = false;
 
     /// Send all scalars to remote servers
     void sendScalars();
@@ -344,6 +348,9 @@ private:
 
     /// Process packet for read and return data block if possible.
     ReadResult processPacket(Packet packet);
+
+    /// Reads packet by packet
+    Block readPackets();
 };
 
 }

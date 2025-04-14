@@ -20,9 +20,6 @@ static constexpr auto DBMS_DEFAULT_POLL_INTERVAL = 10;
 /// The size of the I/O buffer by default.
 static constexpr auto DBMS_DEFAULT_BUFFER_SIZE = 1048576ULL;
 
-/// The initial size of adaptive I/O buffer by default.
-static constexpr auto DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE = 16384ULL;
-
 static constexpr auto PADDING_FOR_SIMD = 64;
 
 /** Which blocks by default read the data (by number of rows).
@@ -79,6 +76,14 @@ static constexpr auto DBMS_DEFAULT_MAX_QUERY_SIZE = 262144;
 /// Max depth of hierarchical dictionary
 static constexpr auto DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH = 1000;
 
+#ifdef OS_LINUX
+#define DBMS_DEFAULT_PAGE_CACHE_USE_MADV_FREE true
+#else
+/// On Mac OS, MADV_FREE is not lazy, so page_cache_use_madv_free should be disabled.
+/// On FreeBSD, it may work but we haven't tested it.
+#define DBMS_DEFAULT_PAGE_CACHE_USE_MADV_FREE false
+#endif
+
 
 /// Default maximum (total and entry) sizes and policies of various caches
 static constexpr auto DEFAULT_UNCOMPRESSED_CACHE_POLICY = "SLRU";
@@ -87,34 +92,19 @@ static constexpr auto DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO = 0.5l;
 static constexpr auto DEFAULT_MARK_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_MARK_CACHE_MAX_SIZE = 5_GiB;
 static constexpr auto DEFAULT_MARK_CACHE_SIZE_RATIO = 0.5l;
-static constexpr auto DEFAULT_PRIMARY_INDEX_CACHE_POLICY = "SLRU";
-static constexpr auto DEFAULT_PRIMARY_INDEX_CACHE_MAX_SIZE = 5_GiB;
-static constexpr auto DEFAULT_PRIMARY_INDEX_CACHE_SIZE_RATIO = 0.5l;
 static constexpr auto DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE = 0;
 static constexpr auto DEFAULT_INDEX_UNCOMPRESSED_CACHE_SIZE_RATIO = 0.5;
 static constexpr auto DEFAULT_INDEX_MARK_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_INDEX_MARK_CACHE_MAX_SIZE = 5_GiB;
 static constexpr auto DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO = 0.3;
-static constexpr auto DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_POLICY = "SLRU";
-static constexpr auto DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_SIZE = 5_GiB;
-static constexpr auto DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_SIZE_RATIO = 0.5;
-static constexpr auto DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_ENTRIES = 10'000'000;
 static constexpr auto DEFAULT_MMAP_CACHE_MAX_SIZE = 1_KiB; /// chosen by rolling dice
 static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE = 128_MiB;
 static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES = 10'000;
-static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_POLICY = "SLRU";
-static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE = 100_MiB;
-static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_SIZE_RATIO = 0.5l;
-static constexpr auto DEFAULT_QUERY_RESULT_CACHE_MAX_SIZE = 1_GiB;
-static constexpr auto DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRIES = 1024uz;
-static constexpr auto DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_BYTES = 1_MiB;
-static constexpr auto DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_ROWS = 30'000'000uz;
-static constexpr auto DEFAULT_PAGE_CACHE_POLICY = "SLRU";
-static constexpr auto DEFAULT_PAGE_CACHE_SIZE_RATIO = 0.5l;
-static constexpr auto DEFAULT_PAGE_CACHE_MIN_SIZE = 100_MiB;
-/// It's ok that max < min. Max takes precedence, i.e. max = 0 disables the cache even if min > 0.
-static constexpr auto DEFAULT_PAGE_CACHE_MAX_SIZE = 0_MiB;
+static constexpr auto DEFAULT_QUERY_CACHE_MAX_SIZE = 1_GiB;
+static constexpr auto DEFAULT_QUERY_CACHE_MAX_ENTRIES = 1024uz;
+static constexpr auto DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_BYTES = 1_MiB;
+static constexpr auto DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_ROWS = 30'000'000uz;
 
 /// Query profiler cannot work with sanitizers.
 /// Sanitizers are using quick "frame walking" stack unwinding (this implies -fno-omit-frame-pointer)
@@ -130,7 +120,5 @@ static constexpr auto QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS = 1000000000;
 #else
 static constexpr auto QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS = 0;
 #endif
-
-static constexpr auto DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT = 1000uz;
 
 }

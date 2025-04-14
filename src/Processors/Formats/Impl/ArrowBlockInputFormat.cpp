@@ -24,10 +24,7 @@ namespace ErrorCodes
 }
 
 ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, bool stream_, const FormatSettings & format_settings_)
-    : IInputFormat(header_, &in_)
-    , stream(stream_)
-    , block_missing_values(getPort().getHeader().columns())
-    , format_settings(format_settings_)
+    : IInputFormat(header_, &in_), stream{stream_}, format_settings(format_settings_)
 {
 }
 
@@ -111,9 +108,9 @@ void ArrowBlockInputFormat::resetParser()
     block_missing_values.clear();
 }
 
-const BlockMissingValues * ArrowBlockInputFormat::getMissingValues() const
+const BlockMissingValues & ArrowBlockInputFormat::getMissingValues() const
 {
-    return &block_missing_values;
+    return block_missing_values;
 }
 
 static std::shared_ptr<arrow::RecordBatchReader> createStreamReader(ReadBuffer & in)
@@ -212,7 +209,7 @@ NamesAndTypesList ArrowSchemaReader::readSchema()
         format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference,
         format_settings.schema_inference_make_columns_nullable != 0);
     if (format_settings.schema_inference_make_columns_nullable == 1)
-        return getNamesAndRecursivelyNullableTypes(header, format_settings);
+        return getNamesAndRecursivelyNullableTypes(header);
     return header.getNamesAndTypesList();
 }
 

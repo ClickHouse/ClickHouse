@@ -4,8 +4,6 @@
 
 #include <base/types.h>
 #include <base/wide_integer.h>
-#include <base/BFloat16.h>
-
 
 using Int128 = wide::integer<128, signed>;
 using UInt128 = wide::integer<128, unsigned>;
@@ -26,7 +24,6 @@ struct is_signed // NOLINT(readability-identifier-naming)
 
 template <> struct is_signed<Int128> { static constexpr bool value = true; };
 template <> struct is_signed<Int256> { static constexpr bool value = true; };
-template <> struct is_signed<BFloat16> { static constexpr bool value = true; };
 
 template <typename T>
 inline constexpr bool is_signed_v = is_signed<T>::value;
@@ -43,12 +40,14 @@ template <> struct is_unsigned<UInt256> { static constexpr bool value = true; };
 template <typename T>
 inline constexpr bool is_unsigned_v = is_unsigned<T>::value;
 
-template <typename T> concept is_integer =
+template <class T> concept is_integer =
     std::is_integral_v<T>
     || std::is_same_v<T, Int128>
     || std::is_same_v<T, UInt128>
     || std::is_same_v<T, Int256>
     || std::is_same_v<T, UInt256>;
+
+template <class T> concept is_floating_point = std::is_floating_point_v<T>;
 
 template <typename T>
 struct is_arithmetic // NOLINT(readability-identifier-naming)
@@ -60,15 +59,10 @@ template <> struct is_arithmetic<Int128> { static constexpr bool value = true; }
 template <> struct is_arithmetic<UInt128> { static constexpr bool value = true; };
 template <> struct is_arithmetic<Int256> { static constexpr bool value = true; };
 template <> struct is_arithmetic<UInt256> { static constexpr bool value = true; };
-template <> struct is_arithmetic<BFloat16> { static constexpr bool value = true; };
+
 
 template <typename T>
 inline constexpr bool is_arithmetic_v = is_arithmetic<T>::value;
-
-template <typename T> concept is_floating_point =
-    std::is_floating_point_v<T>
-    || std::is_same_v<T, BFloat16>;
-
 
 #define FOR_EACH_ARITHMETIC_TYPE(M) \
     M(DataTypeDate) \
@@ -86,7 +80,6 @@ template <typename T> concept is_floating_point =
     M(DataTypeUInt128) \
     M(DataTypeInt256) \
     M(DataTypeUInt256) \
-    M(DataTypeBFloat16) \
     M(DataTypeFloat32) \
     M(DataTypeFloat64)
 
@@ -106,7 +99,6 @@ template <typename T> concept is_floating_point =
     M(DataTypeUInt128, X) \
     M(DataTypeInt256, X) \
     M(DataTypeUInt256, X) \
-    M(DataTypeBFloat16, X) \
     M(DataTypeFloat32, X) \
     M(DataTypeFloat64, X)
 

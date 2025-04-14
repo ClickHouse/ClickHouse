@@ -1,6 +1,4 @@
-#include <Core/UUID.h>
 #include <Disks/TemporaryFileOnDisk.h>
-#include <IO/WriteHelpers.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
 
@@ -58,7 +56,7 @@ TemporaryFileOnDisk::~TemporaryFileOnDisk()
         if (!disk || relative_path.empty())
             return;
 
-        if (!disk->existsFileOrDirectory(relative_path))
+        if (!disk->exists(relative_path))
         {
             if (show_warning_if_removed)
                 LOG_WARNING(getLogger("TemporaryFileOnDisk"), "Temporary path '{}' does not exist in '{}'", relative_path, disk->getPath());

@@ -26,19 +26,19 @@ Cherry-pick stage:
 import argparse
 import logging
 import os
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from subprocess import CalledProcessError
 from typing import List, Optional
 
-from ci_buddy import CIBuddy
-from ci_config import Labels
-from ci_utils import Shell
-from env_helper import IS_CI, TEMP_PATH
+import __main__
+
+from env_helper import TEMP_PATH
 from get_robot_token import get_best_robot_token
-from git_helper import GIT_PREFIX, git_runner, is_shallow, stash
+from git_helper import GIT_PREFIX, git_runner, is_shallow
 from github_helper import GitHub, PullRequest, PullRequests, Repository
-from report import GITHUB_JOB_URL
+from ci_config import Labels
 from ssh import SSHKey
 
 
@@ -84,24 +84,7 @@ Treat it as a standard pull-request: look at the checks and resolve conflicts.
 Merge it only if you intend to backport changes to the target branch, otherwise just \
 close it.
 """
-    PR_SOURCE_DESCRIPTION = ""
     REMOTE = ""
-
-    @property
-    def pr_source(self) -> str:
-        if self.PR_SOURCE_DESCRIPTION:
-            return self.PR_SOURCE_DESCRIPTION
-        header = "\n\n### The PR source\n"
-        if not IS_CI:
-            self.PR_SOURCE_DESCRIPTION = (
-                f"{header}The PR is created manually outside of the CI"
-            )
-        else:
-            self.PR_SOURCE_DESCRIPTION = (
-                f"{header}The PR is created in the [CI job]({GITHUB_JOB_URL()})"
-            )
-
-        return self.PR_SOURCE_DESCRIPTION
 
     def __init__(
         self,
@@ -114,7 +97,7 @@ close it.
         self.pr = pr
         self.repo = repo
 
-        self.cherrypick_branch = f"cherrypick/{name}/{pr.number}"
+        self.cherrypick_branch = f"cherrypick/{name}/{pr.merge_commit_sha}"
         self.backport_branch = f"backport/{name}/{pr.number}"
         self.cherrypick_pr = None  # type: Optional[PullRequest]
         self.backport_pr = None  # type: Optional[PullRequest]
@@ -125,14 +108,12 @@ close it.
         self.pre_check()
 
     def pre_check(self):
-        self._backported = Shell.check(
-            f"git merge-base --is-ancestor {self.pr.merge_commit_sha} {self.REMOTE}/{self.name}",
-            verbose=True,
+        branch_updated = git_runner(
+            f"git branch -a --contains={self.pr.merge_commit_sha} "
+            f"{self.REMOTE}/{self.name}"
         )
-        if self._backported:
-            print(
-                f"WARNING: Backport for PR [{self.pr}] is already present on {self.name}"
-            )
+        if branch_updated:
+            self._backported = True
 
     def pop_prs(self, prs: PullRequests) -> PullRequests:
         """the method processes all prs and pops the ReleaseBranch related prs"""
@@ -255,8 +236,7 @@ close it.
                 pr_url=self.pr.html_url,
                 backport_created_label=self.backport_created_label,
                 label_cherrypick=Labels.PR_CHERRYPICK,
-            )
-            + self.pr_source,
+            ),
             base=self.backport_branch,
             head=self.cherrypick_branch,
         )
@@ -294,8 +274,7 @@ close it.
             title=title,
             body=f"Original pull-request {self.pr.html_url}\n"
             f"Cherry-pick pull-request #{self.cherrypick_pr.number}\n\n"
-            f"{self.BACKPORT_DESCRIPTION}"
-            f"{self.pr_source}",
+            f"{self.BACKPORT_DESCRIPTION}",
             base=self.name,
             head=self.backport_branch,
         )
@@ -350,11 +329,6 @@ close it.
         assignees = [self.pr.user, self.pr.merged_by]
         if self.pr.assignees:
             assignees.extend(self.pr.assignees)
-        assignees = [
-            a
-            for a in assignees
-            if "robot-clickhouse" not in str(a) and "clickhouse-gh" not in str(a)
-        ]
         logging.info(
             "Assing #%s to author and assignees of the original PR: %s",
             new_pr.number,
@@ -443,13 +417,15 @@ class Backport:
                 f"v{branch}-must-backport" for branch in self.release_branches
             ]
         else:
+            fetch_release_prs = self.gh.get_release_pulls(self._fetch_from)
+            fetch_release_branches = [pr.head.ref for pr in fetch_release_prs]
             self.labels_to_backport = [
                 (
                     f"v{branch}-must-backport"
                     if self._repo_name == "ClickHouse/ClickHouse"
                     else f"v{branch.replace('release/','')}-must-backport"
                 )
-                for branch in self.release_branches
+                for branch in fetch_release_branches
             ]
 
             logging.info("Fetching from %s", self._fetch_from)
@@ -594,10 +570,7 @@ class Backport:
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        "Create cherry-pick and backport PRs",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
+    parser = argparse.ArgumentParser("Create cherry-pick and backport PRs")
     parser.add_argument("--token", help="github token, if not set, used from smm")
     parser.add_argument(
         "--repo", default="ClickHouse/ClickHouse", help="repo owner/name"
@@ -622,6 +595,39 @@ def parse_args():
         help="add debug logging for git_helper and github_helper",
     )
     return parser.parse_args()
+
+
+@contextmanager
+def clear_repo():
+    def ref():
+        return git_runner("git branch --show-current") or git_runner(
+            "git rev-parse HEAD"
+        )
+
+    orig_ref = ref()
+    try:
+        yield
+    finally:
+        current_ref = ref()
+        if orig_ref != current_ref:
+            git_runner(f"git checkout -f {orig_ref}")
+
+
+@contextmanager
+def stash():
+    # diff.ignoreSubmodules=all don't show changed submodules
+    need_stash = bool(git_runner("git -c diff.ignoreSubmodules=all diff HEAD"))
+    if need_stash:
+        script = (
+            __main__.__file__ if hasattr(__main__, "__file__") else "unknown script"
+        )
+        git_runner(f"git stash push --no-keep-index -m 'running {script}'")
+    try:
+        with clear_repo():
+            yield
+    finally:
+        if need_stash:
+            git_runner("git stash pop")
 
 
 def main():
@@ -649,14 +655,6 @@ def main():
     bp.process_backports()
     if bp.error is not None:
         logging.error("Finished successfully, but errors occurred!")
-        if IS_CI:
-            ci_buddy = CIBuddy()
-            ci_buddy.post_job_error(
-                f"The cherry-pick finished with errors: {bp.error}",
-                with_instance_info=True,
-                with_wf_link=True,
-                critical=True,
-            )
         raise bp.error
 
 

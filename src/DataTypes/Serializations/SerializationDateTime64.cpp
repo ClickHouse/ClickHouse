@@ -26,10 +26,7 @@ void SerializationDateTime64::serializeText(const IColumn & column, size_t row_n
     switch (settings.date_time_output_format)
     {
         case FormatSettings::DateTimeOutputFormat::Simple:
-            if (settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands)
-                writeDateTimeTextCutTrailingZerosAlignToGroupOfThousands(value, scale, ostr, time_zone);
-            else
-                writeDateTimeText(value, scale, ostr, time_zone);
+            writeDateTimeText(value, scale, ostr, time_zone);
             return;
         case FormatSettings::DateTimeOutputFormat::UnixTimestamp:
             writeDateTimeUnixTimestamp(value, scale, ostr);

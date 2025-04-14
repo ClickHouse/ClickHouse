@@ -19,13 +19,13 @@ settings="$server_logs --log_queries=1 --log_query_threads=1 --log_profile_event
 
 # Test insert logging on each block and checkPacket() method
 
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT $settings -n -q "
 DROP TABLE IF EXISTS null_00634;
 CREATE TABLE null_00634 (i UInt8) ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple();"
 
 head -c 1000 /dev/zero | $CLICKHOUSE_CLIENT $settings --max_insert_block_size=10 --min_insert_block_size_rows=1 --min_insert_block_size_bytes=1 -q "INSERT INTO null_00634 FORMAT RowBinary"
 
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT $settings -n -q "
 SELECT count() FROM null_00634;
 DROP TABLE null_00634;"
 
@@ -36,7 +36,7 @@ DROP TABLE null_00634;"
 
 heavy_cpu_query="SELECT ignore(sum(sipHash64(hex(sipHash64(hex(sipHash64(hex(number)))))))) FROM (SELECT * FROM system.numbers_mt LIMIT 1000000)"
 $CLICKHOUSE_CLIENT $settings --max_threads=1 -q "$heavy_cpu_query"
-$CLICKHOUSE_CLIENT $settings -q "SYSTEM FLUSH LOGS query_log"
+$CLICKHOUSE_CLIENT $settings -q "SYSTEM FLUSH LOGS"
 $CLICKHOUSE_CLIENT $settings -q "
 WITH
     any(query_duration_ms*1000) AS duration,

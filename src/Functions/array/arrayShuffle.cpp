@@ -1,9 +1,12 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Common/assert_cast.h>
 #include <Common/iota.h>
 #include <Common/randomSeed.h>
 #include <Common/shuffle.h>
@@ -11,6 +14,7 @@
 
 #include <pcg_random.hpp>
 
+#include <algorithm>
 #include <numeric>
 
 
@@ -191,7 +195,7 @@ It is possible to override the seed to produce stable results:
                 {"random_seed", "SELECT arrayShuffle([1, 2, 3, 4])", ""},
                 {"explicit_seed", "SELECT arrayShuffle([1, 2, 3, 4], 41)", ""},
                 {"materialize", "SELECT arrayShuffle(materialize([1, 2, 3]), 42), arrayShuffle([1, 2, 3], 42) FROM numbers(10)", ""}},
-            .category{"Arrays"}},
+            .categories{"Array"}},
         FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<FunctionArrayShuffleImpl<FunctionArrayPartialShuffleTraits>>(
@@ -219,7 +223,7 @@ It is possible to override the seed to produce stable results:
                 {"explicit_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2, 41)", ""},
                 {"materialize",
                  "SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffle([1, 2, 3], 2, 42) FROM numbers(10)", ""}},
-            .category{"Arrays"}},
+            .categories{"Array"}},
         FunctionFactory::Case::Insensitive);
 }
 

@@ -37,7 +37,7 @@ int main(int argc, char ** argv)
         std::cerr << applyVisitor(to_string, field) << std::endl;
     }
 
-    field.safeGet<Array>().push_back(field);
+    field.safeGet<Array &>().push_back(field);
     std::cerr << applyVisitor(to_string, field) << std::endl;
 
     std::cerr << (field < field2) << std::endl;
@@ -71,7 +71,7 @@ int main(int argc, char ** argv)
 
                 size_t sum = 0;
                 for (size_t i = 0; i < n; ++i)
-                    sum += array[i].safeGet<String>().size();
+                    sum += array[i].safeGet<const String &>().size();
 
                 watch.stop();
                 std::cerr << std::fixed << std::setprecision(2)

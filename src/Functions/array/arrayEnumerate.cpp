@@ -67,9 +67,11 @@ public:
 
             return ColumnArray::create(std::move(res_nested), array->getOffsetsPtr());
         }
-
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
+        else
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    arguments[0].column->getName(), getName());
+        }
     }
 };
 

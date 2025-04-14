@@ -50,13 +50,13 @@ std::pair<std::string, UInt16> parseAddress(const std::string & str, UInt16 defa
         }
         return { std::string(begin, port - 1), port_number };
     }
-    if (default_port)
+    else if (default_port)
     {
-        return {str, default_port};
+        return { str, default_port };
     }
-    throw Exception(
-        ErrorCodes::BAD_ARGUMENTS,
-        "The address passed to function parseAddress doesn't contain port number and no 'default_port' was passed");
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "The address passed to function parseAddress doesn't contain port number and no 'default_port' was passed");
 }
 
 }

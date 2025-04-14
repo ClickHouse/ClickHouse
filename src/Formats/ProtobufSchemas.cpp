@@ -71,18 +71,20 @@ public:
 
             return message_descriptor;
         }
+        else
+        {
+            const auto * envelope_descriptor = file_descriptor->FindMessageTypeByName("Envelope");
+            if (!envelope_descriptor)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not find a message named 'Envelope' in the schema file '{}'",
+                    schema_path);
 
-        const auto * envelope_descriptor = file_descriptor->FindMessageTypeByName("Envelope");
-        if (!envelope_descriptor)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not find a message named 'Envelope' in the schema file '{}'", schema_path);
+            const auto * message_descriptor = envelope_descriptor->FindNestedTypeByName(message_name); // silly protobuf API disallows a restricting the field type to messages
+            if (!message_descriptor)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not find a message named '{}' in the schema file '{}'",
+                    message_name, schema_path);
 
-        const auto * message_descriptor = envelope_descriptor->FindNestedTypeByName(
-            message_name); // silly protobuf API disallows a restricting the field type to messages
-        if (!message_descriptor)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Could not find a message named '{}' in the schema file '{}'", message_name, schema_path);
-
-        return message_descriptor;
+            return message_descriptor;
+        }
     }
 
 private:

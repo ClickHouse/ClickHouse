@@ -17,7 +17,7 @@ SETTINGS max_memory_usage = '400M';
 SELECT s FROM order_by_desc ORDER BY u LIMIT 10 FORMAT Null
 SETTINGS max_memory_usage = '400M';
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT read_rows < 110000 FROM system.query_log
 WHERE type = 'QueryFinish' AND current_database = currentDatabase()

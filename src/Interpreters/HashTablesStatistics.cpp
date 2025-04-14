@@ -59,8 +59,7 @@ std::optional<HashTablesCacheStatistics> HashTablesStatistics::getCacheStats() c
     std::lock_guard lock(mutex);
     if (hash_table_stats)
     {
-        size_t hits = 0;
-        size_t misses = 0;
+        size_t hits = 0, misses = 0;
         hash_table_stats->getStats(hits, misses);
         return DB::HashTablesCacheStatistics{.entries = hash_table_stats->count(), .hits = hits, .misses = misses};
     }

@@ -25,17 +25,19 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            String res_database;
-            String res_table_name;
+            String res_database, res_table_name;
+            bool is_any_database = false;
+            bool is_any_table = false;
 
-            bool wildcard = false;
-            bool default_database = false;
-            if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, res_database, res_table_name, wildcard, default_database)
-                || (res_database.empty() && res_table_name.empty() && !default_database))
+            if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, res_database, is_any_database, res_table_name, is_any_table)
+                || is_any_database)
+            {
                 return false;
-
-            if (res_table_name.empty())
+            }
+            else if (is_any_table)
+            {
                 res_table_name = RowPolicyName::ANY_TABLE_MARK;
+            }
 
             /// If table is specified without DB it cannot be followed by Keyword::ON
             /// (but can be followed by Keyword::ON CLUSTER).
@@ -79,8 +81,7 @@ namespace
 
             auto parse_db_and_table_name = [&]
             {
-                String database;
-                String table_name;
+                String database, table_name;
                 if (!parseDBAndTableName(pos, expected, database, table_name))
                     return false;
                 res.emplace_back(std::move(database), std::move(table_name));
@@ -129,8 +130,7 @@ namespace
             }
             else
             {
-                String database;
-                String table_name;
+                String database, table_name;
                 if (!parseOnDBAndTableName(pos, expected, database, table_name))
                     return false;
                 database_and_table_names.emplace_back(std::move(database), std::move(table_name));

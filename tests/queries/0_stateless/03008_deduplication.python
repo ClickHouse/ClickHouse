@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
-import argparse
 import os
-import string
 import sys
+import argparse
+import string
+
 
 CURDIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, os.path.join(CURDIR, "helpers"))

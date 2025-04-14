@@ -48,4 +48,4 @@ build_id:
 **另请参阅**
 -   [trace_log](../../operations/system-tables/trace_log.md) 系统表
 
-[原始文章](/operations/system-tables/crash-log)
+[原始文章](https://clickhouse.com/docs/en/operations/system-tables/crash-log)

@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <Parsers/queryToString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
@@ -72,7 +73,7 @@ namespace
                 res_columns[8]->insert(documentation.argumentsAsString());
                 res_columns[9]->insert(documentation.returned_value);
                 res_columns[10]->insert(documentation.examplesAsString());
-                res_columns[11]->insert(documentation.category);
+                res_columns[11]->insert(documentation.categoriesAsString());
             }
         }
         else
@@ -136,7 +137,7 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
     const auto & user_defined_sql_functions_names = user_defined_sql_functions_factory.getAllRegisteredNames();
     for (const auto & function_name : user_defined_sql_functions_names)
     {
-        auto create_query = user_defined_sql_functions_factory.get(function_name)->formatWithSecretsOneLine();
+        auto create_query = queryToString(user_defined_sql_functions_factory.get(function_name));
         fillRow(res_columns, function_name, 0, create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory);
     }
 

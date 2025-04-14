@@ -15,7 +15,7 @@ REGISTER_FUNCTION(EndsWithUTF8)
 Returns whether string `str` ends with `suffix`, the difference between `endsWithUTF8` and `endsWith` is that `endsWithUTF8` match `str` and `suffix` by UTF-8 characters.
         )",
         .examples{{"endsWithUTF8", "select endsWithUTF8('富强民主文明和谐', '富强');", ""}},
-        .category{"String"}});
+        .categories{"String"}});
 }
 
 }

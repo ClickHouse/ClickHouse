@@ -1,25 +1,20 @@
 #!/usr/bin/env python3
 
 import gzip
-import io
 import json
 import logging
 import os
-import random
+import io
 import re
+import random
 import threading
 import time
-from datetime import datetime, timedelta
 
+from azure.storage.blob import BlobServiceClient
 import pytest
-from azure.storage.blob import (
-    BlobServiceClient,
-    ContainerSasPermissions,
-    generate_container_sas,
-)
-
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from helpers.test_tools import TSV, assert_logs_contain_with_retry
+from helpers.test_tools import assert_logs_contain_with_retry
+from helpers.test_tools import TSV
 
 
 @pytest.fixture(scope="module")
@@ -129,19 +124,6 @@ def delete_all_files(cluster):
         assert len(list(container_client.list_blobs())) == 0
 
     yield
-
-
-def generate_sas_token(cluster):
-    sas_token = generate_container_sas(
-        account_name="devstoreaccount1",
-        account_key="Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
-        container_name="cont",
-        permission=ContainerSasPermissions(
-            read=True, write=True, delete=True, list=True, create=True, add=True
-        ),
-        expiry=datetime.utcnow() + timedelta(hours=1),  # 1 hour expiry
-    )
-    return f"http://azurite1:{cluster.env_variables['AZURITE_PORT']}/devstoreaccount1/cont/?{sas_token}"
 
 
 def test_create_table_connection_string(cluster):
@@ -1022,6 +1004,7 @@ def test_union_schema_inference_mode(cluster):
         f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference*.jsonl', '{account_name}', '{account_key}', 'auto', 'auto', 'auto') order by tuple(*) settings schema_inference_mode='union' format TSV",
     )
     assert result == "1\t\\N\n" "\\N\t2\n"
+    node.query(f"system drop schema cache for hdfs")
     result = azure_query(
         node,
         f"desc azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference2.jsonl', '{account_name}', '{account_key}', 'auto', 'auto', 'auto') settings schema_inference_mode='union', describe_compact_output=1 format TSV",
@@ -1333,15 +1316,12 @@ def test_format_detection(cluster):
     node = cluster.instances["node"]
     connection_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
     storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
-    port = cluster.env_variables["AZURITE_PORT"]
     account_name = "devstoreaccount1"
     account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
-    account_key_pattern = re.compile("AccountKey=.*?(;|$)")
-    masked_azure_conn_string = re.sub(
-        account_key_pattern, "AccountKey=[HIDDEN]\\1", connection_string
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection0', '{account_name}', '{account_key}', 'JSONEachRow', 'auto', 'x UInt64, y String') select number as x, 'str_' || toString(number) from numbers(0) SETTINGS azure_truncate_on_insert=1",
     )
-
-    put_azure_file_content("test_format_detection0", port, b"")
 
     azure_query(
         node,
@@ -1386,6 +1366,8 @@ def test_format_detection(cluster):
 
     assert result == expected_result
 
+    node.query(f"system drop schema cache for hdfs")
+
     result = azure_query(
         node,
         f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection{{0,1}}', '{account_name}', '{account_key}')",
@@ -1402,7 +1384,7 @@ def test_format_detection(cluster):
 
     azure_query(
         node,
-        f"create or replace table test_format_detection engine=AzureBlobStorage('{connection_string}', 'cont', 'test_format_detection1')",
+        f"create table test_format_detection engine=AzureBlobStorage('{connection_string}', 'cont', 'test_format_detection1')",
     )
     result = azure_query(
         node,
@@ -1410,7 +1392,7 @@ def test_format_detection(cluster):
     )
     assert (
         result
-        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{masked_azure_conn_string}\\', \\'cont\\', \\'test_format_detection1\\', \\'JSON\\')\n"
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{connection_string}\\', \\'cont\\', \\'test_format_detection1\\', \\'JSON\\')\n"
     )
 
     azure_query(
@@ -1423,7 +1405,7 @@ def test_format_detection(cluster):
     )
     assert (
         result
-        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{masked_azure_conn_string}\\', \\'cont\\', \\'test_format_detection1\\', \\'JSON\\')\n"
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{connection_string}\\', \\'cont\\', \\'test_format_detection1\\', \\'JSON\\')\n"
     )
 
     azure_query(
@@ -1436,7 +1418,7 @@ def test_format_detection(cluster):
     )
     assert (
         result
-        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{masked_azure_conn_string}\\', \\'cont\\', \\'test_format_detection1\\', \\'JSON\\', \\'none\\')\n"
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{connection_string}\\', \\'cont\\', \\'test_format_detection1\\', \\'JSON\\', \\'none\\')\n"
     )
 
     azure_query(
@@ -1449,7 +1431,7 @@ def test_format_detection(cluster):
     )
     assert (
         result
-        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'[HIDDEN]\\', \\'JSON\\')\n"
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'{account_key}\\', \\'JSON\\')\n"
     )
 
     azure_query(
@@ -1462,7 +1444,7 @@ def test_format_detection(cluster):
     )
     assert (
         result
-        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'[HIDDEN]\\', \\'JSON\\')\n"
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'{account_key}\\', \\'JSON\\')\n"
     )
 
     azure_query(
@@ -1475,11 +1457,7 @@ def test_format_detection(cluster):
     )
     assert (
         result
-        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'[HIDDEN]\\', \\'JSON\\', \\'none\\')\n"
-    )
-    azure_query(
-        node,
-        f"DROP TABLE test_format_detection",
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'{account_key}\\', \\'JSON\\', \\'none\\')\n"
     )
 
 
@@ -1513,7 +1491,7 @@ def test_parallel_read(cluster):
 
     res = azure_query(
         node,
-        f"select count() from azureBlobStorage('{connection_string}', 'cont', 'test_parallel_read.parquet') settings remote_filesystem_read_method='read'",
+        f"select count() from azureBlobStorage('{connection_string}', 'cont', 'test_parallel_read.parquet')",
     )
     assert int(res) == 10000
     assert_logs_contain_with_retry(node, "AzureBlobStorage readBigAt read bytes")
@@ -1615,10 +1593,7 @@ def test_hive_partitioning_with_one_parameter(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
         f" container='cont', blob_path='{path}', format='CSVWithNames', compression='auto', structure='{table_format}') VALUES {values}",
-        settings={
-            "azure_truncate_on_insert": 1,
-            "use_hive_partitioning": 0,
-        },
+        settings={"azure_truncate_on_insert": 1},
     )
 
     query = (
@@ -1656,10 +1631,7 @@ def test_hive_partitioning_with_all_parameters(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
         f" container='cont', blob_path='{path}', format='CSVWithNames', compression='auto', structure='{table_format}') VALUES {values_1}, {values_2}",
-        settings={
-            "azure_truncate_on_insert": 1,
-            "use_hive_partitioning": 0,
-        },
+        settings={"azure_truncate_on_insert": 1},
     )
 
     query = (
@@ -1685,10 +1657,7 @@ def test_hive_partitioning_without_setting(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
         f" container='cont', blob_path='{path}', format='CSVWithNames', compression='auto', structure='{table_format}') VALUES {values_1}, {values_2}",
-        settings={
-            "azure_truncate_on_insert": 1,
-            "use_hive_partitioning": 0,
-        },
+        settings={"azure_truncate_on_insert": 1},
     )
 
     query = (
@@ -1697,24 +1666,8 @@ def test_hive_partitioning_without_setting(cluster):
         f"blob_path='{path}', format='CSVWithNames', structure='{table_format}');"
     )
     pattern = re.compile(
-        r"DB::Exception: Unknown expression identifier `.*` in scope.*", re.DOTALL
+        r"DB::Exception: Unknown expression identifier '.*' in scope.*", re.DOTALL
     )
 
     with pytest.raises(Exception, match=pattern):
         azure_query(node, query, settings={"use_hive_partitioning": 0})
-
-
-def test_sas_token(cluster):
-    node = cluster.instances["node"]
-    sas_token = generate_sas_token(cluster)
-    azure_query(
-        node,
-        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{sas_token}', '', 'test-sas-token.csv') SELECT 'foo'",
-        settings={
-            "azure_truncate_on_insert": 1,
-        },
-    )
-    content = azure_query(
-        node, f"SELECT * FROM azureBlobStorage('{sas_token}', '', 'test-sas-token.csv')"
-    )
-    assert content.splitlines() == ["foo"]

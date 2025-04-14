@@ -19,15 +19,10 @@ public:
         return removeOnCluster<ASTDeleteQuery>(clone(), params.default_database);
     }
 
-    /** Used in DELETE FROM queries.
-     *  The value or ID of the partition is stored here.
-     */
-    ASTPtr partition;
-
     ASTPtr predicate;
 
 protected:
-    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 }

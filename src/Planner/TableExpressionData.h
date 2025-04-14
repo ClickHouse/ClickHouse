@@ -5,8 +5,6 @@
 
 #include <Interpreters/ActionsDAG.h>
 
-#include <fmt/ranges.h>
-
 namespace DB
 {
 
