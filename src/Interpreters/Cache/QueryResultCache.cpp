@@ -21,11 +21,13 @@
 #include <Parsers/TokenIterator.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Columns/IColumn.h>
+#include "Common/LRUCachePolicy.h"
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/TTLCachePolicy.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
+#include "Processors/Chunk.h"
 #include <Core/Settings.h>
 #include <base/defines.h> /// chassert
 
@@ -492,6 +494,25 @@ Chunks squashChunks(Chunks & chunks, size_t max_chunk_size)
     return squashed_chunks;
 }
 
+Chunks compressChunks(Chunks & chunks) {
+    Chunks compressed_chunks;
+
+    for (const auto & chunk : chunks)
+    {
+        const Columns & columns = chunk.getColumns();
+        Columns compressed_columns;
+        for (const auto & column : columns)
+        {
+            auto compressed_column = column->compress(/*force_compression=*/false);
+            compressed_columns.push_back(compressed_column);
+        }
+        Chunk compressed_chunk(compressed_columns, chunk.getNumRows());
+        compressed_chunks.push_back(std::move(compressed_chunk));
+    }
+
+    return compressed_chunks;
+}
+
 }
 
 void QueryResultCacheWriter::finalizeWrite()
@@ -528,26 +549,17 @@ void QueryResultCacheWriter::finalizeWrite()
         query_result->chunks = std::move(squashed_chunks);
     }
 
-    // if (key.is_compressed)
-    // {
-    //     /// Compress result chunks. Reduces the space consumption of the cache but means reading from it will be slower due to decompression.
+    /// Need to keep uncompressed chunks for query result cache on disk,
+    /// because it can squash it with different max_chunks_size,
+    /// but can't squash already compressed chunks
+    Chunks uncompressed_chunks = std::move(query_result->chunks);
 
-    //     Chunks compressed_chunks;
-
-    //     for (const auto & chunk : query_result->chunks)
-    //     {
-    //         const Columns & columns = chunk.getColumns();
-    //         Columns compressed_columns;
-    //         for (const auto & column : columns)
-    //         {
-    //             auto compressed_column = column->compress(/*force_compression=*/false);
-    //             compressed_columns.push_back(compressed_column);
-    //         }
-    //         Chunk compressed_chunk(compressed_columns, chunk.getNumRows());
-    //         compressed_chunks.push_back(std::move(compressed_chunk));
-    //     }
-    //     query_result->chunks = std::move(compressed_chunks);
-    // }
+    if (key.is_compressed)
+    {
+        /// Compress result chunks. Reduces the space consumption of the cache but means reading from it will be slower due to decompression.
+        Chunks compressed_chunks = compressChunks(uncompressed_chunks);
+        query_result->chunks = std::move(compressed_chunks);
+    }
 
     /// Check more reasons why the entry must not be cached.
 
@@ -574,6 +586,7 @@ void QueryResultCacheWriter::finalizeWrite()
     // cache.set(key, query_result); 
     
     if (disk_cache) {
+        query_result->chunks = std::move(uncompressed_chunks); /// Use previously saved uncompressed chunks
         disk_cache->set(key, query_result);
     }
 
@@ -616,7 +629,7 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, std::optional<OnD
                 LOG_TRACE(logger, "Query result found in disk cache for query {}", doubleQuoteString(key.query_string));
                 entry.emplace(std::move(disk_entry.value()));
                 /// Should also check constraints for in-memory cache if they differs
-                cache_.set(entry->key, entry->mapped); /// Add entry to in-memory cache
+                // cache_.set(entry->key, entry->mapped); /// Add entry to in-memory cache
             } else {
                 LOG_TRACE(logger, "No query result found for query {}", doubleQuoteString(key.query_string));
                 return;
@@ -717,11 +730,12 @@ std::unique_ptr<SourceFromChunks> QueryResultCacheReader::getSourceExtremes()
 QueryResultCache::QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_, const std::optional<std::filesystem::path> & path_)
     : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, QueryResultCacheEntryWeight, IsStale>>(
           std::make_unique<PerUserTTLCachePolicyUserQuota>()))
-    , disk_cache(path_.has_value() ? std::optional<OnDiskCache>(path_.value()) : std::optional<OnDiskCache>{})
 {
-    updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_);
+    if (path_) {
+        disk_cache.emplace(path_.value(), 2, max_entries);
+    }
 
-    // readCacheEntriesFromPersistence(); maybe read some part of values from disk cache to in-memory cache on startup
+    updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_);
 }
 
 void QueryResultCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
@@ -810,7 +824,14 @@ static constexpr auto * token_expires_at = "expires_at: ";
 static constexpr auto * token_is_compressed = "is_compressed: ";
 static constexpr auto * token_query_string = "query_string: ";
 
-QueryResultCache::OnDiskCache::OnDiskCache(const std::filesystem::path& path_) : query_cache_path(path_) {
+QueryResultCache::OnDiskCache::OnDiskCache(const std::filesystem::path& path_, size_t max_size_in_bytes_, size_t max_entries_)
+    : query_cache_path(path_)
+{
+    auto on_weight_loss_function = [](size_t){};
+    auto on_evict_function = [&](CachePolicy::MappedPtr mapped) { onEvictFunction(mapped); };
+
+    cache_policy = std::make_unique<LRUCachePolicy<Key, DiskEntryMetadata, KeyHasher, DiskEntryWeight>>(max_size_in_bytes_, max_entries_, on_weight_loss_function, on_evict_function);
+    
     try {
         checkFormatVersion();
         readCacheEntriesMetaData();
@@ -878,7 +899,7 @@ std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDisk
     IASTHash ast_hash = key.ast_hash;
     String ast_hash_str = std::to_string(ast_hash.low64) + '_' + std::to_string(ast_hash.high64);
 
-    if (auto it = keys.find(ast_hash_str); it == keys.end()) {
+    if (!cache_policy->contains(key)) {
         LOG_TRACE(getLogger("XXX"), "No entry on disk, key not found in metadata: {}", query_cache_path.string());
         return std::nullopt;
     }
@@ -893,10 +914,16 @@ void QueryResultCache::OnDiskCache::set(const Key & key, const MappedPtr & mappe
     IASTHash ast_hash = key.ast_hash;
     String ast_hash_str = std::to_string(ast_hash.low64) + '_' + std::to_string(ast_hash.high64);
 
-    if (auto it = keys.find(ast_hash_str); it != keys.end()) {
+    /// also check staleness
+    if (cache_policy->contains(key)) { 
         LOG_TRACE(getLogger("XXX"), "Entry already in disk cache, skip inserting: {}", query_cache_path.string());
         return; /// also change lru 
     }
+
+    std::filesystem::path entry_file_path = query_cache_path / ast_hash_str;
+    auto metadata = std::make_shared<DiskEntryMetadata>(1, entry_file_path);
+
+    cache_policy->set(key, metadata);
 
     keys.insert(ast_hash_str);
     
@@ -943,8 +970,6 @@ void QueryResultCache::OnDiskCache::writeCacheEntry(const Key & entry_key, const
         writeBoolText(entry_key.is_shared, entry_file);
         writeText("\n", entry_file);
 
-        /// how to store timepoint on disk????
-
         writeText(token_expires_at, entry_file);
 
         auto duration = entry_key.expires_at.time_since_epoch();
@@ -953,10 +978,12 @@ void QueryResultCache::OnDiskCache::writeCacheEntry(const Key & entry_key, const
         writeIntText(nanoseconds, entry_file);
         writeText("\n", entry_file);
 
+        LOG_TRACE(logger, "Writing entries to disk compression: {}", entry_key.is_compressed);
+
         writeText(token_is_compressed, entry_file);
-        bool is_compressed = false;
-        // writeBoolText(entry_key.is_compressed, entry_file);
-        writeBoolText(is_compressed, entry_file);
+        writeBoolText(entry_key.is_compressed, entry_file);
+        // bool is_compressed = false;
+        // writeBoolText(is_compressed, entry_file);
         writeText("\n", entry_file);
 
         writeText(token_query_string, entry_file);
@@ -972,6 +999,10 @@ void QueryResultCache::OnDiskCache::writeCacheEntry(const Key & entry_key, const
         /// To keep the file format simple, squash the result chunks to a single chunk.
         chunks = squashChunks(chunks, std::numeric_limits<size_t>::max());
 
+        if (entry_key.is_compressed) {
+            chunks = compressChunks(chunks);
+        }
+        
         /// Get only one chunk after squash
         auto& chunk = chunks[0];
 
@@ -983,15 +1014,9 @@ void QueryResultCache::OnDiskCache::writeCacheEntry(const Key & entry_key, const
 
         block_writer.write(block);
 
-        /// TODO write num_rows
-        /// TODO get TypeIndex from column, get DataType from TypeIndex (how??), get Serialization from DataType
-        /// TODO write into separate file
-        /// LOL ... see above header_serializations
-
         entry_file.finalize();
 
         LOG_TRACE(logger, "entry written");
-
     }
     catch (const Exception& e)
     {

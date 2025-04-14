@@ -163,15 +163,30 @@ private:
 public:
     /// query --> query result
     using Cache = CacheBase<Key, Entry, KeyHasher, QueryResultCacheEntryWeight>;
-    
+
     class OnDiskCache {
         using Key = QueryResultCache::Key;
         using Mapped = QueryResultCache::Entry;
         using MappedPtr = std::shared_ptr<Mapped>;
         using KeyMapped = QueryResultCache::Cache::KeyMapped;
 
+        struct DiskEntryMetadata
+        {
+            size_t size_in_bytes;
+            std::filesystem::path path;
+        };
+
+        struct DiskEntryWeight
+        {
+            size_t operator()(const DiskEntryMetadata & entry) const {
+                return entry.size_in_bytes;
+            }
+        };
+
+        using CachePolicy = ICachePolicy<Key, DiskEntryMetadata, KeyHasher, DiskEntryWeight>;
+
     public:
-        explicit OnDiskCache(const std::filesystem::path& path_);
+        explicit OnDiskCache(const std::filesystem::path& path_, size_t max_size_in_bytes_, size_t max_entries_);
 
         std::optional<KeyMapped> getWithKey(const Key & key);
 
@@ -186,7 +201,14 @@ public:
 
         void checkFormatVersion();
 
+        void onEvictFunction(CachePolicy::MappedPtr mapped) {
+            std::filesystem::remove(mapped->path);
+            LOG_TRACE(getLogger("XXX"), "Evict");
+        }
+
         std::mutex mutex;
+
+        std::unique_ptr<CachePolicy> cache_policy TSA_GUARDED_BY(mutex); /// LRU by default
 
         std::filesystem::path query_cache_path; /// directory containing persisted query cache entries which are loaded/stored on
                                                 /// database startup/shutdown (only set if query cache persistence is configured)
@@ -194,11 +216,6 @@ public:
     };
 
     QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_, const std::optional<std::filesystem::path> & path_);
-
-    // void shutdown();
-
-    // void readCacheEntriesFromPersistence();
-    // void writeCacheEntriesToPersistence();
 
     void updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
 
