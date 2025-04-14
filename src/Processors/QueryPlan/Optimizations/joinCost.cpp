@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Interpreters/JoinOperator.h>
 #include <vector>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -42,14 +43,56 @@ double computeJoinCost(
     return left->cost + right->cost + cost;
 }
 
+
+static size_t getSingleBit(BaseRelsSet set)
+{
+    chassert(set.count() == 1);
+    return std::countr_zero(set.to_ullong());
+}
+
+
+const ColumnStats * tryGetColumnStats(BaseRelsSet rels, const String & column_name, const std::vector<RelationStats> & relation_stats)
+{
+    if (rels.count() != 1)
+        return nullptr;
+
+    auto rel_id = getSingleBit(rels);
+    if (rel_id >= relation_stats.size())
+        return nullptr;
+
+    auto it = relation_stats[rel_id].column_stats.find(column_name);
+    if (it == relation_stats[rel_id].column_stats.end())
+        return nullptr;
+
+    return &it->second;
+
+}
+
+String formatJoinCondition(const JoinCondition & join_condition);
+
 double estimateJoinSelectivity(
     const JoinOperator & join_operator,
     const std::vector<RelationStats> & relation_stats)
 {
-    UNUSED(join_operator);
-    UNUSED(relation_stats);
-    /// TODO
-    return 0.1;
+    double selectivity = 1.0;
+    for (const auto & pred : join_operator.expression.condition.predicates)
+    {
+        if (pred.op != PredicateOperator::Equals && pred.op != PredicateOperator::NullSafeEquals)
+            continue;
+
+        const auto * left_stats = tryGetColumnStats(pred.left_node.getSourceRels(), pred.left_node.getDisplayName(), relation_stats);
+        const auto * right_stats = tryGetColumnStats(pred.right_node.getSourceRels(), pred.right_node.getDisplayName(), relation_stats);
+        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: {} {}", __FILE__, __LINE__, left_stats ? left_stats->num_distinct_values : 0, right_stats ? right_stats->num_distinct_values : 0);
+
+        UInt64 max_ndv = std::max(
+            left_stats ? left_stats->num_distinct_values : 0,
+            right_stats ? right_stats->num_distinct_values : 0);
+        if (max_ndv)
+            selectivity = std::min(selectivity, 1.0 / max_ndv);
+    }
+
+    LOG_TRACE(getLogger("optimizeJoin"), "Estimated selectivity for join operator {}: {}", formatJoinCondition(join_operator.expression.condition), selectivity);
+    return selectivity;
 }
 
 }

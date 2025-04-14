@@ -270,8 +270,8 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
 
                 for (auto edge : join_edges)
                 {
-                    bool connects_left_to_right = (left->relations & edge.left_rels).any() && (right->relations & edge.right_rels).any();
-                    bool connects_right_to_left = (left->relations & edge.right_rels).any() && (right->relations & edge.left_rels).any();
+                    bool connects_left_to_right = isSubsetOf(edge.left_rels, left->relations) && isSubsetOf(edge.right_rels, right->relations);
+                    bool connects_right_to_left = isSubsetOf(edge.left_rels, right->relations) && isSubsetOf(edge.right_rels, left->relations);
 
                     if (!connects_left_to_right && !connects_right_to_left)
                         continue;

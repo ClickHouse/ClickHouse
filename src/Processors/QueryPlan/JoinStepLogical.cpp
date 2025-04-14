@@ -275,11 +275,15 @@ public:
 };
 
 template <typename ResultType>
-void describeJoinNode(ActionsDescrtiptionBuilder<ResultType> builder, const DPJoinEntryPtr & node)
+void describeJoinNode(ActionsDescrtiptionBuilder<ResultType> builder, const DPJoinEntryPtr & node, const std::unordered_map<int, std::string_view> & relation_names)
 {
     if (node->relation_id >= 0)
     {
-        builder.add("NodeType", fmt::format("Scan R{} rows={}", node->relation_id, node->estimated_rows));
+        auto it = relation_names.find(node->relation_id);
+        if (it != relation_names.end() && !it->second.empty())
+            builder.add("NodeType", fmt::format("R{}({}) rows={}", node->relation_id, it->second, node->estimated_rows));
+        else
+            builder.add("NodeType", fmt::format("Scan R{} rows={}", node->relation_id, node->estimated_rows));
     }
     if (node->join_operator)
     {
@@ -309,9 +313,9 @@ void describeJoinNode(ActionsDescrtiptionBuilder<ResultType> builder, const DPJo
     {
         auto plans = builder.push("Children");
         if (node->left)
-            describeJoinNode(plans.next(), node->left);
+            describeJoinNode(plans.next(), node->left, relation_names);
         if (node->right)
-            describeJoinNode(plans.next(), node->right);
+            describeJoinNode(plans.next(), node->right, relation_names);
     }
 }
 
@@ -425,7 +429,7 @@ void JoinStepLogical::describeJoinActionsImpl(ResultType & result) const
 
         root_description.add("JoinTree", treeToInfix(plan_node.get(), relation_names));
         auto join_tree_description = root_description.push("JoinTreePlan");
-        describeJoinNode(join_tree_description.next(), plan_node);
+        describeJoinNode(join_tree_description.next(), plan_node, relation_names);
     }
 
     root_description.add("Expressions", ExpressionActions(expression_actions->clone()));
@@ -1595,14 +1599,14 @@ static String toString(const RelationStats & stats)
     return fmt::format("rows: {}", stats.estimated_rows);
 }
 
-void JoinStepLogical::setRelationLabel(std::string_view label, size_t index)
+void JoinStepLogical::setRelationLabel(String label, size_t index)
 {
     if (index >= getNumberOfTables())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index out of bounds");
     if (index >= relation_stats.size())
         relation_stats.resize(index + 1);
 
-    relation_stats[index].table_name = label;
+    relation_stats[index].table_name = std::move(label);
 }
 
 

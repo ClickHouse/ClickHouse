@@ -49,8 +49,10 @@
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/JoinOperator.h>
-#include <ranges>
 
+#include <boost/algorithm/string/trim.hpp>
+
+#include <ranges>
 #include <stack>
 
 namespace DB
@@ -489,18 +491,21 @@ JoinTreeQueryPlan mergeJoinTreePlans(
 }
 
 
-static std::string_view getQueryDisplayLabel(const QueryTreeNodePtr & node)
+static String getQueryDisplayLabel(const QueryTreeNodePtr & node)
 {
     const auto & printable_alias = node->getOriginalAlias();
-    if (printable_alias.empty())
-        return {};
-
     const auto & internal_alias = node->getAlias();
-    if (printable_alias == internal_alias)
-        /// Probably we do not have alias in the original AST
-        return {};
+    if (!printable_alias.empty() && printable_alias != internal_alias)
+        return printable_alias;
 
-    return printable_alias;
+    if (const auto * table_node = node->as<TableNode>(); table_node && table_node->hasOriginalAST())
+    {
+        auto result = table_node->getOriginalAST()->formatForLogging();
+        boost::trim(result);
+        return result;
+    }
+
+    return {};
 }
 
 JoinTreeQueryPlan buildJoinStepLogical(
@@ -536,7 +541,7 @@ JoinTreeQueryPlan buildJoinStepLogical(
             JoinSettings(settings),
             SortingStep::Settings(settings));
         if (auto label = getQueryDisplayLabel(join_node.getLeftTableExpression()); !label.empty())
-            join_step_holder->setRelationLabel(label, 0);
+            join_step_holder->setRelationLabel(std::move(label), 0);
         join_step = join_step_holder.get();
         left_plan.query_plan.addStep(std::move(join_step_holder));
     }

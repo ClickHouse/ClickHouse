@@ -9,7 +9,6 @@ namespace DB
 struct DPJoinEntry;
 using DPJoinEntryPtr = std::shared_ptr<DPJoinEntry>;
 
-
 enum class JoinMethod : UInt8
 {
     None,

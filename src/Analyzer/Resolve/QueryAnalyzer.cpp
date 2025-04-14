@@ -4383,6 +4383,8 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                         scope.scope_node->formatASTForErrorMessage());
 
                 resolved_identifier = resolved_identifier->clone();
+                if (table_identifier_lookup.original_ast_node)
+                    resolved_identifier->setOriginalAST(table_identifier_lookup.original_ast_node);
 
                 /// Update alias name to table expression map
                 auto table_expression_it = scope.aliases.alias_name_to_table_expression_node.find(from_table_identifier_alias);

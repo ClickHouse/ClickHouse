@@ -118,7 +118,7 @@ public:
     void setRelationStats(RelationStats new_stats, size_t index);
     const std::vector<RelationStats> & getRelationStats() const { return relation_stats; }
 
-    void setRelationLabel(std::string_view label, size_t index);
+    void setRelationLabel(String label, size_t index);
 protected:
     void updateOutputHeader() override;
 

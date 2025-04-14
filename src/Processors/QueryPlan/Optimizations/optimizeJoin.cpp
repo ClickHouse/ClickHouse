@@ -24,6 +24,11 @@
 #include <Core/Joins.h>
 #include <ranges>
 #include <memory>
+#include <Common/JSONParsers/RapidJSONParser.h>
+#include <Poco/JSON/JSON.h>
+#include <Poco/JSON/Parser.h>
+#include <Poco/JSON/Object.h>
+
 
 
 namespace DB
@@ -44,12 +49,64 @@ namespace Setting
 namespace QueryPlanOptimizations
 {
 
+static RelationStats getDummyStats(ContextPtr context, const String & table_name)
+{
+    constexpr auto param_name = "_internal_join_table_stat_hints";
+
+    const auto & query_params = context->getQueryParameters();
+    auto it = query_params.find(param_name);
+    if (it == query_params.end())
+        return {};
+
+    try
+    {
+        Poco::JSON::Parser parser;
+        Poco::Dynamic::Var result = parser.parse(it->second);
+        auto object = result.extract<Poco::JSON::Object::Ptr>();
+        if (!object)
+            return {};
+
+        if (!object->has(table_name))
+            return {};
+
+        auto stat_object = object->getObject(table_name);
+        if (!stat_object)
+            return {};
+
+        RelationStats stats;
+        stats.table_name = table_name;
+
+        if (stat_object->has("cardinality"))
+            stats.estimated_rows = stat_object->getValue<UInt64>("cardinality");
+
+        if (stat_object->isObject("distinct_keys"))
+        {
+            auto distinct_keys = stat_object->getObject("distinct_keys");
+            for (const auto & [key, value] : *distinct_keys)
+                stats.column_stats[key].num_distinct_values = value.convert<UInt64>();
+        }
+        LOG_WARNING(getLogger("optimizeJoin"),
+            "Got dummy join stats for table '{}' from '{}' query parameter, it's supposed to be used only for testing, do not use it in production",
+            table_name, param_name);
+        return stats;
+    }
+    catch (const Poco::Exception & e)
+    {
+        LOG_WARNING(getLogger("optimizeJoin"), "Failed to parse '{}': {}", param_name, e.displayText());
+        return {};
+    }
+}
+
 static RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filter = false)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
-        String table_diplay_name = reading->getStorageID().getNameForLogs();
+        String table_diplay_name = reading->getStorageID().getTableName();
+
+        if (auto dummy_stats = getDummyStats(reading->getContext(), table_diplay_name); !dummy_stats.table_name.empty())
+            return dummy_stats;
+
         ReadFromMergeTree::AnalysisResultPtr analyzed_result = nullptr;
         analyzed_result = analyzed_result ? analyzed_result : reading->getAnalyzedResult();
         analyzed_result = analyzed_result ? analyzed_result : reading->selectRangesToRead();
