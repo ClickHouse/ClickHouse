@@ -203,7 +203,7 @@ private:
     static Int32 hashUUID(UUID value)
     {
         UInt128 underlying_value = value.toUnderType();
-        LOG_DEBUG(&Poco::Logger::get("Kek"), "underlying value: {}", wide::to_string(underlying_value));
+        LOG_DEBUG(&Poco::Logger::get("UUID"), "underlying value: {}", wide::to_string(underlying_value));
         return hashDecimalBase(underlying_value, true);
     }
 
