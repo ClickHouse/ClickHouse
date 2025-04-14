@@ -64,6 +64,8 @@ DROP TABLE IF EXISTS sample_00632;
 CREATE TABLE sample_00632 (d Date DEFAULT '2000-01-01', x UInt16) ENGINE = MergeTree(d, x, x, 10);
 INSERT INTO sample_00632 (x) SELECT toUInt16(number) AS x FROM system.numbers LIMIT 65536;
 
+SET max_execution_time = 300;
+
 SELECT count()
 FROM
 (
