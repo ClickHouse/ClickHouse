@@ -12,9 +12,15 @@
 #include <string_view>
 #include <string>
 #include <vector>
+#include <absl/container/flat_hash_map.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 namespace extractKV
 {
@@ -70,9 +76,9 @@ public:
      * Find first delimiter of interest (`read_needles`). Valid symbols are either `key_value_delimiter` and `escape_character` if escaping
      * support is on. If it finds a pair delimiter, it discards the key.
      * */
-    [[nodiscard]] NextState readKey(std::string_view file, auto & key) const
+    [[nodiscard]] NextState readKey(std::string_view file, auto & pair_writer) const
     {
-        key.reset();
+        pair_writer.resetKey();
 
         size_t pos = 0;
 
@@ -85,7 +91,7 @@ public:
             {
                 if constexpr (WITH_ESCAPING)
                 {
-                    auto [parsed_successfully, escape_sequence_length] = consumeWithEscapeSequence(file, pos, character_position, key);
+                    auto [parsed_successfully, escape_sequence_length] = consumeWithEscapeSequence<true>(file, pos, character_position, pair_writer);
                     next_pos = character_position + escape_sequence_length;
 
                     if (!parsed_successfully)
@@ -96,7 +102,7 @@ public:
             }
             else if (isKeyValueDelimiter(*p))
             {
-                key.append(file.data() + pos, file.data() + character_position);
+                pair_writer.appendKey(file.data() + pos, file.data() + character_position);
 
                 return {next_pos, State::WAITING_VALUE};
             }
@@ -118,9 +124,9 @@ public:
     /*
      * Search for closing quoting character and process escape sequences along the way (if escaping support is turned on).
      * */
-    [[nodiscard]] NextState readQuotedKey(std::string_view file, auto & key) const
+    [[nodiscard]] NextState readQuotedKey(std::string_view file, auto & pair_writer) const
     {
-        key.reset();
+        pair_writer.resetKey();
 
         size_t pos = 0;
 
@@ -133,7 +139,7 @@ public:
             {
                 if constexpr (WITH_ESCAPING)
                 {
-                    auto [parsed_successfully, escape_sequence_length] = consumeWithEscapeSequence(file, pos, character_position, key);
+                    auto [parsed_successfully, escape_sequence_length] = consumeWithEscapeSequence<true>(file, pos, character_position, pair_writer);
                     next_pos = character_position + escape_sequence_length;
 
                     if (!parsed_successfully)
@@ -144,9 +150,9 @@ public:
             }
             else if (isQuotingCharacter(*p))
             {
-                key.append(file.data() + pos, file.data() + character_position);
+                pair_writer.appendKey(file.data() + pos, file.data() + character_position);
 
-                if (key.isEmpty())
+                if (pair_writer.isKeyEmpty())
                 {
                     return {next_pos, State::WAITING_KEY};
                 }
@@ -211,9 +217,9 @@ public:
      * Finds next delimiter of interest (`read_needles`). Valid symbols are either `pair_delimiter` and `escape_character` if escaping
      * support is on. If it finds a `key_value_delimiter`, it discards the value.
      * */
-    [[nodiscard]] NextState readValue(std::string_view file, auto & value) const
+    [[nodiscard]] NextState readValue(std::string_view file, auto & pair_writer) const
     {
-        value.reset();
+        pair_writer.resetValue();
 
         size_t pos = 0;
 
@@ -226,7 +232,7 @@ public:
             {
                 if constexpr (WITH_ESCAPING)
                 {
-                    auto [parsed_successfully, escape_sequence_length] = consumeWithEscapeSequence(file, pos, character_position, value);
+                    auto [parsed_successfully, escape_sequence_length] = consumeWithEscapeSequence<false>(file, pos, character_position, pair_writer);
                     next_pos = character_position + escape_sequence_length;
 
                     if (!parsed_successfully)
@@ -238,7 +244,7 @@ public:
             }
             else if (isPairDelimiter(*p))
             {
-                value.append(file.data() + pos, file.data() + character_position);
+                pair_writer.appendValue(file.data() + pos, file.data() + character_position);
 
                 return {next_pos, State::FLUSH_PAIR};
             }
@@ -247,18 +253,18 @@ public:
         }
 
         // Reached end of input, consume rest of the file as value and make sure KV pair is produced.
-        value.append(file.data() + pos, file.data() + file.size());
+        pair_writer.appendValue(file.data() + pos, file.data() + file.size());
         return {file.size(), State::FLUSH_PAIR};
     }
 
     /*
      * Search for closing quoting character and process escape sequences along the way (if escaping support is turned on).
      * */
-    [[nodiscard]] NextState readQuotedValue(std::string_view file, auto & value) const
+    [[nodiscard]] NextState readQuotedValue(std::string_view file, auto & pair_writer) const
     {
         size_t pos = 0;
 
-        value.reset();
+        pair_writer.resetValue();
 
         while (const auto * p = find_first_symbols_or_null({file.begin() + pos, file.end()}, read_quoted_needles))
         {
@@ -269,7 +275,7 @@ public:
             {
                 if constexpr (WITH_ESCAPING)
                 {
-                    auto [parsed_successfully, escape_sequence_length] = consumeWithEscapeSequence(file, pos, character_position, value);
+                    auto [parsed_successfully, escape_sequence_length] = consumeWithEscapeSequence<false>(file, pos, character_position, pair_writer);
                     next_pos = character_position + escape_sequence_length;
 
                     if (!parsed_successfully)
@@ -280,7 +286,7 @@ public:
             }
             else if (isQuotingCharacter(*p))
             {
-                value.append(file.data() + pos, file.data() + character_position);
+                pair_writer.appendValue(file.data() + pos, file.data() + character_position);
 
                 return {next_pos, State::FLUSH_PAIR};
             }
@@ -303,16 +309,32 @@ private:
      * Helper method to copy bytes until `character_pos` and process possible escape sequence. Returns a pair containing a boolean
      * that indicates success and a std::size_t that contains the number of bytes read/ consumed.
      * */
+    template <bool isKey>
     std::pair<bool, std::size_t> consumeWithEscapeSequence(std::string_view file, size_t start_pos, size_t character_pos, auto & output) const
     {
         std::string escaped_sequence;
         DB::ReadBufferFromMemory buf(file.data() + character_pos, file.size() - character_pos);
 
-        output.append(file.data() + start_pos, file.data() + character_pos);
+        if constexpr (isKey)
+        {
+            output.appendKey(file.data() + start_pos, file.data() + character_pos);
+        }
+        else
+        {
+            output.appendValue(file.data() + start_pos, file.data() + character_pos);
+        }
 
         if (DB::parseComplexEscapeSequence(escaped_sequence, buf))
         {
-            output.append(escaped_sequence);
+            if constexpr (isKey)
+            {
+                output.appendKey(escaped_sequence);
+            }
+            else
+            {
+                output.appendValue(escaped_sequence);
+            }
+
 
             return {true, buf.getPosition()};
         }
@@ -349,54 +371,94 @@ struct NoEscapingStateHandler : public StateHandlerImpl<false>
      * */
     class StringWriter
     {
-        ColumnString & col;
+        ColumnString & key_col;
+        ColumnString & value_col;
 
-        std::string_view element;
+        std::string_view key;
+        std::string_view value;
 
     public:
-        explicit StringWriter(ColumnString & col_)
-            : col(col_)
+        StringWriter(ColumnString & key_col_, ColumnString & value_col_)
+            : key_col(key_col_), value_col(value_col_)
         {}
 
         ~StringWriter()
         {
             // Make sure that ColumnString invariants are not broken.
-            if (!isEmpty())
+            if (!isKeyEmpty())
             {
-                reset();
+                resetKey();
+            }
+
+            if (!isValueEmpty())
+            {
+                resetValue();
             }
         }
 
-        void append(std::string_view new_data)
+        void appendKey(std::string_view new_data)
         {
-            element = new_data;
+            key = new_data;
         }
 
         template <typename T>
-        void append(const T * begin, const T * end)
+        void appendKey(const T * begin, const T * end)
         {
-            append({begin, end});
+            appendKey({begin, end});
         }
 
-        void reset()
+        void appendValue(std::string_view new_data)
         {
-            element = {};
+            value = new_data;
         }
 
-        bool isEmpty() const
+        template <typename T>
+        void appendValue(const T * begin, const T * end)
         {
-            return element.empty();
+            appendValue({begin, end});
         }
 
-        void commit()
+        void resetKey()
         {
-            col.insertData(element.data(), element.size());
-            reset();
+            key = {};
         }
 
-        std::string_view uncommittedChunk() const
+        void resetValue()
         {
-            return element;
+            value = {};
+        }
+
+        bool isKeyEmpty() const
+        {
+            return key.empty();
+        }
+
+        bool isValueEmpty() const
+        {
+            return value.empty();
+        }
+
+        void commitKey()
+        {
+            key_col.insertData(key.data(), key.size());
+            resetKey();
+        }
+
+        void commitValue()
+        {
+            value_col.insertData(value.data(), value.size());
+            resetValue();
+        }
+
+
+        std::string_view uncommittedKeyChunk() const
+        {
+            return key;
+        }
+
+        std::string_view uncommittedValueChunk() const
+        {
+            return value;
         }
     };
 
@@ -409,56 +471,100 @@ struct InlineEscapingStateHandler : public StateHandlerImpl<true>
 {
     class StringWriter
     {
-        ColumnString & col;
-        ColumnString::Chars & chars;
-        UInt64 prev_commit_pos;
+        ColumnString & key_col;
+        ColumnString::Chars & key_chars;
+        UInt64 key_prev_commit_pos;
+
+        ColumnString & value_col;
+        ColumnString::Chars & value_chars;
+        UInt64 value_prev_commit_pos;
 
     public:
-        explicit StringWriter(ColumnString & col_)
-            : col(col_),
-            chars(col.getChars()),
-            prev_commit_pos(chars.size())
+        StringWriter(ColumnString & key_col_, ColumnString & value_col_)
+            : key_col(key_col_),
+            key_chars(key_col_.getChars()),
+            key_prev_commit_pos(key_chars.size()),
+            value_col(value_col_),
+            value_chars(value_col_.getChars()),
+            value_prev_commit_pos(value_chars.size())
         {}
 
         ~StringWriter()
         {
             // Make sure that ColumnString invariants are not broken.
-            if (!isEmpty())
+            if (!isKeyEmpty())
             {
-                reset();
+                resetKey();
+           }
+
+            if (!isValueEmpty())
+            {
+                resetValue();
             }
         }
 
-        void append(std::string_view new_data)
+        void appendKey(std::string_view new_data)
         {
-            chars.insert(new_data.begin(), new_data.end());
+            key_chars.insert(new_data.begin(), new_data.end());
         }
 
         template <typename T>
-        void append(const T * begin, const T * end)
+        void appendKey(const T * begin, const T * end)
         {
-            chars.insert(begin, end);
+            key_chars.insert(begin, end);
         }
 
-        void reset()
+        void appendValue(std::string_view new_data)
         {
-            chars.resize_assume_reserved(prev_commit_pos);
+            value_chars.insert(new_data.begin(), new_data.end());
         }
 
-        bool isEmpty() const
+        template <typename T>
+        void appendValue(const T * begin, const T * end)
         {
-            return chars.size() == prev_commit_pos;
+            value_chars.insert(begin, end);
         }
 
-        void commit()
+        void resetKey()
         {
-            col.insertData(nullptr, 0);
-            prev_commit_pos = chars.size();
+            key_chars.resize_assume_reserved(key_prev_commit_pos);
+        }
+
+        void resetValue()
+        {
+            value_chars.resize_assume_reserved(value_prev_commit_pos);
+        }
+
+        bool isKeyEmpty() const
+        {
+            return key_chars.size() == key_prev_commit_pos;
+        }
+
+        bool isValueEmpty() const
+        {
+            return value_chars.size() == value_prev_commit_pos;
+        }
+
+        void commitKey()
+        {
+            key_col.insertData(nullptr, 0);
+            key_prev_commit_pos = key_chars.size();
+        }
+
+        void commitValue()
+        {
+            value_col.insertData(nullptr, 0);
+            value_prev_commit_pos = value_chars.size();
+        }
+
+        std::string_view uncommittedKeyChunk() const
+        {
+            return std::string_view(key_chars.raw_data() + key_prev_commit_pos, key_chars.raw_data() + key_chars.size());
         }
 
         std::string_view uncommittedChunk() const
         {
-            return std::string_view(chars.raw_data() + prev_commit_pos, chars.raw_data() + chars.size());
+            return std::string_view(value_chars.raw_data() + value_prev_commit_pos, value_chars.raw_data() + value_chars.size());
         }
     };
 
@@ -466,6 +572,114 @@ struct InlineEscapingStateHandler : public StateHandlerImpl<true>
     explicit InlineEscapingStateHandler(Args && ... args)
         : StateHandlerImpl<true>(std::forward<Args>(args)...) {}
 };
+
+struct ReferencesOnlyStateHandler : public StateHandlerImpl<false>
+{
+    /*
+     * View based StringWriter, no copies at all
+     * */
+    class StringWriter
+    {
+        absl::flat_hash_map<std::string_view, std::string_view> & map;
+
+        std::string_view key;
+        std::string_view value;
+
+    public:
+        explicit StringWriter(absl::flat_hash_map<std::string_view, std::string_view> & map_)
+            : map(map_)
+        {}
+
+        ~StringWriter()
+        {
+            // Make sure that ColumnString invariants are not broken.
+            if (!isKeyEmpty())
+            {
+                resetKey();
+            }
+
+            if (!isValueEmpty())
+            {
+                resetValue();
+            }
+        }
+
+        void appendKey(std::string_view new_data)
+        {
+            key = new_data;
+        }
+
+        template <typename T>
+        void appendKey(const T * begin, const T * end)
+        {
+            appendKey({begin, end});
+        }
+
+        void appendValue(std::string_view new_data)
+        {
+            value = new_data;
+        }
+
+        template <typename T>
+        void appendValue(const T * begin, const T * end)
+        {
+            appendValue({begin, end});
+        }
+
+        void resetKey()
+        {
+            key = {};
+        }
+
+        void resetValue()
+        {
+            value = {};
+        }
+
+        bool isKeyEmpty() const
+        {
+            return key.empty();
+        }
+
+        bool isValueEmpty() const
+        {
+            return value.empty();
+        }
+
+        void commitKey()
+        {
+            // don't do anything
+        }
+
+        void commitValue()
+        {
+            if (map.contains(key) && value != map[key])
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "bla bla bla");
+            }
+
+            map[key] = value;
+
+            resetValue();
+            resetKey();
+        }
+
+        std::string_view uncommittedKeyChunk() const
+        {
+            return key;
+        }
+
+        std::string_view uncommittedValueChunk() const
+        {
+            return value;
+        }
+    };
+
+    template <typename ... Args>
+    explicit ReferencesOnlyStateHandler(Args && ... args)
+    : StateHandlerImpl<false>(std::forward<Args>(args)...) {}
+};
+
 
 }
 

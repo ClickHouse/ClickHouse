@@ -5,7 +5,9 @@
 #include <Columns/ColumnsNumber.h>
 
 #include <Functions/keyvaluepair/impl/StateHandler.h>
+#include <Functions/keyvaluepair/impl/StateHandlerImpl.h>
 #include <Functions/keyvaluepair/impl/KeyValuePairExtractor.h>
+#include <absl/container/flat_hash_map.h>
 
 namespace DB
 {
@@ -30,23 +32,17 @@ public:
         : state_handler(std::move(state_handler_)), max_number_of_pairs(max_number_of_pairs_)
     {}
 
-    uint64_t extract(const std::string & data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values) override
-    {
-        return extract(std::string_view {data}, keys, values);
-    }
-
-    uint64_t extract(std::string_view data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values) override
+    uint64_t extractOnlyReferences(std::string_view & data, absl::flat_hash_map<std::string_view, std::string_view> & map)
     {
         auto state =  State::WAITING_KEY;
 
-        auto key = typename StateHandler::StringWriter(*keys);
-        auto value = typename StateHandler::StringWriter(*values);
+        auto pair_writer = extractKV::ReferencesOnlyStateHandler::StringWriter(map);
 
         uint64_t row_offset = 0;
 
         while (state != State::END)
         {
-            auto next_state = processState(data, state, key, value, row_offset);
+            auto next_state = processState(data, state, pair_writer, row_offset);
 
             if (next_state.position_in_string > data.size() && next_state.state != State::END)
             {
@@ -61,14 +57,49 @@ public:
         }
 
         // below reset discards invalid keys and values
-        reset(key, value);
+        reset(pair_writer);
+
+        return row_offset;
+    }
+
+    uint64_t extract(const std::string & data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values) override
+    {
+        return extract(std::string_view {data}, keys, values);
+    }
+
+    uint64_t extract(std::string_view data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values) override
+    {
+        auto state =  State::WAITING_KEY;
+
+        auto pair_writer = typename StateHandler::StringWriter(*keys, *values);
+
+        uint64_t row_offset = 0;
+
+        while (state != State::END)
+        {
+            auto next_state = processState(data, state, pair_writer, row_offset);
+
+            if (next_state.position_in_string > data.size() && next_state.state != State::END)
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Attempt to move read pointer past end of available data, from state {} to new state: {}, new position: {}, available data: {}",
+                        magic_enum::enum_name(state), magic_enum::enum_name(next_state.state),
+                        next_state.position_in_string, data.size());
+            }
+
+            data.remove_prefix(next_state.position_in_string);
+            state = next_state.state;
+        }
+
+        // below reset discards invalid keys and values
+        reset(pair_writer);
 
         return row_offset;
     }
 
 private:
 
-    NextState processState(std::string_view file, State state, auto & key, auto & value, uint64_t & row_offset)
+    NextState processState(std::string_view file, State state, auto & pair_writer, uint64_t & row_offset)
     {
         switch (state)
         {
@@ -78,11 +109,11 @@ private:
             }
             case State::READING_KEY:
             {
-                return state_handler.readKey(file, key);
+                return state_handler.readKey(file, pair_writer);
             }
             case State::READING_QUOTED_KEY:
             {
-                return state_handler.readQuotedKey(file, key);
+                return state_handler.readQuotedKey(file, pair_writer);
             }
             case State::READING_KV_DELIMITER:
             {
@@ -94,15 +125,15 @@ private:
             }
             case State::READING_VALUE:
             {
-                return state_handler.readValue(file, value);
+                return state_handler.readValue(file, pair_writer);
             }
             case State::READING_QUOTED_VALUE:
             {
-                return state_handler.readQuotedValue(file, value);
+                return state_handler.readQuotedValue(file, pair_writer);
             }
             case State::FLUSH_PAIR:
             {
-                return flushPair(file, key, value, row_offset);
+                return flushPair(file, pair_writer, row_offset);
             }
             case State::END:
             {
@@ -111,8 +142,7 @@ private:
         }
     }
 
-    NextState flushPair(const std::string_view & file, auto & key,
-                        auto & value, uint64_t & row_offset)
+    NextState flushPair(const std::string_view & file, auto & pair_writer, uint64_t & row_offset)
     {
         row_offset++;
 
@@ -121,16 +151,16 @@ private:
             throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Number of pairs produced exceeded the limit of {}", max_number_of_pairs);
         }
 
-        key.commit();
-        value.commit();
+        pair_writer.commitKey();
+        pair_writer.commitValue();
 
         return {0, file.empty() ? State::END : State::WAITING_KEY};
     }
 
-    void reset(auto & key, auto & value)
+    void reset(auto & pair_writer)
     {
-        key.reset();
-        value.reset();
+        pair_writer.resetKey();
+        pair_writer.resetValue();
     }
 
     StateHandler state_handler;
