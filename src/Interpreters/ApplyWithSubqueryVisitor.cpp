@@ -72,7 +72,7 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
                 if (ast_with_elem)
                     new_data->subqueries[ast_with_elem->name] = ast_with_elem->subquery;
                 else
-                    new_data->subqueries[ast_literal->alias] = child;
+                    new_data->literals[ast_literal->alias] = child;
             }
         }
     }
@@ -126,15 +126,26 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
             {
                 /// Clang-tidy is wrong on this line, because `func.arguments->children.at(1)` gets replaced before last use of `name`.
                 auto name = identifier->shortName();  // NOLINT
+
                 auto subquery_it = data.subqueries.find(name);
                 if (subquery_it != data.subqueries.end())
                 {
                     auto old_alias = func.arguments->children[1]->tryGetAlias();
                     func.arguments->children[1] = subquery_it->second->clone();
-                    if (auto * subquery = func.arguments->children[1]->as<ASTSubquery>())
-                        subquery->cte_name = name;
+                    func.arguments->children[1]->as<ASTSubquery>()->cte_name = name;
                     if (!old_alias.empty())
                         func.arguments->children[1]->setAlias(old_alias);
+                }
+                else
+                {
+                    auto literal_it = data.literals.find(name);
+                    if (literal_it != data.literals.end())
+                    {
+                        auto old_alias = func.arguments->children[1]->tryGetAlias();
+                        func.arguments->children[1] = literal_it->second->clone();
+                        if (!old_alias.empty())
+                            func.arguments->children[1]->setAlias(old_alias);
+                    }
                 }
             }
         }
