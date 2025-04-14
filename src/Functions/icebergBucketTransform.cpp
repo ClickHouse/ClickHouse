@@ -13,6 +13,7 @@
 #include <Interpreters/Context.h>
 #include <Poco/Logger.h>
 #include "Columns/ColumnsDateTime.h"
+#include "Core/ColumnWithTypeAndName.h"
 #include "Core/Field.h"
 #include "Core/Types.h"
 #include "DataTypes/DataTypeDateTime64.h"
@@ -36,6 +37,8 @@ namespace ErrorCodes
 
 namespace
 {
+
+}
 
 /// This function specification https://iceberg.apache.org/spec/#truncate-transform-details
 class FunctionIcebergHash : public IFunction
@@ -299,8 +302,8 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         auto value = (*arguments[0].column)[0].safeGet<Int64>();
-        if (value <= 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function IcebergBucket accepts only positive width");
+        if (value <= 0 || value > std::numeric_limits<UInt32>::max())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function IcebergBucket accepts only positive width which is suitable to UInt32");
 
         auto context = Context::getGlobalContextInstance();
 
@@ -310,41 +313,94 @@ public:
         auto iceberg_hash_result = iceberg_hash_func->execute(iceberg_hash_arguments, iceberg_hash_result_type, input_rows_count, false);
         
         auto iceberg_hash_result_with_type = ColumnWithTypeAndName(iceberg_hash_result, std::make_shared<DataTypeInt32>(), "");
-        auto max_int_with_type = ColumnWithTypeAndName(std::make_shared<DataTypeInt32>()->createColumnConstWithDefaultValue(std::numeric_limits<Int32>::max()), std::make_shared<DataTypeInt32>(), "");
+        auto max_int_with_type = ColumnWithTypeAndName(
+            std::make_shared<DataTypeInt32>()->createColumnConst(input_rows_count, std::numeric_limits<Int32>::max()),
+            std::make_shared<DataTypeInt32>(),
+            "");
         auto bitand_result_type = std::make_shared<DataTypeInt32>();
         auto bitand_result = FunctionFactory::instance().get("bitAnd", context)->build({iceberg_hash_result_with_type, max_int_with_type})->execute({iceberg_hash_result_with_type, max_int_with_type}, bitand_result_type, input_rows_count, false);
 
         ColumnWithTypeAndName bitand_result_with_type(bitand_result, bitand_result_type, "");
-        ColumnsWithTypeAndName modulo_arguments = {iceberg_hash_result_with_type, arguments[0]};
+        auto modulo_column = ColumnWithTypeAndName(
+            std::make_shared<DataTypeUInt32>()->createColumnConst(input_rows_count, static_cast<UInt32>(value)),
+            std::make_shared<DataTypeUInt32>(),
+            "");
+        ColumnsWithTypeAndName modulo_arguments = {bitand_result_with_type, modulo_column};
         auto modulo_func = FunctionFactory::instance().get("positiveModulo", context)->build(modulo_arguments);
-        auto modulo_result_type = modulo_func->getResultType();
-        return modulo_func->execute(modulo_arguments, modulo_result_type, input_rows_count, false);
+        return modulo_func->execute(modulo_arguments, std::make_shared<DataTypeUInt32>(), input_rows_count, false);
     }
 
-    bool useDefaultImplementationForConstants() const override
-    {
-        return true;
-    }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeString>(); }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 };
 
 REGISTER_FUNCTION(IcebergBucket)
 {
-    FunctionDocumentation::Description description = R"(Implements logic of iceberg truncate transform: https://iceberg.apache.org/spec/#truncate-transform-details.)";
-    FunctionDocumentation::Syntax syntax = "IcebergBucket(N, value)";
+    FunctionDocumentation::Description description
+        = R"(Implements logic of iceberg truncate transform: https://iceberg.apache.org/spec/#truncate-transform-details.)";
+    FunctionDocumentation::Syntax syntax = "icebergBucket(N, value)";
     FunctionDocumentation::Arguments arguments = {{"value", "String, integer or Decimal value."}};
     FunctionDocumentation::ReturnedValue returned_value = "The same type as argument";
-    FunctionDocumentation::Examples examples = {{"Example", "SELECT IcebergBucket(3, 'iceberg')", "ice"}};
+    FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergBucket(3, 'iceberg')", "ice"}};
     FunctionDocumentation::Category category = {"Other"};
 
     factory.registerFunction<FunctionIcebergBucket>({description, syntax, arguments, returned_value, examples, category});
 }
-}
 
+
+class FunctionIcebergHashBitAnd : public IFunction
+{
+public:
+    static inline const char * name = "icebergHashBitAnd";
+
+    explicit FunctionIcebergHashBitAnd(ContextPtr) { }
+
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionIcebergHashBitAnd>(context_); }
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeInt32>(); }
+
+    ColumnPtr
+    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    {
+        auto context = Context::getGlobalContextInstance();
+
+        auto iceberg_hash_arguments = {arguments[0]};
+        auto iceberg_hash_func = FunctionFactory::instance().get("icebergHash", context)->build(iceberg_hash_arguments);
+        auto iceberg_hash_result_type = iceberg_hash_func->getResultType();
+        auto iceberg_hash_result = iceberg_hash_func->execute(iceberg_hash_arguments, iceberg_hash_result_type, input_rows_count, false);
+
+        auto iceberg_hash_result_with_type = ColumnWithTypeAndName(iceberg_hash_result, std::make_shared<DataTypeInt32>(), "");
+        auto max_int_with_type = ColumnWithTypeAndName(
+            std::make_shared<DataTypeInt32>()->createColumnConst(input_rows_count, std::numeric_limits<Int32>::max()),
+            std::make_shared<DataTypeInt32>(),
+            "");
+
+        auto bitand_result_type = std::make_shared<DataTypeInt32>();
+        return FunctionFactory::instance()
+            .get("bitAnd", context)
+            ->build({iceberg_hash_result_with_type, max_int_with_type})
+            ->execute({iceberg_hash_result_with_type, max_int_with_type}, bitand_result_type, input_rows_count, false);
+    }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+};
+
+REGISTER_FUNCTION(IcebergHashBitAnd)
+{
+    FunctionDocumentation::Description description = R"(Implements logic of iceberg truncate transform: https://iceberg.apache.org/spec/#truncate-transform-details.)";
+    FunctionDocumentation::Syntax syntax = "icebergHashBitAnd(N, value)";
+    FunctionDocumentation::Arguments arguments = {{"value", "String, integer or Decimal value."}};
+    FunctionDocumentation::ReturnedValue returned_value = "The same type as argument";
+    FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergBucket(3, 'iceberg')", "ice"}};
+    FunctionDocumentation::Category category = {"Other"};
+
+    factory.registerFunction<FunctionIcebergHashBitAnd>({description, syntax, arguments, returned_value, examples, category});
+}
 }
