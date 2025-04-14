@@ -881,7 +881,8 @@ void StatementGenerator::generateNextExchange(RandomGenerator & rg, Exchange * e
     const uint32_t prob_space = exchange_table + exchange_view + exchange_dictionary;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
-    std::optional<String> cluster1, cluster2;
+    std::optional<String> cluster1;
+    std::optional<String> cluster2;
 
     if (exchange_table && nopt < (exchange_table + 1))
     {
