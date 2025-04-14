@@ -294,7 +294,7 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach)
 MergeTreeIndexPtr legacyVectorSimilarityIndexCreator(const IndexDescription & index);
 void legacyVectorSimilarityIndexValidator(const IndexDescription & index, bool attach);
 
-MergeTreeIndexPtr fullTextIndexCreator(const IndexDescription & index);
-void fullTextIndexValidator(const IndexDescription & index, bool attach);
+MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index);
+void ginIndexValidator(const IndexDescription & index, bool attach);
 
 }

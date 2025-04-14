@@ -72,7 +72,8 @@ class StorageUsage(MetaClasses.SerializableSingleton):
         file_zize = cls.get_size_bytes(file_path)
         usage.uploaded += file_zize
         if file_name in usage.uploaded_details:
-            print(f"WARNING: Duplicated upload for filename [{file_name}]")
+            if not file_name.startswith("result_"):
+                print(f"WARNING: Duplicated upload for filename [{file_name}]")
             usage.uploaded_details[file_name] += file_zize
         else:
             usage.uploaded_details[file_name] = file_zize
@@ -109,7 +110,7 @@ class S3:
         cmd = f"aws s3 rm s3://{s3_path} --recursive"
         if include:
             cmd += f' --exclude "*" --include "{include}"'
-        cls.run_command_with_retries(cmd, retries=1)
+        cls.run_command_with_retries(cmd, retries=1, with_stderr=True)
         return
 
     @classmethod
@@ -196,7 +197,11 @@ class S3:
 
     @classmethod
     def run_command_with_retries(
-        cls, command, retries=Settings.MAX_RETRIES_S3, no_strict=False
+        cls,
+        command,
+        retries=Settings.MAX_RETRIES_S3,
+        no_strict=False,
+        with_stderr=False,
     ):
         i = 0
         res = False
@@ -224,6 +229,8 @@ class S3:
                 print(
                     f"ERROR: aws s3 cp failed, stdout/stderr err: [{stderr}], out [{stdout}]"
                 )
+            elif with_stderr and (stdout or stderr):
+                print(f"stdout: {stdout}\nstderr: {stderr}")
             res = ret_code == 0
         if not res and not no_strict:
             raise RuntimeError(f"s3 command failed: [{stderr}]")
@@ -275,7 +282,7 @@ class S3:
         ).is_dir(), f"Path [{local_path}] does not exist or not a directory"
         assert s3_path.endswith("/"), f"s3 path is invalid [{s3_path}]"
         cmd = f'aws s3 cp s3://{s3_path}  {local_path} --exclude "{exclude}" --include "{include}" --recursive'
-        res = cls.run_command_with_retries(cmd, no_strict=no_strict)
+        res = cls.run_command_with_retries(cmd, no_strict=no_strict, with_stderr=True)
         if res:
             print(
                 "TODO: support StorageUsage.add_downloaded with matching pattern download"
