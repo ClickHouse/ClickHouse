@@ -162,12 +162,7 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
     )
 
     # Locate coordination znodes.
-    znode_exists = (
-        lambda uuid: nodes[randint(0, 1)].query(
-            f"select count() from system.zookeeper where path = '/clickhouse/tables/{uuid}' and name = 'shard1'"
-        )
-        == "1\n"
-    )
+    znode_exists_query = lambda uuid: f"select count() from system.zookeeper where path = '/clickhouse/tables/{uuid}' and name = 'shard1'"
     tables = []
     for row in node1.query(
         "select table, uuid from system.tables where database = 're'"
@@ -178,7 +173,8 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
             continue
         coordinated = not name.endswith("uncoordinated")
         tables.append((name, uuid, coordinated))
-        assert coordinated == znode_exists(uuid)
+        znode_exists = nodes[randint(0, 1)].query(znode_exists_query(uuid)) == '1\n'
+        assert coordinated == znode_exists
     assert sorted([name for (name, _, _) in tables]) == [
         "a",
         "append",
@@ -194,7 +190,7 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
         nodes[randint(0, 1)].query(f"drop table re.{name}{' sync' if sync else ''}")
         # TODO: After https://github.com/ClickHouse/ClickHouse/issues/61065 is done (for MVs, not ReplicatedMergeTree), check the parent znode instead.
         if sync:
-            assert not znode_exists(uuid)
+            assert_eq_with_retry(nodes[randint(0, 1)], znode_exists_query(uuid), '0\n')
 
     # A little stress test dropping MV while it's refreshing, hoping to hit various cases where the
     # drop happens while creating/exchanging/dropping the inner table.

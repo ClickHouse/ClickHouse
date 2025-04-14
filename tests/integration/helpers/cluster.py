@@ -56,7 +56,7 @@ from minio import Minio
 
 from helpers import pytest_xdist_logging_to_separate_files
 from helpers.client import QueryRuntimeException
-from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
+from helpers.test_tools import exec_query_with_retry
 
 from .client import Client
 from .config_cluster import *
