@@ -572,6 +572,7 @@ void DatabaseAtomic::tryCreateSymlink(const StoragePtr & table, bool if_data_pat
 {
     if (!db_disk->isSymlinkSupported())
         return;
+
     try
     {
         String table_name = table->getStorageID().getTableName();
