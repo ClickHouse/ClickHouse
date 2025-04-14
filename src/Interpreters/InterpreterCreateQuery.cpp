@@ -267,8 +267,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         }
         auto engine = std::make_shared<ASTFunction>();
         engine->name = "Atomic";
-        engine->no_empty_args = true;
-        engine->no_empty_args = true;
         create.storage->set(create.storage->engine, engine);
     }
     else if ((create.columns_list
