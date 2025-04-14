@@ -136,7 +136,7 @@ void RemoteSource::work()
 
 void RemoteSource::onAsyncJobReady()
 {
-    chassert(async_read);
+    chassert(async_read || async_query_sending);
 
     if (!was_query_sent)
         return;

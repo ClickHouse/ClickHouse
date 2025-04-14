@@ -5,23 +5,13 @@ set -e
 # Avoid dependency on locale
 LC_ALL=C
 
-# Normalize output directory
-if [ -n "$OUTPUT_DIR" ]; then
-    OUTPUT_DIR=$(realpath -m "$OUTPUT_DIR")
-fi
-
-CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-cd "$CUR_DIR"
-
-ROOT_DIR=$(readlink -f "$(git rev-parse --show-cdup)")
-
 PKG_ROOT='root'
 
 DEB_ARCH=${DEB_ARCH:-amd64}
-OUTPUT_DIR=${OUTPUT_DIR:-$ROOT_DIR}
-[ -d "${OUTPUT_DIR}" ] || mkdir -p "${OUTPUT_DIR}"
 SANITIZER=${SANITIZER:-""}
 SOURCE=${SOURCE:-$PKG_ROOT}
+
+cd "$(dirname "${BASH_SOURCE[0]}")"
 
 HELP="${0} [--test] [--rpm] [-h|--help]
   --test - adds '+test' prefix to version
@@ -40,12 +30,7 @@ Used envs:
   VERSION_STRING='${VERSION_STRING}' - the package version to overwrite
 "
 
-if [ -z "${VERSION_STRING}" ]; then
-    # Get CLICKHOUSE_VERSION_STRING from the current git repo
-    eval "$("$ROOT_DIR/tests/ci/version_helper.py" -e)"
-else
-    CLICKHOUSE_VERSION_STRING=${VERSION_STRING}
-fi
+CLICKHOUSE_VERSION_STRING=${VERSION_STRING}
 export CLICKHOUSE_VERSION_STRING
 
 
@@ -146,29 +131,27 @@ echo -e "\nCurrent version is $CLICKHOUSE_VERSION_STRING"
 for config in clickhouse*.yaml; do
     if [ -n "$MAKE_DEB" ] || [ -n "$MAKE_TGZ" ]; then
         echo "Building deb package for $config"
-
-        # Preserve package path
-        exec 9>&1
-        PKG_PATH=$(nfpm package --target "$OUTPUT_DIR" --config "$config" --packager deb | tee /dev/fd/9)
-        PKG_PATH=${PKG_PATH##*created package: }
-        exec 9>&-
+        PKG_PATH=$(nfpm package --target "$OUTPUT_DIR" --config "$config" --packager deb | tee /dev/stderr | grep "created package:" | sed 's/.*created package: //')
     fi
 
     if [ -n "$MAKE_APK" ]; then
-      echo "Building apk package for $config"
-      nfpm package --target "$OUTPUT_DIR" --config "$config" --packager apk
+        echo "Building apk package for $config"
+        nfpm package --target "$OUTPUT_DIR" --config "$config" --packager apk
     fi
+
     if [ -n "$MAKE_ARCHLINUX" ]; then
-      echo "Building archlinux package for $config"
-      nfpm package --target "$OUTPUT_DIR" --config "$config" --packager archlinux
+        echo "Building archlinux package for $config"
+        nfpm package --target "$OUTPUT_DIR" --config "$config" --packager archlinux
     fi
+
     if [ -n "$MAKE_RPM" ]; then
-      echo "Building rpm package for $config"
-      nfpm package --target "$OUTPUT_DIR" --config "$config" --packager rpm
+        echo "Building rpm package for $config"
+        nfpm package --target "$OUTPUT_DIR" --config "$config" --packager rpm
     fi
+
     if [ -n "$MAKE_TGZ" ]; then
-      echo "Building tarball for $config"
-      deb2tgz "$PKG_PATH"
+        echo "Building tarball for $config"
+        deb2tgz "$PKG_PATH"
     fi
 done
 

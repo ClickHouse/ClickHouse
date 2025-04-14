@@ -1,4 +1,5 @@
-#include "StorageMaterializedPostgreSQL.h"
+#include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
+#include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
 
 #if USE_LIBPQXX
 #include <Common/logger_useful.h>
@@ -10,6 +11,7 @@
 #include <Core/Settings.h>
 #include <Core/PostgreSQL/Connection.h>
 
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -23,11 +25,12 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/formatAST.h>
 
 #include <Interpreters/applyTableOverride.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterDropQuery.h>
 
 #include <Storages/StorageFactory.h>
@@ -44,6 +47,11 @@ namespace Setting
     extern const SettingsBool allow_experimental_materialized_postgresql_table;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 postgresql_connection_attempt_timeout;
+}
+
+namespace MaterializedPostgreSQLSetting
+{
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
 }
 
 namespace ErrorCodes
@@ -79,7 +87,7 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     setInMemoryMetadata(storage_metadata);
     setVirtuals(createVirtuals());
 
-    replication_settings->materialized_postgresql_tables_list = remote_table_name_;
+    (*replication_settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list] = remote_table_name_;
 
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
             remote_database_name,
@@ -326,39 +334,24 @@ ASTPtr StorageMaterializedPostgreSQL::getColumnDeclaration(const DataTypePtr & d
     /// getName() for decimal returns 'Decimal(precision, scale)', will get an error with it
     if (which.isDecimal())
     {
-        auto make_decimal_expression = [&](std::string type_name)
-        {
-            auto ast_expression = std::make_shared<ASTDataType>();
-
-            ast_expression->name = type_name;
-            ast_expression->arguments = std::make_shared<ASTExpressionList>();
-            ast_expression->arguments->children.emplace_back(std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
-
-            return ast_expression;
-        };
-
         if (which.isDecimal32())
-            return make_decimal_expression("Decimal32");
+            return makeASTDataType("Decimal32", std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
 
         if (which.isDecimal64())
-            return make_decimal_expression("Decimal64");
+            return makeASTDataType("Decimal64", std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
 
         if (which.isDecimal128())
-            return make_decimal_expression("Decimal128");
+            return makeASTDataType("Decimal128", std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
 
         if (which.isDecimal256())
-            return make_decimal_expression("Decimal256");
+            return makeASTDataType("Decimal256", std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
     }
 
     if (which.isDateTime64())
-    {
-        auto ast_expression = std::make_shared<ASTDataType>();
+        return makeASTDataType("DateTime64", std::make_shared<ASTLiteral>(static_cast<UInt32>(6)));
 
-        ast_expression->name = "DateTime64";
-        ast_expression->arguments = std::make_shared<ASTExpressionList>();
-        ast_expression->arguments->children.emplace_back(std::make_shared<ASTLiteral>(static_cast<UInt32>(6)));
-        return ast_expression;
-    }
+    if (which.isFixedString())
+        return makeASTDataType("FixedString", std::make_shared<ASTLiteral>(assert_cast<const DataTypeFixedString &>(*data_type).getN()));
 
     return makeASTDataType(data_type->getName());
 }
@@ -617,13 +610,14 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
     };
 
     factory.registerStorage(
-            "MaterializedPostgreSQL",
-            creator_fn,
-            StorageFactory::StorageFeatures{
-                .supports_settings = true,
-                .supports_sort_order = true,
-                .source_access_type = AccessType::POSTGRES,
-    });
+        "MaterializedPostgreSQL",
+        creator_fn,
+        StorageFactory::StorageFeatures{
+            .supports_settings = true,
+            .supports_sort_order = true,
+            .source_access_type = AccessType::POSTGRES,
+            .has_builtin_setting_fn = MaterializedPostgreSQLSettings::hasBuiltin,
+        });
 }
 
 }

@@ -31,6 +31,8 @@ public:
             ///   - ObjectDynamicPath stream for each column in dynamic paths
             ///   - ObjectSharedData stream shared data column.
             V1 = 0,
+            /// V2 serialization: the same as V1 but without max_dynamic_paths parameter in ObjectStructure stream.
+            V2 = 2,
             /// String serialization:
             ///  - ObjectData stream with single String column containing serialized JSON.
             STRING = 1,
@@ -76,6 +78,7 @@ public:
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -98,21 +101,22 @@ private:
     struct DeserializeBinaryBulkStateObjectStructure : public ISerialization::DeserializeBinaryBulkState
     {
         ObjectSerializationVersion serialization_version;
-        size_t max_dynamic_paths;
         std::vector<String> sorted_dynamic_paths;
         std::unordered_set<String> dynamic_paths;
         /// Paths statistics. Map (dynamic path) -> (number of non-null values in this path).
         ColumnObject::StatisticsPtr statistics;
 
         explicit DeserializeBinaryBulkStateObjectStructure(UInt64 serialization_version_) : serialization_version(serialization_version_) {}
+
+        DeserializeBinaryBulkStatePtr clone() const override
+        {
+            return std::make_shared<DeserializeBinaryBulkStateObjectStructure>(*this);
+        }
     };
 
     static DeserializeBinaryBulkStatePtr deserializeObjectStructureStatePrefix(
         DeserializeBinaryBulkSettings & settings,
         SubstreamsDeserializeStatesCache * cache);
-
-    /// Shared data has type Array(Tuple(String, String)).
-    static const DataTypePtr & getTypeOfSharedData();
 
     struct TypedPathSubcolumnCreator : public ISubcolumnCreator
     {
@@ -122,7 +126,7 @@ private:
 
         DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
         ColumnPtr create(const ColumnPtr & prev) const override { return prev; }
-        SerializationPtr create(const SerializationPtr & prev) const override;
+        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
     };
 
 protected:

@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/QueryPlan/PartsSplitter.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/SelectQueryInfo.h>
@@ -10,6 +11,9 @@
 
 namespace DB
 {
+
+struct LazilyReadInfo;
+using LazilyReadInfoPtr = std::shared_ptr<LazilyReadInfo>;
 
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
@@ -88,6 +92,7 @@ public:
     struct AnalysisResult
     {
         RangesInDataParts parts_with_ranges;
+        SplitPartsByRanges split_parts;
         MergeTreeDataSelectSamplingData sampling;
         IndexStats index_stats;
         Names column_names_to_read;
@@ -169,6 +174,7 @@ public:
     static AnalysisResultPtr selectRangesToRead(
         MergeTreeData::DataPartsVector parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
+        const std::optional<VectorSearchParameters> & vector_search_parameters,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
@@ -185,14 +191,16 @@ public:
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
+    const LazilyReadInfoPtr & getLazilyReadInfo() const { return lazily_read_info; }
 
     /// Returns `false` if requested reading cannot be performed.
-    bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
+    bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit, std::optional<ActionsDAG> virtual_row_conversion_);
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
     const SortDescription & getSortDescription() const override { return result_sort_description; }
 
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
+    void updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_read_info_value);
     bool isQueryWithSampling() const;
 
     /// Returns true if the optimization is applicable (and applies it then).
@@ -212,6 +220,8 @@ public:
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
+    void setVectorSearchParameters(std::optional<VectorSearchParameters> && vector_search_parameters_) { vector_search_parameters = vector_search_parameters_; }
+
 private:
     MergeTreeReaderSettings reader_settings;
 
@@ -221,6 +231,7 @@ private:
     Names all_column_names;
 
     const MergeTreeData & data;
+    LazilyReadInfoPtr lazily_read_info;
     ExpressionActionsSettings actions_settings;
 
     const MergeTreeReadTask::BlockSizeParams block_size;
@@ -243,6 +254,8 @@ private:
     UInt64 selected_rows = 0;
     UInt64 selected_marks = 0;
 
+    std::optional<VectorSearchParameters> vector_search_parameters;
+
     using PoolSettings = MergeTreeReadPoolBase::PoolSettings;
 
     Pipe read(RangesInDataParts parts_with_range, Names required_columns, ReadType read_type, size_t max_streams, size_t min_marks_for_concurrent_read, bool use_uncompressed_cache);
@@ -253,6 +266,8 @@ private:
     Pipe spreadMarkRanges(RangesInDataParts && parts_with_ranges, size_t num_streams, AnalysisResult & result, std::optional<ActionsDAG> & result_projection);
 
     Pipe groupStreamsByPartition(AnalysisResult & result, std::optional<ActionsDAG> & result_projection);
+
+    Pipe readByLayers(const RangesInDataParts & parts_with_ranges, SplitPartsByRanges split_parts, const Names & column_names, const InputOrderInfoPtr & input_order_info);
 
     Pipe spreadMarkRangesAmongStreams(RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & column_names);
 
@@ -281,6 +296,9 @@ private:
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
     bool enable_remove_parts_from_snapshot_optimization = true;
+
+    ExpressionActionsPtr virtual_row_conversion;
+
     std::optional<size_t> number_of_current_replica;
 };
 

@@ -1,7 +1,9 @@
+#include <string_view>
 #include <IO/HTTPCommon.h>
 
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Poco/Any.h>
+#include <Poco/StreamCopier.h>
 #include <Common/Exception.h>
 
 #include "config.h"
@@ -54,10 +56,11 @@ HTTPSessionPtr makeHTTPSession(
     HTTPConnectionGroupType group,
     const Poco::URI & uri,
     const ConnectionTimeouts & timeouts,
-    const ProxyConfiguration & proxy_configuration)
+    const ProxyConfiguration & proxy_configuration,
+    UInt64 * connect_time)
 {
     auto connection_pool = HTTPConnectionPools::instance().getPool(group, uri, proxy_configuration);
-    return connection_pool->getConnection(timeouts);
+    return connection_pool->getConnection(timeouts, connect_time);
 }
 
 bool isRedirect(const Poco::Net::HTTPResponse::HTTPStatus status) { return status == Poco::Net::HTTPResponse::HTTP_MOVED_PERMANENTLY  || status == Poco::Net::HTTPResponse::HTTP_FOUND || status == Poco::Net::HTTPResponse::HTTP_SEE_OTHER  || status == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT; }
@@ -84,11 +87,10 @@ void assertResponseIsOk(const String & uri, Poco::Net::HTTPResponse & response, 
             ? ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
             : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 
-        std::stringstream body; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        body.exceptions(std::ios::failbit);
-        body << istr.rdbuf();
+        std::string body;
+        Poco::StreamCopier::copyToString(istr, body);
 
-        throw HTTPException(code, uri, status, response.getReason(), body.str());
+        throw HTTPException(code, uri, status, response.getReason(), body);
     }
 }
 
@@ -101,9 +103,9 @@ Exception HTTPException::makeExceptionMessage(
 {
     return Exception(code,
         "Received error from remote server {}. "
-        "HTTP status code: {} {}, "
-        "body: {}",
-        uri, static_cast<int>(http_status), reason, body);
+        "HTTP status code: {} '{}', "
+        "body length: {} bytes, body: '{}'",
+        uri, static_cast<int>(http_status), reason, body.length(), body);
 }
 
 }

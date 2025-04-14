@@ -1,13 +1,14 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/StreamingHandleErrorMode.h>
 #include <Storages/IStorage.h>
 #include <Poco/Semaphore.h>
 #include <mutex>
 #include <atomic>
 #include <Storages/RabbitMQ/RabbitMQConsumer.h>
-#include <Storages/RabbitMQ/RabbitMQSettings.h>
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
+#include <Storages/RabbitMQ/RabbitMQ_fwd.h>
 #include <Common/thread_local_rng.h>
 #include <amqpcpp/libuv.h>
 #include <uv.h>
@@ -16,7 +17,7 @@
 
 namespace DB
 {
-
+struct RabbitMQSettings;
 using RabbitMQConsumerPtr = std::shared_ptr<RabbitMQConsumer>;
 
 class StorageRabbitMQ final: public IStorage, WithContext
@@ -30,7 +31,9 @@ public:
             std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
             LoadingStrictnessLevel mode);
 
-    std::string getName() const override { return "RabbitMQ"; }
+    ~StorageRabbitMQ() override;
+
+    std::string getName() const override { return RabbitMQ::TABLE_ENGINE_NAME; }
 
     bool noPushingToViews() const override { return true; }
 
@@ -77,6 +80,9 @@ public:
 
     void incrementReader();
     void decrementReader();
+
+    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsSubcolumns() const override { return true; }
 
 private:
     ContextMutablePtr rabbitmq_context;
@@ -128,9 +134,9 @@ private:
 
     std::once_flag flag; /// remove exchange only once
     std::mutex task_mutex;
-    BackgroundSchedulePool::TaskHolder streaming_task;
-    BackgroundSchedulePool::TaskHolder looping_task;
-    BackgroundSchedulePool::TaskHolder init_task;
+    BackgroundSchedulePoolTaskHolder streaming_task;
+    BackgroundSchedulePoolTaskHolder looping_task;
+    BackgroundSchedulePoolTaskHolder init_task;
 
     uint64_t milliseconds_to_wait;
 
@@ -179,7 +185,7 @@ private:
 
     ContextMutablePtr addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;
-    void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop);
+    void deactivateTask(BackgroundSchedulePoolTaskHolder & task, bool wait, bool stop_loop);
 
     void initRabbitMQ();
     void cleanupRabbitMQ() const;

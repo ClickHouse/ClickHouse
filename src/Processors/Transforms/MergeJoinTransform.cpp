@@ -19,6 +19,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Processors/Chunk.h>
+#include <Processors/Port.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
 
 
@@ -394,7 +395,7 @@ void FullMergeJoinCursor::setChunk(Chunk && chunk)
     convertToFullIfSparse(chunk);
 
     current_chunk = std::move(chunk);
-    cursor = SortCursorImpl(sample_block, current_chunk.getColumns(), desc);
+    cursor = SortCursorImpl(sample_block, current_chunk.getColumns(), current_chunk.getNumRows(), desc);
 }
 
 bool FullMergeJoinCursor::fullyCompleted() const

@@ -1,5 +1,6 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/63833
 SET enable_analyzer = 1;
+SET parallel_replicas_local_plan=1;
 
 create table Example (id Int32) engine = MergeTree ORDER BY id;
 INSERT INTO Example SELECT number AS id FROM numbers(2);
@@ -16,4 +17,4 @@ using id;
 
 INSERT INTO Null SELECT number AS id FROM numbers(2);
 
-select * from Example;  -- should return 4 rows
+select * from Example order by all;  -- should return 4 rows

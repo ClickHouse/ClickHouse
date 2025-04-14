@@ -1,11 +1,12 @@
 -- Tags: no-parallel, no-fasttest, no-ubsan, no-batch, no-flaky-check
 -- no-parallel because we want to run this test when most of the other tests already passed
+
 -- This is not a regular test. It is intended to run once after other tests to validate certain statistics about the whole test runs.
 -- TODO: I advise to put in inside clickhouse-test instead.
 
 -- If this test fails, see the "Top patterns of log messages" diagnostics in the end of run.log
 
-system flush logs;
+system flush logs text_log;
 drop table if exists logs;
 create view logs as select * from system.text_log where now() - toIntervalMinute(120) < event_time;
 
@@ -62,13 +63,13 @@ SELECT
             WHERE
                 length(message_format_string) = 0
               AND (message like '%DB::Exception%' or message like '%Coordination::Exception%')
-              AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%Fault injection%'
+              AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%Fault injection%' and message not like '%throwIf%'
             GROUP BY message ORDER BY c LIMIT 10
         ))
 FROM logs
 WHERE
   (message like '%DB::Exception%' or message like '%Coordination::Exception%')
-  AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%Fault injection%';
+  AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%Fault injection%' and message not like '%throwIf%';
 
 
 -- FIXME some of the following messages are not informative and it has to be fixed
@@ -76,6 +77,7 @@ create temporary table known_short_messages (s String) as select * from (select 
     '',
     '({}) Keys: {}',
     '({}) {}',
+    '{} failed: {}',
     'Aggregating',
     'Attempt to read after EOF.',
     'Attempt to read after eof',

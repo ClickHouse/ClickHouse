@@ -17,7 +17,7 @@
 #if USE_SSL
 #include <Poco/Net/SecureStreamSocketImpl.h>
 #include <Poco/Net/SSLException.h>
-#include <Poco/Net/X509Certificate.h>
+#include <Common/Crypto/X509Certificate.h>
 #endif
 
 static constexpr UInt64 HTTP_MAX_CHUNK_SIZE = 100ULL << 30;
@@ -60,8 +60,7 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     else if (hasContentLength())
     {
         size_t content_length = getContentLength();
-        stream = std::make_unique<LimitReadBuffer>(std::move(in), content_length,
-                                                   /* trow_exception */ true, /* exact_limit */ content_length);
+        stream = std::make_unique<LimitReadBuffer>(std::move(in), LimitReadBuffer::Settings{.read_no_less = content_length, .read_no_more = content_length, .expect_eof = true});
     }
     else if (getMethod() != HTTPRequest::HTTP_GET && getMethod() != HTTPRequest::HTTP_HEAD && getMethod() != HTTPRequest::HTTP_DELETE)
     {
@@ -107,15 +106,16 @@ bool HTTPServerRequest::havePeerCertificate() const
     return secure_socket->havePeerCertificate();
 }
 
-Poco::Net::X509Certificate HTTPServerRequest::peerCertificate() const
+X509Certificate HTTPServerRequest::peerCertificate() const
 {
-    if (secure)
-    {
-        const Poco::Net::SecureStreamSocketImpl * secure_socket = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket);
-        if (secure_socket)
-            return secure_socket->peerCertificate();
-    }
-    throw Poco::Net::SSLException("No certificate available");
+    if (!secure)
+        throw Poco::Net::SSLException("No certificate available");
+
+    const Poco::Net::SecureStreamSocketImpl * secure_socket = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket);
+    if (!secure_socket)
+        throw Poco::Net::SSLException("No certificate available");
+
+    return X509Certificate(secure_socket->peerCertificate());
 }
 #endif
 
@@ -158,7 +158,7 @@ void HTTPServerRequest::readRequest(ReadBuffer & in)
         version += ch;
 
     if (version.size() > MAX_VERSION_LENGTH)
-        throw Poco::Net::MessageException("Invalid HTTP version string");
+        throw Poco::Net::MessageException(fmt::format("Invalid HTTP version string: {}", version));
 
     // since HTTP always use Windows-style EOL '\r\n' we always can safely skip to '\n'
 

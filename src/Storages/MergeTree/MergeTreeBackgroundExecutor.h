@@ -5,7 +5,6 @@
 #include <mutex>
 #include <future>
 #include <condition_variable>
-#include <set>
 #include <variant>
 #include <utility>
 
@@ -16,18 +15,11 @@
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <base/defines.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/Exception.h>
-#include <Common/Stopwatch.h>
+#include <Common/Logger.h>
 #include <Common/ThreadPool_fwd.h>
-
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
 
 struct TaskRuntimeData;
 using TaskRuntimeDataPtr = std::shared_ptr<TaskRuntimeData>;
@@ -88,8 +80,14 @@ public:
         queue.push_back(std::move(item));
     }
 
-    void remove(StorageID id)
+    void cancelAndRemove(StorageID id)
     {
+        for (auto & item : queue)
+        {
+            if (item->task->getStorageID() == id)
+                item->task->cancel();
+        }
+
         auto it = std::remove_if(queue.begin(), queue.end(),
             [&] (auto && item) -> bool { return item->task->getStorageID() == id; });
         queue.erase(it, queue.end());
@@ -98,10 +96,7 @@ public:
     void setCapacity(size_t count) { queue.set_capacity(count); }
     bool empty() { return queue.empty(); }
 
-    [[noreturn]] void updatePolicy(std::string_view)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updatePolicy() is not implemented");
-    }
+    [[noreturn]] void updatePolicy(std::string_view);
 
     static constexpr std::string_view name = "round_robin";
 
@@ -128,8 +123,14 @@ public:
         std::push_heap(buffer.begin(), buffer.end(), TaskRuntimeData::comparePtrByPriority);
     }
 
-    void remove(StorageID id)
+    void cancelAndRemove(StorageID id)
     {
+        for (auto & item : buffer)
+        {
+            if (item->task->getStorageID() == id)
+                item->task->cancel();
+        }
+
         std::erase_if(buffer, [&] (auto && item) -> bool { return item->task->getStorageID() == id; });
         std::make_heap(buffer.begin(), buffer.end(), TaskRuntimeData::comparePtrByPriority);
     }
@@ -137,10 +138,7 @@ public:
     void setCapacity(size_t count) { buffer.reserve(count); }
     bool empty() { return buffer.empty(); }
 
-    [[noreturn]] void updatePolicy(std::string_view)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updatePolicy() is not implemented");
-    }
+    [[noreturn]] void updatePolicy(std::string_view);
 
     static constexpr std::string_view name = "shortest_task_first";
 
@@ -163,9 +161,9 @@ public:
         std::visit([&] (auto && queue) { queue.push(std::move(item)); }, impl);
     }
 
-    void remove(StorageID id)
+    void cancelAndRemove(StorageID id)
     {
-        std::visit([&] (auto && queue) { queue.remove(id); }, impl);
+        std::visit([&] (auto && queue) { queue.cancelAndRemove(id); }, impl);
     }
 
     void setCapacity(size_t count)

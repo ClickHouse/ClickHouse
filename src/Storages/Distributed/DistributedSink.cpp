@@ -1,5 +1,6 @@
 #include <Storages/Distributed/DistributedSink.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
+#include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/Distributed/Defines.h>
 #include <Storages/StorageDistributed.h>
 #include <Disks/StoragePolicy.h>
@@ -7,10 +8,10 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/queryToString.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ConnectionTimeouts.h>
@@ -27,12 +28,13 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
-#include <Common/escapeForFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Core/Settings.h>
+
+#include <base/range.h>
 
 #include <filesystem>
 
@@ -73,6 +75,12 @@ namespace Setting
     extern const SettingsInt64 network_zstd_compression_level;
     extern const SettingsBool prefer_localhost_replica;
     extern const SettingsBool use_compact_format_in_distributed_parts_names;
+}
+
+namespace DistributedSetting
+{
+    extern const DistributedSettingsBool fsync_after_insert;
+    extern const DistributedSettingsBool fsync_directories;
 }
 
 namespace ErrorCodes
@@ -139,7 +147,7 @@ DistributedSink::DistributedSink(
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , query_ast(createInsertToRemoteTableQuery(storage.remote_storage.database_name, storage.remote_storage.table_name, columns_to_send_))
-    , query_string(queryToString(query_ast))
+    , query_string(query_ast->formatWithSecretsOneLine())
     , cluster(cluster_)
     , insert_sync(insert_sync_)
     , allow_materialized(context->getSettingsRef()[Setting::insert_allow_materialized_columns])
@@ -323,15 +331,9 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         if (isCancelled())
             throw Exception(ErrorCodes::ABORTED, "Writing job was cancelled");
 
-        SCOPE_EXIT_SAFE(
-            if (thread_group)
-                CurrentThread::detachFromGroupIfNotDetached();
-        );
-        OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
+        ThreadGroupSwitcher switcher(thread_group, "DistrOutStrProc");
 
-        if (thread_group)
-            CurrentThread::attachToGroupIfDetached(thread_group);
-        setThreadName("DistrOutStrProc");
+        OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
 
         ++job.blocks_started;
 
@@ -446,9 +448,9 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     copy_query_ast,
                     job.local_context,
                     allow_materialized,
-                    /* no_squash */ false,
-                    /* no_destination */ false,
-                    /* async_isnert */ false);
+                    /* no_squash= */ false,
+                    /* no_destination= */ false,
+                    /* async_insert_= */ false);
                 auto block_io = interp.execute();
 
                 job.pipeline = std::move(block_io.pipeline);
@@ -591,12 +593,7 @@ void DistributedSink::onFinish()
                     {
                         pool->scheduleOrThrowOnError([&job, thread_group = CurrentThread::getGroup()]()
                         {
-                            SCOPE_EXIT_SAFE(
-                                if (thread_group)
-                                    CurrentThread::detachFromGroupIfNotDetached();
-                            );
-                            if (thread_group)
-                                CurrentThread::attachToGroupIfDetached(thread_group);
+                            ThreadGroupSwitcher switcher(thread_group, "");
 
                             job.executor->finish();
                         });
@@ -676,31 +673,31 @@ Blocks DistributedSink::splitBlock(const Block & block)
     /// Split block to num_shard smaller block, using 'selector'.
 
     const size_t num_shards = cluster->getShardsInfo().size();
-    Blocks splitted_blocks(num_shards);
+    Blocks split_blocks(num_shards);
 
     for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
-        splitted_blocks[shard_idx] = block.cloneEmpty();
+        split_blocks[shard_idx] = block.cloneEmpty();
 
     size_t columns_in_block = block.columns();
     for (size_t col_idx_in_block = 0; col_idx_in_block < columns_in_block; ++col_idx_in_block)
     {
-        MutableColumns splitted_columns = block.getByPosition(col_idx_in_block).column->scatter(num_shards, selector);
+        MutableColumns split_columns = block.getByPosition(col_idx_in_block).column->scatter(num_shards, selector);
         for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
-            splitted_blocks[shard_idx].getByPosition(col_idx_in_block).column = std::move(splitted_columns[shard_idx]);
+            split_blocks[shard_idx].getByPosition(col_idx_in_block).column = std::move(split_columns[shard_idx]);
     }
 
-    return splitted_blocks;
+    return split_blocks;
 }
 
 
 void DistributedSink::writeSplitAsync(const Block & block)
 {
-    Blocks splitted_blocks = splitBlock(block);
-    const size_t num_shards = splitted_blocks.size();
+    Blocks split_blocks = splitBlock(block);
+    const size_t num_shards = split_blocks.size();
 
     for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
-        if (splitted_blocks[shard_idx].rows())
-            writeAsyncImpl(splitted_blocks[shard_idx], shard_idx);
+        if (split_blocks[shard_idx].rows())
+            writeAsyncImpl(split_blocks[shard_idx], shard_idx);
 
     ++inserted_blocks;
 }
@@ -758,9 +755,9 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const 
             query_ast,
             context,
             allow_materialized,
-            /* no_squash */ false,
-            /* no_destination */ false,
-            /* async_isnert */ false);
+            /* no_squash= */ false,
+            /* no_destination= */ false,
+            /* async_insert_= */ false);
 
         auto block_io = interp.execute();
         PushingPipelineExecutor executor(block_io.pipeline);
@@ -785,8 +782,8 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
     const auto & settings = context->getSettingsRef();
     const auto & distributed_settings = storage.getDistributedSettingsRef();
 
-    bool fsync = distributed_settings.fsync_after_insert;
-    bool dir_fsync = distributed_settings.fsync_directories;
+    bool fsync = distributed_settings[DistributedSetting::fsync_after_insert];
+    bool dir_fsync = distributed_settings[DistributedSetting::fsync_directories];
 
     std::string compression_method = Poco::toUpper(settings[Setting::network_compression_method].toString());
     std::optional<int> compression_level;

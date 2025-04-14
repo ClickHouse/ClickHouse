@@ -24,7 +24,7 @@ namespace DB
 {
 
 struct SocketInterruptablePollWrapper;
-using SocketInterruptablePollWrapperPtr = std::unique_ptr<SocketInterruptablePollWrapper>;
+using SocketInterruptablePollWrapperPtr = std::shared_ptr<SocketInterruptablePollWrapper>;
 
 struct RequestWithResponse
 {
@@ -98,6 +98,8 @@ private:
 
     WriteBuffer & getWriteBuffer();
     void flushWriteBuffer();
+    void finalizeWriteBuffer();
+    void cancelWriteBuffer() noexcept;
     ReadBuffer & getReadBuffer();
 
     void sendHandshake(bool has_leader, bool & use_compression);

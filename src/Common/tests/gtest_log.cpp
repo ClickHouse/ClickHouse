@@ -150,6 +150,7 @@ TEST(Logger, SharedLoggersThreadSafety)
     size_t loggers_size_before = names.size();
 
     std::vector<std::thread> threads;
+    threads.reserve(threads_count);
 
     for (size_t thread_index = 0; thread_index < threads_count; ++thread_index)
     {

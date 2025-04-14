@@ -38,6 +38,7 @@ bool MergeProjectionPartsTask::executeStep()
             selected_parts[0]->renameTo(projection.name + ".proj", true);
             selected_parts[0]->setName(projection.name);
             selected_parts[0]->is_temp = false;
+            selected_parts[0]->temp_projection_block_number.reset();
             new_data_part->addProjectionPart(name, std::move(selected_parts[0]));
 
             /// Task is finished
@@ -83,7 +84,11 @@ bool MergeProjectionPartsTask::executeStep()
             ".tmp_proj");
 
         next_level_parts.push_back(executeHere(tmp_part_merge_task));
+        /// FIXME (alesapin) we should use some temporary storage for this,
+        /// not commit each subprojection part
+        next_level_parts.back()->getDataPartStorage().commitTransaction();
         next_level_parts.back()->is_temp = true;
+        next_level_parts.back()->temp_projection_block_number = block_num;
     }
 
     /// Need execute again

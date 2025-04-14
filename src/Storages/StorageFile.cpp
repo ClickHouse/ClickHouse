@@ -10,7 +10,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/ExpressionActions.h>
 
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -67,6 +69,8 @@
 #include <shared_mutex>
 #include <algorithm>
 
+#include <Poco/Util/AbstractConfiguration.h>
+
 namespace ProfileEvents
 {
     extern const Event CreatedReadBufferOrdinary;
@@ -89,7 +93,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSeconds max_execution_time;
     extern const SettingsMaxThreads max_parsing_threads;
-    extern const SettingsUInt64 max_read_buffer_size;
+    extern const SettingsNonZeroUInt64 max_read_buffer_size;
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
@@ -124,6 +128,8 @@ namespace ErrorCodes
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int UNSUPPORTED_METHOD;
 }
+
+using String = std::string;
 
 namespace
 {
@@ -385,7 +391,7 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     String path = fs::absolute(fs_table_path).lexically_normal(); /// Normalize path.
     bool can_be_directory = true;
 
-    if (path.find(PartitionedSink::PARTITION_ID_WILDCARD) != std::string::npos)
+    if (path.contains(PartitionedSink::PARTITION_ID_WILDCARD))
     {
         paths.push_back(path);
     }
@@ -1159,7 +1165,7 @@ StorageFileSource::FilesIterator::FilesIterator(
 {
     std::optional<ActionsDAG> filter_dag;
     if (!distributed_processing && !archive_info && !files.empty())
-        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context_);
+        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
 
     if (filter_dag)
     {
@@ -1562,7 +1568,7 @@ public:
         const bool need_only_count_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
         , storage(std::move(storage_))
         , info(std::move(info_))
         , need_only_count(need_only_count_)
@@ -1848,17 +1854,16 @@ private:
 
         try
         {
-            writer->finalize();
             writer->flush();
+            writer->finalize();
+            write_buf->finalize();
         }
         catch (...)
         {
             /// Stop ParallelFormattingOutputFormat correctly.
-            releaseBuffers();
+            cancelBuffers();
             throw;
         }
-
-        write_buf->finalize();
     }
 
     void releaseBuffers()
@@ -1867,7 +1872,7 @@ private:
         write_buf.reset();
     }
 
-    void cancelBuffers()
+    void cancelBuffers() noexcept
     {
         if (writer)
             writer->cancel();
@@ -1977,7 +1982,7 @@ SinkToStoragePtr StorageFile::write(
     if (context->getSettingsRef()[Setting::engine_file_truncate_on_insert])
         flags |= O_TRUNC;
 
-    bool has_wildcards = path_for_partitioned_write.find(PartitionedSink::PARTITION_ID_WILDCARD) != String::npos;
+    bool has_wildcards = path_for_partitioned_write.contains(PartitionedSink::PARTITION_ID_WILDCARD);
     const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
     bool is_partitioned_implementation = insert_query && insert_query->partition_by && has_wildcards;
 
@@ -2033,10 +2038,10 @@ SinkToStoragePtr StorageFile::write(
             else
                 throw Exception(
                     ErrorCodes::CANNOT_APPEND_TO_FILE,
-                    "Cannot append data in format {} to file, because this format doesn't support appends."
-                    " You can allow to create a new file "
-                    "on each insert by enabling setting engine_file_allow_create_multiple_files",
-                    format_name);
+                    "File {} already exists and data cannot be appended to this file as the {} format doesn't support appends."
+                    " You can configure ClickHouse to create a new file "
+                    "on each insert by enabling the setting `engine_file_allow_create_multiple_files`",
+                    path, format_name);
         }
     }
 
@@ -2114,6 +2119,11 @@ void StorageFile::truncate(
     }
 }
 
+void StorageFile::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
+{
+    if (checkAndGetLiteralArgument<String>(evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context), "format") == "auto")
+        args[0] = std::make_shared<ASTLiteral>(format_name);
+}
 
 void registerStorageFile(StorageFactory & factory)
 {
@@ -2121,6 +2131,7 @@ void registerStorageFile(StorageFactory & factory)
         .supports_settings = true,
         .supports_schema_inference = true,
         .source_access_type = AccessType::FILE,
+        .has_builtin_setting_fn = Settings::hasBuiltin,
     };
 
     factory.registerStorage(

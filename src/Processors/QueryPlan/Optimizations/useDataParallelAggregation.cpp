@@ -6,8 +6,8 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Interpreters/ExpressionActions.h>
 
-#include <stack>
 #include <unordered_map>
 
 using namespace DB;
@@ -178,7 +178,7 @@ bool isPartitionKeySuitsGroupByKey(
 namespace DB::QueryPlanOptimizations
 {
 
-size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::Nodes &)
+size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings & /*settings*/)
 {
     if (!node || node->children.size() != 1)
         return 0;

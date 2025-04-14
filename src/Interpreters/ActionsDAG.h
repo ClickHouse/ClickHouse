@@ -4,6 +4,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
+#include <Common/SipHash.h>
 #include <Interpreters/Context_fwd.h>
 
 #include "config.h"
@@ -34,6 +35,9 @@ namespace JSONBuilder
 }
 
 class SortDescription;
+
+struct SerializedSetsRegistry;
+struct DeserializedSetsRegistry;
 
 /// Directed acyclic graph of expressions.
 /// This is an intermediate representation of actions which is usually built from expression list AST.
@@ -90,6 +94,8 @@ public:
         /// If result of this not is deterministic. Checks only this node, not a subtree.
         bool isDeterministic() const;
         void toTree(JSONBuilder::JSONMap & map) const;
+        size_t getHash() const;
+        void updateHash(SipHash & hash_state) const;
     };
 
     /// NOTE: std::list is an implementation detail.
@@ -113,13 +119,10 @@ public:
 
     const Nodes & getNodes() const { return nodes; }
     static Nodes detachNodes(ActionsDAG && dag) { return std::move(dag.nodes); }
-    const NodeRawConstPtrs & getOutputs() const { return outputs; }
-    /** Output nodes can contain any column returned from DAG.
-      * You may manually change it if needed.
-      */
-    NodeRawConstPtrs & getOutputs() { return outputs; }
-
     const NodeRawConstPtrs & getInputs() const { return inputs; }
+    const NodeRawConstPtrs & getOutputs() const { return outputs; }
+    /// Output nodes can contain any column returned from DAG. You may manually change it if needed.
+    NodeRawConstPtrs & getOutputs() { return outputs; }
 
     NamesAndTypesList getRequiredColumns() const;
     Names getRequiredColumnsNames() const;
@@ -129,6 +132,9 @@ public:
     Names getNames() const;
     std::string dumpNames() const;
     std::string dumpDAG() const;
+
+    void serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const;
+    static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context);
 
     const Node & addInput(std::string name, DataTypePtr type);
     const Node & addInput(ColumnWithTypeAndName column);
@@ -298,14 +304,14 @@ public:
     /// It is needed to convert result from different sources to the same structure, e.g. for UNION query.
     /// Conversion should be possible with only usage of CAST function and renames.
     /// @param ignore_constant_values - Do not check that constants are same. Use value from result_header.
-    /// @param add_casted_columns - Create new columns with converted values instead of replacing original.
-    /// @param new_names - Output parameter for new column names when add_casted_columns is used.
+    /// @param add_cast_columns - Create new columns with converted values instead of replacing original.
+    /// @param new_names - Output parameter for new column names when add_cast_columns is used.
     static ActionsDAG makeConvertingActions(
         const ColumnsWithTypeAndName & source,
         const ColumnsWithTypeAndName & result,
         MatchColumnsMode mode,
         bool ignore_constant_values = false,
-        bool add_casted_columns = false,
+        bool add_cast_columns = false,
         NameToNameMap * new_names = nullptr);
 
     /// Create expression which add const column and then materialize it.
@@ -440,6 +446,9 @@ public:
     static NodeRawConstPtrs filterNodesByAllowedInputs(
         NodeRawConstPtrs nodes,
         const std::unordered_set<const Node *> & allowed_inputs);
+
+    UInt64 getHash() const;
+    void updateHash(SipHash & hash_state) const;
 
 private:
     NodeRawConstPtrs getParents(const Node * target) const;

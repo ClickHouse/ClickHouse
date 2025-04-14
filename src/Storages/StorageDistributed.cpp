@@ -7,11 +7,16 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/NestedUtils.h>
 
+#include <Disks/IVolume.h>
+
+#include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/Distributed/DistributedSink.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
@@ -33,6 +38,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
 
+#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -62,6 +68,7 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -99,9 +106,14 @@
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
 
+#include <base/range.h>
+
 #include <memory>
 #include <filesystem>
 #include <cassert>
+
+#include <boost/algorithm/string/find_iterator.hpp>
+#include <boost/algorithm/string/finder.hpp>
 
 
 namespace fs = std::filesystem;
@@ -158,6 +170,20 @@ namespace Setting
     extern const SettingsBool optimize_skip_unused_shards;
     extern const SettingsUInt64 optimize_skip_unused_shards_limit;
     extern const SettingsUInt64 parallel_distributed_insert_select;
+    extern const SettingsBool prefer_localhost_replica;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+}
+
+namespace DistributedSetting
+{
+    extern const DistributedSettingsUInt64 background_insert_batch;
+    extern const DistributedSettingsMilliseconds background_insert_max_sleep_time_ms;
+    extern const DistributedSettingsMilliseconds background_insert_sleep_time_ms;
+    extern const DistributedSettingsUInt64 background_insert_split_batch_on_failure;
+    extern const DistributedSettingsUInt64 bytes_to_delay_insert;
+    extern const DistributedSettingsUInt64 bytes_to_throw_insert;
+    extern const DistributedSettingsBool flush_on_detach;
+    extern const DistributedSettingsUInt64 max_delay_to_insert;
 }
 
 namespace ErrorCodes
@@ -299,7 +325,10 @@ size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & clus
 {
     size_t num_local_shards = cluster->getLocalShardCount();
     size_t num_remote_shards = cluster->getRemoteShardCount();
-    return (num_remote_shards + num_local_shards) * settings[Setting::max_parallel_replicas];
+    UInt64 max_parallel_replicas = settings[Setting::allow_experimental_parallel_reading_from_replicas]
+        ? settings[Setting::max_parallel_replicas] : 1;
+
+    return (num_remote_shards + num_local_shards) * max_parallel_replicas;
 }
 
 }
@@ -353,11 +382,11 @@ StorageDistributed::StorageDistributed(
     , cluster_name(getContext()->getMacros()->expand(cluster_name_))
     , has_sharding_key(sharding_key_)
     , relative_data_path(relative_data_path_)
-    , distributed_settings(distributed_settings_)
+    , distributed_settings(std::make_unique<DistributedSettings>(distributed_settings_))
     , rng(randomSeed())
     , is_remote_function(is_remote_function_)
 {
-    if (!distributed_settings.flush_on_detach && distributed_settings.background_insert_batch)
+    if (!(*distributed_settings)[DistributedSetting::flush_on_detach] && (*distributed_settings)[DistributedSetting::background_insert_batch])
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings flush_on_detach=0 and background_insert_batch=1 are incompatible");
 
     StorageInMemoryMetadata storage_metadata;
@@ -671,7 +700,7 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 
 static bool requiresObjectColumns(const ColumnsDescription & all_columns, ASTPtr query)
 {
-    if (!hasDynamicSubcolumns(all_columns))
+    if (!hasDynamicSubcolumnsDeprecated(all_columns))
         return false;
 
     if (!query)
@@ -735,6 +764,7 @@ class ReplaseAliasColumnsVisitor : public InDepthQueryTreeVisitor<ReplaseAliasCo
 
         const auto & column_source = column_node->getColumnSourceOrNull();
         if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
+                           || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
                            || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
             return nullptr;
 
@@ -893,7 +923,7 @@ void StorageDistributed::read(
         modified_query_info,
         sharding_key_expr,
         sharding_key_column_name,
-        distributed_settings,
+        *distributed_settings,
         shard_filter_generator,
         is_remote_function);
 
@@ -923,7 +953,7 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
     }
 
     /// Force sync insertion if it is remote() table function
-    bool insert_sync = settings[Setting::distributed_foreground_insert] || settings[Setting::insert_shard_id] || owned_cluster;
+    bool insert_sync = settings[Setting::distributed_foreground_insert] || settings[Setting::insert_shard_id] || owned_cluster || relative_data_path.empty();
     auto timeout = settings[Setting::distributed_background_insert_timeout];
 
     Names columns_to_send;
@@ -942,14 +972,30 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     const auto & settings = local_context->getSettingsRef();
     auto new_query = std::dynamic_pointer_cast<ASTInsertQuery>(query.clone());
 
-    /// Unwrap view() function.
     if (src_distributed.remote_table_function_ptr)
     {
         const TableFunctionPtr src_table_function =
             TableFunctionFactory::instance().get(src_distributed.remote_table_function_ptr, local_context);
-        const TableFunctionView * view_function =
-            assert_cast<const TableFunctionView *>(src_table_function.get());
-        new_query->select = view_function->getSelectQuery().clone();
+        if (const TableFunctionView * view_function = typeid_cast<const TableFunctionView *>(src_table_function.get()))
+        {
+            new_query->select = view_function->getSelectQuery().clone();
+        }
+        else
+        {
+            const auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
+            select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
+
+            const auto select = std::make_shared<ASTSelectQuery>();
+
+            auto expression_list = std::make_shared<ASTExpressionList>();
+            expression_list->children.push_back(std::make_shared<ASTAsterisk>());
+            select->setExpression(ASTSelectQuery::Expression::SELECT, expression_list->clone());
+            select->addTableFunction(src_distributed.remote_table_function_ptr);
+
+            select_with_union_query->list_of_selects->children.push_back(select->clone());
+
+            new_query->select = select_with_union_query;
+        }
     }
     else
     {
@@ -1003,8 +1049,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     {
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(
-            /*ostr_=*/buf, /*one_line*/ true, /*hilite*/ false, /*identifier_quoting_rule_=*/IdentifierQuotingRule::Always);
-        new_query->IAST::format(ast_format_settings);
+            /*one_line*/ true, /*hilite*/ false, /*identifier_quoting_rule_=*/IdentifierQuotingRule::Always);
+        new_query->IAST::format(buf, ast_format_settings);
         new_query_str = buf.str();
     }
 
@@ -1015,7 +1061,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     for (size_t shard_index : collections::range(0, shards_info.size()))
     {
         const auto & shard_info = shards_info[shard_index];
-        if (shard_info.isLocal())
+        if (shard_info.isLocal() && settings[Setting::prefer_localhost_replica])
         {
             InterpreterInsertQuery interpreter(
                 new_query,
@@ -1064,7 +1110,7 @@ static std::optional<ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextP
         interpreter.buildQueryPlan(plan);
     }
 
-    plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
+    plan.optimize(QueryPlanOptimizationSettings(context));
 
     std::stack<QueryPlan::Node *> nodes;
     nodes.push(plan.getRootNode());
@@ -1084,7 +1130,7 @@ static std::optional<ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextP
                 plan.explainPlan(buf, {});
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Found multiple source steps for query\n{}\nPlan\n{}",
-                    queryToString(ast), buf.str());
+                    ast->formatForErrorMessage(), buf.str());
             }
 
             source = with_filter;
@@ -1124,8 +1170,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     {
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(
-            /*ostr_=*/buf, /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
-        new_query->IAST::format(ast_format_settings);
+            /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
+        new_query->IAST::format(buf, ast_format_settings);
         new_query_str = buf.str();
     }
 
@@ -1155,6 +1201,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
                 Scalars{},
                 Tables{},
                 QueryProcessingStage::Complete,
+                nullptr,
                 extension);
 
             QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(
@@ -1290,7 +1337,7 @@ void StorageDistributed::initializeFromDisk()
         if (inc > file_names_increment.value)
             file_names_increment.value.store(inc);
     }
-    LOG_DEBUG(log, "Auto-increment is {}", file_names_increment.value);
+    LOG_DEBUG(log, "Auto-increment is {}", file_names_increment.value.load());
 }
 
 
@@ -1328,7 +1375,7 @@ void StorageDistributed::drop()
     auto disks = data_volume->getDisks();
     for (const auto & disk : disks)
     {
-        if (!disk->exists(relative_data_path))
+        if (!disk->existsDirectory(relative_data_path))
         {
             LOG_INFO(log, "Path {} is already removed from disk {}", relative_data_path, disk->getName());
             continue;
@@ -1485,7 +1532,7 @@ Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name) 
     return addresses;
 }
 
-std::optional<UInt64> StorageDistributed::totalBytes(const Settings &) const
+std::optional<UInt64> StorageDistributed::totalBytes(ContextPtr) const
 {
     UInt64 total_bytes = 0;
     for (const auto & status : getDirectoryQueueStatuses())
@@ -1658,7 +1705,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
             log,
             "Number of values for sharding key exceeds optimize_skip_unused_shards_limit={}, "
             "try to increase it, but note that this may increase query processing time.",
-            local_context->getSettingsRef()[Setting::optimize_skip_unused_shards_limit]);
+            local_context->getSettingsRef()[Setting::optimize_skip_unused_shards_limit].value);
         return nullptr;
     }
 
@@ -1693,7 +1740,7 @@ void StorageDistributed::flushAndPrepareForShutdown()
 {
     try
     {
-        flushClusterNodesAllDataImpl(getContext(), /* settings_changes= */ {}, getDistributedSettingsRef().flush_on_detach);
+        flushClusterNodesAllDataImpl(getContext(), /* settings_changes= */ {}, (*distributed_settings)[DistributedSetting::flush_on_detach]);
     }
     catch (...)
     {
@@ -1805,49 +1852,49 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
 
 void StorageDistributed::delayInsertOrThrowIfNeeded() const
 {
-    if (!distributed_settings.bytes_to_throw_insert &&
-        !distributed_settings.bytes_to_delay_insert)
+    if (!(*distributed_settings)[DistributedSetting::bytes_to_throw_insert] &&
+        !(*distributed_settings)[DistributedSetting::bytes_to_delay_insert])
         return;
 
-    UInt64 total_bytes = *totalBytes(getContext()->getSettingsRef());
+    UInt64 total_bytes = *totalBytes(getContext());
 
-    if (distributed_settings.bytes_to_throw_insert && total_bytes > distributed_settings.bytes_to_throw_insert)
+    if ((*distributed_settings)[DistributedSetting::bytes_to_throw_insert] && total_bytes > (*distributed_settings)[DistributedSetting::bytes_to_throw_insert])
     {
         ProfileEvents::increment(ProfileEvents::DistributedRejectedInserts);
         throw Exception(ErrorCodes::DISTRIBUTED_TOO_MANY_PENDING_BYTES,
             "Too many bytes pending for async INSERT: {} (bytes_to_throw_insert={})",
             formatReadableSizeWithBinarySuffix(total_bytes),
-            formatReadableSizeWithBinarySuffix(distributed_settings.bytes_to_throw_insert));
+            formatReadableSizeWithBinarySuffix((*distributed_settings)[DistributedSetting::bytes_to_throw_insert]));
     }
 
-    if (distributed_settings.bytes_to_delay_insert && total_bytes > distributed_settings.bytes_to_delay_insert)
+    if ((*distributed_settings)[DistributedSetting::bytes_to_delay_insert] && total_bytes > (*distributed_settings)[DistributedSetting::bytes_to_delay_insert])
     {
         /// Step is 5% of the delay and minimal one second.
         /// NOTE: max_delay_to_insert is in seconds, and step is in ms.
-        const size_t step_ms = static_cast<size_t>(std::min<double>(1., static_cast<double>(distributed_settings.max_delay_to_insert) * 1'000 * 0.05));
+        const size_t step_ms = static_cast<size_t>(std::min<double>(1., static_cast<double>((*distributed_settings)[DistributedSetting::max_delay_to_insert]) * 1'000 * 0.05));
         UInt64 delayed_ms = 0;
 
         do {
             delayed_ms += step_ms;
             std::this_thread::sleep_for(std::chrono::milliseconds(step_ms));
-        } while (*totalBytes(getContext()->getSettingsRef()) > distributed_settings.bytes_to_delay_insert && delayed_ms < distributed_settings.max_delay_to_insert*1000);
+        } while (*totalBytes(getContext()) > (*distributed_settings)[DistributedSetting::bytes_to_delay_insert] && delayed_ms < (*distributed_settings)[DistributedSetting::max_delay_to_insert]*1000);
 
         ProfileEvents::increment(ProfileEvents::DistributedDelayedInserts);
         ProfileEvents::increment(ProfileEvents::DistributedDelayedInsertsMilliseconds, delayed_ms);
 
-        UInt64 new_total_bytes = *totalBytes(getContext()->getSettingsRef());
+        UInt64 new_total_bytes = *totalBytes(getContext());
         LOG_INFO(log, "Too many bytes pending for async INSERT: was {}, now {}, INSERT was delayed to {} ms",
             formatReadableSizeWithBinarySuffix(total_bytes),
             formatReadableSizeWithBinarySuffix(new_total_bytes),
             delayed_ms);
 
-        if (new_total_bytes > distributed_settings.bytes_to_delay_insert)
+        if (new_total_bytes > (*distributed_settings)[DistributedSetting::bytes_to_delay_insert])
         {
             ProfileEvents::increment(ProfileEvents::DistributedRejectedInserts);
             throw Exception(ErrorCodes::DISTRIBUTED_TOO_MANY_PENDING_BYTES,
                 "Too many bytes pending for async INSERT: {} (bytes_to_delay_insert={})",
                 formatReadableSizeWithBinarySuffix(new_total_bytes),
-                formatReadableSizeWithBinarySuffix(distributed_settings.bytes_to_delay_insert));
+                formatReadableSizeWithBinarySuffix((*distributed_settings)[DistributedSetting::bytes_to_delay_insert]));
         }
     }
 }
@@ -1922,27 +1969,27 @@ void registerStorageDistributed(StorageFactory & factory)
             distributed_settings.loadFromQuery(*args.storage_def);
         }
 
-        if (distributed_settings.max_delay_to_insert < 1)
+        if (distributed_settings[DistributedSetting::max_delay_to_insert] < 1)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                 "max_delay_to_insert cannot be less then 1");
 
-        if (distributed_settings.bytes_to_throw_insert && distributed_settings.bytes_to_delay_insert &&
-            distributed_settings.bytes_to_throw_insert <= distributed_settings.bytes_to_delay_insert)
+        if (distributed_settings[DistributedSetting::bytes_to_throw_insert] && distributed_settings[DistributedSetting::bytes_to_delay_insert] &&
+            distributed_settings[DistributedSetting::bytes_to_throw_insert] <= distributed_settings[DistributedSetting::bytes_to_delay_insert])
         {
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                 "bytes_to_throw_insert cannot be less or equal to bytes_to_delay_insert (since it is handled first)");
         }
 
         /// Set default values from the distributed_background_insert_* global context settings.
-        if (!distributed_settings.background_insert_batch.changed)
-            distributed_settings.background_insert_batch = context->getSettingsRef()[Setting::distributed_background_insert_batch];
-        if (!distributed_settings.background_insert_split_batch_on_failure.changed)
-            distributed_settings.background_insert_split_batch_on_failure
+        if (!distributed_settings[DistributedSetting::background_insert_batch].changed)
+            distributed_settings[DistributedSetting::background_insert_batch] = context->getSettingsRef()[Setting::distributed_background_insert_batch];
+        if (!distributed_settings[DistributedSetting::background_insert_split_batch_on_failure].changed)
+            distributed_settings[DistributedSetting::background_insert_split_batch_on_failure]
                 = context->getSettingsRef()[Setting::distributed_background_insert_split_batch_on_failure];
-        if (!distributed_settings.background_insert_sleep_time_ms.changed)
-            distributed_settings.background_insert_sleep_time_ms = context->getSettingsRef()[Setting::distributed_background_insert_sleep_time_ms];
-        if (!distributed_settings.background_insert_max_sleep_time_ms.changed)
-            distributed_settings.background_insert_max_sleep_time_ms
+        if (!distributed_settings[DistributedSetting::background_insert_sleep_time_ms].changed)
+            distributed_settings[DistributedSetting::background_insert_sleep_time_ms] = context->getSettingsRef()[Setting::distributed_background_insert_sleep_time_ms];
+        if (!distributed_settings[DistributedSetting::background_insert_max_sleep_time_ms].changed)
+            distributed_settings[DistributedSetting::background_insert_max_sleep_time_ms]
                 = context->getSettingsRef()[Setting::distributed_background_insert_max_sleep_time_ms];
 
         return std::make_shared<StorageDistributed>(
@@ -1965,6 +2012,7 @@ void registerStorageDistributed(StorageFactory & factory)
         .supports_parallel_insert = true,
         .supports_schema_inference = true,
         .source_access_type = AccessType::REMOTE,
+        .has_builtin_setting_fn = DistributedSettings::hasBuiltin,
     });
 }
 

@@ -4,6 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/FST.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/ICompressionCodec.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -37,7 +38,7 @@ bool GinIndexPostingsBuilder::contains(UInt32 row_id) const
     if (useRoaring())
         return rowid_bitmap.contains(row_id);
 
-    const auto * const it = std::find(rowid_lst.begin(), rowid_lst.begin() + rowid_lst_length, row_id);
+    const auto it = std::find(rowid_lst.begin(), rowid_lst.begin() + rowid_lst_length, row_id);
     return it != rowid_lst.begin() + rowid_lst_length;
 }
 
@@ -167,7 +168,7 @@ GinIndexStore::GinIndexStore(const String & name_, DataPartStoragePtr storage_, 
 bool GinIndexStore::exists() const
 {
     String segment_id_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
-    return storage->exists(segment_id_file_name);
+    return storage->existsFile(segment_id_file_name);
 }
 
 UInt32 GinIndexStore::getNextSegmentIDRange(const String & file_name, size_t n)
@@ -175,10 +176,10 @@ UInt32 GinIndexStore::getNextSegmentIDRange(const String & file_name, size_t n)
     std::lock_guard guard(mutex);
 
     /// When the method is called for the first time, the file doesn't exist yet, need to create it and write segment ID 1.
-    if (!storage->exists(file_name))
+    if (!storage->existsFile(file_name))
     {
         /// Create file
-        std::unique_ptr<DB::WriteBufferFromFileBase> ostr = this->data_part_storage_builder->writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE, {});
+        std::unique_ptr<DB::WriteBufferFromFileBase> ostr = this->data_part_storage_builder->writeFile(file_name, 8, {});
 
         /// Write version
         writeChar(static_cast<char>(CURRENT_GIN_FILE_FORMAT_VERSION), *ostr);
@@ -202,7 +203,7 @@ UInt32 GinIndexStore::getNextSegmentIDRange(const String & file_name, size_t n)
 
     /// Save result + n
     {
-        std::unique_ptr<DB::WriteBufferFromFileBase> ostr = this->data_part_storage_builder->writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE, {});
+        std::unique_ptr<DB::WriteBufferFromFileBase> ostr = this->data_part_storage_builder->writeFile(file_name, 8, {});
 
         /// Write version
         writeChar(static_cast<char>(CURRENT_GIN_FILE_FORMAT_VERSION), *ostr);
@@ -233,7 +234,7 @@ UInt32 GinIndexStore::getNumOfSegments()
         return cached_segment_num;
 
     String segment_id_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
-    if (!storage->exists(segment_id_file_name))
+    if (!storage->existsFile(segment_id_file_name))
         return 0;
 
     UInt32 result = 0;
@@ -274,13 +275,25 @@ void GinIndexStore::finalize()
         postings_file_stream->finalize();
 }
 
+void GinIndexStore::cancel() noexcept
+{
+    if (metadata_file_stream)
+        metadata_file_stream->cancel();
+
+    if (dict_file_stream)
+        dict_file_stream->cancel();
+
+    if (postings_file_stream)
+        postings_file_stream->cancel();
+}
+
 void GinIndexStore::initFileStreams()
 {
     String metadata_file_name = getName() + GIN_SEGMENT_METADATA_FILE_TYPE;
     String dict_file_name = getName() + GIN_DICTIONARY_FILE_TYPE;
     String postings_file_name = getName() + GIN_POSTINGS_FILE_TYPE;
 
-    metadata_file_stream = data_part_storage_builder->writeFile(metadata_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
+    metadata_file_stream = data_part_storage_builder->writeFile(metadata_file_name, 4096, WriteMode::Append, {});
     dict_file_stream = data_part_storage_builder->writeFile(dict_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
     postings_file_stream = data_part_storage_builder->writeFile(postings_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
 }

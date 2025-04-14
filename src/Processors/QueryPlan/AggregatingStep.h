@@ -1,8 +1,11 @@
 #pragma once
+
+#include <Core/Block.h>
+#include <Core/Block_fwd.h>
+#include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Interpreters/Aggregator.h>
 
 namespace DB
 {
@@ -17,7 +20,7 @@ class AggregatingStep : public ITransformingStep
 {
 public:
     AggregatingStep(
-        const DataStream & input_stream_,
+        const Header & input_header_,
         Aggregator::Params params_,
         GroupingSetsParamsList grouping_sets_params_,
         bool final_,
@@ -62,10 +65,10 @@ public:
     /// When we apply aggregate projection (which is full), this step will only merge data.
     /// Argument input_stream replaces current single input.
     /// Probably we should replace this step to MergingAggregated later? (now, aggregation-in-order will not work)
-    void requestOnlyMergeForAggregateProjection(const DataStream & input_stream);
+    void requestOnlyMergeForAggregateProjection(const Header & input_header);
     /// When we apply aggregate projection (which is partial), this step should be replaced to AggregatingProjection.
     /// Argument input_stream would be the second input (from projection).
-    std::unique_ptr<AggregatingProjectionStep> convertToAggregatingProjection(const DataStream & input_stream) const;
+    std::unique_ptr<AggregatingProjectionStep> convertToAggregatingProjection(const Header & input_header) const;
 
     static ActionsDAG makeCreatingMissingKeysForGroupingSetDAG(
         const Block & in_header,
@@ -74,8 +77,16 @@ public:
         UInt64 group,
         bool group_by_use_nulls);
 
+    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
+    void serialize(Serialization & ctx) const override;
+    bool isSerializable() const override { return true; }
+
+    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
+
+    void enableMemoryBoundMerging() { memory_bound_merging_of_aggregation_results_enabled = true; }
+
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     Aggregator::Params params;
     GroupingSetsParamsList grouping_sets_params;
@@ -98,7 +109,7 @@ private:
 
     /// These settings are used to determine if we should resize pipeline to 1 at the end.
     const bool should_produce_results_in_order_of_bucket_number;
-    const bool memory_bound_merging_of_aggregation_results_enabled;
+    bool memory_bound_merging_of_aggregation_results_enabled;
     bool explicit_sorting_required_for_aggregation_in_order;
 
     Processors aggregating_in_order;
@@ -112,7 +123,7 @@ class AggregatingProjectionStep : public IQueryPlanStep
 {
 public:
     AggregatingProjectionStep(
-        DataStreams input_streams_,
+        Blocks input_headers_,
         Aggregator::Params params_,
         bool final_,
         size_t merge_threads_,
@@ -120,9 +131,11 @@ public:
     );
 
     String getName() const override { return "AggregatingProjection"; }
-    QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
+    QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
 private:
+    void updateOutputHeader() override;
+
     Aggregator::Params params;
     bool final;
     size_t merge_threads;

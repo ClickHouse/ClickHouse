@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QueryPipeline/BlockIO.h>
+#include <IO/ReadBuffer.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -11,6 +12,7 @@ namespace DB
 
 class Chain;
 class ThreadStatus;
+class ReadBuffer;
 
 struct ThreadStatusesHolder;
 using ThreadStatusesHolderPtr = std::shared_ptr<ThreadStatusesHolder>;
@@ -43,6 +45,7 @@ public:
 
     Chain buildChain(
         const StoragePtr & table,
+        size_t view_level,
         const StorageMetadataPtr & metadata_snapshot,
         const Names & columns,
         ThreadStatusesHolderPtr thread_status_holder = {},
@@ -64,9 +67,9 @@ public:
 
     bool supportsTransactions() const override { return true; }
 
-    void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.push_back(std::move(buffer)); }
+    void addBuffer(std::unique_ptr<ReadBuffer> buffer);
 
-    bool shouldAddSquashingFroStorage(const StoragePtr & table) const;
+    bool shouldAddSquashingForStorage(const StoragePtr & table) const;
 
 private:
     static Block getSampleBlockImpl(const Names & names, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot, bool no_destination, bool allow_materialized);
@@ -79,13 +82,20 @@ private:
 
     std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
 
-    std::pair<std::vector<Chain>, std::vector<Chain>> buildPreAndSinkChains(size_t presink_streams, size_t sink_streams, StoragePtr table, const StorageMetadataPtr & metadata_snapshot, const Block & query_sample_block);
+    std::pair<std::vector<Chain>, std::vector<Chain>> buildPreAndSinkChains(
+        size_t presink_streams,
+        size_t sink_streams,
+        StoragePtr table,
+        size_t view_level,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Block & query_sample_block);
 
     QueryPipeline buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table);
     QueryPipeline buildInsertPipeline(ASTInsertQuery & query, StoragePtr table);
 
     Chain buildSink(
         const StoragePtr & table,
+        size_t view_level,
         const StorageMetadataPtr & metadata_snapshot,
         ThreadStatusesHolderPtr thread_status_holder,
         ThreadGroupPtr running_group,

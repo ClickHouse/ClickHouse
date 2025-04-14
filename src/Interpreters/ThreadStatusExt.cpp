@@ -8,7 +8,6 @@
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/TraceCollector.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/queryNormalization.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
@@ -58,6 +57,7 @@ namespace Setting
     extern const SettingsInt64 os_thread_priority;
     extern const SettingsUInt64 query_profiler_cpu_time_period_ns;
     extern const SettingsUInt64 query_profiler_real_time_period_ns;
+    extern const SettingsBool enable_adaptive_memory_spill_scheduler;
 }
 
 namespace ErrorCodes
@@ -71,6 +71,7 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_err
     , query_context(query_context_)
     , global_context(query_context_->getGlobalContext())
     , fatal_error_callback(fatal_error_callback_)
+    , memory_spill_scheduler(query_context_->getSettingsRef()[Setting::enable_adaptive_memory_spill_scheduler])
 {
     shared_data.query_is_canceled_predicate = [this] () -> bool {
             if (auto context_locked = query_context.lock())
@@ -119,7 +120,7 @@ void ThreadGroup::unlinkThread()
 ThreadGroupPtr ThreadGroup::createForQuery(ContextPtr query_context_, std::function<void()> fatal_error_callback_)
 {
     auto group = std::make_shared<ThreadGroup>(query_context_, std::move(fatal_error_callback_));
-    group->memory_tracker.setDescription("(for query)");
+    group->memory_tracker.setDescription("Query");
     return group;
 }
 
@@ -127,7 +128,7 @@ ThreadGroupPtr ThreadGroup::createForBackgroundProcess(ContextPtr storage_contex
 {
     auto group = std::make_shared<ThreadGroup>(storage_context);
 
-    group->memory_tracker.setDescription("background process to apply mutate/merge in table");
+    group->memory_tracker.setDescription("Background process (mutate/merge)");
     /// However settings from storage context have to be applied
     const Settings & settings = storage_context->getSettingsRef();
     group->memory_tracker.setProfilerStep(settings[Setting::memory_profiler_step]);
@@ -168,22 +169,74 @@ void ThreadGroup::attachInternalProfileEventsQueue(const InternalProfileEventsQu
     shared_data.profile_queue_ptr = profile_queue;
 }
 
-ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group)
+ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, const char * thread_name, bool allow_existing_group) noexcept : thread_group(std::move(thread_group_))
 {
-    chassert(thread_group);
+    try
+    {
+        if (!thread_group)
+            return;
 
-    /// might be nullptr
-    prev_thread_group = CurrentThread::getGroup();
+        prev_thread = current_thread;
+        prev_thread_group = CurrentThread::getGroup();
+        if (prev_thread_group)
+        {
+            if (prev_thread_group == thread_group)
+            {
+                thread_group = nullptr;
+                prev_thread_group = nullptr;
+                return;
+            }
+            else if (!allow_existing_group)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread ({}) is already attached to a group (master_thread_id {})", thread_name, prev_thread_group->master_thread_id);
+            else
+                CurrentThread::detachFromGroupIfNotDetached();
+        }
 
-    CurrentThread::detachFromGroupIfNotDetached();
-    CurrentThread::attachToGroup(thread_group);
+        if (!prev_thread)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tried to attach thread ({}) to a group, but the ThreadStatus is not initialized", thread_name);
+
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+
+        CurrentThread::attachToGroup(thread_group);
+        if (thread_name[0] != '\0')
+            setThreadName(thread_name);
+    }
+    catch (...)
+    {
+        /// Unexpected. For caller's convenience avoid throwing exceptions.
+        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+        thread_group = nullptr;
+        prev_thread_group = nullptr;
+    }
 }
 
 ThreadGroupSwitcher::~ThreadGroupSwitcher()
 {
-    CurrentThread::detachFromGroupIfNotDetached();
-    if (prev_thread_group)
-        CurrentThread::attachToGroup(prev_thread_group);
+    if (!thread_group)
+        return;
+
+    try
+    {
+        ThreadStatus * cur_thread = current_thread;
+        ThreadGroupPtr cur_thread_group = CurrentThread::getGroup();
+        if (cur_thread != prev_thread)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ThreadGroupSwitcher-s are not properly nested: current thread changed between scope start ({}) and end ({})", prev_thread ? std::to_string(prev_thread->thread_id) : "nullptr", cur_thread ? std::to_string(cur_thread->thread_id) : "nullptr");
+        if (cur_thread_group != thread_group)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ThreadGroupSwitcher-s are not properly nested: current thread group changed between scope start (master_thread_id {}) and end ({})", thread_group->master_thread_id, cur_thread_group ? "master_thread_id " + std::to_string(cur_thread_group->master_thread_id) : "nullptr");
+        thread_group.reset();
+
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        if (prev_thread_group)
+        {
+            LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+            CurrentThread::attachToGroup(prev_thread_group);
+        }
+    }
+    catch (...)
+    {
+        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void ThreadStatus::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue)
@@ -281,7 +334,7 @@ void ThreadStatus::detachFromGroup()
 
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
-    /// flash untracked memory before resetting memory_tracker parent
+    /// flush untracked memory before resetting memory_tracker parent
     flushUntrackedMemory();
 
     finalizeQueryProfiler();
@@ -384,7 +437,7 @@ void ThreadStatus::initPerformanceCounters()
     /// TODO: make separate query_thread_performance_counters and thread_performance_counters
     performance_counters.resetCounters();
     memory_tracker.resetCounters();
-    memory_tracker.setDescription("(for thread)");
+    memory_tracker.setDescription("Thread");
 
     query_start_time.setUp();
 
@@ -607,7 +660,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
 
 static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 {
-    String res = serializeAST(*q);
+    String res = q->formatWithSecretsOneLine();
     if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(res);
 

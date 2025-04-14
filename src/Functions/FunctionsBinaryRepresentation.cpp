@@ -3,6 +3,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -296,6 +297,7 @@ public:
             tryExecuteUIntOrInt<Int256>(column, res_column) ||
             tryExecuteString(column, res_column) ||
             tryExecuteFixedString(column, res_column) ||
+            tryExecuteFloat<BFloat16>(column, res_column) ||
             tryExecuteFloat<Float32>(column, res_column) ||
             tryExecuteFloat<Float64>(column, res_column) ||
             tryExecuteDecimal<Decimal32>(column, res_column) ||

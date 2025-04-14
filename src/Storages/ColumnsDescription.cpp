@@ -32,7 +32,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <Storages/IStorage.h>
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
@@ -108,7 +107,7 @@ ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) noe
 
 bool ColumnDescription::operator==(const ColumnDescription & other) const
 {
-    auto ast_to_str = [](const ASTPtr & ast) { return ast ? queryToString(ast) : String{}; };
+    auto ast_to_str = [](const ASTPtr & ast) { return ast ? ast->formatWithSecretsOneLine() : String{}; };
 
     return name == other.name
         && type->equals(*other.type)
@@ -122,8 +121,8 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
 String formatASTStateAware(IAST & ast, IAST::FormatState & state)
 {
     WriteBufferFromOwnString buf;
-    IAST::FormatSettings settings(buf, true, false);
-    ast.formatImpl(settings, state, IAST::FormatStateStacked());
+    IAST::FormatSettings settings(true, false);
+    ast.format(buf, settings, state, IAST::FormatStateStacked());
     return buf.str();
 }
 
@@ -157,18 +156,6 @@ void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, 
         writeEscapedString(formatASTStateAware(*codec, state), buf);
     }
 
-    if (!settings.empty())
-    {
-        writeChar('\t', buf);
-        DB::writeText("SETTINGS ", buf);
-        DB::writeText("(", buf);
-        ASTSetQuery ast;
-        ast.is_standalone = false;
-        ast.changes = settings;
-        writeEscapedString(formatASTStateAware(ast, state), buf);
-        DB::writeText(")", buf);
-    }
-
     if (!statistics.empty())
     {
         writeChar('\t', buf);
@@ -180,6 +167,18 @@ void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, 
         writeChar('\t', buf);
         DB::writeText("TTL ", buf);
         writeEscapedString(formatASTStateAware(*ttl, state), buf);
+    }
+
+    if (!settings.empty())
+    {
+        writeChar('\t', buf);
+        DB::writeText("SETTINGS ", buf);
+        DB::writeText("(", buf);
+        ASTSetQuery ast;
+        ast.is_standalone = false;
+        ast.changes = settings;
+        writeEscapedString(formatASTStateAware(ast, state), buf);
+        DB::writeText(")", buf);
     }
 
     writeChar('\n', buf);
@@ -386,7 +385,9 @@ void ColumnsDescription::modifyColumnOrder(const String & column_name, const Str
     };
 
     if (first)
+    {
         reorder_column([&]() { return columns.cbegin(); });
+    }
     else if (!after_column.empty() && column_name != after_column)
     {
         /// Checked first
@@ -970,7 +971,7 @@ std::vector<String> ColumnsDescription::getAllRegisteredNames() const
     names.reserve(columns.size());
     for (const auto & column : columns)
     {
-        if (column.name.find('.') == std::string::npos)
+        if (!column.name.contains('.'))
             names.push_back(column.name);
     }
     return names;

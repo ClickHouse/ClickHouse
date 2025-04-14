@@ -1,5 +1,6 @@
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
 
+#include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Interpreters/QueryLog.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -76,8 +77,7 @@ QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline()
 QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline(QueryPlan & query_plan)
 {
     buildQueryPlan(query_plan);
-    return std::move(*query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context)));
+    return std::move(*query_plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context)));
 }
 
 static StreamLocalLimits getLimitsForStorage(const Settings & settings, const SelectQueryOptions & options)
@@ -182,10 +182,10 @@ void IInterpreterUnionOrSelectQuery::addAdditionalPostFilter(QueryPlan & plan) c
     if (!ast)
         return;
 
-    auto dag = makeAdditionalPostFilter(ast, context, plan.getCurrentDataStream().header);
+    auto dag = makeAdditionalPostFilter(ast, context, plan.getCurrentHeader());
     std::string filter_name = dag.getOutputs().back()->result_name;
     auto filter_step = std::make_unique<FilterStep>(
-        plan.getCurrentDataStream(), std::move(dag), std::move(filter_name), true);
+        plan.getCurrentHeader(), std::move(dag), std::move(filter_name), true);
     filter_step->setStepDescription("Additional result filter");
     plan.addStep(std::move(filter_step));
 }

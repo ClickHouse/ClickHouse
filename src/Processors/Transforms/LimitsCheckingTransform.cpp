@@ -6,7 +6,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_MANY_ROWS;
     extern const int TOO_MANY_ROWS_OR_BYTES;
 }
 
@@ -32,7 +31,7 @@ void LimitsCheckingTransform::transform(Chunk & chunk)
         info.started = true;
     }
 
-    if (!limits.speed_limits.checkTimeLimit(info.total_stopwatch, limits.timeout_overflow_mode))
+    if (!limits.speed_limits.checkTimeLimit(info.total_stopwatch.elapsed(), limits.timeout_overflow_mode))
     {
         stopReading();
         return;

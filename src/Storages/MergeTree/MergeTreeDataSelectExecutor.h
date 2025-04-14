@@ -94,6 +94,7 @@ private:
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
+        VectorSimilarityIndexCache * vector_similarity_index_cache,
         LoggerPtr log);
 
     static MarkRanges filterMarksUsingMergedIndex(
@@ -105,6 +106,7 @@ private:
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
+        VectorSimilarityIndexCache * vector_similarity_index_cache,
         LoggerPtr log);
 
     struct PartFilterCounters
@@ -153,11 +155,7 @@ public:
 
     /// The same as roundRowsOrBytesToMarks, but return no more than max_marks.
     static size_t minMarksForConcurrentRead(
-        size_t rows_setting,
-        size_t bytes_setting,
-        size_t rows_granularity,
-        size_t bytes_granularity,
-        size_t max_marks);
+        size_t rows_setting, size_t bytes_setting, size_t rows_granularity, size_t bytes_granularity, size_t min_marks, size_t max_marks);
 
     /// If possible, construct optional key condition from predicates containing _part_offset column.
     static void buildKeyConditionFromPartOffset(
@@ -202,6 +200,13 @@ public:
         ReadFromMergeTree::IndexStats & index_stats,
         bool use_skip_indexes,
         bool find_exact_ranges);
+
+    /// Filter parts using query condition cache.
+    static void filterPartsByQueryConditionCache(
+        RangesInDataParts & parts_with_ranges,
+        const SelectQueryInfo & select_query_info,
+        const ContextPtr & context,
+        LoggerPtr log);
 
     /// Create expression for sampling.
     /// Also, calculate _sample_factor if needed.

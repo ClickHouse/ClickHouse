@@ -1,7 +1,9 @@
 ---
-slug: /en/sql-reference/window-functions/percent_rank
-sidebar_label: percent_rank
+description: 'Documentation for the percent_rank window function'
+sidebar_label: 'percent_rank'
 sidebar_position: 8
+slug: /sql-reference/window-functions/percent_rank
+title: 'percent_rank'
 ---
 
 # percent_rank
@@ -13,8 +15,8 @@ returns the relative rank (i.e. percentile) of rows within a window partition.
 Alias: `percentRank` (case-sensitive)
 
 ```sql
-percent_rank (column_name)
-  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
+percent_rank ()
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
         [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
 FROM table_name
 WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
@@ -50,7 +52,7 @@ INSERT INTO salaries FORMAT Values
 ```
 
 ```sql
-SELECT player, salary, 
+SELECT player, salary,
        percent_rank() OVER (ORDER BY salary DESC) AS percent_rank
 FROM salaries;
 ```

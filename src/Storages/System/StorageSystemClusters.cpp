@@ -1,4 +1,4 @@
-#include <optional>
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -7,6 +7,8 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/System/StorageSystemClusters.h>
 #include <Databases/DatabaseReplicated.h>
+
+#include <optional>
 
 namespace DB
 {
@@ -17,6 +19,7 @@ ColumnsDescription StorageSystemClusters::getColumnsDescription()
     {
         {"cluster", std::make_shared<DataTypeString>(), "The cluster name."},
         {"shard_num", std::make_shared<DataTypeUInt32>(), "The shard number in the cluster, starting from 1."},
+        {"shard_name", std::make_shared<DataTypeString>(), "The name of the shard in the cluster."},
         {"shard_weight", std::make_shared<DataTypeUInt32>(), "The relative weight of the shard when writing data."},
         {"internal_replication", std::make_shared<DataTypeUInt8>(), "Flag that indicates whether this host is a part on ensemble which can replicate the data on its own."},
         {"replica_num", std::make_shared<DataTypeUInt32>(), "The replica number in the shard, starting from 1."},
@@ -70,7 +73,9 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std
     const auto & shards_info = cluster->getShardsInfo();
     const auto & addresses_with_failover = cluster->getShardsAddresses();
 
-    size_t recovery_time_column_idx = columns_mask.size() - 1, replication_lag_column_idx = columns_mask.size() - 2, is_active_column_idx = columns_mask.size() - 3;
+    size_t recovery_time_column_idx = columns_mask.size() - 1;
+    size_t replication_lag_column_idx = columns_mask.size() - 2;
+    size_t is_active_column_idx = columns_mask.size() - 3;
     ReplicasInfo replicas_info;
     if (replicated && (columns_mask[recovery_time_column_idx] || columns_mask[replication_lag_column_idx] || columns_mask[is_active_column_idx]))
         replicas_info = replicated->tryGetReplicasInfo(name_and_cluster.second);
@@ -84,13 +89,16 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std
 
         for (size_t replica_index = 0; replica_index < shard_addresses.size(); ++replica_index)
         {
-            size_t src_index = 0, res_index = 0;
+            size_t src_index = 0;
+            size_t res_index = 0;
             const auto & address = shard_addresses[replica_index];
 
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(cluster_name);
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(shard_info.shard_num);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(shard_info.name);
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(shard_info.weight);
             if (columns_mask[src_index++])

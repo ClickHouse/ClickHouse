@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: replica, no-debug
+# Tags: replica, no-debug, no-shared-merge-tree
+# no-shared-merge-tree: depends on zookeeper, specific logs of rmt and so on
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -29,7 +30,7 @@ $CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 --max_block_siz
 
 # Now wait for cleanup thread
 for _ in {1..60}; do
-    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
     [[ $($CLICKHOUSE_CLIENT --query "SELECT sum(toUInt32(extract(message, 'Removed (\d+) old log entries'))) FROM system.text_log WHERE event_date >= yesterday() AND logger_name LIKE '%' || '$CLICKHOUSE_DATABASE' || '%r1%(ReplicatedMergeTreeCleanupThread)%' AND message LIKE '%Removed % old log entries%' SETTINGS max_rows_to_read = 0") -gt $((SCALE - 10)) ]] && break;
     sleep 1
 done

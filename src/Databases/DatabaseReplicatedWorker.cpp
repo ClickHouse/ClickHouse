@@ -3,6 +3,7 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
@@ -18,6 +19,14 @@ namespace Setting
     extern const SettingsUInt64 database_replicated_initial_query_timeout_sec;
 }
 
+namespace DatabaseReplicatedSetting
+{
+    extern const DatabaseReplicatedSettingsBool check_consistency;
+    extern const DatabaseReplicatedSettingsUInt64 max_replication_lag_to_enqueue;
+    extern const DatabaseReplicatedSettingsUInt64 max_retries_before_automatic_recovery;
+    extern const DatabaseReplicatedSettingsUInt64 wait_entry_commited_timeout_sec;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -31,7 +40,14 @@ namespace ErrorCodes
 static constexpr const char * FORCE_AUTO_RECOVERY_DIGEST = "42";
 
 DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db, ContextPtr context_)
-    : DDLWorker(/* pool_size */ 1, db->zookeeper_path + "/log", context_, nullptr, {}, fmt::format("DDLWorker({})", db->getDatabaseName()))
+    : DDLWorker(
+          /* pool_size */ 1,
+          db->zookeeper_path + "/log",
+          db->zookeeper_path + "/replicas",
+          context_,
+          nullptr,
+          {},
+          fmt::format("DDLWorker({})", db->getDatabaseName()))
     , database(db)
 {
     /// Pool size must be 1 to avoid reordering of log entries.
@@ -63,8 +79,8 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
                 break;
             }
 
-            if (database->db_settings.max_retries_before_automatic_recovery &&
-                database->db_settings.max_retries_before_automatic_recovery <= subsequent_errors_count)
+            if (database->db_settings[DatabaseReplicatedSetting::max_retries_before_automatic_recovery]
+                && database->db_settings[DatabaseReplicatedSetting::max_retries_before_automatic_recovery] <= subsequent_errors_count)
             {
                 String current_task_name;
                 {
@@ -74,7 +90,7 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
                 LOG_WARNING(log, "Database got stuck at processing task {}: it failed {} times in a row with the same error. "
                                  "Will reset digest to mark our replica as lost, and trigger recovery from the most up-to-date metadata "
                                  "from ZooKeeper. See max_retries_before_automatic_recovery setting. The error: {}",
-                            current_task, subsequent_errors_count, last_unexpected_error);
+                            current_task, subsequent_errors_count.load(), last_unexpected_error);
 
                 String digest_str;
                 zookeeper->tryGet(database->replica_path + "/digest", digest_str);
@@ -155,7 +171,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
 
     bool is_new_replica = our_log_ptr == 0;
     bool lost_according_to_log_ptr = our_log_ptr + logs_to_keep < max_log_ptr;
-    bool lost_according_to_digest = database->db_settings.check_consistency && local_digest != digest;
+    bool lost_according_to_digest = database->db_settings[DatabaseReplicatedSetting::check_consistency] && local_digest != digest;
 
     if (is_new_replica || lost_according_to_log_ptr || lost_according_to_digest)
     {
@@ -175,7 +191,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
 
     {
         std::lock_guard lock{database->metadata_mutex};
-        if (!database->checkDigestValid(context, false))
+        if (!database->checkDigestValid(context))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent database metadata after reconnection to ZooKeeper");
     }
 
@@ -184,12 +200,11 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
 }
 
-String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry)
+String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &)
 {
     auto zookeeper = getAndSetZooKeeper();
     return enqueueQueryImpl(zookeeper, entry, database);
 }
-
 
 bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
 {
@@ -293,7 +308,7 @@ String DatabaseReplicatedDDLWorker::enqueueQueryImpl(const ZooKeeperPtr & zookee
     return node_path;
 }
 
-String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context)
+String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context, bool internal_query)
 {
     /// NOTE Possibly it would be better to execute initial query on the most up-to-date node,
     /// but it requires more complex logic around /try node.
@@ -306,7 +321,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     UInt32 our_log_ptr = getLogPointer();
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
 
-    if (our_log_ptr + database->db_settings.max_replication_lag_to_enqueue < max_log_ptr)
+    if (our_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] < max_log_ptr)
         throw Exception(ErrorCodes::NOT_A_LEADER, "Cannot enqueue query on this replica, "
                         "because it has replication lag of {} queries. Try other replica.", max_log_ptr - our_log_ptr);
 
@@ -320,10 +335,11 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     assert(!zookeeper->exists(task->getFinishedNodePath()));
     task->is_initial_query = true;
 
-    LOG_DEBUG(log, "Waiting for worker thread to process all entries before {}", entry_name);
     UInt64 timeout = query_context->getSettingsRef()[Setting::database_replicated_initial_query_timeout_sec];
     StopToken cancellation = query_context->getDDLQueryCancellation();
     StopCallback cancellation_callback(cancellation, [&] { wait_current_task_change.notify_all(); });
+    LOG_DEBUG(log, "Waiting for worker thread to process all entries before {} (timeout: {}s{})", entry_name, timeout, cancellation.stop_possible() ? ", cancellable" : "");
+
     {
         std::unique_lock lock{mutex};
         bool processed = wait_current_task_change.wait_for(lock, std::chrono::seconds(timeout), [&]()
@@ -331,10 +347,16 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
             assert(zookeeper->expired() || current_task <= entry_name);
 
             if (zookeeper->expired() || stop_flag)
+            {
+                LOG_TRACE(log, "Not enqueueing query: {}", stop_flag ? "replication stopped" : "ZooKeeper session expired");
                 throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "ZooKeeper session expired or replication stopped, try again");
+            }
 
             if (cancellation.stop_requested())
+            {
+                LOG_TRACE(log, "DDL query was cancelled");
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "DDL query was cancelled");
+            }
 
             return current_task == entry_name;
         });
@@ -347,7 +369,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     if (entry.parent_table_uuid.has_value() && !checkParentTableExists(entry.parent_table_uuid.value()))
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Parent table doesn't exist");
 
-    processTask(*task, zookeeper);
+    processTask(*task, zookeeper, internal_query);
 
     if (!task->was_executed)
     {
@@ -399,7 +421,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         /// Query is not committed yet. We cannot just skip it and execute next one, because reordering may break replication.
         LOG_TRACE(log, "Waiting for initiator {} to commit or rollback entry {}", initiator_name, entry_path);
         constexpr size_t wait_time_ms = 1000;
-        size_t max_iterations = database->db_settings.wait_entry_commited_timeout_sec;
+        size_t max_iterations = database->db_settings[DatabaseReplicatedSetting::wait_entry_commited_timeout_sec];
         size_t iteration = 0;
 
         while (!wait_committed_or_failed->tryWait(wait_time_ms))

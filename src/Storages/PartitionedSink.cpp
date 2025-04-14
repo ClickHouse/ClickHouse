@@ -5,6 +5,7 @@
 #include <Common/ArenaUtils.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 
@@ -146,6 +147,12 @@ String PartitionedSink::replaceWildcards(const String & haystack, const String &
     return boost::replace_all_copy(haystack, PartitionedSink::PARTITION_ID_WILDCARD, partition_id);
 }
 
+PartitionedSink::~PartitionedSink()
+{
+    if (isCancelled())
+        for (auto & item : partition_id_to_sink)
+            item.second->cancel();
+}
 }
 
 // NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)

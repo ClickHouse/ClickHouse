@@ -5,7 +5,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Field.h>
 
-#include <Analyzer/Identifier.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
@@ -602,11 +601,20 @@ public:
         return projection_columns;
     }
 
+    /// Returns true if query node is resolved, false otherwise
+    bool isResolved() const
+    {
+        return !projection_columns.empty();
+    }
+
     /// Resolve query node projection columns
     void resolveProjectionColumns(NamesAndTypes projection_columns_value);
 
-    /// Remove unused projection columns
-    void removeUnusedProjectionColumns(const std::unordered_set<std::string> & used_projection_columns);
+    /// Clear query node projection columns
+    void clearProjectionColumns()
+    {
+        projection_columns.clear();
+    }
 
     /// Remove unused projection columns
     void removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes);
@@ -617,6 +625,11 @@ public:
     }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
+
+    void setProjectionAliasesToOverride(Names pr_aliases)
+    {
+        projection_aliases_to_override = std::move(pr_aliases);
+    }
 
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
@@ -642,6 +655,7 @@ private:
 
     std::string cte_name;
     NamesAndTypes projection_columns;
+    Names projection_aliases_to_override;
     ContextMutablePtr context;
     SettingsChanges settings_changes;
 

@@ -2,6 +2,7 @@
 
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperDispatcher.h>
+#include <Coordination/KeeperStorage.h>
 #include <Server/KeeperTCPHandler.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/logger_useful.h>
@@ -11,9 +12,10 @@
 #include <Common/getMaxFileDescriptorCount.h>
 #include <Common/StringUtils.h>
 #include <Common/config_version.h>
-#include "Coordination/KeeperFeatureFlags.h"
+#include "Common/ZooKeeper/KeeperFeatureFlags.h"
 #include <Coordination/Keeper4LWInfo.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <boost/algorithm/string.hpp>
 
@@ -257,7 +259,9 @@ String RuokCommand::run()
 namespace
 {
 
-void print(IFourLetterCommand::StringBuffer & buf, const String & key, const String & value)
+using StringBuffer = DB::WriteBufferFromOwnString;
+
+void print(StringBuffer & buf, const String & key, const String & value)
 {
     writeText("zk_", buf);
     writeText(key, buf);
@@ -266,7 +270,7 @@ void print(IFourLetterCommand::StringBuffer & buf, const String & key, const Str
     writeText('\n', buf);
 }
 
-void print(IFourLetterCommand::StringBuffer & buf, const String & key, uint64_t value)
+void print(StringBuffer & buf, const String & key, uint64_t value)
 {
     print(buf, key, toString(value));
 }

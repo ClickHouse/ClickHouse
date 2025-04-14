@@ -1,8 +1,10 @@
 #pragma once
 
+#include <atomic>
 #include <limits>
 #include <memory>
 #include <base/types.h>
+#include <base/defines.h>
 #include <boost/core/noncopyable.hpp>
 
 
@@ -54,11 +56,8 @@ public:
     /// Take one already granted slot if available.
     [[nodiscard]] virtual AcquiredSlotPtr tryAcquire() = 0;
 
-    /// Returns the number of granted slots for given allocation (i.e. available to be acquired)
-    virtual SlotCount grantedCount() const = 0;
-
-    /// Returns the total number of slots allocated at the moment (acquired and granted)
-    virtual SlotCount allocatedCount() const = 0;
+    /// Take one granted slot or wait until it is available.
+    [[nodiscard]] virtual AcquiredSlotPtr acquire() = 0;
 };
 
 using SlotAllocationPtr = std::shared_ptr<ISlotAllocation>;
@@ -71,6 +70,36 @@ public:
     // Allocate at least `min` and at most `max` slots.
     // If not all `max` slots were successfully allocated, a "subscription" for later allocation is created
     [[nodiscard]] virtual SlotAllocationPtr allocate(SlotCount min, SlotCount max) = 0;
+};
+
+/// Allocation that grants all the slots immediately on creation
+class GrantedAllocation : public ISlotAllocation
+{
+public:
+    explicit GrantedAllocation(SlotCount granted_)
+        : granted(granted_)
+    {}
+
+    [[nodiscard]] AcquiredSlotPtr tryAcquire() override
+    {
+        SlotCount value = granted.load();
+        while (value)
+        {
+            if (granted.compare_exchange_strong(value, value - 1))
+                return std::make_shared<IAcquiredSlot>();
+        }
+        return {};
+    }
+
+    [[nodiscard]] AcquiredSlotPtr acquire() override
+    {
+        auto result = tryAcquire();
+        chassert(result);
+        return result;
+    }
+
+private:
+    std::atomic<SlotCount> granted; // allocated, but not yet acquired
 };
 
 }

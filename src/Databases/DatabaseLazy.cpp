@@ -47,24 +47,26 @@ DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, 
     : DatabaseOnDisk(name_, metadata_path_, std::filesystem::path("data") / escapeForFileName(name_) / "", "DatabaseLazy (" + name_ + ")", context_)
     , expiration_time(expiration_time_)
 {
+    createDirectories();
 }
 
 
 void DatabaseLazy::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel /*mode*/)
 {
-    iterateMetadataFiles([this, &local_context](const String & file_name)
-    {
-        const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
-
-        fs::path detached_permanently_flag = fs::path(getMetadataPath()) / (file_name + detached_suffix);
-        if (fs::exists(detached_permanently_flag))
+    iterateMetadataFiles(
+        [this, &local_context](const String & file_name)
         {
-            LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
-            return;
-        }
+            const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
 
-        attachTable(local_context, table_name, nullptr, {});
-    });
+            fs::path detached_permanently_flag = fs::path(getMetadataPath()) / (file_name + detached_suffix);
+            if (db_disk->existsFile(detached_permanently_flag))
+            {
+                LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
+                return;
+            }
+
+            attachTable(local_context, table_name, nullptr, {});
+        });
 }
 
 
@@ -324,7 +326,7 @@ try
 
         if (!it->second.table || isSharedPtrUnique(it->second.table))
         {
-            LOG_DEBUG(log, "Drop table {} from cache.", backQuote(it->first));
+            LOG_DEBUG(log, "Removing table {} from cache.", backQuote(it->first));
             it->second.table.reset();
             expired_tables.erase(it->second.expiration_iterator);
             it->second.expiration_iterator = cache_expiration_queue.end();

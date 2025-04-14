@@ -2,7 +2,7 @@
 
 #include <Common/assert_cast.h>
 #include <Common/IPv6ToBinary.h>
-#include <Common/memcmpSmall.h>
+#include <base/memcmpSmall.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
@@ -412,6 +412,7 @@ void IPAddressDictionary::loadData()
     bool has_ipv6 = false;
 
     DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+    pipeline.setConcurrencyControl(false);
     Block block;
     while (executor.pull(block))
     {

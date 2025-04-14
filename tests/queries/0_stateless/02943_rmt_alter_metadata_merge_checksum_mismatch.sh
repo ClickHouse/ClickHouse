@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-shared-merge-tree
 # Tag no-parallel: failpoint is in use
+# Tag no-shared-merge-tree: looks like it tests a specific behaviour of ReplicatedMergeTree with failpoints
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -95,6 +96,6 @@ wait_part "$failed_replica" all_0_2_2_1
 restore_failpoints
 trap '' EXIT
 
-$CLICKHOUSE_CLIENT -q "system flush logs"
+$CLICKHOUSE_CLIENT -q "system flush logs part_log"
 # check for error "Different number of files: 5 compressed (expected 3) and 2 uncompressed ones (expected 2). (CHECKSUM_DOESNT_MATCH)"
 $CLICKHOUSE_CLIENT -q "select part_name, merge_reason, event_type, errorCodeToName(error) from system.part_log where database = '$CLICKHOUSE_DATABASE' and error != 0 and errorCodeToName(error) != 'NO_REPLICA_HAS_PART' order by event_time_microseconds"

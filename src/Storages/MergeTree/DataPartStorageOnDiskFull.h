@@ -16,8 +16,8 @@ public:
     DataPartStoragePtr getProjection(const std::string & name) const override;
 
     bool exists() const override;
-    bool exists(const std::string & name) const override;
-    bool isDirectory(const std::string & name) const override;
+    bool existsFile(const std::string & name) const override;
+    bool existsDirectory(const std::string & name) const override;
 
     DataPartStorageIteratorPtr iterate() const override;
     Poco::Timestamp getFileLastModified(const String & file_name) const override;
@@ -27,6 +27,12 @@ public:
     String getUniqueId() const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
+        const std::string & name,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override;
+
+    std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const std::string & name,
         const ReadSettings & settings,
         std::optional<size_t> read_hint,

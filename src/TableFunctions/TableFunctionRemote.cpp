@@ -4,6 +4,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/Distributed/DistributedSettings.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -19,7 +20,6 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
-#include <base/range.h>
 #include "registerTableFunctions.h"
 
 
@@ -133,7 +133,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             if (lit->value.getType() != Field::Types::String)
                 return false;
 
-            res = lit->value.safeGet<const String &>();
+            res = lit->value.safeGet<String>();
             return true;
         };
 
@@ -287,6 +287,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             treat_local_as_remote,
             treat_local_port_as_remote,
             secure,
+            /* bind_host= */ "",
             /* priority= */ Priority{1},
             /* cluster_name= */ "",
             /* cluster_secret= */ ""

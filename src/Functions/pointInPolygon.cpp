@@ -11,13 +11,13 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/ObjectPool.h>
 #include <Common/ProfileEvents.h>
+#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <base/arithmeticOverflow.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 
@@ -54,6 +54,27 @@ using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
 using Polygon = boost::geometry::model::polygon<Point, false>;
 using Box = boost::geometry::model::box<Point>;
 
+template <typename Polygon>
+UInt128 sipHash128(Polygon && polygon)
+{
+    SipHash hash;
+
+    auto hash_ring = [&hash](const auto & ring)
+    {
+        UInt32 size = static_cast<UInt32>(ring.size());
+        hash.update(size);
+        hash.update(reinterpret_cast<const char *>(ring.data()), size * sizeof(ring[0]));
+    };
+
+    hash_ring(polygon.outer());
+
+    const auto & inners = polygon.inners();
+    hash.update(inners.size());
+    for (auto & inner : inners)
+        hash_ring(inner);
+
+    return hash.get128();
+}
 
 template <typename PointInConstPolygonImpl>
 class FunctionPointInPolygon : public IFunction

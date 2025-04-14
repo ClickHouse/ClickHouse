@@ -1,6 +1,8 @@
+#include <DataTypes/IDataType.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferValidUTF8.h>
 #include <Processors/Formats/Impl/XMLRowOutputFormat.h>
+#include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 
 
@@ -177,11 +179,6 @@ void XMLRowOutputFormat::writeExtremesElement(const char * title, const Columns 
     writeCString(">\n", *ostr);
 }
 
-
-void XMLRowOutputFormat::onProgress(const Progress & value)
-{
-    statistics.progress.incrementPiecewiseAtomically(value);
-}
 
 void XMLRowOutputFormat::finalizeImpl()
 {

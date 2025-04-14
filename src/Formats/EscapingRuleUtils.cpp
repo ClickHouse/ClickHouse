@@ -10,7 +10,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/parseDateTimeBestEffort.h>
-#include <Parsers/TokenIterator.h>
 
 
 namespace DB
@@ -83,7 +82,7 @@ void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule esca
             readCSVStringInto(out, buf, format_settings.csv);
             break;
         case FormatSettings::EscapingRule::JSON:
-            skipJSONField(buf, StringRef(field_name, field_name_len), format_settings.json);
+            skipJSONField(buf, std::string_view(field_name, field_name_len), format_settings.json);
             break;
         case FormatSettings::EscapingRule::Raw:
             readStringInto(out, buf);

@@ -21,7 +21,7 @@ ReadFromStreamLikeEngine::ReadFromStreamLikeEngine(
     const StorageSnapshotPtr & storage_snapshot_,
     std::shared_ptr<const StorageLimitsList> storage_limits_,
     ContextPtr context_)
-    : ISourceStep{DataStream{.header = storage_snapshot_->getSampleBlockForColumns(column_names_)}}
+    : ISourceStep{storage_snapshot_->getSampleBlockForColumns(column_names_)}
     , WithContext{context_}
     , storage_limits{std::move(storage_limits_)}
 {

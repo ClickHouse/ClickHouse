@@ -44,7 +44,7 @@ public:
 protected:
     StoragePtr getStorage(
         const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
-        const std::string & table_name, const String & compression_method_) const override;
+        const std::string & table_name, const String & compression_method_, bool) const override;
 
     const char * getStorageTypeName() const override { return "URLCluster"; }
 };

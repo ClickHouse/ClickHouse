@@ -42,6 +42,7 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, Int64) \
     M(CLASS_NAME, LightweightMutationProjectionMode) \
     M(CLASS_NAME, MaxThreads) \
+    M(CLASS_NAME, MergeSelectorAlgorithm) \
     M(CLASS_NAME, Milliseconds) \
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, String) \
@@ -76,7 +77,7 @@ struct MergeTreeSettings
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     bool needSyncPart(size_t input_rows, size_t input_bytes) const;
-    void sanityCheck(size_t background_pool_tasks) const;
+    void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const;
 
     void dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const;
 
@@ -90,6 +91,9 @@ struct MergeTreeSettings
     static bool isReadonlySetting(const String & name);
     static void checkCanSet(std::string_view name, const Field & value);
     static bool isPartFormatSetting(const String & name);
+
+    /// Cloud only
+    static bool isSMTReadonlySetting(const String & name);
 
 private:
     std::unique_ptr<MergeTreeSettingsImpl> impl;

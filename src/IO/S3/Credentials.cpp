@@ -1,3 +1,5 @@
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <IO/S3/Credentials.h>
 #include <Common/Exception.h>
 
@@ -347,7 +349,9 @@ bool AWSEC2InstanceProfileConfigLoader::LoadInternal()
         LOG_ERROR(logger, "Failed to parse output from EC2MetadataService.");
         return false;
     }
-    String access_key, secret_key, token;
+    String access_key;
+    String secret_key;
+    String token;
 
     auto credentials_view = credentials_doc.View();
     access_key = credentials_view.GetString("AccessKeyId");
@@ -645,7 +649,8 @@ Aws::String SSOCredentialsProvider::loadAccessTokenFile(const Aws::String & sso_
             return "";
         }
         Aws::Utils::Json::JsonView token_view(token_doc);
-        Aws::String tmp_access_token, expiration_str;
+        Aws::String tmp_access_token;
+        Aws::String expiration_str;
         tmp_access_token = token_view.GetString("accessToken");
         expiration_str = token_view.GetString("expiresAt");
         Aws::Utils::DateTime expiration(expiration_str, Aws::Utils::DateFormat::ISO_8601);
@@ -693,6 +698,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
         static const char AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI[] = "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI";
         static const char AWS_ECS_CONTAINER_CREDENTIALS_FULL_URI[] = "AWS_CONTAINER_CREDENTIALS_FULL_URI";
         static const char AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN[] = "AWS_CONTAINER_AUTHORIZATION_TOKEN";
+        static const char AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN_FILE[] = "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE";
         static const char AWS_EC2_METADATA_DISABLED[] = "AWS_EC2_METADATA_DISABLED";
 
         /// The only difference from DefaultAWSCredentialsProviderChain::DefaultAWSCredentialsProviderChain()
@@ -750,7 +756,22 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
         }
         else if (!absolute_uri.empty())
         {
-            const auto token = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN);
+            auto token = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN);
+            const auto token_path = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN_FILE);
+
+            if (!token_path.empty())
+            {
+                LOG_INFO(logger, "The environment variable value {} is {}", AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN_FILE, token_path);
+
+                String token_from_file;
+
+                ReadBufferFromFile in(token_path);
+                readStringUntilEOF(token_from_file, in);
+                Poco::trimInPlace(token_from_file);
+
+                token = token_from_file;
+            }
+
             AddProvider(std::make_shared<Aws::Auth::TaskRoleCredentialsProvider>(absolute_uri.c_str(), token.c_str()));
 
             /// DO NOT log the value of the authorization token for security purposes.

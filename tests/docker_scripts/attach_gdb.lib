@@ -2,10 +2,12 @@
 
 # shellcheck source=./utils.lib
 source /repo/tests/docker_scripts/utils.lib
+# shellcheck disable=SC1091
+source /basic_helpers.sh
 
 function attach_gdb_to_clickhouse()
 {
-    IS_ASAN=$(clickhouse-client --query "SELECT count() FROM system.build_options WHERE name = 'CXX_FLAGS' AND position('sanitize=address' IN value)")
+    IS_ASAN=$(clickhouse local --query "SELECT count() FROM system.build_options WHERE name = 'CXX_FLAGS' AND position('sanitize=address' IN value)")
     if [[ "$IS_ASAN" = "1" ]];
     then
         echo "ASAN build detected. Not using gdb since it disables LeakSanitizer detections"
@@ -28,6 +30,8 @@ function attach_gdb_to_clickhouse()
         handle SIGUSR2 nostop noprint pass
         handle SIG$RTMIN nostop noprint pass
         info signals
+        # safeExit is called if graceful shutdown times out. Print stack traces in that case.
+        break safeExit
         continue
         backtrace full
         info registers

@@ -17,8 +17,11 @@ node3 = cluster.add_instance(
     user_configs=[
         "configs/config_zk.xml",
     ],
-    main_configs=["configs/config_zk_include_test.xml"],
+    main_configs=[
+        "configs/config_zk_include_test.xml",
+    ],
     with_zookeeper=True,
+    stay_alive=True,
 )
 node4 = cluster.add_instance(
     "node4",
@@ -131,7 +134,7 @@ def test_config(start_cluster):
 
 
 def test_config_from_env_overrides(start_cluster):
-    node7.replace_config(
+    with node7.with_replace_config(
         "/etc/clickhouse-server/users.d/000-users_with_env_subst.xml",
         """
 <clickhouse>
@@ -153,13 +156,14 @@ def test_config_from_env_overrides(start_cluster):
   </users>
 </clickhouse>
 """,
-    )
-    with pytest.raises(
-        QueryRuntimeException,
-        match="Failed to preprocess config '/etc/clickhouse-server/users.xml': Exception: Element <max_threads> has value and does not have 'replace' attribute, can't process from_env substitution",
     ):
-        node7.query("SYSTEM RELOAD CONFIG")
-    node7.replace_config(
+        with pytest.raises(
+            QueryRuntimeException,
+            match="Failed to preprocess config '/etc/clickhouse-server/users.xml': Exception: Element <max_threads> has value and does not have 'replace' attribute, can't process from_env substitution",
+        ):
+            node7.query("SYSTEM RELOAD CONFIG")
+
+    with node7.with_replace_config(
         "/etc/clickhouse-server/users.d/000-users_with_env_subst.xml",
         """
 <clickhouse>
@@ -181,26 +185,27 @@ def test_config_from_env_overrides(start_cluster):
   </users>
 </clickhouse>
 """,
-    )
-    node7.query("SYSTEM RELOAD CONFIG")
+    ):
+        node7.query("SYSTEM RELOAD CONFIG")
 
 
 def test_config_merge_from_env_overrides(start_cluster):
+    node7.query("SYSTEM RELOAD CONFIG")
     assert (
         node7.query(
             "SELECT value FROM system.server_settings WHERE name='max_thread_pool_size'"
         )
         == "10000\n"
     )
-    node7.replace_config(
+    with node7.with_replace_config(
         "/etc/clickhouse-server/config.d/010-server_with_env_subst.xml",
         """
 <clickhouse>
     <max_thread_pool_size from_env="CH_THREADS" replace="1">9000</max_thread_pool_size>
 </clickhouse>
 """,
-    )
-    node7.query("SYSTEM RELOAD CONFIG")
+    ):
+        node7.query("SYSTEM RELOAD CONFIG")
 
 
 def test_include_config(start_cluster):
@@ -221,6 +226,7 @@ def test_include_config(start_cluster):
 
 
 def test_allow_databases(start_cluster):
+    node5.query("DROP DATABASE IF EXISTS db1 SYNC")
     node5.query("CREATE DATABASE db1")
     node5.query(
         "CREATE TABLE db1.test_table(date Date, k1 String, v1 Int32) ENGINE = MergeTree(date, (k1, date), 8192)"
@@ -291,6 +297,9 @@ def test_allow_databases(start_cluster):
 
 
 def test_config_multiple_zk_substitutions(start_cluster):
+    # NOTE: background_pool_size cannot be decreased, so let's restart ClickHouse to make the test idempotent (i.e. runned multiple times)
+    node3.restart_clickhouse()
+    node3.query("SYSTEM RELOAD CONFIG")
     assert (
         node3.query(
             "SELECT value FROM system.merge_tree_settings WHERE name='min_bytes_for_wide_part'"
@@ -317,34 +326,36 @@ def test_config_multiple_zk_substitutions(start_cluster):
     )
 
     zk = cluster.get_kazoo_client("zoo1")
-    zk.create(
-        path="/background_pool_size",
-        value=b"<background_pool_size>72</background_pool_size>",
-        makepath=True,
-    )
-
-    node3.replace_config(
-        "/etc/clickhouse-server/config.d/config_zk_include_test.xml",
-        """
-<clickhouse>
-  <include from_zk="/background_pool_size" merge="true"/>
-  <background_pool_size>44</background_pool_size>
-  <merge_tree>
-    <include from_zk="/merge_max_block_size" merge="true"/>
-    <min_bytes_for_wide_part>1</min_bytes_for_wide_part>
-    <min_rows_for_wide_part>1111</min_rows_for_wide_part>
-  </merge_tree>
-
-  <include from_zk="/min_bytes_for_wide_part" merge="true"/>
- </clickhouse>
-""",
-    )
-
-    node3.query("SYSTEM RELOAD CONFIG")
-
-    assert (
-        node3.query(
-            "SELECT value FROM system.server_settings WHERE name='background_pool_size'"
+    try:
+        zk.create(
+            path="/background_pool_size",
+            value=b"<background_pool_size>72</background_pool_size>",
+            makepath=True,
         )
-        == "72\n"
-    )
+
+        with node3.with_replace_config(
+            "/etc/clickhouse-server/config.d/config_zk_include_test.xml",
+            """
+    <clickhouse>
+      <include from_zk="/background_pool_size" merge="true"/>
+      <background_pool_size>44</background_pool_size>
+      <merge_tree>
+        <include from_zk="/merge_max_block_size" merge="true"/>
+        <min_bytes_for_wide_part>1</min_bytes_for_wide_part>
+        <min_rows_for_wide_part>1111</min_rows_for_wide_part>
+      </merge_tree>
+
+      <include from_zk="/min_bytes_for_wide_part" merge="true"/>
+     </clickhouse>
+    """,
+        ):
+            node3.query("SYSTEM RELOAD CONFIG")
+
+            assert (
+                node3.query(
+                    "SELECT value FROM system.server_settings WHERE name='background_pool_size'"
+                )
+                == "72\n"
+            )
+    finally:
+        zk.delete(path="/background_pool_size")

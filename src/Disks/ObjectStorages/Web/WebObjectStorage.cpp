@@ -48,7 +48,7 @@ WebObjectStorage::loadFiles(const String & path, const std::unique_lock<std::sha
 
         auto timeouts = ConnectionTimeouts::getHTTPTimeouts(
             getContext()->getSettingsRef(),
-            getContext()->getServerSettings().keep_alive_timeout);
+            getContext()->getServerSettings());
 
         auto metadata_buf = BuilderRWBufferFromHTTP(Poco::URI(fs::path(full_url) / ".index"))
                                 .withConnectionGroup(HTTPConnectionGroupType::DISK)
@@ -254,16 +254,6 @@ std::unique_ptr<WriteBufferFromFileBase> WebObjectStorage::writeObject( /// NOLI
     throwNotAllowed();
 }
 
-void WebObjectStorage::removeObject(const StoredObject &)
-{
-    throwNotAllowed();
-}
-
-void WebObjectStorage::removeObjects(const StoredObjects &)
-{
-    throwNotAllowed();
-}
-
 void WebObjectStorage::removeObjectIfExists(const StoredObject &)
 {
     throwNotAllowed();
@@ -297,7 +287,7 @@ std::unique_ptr<IObjectStorage> WebObjectStorage::cloneObjectStorage(
     const Poco::Util::AbstractConfiguration & /* config */,
     const std::string & /* config_prefix */, ContextPtr /* context */)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "cloneObjectStorage() is not implemented for WebObjectStorage");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "cloneObjectStorage is not implemented for WebObjectStorage");
 }
 
 }

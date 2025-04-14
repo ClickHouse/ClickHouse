@@ -27,5 +27,5 @@
 2	('aaa','bbb')	[1,NULL,3]
 3	('ccc','ddd')	[4,5,6]
 1	foo	bar	3	[0,1,0]
-2	foo	bar	3	[0,1,0]
+2	aaa	bbb	3	[0,1,0]
 3	ccc	ddd	3	[0,0,0]

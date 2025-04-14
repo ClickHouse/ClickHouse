@@ -1,5 +1,6 @@
 # docker build -t clickhouse/integration-tests-runner .
-FROM ubuntu:22.04
+ARG FROM_TAG=latest
+FROM clickhouse/test-util:$FROM_TAG
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
@@ -26,6 +27,7 @@ RUN apt-get update \
     libicu-dev \
     bsdutils \
     curl \
+    openssh-client \
     liblua5.1-dev \
     luajit \
     libssl-dev \
@@ -42,13 +44,12 @@ ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ENV DOCKER_CHANNEL stable
-# Unpin the docker version after the release 24.0.3 is released
-# https://github.com/moby/moby/issues/45770#issuecomment-1618255130
 RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
     && add-apt-repository "deb https://download.docker.com/linux/ubuntu $(lsb_release -c -s) ${DOCKER_CHANNEL}" \
     && apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
-        docker-ce='5:23.*' docker-compose-plugin='2.29.*' \
+        docker-ce="5:27.0.3*" \
+        docker-compose-plugin='2.29.*' \
     && rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \
@@ -86,7 +87,7 @@ COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/
 COPY misc/ /misc/
 
-COPY --from=clickhouse/cctools:0d6b90a7a490 /opt/gdb /opt/gdb
+COPY --from=clickhouse/cctools:13cfebfd8f1bbc65ab49 /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
 
 # Same options as in test/base/Dockerfile

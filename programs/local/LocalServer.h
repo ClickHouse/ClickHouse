@@ -34,13 +34,13 @@ protected:
 
     void connect() override;
 
-    void processError(const String & query) const override;
+    void processError(std::string_view query) const override;
 
     String getName() const override { return "local"; }
 
-    void printHelpMessage(const OptionsDescription & options_description, bool verbose) override;
+    void printHelpMessage(const OptionsDescription & options_description) override;
 
-    void addOptions(OptionsDescription & options_description) override;
+    void addExtraOptions(OptionsDescription & options_description) override;
 
     void processOptions(const OptionsDescription & options_description, const CommandLineOptions & options,
                         const std::vector<Arguments> &, const std::vector<Arguments> &) override;
@@ -53,9 +53,10 @@ protected:
 private:
     /** Composes CREATE subquery based on passed arguments (--structure --file --table and --input-format)
       * This query will be executed first, before queries passed through --query argument
-      * Returns empty string if it cannot compose that query.
+      * Returns a pair of the table name and the corresponding create table statement.
+      * Returns empty strings if it cannot compose that query.
       */
-    std::string getInitialCreateTableQuery();
+    std::pair<std::string, std::string> getInitialCreateTableQuery();
 
     void tryInitPath();
     void setupUsers();

@@ -48,7 +48,7 @@ public:
     std::shared_ptr<IBackupCoordination> getBackupCoordination() const { return backup_coordination; }
     const ReadSettings & getReadSettings() const { return read_settings; }
     ContextPtr getContext() const { return context; }
-    const ZooKeeperRetriesInfo & getZooKeeperRetriesInfo() const { return global_zookeeper_retries_info; }
+    const ZooKeeperRetriesInfo & getZooKeeperRetriesInfo() const { return zookeeper_retries_info; }
 
     /// Returns all access entities which can be put into a backup.
     std::unordered_map<UUID, AccessEntityPtr> getAllAccessEntities();
@@ -111,10 +111,6 @@ private:
     ContextPtr context;
     QueryStatusPtr process_list_element;
 
-    /// The time a BACKUP ON CLUSTER or RESTORE ON CLUSTER command will wait until all the nodes receive the BACKUP (or RESTORE) query and start working.
-    /// This setting is similar to `distributed_ddl_task_timeout`.
-    const std::chrono::milliseconds on_cluster_first_sync_timeout;
-
     /// The time a BACKUP command will try to collect the metadata of tables & databases.
     const std::chrono::milliseconds collect_metadata_timeout;
 
@@ -133,7 +129,7 @@ private:
     LoggerPtr log;
     /// Unfortunately we can use ZooKeeper for collecting information for backup
     /// and we need to retry...
-    ZooKeeperRetriesInfo global_zookeeper_retries_info;
+    ZooKeeperRetriesInfo zookeeper_retries_info;
 
     Strings all_hosts;
     DDLRenamingMap renaming_map;

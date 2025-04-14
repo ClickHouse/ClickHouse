@@ -251,7 +251,8 @@ protected:
 
         /// Find the data range.
         /// If data left is small, shrink block size.
-        RangesPos start, end;
+        RangesPos start;
+        RangesPos end;
         auto block_size = findRanges(start, end, base_block_size);
 
         if (!block_size)
@@ -353,8 +354,11 @@ private:
 namespace
 {
 /// Whether we should push limit down to scan.
-bool shouldPushdownLimit(SelectQueryInfo & query_info, UInt64 limit_length)
+bool shouldPushdownLimit(const SelectQueryInfo & query_info, UInt64 limit_length)
 {
+    if (!query_info.query)
+        return false;
+
     const auto & query = query_info.query->as<ASTSelectQuery &>();
     /// Just ignore some minor cases, such as:
     ///     select * from system.numbers order by number asc limit 10
@@ -393,6 +397,19 @@ void shrinkRanges(RangesWithStep & ranges, size_t size)
     ranges.erase(ranges.begin() + (last_range_idx + 1), ranges.end());
 }
 
+/// This is idealogically wrong. We should only get it from the query plan optimization.
+std::optional<size_t> getLimitFromQueryInfo(const SelectQueryInfo & query_info, const ContextPtr & context)
+{
+    if (!query_info.query)
+        return {};
+
+    auto limit_length_and_offset = InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context);
+    if (!shouldPushdownLimit(query_info, limit_length_and_offset.first))
+        return {};
+
+    return limit_length_and_offset.first + limit_length_and_offset.second;
+}
+
 }
 
 ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
@@ -404,24 +421,24 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
     size_t max_block_size_,
     size_t num_streams_)
     : SourceStepWithFilter(
-        DataStream{.header = storage_snapshot_->getSampleBlockForColumns(column_names_)},
+        storage_snapshot_->getSampleBlockForColumns(column_names_),
         column_names_,
         query_info_,
         storage_snapshot_,
         context_)
     , column_names{column_names_}
     , storage{std::move(storage_)}
-    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, context).expression}
+    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, context, false).expression}
     , max_block_size{max_block_size_}
     , num_streams{num_streams_}
-    , limit_length_and_offset(InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context))
-    , should_pushdown_limit(shouldPushdownLimit(query_info, limit_length_and_offset.first))
     , query_info_limit(query_info.trivial_limit)
     , storage_limits(query_info.storage_limits)
 {
     storage_snapshot->check(column_names);
     chassert(column_names.size() == 1);
     chassert(storage->as<StorageSystemNumbers>() != nullptr);
+
+    limit = getLimitFromQueryInfo(query_info_, context);
 }
 
 
@@ -431,8 +448,8 @@ void ReadFromSystemNumbersStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     if (pipe.empty())
     {
-        assert(output_stream != std::nullopt);
-        pipe = Pipe(std::make_shared<NullSource>(output_stream->header));
+        assert(output_header != std::nullopt);
+        pipe = Pipe(std::make_shared<NullSource>(*output_header));
     }
 
     /// Add storage limits.
@@ -533,16 +550,13 @@ Pipe ReadFromSystemNumbersStep::makePipe()
             pipe.addSource(std::make_shared<NullSource>(NumbersSource::createHeader(numbers_storage.column_name)));
             return pipe;
         }
-        const auto & limit_length = limit_length_and_offset.first;
-        const auto & limit_offset = limit_length_and_offset.second;
 
         UInt128 total_size = sizeOfRanges(intersected_ranges);
-        UInt128 query_limit = limit_length + limit_offset;
 
         /// limit total_size by query_limit
-        if (should_pushdown_limit && query_limit < total_size)
+        if (limit && *limit < total_size)
         {
-            total_size = query_limit;
+            total_size = *limit;
             /// We should shrink intersected_ranges for case:
             ///     intersected_ranges: [1, 4], [7, 100]; query_limit: 2
             shrinkRanges(intersected_ranges, total_size);

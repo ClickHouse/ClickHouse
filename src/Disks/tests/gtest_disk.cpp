@@ -33,10 +33,10 @@ public:
 TEST_F(DiskTest, createDirectories)
 {
     disk->createDirectories("test_dir1/");
-    EXPECT_TRUE(disk->isDirectory("test_dir1/"));
+    EXPECT_TRUE(disk->existsDirectory("test_dir1/"));
 
     disk->createDirectories("test_dir2/nested_dir/");
-    EXPECT_TRUE(disk->isDirectory("test_dir2/nested_dir/"));
+    EXPECT_TRUE(disk->existsDirectory("test_dir2/nested_dir/"));
 }
 
 
@@ -45,6 +45,7 @@ TEST_F(DiskTest, writeFile)
     {
         std::unique_ptr<DB::WriteBuffer> out = disk->writeFile("test_file");
         writeString("test data", *out);
+        out->finalize();
     }
 
     String data;
@@ -63,6 +64,7 @@ TEST_F(DiskTest, readFile)
     {
         std::unique_ptr<DB::WriteBuffer> out = disk->writeFile("test_file");
         writeString("test data", *out);
+        out->finalize();
     }
 
     auto read_settings = DB::getReadSettings();

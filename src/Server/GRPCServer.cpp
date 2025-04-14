@@ -7,6 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/SettingsChanges.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
@@ -71,6 +72,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool throw_if_no_data_to_insert;
+    extern const SettingsBool use_concurrency_control;
 }
 
 namespace ErrorCodes
@@ -935,9 +937,9 @@ namespace
         /// Choose output format.
         query_context->setDefaultFormat(query_info.output_format());
         if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
-            ast_query_with_output && ast_query_with_output->format)
+            ast_query_with_output && ast_query_with_output->format_ast)
         {
-            output_format = getIdentifierName(ast_query_with_output->format);
+            output_format = getIdentifierName(ast_query_with_output->format_ast);
         }
         if (output_format.empty())
             output_format = query_context->getDefaultFormat();
@@ -1244,6 +1246,7 @@ namespace
         if (io.pipeline.pulling())
         {
             auto executor = std::make_shared<PullingAsyncPipelineExecutor>(io.pipeline);
+            io.pipeline.setConcurrencyControl(query_context->getSettingsRef()[Setting::use_concurrency_control]);
             auto check_for_cancel = [&]
             {
                 if (isQueryCancelled())

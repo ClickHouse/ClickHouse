@@ -1,14 +1,15 @@
 #include <Core/Settings.h>
-#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Functions/FunctionsLogical.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Functions/FunctionsLogical.h>
-#include <Functions/IFunctionAdaptors.h>
 
 namespace DB
 {
@@ -187,7 +188,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     if (!optimize_result.fully_moved_to_prewhere)
     {
         filter_node->step = std::make_unique<FilterStep>(
-            source_step_with_filter->getOutputStream(),
+            source_step_with_filter->getOutputHeader(),
             std::move(split_result.second),
             filter_step->getFilterColumnName(),
             filter_step->removesFilterColumn());
@@ -196,7 +197,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     {
         /// Have to keep this expression to change column names to column identifiers
         filter_node->step = std::make_unique<ExpressionStep>(
-            source_step_with_filter->getOutputStream(),
+            source_step_with_filter->getOutputHeader(),
             std::move(split_result.second));
     }
 }

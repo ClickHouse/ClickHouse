@@ -200,6 +200,7 @@ class RpmArtifactory:
     )
     _PROD_REPO_URL = "https://packages.clickhouse.com/rpm/clickhouse.repo"
     _SIGN_KEY = "885E2BDCF96B0B45ABF058453E4AD4719DDE9A38"
+    FEDORA_VERSION = 40
 
     def __init__(self, release_info: ReleaseInfo, dry_run: bool):
         self.release_info = release_info
@@ -249,16 +250,16 @@ class RpmArtifactory:
         Shell.check("sync")
 
     def test_packages(self):
-        Shell.check("docker pull fedora:latest", strict=True)
+        Shell.check(f"docker pull fedora:{self.FEDORA_VERSION}", strict=True)
         print(f"Test package installation, version [{self.version}]")
         rpm_command = f"dnf config-manager --add-repo={self.repo_url} && dnf makecache && dnf -y install clickhouse-client-{self.version}-1"
-        cmd = f'docker run --rm fedora:latest /bin/bash -c "dnf -y install dnf-plugins-core && dnf config-manager --add-repo={self.repo_url} && {rpm_command}"'
+        cmd = f'docker run --rm fedora:{self.FEDORA_VERSION} /bin/bash -c "dnf -y install dnf-plugins-core && dnf config-manager --add-repo={self.repo_url} && {rpm_command}"'
         print("Running test command:")
         print(f"  {cmd}")
         assert Shell.check(cmd)
         print("Test package installation, version [latest]")
         rpm_command_2 = f"dnf config-manager --add-repo={self.repo_url} && dnf makecache && dnf -y install clickhouse-client"
-        cmd = f'docker run --rm fedora:latest /bin/bash -c "dnf -y install dnf-plugins-core && dnf config-manager --add-repo={self.repo_url} && {rpm_command_2}"'
+        cmd = f'docker run --rm fedora:{self.FEDORA_VERSION} /bin/bash -c "dnf -y install dnf-plugins-core && dnf config-manager --add-repo={self.repo_url} && {rpm_command_2}"'
         print("Running test command:")
         print(f"  {cmd}")
         assert Shell.check(cmd)

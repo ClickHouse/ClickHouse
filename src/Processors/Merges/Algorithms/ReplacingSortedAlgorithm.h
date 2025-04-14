@@ -1,4 +1,6 @@
 #pragma once
+
+#include <Columns/ColumnsNumber.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithSharedChunks.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
@@ -13,8 +15,7 @@ class Logger;
 namespace DB
 {
 
-/** Use in skipping final to keep list of indices of selected row after merging final
-  */
+//// Used in skipping final to keep the list of indices of selected rows after merging.
 struct ChunkSelectFinalIndices : public ChunkInfoCloneable<ChunkSelectFinalIndices>
 {
     explicit ChunkSelectFinalIndices(MutableColumnPtr select_final_indices_);
@@ -22,6 +23,11 @@ struct ChunkSelectFinalIndices : public ChunkInfoCloneable<ChunkSelectFinalIndic
 
     const ColumnPtr column_holder;
     const ColumnUInt64 * select_final_indices = nullptr;
+};
+
+//// Used in skipping final to keep all rows in chunk after merging.
+struct ChunkSelectFinalAllRows : public ChunkInfoCloneable<ChunkSelectFinalAllRows>
+{
 };
 
 /** Merges several sorted inputs into one.
@@ -63,6 +69,7 @@ private:
     PODArray<RowSourcePart> current_row_sources;
 
     void insertRow();
+    void insertRowImpl();
 
     /// Method for using in skipping FINAL logic
     /// Skipping FINAL doesn't merge rows to new chunks but marks selected rows in input chunks and emit them

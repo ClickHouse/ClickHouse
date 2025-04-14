@@ -23,7 +23,7 @@ namespace ErrorCodes
 ReadBufferIterator::ReadBufferIterator(
     ObjectStoragePtr object_storage_,
     ConfigurationPtr configuration_,
-    const FileIterator & file_iterator_,
+    const ObjectIterator & file_iterator_,
     const std::optional<FormatSettings> & format_settings_,
     SchemaCache & schema_cache_,
     ObjectInfos & read_keys_,
@@ -218,7 +218,6 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         }
 
         const auto filename = current_object_info->getFileName();
-        chassert(!filename.empty());
 
         /// file iterator could get new keys after new iteration
         if (read_keys.size() > prev_read_keys_size)

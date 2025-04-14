@@ -14,7 +14,6 @@
 namespace DB
 {
 
-class Block;
 class Chunk;
 
 class ArrowColumnToCHColumn
@@ -36,7 +35,8 @@ public:
         const arrow::Schema & schema,
         const std::string & format_name,
         bool skip_columns_with_unsupported_types = false,
-        bool allow_inferring_nullable_columns = true);
+        bool allow_inferring_nullable_columns = true,
+        bool case_insensitive_matching = false);
 
     struct DictionaryInfo
     {

@@ -1,5 +1,6 @@
+#include <IO/NullWriteBuffer.h>
 #include <Processors/Formats/PullingOutputFormat.h>
-#include <IO/WriteBuffer.h>
+#include <Processors/Port.h>
 
 namespace DB
 {
@@ -9,7 +10,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-WriteBufferFromPointer PullingOutputFormat::out(nullptr, 0);
+NullWriteBuffer PullingOutputFormat::out;
 
 PullingOutputFormat::PullingOutputFormat(const Block & header, std::atomic_bool & consume_data_flag_)
     : IOutputFormat(header, out)

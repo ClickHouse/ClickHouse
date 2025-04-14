@@ -46,6 +46,8 @@ public:
     ZNode get(const std::string & path, EventPtr watch_event);
     ZNode get(const std::string & path, Coordination::WatchCallback watch_callback);
 
+    void sync();
+
 private:
     GetZooKeeper get_zookeeper;
 

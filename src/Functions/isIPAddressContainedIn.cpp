@@ -30,14 +30,14 @@ public:
     explicit IPAddressVariant(std::string_view address_str)
     {
         UInt32 v4;
-        if (DB::parseIPv4whole(address_str.begin(), address_str.end(), reinterpret_cast<unsigned char *>(&v4)))
+        if (DB::parseIPv4whole(address_str.data(), address_str.data() + address_str.size(), reinterpret_cast<unsigned char *>(&v4)))
         {
             addr = v4;
         }
         else
         {
             addr = IPv6AddrType();
-            bool success = DB::parseIPv6whole(address_str.begin(), address_str.end(), std::get<IPv6AddrType>(addr).data());
+            bool success = DB::parseIPv6whole(address_str.data(), address_str.data() + address_str.size(), std::get<IPv6AddrType>(addr).data());
             if (!success)
                 throw DB::Exception(DB::ErrorCodes::CANNOT_PARSE_TEXT, "Neither IPv4 nor IPv6 address: '{}'", address_str);
         }
@@ -86,7 +86,7 @@ IPAddressCIDR parseIPWithCIDR(std::string_view cidr_str)
     auto prefix_str = cidr_str.substr(pos_slash+1);
 
     const auto * prefix_str_end = prefix_str.data() + prefix_str.size();
-    auto [parse_end, parse_error] = std::from_chars(prefix_str.data(), prefix_str_end, prefix);
+    auto [parse_end, parse_error] = std::from_chars(prefix_str.data(), prefix_str_end, prefix);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
     uint8_t max_prefix = (addr.asV6() ? IPV6_BINARY_LENGTH : IPV4_BINARY_LENGTH) * 8;
     bool has_error = parse_error != std::errc() || parse_end != prefix_str_end || prefix > max_prefix;
     if (has_error)

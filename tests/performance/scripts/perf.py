@@ -478,6 +478,8 @@ for query_index in queries_to_run:
 
     client_seconds = time.perf_counter() - start_seconds
     print(f"client-time\t{query_index}\t{client_seconds}\t{server_seconds}")
+    median = [statistics.median(t) for t in all_server_times]
+    print(f"median\t{query_index}\t{median[0]}")
 
     # Run additional profiling queries to collect profile data, but only if test times appeared to be different.
     # We have to do it after normal runs because otherwise it will affect test statistics too much
@@ -491,7 +493,6 @@ for query_index in queries_to_run:
     pvalue = stats.ttest_ind(
         all_server_times[0], all_server_times[1], equal_var=False
     ).pvalue
-    median = [statistics.median(t) for t in all_server_times]
     # Keep this consistent with the value used in report. Should eventually move
     # to (median[1] - median[0]) / min(median), which is compatible with "times"
     # difference we use in report (max(median) / min(median)).
