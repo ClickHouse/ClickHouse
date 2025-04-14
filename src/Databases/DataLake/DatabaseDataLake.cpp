@@ -160,10 +160,14 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_HIVE:
         {
+#if USE_AVRO && USE_HIVE
             catalog_impl = std::make_shared<DataLake::HiveCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
                 Context::getGlobalContextInstance());
+#else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse should be compiled with USE_HIVE and USE_AVRO");
+#endif
             break;
         }
     }
