@@ -97,6 +97,53 @@ static RelationStats getDummyStats(ContextPtr context, const String & table_name
     }
 }
 
+
+NameSet backTrackColumnsInDag(const String & input_name, const ActionsDAG & actions)
+{
+    NameSet output_names;
+
+    std::unordered_set<const ActionsDAG::Node *> input_nodes;
+    for (const auto * node : actions.getInputs())
+    {
+        if (input_name == node->result_name)
+            input_nodes.insert(node);
+    }
+
+    std::unordered_set<const ActionsDAG::Node *> visited_nodes;
+    for (const auto * out_node : actions.getOutputs())
+    {
+        const auto * node = out_node;
+        while (true)
+        {
+            auto [_, inserted] = visited_nodes.insert(node);
+            if (!inserted)
+                break;
+
+            if (input_nodes.contains(node))
+            {
+                output_names.insert(out_node->result_name);
+                break;
+            }
+
+            if (node->type == ActionsDAG::ActionType::ALIAS && node->children.size() == 1)
+                node = node->children[0];
+        }
+    }
+    return output_names;
+}
+
+template <typename T>
+std::unordered_map<String, T> remapColumnStats(const std::unordered_map<String, T> & original, const ActionsDAG & actions)
+{
+    std::unordered_map<String, T> mapped;
+    for (const auto & [name, value] : original)
+    {
+        for (const auto & remapped : backTrackColumnsInDag(name, actions))
+            mapped[remapped] = value;
+    }
+    return mapped;
+}
+
 static RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filter = false)
 {
     IQueryPlanStep * step = node.step.get();
@@ -169,11 +216,19 @@ static RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filt
         return estimated;
     }
 
-    if (typeid_cast<const ExpressionStep *>(step))
-        return estimateReadRowsCount(*node.children.front(), has_filter);
+    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step))
+    {
+        auto stats = estimateReadRowsCount(*node.children.front(), has_filter);
+        stats.column_stats = remapColumnStats(stats.column_stats, expression_step->getExpression());
+        return stats;
+    }
 
-    if (typeid_cast<const FilterStep *>(step))
-        return estimateReadRowsCount(*node.children.front(), true);
+    if (const auto * expression_step = typeid_cast<const FilterStep *>(step))
+    {
+        auto stats = estimateReadRowsCount(*node.children.front(), true);
+        stats.column_stats = remapColumnStats(stats.column_stats, expression_step->getExpression());
+        return stats;
+    }
 
     return {};
 }

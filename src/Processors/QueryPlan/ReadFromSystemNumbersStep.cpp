@@ -668,13 +668,8 @@ UInt64 ReadFromSystemNumbersStep::getNumberOfRows() const
             numbers_storage.step);
     }
 
-    auto [limit_length, limit_offset] = limit_length_and_offset;
-    if (should_pushdown_limit && limit_length > 0)
-    {
-        UInt64 query_limit = limit_length + limit_offset;
-        if (estimated_rows == 0 || query_limit < estimated_rows)
-            estimated_rows = query_limit;
-    }
+    if (limit.has_value() && (estimated_rows == 0 || limit.value() < estimated_rows))
+        estimated_rows = limit.value();
 
     return estimated_rows;
 }

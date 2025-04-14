@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Interpreters/JoinOperator.h>
 #include <vector>
+#include <fmt/ranges.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -65,7 +66,6 @@ const ColumnStats * tryGetColumnStats(BaseRelsSet rels, const String & column_na
         return nullptr;
 
     return &it->second;
-
 }
 
 String formatJoinCondition(const JoinCondition & join_condition);
@@ -80,9 +80,8 @@ double estimateJoinSelectivity(
         if (pred.op != PredicateOperator::Equals && pred.op != PredicateOperator::NullSafeEquals)
             continue;
 
-        const auto * left_stats = tryGetColumnStats(pred.left_node.getSourceRels(), pred.left_node.getDisplayName(), relation_stats);
-        const auto * right_stats = tryGetColumnStats(pred.right_node.getSourceRels(), pred.right_node.getDisplayName(), relation_stats);
-        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: {} {}", __FILE__, __LINE__, left_stats ? left_stats->num_distinct_values : 0, right_stats ? right_stats->num_distinct_values : 0);
+        const auto * left_stats = tryGetColumnStats(pred.left_node.getSourceRels(), pred.left_node.getColumnName(), relation_stats);
+        const auto * right_stats = tryGetColumnStats(pred.right_node.getSourceRels(), pred.right_node.getColumnName(), relation_stats);
 
         UInt64 max_ndv = std::max(
             left_stats ? left_stats->num_distinct_values : 0,
