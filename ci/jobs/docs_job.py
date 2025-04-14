@@ -39,7 +39,7 @@ if __name__ == "__main__":
     results.append(
         Result.from_commands_run(
             name=testname,
-            command=[f"yarn run-markdown-linter"],
+            command=[f"yarn check-markdown"],
             workdir="/opt/clickhouse-docs",
         )
     )
