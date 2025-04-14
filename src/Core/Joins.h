@@ -11,14 +11,16 @@ class WriteBuffer;
 /// Defines which side of the JOIN is preserved in the result.
 enum class JoinKind : uint8_t
 {
-    Inner, /// Keep only joined rows.
-    Left,  /// Keep all rows from left table. Fill with default values for right table where no matches.
-    Right, /// Keep all rows from right table. Fill with default values for left table where no matches.
-    Full,  /// Keep all rows from both tables. Fill with default values where no matches.
-    Cross, /// Direct product. Strictness and condition doesn't matter.
-    Comma, /// Same as direct product. Intended to be converted to INNER JOIN with conditions from WHERE.
-    Paste, /// Stack columns from left and right tables.
+    Inner = 0, /// Keep only joined rows.
+    Left,      /// Keep all rows from left table. Fill with default values for right table where no matches.
+    Right,     /// Keep all rows from right table. Fill with default values for left table where no matches.
+    Full,      /// Keep all rows from both tables. Fill with default values where no matches.
+    Cross,     /// Direct product. Strictness and condition doesn't matter.
+    Comma,     /// Same as direct product. Intended to be converted to INNER JOIN with conditions from WHERE.
+    Paste,     /// Stack columns from left and right tables.
 };
+
+constexpr uint8_t JoinKindMax = static_cast<uint8_t>(JoinKind::Paste);
 
 void serializeJoinKind(JoinKind kind, WriteBuffer & out);
 JoinKind deserializeJoinKind(ReadBuffer & in);
@@ -42,7 +44,7 @@ JoinKind reverseJoinKind(JoinKind kind);
 /// Allows more optimal JOIN for typical cases.
 enum class JoinStrictness : uint8_t
 {
-    Unspecified,
+    Unspecified = 0,
     RightAny, /// Old ANY JOIN. If there are many suitable rows in right table, use any from them to join.
     Any, /// Semi Join with any value from filtering table. For LEFT JOIN with Any and RightAny are the same.
     All, /// If there are many suitable rows to join, use all of them and replicate rows of "left" table (usual semantic of JOIN).
@@ -50,6 +52,8 @@ enum class JoinStrictness : uint8_t
     Semi, /// LEFT or RIGHT. SEMI LEFT JOIN filters left table by values exists in right table. SEMI RIGHT - otherwise.
     Anti, /// LEFT or RIGHT. Same as SEMI JOIN but filter values that are NOT exists in other table.
 };
+
+constexpr uint8_t JoinStrictnessMax = static_cast<uint8_t>(JoinStrictness::Anti);
 
 void serializeJoinStrictness(JoinStrictness strictness, WriteBuffer & out);
 JoinStrictness deserializeJoinStrictness(ReadBuffer & in);
@@ -59,10 +63,12 @@ const char * toString(JoinStrictness strictness);
 /// Algorithm for distributed query processing.
 enum class JoinLocality : uint8_t
 {
-    Unspecified,
+    Unspecified = 0,
     Local, /// Perform JOIN, using only data available on same servers (co-located data).
-    Global /// Collect and merge data from remote servers, and broadcast it to each server.
+    Global, /// Collect and merge data from remote servers, and broadcast it to each server.
 };
+
+constexpr uint8_t JoinLocalityMax = static_cast<uint8_t>(JoinLocality::Global);
 
 void serializeJoinLocality(JoinLocality locality, WriteBuffer & out);
 JoinLocality deserializeJoinLocality(ReadBuffer & in);

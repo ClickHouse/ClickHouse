@@ -144,7 +144,6 @@ static auto bitsetToPositions(BaseRelsSet s)
     return std::views::iota(0u, s.size()) | std::views::filter([=](size_t i) { return s.test(i); });
 }
 
-
 JoinStepLogical::JoinStepLogical(
     const Block & left_header, bool use_nulls_, JoinSettings join_settings_, SortingStep::Settings sorting_settings_)
     : expression_actions(std::make_unique<ActionsDAG>(left_header.getColumnsWithTypeAndName()))
