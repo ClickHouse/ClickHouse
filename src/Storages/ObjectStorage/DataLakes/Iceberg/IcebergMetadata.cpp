@@ -690,7 +690,7 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory() const
 {
     auto configuration_ptr = configuration.lock();
 
-    const auto [metadata_version, metadata_file_path] = getLatestOrExplicitMetadataFileAndVersion(object_storage, *configuration_ptr, log.get());
+    const auto [metadata_version, metadata_file_path] = getLatestOrExplicitMetadataFileAndVersion(object_storage, getContext(), *configuration_ptr, log.get());
 
     chassert(metadata_version == last_metadata_version);
 
