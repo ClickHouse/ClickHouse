@@ -28,7 +28,6 @@ template <typename ColumnType>
 class WriteHelper
 {
     ColumnType & col;
-    size_t rows;
     WriteBufferFromVector<typename ColumnType::Chars> buffer;
     size_t prev_row_buffer_size = 0;
 
@@ -48,7 +47,6 @@ class WriteHelper
 public:
     WriteHelper(ColumnType & col_, size_t expected_rows)
         : col(resizeColumn(col_, expected_rows))
-        , rows(expected_rows)
         , buffer(col.getChars())
     {}
 
@@ -57,12 +55,6 @@ public:
     void finalize()
     {
         buffer.finalize();
-
-        // Buffer might overflow at the end and be resized.
-        // This will make `ColumnFixedString` think that it has more rows than it actually has.
-        // To avoid this effect, let's manually restore the correct size.
-        if constexpr (std::is_same_v<ColumnType, ColumnFixedString>)
-            resizeColumn(col, rows);
     }
 
     auto & getWriteBuffer()
@@ -80,9 +72,12 @@ public:
                         "Too large string for FixedString column");
 
             // Pad with zeroes on the right to maintain FixedString invariant.
-            const auto excess_bytes = buffer.count() % col.getN();
-            const auto fill_bytes = col.getN() - excess_bytes;
-            writeChar(0, fill_bytes, buffer);
+            if (buffer.count() % col.getN() != 0 || buffer.count() == prev_row_buffer_size)
+            {
+                const auto excess_bytes = buffer.count() % col.getN();
+                const auto fill_bytes = col.getN() - excess_bytes;
+                writeChar(0, fill_bytes, buffer);
+            }
         }
         else
         {
