@@ -1,5 +1,5 @@
--- This is supposed to test that DROP INDEX removes all index related files. Can't test this directly but at least run the statement and
--- check that no bad things happen.
+-- Test that DROP INDEX removes all index related files.
+-- This can't be tested directly but we can at least check that no bad things happen.
 
 SET allow_experimental_full_text_index = 1;
 
@@ -9,7 +9,7 @@ CREATE TABLE tab
 (
     id UInt64,
     doc String,
-    INDEX text_idx doc TYPE full_text
+    INDEX text_idx doc TYPE gin
 )
 ENGINE = MergeTree
 ORDER BY id
