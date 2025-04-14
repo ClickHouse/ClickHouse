@@ -342,6 +342,22 @@ QueryPlan buildLogicalJoin(
 
 }
 
+/* Build query plan for correlated subquery using decorrelation algorithm
+ * on top of relational algebra operators proposed by TU Munich researchers
+ * Thomas Neumann and Alfons Kemper.
+ *
+ * Original research paper "Unnesting Arbitrary Queries": https://cs.emis.de/LNI/Proceedings/Proceedings241/383.pdf
+ * See also a follow up paper "Improving Unnesting of Complex Queries": https://dl.gi.de/items/b9df4765-d1b0-4267-a77c-4ce4ab0ee62d
+ *
+ * NOTE: ClickHouse does not explicitely build SQL query into relational algebra expression,
+ * instead it produces a query plan where almost every step has an analog from relational algebra.
+ * This function implements decorrelation algorithm using ClickHouse query plan.
+ *
+ * TODO: Support scalar correlated subqueries.
+ * TODO: Support decorrelation of all kinds of query plan steps.
+ * TODO: Implement left table substitution optimization: T_left DEPENDENT JOIN T_right is a subset of T_right
+ * if T_right has all the necessary columns of T_left.
+ */
 void buildQueryPlanForCorrelatedSubquery(
     const PlannerContextPtr & planner_context,
     QueryPlan & query_plan,
@@ -362,6 +378,9 @@ void buildQueryPlanForCorrelatedSubquery(
         {
             auto subquery_options = select_query_options.subquery();
             auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+            /// Register table expression data for correlated columns sources in the global context.
+            /// Table expression data would be reused because it can't be initialized
+            /// during plan construction for correlated subquery.
             global_planner_context->collectTableExpressionDataForCorrelatedColumns(correlated_subquery.query_tree, planner_context);
 
             Planner subquery_planner(
@@ -373,12 +392,19 @@ void buildQueryPlanForCorrelatedSubquery(
             /// Logical plan for correlated subquery
             auto & correlated_query_plan = subquery_planner.getQueryPlan();
 
+            /// For EXISTS expression we can remove plan steps that doesn't change the number of result rows.
+            /// It may also result in non-correlated subquery plan
+            /// Example:
+            /// SELECT * FROM numbers(1) WHERE EXISTS (SELECT a = number FROM table)
             if (optimizeCorrelatedPlanForExists(correlated_query_plan))
             {
+                /// Subquery always produces at least 1 row.
                 buildExistsResultExpression(query_plan, correlated_subquery, /*project_only_correlated_columns=*/false);
                 return;
             }
 
+            /// Mark all query plan steps if they or their subplans contain usage of correlated subqueries.
+            /// It's needed to identify the moment when dependent join can be replaced by CROSS JOIN.
             auto correlated_step_map = buildCorrelatedPlanStepMap(correlated_query_plan);
 
             DecorrelationContext context{
@@ -389,8 +415,11 @@ void buildQueryPlanForCorrelatedSubquery(
             };
 
             auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
+            /// Add a 'exists(<table expression id>)' expression that is always true.
             buildExistsResultExpression(decorrelated_plan, correlated_subquery, /*project_only_correlated_columns=*/true);
 
+            /// Use LEFT OUTER JOIN to produce the result plan.
+            /// If there's no corresponding rows from the right side, 'exists(<table expression id>)' would be replaced by default value (false).
             query_plan = buildLogicalJoin(
                 planner_context,
                 std::move(context.query_plan),
