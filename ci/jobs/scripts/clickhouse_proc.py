@@ -5,7 +5,7 @@ from pathlib import Path
 
 from praktika.utils import Shell, Utils
 
-temp_dir = f"{Utils.cwd()}/ci/tmp/"
+temp_dir = f"{Utils.cwd()}/ci/tmp"
 
 
 class ClickHouseProc:
@@ -28,7 +28,7 @@ class ClickHouseProc:
         self.proc = None
         self.pid = 0
         nproc = int(Utils.cpu_count() / 2)
-        self.fast_test_command = f"clickhouse-test --hung-check --fast-tests-only --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --zookeeper --check-zookeeper-session --order random --print-time --report-logs-stats --jobs {nproc} -- '' | ts '%Y-%m-%d %H:%M:%S' \
+        self.fast_test_command = f"clickhouse-test --hung-check --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --zookeeper --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' \
         | tee -a \"{self.test_output_file}\""
         # TODO: store info in case of failure
         self.info = ""
@@ -128,10 +128,10 @@ class ClickHouseProc:
             return False
         return True
 
-    def run_fast_test(self):
+    def run_fast_test(self, test=""):
         if Path(self.test_output_file).exists():
             Path(self.test_output_file).unlink()
-        exit_code = Shell.run(self.fast_test_command)
+        exit_code = Shell.run(self.fast_test_command.format(TEST=test), verbose=True)
         return exit_code == 0
 
     def terminate(self):

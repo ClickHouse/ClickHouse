@@ -13,11 +13,13 @@
 #include "config_tools.h"
 
 #include <Common/EnvironmentChecks.h>
+#include <Common/Exception.h>
 #include <Common/Coverage.h>
 
 #include <Common/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/IO.h>
+#include <Common/Crypto/OpenSSLInitializer.h>
 
 #include <base/coverage.h>
 #include <base/phdr_cache.h>
@@ -150,6 +152,13 @@ __attribute__((constructor(0))) void init_je_malloc_message()
     };
 }
 #endif
+
+/// OpenSSL early initialization.
+/// Must be ran after EnvironmentChecks.cpp, as OpenSSL uses SSSE3.
+__attribute__((constructor(202))) void init_ssl()
+{
+    DB::OpenSSLInitializer::initialize();
+}
 
 /// This allows to implement assert to forbid initialization of a class in static constructors.
 /// Usage:

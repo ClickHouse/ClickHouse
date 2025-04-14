@@ -2,15 +2,15 @@
 
 #include <cstddef>
 #include <deque>
-
-#include <fmt/core.h>
+#include <Processors/Chunk.h>
 #include <fmt/format.h>
-
-#include <IO/WriteBuffer.h>
-#include <IO/ReadBuffer.h>
+#include <base/types.h>
 
 namespace DB
 {
+
+class ReadBuffer;
+class WriteBuffer;
 
 
 /** A pair of marks that defines the range of rows in a part. Specifically,
@@ -22,7 +22,7 @@ struct MarkRange
     size_t end;
 
     MarkRange() = default;
-    MarkRange(const size_t begin_, const size_t end_) : begin{begin_}, end{end_} {}
+    MarkRange(size_t begin_, size_t end_);
 
     size_t getNumberOfMarks() const;
 
@@ -49,6 +49,22 @@ size_t getLastMark(const MarkRanges & ranges);
 std::string toString(const MarkRanges & ranges);
 
 void assertSortedAndNonIntersecting(const MarkRanges & ranges);
+
+/// Lineage information: from which table, part and mark range does the chunk come from?
+/// This information is needed by the query condition cache.
+class MarkRangesInfo : public ChunkInfoCloneable<MarkRangesInfo>
+{
+public:
+    MarkRangesInfo(UUID table_uuid_, const String & part_name_, size_t marks_count_, bool has_final_mark_, MarkRanges mark_ranges_);
+    void appendMarkRanges(const MarkRanges & mark_ranges_);
+
+    UUID table_uuid;
+    String part_name;
+    size_t marks_count;
+    bool has_final_mark;
+    MarkRanges mark_ranges;
+};
+using MarkRangesInfoPtr = std::shared_ptr<MarkRangesInfo>;
 
 }
 

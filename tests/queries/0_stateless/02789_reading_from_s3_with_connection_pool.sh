@@ -23,7 +23,7 @@ while true
 do
     query="SELECT a, b FROM test_s3"
     query_id=$(${CLICKHOUSE_CLIENT} --query "select queryID() from ($query) limit 1" 2>&1)
-    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS"
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 
     RES=$(${CLICKHOUSE_CLIENT} -m --query "
     SELECT ProfileEvents['DiskConnectionsPreserved'] > 0
@@ -42,8 +42,9 @@ done
 while true
 do
     query_id=$(${CLICKHOUSE_CLIENT} -q "
-    create table mut (n int, m int, k int) engine=ReplicatedMergeTree('/test/02441/{database}/mut', '1') order by n;
+    create table if not exists mut (n int, m int, k int) engine=ReplicatedMergeTree('/test/02441/{database}/mut', '1') order by n;
     set insert_keeper_fault_injection_probability=0;
+    set parallel_replicas_for_cluster_engines=0;
     insert into mut values (1, 2, 3), (10, 20, 30);
 
     system stop merges mut;
@@ -59,7 +60,7 @@ do
         select 1
     ) limit 1 settings max_threads=1;
     " 2>&1)
-    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS"
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
     RES=$(${CLICKHOUSE_CLIENT} -m --query "
     SELECT ProfileEvents['StorageConnectionsPreserved'] > 0
     FROM system.query_log

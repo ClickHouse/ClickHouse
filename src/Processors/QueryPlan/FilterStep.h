@@ -26,9 +26,12 @@ public:
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
 
+    void setConditionForQueryConditionCache(size_t condition_hash_, const String & condition_);
+
     static bool canUseType(const DataTypePtr & type);
 
     void serialize(Serialization & ctx) const override;
+    bool isSerializable() const override { return true; }
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
@@ -38,6 +41,8 @@ private:
     ActionsDAG actions_dag;
     String filter_column_name;
     bool remove_filter_column;
+
+    std::optional<std::pair<size_t, String>> condition; /// for query condition cache
 };
 
 }
