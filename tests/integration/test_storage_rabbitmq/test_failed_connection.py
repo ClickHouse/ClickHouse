@@ -59,7 +59,7 @@ class RabbitMQMonitor:
     rabbitmq_cluster = None
 
     def _consume(self, timeout=180):
-        logging.debug("Consuming trace RabbitMQ messages...")
+        logging.debug("RabbitMQMonitor: Consuming trace RabbitMQ messages...")
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             method, properties, body = self.channel.basic_get(self.queue_name, True)
@@ -76,11 +76,7 @@ class RabbitMQMonitor:
                     # logging.debug(f"Message published: {value}")
             else:
                 break
-        logging.debug(f"Consumed {len(self.published)} published messages and {len(self.delivered)} delivered messages")
-
-    def reset(self):
-        self.published = set()
-        self.delivered = set()
+        logging.debug(f"RabbitMQMonitor: Consumed {len(self.published)} published messages and {len(self.delivered)} delivered messages")
 
     def check(self, published, delivered):
         self._consume()
@@ -102,16 +98,18 @@ class RabbitMQMonitor:
     def start(self, rabbitmq_cluster):
         self.rabbitmq_cluster = rabbitmq_cluster
 
+        logging.debug("RabbitMQMonitor: Creating a new connection for RabbitMQ")
         credentials = pika.PlainCredentials("root", "clickhouse")
         parameters = pika.ConnectionParameters(
             self.rabbitmq_cluster.rabbitmq_ip, self.rabbitmq_cluster.rabbitmq_port, "/", credentials
         )
         self.connection = pika.BlockingConnection(parameters)
         self.channel = self.connection.channel()
-        queue_res = self.channel.queue_declare(queue="", exclusive=True)
-        self.queue_name = queue_res.method.queue
 
-        logging.debug(f"Created debug queue to monitor RabbitMQ published and delivered messages: {self.queue_name}")
+        if not self.queue_name:
+            queue_res = self.channel.queue_declare(queue="", durable=True)
+            self.queue_name = queue_res.method.queue
+            logging.debug(f"RabbitMQMonitor: Created debug queue to monitor RabbitMQ published and delivered messages: {self.queue_name}")
 
         self.channel.queue_bind(exchange="amq.rabbitmq.trace", queue=self.queue_name, routing_key="publish.#")
         self.channel.queue_bind(exchange="amq.rabbitmq.trace", queue=self.queue_name, routing_key="deliver.#")
@@ -119,7 +117,7 @@ class RabbitMQMonitor:
     def stop(self):
         if self.connection:
             self._consume()
-            self.channel.queue_delete(self.queue_name)
+            self.channel.close()
             self.channel = None
             self.connection.close()
             self.connection = None

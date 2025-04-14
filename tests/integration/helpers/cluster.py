@@ -2378,7 +2378,7 @@ class ClickHouseCluster:
                     return True
             except Exception as ex:
                 logging.debug("RabbitMQ await_startup failed, %s:", ex)
-                time.sleep(0.5)
+                time.sleep(0.1)
 
         start = time.time()
         while time.time() - start < timeout:
