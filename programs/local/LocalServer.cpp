@@ -407,14 +407,14 @@ void LocalServer::cleanup()
 
 std::pair<std::string, std::string> LocalServer::getInitialCreateTableQuery()
 {
-    /// If queries were not specified in the command line, they might me in stdin, and this means that stdin is not input data.
-    if (queries.empty())
-        return {};
+    /// The input data can be specified explicitly with any of the `file`, `structure`, `input-format` command line arguments,
+    /// or it can be implicitly specified in stdin - then the structure and format is autodetected.
+    /// But if queries were not specified in the command line, they might me in stdin, and this means that stdin is not input data.
 
     if (!getClientConfiguration().has("table-structure")
         && !getClientConfiguration().has("table-file")
         && !getClientConfiguration().has("table-data-format")
-        && !isFileDescriptorSuitableForInput(stdin_fd)) /// In we know that there is data in stdin, we can auto-detect the format.
+        && (queries.empty() || !isFileDescriptorSuitableForInput(stdin_fd))) /// In we know that there is data in stdin, we can auto-detect the format.
         return {};
 
     auto table_name = getClientConfiguration().getString("table-name", "table");
