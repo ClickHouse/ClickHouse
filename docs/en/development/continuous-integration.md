@@ -59,14 +59,14 @@ Performs various style checks on the code base.
 
 Basic checks in the Style Check job:
 
-##### cpp
+##### cpp {#cpp}
 Performs simple regex-based code style checks using the [`ci/jobs/scripts/check_style/check_cpp.sh`](https://github.com/ClickHouse/ClickHouse/blob/master/ci/jobs/scripts/check_style/check_cpp.sh) script (which can also be run locally).  
 If it fails, fix the style issues according to the [code style guide](style.md).
 
-##### codespell, aspell
+##### codespell, aspell {#codespell}
 Check for grammatical mistakes and typos.
 
-##### mypy
+##### mypy {#mypy}
 Performs static type checking for Python code.
 
 ### Running the Style Check job locally {#running-style-check-locally}
