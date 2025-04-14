@@ -187,6 +187,7 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool read_in_order_use_virtual_row;
     extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBool query_condition_cache_store_conditions_as_plaintext;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool merge_tree_use_deserialization_prefixes_cache;
     extern const SettingsBool merge_tree_use_prefixes_deserialization_thread_pool;
@@ -221,6 +222,7 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
         .enable_multiple_prewhere_read_steps = settings[Setting::enable_multiple_prewhere_read_steps],
         .force_short_circuit_execution = settings[Setting::query_plan_merge_filters],
         .use_query_condition_cache = settings[Setting::use_query_condition_cache] && settings[Setting::allow_experimental_analyzer],
+        .query_condition_cache_store_conditions_as_plaintext = settings[Setting::query_condition_cache_store_conditions_as_plaintext],
         .use_deserialization_prefixes_cache = settings[Setting::merge_tree_use_deserialization_prefixes_cache],
         .use_prefixes_deserialization_thread_pool = settings[Setting::merge_tree_use_prefixes_deserialization_thread_pool],
     };
@@ -1125,6 +1127,20 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
         return new_ranges;
     };
+
+    if (num_streams > 1)
+    {
+        /// Reduce num_streams if requested value is unnecessarily large.
+        ///
+        /// Additional increase of streams number in case of skewed parts, like it's
+        /// done in `spreadMarkRangesAmongStreams` won't affect overall performance
+        /// due to the single downstream `MergingSortedTransform`.
+        if (info.sum_marks < num_streams * info.min_marks_for_concurrent_read && parts_with_ranges.size() < num_streams)
+        {
+            num_streams = std::max(
+                (info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read, parts_with_ranges.size());
+        }
+    }
 
     const size_t min_marks_per_stream = (info.sum_marks - 1) / num_streams + 1;
     bool need_preliminary_merge = (parts_with_ranges.size() > settings[Setting::read_in_order_two_level_merge_threshold]);

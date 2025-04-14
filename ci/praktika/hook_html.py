@@ -4,17 +4,16 @@ import os
 from pathlib import Path
 from typing import List
 
-from praktika.utils import Shell
-
 from ._environment import _Environment
 from .gh import GH
 from .info import Info
 from .parser import WorkflowConfigParser
 from .result import Result, ResultInfo, _ResultS3
 from .runtime import RunConfig
-from .s3 import S3, StorageUsage
+from .s3 import S3
 from .settings import Settings
-from .utils import Utils
+from .usage import ComputeUsage, StorageUsage
+from .utils import Shell, Utils
 
 
 @dataclasses.dataclass
@@ -295,6 +294,11 @@ class HtmlRunnerHooks:
             new_sub_results=new_sub_results,
             workflow_name=_workflow.name,
             storage_usage=storage_usage,
+            compute_usage=ComputeUsage().set_usage(
+                runner_str="_".join(_job.runs_on),
+                duration=result.duration,
+                job_name=_job.name,
+            ),
         )
 
         if updated_status:
