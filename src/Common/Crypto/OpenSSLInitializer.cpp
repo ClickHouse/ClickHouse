@@ -2,6 +2,7 @@
 
 #include "config.h"
 
+#include <Common/OpenSSLHelpers.h>
 #include <Common/Exception.h>
 
 #if USE_SSL
@@ -10,13 +11,9 @@
 #    include <openssl/ssl.h>
 #endif
 
+
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int OPENSSL_ERROR;
-}
 
 #if USE_SSL
 std::atomic<uint8_t> DB::OpenSSLInitializer::ref_count{0};
@@ -34,17 +31,29 @@ void OpenSSLInitializer::initialize()
 #if USE_SSL
     if (ref_count++ == 0)
     {
-        int basic_init = OPENSSL_init_ssl(OPENSSL_INIT_LOAD_CONFIG, nullptr);
-        if (!basic_init)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to initialize OpenSSL.");
+        /// Loading OpenSSL config only if it is set explicitly.
+        ///
+        /// 'legacy' provider may be disabled in system config,
+        /// but we're compiling it statically in the binary, so it must be loadable in any case.
+        const char * env_openssl_conf = getenv("OPENSSL_CONF"); // NOLINT(concurrency-mt-unsafe)
+        if (env_openssl_conf)
+        {
+            if (OPENSSL_init_ssl(OPENSSL_INIT_LOAD_CONFIG, nullptr) == 0)
+                throw std::runtime_error(fmt::format("Failed to load OpenSSL config. {}", getOpenSSLErrors()));
+        }
+        else
+        {
+            if (OPENSSL_init_ssl(OPENSSL_INIT_NO_LOAD_CONFIG, nullptr) == 0)
+                throw std::runtime_error(fmt::format("Failed to initialize OpenSSL. {}", getOpenSSLErrors()));
+        }
 
         default_provider = OSSL_PROVIDER_load(nullptr, "default");
         if (!default_provider)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to load 'default' provider.");
+            throw std::runtime_error(fmt::format("Failed to load OpenSSL 'default' provider. {}", getOpenSSLErrors()));
 
         legacy_provider = OSSL_PROVIDER_load(nullptr, "legacy");
         if (!legacy_provider)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to load 'legacy' provider.");
+            throw std::runtime_error(fmt::format("Failed to load OpenSSL 'legacy' provider. {}", getOpenSSLErrors()));
     }
 #endif
 }
