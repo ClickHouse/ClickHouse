@@ -3202,7 +3202,7 @@ void StatementGenerator::generateNextRename(RandomGenerator & rg, Rename * ren)
 
         cluster = t.getCluster();
         ren->set_sobject(SQLObject::TABLE);
-        t.setName(oldn->mutable_est(), false);
+        t.setName(oldn->mutable_est(), true);
         SQLTable::setName(newn->mutable_est(), true, t.db, this->table_counter++);
     }
     else if (rename_view && nopt < (rename_table + rename_view + 1))
@@ -3211,7 +3211,7 @@ void StatementGenerator::generateNextRename(RandomGenerator & rg, Rename * ren)
 
         cluster = v.getCluster();
         ren->set_sobject(SQLObject::TABLE);
-        v.setName(oldn->mutable_est(), false);
+        v.setName(oldn->mutable_est(), true);
         SQLView::setName(newn->mutable_est(), true, v.db, this->table_counter++);
     }
     else if (rename_dictionary && nopt < (rename_table + rename_view + rename_dictionary + 1))
@@ -3220,7 +3220,7 @@ void StatementGenerator::generateNextRename(RandomGenerator & rg, Rename * ren)
 
         cluster = d.getCluster();
         ren->set_sobject(SQLObject::DICTIONARY);
-        d.setName(oldn->mutable_est(), false);
+        d.setName(oldn->mutable_est(), true);
         SQLDictionary::setName(newn->mutable_est(), true, d.db, this->table_counter++);
     }
     else if (rename_database && nopt < (rename_table + rename_view + rename_dictionary + rename_database + 1))
@@ -3750,6 +3750,7 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
 
             tx.tname = new_tname;
             this->tables[new_tname] = std::move(tx);
+            this->tables.erase(old_tname);
         }
         else if (isview)
         {
@@ -3759,6 +3760,7 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
 
             vx.tname = new_tname;
             this->views[new_tname] = std::move(vx);
+            this->views.erase(old_tname);
         }
         else if (isdictionary)
         {
@@ -3768,6 +3770,7 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
 
             dx.tname = new_tname;
             this->dictionaries[new_tname] = std::move(dx);
+            this->dictionaries.erase(old_tname);
         }
         else if (isdatabase)
         {
@@ -3777,6 +3780,7 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
 
             dx->dname = new_dname;
             this->databases[new_dname] = std::move(dx);
+            this->databases.erase(old_dname);
         }
     }
     else if (sq.has_explain() && !sq.explain().is_explain() && query.has_alter())
