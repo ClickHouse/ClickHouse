@@ -125,12 +125,15 @@ String formatTemplate(const String & out_file_template, const PartitionOutputFor
     return res;
 }
 
-const ASTs & getChildrensInPartitionBy(const ASTPtr & expr_list) {
-    if (expr_list->children.size() != 1) {
+const ASTs & getChildrensInPartitionBy(const ASTPtr & expr_list)
+{
+    if (expr_list->children.size() != 1)
+    {
         return expr_list->children;
     }
     const auto * func = expr_list->children.front()->as<ASTFunction>();
-    if (!func || func->name != "tuple") {
+    if (!func || func->name != "tuple")
+    {
         return expr_list->children;
     }
     return func->arguments->children;

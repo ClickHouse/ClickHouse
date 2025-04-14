@@ -20,8 +20,10 @@ void DynamicWriteBufferManager::addWriteBuffer(WriteBufferPtr && buffer)
     sources.push_back(std::move(buffer));
 }
 
-void DynamicWriteBufferManager::proxyNext() {
-    for (const WriteBufferPtr & buffer : sources) {
+void DynamicWriteBufferManager::proxyNext()
+{
+    for (const WriteBufferPtr & buffer : sources)
+    {
         buffer->next();
     }
 }
