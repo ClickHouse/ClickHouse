@@ -609,7 +609,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
     std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
     std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
-    if (cluster.has_value() || (!fc.clusters.empty() && noption2 < 11))
+    if (cluster.has_value() || (!fc.clusters.empty() && noption2 < 6))
     {
         /// If the table is set on cluster, always insert to all replicas/shards
         ClusterFunc * cdf = tof->mutable_tfunc()->mutable_cluster();
@@ -625,7 +625,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
             this->remote_entries.clear();
         }
     }
-    else if (noption2 < 21)
+    else if (noption2 < 11)
     {
         /// Use insert into remote
         setTableRemote(rg, true, false, t, tof->mutable_tfunc());

@@ -632,7 +632,11 @@ void QueryOracle::findTablesWithPeersAndReplace(
     {
         auto & tfunc = static_cast<TableFunction &>(mes);
 
-        if (tfunc.has_remote() || tfunc.has_cluster())
+        if (tfunc.has_loop())
+        {
+            findTablesWithPeersAndReplace(rg, const_cast<TableOrFunction &>(tfunc.loop()), gen, replace);
+        }
+        else if (tfunc.has_remote() || tfunc.has_cluster())
         {
             findTablesWithPeersAndReplace(
                 rg, const_cast<TableOrFunction &>(tfunc.has_remote() ? tfunc.remote().tof() : tfunc.cluster().tof()), gen, replace);
