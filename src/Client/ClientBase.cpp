@@ -881,7 +881,7 @@ bool ClientBase::isFileDescriptorSuitableForInput(int fd)
 {
     struct stat file_stat;
     return fstat(fd, &file_stat) == 0
-        && (S_ISREG(file_stat.st_mode) || S_ISLNK(file_stat.st_mode) || S_ISFIFO(file_stat.st_mode));
+        && (S_ISREG(file_stat.st_mode) || S_ISLNK(file_stat.st_mode));
 }
 
 void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
