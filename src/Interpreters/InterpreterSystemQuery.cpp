@@ -46,6 +46,7 @@
 #include <Access/ContextAccess.h>
 #include <Access/Common/AllowedClientHosts.h>
 #include <Databases/DatabaseReplicated.h>
+#include <DataTypes/DataTypeString.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>

@@ -17,6 +17,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <city.h>
 #include <Storages/LazilyReadInfo.h>
 
@@ -176,17 +177,23 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 /// Update the query condition cache for filters in PREWHERE stage
                 if (reader_settings.use_query_condition_cache && task && prewhere_info)
                 {
-                    for (const auto * outputs : prewhere_info->prewhere_actions.getOutputs())
+                    for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
                     {
-                        if (outputs->result_name == prewhere_info->prewhere_column_name)
+                        if (output->result_name == prewhere_info->prewhere_column_name)
                         {
+                            if (!VirtualColumnUtils::isDeterministic(output))
+                                continue;
+
                             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
                             auto data_part = task->getInfo().data_part;
 
                             query_condition_cache->write(
                                 data_part->storage.getStorageID().uuid,
                                 data_part->name,
-                                outputs->getHash(),
+                                output->getHash(),
+                                reader_settings.query_condition_cache_store_conditions_as_plaintext
+                                    ? prewhere_info->prewhere_actions.getNames()[0]
+                                    : "",
                                 task->getPrewhereUnmatchedMarks(),
                                 data_part->index_granularity->getMarksCount(),
                                 data_part->index_granularity->hasFinalMark());
