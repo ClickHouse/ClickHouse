@@ -410,7 +410,8 @@ std::pair<std::string, std::string> LocalServer::getInitialCreateTableQuery()
     if (!getClientConfiguration().has("table-structure")
         && !getClientConfiguration().has("table-file")
         && !getClientConfiguration().has("table-data-format")
-        && (stdin_is_a_tty || queries.empty()))
+        && !isRegularFile(stdin_fd) /// In we know that there is data in stdin, we can auto-detect the format.
+        && !queries.empty())    /// If queries were not specified in the command line, they might me in stdin, and this means that stdin is not input data.
         return {};
 
     auto table_name = getClientConfiguration().getString("table-name", "table");
