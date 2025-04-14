@@ -29,6 +29,7 @@ namespace Setting
 {
     extern const SettingsBool formatdatetime_parsedatetime_m_is_month_name;
     extern const SettingsBool parsedatetime_parse_without_leading_zeros;
+    extern const SettingsBool parsedatetime_dayofmonth_keep_leading_spaces;
 }
 
 namespace ErrorCodes
@@ -642,6 +643,7 @@ namespace
     public:
         const bool mysql_M_is_month_name;
         const bool mysql_parse_ckl_without_leading_zeros;
+        const bool mysql_day_of_month_keep_leading_spaces;
 
         static constexpr auto name = Name::name;
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionParseDateTimeImpl>(context); }
@@ -649,6 +651,7 @@ namespace
         explicit FunctionParseDateTimeImpl(ContextPtr context)
             : mysql_M_is_month_name(context->getSettingsRef()[Setting::formatdatetime_parsedatetime_m_is_month_name])
             , mysql_parse_ckl_without_leading_zeros(context->getSettingsRef()[Setting::parsedatetime_parse_without_leading_zeros])
+            , mysql_day_of_month_keep_leading_spaces(context->getSettingsRef()[Setting::parsedatetime_dayofmonth_keep_leading_spaces])
         {
         }
 
@@ -1156,6 +1159,20 @@ namespace
                 Int32 year;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, year)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setYear(year + 2000))
+                return cur;
+            }
+
+            [[nodiscard]]
+            static PosOrError mysqlDayOfMonthSkipLeadingSpaces(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
+            {
+                Int32 day_of_month = 0;
+                while (cur < end && *cur == ' ')
+                    ++cur;
+
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 1, "mysqlDayOfMonthSpacePadded requires size 1 or 2", fragment))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, day_of_month))
+
+                RETURN_ERROR_IF_FAILED(parsed_value.setDayOfMonth(day_of_month))
                 return cur;
             }
 
@@ -1953,7 +1970,10 @@ namespace
 
                         // Day of month, space-padded ( 1-31)  23
                         case 'e':
-                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfMonthSpacePadded));
+                            if (mysql_day_of_month_keep_leading_spaces)
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfMonthSpacePadded));
+                            else
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfMonthSkipLeadingSpaces));
                             break;
 
                         // Fractional seconds

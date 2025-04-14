@@ -3631,6 +3631,9 @@ Formatter '%M' in functions 'formatDateTime' and 'parseDateTime' print/parse the
     DECLARE(Bool, parsedatetime_parse_without_leading_zeros, true, R"(
 Formatters '%c', '%l' and '%k' in function 'parseDateTime' parse months and hours without leading zeros.
 )", 0) \
+    DECLARE(Bool, parsedatetime_dayofmonth_keep_leading_spaces, true, R"(
+Formatter '%e' in function 'parseDateTime' keeps leading spaces while parsing day of month instead of ignoring them.
+    )", 0) \
     DECLARE(Bool, formatdatetime_format_without_leading_zeros, false, R"(
 Formatters '%c', '%l' and '%k' in function 'formatDateTime' print months and hours without leading zeros.
 )", 0) \
