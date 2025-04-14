@@ -14,7 +14,7 @@ Compressed files are supported. Compression type is detected by the extension of
 **Syntax**
 
 ```sql
-SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [PARTITION BY <partition_by_expr_list>] [COMPRESSION type [LEVEL level]]
+SELECT <expr_list> INTO OUTFILE file_name [APPEND | TRUNCATE] [AND STDOUT] [PARTITION BY <partition_by_expr_list>] [COMPRESSION type [LEVEL level]]
 ```
 
 `file_name` and `type` are string literals. Supported compression types are: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
