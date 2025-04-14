@@ -161,7 +161,7 @@ struct SpanHolder : public Span
 
     /// Finish a span explicitly if needed.
     /// It's safe to call it multiple times
-    void finish() noexcept;
+    void finish(std::chrono::system_clock::time_point time) noexcept;
 };
 
 }
