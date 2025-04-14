@@ -1,5 +1,6 @@
 # docker build -t clickhouse/integration-tests-runner .
-FROM ubuntu:22.04
+ARG FROM_TAG=latest
+FROM clickhouse/test-util:$FROM_TAG
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
@@ -26,6 +27,7 @@ RUN apt-get update \
     libicu-dev \
     bsdutils \
     curl \
+    openssh-client \
     liblua5.1-dev \
     luajit \
     libssl-dev \
