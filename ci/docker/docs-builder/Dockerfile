@@ -1,5 +1,7 @@
 # docker build -t clickhouse/docs-builder .
-FROM node:20-bookworm-slim
+
+# To match the same environment that Vercel is using
+FROM amazonlinux
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
