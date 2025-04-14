@@ -573,13 +573,25 @@ struct InlineEscapingStateHandler : public StateHandlerImpl<true>
         : StateHandlerImpl<true>(std::forward<Args>(args)...) {}
 };
 
+template <bool throwOnDuplicate = false>
 struct ReferencesOnlyStateHandler : public StateHandlerImpl<false>
 {
+    struct DuplicateFoundException : Exception
+    {
+        DuplicateFoundException(std::string_view key_, std::string_view existing_value_, std::string_view new_value_)
+            : key(key_), existing_value(existing_value_), new_value(new_value_) {}
+
+        std::string_view key;
+        std::string_view existing_value;
+        std::string_view new_value;
+    };
+
     /*
      * View based StringWriter, no copies at all
      * */
     class StringWriter
     {
+        static inline absl::flat_hash_map<std::string_view, std::string_view> dummy_map;
         absl::flat_hash_map<std::string_view, std::string_view> & map;
 
         std::string_view key;
@@ -589,6 +601,12 @@ struct ReferencesOnlyStateHandler : public StateHandlerImpl<false>
         explicit StringWriter(absl::flat_hash_map<std::string_view, std::string_view> & map_)
             : map(map_)
         {}
+
+        StringWriter(ColumnString &, ColumnString &)
+            : map(dummy_map)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Constructor should never be called");
+        }
 
         ~StringWriter()
         {
@@ -653,9 +671,12 @@ struct ReferencesOnlyStateHandler : public StateHandlerImpl<false>
 
         void commitValue()
         {
-            if (map.contains(key) && value != map[key])
+            if constexpr (throwOnDuplicate)
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "bla bla bla");
+                if (const auto it = map.find(key); it != map.end() && it->second != value)
+                {
+                    throw DuplicateFoundException(key, it->second, value);
+                }
             }
 
             map[key] = value;
