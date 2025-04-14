@@ -123,7 +123,7 @@ public:
                     {
                         while (true)
                         {
-                            if (is_cancelled->load(std::memory_order_seq_cst))
+                            if (is_cancelled->load())
                                 return;
 
                             const auto bucket = next_bucket_to_merge->fetch_add(1);
@@ -139,6 +139,7 @@ public:
                 }
                 catch (...)
                 {
+                    is_cancelled->store(true);
                     runner.waitForAllToFinishAndRethrowFirstError();
                 }
             }

@@ -2353,7 +2353,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(AggregatedDataVariants &
 
             /// Select Arena to avoid race conditions
             Arena * arena = data_variants.aggregates_pools.at(thread_id).get();
-            res.at(thread_id).emplace_back(convertOneBucketToBlock(data_variants, method, arena, final, bucket));
+            res[thread_id].emplace_back(convertOneBucketToBlock(data_variants, method, arena, final, bucket));
         }
     };
 
@@ -3098,6 +3098,9 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
                 if (bucket > max_bucket)
                     break;
 
+                if (is_cancelled.load())
+                    return;
+
                 for (Block & block : bucket_to_blocks[bucket])
                 {
                     /// Copy to avoid race.
@@ -3134,6 +3137,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
             }
             catch (...)
             {
+                is_cancelled.store(true);
                 runner.waitForAllToFinishAndRethrowFirstError();
             }
         }
