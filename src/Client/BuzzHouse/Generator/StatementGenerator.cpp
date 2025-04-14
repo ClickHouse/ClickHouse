@@ -3696,6 +3696,40 @@ void StatementGenerator::dropDatabase(const uint32_t dname)
     this->databases.erase(dname);
 }
 
+template <typename T>
+void StatementGenerator::exchangeObjects(const uint32_t tname1, const uint32_t tname2)
+{
+    auto & container = const_cast<std::unordered_map<uint32_t, T> &>(getNextCollection<T>());
+    T tx = std::move(container.at(tname1));
+    T ty = std::move(container.at(tname2));
+    auto db_tmp = tx.db;
+
+    tx.tname = tname2;
+    tx.db = ty.db;
+    ty.tname = tname1;
+    ty.db = db_tmp;
+    container[tname2] = std::move(tx);
+    container[tname1] = std::move(ty);
+}
+
+template <typename T>
+void StatementGenerator::renameObjects(const uint32_t old_tname, const uint32_t new_tname)
+{
+    auto & container = const_cast<std::unordered_map<uint32_t, T> &>(getNextCollection<T>());
+    T tx = std::move(container.at(old_tname));
+
+    if constexpr (std::is_same_v<T, std::shared_ptr<SQLDatabase>>)
+    {
+        tx->dname = new_tname;
+    }
+    else
+    {
+        tx.tname = new_tname;
+    }
+    container[new_tname] = std::move(tx);
+    container.erase(old_tname);
+}
+
 void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegrations & ei, bool success)
 {
     const SQLQueryInner & query = sq.explain().inner_query();
@@ -3785,91 +3819,45 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
 
         if (istable)
         {
-            SQLTable tx = std::move(this->tables.at(tname1));
-            SQLTable ty = std::move(this->tables.at(tname2));
-            auto db_tmp = tx.db;
-
-            tx.tname = tname2;
-            tx.db = ty.db;
-            ty.tname = tname1;
-            ty.db = db_tmp;
-            this->tables[tname2] = std::move(tx);
-            this->tables[tname1] = std::move(ty);
+            this->exchangeObjects<SQLTable>(tname1, tname2);
         }
         else if (isview)
         {
-            SQLView tx = std::move(this->views.at(tname1));
-            SQLView ty = std::move(this->views.at(tname2));
-            auto db_tmp = tx.db;
-
-            tx.tname = tname2;
-            tx.db = ty.db;
-            ty.tname = tname1;
-            ty.db = db_tmp;
-            this->views[tname2] = std::move(tx);
-            this->views[tname1] = std::move(ty);
+            this->exchangeObjects<SQLView>(tname1, tname2);
         }
         else if (isdictionary)
         {
-            SQLDictionary tx = std::move(this->dictionaries.at(tname1));
-            SQLDictionary ty = std::move(this->dictionaries.at(tname2));
-            auto db_tmp = tx.db;
-
-            tx.tname = tname2;
-            tx.db = ty.db;
-            ty.tname = tname1;
-            ty.db = db_tmp;
-            this->dictionaries[tname2] = std::move(tx);
-            this->dictionaries[tname1] = std::move(ty);
+            this->exchangeObjects<SQLDictionary>(tname1, tname2);
         }
     }
     else if (sq.has_explain() && !sq.explain().is_explain() && query.has_rename() && success)
     {
         const Rename & ren = query.rename();
-        const bool istable = ren.old_object().has_est() && ren.old_object().est().table().table()[0] == 't';
-        const bool isview = ren.old_object().has_est() && ren.old_object().est().table().table()[0] == 'v';
-        const bool isdictionary = ren.old_object().has_est() && ren.old_object().est().table().table()[0] == 'd';
-        const bool isdatabase = ren.old_object().has_database();
+        const SQLObjectName & oobj = ren.old_object();
+        const bool istable = oobj.has_est() && oobj.est().table().table()[0] == 't';
+        const bool isview = oobj.has_est() && oobj.est().table().table()[0] == 'v';
+        const bool isdictionary = oobj.has_est() && oobj.est().table().table()[0] == 'd';
+        const bool isdatabase = oobj.has_database();
+        const uint32_t old_tname
+            = static_cast<uint32_t>(std::stoul(isdatabase ? oobj.database().database().substr(1) : oobj.est().table().table().substr(1)));
+        const uint32_t new_tname = static_cast<uint32_t>(
+            std::stoul(isdatabase ? ren.new_object().database().database().substr(1) : ren.new_object().est().table().table().substr(1)));
 
         if (istable)
         {
-            const uint32_t old_tname = static_cast<uint32_t>(std::stoul(ren.old_object().est().table().table().substr(1)));
-            const uint32_t new_tname = static_cast<uint32_t>(std::stoul(ren.new_object().est().table().table().substr(1)));
-            SQLTable tx = std::move(this->tables.at(old_tname));
-
-            tx.tname = new_tname;
-            this->tables[new_tname] = std::move(tx);
-            this->tables.erase(old_tname);
+            this->renameObjects<SQLTable>(old_tname, new_tname);
         }
         else if (isview)
         {
-            const uint32_t old_tname = static_cast<uint32_t>(std::stoul(ren.old_object().est().table().table().substr(1)));
-            const uint32_t new_tname = static_cast<uint32_t>(std::stoul(ren.new_object().est().table().table().substr(1)));
-            SQLView vx = std::move(this->views.at(old_tname));
-
-            vx.tname = new_tname;
-            this->views[new_tname] = std::move(vx);
-            this->views.erase(old_tname);
+            this->renameObjects<SQLView>(old_tname, new_tname);
         }
         else if (isdictionary)
         {
-            const uint32_t old_tname = static_cast<uint32_t>(std::stoul(ren.old_object().est().table().table().substr(1)));
-            const uint32_t new_tname = static_cast<uint32_t>(std::stoul(ren.new_object().est().table().table().substr(1)));
-            SQLDictionary dx = std::move(this->dictionaries.at(old_tname));
-
-            dx.tname = new_tname;
-            this->dictionaries[new_tname] = std::move(dx);
-            this->dictionaries.erase(old_tname);
+            this->renameObjects<SQLDictionary>(old_tname, new_tname);
         }
         else if (isdatabase)
         {
-            const uint32_t old_dname = static_cast<uint32_t>(std::stoul(ren.old_object().database().database().substr(1)));
-            const uint32_t new_dname = static_cast<uint32_t>(std::stoul(ren.new_object().database().database().substr(1)));
-            std::shared_ptr<SQLDatabase> dx = std::move(this->databases.at(old_dname));
-
-            dx->dname = new_dname;
-            this->databases[new_dname] = std::move(dx);
-            this->databases.erase(old_dname);
+            this->renameObjects<std::shared_ptr<SQLDatabase>>(old_tname, new_tname);
         }
     }
     else if (sq.has_explain() && !sq.explain().is_explain() && query.has_alter())

@@ -407,6 +407,9 @@ private:
     void generateNextRestore(RandomGenerator & rg, BackupRestore * br);
     void generateNextBackupOrRestore(RandomGenerator & rg, BackupRestore * br);
 
+    template <typename T> void exchangeObjects(const uint32_t tname1, const uint32_t tname2);
+    template <typename T> void renameObjects(const uint32_t old_tname, const uint32_t new_tname);
+
     static const constexpr auto funcDeterministicLambda = [](const SQLFunction & f) { return f.is_deterministic; };
 
     static const constexpr auto funcNotDeterministicIndexLambda = [](const CHFunction & f) { return f.fnum == SQLFunc::FUNCarrayShuffle; };
