@@ -119,11 +119,16 @@ public:
             // Handle UUID types
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
-                const IColumn & wrapper_column = const_column ? const_column->getDataColumn() : *arguments[0].column.get();
-                const ColumnVector<UUID> & uuid_column = checkAndGetColumn<const ColumnVector<UUID> &>(wrapper_column);
-                UUID value = uuid_column.getData()[i];
-                result_data[i] = hashUUID(value);
+                ColumnPtr intermediate_representation
+                    = FunctionFactory::instance()
+                          .get("toUInt128", context)
+                          ->build(arguments)
+                          ->execute(arguments, std::make_shared<DataTypeUInt128>(), input_rows_count, false);
+                const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(intermediate_representation.get());
+                const IColumn & wrapper_column = const_column ? const_column->getDataColumn() : *intermediate_representation.get();
+                const ColumnVector<UInt128> & uuid_column = checkAndGetColumn<const ColumnVector<UInt128> &>(wrapper_column);
+                UInt128 value = uuid_column.getData()[i];
+                result_data[i] = hashUnderlyingIntBigEndian(value, /*reduce_two_complement*/ false);
             }
         }
         else if (which.isDate()) 
@@ -176,7 +181,7 @@ public:
                     const ColumnDecimal<Decimal128> * decimal_column = typeid_cast<const ColumnDecimal<Decimal128> *>(&wrapper_column);
                     value = decimal_column->getElement(i).value;
                 }
-                result_data[i] = hashDecimalBase(value, /*take_all*/ false);
+                result_data[i] = hashUnderlyingIntBigEndian(value, /*reduce_two_complement*/ true);
             }
         }
         else
@@ -200,52 +205,28 @@ private:
         return MurmurHash3Impl32::apply(little_endian_representation, 8);
     }
 
-    static Int32 hashUUID(UUID value)
+    static Int32 hashUnderlyingIntBigEndian(UInt128 value, bool reduce_two_complement)
     {
-        UInt128 underlying_value = value.toUnderType();
-        LOG_DEBUG(&Poco::Logger::get("UUID"), "underlying value: {}", wide::to_string(underlying_value));
-        return hashDecimalBase(underlying_value, true);
-    }
-
-    static Int32 hashDecimalBase(UInt128 value, bool take_all)
-    {
-        LOG_DEBUG(&Poco::Logger::get("Kek"), "value: {}", wide::to_string(value));
         char big_endian_representation[16];
         UInt32 taken = 1;
-        char prev = static_cast<unsigned char>(value & 0xFF);
-        value >>= 8;
-        big_endian_representation[0] = prev;
-        for (int i = 1; i < 16; ++i) {
+        char prev = 0;
+        for (int i = 0; i < 16; ++i)
+        {
             char c = static_cast<unsigned char>(value & 0xFF);
             big_endian_representation[i] = c;
             value >>= 8;
-            LOG_DEBUG(&Poco::Logger::get("Kek"), "i: {}, c: {}, prev: {}", i, static_cast<int>(c), static_cast<int>(prev));
-            LOG_DEBUG(
-                &Poco::Logger::get("Kek"),
-                "first cond: {}, second cond: {}, third cond: {}",
-                c != 0,
-                c != -1,
-                ((c & 0x80) != (prev & 0x80)));
-            if (((c != 0) && (c != -1)) || ((c & 0x80) != (prev & 0x80)))
+            if ((i == 0) || ((c != 0) && (c != -1)) || ((c & 0x80) != (prev & 0x80)))
             {
                 taken = i + 1;
             }
             prev = c;
         }
-        if (take_all)
+        if (!reduce_two_complement)
         {
             taken = 16;
         }
         for (size_t i = 0; i < (taken >> 1); ++i) {
             std::swap(big_endian_representation[i], big_endian_representation[taken - i - 1]);
-        }
-        LOG_DEBUG(&Poco::Logger::get("Kek"), "Taken: {}", taken);
-        for (size_t i = 0; i < taken; ++i)
-        {
-            // char buffer[3]; // 2 characters + null terminator
-
-            // [[maybe_unused]] int error = std::snprintf(buffer, sizeof(buffer), "%02X", big_endian_representation[i]);
-            LOG_DEBUG(&Poco::Logger::get("Kek"), "{}th byte is {}", i, static_cast<int>(big_endian_representation[i]));
         }
         return MurmurHash3Impl32::apply(big_endian_representation, taken);
     }
