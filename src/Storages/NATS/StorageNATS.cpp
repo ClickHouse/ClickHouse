@@ -54,7 +54,8 @@ namespace NATSSetting
     extern const NATSSettingsStreamingHandleErrorMode nats_handle_error_mode;
     extern const NATSSettingsUInt64 nats_max_block_size;
     extern const NATSSettingsUInt64 nats_max_rows_per_message;
-    extern const NATSSettingsString nats_consumer;
+    extern const NATSSettingsString nats_consumer_name;
+    extern const NATSSettingsNATSJetStreamConsumerMode nats_consumer_mode;
     extern const NATSSettingsUInt64 nats_num_consumers;
     extern const NATSSettingsString nats_password;
     extern const NATSSettingsString nats_queue_group;
@@ -534,7 +535,7 @@ INATSConsumerPtr StorageNATS::popConsumer(std::chrono::milliseconds timeout)
 
 INATSConsumerPtr StorageNATS::createConsumer()
 {
-    auto stream_name = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_stream]);
+    auto stream_name = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_stream].value);
     
     if (stream_name.empty())
     {
@@ -542,9 +543,15 @@ INATSConsumerPtr StorageNATS::createConsumer()
         return std::make_shared<NATSCoreConsumer>(consumers_connection, subjects, queue_name, log, queue_size, shutdown_called);
     }
 
-    auto consumer_name = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_consumer]);
-    auto queue_name = (*nats_settings)[NATSSetting::nats_queue_group].value;
-    return std::make_shared<NATSJetStreamAsyncConsumer>(consumers_connection, stream_name, consumer_name, subjects, queue_name, log, queue_size, shutdown_called);
+    auto queue_name = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_queue_group]);
+
+    auto consumer_name = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_consumer_name]);
+    auto consumer_mode = (*nats_settings)[NATSSetting::nats_consumer_mode];
+    
+    if(consumer_mode == NATSJetStreamConsumerMode::ASYNC)
+        return std::make_shared<NATSJetStreamAsyncConsumer>(consumers_connection, stream_name, consumer_name, subjects, queue_name, log, queue_size, shutdown_called);
+    
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported consumer type");
 }
 
 bool StorageNATS::isSubjectInSubscriptions(const std::string & subject)

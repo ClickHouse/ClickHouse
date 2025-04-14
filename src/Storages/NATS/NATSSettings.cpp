@@ -8,18 +8,24 @@
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 
+#include <boost/range/adaptor/map.hpp>
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_SETTING;
 }
+
+IMPLEMENT_SETTING_ENUM(NATSJetStreamConsumerMode, ErrorCodes::BAD_ARGUMENTS, {{"async", NATSJetStreamConsumerMode::ASYNC}, {"sync", NATSJetStreamConsumerMode::SYNC}})
 
 #define NATS_RELATED_SETTINGS(DECLARE, ALIAS) \
     DECLARE(String, nats_url, "", "A host-port to connect to NATS server.", 0) \
     DECLARE(String, nats_stream, "", "Stream name for NATS JetStream", 0) \
-    DECLARE(String, nats_consumer, "", "Name of a durable consumer for NATS JetStream.", 0) \
+    DECLARE(String, nats_consumer_name, "", "Name of a durable pull consumer for NATS JetStream.", 0) \
+    DECLARE(NATSJetStreamConsumerMode, nats_consumer_mode, NATSJetStreamConsumerMode::SYNC, "Mode of a durable pull consumer for NATS JetStream", 0) \
     DECLARE(String, nats_subjects, "", "List of subject for NATS table to subscribe/publish to.", 0) \
     DECLARE(String, nats_format, "", "The message format.", 0) \
     DECLARE(String, nats_schema, "", "Schema identifier (used by schema-based formats) for NATS engine", 0) \

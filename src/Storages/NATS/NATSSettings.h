@@ -11,6 +11,13 @@ namespace DB
 class ASTStorage;
 struct NATSSettingsImpl;
 
+enum class NATSJetStreamConsumerMode : uint8_t
+{
+    ASYNC = 0,
+    SYNC,
+};
+DECLARE_SETTING_ENUM(NATSJetStreamConsumerMode)
+
 /// List of available types supported in NATSSettings object
 #define NATS_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, ArrowCompression) \
@@ -38,7 +45,8 @@ struct NATSSettingsImpl;
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, UInt64Auto) \
-    M(CLASS_NAME, URI)
+    M(CLASS_NAME, URI) \
+    M(CLASS_NAME, NATSJetStreamConsumerMode)
 
 NATS_SETTINGS_SUPPORTED_TYPES(NATSSettings, DECLARE_SETTING_TRAIT)
 

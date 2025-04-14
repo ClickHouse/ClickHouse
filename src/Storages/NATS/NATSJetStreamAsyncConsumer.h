@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/NATS/INATSConsumer.h>
+#include <Storages/NATS/NATSJetStreamConsumer.h>
 
 namespace Poco
 {
@@ -10,7 +10,7 @@ class Logger;
 namespace DB
 {
 
-class NATSJetStreamAsyncConsumer : public INATSConsumer
+class NATSJetStreamAsyncConsumer : public NATSJetStreamConsumer
 {
 public:
     NATSJetStreamAsyncConsumer(
@@ -23,15 +23,8 @@ public:
         uint32_t queue_size,
         const std::atomic<bool> & stopped);
 
-    void subscribe() override;
-
 private:
-    const String stream_name;
-    const String consumer_name;
-
-    std::unique_ptr<jsCtx, decltype(&jsCtx_Destroy)> jet_stream_ctx;
-    jsOptions jet_stream_options;
-    jsSubOptions subscribe_options;
+    virtual NATSSubscriptionPtr subscribeToSubject(const String & subject) override;
 };
 
 }

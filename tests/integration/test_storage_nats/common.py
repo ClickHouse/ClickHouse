@@ -128,7 +128,7 @@ async def delete_stream(cluster_inst, stream_name):
 
 
 # consumer_type: "push" or empty for pull consumers
-async def add_durable_consumer(cluster_inst, stream_name, consumer_name, consumer_type: Optional[str] = None):
+async def add_durable_consumer(cluster_inst, stream_name, consumer_name):
     nc = await nats_connect_ssl(
         cluster_inst.nats_port,
         user="click",
@@ -140,7 +140,7 @@ async def add_durable_consumer(cluster_inst, stream_name, consumer_name, consume
     # Create JetStream context.
     js = nc.jetstream()
     
-    consumer_config = api.ConsumerConfig(name=consumer_name, deliver_subject=consumer_type)
+    consumer_config = api.ConsumerConfig(name=consumer_name)
 
     # Persist messages on 'foo's subject.
     consumer_info = await js.add_consumer(stream=stream_name, config=consumer_config)
