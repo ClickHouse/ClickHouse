@@ -1,13 +1,11 @@
--- Tests that GIN indexes can be created on > 1 column
-
-SET allow_experimental_full_text_index = 1;
+SET allow_experimental_full_text_index=1;
 
 DROP TABLE IF EXISTS multi_col_ivt;
 
 CREATE TABLE tab (
     v0 String,
     v1 String,
-    INDEX idx (v0, v1) TYPE gin GRANULARITY 1)
+    INDEX idx (v0, v1) TYPE full_text GRANULARITY 1)
 ENGINE = MergeTree
 ORDER BY tuple()
 SETTINGS index_granularity = 1;
