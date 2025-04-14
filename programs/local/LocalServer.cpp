@@ -418,12 +418,19 @@ void LocalServer::cleanup()
 }
 
 
-std::string LocalServer::getInitialCreateTableQuery()
+std::pair<std::string, std::string> LocalServer::getInitialCreateTableQuery()
 {
-    if (!getClientConfiguration().has("table-structure") && !getClientConfiguration().has("table-file") && !getClientConfiguration().has("table-data-format") && (!isRegularFile(STDIN_FILENO) || queries.empty()))
+    /// The input data can be specified explicitly with any of the `file`, `structure`, `input-format` command line arguments,
+    /// or it can be implicitly specified in stdin - then the structure and format is autodetected.
+    /// But if queries were not specified in the command line, they might me in stdin, and this means that stdin is not input data.
+
+    if (!getClientConfiguration().has("table-structure")
+        && !getClientConfiguration().has("table-file")
+        && !getClientConfiguration().has("table-data-format")
+        && (queries.empty() || !isFileDescriptorSuitableForInput(stdin_fd))) /// In we know that there is data in stdin, we can auto-detect the format.
         return {};
 
-    auto table_name = backQuoteIfNeed(getClientConfiguration().getString("table-name", "table"));
+    auto table_name = getClientConfiguration().getString("table-name", "table");
     auto table_structure = getClientConfiguration().getString("table-structure", "auto");
 
     String table_file;
@@ -442,15 +449,24 @@ std::string LocalServer::getInitialCreateTableQuery()
         table_file = quoteString(file_name);
     }
 
-    String data_format = backQuoteIfNeed(default_input_format);
+    String data_format;
+
+    if (default_input_format == "auto" && getClientConfiguration().has("table-structure"))
+        data_format = "TabSeparated";   /// Compatibility with older versions when format inference was not available.
+    else
+        data_format = backQuoteIfNeed(default_input_format);
 
     if (table_structure == "auto")
         table_structure = "";
     else
         table_structure = "(" + table_structure + ")";
 
-    return fmt::format("CREATE TEMPORARY TABLE {} {} ENGINE = File({}, {}, {});",
-                       table_name, table_structure, data_format, table_file, compression);
+    return
+    {
+        table_name,
+        fmt::format("CREATE TEMPORARY TABLE {} {} ENGINE = File({}, {}, {});",
+            backQuote(table_name), table_structure, data_format, table_file, compression)
+    };
 }
 
 
@@ -626,10 +642,13 @@ try
         std::cerr << std::endl;
     }
 
+    auto [table_name, initial_query] = getInitialCreateTableQuery();
+    if (!table_name.empty())
+        client_context->setSetting("implicit_table_at_top_level", table_name);
+
     connect();
 
-    String initial_query = getInitialCreateTableQuery();
-    if (!initial_query.empty())
+    if (!table_name.empty())
         processQueryText(initial_query);
 
 #if USE_FUZZING_MODE
@@ -868,7 +887,7 @@ void LocalServer::processConfig()
 #endif
 
     /// NOTE: it is important to apply any overrides before
-    /// setDefaultProfiles() calls since it will copy current context (i.e.
+    /// `setDefaultProfiles` calls since it will copy current context (i.e.
     /// there is separate context for Buffer tables).
     adjustSettings();
     applySettingsOverridesForLocal(global_context);
