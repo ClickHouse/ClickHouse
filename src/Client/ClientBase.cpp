@@ -753,7 +753,8 @@ try
         if (select_into_file_partition_by)
         {
             auto* manager = dynamic_cast<DynamicWriteBufferManager*>(out_file_buf.get());
-            OutputFormatForPath creator = [=, this](const String & out_filepath) {
+            OutputFormatForPath creator = [=, this](const String & out_filepath)
+            {
                 auto write_buffer = outfile_buf_factory(out_filepath);
                 auto format = client_context->getOutputFormat(current_format, *write_buffer, block);
                 manager->addWriteBuffer(std::move(write_buffer));
