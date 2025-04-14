@@ -68,14 +68,14 @@ public:
         const std::lock_guard<std::mutex> & moving_parts_lock);
 
     /// Copies part to selected reservation in detached folder. Throws exception if part already exists.
-    virtual TemporaryClonedPart clonePart(const MergeTreeMoveEntry & moving_part, const ReadSettings & read_settings, const WriteSettings & write_settings) const;
+    TemporaryClonedPart clonePart(const MergeTreeMoveEntry & moving_part, const ReadSettings & read_settings, const WriteSettings & write_settings) const;
 
     /// Replaces cloned part from detached directory into active data parts set.
     /// Replacing part changes state to DeleteOnDestroy and will be removed from disk after destructor of
     /// IMergeTreeDataPart called. If replacing part doesn't exists or not active (committed) than
     /// cloned part will be removed and log message will be reported. It may happen in case of concurrent
     /// merge or mutation.
-    virtual void swapClonedPart(TemporaryClonedPart & cloned_part) const;
+    void swapClonedPart(TemporaryClonedPart & cloned_part) const;
 
     /// Rename cloned part from `moving/` directory to the actual part storage
     void renameClonedPart(IMergeTreeDataPart & part) const;
@@ -87,12 +87,13 @@ public:
 
 protected:
 
-    bool hasActivePartToSwap(TemporaryClonedPart & cloned_part, DataPartsLock & part_lock) const;
-    void swapActivePart(TemporaryClonedPart & cloned_part, DataPartsLock & part_lock) const;
+    virtual void preparePartToSwap(TemporaryClonedPart & /* cloned_part */ ) const {}
 
-    void buildClonedPart(
-        TemporaryClonedPart & cloned_part, MutableDataPartStoragePtr cloned_part_storage,
-        const MergeTreeMoveEntry & moving_part, bool preserve_blobs = false) const;
+    virtual std::pair<MutableDataPartStoragePtr, bool> clonePartImpl(
+        const MergeTreeDataPartPtr & part, const DiskPtr & disk,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        const std::function<void()> & cancellation_hook) const;
 
     MergeTreeData * data;
     LoggerPtr log;
@@ -108,9 +109,16 @@ public:
     {
     }
 
-    TemporaryClonedPart clonePart(const MergeTreeMoveEntry & moving_part, const ReadSettings & read_settings, const WriteSettings & write_settings) const override;
+protected:
 
-    void swapClonedPart(TemporaryClonedPart & cloned_part) const override;
+    void preparePartToSwap(TemporaryClonedPart & cloned_part) const override;
+
+    std::pair<MutableDataPartStoragePtr, bool> clonePartImpl(
+        const MergeTreeDataPartPtr & part, const DiskPtr & disk,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        const std::function<void()> & cancellation_hook) const override;
+
 };
 
 
