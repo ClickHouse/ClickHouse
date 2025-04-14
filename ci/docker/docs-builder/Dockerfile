@@ -19,7 +19,8 @@ RUN dnf install -y --allowerasing \
     make \
     nodejs \
     tar \
-    gzip
+    gzip \
+    file
     
 RUN npm install --global yarn && \
     dnf clean all && \
