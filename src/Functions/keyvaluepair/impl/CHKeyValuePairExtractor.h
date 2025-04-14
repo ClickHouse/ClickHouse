@@ -36,7 +36,7 @@ public:
     {
         auto state =  State::WAITING_KEY;
 
-        auto pair_writer = extractKV::ReferencesOnlyStateHandler::StringWriter(map);
+        auto pair_writer = typename StateHandler::StringWriter(nullptr, nullptr, &map);
 
         uint64_t row_offset = 0;
 
@@ -71,7 +71,7 @@ public:
     {
         auto state =  State::WAITING_KEY;
 
-        auto pair_writer = typename StateHandler::StringWriter(*keys, *values);
+        auto pair_writer = typename StateHandler::StringWriter(keys.get(), values.get(), nullptr);
 
         uint64_t row_offset = 0;
 
@@ -82,7 +82,7 @@ public:
             if (next_state.position_in_string > data.size() && next_state.state != State::END)
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Attempt to move read pointer past end of available data, from state {} to new state: {}, new position: {}, available data: {}",
+                        "Attempt to move read pointer past end of available data, from state {} to new state: {}, n ew position: {}, available data: {}",
                         magic_enum::enum_name(state), magic_enum::enum_name(next_state.state),
                         next_state.position_in_string, data.size());
             }

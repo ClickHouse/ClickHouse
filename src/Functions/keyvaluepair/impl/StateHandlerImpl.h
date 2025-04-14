@@ -371,14 +371,14 @@ struct NoEscapingStateHandler : public StateHandlerImpl<false>
      * */
     class StringWriter
     {
-        ColumnString & key_col;
-        ColumnString & value_col;
+        ColumnString * key_col;
+        ColumnString * value_col;
 
         std::string_view key;
         std::string_view value;
 
     public:
-        StringWriter(ColumnString & key_col_, ColumnString & value_col_)
+        StringWriter(ColumnString * key_col_, ColumnString * value_col_, absl::flat_hash_map<std::string_view, std::string_view> * = nullptr)
             : key_col(key_col_), value_col(value_col_)
         {}
 
@@ -440,13 +440,13 @@ struct NoEscapingStateHandler : public StateHandlerImpl<false>
 
         void commitKey()
         {
-            key_col.insertData(key.data(), key.size());
+            key_col->insertData(key.data(), key.size());
             resetKey();
         }
 
         void commitValue()
         {
-            value_col.insertData(value.data(), value.size());
+            value_col->insertData(value.data(), value.size());
             resetValue();
         }
 
@@ -471,21 +471,21 @@ struct InlineEscapingStateHandler : public StateHandlerImpl<true>
 {
     class StringWriter
     {
-        ColumnString & key_col;
+        ColumnString * key_col;
         ColumnString::Chars & key_chars;
         UInt64 key_prev_commit_pos;
 
-        ColumnString & value_col;
+        ColumnString * value_col;
         ColumnString::Chars & value_chars;
         UInt64 value_prev_commit_pos;
 
     public:
-        StringWriter(ColumnString & key_col_, ColumnString & value_col_)
+        StringWriter(ColumnString * key_col_, ColumnString * value_col_, absl::flat_hash_map<std::string_view, std::string_view> * = nullptr)
             : key_col(key_col_),
-            key_chars(key_col_.getChars()),
+            key_chars(key_col_->getChars()),
             key_prev_commit_pos(key_chars.size()),
             value_col(value_col_),
-            value_chars(value_col_.getChars()),
+            value_chars(value_col_->getChars()),
             value_prev_commit_pos(value_chars.size())
         {}
 
@@ -547,13 +547,13 @@ struct InlineEscapingStateHandler : public StateHandlerImpl<true>
 
         void commitKey()
         {
-            key_col.insertData(nullptr, 0);
+            key_col->insertData(nullptr, 0);
             key_prev_commit_pos = key_chars.size();
         }
 
         void commitValue()
         {
-            value_col.insertData(nullptr, 0);
+            value_col->insertData(nullptr, 0);
             value_prev_commit_pos = value_chars.size();
         }
 
@@ -586,8 +586,8 @@ struct ReferencesOnlyStateHandler : public StateHandlerImpl<false>
         std::string_view value;
 
     public:
-        explicit StringWriter(absl::flat_hash_map<std::string_view, std::string_view> & map_)
-            : map(map_)
+        explicit StringWriter(ColumnString *, ColumnString *, absl::flat_hash_map<std::string_view, std::string_view> * map_)
+            : map(*map_)
         {}
 
         ~StringWriter()
