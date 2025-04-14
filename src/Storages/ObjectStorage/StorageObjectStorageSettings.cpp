@@ -26,6 +26,12 @@ Whether delta-lake read schema is the same as table schema.
     DECLARE(String, iceberg_metadata_file_path, "", R"(
 Explicit path to desired Iceberg metadata file, should be relative to path in object storage. Make sense for table function use case only.
 )", 0) \
+    DECLARE(String, iceberg_metadata_table_uuid, "", R"(
+Explicit table UUID to read metadata for. Ignored if iceberg_metadata_file_path is set.
+)", 0) \
+    DECLARE(Bool, iceberg_recent_metadata_file_by_last_updated_ms_field, false, R"(
+If enabled, the engine would use the metadata file with the most recent last_updated_ms json field. Does not make sense to use with iceberg_metadata_file_path.
+)", 0)
 
 // clang-format on
 

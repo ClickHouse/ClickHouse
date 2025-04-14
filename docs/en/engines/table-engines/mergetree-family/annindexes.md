@@ -148,7 +148,7 @@ The default values of all HNSW-specific parameters work reasonably well in the m
 We therefore do not recommend customizing the HNSW-specific parameters.
 
 Further restrictions apply:
-- Vector similarity indexes can only be build on columns of type [Array(Float32)](../../../sql-reference/data-types/array.md) or [Array(Float64)](../../../sql-reference/data-types/array.md). Arrays of nullable and low-cardinality floats such as `Array(Nullable(Float32))` and `Array(LowCardinality(Float32))` are not allowed.
+- Vector similarity indexes can only be build on columns of type [Array(Float32)](../../../sql-reference/data-types/array.md), [Array(Float64)](../../../sql-reference/data-types/array.md), or [Array(BFloat16)](../../../sql-reference/data-types/array.md). Arrays of nullable and low-cardinality floats such as `Array(Nullable(Float32))` and `Array(LowCardinality(Float32))` are not allowed.
 - Vector similarity indexes must be build on single columns.
 - Vector similarity indexes may be build on calculated expressions (e.g., `INDEX index_name arraySort(vectors) TYPE vector_similarity([...])`) but such indexes cannot be used for approximate neighbor search later on.
 - Vector similarity indexes require that all arrays in the underlying column have `<dimension>`-many elements - this is checked during index creation. To detect violations of this requirement as soon as possible, users can add a [constraint](/sql-reference/statements/create/table.md#constraints) for the vector column, e.g., `CONSTRAINT same_length CHECK length(vectors) = 256`.

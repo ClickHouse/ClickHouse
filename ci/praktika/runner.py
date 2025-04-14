@@ -16,8 +16,9 @@ from .hook_html import HtmlRunnerHooks
 from .info import Info
 from .result import Result, ResultInfo
 from .runtime import RunConfig
-from .s3 import S3, StorageUsage
+from .s3 import S3
 from .settings import Settings
+from .usage import ComputeUsage, StorageUsage
 from .utils import Shell, TeePopen, Utils
 
 
@@ -357,6 +358,8 @@ class Runner:
             info = f"ERROR: {ResultInfo.KILLED}"
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
+        elif not result.is_ok and job.allow_merge_on_failure:
+            result.set_not_required_label()
 
         result.update_duration()
         # if result.is_error():
@@ -475,11 +478,19 @@ class Runner:
             workflow_storage_usage = StorageUsage.from_dict(
                 workflow_result.ext.get("storage_usage", {})
             )
+            workflow_compute_usage = ComputeUsage.from_dict(
+                workflow_result.ext.get("compute_usage", {})
+            )
             if workflow_storage_usage:
                 print(
                     "NOTE: storage_usage is found in workflow Result - insert into CIDB"
                 )
                 ci_db.insert_storage_usage(workflow_storage_usage)
+            if workflow_compute_usage:
+                print(
+                    "NOTE: compute_usage is found in workflow Result - insert into CIDB"
+                )
+                ci_db.insert_compute_usage(workflow_compute_usage)
 
         report_url = Info().get_job_report_url(latest=False)
         if (
