@@ -52,7 +52,6 @@
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
 #include <Common/ProfileEvents.h>
-#include "Storages/MergeTree/ParallelReplicasReadingCoordinator.h"
 #include "base/defines.h"
 
 

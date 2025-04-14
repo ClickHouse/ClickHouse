@@ -6,7 +6,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/ThreadStatus.h>
-#include "QueryPipeline/QueryPipelineBuilder.h"
+#include <QueryPipeline/QueryPipeline.h>
 
 namespace DB
 {

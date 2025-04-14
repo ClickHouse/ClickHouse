@@ -3,9 +3,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
-#include "Interpreters/Context.h"
 
-#include <list>
 #include <optional>
 
 namespace DB

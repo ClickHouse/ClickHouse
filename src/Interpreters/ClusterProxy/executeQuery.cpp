@@ -974,7 +974,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     std::optional<ParallelReplicasReadingCoordinatorPtr> coordinator)
 {
     auto logger = getLogger("executeInsertSelectWithParallelReplicas");
-    LOG_DEBUG(logger, "Executing query with parallel replicas: {}", query_ast.select->formatForLogging());
+    LOG_DEBUG(logger, "Executing query with parallel replicas: {}", query_ast.formatForLogging());
 
     const auto & settings = context->getSettingsRef();
 
@@ -1116,7 +1116,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     }
     pools_to_use.resize(max_replicas_to_use);
 
-    String new_query_str;
+    String formatted_query;
     {
         InterpreterSelectQueryAnalyzer analyzer(query_ast.select, context, {});
         const auto & query_tree = analyzer.getQueryTree();
@@ -1130,9 +1130,8 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         IAST::FormatSettings ast_format_settings(
             /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
         insert_ast->IAST::format(buf, ast_format_settings);
-        new_query_str = buf.str();
+        formatted_query = buf.str();
     }
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Formatted insert select query: {}", new_query_str);
 
     const bool skip_local_replica = local_pipeline.has_value();
     QueryPipeline pipeline;
@@ -1155,7 +1154,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         };
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             pools_to_use[i],
-            new_query_str,
+            formatted_query,
             Block{},
             new_context,
             /*throttler=*/nullptr,
