@@ -1,10 +1,12 @@
 import copy
 import dataclasses
 import datetime
+import io
 import json
 import random
 import sys
 import time
+from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -45,6 +47,11 @@ class Result(MetaClasses.Serializable):
         RUNNING = "running"
         ERROR = "error"
 
+    class Label:
+        NOT_REQUIRED = "not required"
+        FLAKY = "flaky"
+        BROKEN = "broken"
+
     name: str
     status: str
     start_time: Optional[float] = None
@@ -64,6 +71,7 @@ class Result(MetaClasses.Serializable):
         files=None,
         info: Union[List[str], str] = "",
         with_info_from_results=False,
+        links=None,
     ) -> "Result":
         if isinstance(status, bool):
             status = Result.Status.SUCCESS if status else Result.Status.FAILED
@@ -121,6 +129,7 @@ class Result(MetaClasses.Serializable):
             info="\n".join(infos) if infos else "",
             results=results or [],
             files=files or [],
+            links=links or [],
         )
 
     @staticmethod
@@ -278,6 +287,14 @@ class Result(MetaClasses.Serializable):
         self.duration = stopwatch.duration
         return self
 
+    def set_label(self, label):
+        if not self.ext["labels"]:
+            self.ext["labels"] = []
+        self.ext["labels"].append(label)
+
+    def set_not_required_label(self):
+        self.set_label(self.Label.NOT_REQUIRED)
+
     def update_sub_result(self, result: "Result", drop_nested_results=False):
         assert self.results, "BUG?"
         for i, result_ in enumerate(self.results):
@@ -426,7 +443,13 @@ class Result(MetaClasses.Serializable):
             for command_ in command:
                 if callable(command_):
                     # If command is a Python function, call it with provided arguments
-                    result = command_(*command_args, **command_kwargs)
+                    if with_info:
+                        buffer = io.StringIO()
+                        with redirect_stdout(buffer):
+                            result = command_(*command_args, **command_kwargs)
+                        error_infos = buffer.getvalue()
+                    else:
+                        result = command_(*command_args, **command_kwargs)
                     if isinstance(result, bool):
                         res = result
                     elif result:
