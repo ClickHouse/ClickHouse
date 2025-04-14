@@ -181,8 +181,8 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
         /// 2 rewrites in the plan :-
         /// 1. Remove the vector physical column from the ReadFromMergeTreeStep and add _distance virtual column
         /// 2. Replace the "cosineDistance(vector_column,[1.0, 2.0...])" node in the DAG with "_distance" node
-        LOG_DEBUG(getLogger("optimizUseProjections"), "DAG before {}", expression.dumpDAG());
-        LOG_DEBUG(getLogger("optimizUseProjections"), "DAG names before {}", expression.dumpNames());
+        /// LOG_DEBUG(getLogger("optimizUseProjections"), "DAG before {}", expression.dumpDAG());
+        /// LOG_DEBUG(getLogger("optimizUseProjections"), "DAG names before {}", expression.dumpNames());
         read_from_mergetree_step->replaceVectorColumnWithDistance(search_column);
 
         expression.removeUnusedResult(sort_column); /// Remove the OUPUT cosineDistance(...) FUNCTION Node
@@ -191,8 +191,8 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
         auto new_output = &expression.addAlias(*distance_node, sort_column);
         expression.getOutputs().push_back(new_output);
 
-        LOG_DEBUG(getLogger("optimizUseProjections"), "DAG after {}", expression.dumpDAG());
-        LOG_DEBUG(getLogger("optimizUseProjections"), "DAG names after{}", expression.dumpNames());
+        /// LOG_DEBUG(getLogger("optimizUseProjections"), "DAG after {}", expression.dumpDAG());
+        /// LOG_DEBUG(getLogger("optimizUseProjections"), "DAG names after{}", expression.dumpNames());
         return_distances = true;
         updated_layers = 2;
     }
