@@ -27,19 +27,20 @@ SLRUFileCachePriority::SLRUFileCachePriority(
     size_t max_size_,
     size_t max_elements_,
     double size_ratio_,
+    const std::string & description_,
     LRUFileCachePriority::StatePtr probationary_state_,
-    LRUFileCachePriority::StatePtr protected_state_,
-    const std::string & description_)
+    LRUFileCachePriority::StatePtr protected_state_)
     : IFileCachePriority(max_size_, max_elements_)
+    , description(description_)
     , size_ratio(size_ratio_)
     , protected_queue(LRUFileCachePriority(getRatio(max_size_, size_ratio),
                                            getRatio(max_elements_, size_ratio),
-                                           protected_state_,
-                                           description_ + ", protected"))
+                                           description_ + ", protected",
+                                           protected_state_))
     , probationary_queue(LRUFileCachePriority(getRatio(max_size_, 1 - size_ratio),
                                               getRatio(max_elements_, 1 - size_ratio),
-                                              probationary_state_,
-                                              description_ + ", probationary"))
+                                              description_ + ", probationary",
+                                              probationary_state_))
     , log(getLogger("SLRUFileCachePriority(" + description_ + ")"))
 {
     LOG_DEBUG(
@@ -47,6 +48,12 @@ SLRUFileCachePriority::SLRUFileCachePriority(
         "Protected queue {} in size and {} in elements",
         probationary_queue.max_size.load(), probationary_queue.max_elements.load(),
         protected_queue.max_size.load(), protected_queue.max_elements.load());
+}
+
+FileCachePriorityPtr SLRUFileCachePriority::copy() const
+{
+    return std::make_unique<SLRUFileCachePriority>(
+        max_size, max_elements, size_ratio, description, probationary_queue.state, protected_queue.state);
 }
 
 size_t SLRUFileCachePriority::getSize(const CachePriorityGuard::Lock & lock) const

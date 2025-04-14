@@ -18,9 +18,9 @@ public:
         size_t max_size_,
         size_t max_elements_,
         double size_ratio_,
+        const std::string & description_,
         LRUFileCachePriority::StatePtr probationary_state_ = nullptr,
-        LRUFileCachePriority::StatePtr protected_state_ = nullptr,
-        const std::string & description_ = "none");
+        LRUFileCachePriority::StatePtr protected_state_ = nullptr);
 
     size_t getSize(const CachePriorityGuard::Lock & lock) const override;
 
@@ -72,12 +72,13 @@ public:
 
     bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CachePriorityGuard::Lock &) override;
 
-    FileCachePriorityPtr copy() const { return std::make_unique<SLRUFileCachePriority>(max_size, max_elements, size_ratio, probationary_queue.state, protected_queue.state); }
+    FileCachePriorityPtr copy() const;
 
 private:
     using LRUIterator = LRUFileCachePriority::LRUIterator;
     using LRUQueue = std::list<Entry>;
 
+    std::string description;
     double size_ratio;
     LRUFileCachePriority protected_queue;
     LRUFileCachePriority probationary_queue;
