@@ -62,6 +62,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/UseSSL.h>
 #include <Interpreters/CancellationChecker.h>
 #include <Interpreters/ServerAsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
@@ -965,6 +966,8 @@ try
     Stopwatch startup_watch;
 
     Poco::Logger * log = &logger();
+
+    UseSSL use_ssl;
 
     MainThreadStatus::getInstance();
 

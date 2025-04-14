@@ -249,7 +249,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enforce_index_structure_match_on_partition_manipulation;
     extern const MergeTreeSettingsUInt64 min_bytes_to_prewarm_caches;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
-    extern const MergeTreeSettingsSeconds refresh_parts_interval;
 }
 
 namespace ServerSetting
@@ -1888,6 +1887,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto settings = getSettings();
+    Strings part_file_names;
 
     auto disks = getStoragePolicy()->getDisks();
 
@@ -2023,6 +2023,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     num_parts += active_parts.size();
 
     auto part_lock = lockParts();
+    LOG_TEST(log, "loadDataParts: clearing data_parts_indexes (had {} parts)", data_parts_indexes.size());
+    data_parts_indexes.clear();
 
     MutableDataPartsVector broken_parts_to_detach;
     MutableDataPartsVector duplicate_parts_to_remove;
@@ -2079,6 +2081,14 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                 have_parts_with_version_metadata |= res.part->wasInvolvedInTransaction();
             }
         }
+    }
+
+    if (num_parts == 0 && unexpected_parts_to_load.empty())
+    {
+        resetObjectColumnsFromActiveParts(part_lock);
+        resetSerializationHints(part_lock);
+        LOG_DEBUG(log, "There are no data parts");
+        return;
     }
 
     if (have_non_adaptive_parts && have_adaptive_parts && !(*settings)[MergeTreeSetting::enable_mixed_granularity_parts])
@@ -2187,111 +2197,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     ProfileEvents::increment(ProfileEvents::LoadedDataParts, data_parts_indexes.size());
     ProfileEvents::increment(ProfileEvents::LoadedDataPartsMicroseconds, watch.elapsedMicroseconds());
     data_parts_loading_finished = true;
-
-    auto refresh_parts_interval = (*settings)[MergeTreeSetting::refresh_parts_interval].totalMilliseconds();
-    if (all_disks_are_readonly && refresh_parts_interval && !refresh_parts_task)
-    {
-        refresh_parts_task = getContext()->getSchedulePool().createTask(
-            "MergeTreeData::refreshDataParts",
-            [this, refresh_parts_interval] { refreshDataParts(refresh_parts_interval); });
-
-        refresh_parts_task->scheduleAfter(refresh_parts_interval);
-    }
 }
-
-void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
-{
-    for (auto & disk : getStoragePolicy()->getDisks())
-        disk->refresh(interval_milliseconds);
-
-    Stopwatch watch;
-    LOG_DEBUG(log, "Refreshing data parts");
-
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-    const auto settings = getSettings();
-
-    auto disks = getStoragePolicy()->getDisks();
-    PartLoadingTree::PartLoadingInfos parts_to_load;
-
-    for (const auto & disk_ptr : disks)
-    {
-        if (disk_ptr->isBroken())
-            continue;
-        if (!disk_ptr->isReadOnly())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeData::refreshDataParts should only be called if all disks are readonly");
-
-        for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
-        {
-            /// Skip temporary directories, file 'format_version.txt' and directory 'detached'.
-            if (startsWith(it->name(), "tmp")
-                || it->name() == MergeTreeData::FORMAT_VERSION_FILE_NAME
-                || it->name() == DETACHED_DIR_NAME)
-                continue;
-
-            if (auto part_info = MergeTreePartInfo::tryParsePartName(it->name(), format_version))
-                parts_to_load.emplace_back(*part_info, it->name(), disk_ptr);
-        }
-    }
-
-    auto loading_tree = PartLoadingTree::build(std::move(parts_to_load));
-
-    PartLoadingTreeNodes parts_to_add;
-
-    {
-        auto part_lock = lockParts();
-
-        /// Collect only "the most covering" parts from the top level of the tree.
-        loading_tree.traverse(/*recursive=*/ false, [&, this](const auto & node)
-        {
-            if (auto it = data_parts_by_info.find(node->info); it == data_parts_by_info.end())
-                parts_to_add.emplace_back(node);
-        });
-    }
-
-    bool have_non_adaptive_parts = false;
-    bool have_lightweight_in_parts = false;
-    bool have_parts_with_version_metadata = false;
-
-    for (const auto & my_part : parts_to_add)
-    {
-        auto res = loadDataPartWithRetries(
-            my_part->info, my_part->name, my_part->disk,
-            DataPartState::PreActive, data_parts_mutex, loading_parts_initial_backoff_ms,
-            loading_parts_max_backoff_ms, loading_parts_max_tries);
-
-        if (res.is_broken)
-        {
-            LOG_ERROR(log, "The new data part {} appears broken - skip loading", res.part->name);
-        }
-        else
-        {
-            Transaction transaction(*this, nullptr);
-            preparePartForCommit(res.part, transaction, false, false);
-            transaction.commit();
-
-            bool is_adaptive = res.part->index_granularity_info.mark_type.adaptive;
-            have_non_adaptive_parts |= !is_adaptive;
-            have_lightweight_in_parts |= res.part->hasLightweightDelete();
-            have_parts_with_version_metadata |= res.part->wasInvolvedInTransaction();
-        }
-    }
-
-    has_non_adaptive_index_granularity_parts = have_non_adaptive_parts;
-    has_lightweight_delete_parts = have_lightweight_in_parts;
-    transactions_enabled = have_parts_with_version_metadata;
-
-    auto old_parts = grabOldParts(true);
-
-    watch.stop();
-    LOG_DEBUG(log, "Refreshing data parts (added {} items, removed {} items) took {} seconds",
-        parts_to_add.size(), old_parts.size(), watch.elapsedSeconds());
-
-    ProfileEvents::increment(ProfileEvents::LoadedDataParts, parts_to_add.size());
-    ProfileEvents::increment(ProfileEvents::LoadedDataPartsMicroseconds, watch.elapsedMicroseconds());
-
-    refresh_parts_task->scheduleAfter(interval_milliseconds);
-}
-
 
 void MergeTreeData::loadUnexpectedDataParts()
 try
