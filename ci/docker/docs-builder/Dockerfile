@@ -1,21 +1,29 @@
 # docker build -t clickhouse/docs-builder .
 
 # To match the same environment that Vercel is using
-FROM amazonlinux
+FROM amazonlinux:2023
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
+RUN dnf update -y
+
+# Install dependencies using dnf (Amazon Linux 2023 package manager)
+RUN dnf install -y --allowerasing \
     git \
-    openssh-client \
+    openssh-clients \
     python3 \
-    python3-venv \
+    python3-pip \
     rsync \
     curl \
     ca-certificates \
-    build-essential \
-    g++ \
-    make && \
-    rm -rf /var/lib/apt/lists/*
+    gcc \
+    gcc-c++ \
+    make \
+    nodejs \
+    tar \
+    gzip
+    
+RUN npm install --global yarn && \
+    dnf clean all && \
+    rm -rf /var/cache/dnf /root/.npm /tmp/*
 
 ARG CACHE_INVALIDATOR=0
 
@@ -23,6 +31,7 @@ ARG CACHE_INVALIDATOR=0
 RUN groupadd -r clickhouse && \
     useradd -r -g clickhouse -m -d /home/clickhouse -s /sbin/nologin -c "ClickHouse user" clickhouse
 
+# Set yarn registry (Needs yarn installed first, moved install earlier)
 RUN yarn config set registry https://registry.npmjs.org
 ENV HOME=/opt/clickhouse-docs
 
