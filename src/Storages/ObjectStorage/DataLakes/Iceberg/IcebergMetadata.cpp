@@ -694,7 +694,7 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory() const
 
     chassert(metadata_version == last_metadata_version);
 
-    auto metadata_object = readJSON(metadata_file_path, getContext());
+    auto metadata_object = readJSON(metadata_file_path, object_storage, getContext(), log);
 
     chassert(format_version == metadata_object->getValue<int>(FORMAT_VERSION_FIELD));
 
