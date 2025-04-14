@@ -1001,6 +1001,8 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
         create_query_context->setSetting("keeper_initial_backoff_ms", zookeeper_retries_info.initial_backoff_ms);
         create_query_context->setSetting("keeper_max_backoff_ms", zookeeper_retries_info.max_backoff_ms);
 
+        create_query_context->setUnderRestore(true);
+
         /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
         /// database-specific things).
         database->createTableRestoredFromBackup(
