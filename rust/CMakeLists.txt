@@ -1,2 +1,7 @@
 add_subdirectory (workspace)
-add_subdirectory (chcache)
+
+option(ENABLE_CHCACHE "Enable chcache" ${ENABLE_RUST})
+
+if (ENABLE_CHCACHE)
+    add_subdirectory (chcache)
+endif()
