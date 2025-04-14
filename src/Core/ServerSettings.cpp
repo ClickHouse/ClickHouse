@@ -34,6 +34,7 @@ namespace DB
 // clang-format off
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreserved-identifier"
+// NOLINTBEGIN(bugprone-reserved-identifier)
 
 #define LIST_OF_SERVER_SETTINGS(DECLARE, ALIAS) \
     DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
@@ -1293,3 +1294,4 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
 }
 
 #pragma clang diagnostic pop
+// NOLINTEND(bugprone-reserved-identifier)

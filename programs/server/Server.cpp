@@ -177,6 +177,7 @@ namespace MergeTreeSetting
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreserved-identifier"
+// NOLINTBEGIN(bugprone-reserved-identifier)
 
 namespace ServerSetting
 {
@@ -355,6 +356,7 @@ namespace ServerSetting
 }
 
 #pragma clang diagnostic pop
+// NOLINTEND(bugprone-reserved-identifier)
 
 namespace CurrentMetrics
 {
