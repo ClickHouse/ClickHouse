@@ -12,6 +12,7 @@
                 <max_elements>100</max_elements>
                 <max_file_segment_size>10</max_file_segment_size>
                 <boundary_alignment>10</boundary_alignment>
+                <cache_policy>LRU</cache_policy>
                 <path>./cache_dynamic_reload/</path>
             </cache_dynamic_resize>
         </disks>
