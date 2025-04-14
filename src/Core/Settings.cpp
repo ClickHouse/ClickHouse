@@ -6405,6 +6405,19 @@ Enable pushing user roles from originator to other nodes while performing a quer
     DECLARE(Bool, shared_merge_tree_sync_parts_on_partition_operations, true, R"(
 Automatically synchronize set of data parts after MOVE|REPLACE|ATTACH partition operations in SMT tables. Cloud only
 )", 0) \
+    DECLARE(String, implicit_table_at_top_level, "", R"(
+If not empty, queries without FROM at the top level will read from this table instead of system.one.
+
+This is used in clickhouse-local for input data processing.
+The setting could be set explicitly by a user but is not intended for this type of usage.
+
+Subqueries are not affected by this setting (neither scalar, FROM, or IN subqueries).
+SELECTs at the top level of UNION, INTERSECT, EXCEPT chains are treated uniformly and affected by this setting, regardless of their grouping in parentheses.
+It is unspecified how this setting affects views and distributed queries.
+
+The setting accepts a table name (then the table is resolved from the current database) or a qualified name in the form of 'database.table'.
+Both database and table names have to be unquoted - only simple identifiers are allowed.
+)", 0) \
     \
     DECLARE(Bool, allow_experimental_variant_type, true, R"(
 Allows creation of [Variant](../../sql-reference/data-types/variant.md) data type.
