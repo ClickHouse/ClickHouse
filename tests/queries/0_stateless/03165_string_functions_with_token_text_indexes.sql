@@ -2,6 +2,8 @@ SELECT '-------- Bloom filter --------';
 SELECT '';
 DROP TABLE IF EXISTS 03165_token_bf;
 
+SET allow_experimental_full_text_index=1;
+
 CREATE TABLE 03165_token_bf
 (
     id Int64,
