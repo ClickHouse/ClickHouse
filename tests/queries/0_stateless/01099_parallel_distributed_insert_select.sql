@@ -231,6 +231,7 @@ DROP TABLE distributed_01099_a;
 DROP TABLE distributed_01099_b;
 
 --- test_cluster_1_shard_3_replicas_1_unavailable
+SET send_logs_level='error';
 
 SELECT 'test_cluster_1_shard_3_replicas_1_unavailable';
 
