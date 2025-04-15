@@ -349,7 +349,7 @@ QueryPlan buildLogicalJoin(
  * Original research paper "Unnesting Arbitrary Queries": https://cs.emis.de/LNI/Proceedings/Proceedings241/383.pdf
  * See also a follow up paper "Improving Unnesting of Complex Queries": https://dl.gi.de/items/b9df4765-d1b0-4267-a77c-4ce4ab0ee62d
  *
- * NOTE: ClickHouse does not explicitely build SQL query into relational algebra expression,
+ * NOTE: ClickHouse does not explicitly build SQL query into relational algebra expression,
  * instead it produces a query plan where almost every step has an analog from relational algebra.
  * This function implements decorrelation algorithm using ClickHouse query plan.
  *
