@@ -1063,7 +1063,7 @@ Possible values:
 
     If a shard is unavailable, ClickHouse throws an exception.
 )", 0) \
-    DECLARE(Bool, hedged_connections_preffer_stable_pools, false, R"(
+    DECLARE(Bool, hedged_connections_prefer_stable_pools, false, R"(
 Preffer using stable pools for creating connections.
 )", 0) \
     \
@@ -3797,7 +3797,7 @@ Minimal period of time when replica can be unstable. Replica can become unstable
 
 See also:
 
-- [hedged_connections_preffer_stable_pools](#hedged_connections_preffer_stable_pools)
+- [hedged_connections_prefer_stable_pools](#hedged_connections_prefer_stable_pools)
 - [distributed_max_unstable_period_for_replica](#distributed_max_unstable_period_for_replica)
 )", 0) \
     DECLARE(Seconds, distributed_max_unstable_period_for_replica, 600, R"(
@@ -3805,7 +3805,7 @@ Max period of time when replica can be unstable. Replica can become unstable if 
 
 See also:
 
-- [hedged_connections_preffer_stable_pools](#hedged_connections_preffer_stable_pools)
+- [hedged_connections_prefer_stable_pools](#hedged_connections_prefer_stable_pools)
 - [distributed_min_unstable_period_for_replica](#distributed_min_unstable_period_for_replica)
 )", 0) \
     DECLARE(UInt64, distributed_replica_max_ignored_errors, 0, R"(

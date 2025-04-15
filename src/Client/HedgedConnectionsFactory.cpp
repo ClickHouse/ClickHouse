@@ -28,7 +28,7 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
     bool fallback_to_stale_replicas_,
     UInt64 max_parallel_replicas_,
     bool skip_unavailable_shards_,
-    bool preffer_stable_pools_,
+    bool prefer_stable_pools_,
     std::shared_ptr<QualifiedTableName> table_to_check_,
     GetPriorityForLoadBalancing::Func priority_func)
     : pool(pool_)
@@ -39,7 +39,7 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
     , fallback_to_stale_replicas(fallback_to_stale_replicas_)
     , max_parallel_replicas(max_parallel_replicas_)
     , skip_unavailable_shards(skip_unavailable_shards_)
-    , preffer_stable_pools(preffer_stable_pools_)
+    , prefer_stable_pools(prefer_stable_pools_)
 {
     shuffled_pools = pool->getShuffledPools(settings_, priority_func, /* use_slowdown_count */ true);
 
@@ -47,7 +47,7 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
         replicas.emplace_back(
             std::make_unique<ConnectionEstablisherAsync>(shuffled_pool.pool, &timeouts, settings_, log, table_to_check.get()));
 
-    if (preffer_stable_pools)
+    if (prefer_stable_pools)
         stable_pools_to_try_connections = std::count_if(shuffled_pools.begin(), shuffled_pools.end(), [](const auto&  shuffled_pool){ return shuffled_pool.is_stable; });
 }
 
@@ -171,10 +171,10 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::waitForReadyConnection
         if (state != State::CANNOT_CHOOSE)
             return state;
     }
-    if (preffer_stable_pools && stable_pools_to_try_connections == 0)
+    if (prefer_stable_pools && stable_pools_to_try_connections == 0)
     {
         LOG_TRACE(log, "Can not choose from stable pools, fallback to unstable ones.");
-        preffer_stable_pools = false;
+        prefer_stable_pools = false;
         return waitForReadyConnectionsImpl(blocking, connection_out, async_callback);
     }
     return State::CANNOT_CHOOSE;
@@ -268,7 +268,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processEpollEvents(boo
         /// then we should fallback to take stale replicas.
         /// In case when it's still not enought, we will return  to processing epoll
         /// with waiting all replicas (not stable too).
-        if (preffer_stable_pools && stable_pools_to_try_connections == 0)
+        if (prefer_stable_pools && stable_pools_to_try_connections == 0)
             return State::CANNOT_CHOOSE;
 
         /// We reach this point only if we need to start new connection

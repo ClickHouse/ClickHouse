@@ -143,7 +143,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_replicas_insert_select_local_pipeline", false, false, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"},
             {"parallel_hash_join_threshold", 0, 0, "New setting"},
             /// Release closed. Please use 25.5
-            {"hedged_connections_preffer_stable_pools", false, false, "New setting."},
+            {"hedged_connections_prefer_stable_pools", false, false, "New setting."},
             {"distributed_min_unstable_period_for_replica", 1, 1, "New setting."},
             {"distributed_max_unstable_period_for_replica", 600, 600, "New setting."},
         });
