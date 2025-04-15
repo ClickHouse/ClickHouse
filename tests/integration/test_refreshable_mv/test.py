@@ -40,6 +40,8 @@ reading_node = cluster.add_instance(
 )
 nodes = [node1, node2]
 
+test_idx = 0
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -50,11 +52,22 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+@pytest.fixture
+def cleanup():
+    yield
 
-def test_refreshable_mv_in_replicated_db(started_cluster):
     for node in nodes:
         node.query(
-            "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
+            "drop database if exists re sync;"
+            "drop table if exists system.a;")
+
+    global test_idx
+    test_idx += 1
+
+def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
+    for node in nodes:
+        node.query(
+            f"create database re engine = Replicated('/test/re_{test_idx}', 'shard1', '{{replica}}');"
         )
 
     # Table engine check.
@@ -212,11 +225,8 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
     for node in nodes:
         assert node.query("show tables from re") == ""
 
-    node1.query("drop database re sync")
-    node2.query("drop database re sync")
 
-
-def test_refreshable_mv_in_system_db(started_cluster):
+def test_refreshable_mv_in_system_db(started_cluster, cleanup):
     node1.query(
         "create materialized view system.a refresh every 1 second (x Int64) engine Memory as select number+1 as x from numbers(2);"
         "system refresh view system.a;"
@@ -226,17 +236,15 @@ def test_refreshable_mv_in_system_db(started_cluster):
     node1.query("system refresh view system.a")
     assert node1.query("select count(), sum(x) from system.a") == "2\t3\n"
 
-    node1.query("drop table system.a")
-
-def test_refreshable_mv_in_read_only_node(started_cluster):
+def test_refreshable_mv_in_read_only_node(started_cluster, cleanup):
     # writable node
     node1.query(
-        "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
+        f"create database re engine = Replicated('/test/re_{test_idx}', 'shard1', '{{replica}}');"
     )
 
     # read_only node
     reading_node.query(
-        "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
+        f"create database re engine = Replicated('/test/re_{test_idx}', 'shard1', '{{replica}}');"
     )
 
     # disable view sync on writable node, see if there's RefreshTask on read_only node
@@ -280,13 +288,10 @@ def test_refreshable_mv_in_read_only_node(started_cluster):
         "1\n",
     )
 
-    reading_node.query("drop database re sync")
-    node1.query("drop database re sync")
-
-def test_refresh_vs_shutdown_smoke(started_cluster):
+def test_refresh_vs_shutdown_smoke(started_cluster, cleanup):
     for node in nodes:
         node.query(
-            "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
+            f"create database re engine = Replicated('/test/re_{test_idx}', 'shard1', '{{replica}}');"
         )
 
     node1.stop_clickhouse()
@@ -331,13 +336,11 @@ def test_refresh_vs_shutdown_smoke(started_cluster):
     )
 
     node1.start_clickhouse()
-    node1.query("drop database re sync")
-    node2.query("drop database re sync")
 
-def test_replicated_db_startup_race(started_cluster):
+def test_replicated_db_startup_race(started_cluster, cleanup):
     for node in nodes:
         node.query(
-            "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
+            f"create database re engine = Replicated('/test/re_{test_idx}', 'shard1', '{{replica}}');"
         )
     node1.query(
             "create materialized view re.a refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x as select number*10 as x from numbers(2);\
@@ -354,5 +357,3 @@ def test_replicated_db_startup_race(started_cluster):
     node1.query("system disable failpoint database_replicated_startup_pause")
     _, err = drop_query_handle.get_answer_and_error()
     assert err == ""
-
-    node2.query("drop database re sync")
