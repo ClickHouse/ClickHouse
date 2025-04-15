@@ -27,14 +27,27 @@ public:
     {
         auto configuration = extractKV::ConfigurationFactory::createWithoutEscaping(key_value_delimiter, quoting_character, item_delimiters);
 
-        return CHKeyValuePairExtractor(extractKV::NoEscapingStateHandler(configuration), max_number_of_pairs);
+        return CHKeyValuePairExtractor<extractKV::NoEscapingStateHandler>(configuration, max_number_of_pairs);
     }
 
     auto buildWithEscaping() const
     {
         auto configuration = extractKV::ConfigurationFactory::createWithEscaping(key_value_delimiter, quoting_character, item_delimiters);
 
-        return CHKeyValuePairExtractor(extractKV::InlineEscapingStateHandler(configuration), max_number_of_pairs);
+        return CHKeyValuePairExtractor<extractKV::InlineEscapingStateHandler>(configuration, max_number_of_pairs);
+    }
+
+    auto buildWithReferenceMap()
+    {
+        auto configuration = extractKV::ConfigurationFactory::createWithoutEscaping(key_value_delimiter, quoting_character, item_delimiters);
+
+        return CHKeyValuePairExtractor<extractKV::ReferencesOnlyStateHandler>(configuration, max_number_of_pairs);
+    }
+
+    auto buildWithReferenceMapaaa()
+    {
+        auto configuration = extractKV::ConfigurationFactory::createWithoutEscaping(key_value_delimiter, quoting_character, item_delimiters);
+        return CHKeyValuePairExtractor<extractKV::ReferencesOnlyStateHandler>(configuration, max_number_of_pairs);
     }
 
 private:

@@ -21,37 +21,17 @@ namespace ErrorCodes
  * Handle state transitions and a few states like `FLUSH_PAIR` and `END`.
  * */
 template <typename StateHandler>
-class CHKeyValuePairExtractor
+class CHKeyValuePairExtractorImpl
 {
     using State = typename DB::extractKV::StateHandler::State;
     using NextState = DB::extractKV::StateHandler::NextState;
 
 public:
-    explicit CHKeyValuePairExtractor(StateHandler state_handler_, uint64_t max_number_of_pairs_)
+    CHKeyValuePairExtractorImpl(StateHandler state_handler_, uint64_t max_number_of_pairs_)
         : state_handler(std::move(state_handler_)), max_number_of_pairs(max_number_of_pairs_)
     {}
 
-    uint64_t extractOnlyReferences(std::string_view & data, absl::flat_hash_map<std::string_view, std::string_view> & map)
-    {
-        auto pair_writer = typename StateHandler::StringWriter(nullptr, nullptr, &map);
-
-        return extract(data, pair_writer);
-    }
-
-    uint64_t extract(const std::string & data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values)
-    {
-        return extract(std::string_view {data}, keys, values);
-    }
-
-    uint64_t extract(std::string_view data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values)
-    {
-        auto pair_writer = typename StateHandler::StringWriter(keys.get(), values.get(), nullptr);
-        return extract(data, pair_writer);
-    }
-
-private:
-
-    uint64_t extract(std::string_view data, auto & pair_writer)
+    uint64_t extract(std::string_view data, typename StateHandler::StringWriter & pair_writer)
     {
         auto state =  State::WAITING_KEY;
 
@@ -79,6 +59,7 @@ private:
         return row_offset;
     }
 
+private:
     NextState processState(std::string_view file, State state, auto & pair_writer, uint64_t & row_offset)
     {
         switch (state)
@@ -145,6 +126,65 @@ private:
 
     StateHandler state_handler;
     uint64_t max_number_of_pairs;
+};
+
+template <typename StateHandler>
+struct CHKeyValuePairExtractor
+{
+};
+
+template <>
+struct CHKeyValuePairExtractor<extractKV::NoEscapingStateHandler>
+{
+    using StateHandler = extractKV::NoEscapingStateHandler;
+    explicit CHKeyValuePairExtractor(const extractKV::Configuration & configuration_, std::size_t max_number_of_pairs_)
+        : state_handler(configuration_), max_number_of_pairs(max_number_of_pairs_) {}
+
+    uint64_t extract(std::string_view data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values)
+    {
+        auto pair_writer = typename StateHandler::StringWriter(*keys, *values);
+        return CHKeyValuePairExtractorImpl(state_handler, max_number_of_pairs).extract(data, pair_writer);
+    }
+
+private:
+    StateHandler state_handler;
+    std::size_t max_number_of_pairs;
+};
+
+template <>
+struct CHKeyValuePairExtractor<extractKV::InlineEscapingStateHandler>
+{
+    using StateHandler = extractKV::InlineEscapingStateHandler;
+    explicit CHKeyValuePairExtractor(const extractKV::Configuration & configuration_, std::size_t max_number_of_pairs_)
+        : state_handler(configuration_), max_number_of_pairs(max_number_of_pairs_) {}
+
+    uint64_t extract(std::string_view data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values)
+    {
+        auto pair_writer = typename StateHandler::StringWriter(*keys, *values);
+        return CHKeyValuePairExtractorImpl(state_handler, max_number_of_pairs).extract(data, pair_writer);
+    }
+
+private:
+    StateHandler state_handler;
+    std::size_t max_number_of_pairs;
+};
+
+template <>
+struct CHKeyValuePairExtractor<extractKV::ReferencesOnlyStateHandler>
+{
+    using StateHandler = extractKV::ReferencesOnlyStateHandler;
+    explicit CHKeyValuePairExtractor(const extractKV::Configuration & configuration_, std::size_t max_number_of_pairs_)
+        : state_handler(configuration_), max_number_of_pairs(max_number_of_pairs_) {}
+
+    uint64_t extract(std::string_view data, absl::flat_hash_map<std::string_view, std::string_view> & map)
+    {
+        auto pair_writer = typename StateHandler::StringWriter(map);
+        return CHKeyValuePairExtractorImpl(state_handler, max_number_of_pairs).extract(data, pair_writer);
+    }
+
+private:
+    StateHandler state_handler;
+    std::size_t max_number_of_pairs;
 };
 
 }

@@ -51,7 +51,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
-#include <Functions/keyvaluepair/impl/CHKeyValuePairExtractor.h>
+#include <Functions/keyvaluepair/impl/KeyValuePairExtractorBuilder.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/makeASTForLogicalFunction.h>
@@ -149,11 +149,14 @@ NameSet getVirtualNamesForFileLikeStorage()
 
 using HivePartitioningKeysAndValues = absl::flat_hash_map<std::string_view, std::string_view>;
 
+static auto makeExtractor()
+{
+    return KeyValuePairExtractorBuilder().withItemDelimiters({'/'}).withKeyValueDelimiter('=').buildWithReferenceMap();
+}
+
 static HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & path)
 {
-    static auto configuration = extractKV::ConfigurationFactory::createWithoutEscaping('=', '"', {'/'});
-    static extractKV::NoEscapingStateHandler state_handler(std::move(configuration));
-    static CHKeyValuePairExtractor extractor(state_handler, std::numeric_limits<uint64_t>::max());
+    static auto extractor = makeExtractor();
 
     HivePartitioningKeysAndValues key_values;
 
@@ -169,7 +172,7 @@ static HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const St
 
     std::string_view path_without_filename(path.data(), last_slash_pos);
 
-    extractor.extractOnlyReferences(path_without_filename, key_values);
+    extractor.extract(path_without_filename, key_values);
 
     return key_values;
 }
