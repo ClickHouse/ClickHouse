@@ -573,7 +573,7 @@ struct InlineEscapingStateHandler : public StateHandlerImpl<true>
         : StateHandlerImpl<true>(std::forward<Args>(args)...) {}
 };
 
-struct ReferencesOnlyStateHandler : public StateHandlerImpl<false>
+struct ReferencesMapStateHandler : public StateHandlerImpl<false>
 {
     /*
      * View based PairWriter, no copies at all
@@ -676,7 +676,7 @@ struct ReferencesOnlyStateHandler : public StateHandlerImpl<false>
     };
 
     template <typename ... Args>
-    explicit ReferencesOnlyStateHandler(Args && ... args)
+    explicit ReferencesMapStateHandler(Args && ... args)
     : StateHandlerImpl<false>(std::forward<Args>(args)...) {}
 };
 

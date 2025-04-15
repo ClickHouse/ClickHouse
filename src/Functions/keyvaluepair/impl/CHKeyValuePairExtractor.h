@@ -163,9 +163,9 @@ struct KeyValuePairExtractorInlineEscaping : extractKV::KeyValuePairExtractor<ex
     }
 };
 
-struct KeyValuePairExtractorReferenceMap : extractKV::KeyValuePairExtractor<extractKV::ReferencesOnlyStateHandler>
+struct KeyValuePairExtractorReferenceMap : extractKV::KeyValuePairExtractor<extractKV::ReferencesMapStateHandler>
 {
-    using StateHandler = extractKV::ReferencesOnlyStateHandler;
+    using StateHandler = extractKV::ReferencesMapStateHandler;
     explicit KeyValuePairExtractorReferenceMap(const extractKV::Configuration & configuration_, std::size_t max_number_of_pairs_)
         : KeyValuePairExtractor(configuration_, max_number_of_pairs_) {}
 
