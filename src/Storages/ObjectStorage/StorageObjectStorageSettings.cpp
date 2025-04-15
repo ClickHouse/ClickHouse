@@ -31,7 +31,10 @@ Explicit table UUID to read metadata for. Ignored if iceberg_metadata_file_path 
 )", 0) \
     DECLARE(Bool, iceberg_recent_metadata_file_by_last_updated_ms_field, false, R"(
 If enabled, the engine would use the metadata file with the most recent last_updated_ms json field. Does not make sense to use with iceberg_metadata_file_path.
-)", 0)
+)", 0) \
+    DECLARE(Bool, iceberg_use_version_hint, false, R"(
+Get latest metadata path from version-hint.text file.
+)", 0) \
 
 // clang-format on
 

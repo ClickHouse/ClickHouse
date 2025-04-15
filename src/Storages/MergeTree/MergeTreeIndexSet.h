@@ -100,7 +100,7 @@ class MergeTreeIndexConditionSet final : public IMergeTreeIndexCondition
 public:
     MergeTreeIndexConditionSet(
         size_t max_rows_,
-        const ActionsDAG * filter_dag,
+        const ActionsDAGWithInversionPushDown & filter_dag,
         ContextPtr context,
         const IndexDescription & index_description);
 
@@ -168,7 +168,7 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-            const ActionsDAG * filter_actions_dag, ContextPtr context) const override;
+        const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     size_t max_rows = 0;
 };

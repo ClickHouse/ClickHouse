@@ -18,9 +18,6 @@
 #include <Functions/indexHint.h>
 #include <Planner/PlannerActionsVisitor.h>
 
-#include <Storages/MergeTree/MergeTreeIndexUtils.h>
-
-
 namespace DB
 {
 
@@ -342,14 +339,14 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSet::getGranuleAndReset()
     return granule;
 }
 
-KeyCondition buildCondition(const IndexDescription & index, const ActionsDAG * filter_actions_dag, ContextPtr context)
+KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
 {
-    return KeyCondition{filter_actions_dag, context, index.column_names, index.expression};
+    return KeyCondition{filter_dag, context, index.column_names, index.expression};
 }
 
 MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     size_t max_rows_,
-    const ActionsDAG * filter_dag,
+    const ActionsDAGWithInversionPushDown & filter_dag,
     ContextPtr context,
     const IndexDescription & index_description)
     : index_name(index_description.name)
@@ -361,21 +358,18 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
         if (!key_columns.contains(name))
             key_columns.insert(name);
 
-    if (!filter_dag)
+    if (!filter_dag.predicate)
         return;
 
-    /// Clone ActionsDAG with re-generated column name for constants.
-    /// DAG from the query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
-    /// DAG from the skip indexes does not use it. This breaks matching by column name sometimes.
-    auto filter_actions_dag = cloneFilterDAGForIndexesAnalysis(*filter_dag);
     std::vector<FutureSetPtr> sets_to_prepare;
-    if (checkDAGUseless(*filter_actions_dag.getOutputs().at(0), context, sets_to_prepare))
+    if (checkDAGUseless(*filter_dag.predicate, context, sets_to_prepare))
         return;
     /// Try to run subqueries, don't use index if failed (e.g. if use_index_for_in_with_subqueries is disabled).
     for (auto & set : sets_to_prepare)
         if (!set->buildOrderedSetInplace(context))
             return;
 
+    auto filter_actions_dag = filter_dag.dag->clone();
     const auto * filter_actions_dag_node = filter_actions_dag.getOutputs().at(0);
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
@@ -755,9 +749,10 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator(const Merge
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
-    const ActionsDAG * filter_actions_dag, ContextPtr context) const
+    const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionSet>(max_rows, filter_actions_dag, context, index);
+    ActionsDAGWithInversionPushDown filter_dag(predicate, context);
+    return std::make_shared<MergeTreeIndexConditionSet>(max_rows, filter_dag, context, index);
 }
 
 MergeTreeIndexPtr setIndexCreator(const IndexDescription & index)

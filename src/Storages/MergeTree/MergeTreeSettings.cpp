@@ -1788,6 +1788,13 @@ namespace ErrorCodes
     - `throw`
     - `drop`
     - `rebuild`
+    DECLARE(String, default_compression_codec, "", R"(
+    Specifies the default compression codec to be used if none is defined for a particular column in the table declaration.
+    Compression codec selecting order for a column:
+        1. Compression codec defined for the column in the table declaration
+        2. Compression codec defined in `default_compression_codec` (this setting)
+        3. Default compression codec defined in `compression` settings
+    Default value: an empty string (not defined).
     )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
