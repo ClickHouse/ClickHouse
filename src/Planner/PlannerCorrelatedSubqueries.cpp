@@ -104,6 +104,9 @@ struct DecorrelationContext
     CorrelatedPlanStepMap correlated_plan_steps;
 };
 
+/// Correlated subquery is represented by implicit dependent join operator.
+/// This function builds a query plan to evaluate correlated subquery by
+/// pushing dependent join down and replacing it with CROSS JOIN.
 QueryPlan decorrelateQueryPlan(
     DecorrelationContext & context,
     QueryPlan::Node * node
@@ -111,6 +114,7 @@ QueryPlan decorrelateQueryPlan(
 {
     if (!context.correlated_plan_steps[node])
     {
+        /// The rest of the query plan doesn't use any correlated columns.
         auto lhs_plan = context.query_plan.clone();
 
         const auto & settings = context.planner_context->getQueryContext()->getSettingsRef();
@@ -230,6 +234,8 @@ void buildExistsResultExpression(
     query_plan.addStep(std::move(expression_step));
 }
 
+/// Remove query plan steps that don't affect the number of rows in the result.
+/// Returns true if the query always returns at least 1 row.
 bool optimizeCorrelatedPlanForExists(QueryPlan & correlated_query_plan)
 {
     auto * node = correlated_query_plan.getRootNode();
@@ -347,11 +353,11 @@ QueryPlan buildLogicalJoin(
  * Thomas Neumann and Alfons Kemper.
  *
  * Original research paper "Unnesting Arbitrary Queries": https://cs.emis.de/LNI/Proceedings/Proceedings241/383.pdf
- * See also a follow up paper "Improving Unnesting of Complex Queries": https://dl.gi.de/items/b9df4765-d1b0-4267-a77c-4ce4ab0ee62d
+ * See also a follow-up paper, "Improving Unnesting of Complex Queries": https://dl.gi.de/items/b9df4765-d1b0-4267-a77c-4ce4ab0ee62d
  *
- * NOTE: ClickHouse does not explicitly build SQL query into relational algebra expression,
- * instead it produces a query plan where almost every step has an analog from relational algebra.
- * This function implements decorrelation algorithm using ClickHouse query plan.
+ * NOTE: ClickHouse does not explicitly build SQL query into relational algebra expression.
+ * Instead, it produces a query plan where almost every step has an analog from relational algebra.
+ * This function implements a decorrelation algorithm using the ClickHouse query plan.
  *
  * TODO: Support scalar correlated subqueries.
  * TODO: Support decorrelation of all kinds of query plan steps.
