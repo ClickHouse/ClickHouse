@@ -4,7 +4,7 @@ SET allow_experimental_full_text_index = 1;
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab (id UInt32, str String, INDEX idx str TYPE gin) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE tab (id UInt32, str String, INDEX idx str TYPE gin) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage=0, min_rows_for_full_part_storage=0;
 INSERT INTO tab VALUES (0, 'a');
 SELECT * FROM tab WHERE str == 'b' AND 1.0;
 
