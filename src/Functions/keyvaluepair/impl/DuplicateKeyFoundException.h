@@ -10,7 +10,7 @@ namespace extractKV
 
 struct DuplicateKeyFoundException : Exception
 {
-    DuplicateKeyFoundException(std::string_view key_) : key(key_) {}
+    explicit DuplicateKeyFoundException(std::string_view key_) : key(key_) {}
 
     std::string_view key;
 };
