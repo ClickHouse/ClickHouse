@@ -367,9 +367,9 @@ private:
 struct NoEscapingStateHandler : public StateHandlerImpl<false>
 {
     /*
-     * View based StringWriter, no temporary copies are used.
+     * View based PairWriter, no temporary copies are used.
      * */
-    class StringWriter
+    class PairWriter
     {
         ColumnString & key_col;
         ColumnString & value_col;
@@ -378,11 +378,11 @@ struct NoEscapingStateHandler : public StateHandlerImpl<false>
         std::string_view value;
 
     public:
-        StringWriter(ColumnString & key_col_, ColumnString & value_col_)
+        PairWriter(ColumnString & key_col_, ColumnString & value_col_)
             : key_col(key_col_), value_col(value_col_)
         {}
 
-        ~StringWriter()
+        ~PairWriter()
         {
             // Make sure that ColumnString invariants are not broken.
             if (!isKeyEmpty())
@@ -469,7 +469,7 @@ struct NoEscapingStateHandler : public StateHandlerImpl<false>
 
 struct InlineEscapingStateHandler : public StateHandlerImpl<true>
 {
-    class StringWriter
+    class PairWriter
     {
         ColumnString & key_col;
         ColumnString::Chars & key_chars;
@@ -480,7 +480,7 @@ struct InlineEscapingStateHandler : public StateHandlerImpl<true>
         UInt64 value_prev_commit_pos;
 
     public:
-        StringWriter(ColumnString & key_col_, ColumnString & value_col_)
+        PairWriter(ColumnString & key_col_, ColumnString & value_col_)
             : key_col(key_col_),
             key_chars(key_col.getChars()),
             key_prev_commit_pos(key_chars.size()),
@@ -489,7 +489,7 @@ struct InlineEscapingStateHandler : public StateHandlerImpl<true>
             value_prev_commit_pos(value_chars.size())
         {}
 
-        ~StringWriter()
+        ~PairWriter()
         {
             // Make sure that ColumnString invariants are not broken.
             if (!isKeyEmpty())
@@ -562,7 +562,7 @@ struct InlineEscapingStateHandler : public StateHandlerImpl<true>
             return std::string_view(key_chars.raw_data() + key_prev_commit_pos, key_chars.raw_data() + key_chars.size());
         }
 
-        std::string_view uncommittedChunk() const
+        std::string_view uncommittedValueChunk() const
         {
             return std::string_view(value_chars.raw_data() + value_prev_commit_pos, value_chars.raw_data() + value_chars.size());
         }
@@ -576,9 +576,9 @@ struct InlineEscapingStateHandler : public StateHandlerImpl<true>
 struct ReferencesOnlyStateHandler : public StateHandlerImpl<false>
 {
     /*
-     * View based StringWriter, no copies at all
+     * View based PairWriter, no copies at all
      * */
-    class StringWriter
+    class PairWriter
     {
         absl::flat_hash_map<std::string_view, std::string_view> & map;
 
@@ -586,11 +586,11 @@ struct ReferencesOnlyStateHandler : public StateHandlerImpl<false>
         std::string_view value;
 
     public:
-        explicit StringWriter(absl::flat_hash_map<std::string_view, std::string_view> & map_)
+        explicit PairWriter(absl::flat_hash_map<std::string_view, std::string_view> & map_)
             : map(map_)
         {}
 
-        ~StringWriter()
+        ~PairWriter()
         {
             // Make sure that ColumnString invariants are not broken.
             if (!isKeyEmpty())

@@ -29,7 +29,7 @@ class KeyValuePairExtractor
     using NextState = DB::extractKV::StateHandler::NextState;
 
 public:
-    using PairWriter = typename StateHandler::StringWriter;
+    using PairWriter = typename StateHandler::PairWriter;
 
     KeyValuePairExtractor(const Configuration & configuration_, uint64_t max_number_of_pairs_)
         : state_handler(StateHandler(configuration_))
@@ -38,7 +38,7 @@ public:
     }
 
 protected:
-    uint64_t extractImpl(std::string_view data, typename StateHandler::StringWriter & pair_writer)
+    uint64_t extractImpl(std::string_view data, typename StateHandler::PairWriter & pair_writer)
     {
         auto state =  State::WAITING_KEY;
 
@@ -145,7 +145,7 @@ struct KeyValuePairExtractorNoEscaping : extractKV::KeyValuePairExtractor<extrac
 
     uint64_t extract(std::string_view data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values)
     {
-        auto pair_writer = typename StateHandler::StringWriter(*keys, *values);
+        auto pair_writer = typename StateHandler::PairWriter(*keys, *values);
         return extractImpl(data, pair_writer);
     }
 };
@@ -158,7 +158,7 @@ struct KeyValuePairExtractorInlineEscaping : extractKV::KeyValuePairExtractor<ex
 
     uint64_t extract(std::string_view data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values)
     {
-        auto pair_writer = typename StateHandler::StringWriter(*keys, *values);
+        auto pair_writer = typename StateHandler::PairWriter(*keys, *values);
         return extractImpl(data, pair_writer);
     }
 };
@@ -171,7 +171,7 @@ struct KeyValuePairExtractorReferenceMap : extractKV::KeyValuePairExtractor<extr
 
     uint64_t extract(std::string_view data, absl::flat_hash_map<std::string_view, std::string_view> & map)
     {
-        auto pair_writer = typename StateHandler::StringWriter(map);
+        auto pair_writer = typename StateHandler::PairWriter(map);
         return extractImpl(data, pair_writer);
     }
 };
