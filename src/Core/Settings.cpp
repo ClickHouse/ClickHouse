@@ -3615,6 +3615,9 @@ If enabled, functions 'least' and 'greatest' return NULL if one of their argumen
     DECLARE(Bool, h3togeo_lon_lat_result_order, false, R"(
 Function 'h3ToGeo' returns (lon, lat) if true, otherwise (lat, lon).
 )", 0) \
+    DECLARE(Bool, geotoh3_lon_lat_input_order, false, R"(
+Function 'geoToH3' accepts (lon, lat) if true, otherwise (lat, lon).
+)", 0) \
     DECLARE(UInt64, max_partitions_per_insert_block, 100, R"(
 Limits the maximum number of partitions in a single inserted block
 and an exception is thrown if the block contains too many partitions.
@@ -5195,6 +5198,9 @@ Possible values:
 )", 0) \
     DECLARE(Bool, query_plan_convert_outer_join_to_inner_join, true, R"(
 Allow to convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values
+)", 0) \
+    DECLARE(Bool, query_plan_merge_filter_into_join_condition, true, R"(
+Allow to merge filter into JOIN condition and convert CROSS JOIN to INNER.
 )", 0) \
     DECLARE(Bool, query_plan_convert_join_to_in, false, R"(
 Allow to convert JOIN to subquery with IN if output columns tied to only left table
