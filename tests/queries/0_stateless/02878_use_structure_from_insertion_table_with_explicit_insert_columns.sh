@@ -18,7 +18,8 @@ rm $CLICKHOUSE_TEST_UNIQUE_NAME.native
 
 $CLICKHOUSE_LOCAL -q "select 'world' as y, 42 as x format Values" > $CLICKHOUSE_TEST_UNIQUE_NAME.values
 $CLICKHOUSE_CLIENT -q "
-create or replace table test_infile (val UInt64, key String) engine=Memory;
+drop table if exists test_infile;
+create table test_infile (val UInt64, key String) engine=Memory;
 insert into test_infile from infile '$CLICKHOUSE_TEST_UNIQUE_NAME.values' FORMAT Values; -- { clientError CANNOT_PARSE_TEXT }
 insert into test_infile (key, val) from infile '$CLICKHOUSE_TEST_UNIQUE_NAME.values' FORMAT Values;
 insert into test_infile (* EXCEPT 'val', * EXCEPT 'key') from infile '$CLICKHOUSE_TEST_UNIQUE_NAME.values' FORMAT Values;
