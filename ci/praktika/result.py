@@ -48,6 +48,7 @@ class Result(MetaClasses.Serializable):
         ERROR = "error"
 
     class Label:
+        REQUIRED = "required"
         NOT_REQUIRED = "not required"
         FLAKY = "flaky"
         BROKEN = "broken"
@@ -288,12 +289,12 @@ class Result(MetaClasses.Serializable):
         return self
 
     def set_label(self, label):
-        if not self.ext["labels"]:
+        if not self.ext.get("labels", None):
             self.ext["labels"] = []
         self.ext["labels"].append(label)
 
-    def set_not_required_label(self):
-        self.set_label(self.Label.NOT_REQUIRED)
+    def set_required_label(self):
+        self.set_label(self.Label.REQUIRED)
 
     def update_sub_result(self, result: "Result", drop_nested_results=False):
         assert self.results, "BUG?"

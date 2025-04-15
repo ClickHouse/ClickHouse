@@ -113,7 +113,7 @@ ENV MINIO_ROOT_PASSWORD="clickhouse"
 RUN chmod 777 /home
 ENV HOME="/home"
 
-RUN npm install -g azurite@3.30.0 \
+RUN npm install -g azurite@3.34.0 \
     && npm install -g tslib && npm install -g node
 
 ENV PYTHONPATH=".:./ci"

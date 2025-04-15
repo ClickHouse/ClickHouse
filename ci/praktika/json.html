@@ -227,9 +227,10 @@
             color: #e0e0e0;
         }
 
-        #theme-toggle {
+        #theme-toggle, #status-filter-toggle {
             cursor: pointer;
             color: white;
+            margin-left: 10px;
         }
 
         #theme-toggle:hover {
@@ -345,6 +346,7 @@
     <div class="left"></div>
     <div class="right"></div>
     <div class="settings">
+        <span id="status-filter-toggle"></span>
         <span id="theme-toggle">🔆️</span>
     </div>
 </footer>
@@ -357,6 +359,70 @@
         } else {
             localStorage.setItem('theme', 'day');
         }
+    }
+
+    function filterRowsByStatus() {
+        const filter = localStorage.getItem('filter');
+        const showOnlyFailures = filter === 'failures';
+        const showOnlyWarnings = filter === 'warnings';
+
+        const rows = document.querySelectorAll('tr[data-status]');
+
+        if (!showOnlyFailures && !showOnlyWarnings) {
+            rows.forEach(row => row.style.display = '');
+            return;
+        }
+        rows.forEach(row => {
+            const status = row.dataset.status?.toLowerCase() || '';
+            const isFailure = status.includes('fail') || status.includes('error');
+            const isWarning = status.includes('pending') || status.includes('running');
+
+            let shouldShow = false;
+
+            if (showOnlyFailures) {
+                shouldShow = isFailure;
+            } else if (showOnlyWarnings) {
+                shouldShow = isWarning || isFailure;
+            }
+
+            row.style.display = shouldShow ? '' : 'none';
+        });
+    }
+
+    function toggleStatusFilter(setValue=false) {
+        if (setValue instanceof Event) {
+            setValue = false;
+        }
+        let current = localStorage.getItem('filter');
+
+        if (!['all', 'failures', 'warnings'].includes(current)) {
+            current = 'all';
+        }
+        let newFilter;
+        if (setValue) {
+            newFilter = current;
+        } else {
+            if (current === 'all') {
+                newFilter = 'warnings';
+            } else if (current === 'warnings') {
+                newFilter = 'failures';
+            } else {
+                newFilter = 'all';
+            }
+        }
+        localStorage.setItem('filter', newFilter);
+        const toggle = document.getElementById('status-filter-toggle');
+        if (toggle) {
+            const greenTick = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgZmlsbD0ibm9uZSIgdmlld0JveD0iMCAwIDE2IDE2Ij48cGF0aCBkPSJNNCw4TDcsMTFMMTIsNSIgc3Ryb2tlPSJncmVlbiIgc3Ryb2tlLXdpZHRoPSIyIiBmaWxsPSJub25lIi8+PC9zdmc+" width="20" height="20" style="vertical-align: middle;">`;
+            const redCross = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgZmlsbD0ibm9uZSIgdmlld0JveD0iMCAwIDE2IDE2Ij48cGF0aCBkPSJNNCw0TDEyLDEyTTEyLDRMNCwxMiIgc3Ryb2tlPSJyZWQiIHN0cm9rZS13aWR0aD0iMiIgZmlsbD0ibm9uZSIvPjwvc3ZnPg==" width="20" height="20" style="vertical-align: middle;">`;
+            const yellowExclamationMark = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDE2IDE2IiBmaWxsPSJub25lIj48cmVjdCB4PSI2LjUiIHk9IjIiIHdpZHRoPSIzIiBoZWlnaHQ9IjgiIGZpbGw9IiNGRkQ3MDAiIHJ4PSIxLjUiLz48Y2lyY2xlIGN4PSI4IiBjeT0iMTIuNSIgcj0iMS41IiBmaWxsPSIjRkZENzAwIi8+PC9zdmc+" width="16" height="16" style="vertical-align: middle;">`;
+            toggle.innerHTML =
+                newFilter === 'failures' ? redCross :
+                    newFilter === 'warnings' ? yellowExclamationMark :
+                        greenTick;
+        }
+
+        filterRowsByStatus();
     }
 
     function toggleStatusBar() {
@@ -382,6 +448,7 @@
     }
 
     document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+    document.getElementById('status-filter-toggle').addEventListener('click', toggleStatusFilter);
 
     function formatTimestamp(timestamp, showDate = true) {
         const date = new Date(timestamp * 1000);
@@ -442,6 +509,18 @@
         if (lowerStatus.includes('run')) return 'status-run';
         if (lowerStatus.includes('error')) return 'status-error';
         return 'status-other';
+    }
+
+    // Color utility
+    function stringToColor(str, dark = false) {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            hash = str.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        const hue = Math.abs(hash % 360);
+        const saturation = dark ? 90 : 60; // Higher = more vivid
+        const lightness = dark ? 45 : 60;  // Slightly darker = more contrast
+        return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
     }
 
     function addFileLinksWidget(links) {
@@ -849,16 +928,6 @@
         }
 
         drawChart(null); // Initial draw
-
-        // Color utility
-        function stringToColor(str) {
-            let hash = 0;
-            for (let i = 0; i < str.length; i++) {
-                hash = str.charCodeAt(i) + ((hash << 5) - hash);
-            }
-            const hue = hash % 360;
-            return `hsl(${hue}, 60%, 60%)`;
-        }
     }
 
     function addTimeTraceWidget(results, statusWidget, originalTask) {
@@ -1083,19 +1152,18 @@
 
     function populateTableRows(tbody, results, nest_level) {
         const currentUrl = new URL(window.location.href);
-
-        // Clear existing rows if re-rendering (used in sorting)
+        // Clear existing rows
         tbody.innerHTML = '';
 
         results.forEach((result, _index) => {
             const row = document.createElement('tr');
+            const labels = result?.ext?.labels;
 
             columns.forEach(column => {
                 const td = document.createElement('td');
                 const value = result[column];
 
                 if (column === 'status') {
-                    // Apply status formatting and make it clickable
                     const span = document.createElement('span');
                     span.className = getStatusClass(value);
                     span.textContent = value;
@@ -1114,14 +1182,12 @@
                         (nest_level === 1 && ["pending", "skipped", "running"].includes(statusValue)) ||
                         (nest_level > 1 && (!Array.isArray(result.results) || result.results.length === 0))
                     ) {
-                        // If status is pending, just show plain text
                         const span = document.createElement('span');
                         span.textContent = value;
                         span.classList.add('disabled');
                         td.classList.add('name-column');
                         td.appendChild(span);
                     } else {
-                        // Create a link for the name field
                         const newUrl = new URL(currentUrl);
                         newUrl.searchParams.set(`name_${nest_level}`, value);
 
@@ -1132,6 +1198,23 @@
                         td.appendChild(link);
                     }
 
+                    if (Array.isArray(labels)) {
+                        labels.forEach(labelStr => {
+                            const label = document.createElement('span');
+                            label.textContent = labelStr;
+                            label.style.marginLeft = '6px';
+                            label.style.padding = '2px 8px';
+                            label.style.backgroundColor = stringToColor(labelStr, true);
+                            label.style.color = 'white';
+                            label.style.fontSize = '12px';
+                            label.style.borderRadius = '8px';
+                            label.style.fontWeight = 'bold';
+                            label.style.display = 'inline-block';
+                            label.style.verticalAlign = 'middle';
+                            td.appendChild(label);
+                        });
+                    }
+
                 } else if (column === 'start_time') {
                     td.classList.add('time-column');
                     td.textContent = value ? formatTimestamp(value, false) : '';
@@ -1139,8 +1222,8 @@
                 } else if (column === 'duration') {
                     td.classList.add('dur-column');
                     td.textContent = value ? formatDuration(value) : '';
-
                 }
+
                 row.appendChild(td);
             });
 
@@ -1604,12 +1687,13 @@
         }
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
         const savedTheme = localStorage.getItem('theme');
         if (savedTheme === 'night') {
             document.body.classList.add('night-theme');
         }
-        init();
+        await init();
+        toggleStatusFilter(true);
     });
 
     function createFavicon() {
