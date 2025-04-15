@@ -29,7 +29,7 @@ void test_read(const auto & handler, std::string_view input, std::string_view ex
 
     auto key = ColumnString::create();
     auto val = ColumnString::create();
-    NoEscapingStateHandler::StringWriter element(*key, *val);
+    NoEscapingStateHandler::PairWriter element(*key, *val);
 
     if constexpr (quoted)
     {
