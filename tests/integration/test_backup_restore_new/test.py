@@ -1816,7 +1816,7 @@ def test_system_backups():
             restore_info.bytes_read + restore_events["RestorePartsSkippedBytes"] == restore_info.total_size
         )
 
-    wait_condition(verify_restore_info, lambda x: x);
+    wait_condition(verify_restore_info, lambda x: x)
 
     # Failed backup.
     backup_name = new_backup_name()
