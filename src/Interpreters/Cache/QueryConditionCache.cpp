@@ -19,10 +19,10 @@ QueryConditionCache::QueryConditionCache(const String & cache_policy, size_t max
 }
 
 void QueryConditionCache::write(
-    const UUID & table_id, const String & part_name, size_t condition_hash,
+    const UUID & table_id, const String & part_name, size_t condition_hash, const String & condition,
     const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark)
 {
-    Key key = {table_id, part_name, condition_hash};
+    Key key = {table_id, part_name, condition_hash, condition};
 
     auto load_func = [&](){ return std::make_shared<Entry>(marks_count); };
     auto [entry, inserted] = cache.getOrSet(key, load_func);
@@ -40,11 +40,12 @@ void QueryConditionCache::write(
 
     LOG_DEBUG(
         logger,
-        "{} entry for table_id: {}, part_name: {}, condition_hash: {}, marks_count: {}, has_final_mark: {}, ranges: {}",
+        "{} entry for table_id: {}, part_name: {}, condition_hash: {}, condition: {}, marks_count: {}, has_final_mark: {}, ranges: {}",
         inserted ? "Inserted" : "Updated",
         table_id,
         part_name,
         condition_hash,
+        condition,
         marks_count,
         has_final_mark,
         toString(mark_ranges));
@@ -52,7 +53,7 @@ void QueryConditionCache::write(
 
 std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(const UUID & table_id, const String & part_name, size_t condition_hash)
 {
-    Key key = {table_id, part_name, condition_hash};
+    Key key = {table_id, part_name, condition_hash, ""};
 
     if (auto entry = cache.get(key))
     {
@@ -130,7 +131,7 @@ size_t QueryConditionCache::KeyHasher::operator()(const Key & key) const
 size_t QueryConditionCache::QueryConditionCacheEntryWeight::operator()(const Entry & entry) const
 {
     /// Estimate the memory size of `std::vector<bool>` (it uses bit-packing internally)
-    size_t dynamic_memory = (entry.matching_marks.capacity() + 7) / 8; /// round up to bytes.
-    return dynamic_memory + sizeof(decltype(entry.matching_marks));
+    size_t memory = (entry.matching_marks.capacity() + 7) / 8; /// round up to bytes.
+    return memory + sizeof(decltype(entry.matching_marks));
 }
 }

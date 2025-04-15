@@ -197,6 +197,11 @@ bool StorageObjectStorage::hasExternalDynamicMetadata() const
     return configuration->hasExternalDynamicMetadata();
 }
 
+IDataLakeMetadata * StorageObjectStorage::getExternalMetadata() const
+{
+    return configuration->getExternalMetadata();
+}
+
 void StorageObjectStorage::updateExternalDynamicMetadata(ContextPtr context_ptr)
 {
     StorageInMemoryMetadata metadata;
@@ -422,6 +427,9 @@ SinkToStoragePtr StorageObjectStorage::write(
                         "Path '{}' contains globs, so the table is in readonly mode",
                         configuration->getPath());
     }
+
+    if (!configuration->supportsWrites())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
 
     if (configuration->withPartitionWildcard())
     {
