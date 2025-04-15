@@ -183,7 +183,7 @@ public:
         {
             throw Exception(ErrorCodes::WASM_ERROR, "cannot grow memory of wasm compartment");
         }
-        return memory.size(store);
+        return static_cast<uint32_t>(memory.size(store));
     }
 
     WasmSizeT getMemorySize() override
@@ -194,7 +194,7 @@ public:
             throw Exception(ErrorCodes::WASM_ERROR, "cannot get memory from wasm instance");
         }
         auto memory = std::get<wasmtime::Memory>(memory_result.value());
-        return memory.size(store);
+        return static_cast<uint32_t>(memory.size(store));
     }
 
     void invoke(std::string_view function_name, const std::vector<WasmVal> & params, std::vector<WasmVal> & returns) override
