@@ -81,7 +81,8 @@ namespace
             if (!tag_outcome.IsSuccess())
                 return {std::nullopt, tag_outcome.GetError()};
 
-            for (const auto & tag : tag_outcome.GetResult().GetTagSet()) {
+            for (const auto & tag : tag_outcome.GetResult().GetTagSet())
+            {
                 object_info.tags[tag.GetKey()] = tag.GetValue();
             }
         }
@@ -103,8 +104,8 @@ ObjectInfo getObjectInfo(
     const String & key,
     const String & version_id,
     bool with_metadata,
-    bool with_tags,
-    bool throw_on_error)
+    bool throw_on_error,
+    bool with_tags)
 {
     auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, with_metadata, with_tags);
     if (object_info)
@@ -129,7 +130,7 @@ size_t getObjectSize(
     const String & version_id,
     bool throw_on_error)
 {
-    return getObjectInfo(client, bucket, key, version_id, {}, {}, throw_on_error).size;
+    return getObjectInfo(client, bucket, key, version_id, {}, throw_on_error, {}).size;
 }
 
 bool objectExists(
