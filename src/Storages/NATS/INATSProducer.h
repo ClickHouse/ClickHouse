@@ -18,7 +18,14 @@ public:
     void produce(const String & message, size_t rows_in_message, const Columns & columns, size_t last_row) override;
     void cancel() noexcept override;
 
+protected:
+    natsConnection * getNativeConnection(){return connection->getConnection();}
+
+    const String & getSubject() const{return subject;}
+
 private:
+    virtual natsStatus publishMessage(const String & message) = 0;
+
     String getProducingTaskName() const override { return "NatsProducingTask"; }
 
     void stopProducingTask() override;

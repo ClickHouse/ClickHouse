@@ -19,7 +19,7 @@
 #include <Storages/MessageQueueSink.h>
 #include <Storages/NATS/NATSJetStreamAsyncConsumer.h>
 #include <Storages/NATS/NATSCoreConsumer.h>
-#include <Storages/NATS/INATSProducer.h>
+#include <Storages/NATS/NATSCoreProducer.h>
 #include <Storages/NATS/NATSSettings.h>
 #include <Storages/NATS/NATSSource.h>
 #include <Storages/NATS/StorageNATS.h>
@@ -449,7 +449,7 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
 
     auto connection_future = event_handler.createConnection(configuration);
 
-    auto producer = std::make_unique<INATSProducer>(connection_future.get(), subject, shutdown_called, log);
+    auto producer = std::make_unique<NATSCoreProducer>(connection_future.get(), subject, shutdown_called, log);
     size_t max_rows = max_rows_per_message;
     /// Need for backward compatibility.
     if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
