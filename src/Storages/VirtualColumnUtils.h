@@ -112,7 +112,6 @@ void addRequestedFileLikeStorageVirtualsToChunk(
 
 using HivePartitioningKeysAndValues = absl::flat_hash_map<std::string_view, std::string_view>;
 
-HivePartitioningKeysAndValues parseHivePartitioningKeysAndValuesRegex(const String & path);
 HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & path);
 
 }
