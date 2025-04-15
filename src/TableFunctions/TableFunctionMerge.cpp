@@ -125,7 +125,7 @@ ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr contex
         source_database_name_or_regexp,
         database_is_regexp,
         source_table_regexp,
-        context->getSettingsRef()[Setting::merge_table_max_tables_to_look_for_schema_inference]);
+        0/* max_tables_to_look feature is not backported */);
     if (res.empty())
         throwNoTablesMatchRegexp(source_database_name_or_regexp, source_table_regexp);
 

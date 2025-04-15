@@ -1401,7 +1401,7 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
                         if  (!granted_select_on_all_tables)
                             access->checkAccess(AccessType::SELECT, iterator->databaseName(), iterator->name(), column_names);
 
-                        auto table_lock = storage->lockForShare(query_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+                        auto table_lock = storage->lockForShare(query_context->getCurrentQueryId(), settings.lock_acquire_timeout);
                         res.emplace_back(iterator->databaseName(), storage, std::move(table_lock), iterator->name());
                     }
             iterator->next();
