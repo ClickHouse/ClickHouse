@@ -34,36 +34,37 @@ FiberStack::FiberStack(size_t stack_size_)
 boost::context::stack_context FiberStack::allocate() const
 {
     size_t num_pages = 1 + (stack_size - 1) / page_size;
-    size_t num_bytes = (num_pages + 1) * page_size; /// Add one page at bottom that will be used as guard-page
+    size_t num_bytes = (num_pages + guarded_pages) * page_size; /// Add one page at bottom that will be used as guard-page
 
     void * data = aligned_alloc(page_size, num_bytes);
 
     if (!data)
         throw DB::ErrnoException(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate FiberStack");
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    /// TODO: make reports on illegal guard page access more clear.
-    /// Currently we will see segfault and almost random stacktrace.
-    try
+    if (guarded_pages)
     {
-        memoryGuardInstall(data, page_size);
+        /// TODO: make reports on illegal guard page access more clear.
+        /// Currently we will see segfault and almost random stacktrace.
+        try
+        {
+            memoryGuardInstall(data, guarded_pages * page_size);
+        }
+        catch (...)
+        {
+            free(data);
+            throw;
+        }
     }
-    catch (...)
-    {
-        free(data);
-        throw;
-    }
-#endif
 
     /// Do not count guard page in memory usage.
-    auto trace = CurrentMemoryTracker::alloc(num_pages * page_size);
+    auto trace = CurrentMemoryTracker::alloc(num_bytes - guarded_pages * page_size);
     trace.onAlloc(data, num_pages * page_size);
 
     boost::context::stack_context sctx;
     sctx.size = num_bytes;
     sctx.sp = static_cast< char * >(data) + sctx.size;
 #if defined(BOOST_USE_VALGRIND)
-    sctx.valgrind_stack_id = VALGRIND_STACK_REGISTER(sctx.sp, vp);
+    sctx.valgrind_stack_id = VALGRIND_STACK_REGISTER(sctx.sp, data);
 #endif
     return sctx;
 }
@@ -75,13 +76,12 @@ void FiberStack::deallocate(boost::context::stack_context & sctx) const
 #endif
     void * data = static_cast< char * >(sctx.sp) - sctx.size;
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
-        memoryGuardRemove(data, page_size);
-#endif
+    if (guarded_pages)
+        memoryGuardRemove(data, guarded_pages * page_size);
 
     free(data);
 
     /// Do not count guard page in memory usage.
-    auto trace = CurrentMemoryTracker::free(sctx.size - page_size);
+    auto trace = CurrentMemoryTracker::free(sctx.size - guarded_pages * page_size);
     trace.onFree(data, sctx.size - page_size);
 }
