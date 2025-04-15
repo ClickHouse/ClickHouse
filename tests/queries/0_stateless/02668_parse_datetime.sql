@@ -234,10 +234,10 @@ select parseDateTime64('2300-01-01 00:00:00', '%Y-%m-%d %H:%i:%s'); -- { serverE
 -- -------------------------------------------------------------------------------------------------------------------------
 
 -- Test parseDateTime should ignore leading spaces with %e
-SELECT parseDateTime('1/12/2024', '%e/%m/%Y') SETTINGS parsedatetime_dayofmonth_keep_leading_spaces=0 = toDateTime('2024-12-01 00:00:00', 0);
+SELECT parseDateTime('1/12/2024', '%e/%m/%Y') SETTINGS parsedatetime_parse_without_leading_space=0 = toDateTime('2024-12-01 00:00:00', 0);
 
 -- Legacy behaviour: Test parseDateTime should return an error with %e when parsing a single digit date
-SELECT parseDateTime('1/12/2024', '%e/%m/%Y') SETTINGS parsedatetime_dayofmonth_keep_leading_spaces=1; -- { serverError CANNOT_PARSE_DATETIME }
+SELECT parseDateTime('1/12/2024', '%e/%m/%Y') SETTINGS parsedatetime_parse_without_leading_space=1; -- { serverError CANNOT_PARSE_DATETIME }
 
 
 -- { echoOff }
