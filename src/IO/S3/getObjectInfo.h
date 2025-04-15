@@ -26,8 +26,8 @@ ObjectInfo getObjectInfo(
     const String & key,
     const String & version_id = {},
     bool with_metadata = false,
-    bool with_tags = false,
-    bool throw_on_error = true);
+    bool throw_on_error = true,
+    bool with_tags = false);
 
 size_t getObjectSize(
     const S3::Client & client,
