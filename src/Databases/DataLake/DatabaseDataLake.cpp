@@ -167,10 +167,10 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
                 Context::getGlobalContextInstance());
+            break;
 #else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot use 'hive' database engine: ClickHouse was compiled without USE_HIVE built option");
 #endif
-            break;
         }
     }
     return catalog_impl;
