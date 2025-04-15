@@ -13,10 +13,11 @@
 #include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/ISink.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/Pipe.h>
@@ -93,6 +94,9 @@ bool ProjectionDescription::operator==(const ProjectionDescription & other) cons
     return name == other.name && definition_ast->formatWithSecretsOneLine() == other.definition_ast->formatWithSecretsOneLine();
 }
 
+namespace
+{
+
 /// Fake storage used to build projection metadata
 class StorageProjectionSource final : public IStorage
 {
@@ -126,6 +130,74 @@ public:
         return Pipe(std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
     }
 };
+
+/// Provides source data for the projection pipeline
+class ProjectionDataSource : public ISource
+{
+public:
+    explicit ProjectionDataSource(Block block)
+        : ISource(block.cloneEmpty())
+        , chunk(block.getColumns(), block.rows())
+    {
+    }
+
+    String getName() const override { return "ProjectionDataSource"; }
+
+    /// Avoid tracking read progress for projection calculation pipeline.
+    std::optional<ReadProgress> getReadProgress() override { return std::nullopt; }
+
+protected:
+    Chunk generate() override { return std::move(chunk); }
+
+private:
+    Chunk chunk;
+};
+
+/// Collects processed data from the projection pipeline into a single chunk,
+/// Enforces that projections cannot increase the number of rows beyond the original input.
+class ProjectionDataSink : public ISink
+{
+public:
+    ProjectionDataSink(Block header, size_t max_rows_allowed_)
+        : ISink(std::move(header))
+        , max_rows_allowed(max_rows_allowed_)
+    {
+    }
+
+    String getName() const override { return "ProjectionDataSink"; }
+
+    Columns detachAccumulatedColumns() { return accumulated_chunk.detachColumns(); }
+
+protected:
+    void consume(Chunk chunk) override
+    {
+        num_rows += chunk.getNumRows();
+        if (num_rows > max_rows_allowed)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection cannot increase the number of rows in a block. It's a bug");
+
+        if (!accumulated_chunk)
+        {
+            accumulated_chunk = std::move(chunk);
+            return;
+        }
+
+        auto mutable_columns = accumulated_chunk.mutateColumns();
+        for (size_t i = 0, size = mutable_columns.size(); i < size; ++i)
+        {
+            const auto source_column = chunk.getColumns()[i];
+            mutable_columns[i]->insertRangeFrom(*source_column, 0, source_column->size());
+        }
+
+        accumulated_chunk.setColumns(std::move(mutable_columns), num_rows);
+    }
+
+private:
+    Chunk accumulated_chunk;
+    size_t num_rows = 0;
+    const size_t max_rows_allowed;
+};
+
+}
 
 ProjectionDescription
 ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context)
@@ -396,7 +468,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context, 
     auto builder = InterpreterSelectQuery(
                        query_ast_copy ? query_ast_copy : query_ast,
                        mut_context,
-                       Pipe(std::make_shared<SourceFromSingleChunk>(std::move(source_block))),
+                       Pipe(std::make_shared<ProjectionDataSource>(std::move(source_block))),
                        SelectQueryOptions{
                            type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
                                                                        : QueryProcessingStage::WithMergeableState}
@@ -404,22 +476,15 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context, 
                            .ignoreSettingConstraints())
                        .buildQueryPipeline();
     builder.resize(1);
+
     // Generate aggregated blocks with rows less or equal than the original block.
     // There should be only one output block after this transformation.
-
-    builder.addTransform(std::make_shared<PlanSquashingTransform>(builder.getHeader(), block.rows(), 0));
-    builder.addTransform(std::make_shared<ApplySquashingTransform>(builder.getHeader(), block.rows(), 0));
-
+    auto sink = std::make_shared<ProjectionDataSink>(builder.getHeader(), block.rows());
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
-    PullingPipelineExecutor executor(pipeline);
-    Block projection_block;
-    executor.pull(projection_block);
-    if (!projection_block)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout while calculating Projection block");
-
-    if (executor.pull(projection_block))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection cannot increase the number of rows in a block. It's a bug");
-
+    pipeline.complete(sink);
+    CompletedPipelineExecutor executor(pipeline);
+    executor.execute();
+    auto projection_block = sink->getPort().getHeader().cloneWithColumns(sink->detachAccumulatedColumns());
     chassert(projection_block.rows() > 0);
 
     /// Rename parent _part_offset to _parent_part_offset column
