@@ -8,17 +8,19 @@ set do_not_merge_across_partitions_select_final=1;
 
 truncate table system.query_log;
 
-select count() from 03274_prewhere_is_deleted final SETTINGS log_comment='final_query';
+select count() from 03274_prewhere_is_deleted final SETTINGS log_comment='3274_final_query';
 
 -- check that it works for queries that already have an explicit WHERE
-select count() from 03274_prewhere_is_deleted final where number > 100 SETTINGS log_comment='final_query';
+select count() from 03274_prewhere_is_deleted final where number > 100 SETTINGS log_comment='3274_final_query';
 
 -- check that it works for queries that already have an explicit PREWHERE
-select count() from 03274_prewhere_is_deleted final prewhere number > 100 SETTINGS log_comment='final_query';
+select count() from 03274_prewhere_is_deleted final prewhere number > 100 SETTINGS log_comment='3274_final_query';
 
 system flush logs;
 
 -- should be zero in case the optimization worked
-SELECT ProfileEvents['ReplacingSortedMilliseconds'] FROM system.query_log WHERE current_database = currentDatabase() AND event_time > now() - 600 and log_comment = 'final_query';
+SELECT sum(ProfileEvents['ReplacingSortedMilliseconds']) FROM system.query_log WHERE current_database = currentDatabase() AND log_comment = '3274_final_query';
+
+truncate table system.query_log;
 
 drop table if exists 03274_prewhere_is_deleted;
