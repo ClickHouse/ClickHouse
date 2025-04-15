@@ -3051,23 +3051,22 @@ CONV_FN(CreateTable, create_table)
     }
 }
 
-CONV_FN(SQLObjectName, dt)
+CONV_FN(SQLObjectName, son)
 {
-    if (dt.has_est())
+    using SQLObjectNameType = SQLObjectName::ObjnOneofCase;
+    switch (son.objn_oneof_case())
     {
-        ExprSchemaTableToString(ret, dt.est());
-    }
-    else if (dt.has_database())
-    {
-        DatabaseToString(ret, dt.database());
-    }
-    else if (dt.has_function())
-    {
-        FunctionToString(ret, dt.function());
-    }
-    else
-    {
-        ret += "t0";
+        case SQLObjectNameType::kEst:
+            ExprSchemaTableToString(ret, son.est());
+            break;
+        case SQLObjectNameType::kDatabase:
+            DatabaseToString(ret, son.database());
+            break;
+        case SQLObjectNameType::kFunction:
+            FunctionToString(ret, son.function());
+            break;
+        default:
+            ret += "t0";
     }
 }
 

@@ -3178,7 +3178,7 @@ enum SQLObject {
 }
 
 message SQLObjectName {
-    oneof drop_oneof {
+    oneof objn_oneof {
         ExprSchemaTable est = 1;
         Database database = 2;
         Function function = 3;
