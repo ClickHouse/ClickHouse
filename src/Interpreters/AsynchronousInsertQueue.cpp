@@ -963,7 +963,9 @@ try
         LOG_DEBUG(log, "Flushed {} rows, {} bytes for query '{}'", num_rows, num_bytes, key.query_str);
         queue_shard_flush_time_history.updateWithCurrentTime();
 
-        logQueryFinish(query_log_elem, insert_context, key.query, pipeline, /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, internal);
+        bool pulling_pipeline = false;
+        logQueryFinish(
+            query_log_elem, insert_context, key.query, pipeline, pulling_pipeline, query_span, QueryResultCacheUsage::None, internal);
     };
 
     try

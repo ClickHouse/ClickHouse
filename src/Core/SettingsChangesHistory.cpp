@@ -66,14 +66,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
-        addSettingsChanges(settings_changes_history, "25.5",
-        {
-            {"secondary_indices_enable_bulk_filtering", false, true, "A new algorithm for filtering by data skipping indices"},
-            {"implicit_table_at_top_level", "", "", "A new setting, used in clickhouse-local"},
-        });
         addSettingsChanges(settings_changes_history, "25.4",
         {
-            /// Release closed. Please use 25.5
             {"allow_materialized_view_with_bad_select", true, false, "Don't allow creating MVs referencing nonexistent columns or tables"},
             {"query_plan_optimize_lazy_materialization", false, true, "Added new setting to use query plan for lazy materialization optimisation"},
             {"query_plan_max_limit_for_lazy_materialization", 10, 10, "Added new setting to control maximum limit value that allows to use query plan for lazy materialization optimisation. If zero, there is no limit"},
@@ -85,7 +79,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_special_bool_values_inside_variant", true, false, "Don't allow special bool values during Variant type parsing"},
             {"cast_string_to_variant_use_inference", true, true, "New setting to enable/disable types inference during CAST from String to Variant"},
             {"distributed_cache_read_request_max_tries", 20, 20, "New setting"},
-            {"query_condition_cache_store_conditions_as_plaintext", false, false, "New setting"},
             {"min_os_cpu_wait_time_ratio_to_throw", 0, 2, "New setting"},
             {"max_os_cpu_wait_time_ratio_to_throw", 0, 6, "New setting"},
             {"query_plan_merge_filter_into_join_condition", false, true, "Added new setting to merge filter into join condition"},
@@ -108,9 +101,14 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_database_unity_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'"},
             {"allow_experimental_database_glue_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'"},
             {"use_page_cache_with_distributed_cache", false, false, "New setting"},
+            {"use_iceberg_metadata_files_cache", true, true, "New setting"},
             {"use_query_condition_cache", false, false, "New setting."},
+            {"query_plan_join_shard_by_pk_ranges", false, false, "New setting"},
+            {"iceberg_timestamp_ms", 0, 0, "New setting."},
+            {"iceberg_snapshot_id", 0, 0, "New setting."},
             {"parallel_replicas_for_cluster_engines", false, true, "New setting."},
             /// Release closed. Please use 25.4
+            {"use_local_cache_for_remote_storage", true, false, "Obsolete setting."},
         });
         addSettingsChanges(settings_changes_history, "25.2",
         {
@@ -710,10 +708,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "25.5",
-        {
-            {"default_compression_codec", "", "", "New setting"},
-        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",
         {
             /// Release closed. Please use 25.5
@@ -723,7 +717,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"max_postpone_time_for_failed_replicated_merges_ms", 1ULL * 60 * 1000, 1ULL * 60 * 1000, "Added new setting to enable postponing merge tasks in the replication queue."},
             {"max_postpone_time_for_failed_replicated_tasks_ms", 5ULL * 60 * 1000, 5ULL * 60 * 1000, "Added new setting to enable postponing tasks in the replication queue."},
             {"allow_summing_columns_in_partition_or_order_key", true, false, "New setting to allow summing of partition or sorting key columns"},
-            /// Release closed. Please use 25.5
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.3",
         {

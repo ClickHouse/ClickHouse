@@ -69,9 +69,6 @@ class Labels:
 
     CI_PERFORMANCE = "ci-performance"
 
-    CI_INTEGRATION = "ci-integration-test"
-    CI_FUNCTIONAL = "ci-functional-test"
-
     # automatic backport for critical bug fixes
     AUTO_BACKPORT = {"pr-critical-bugfix"}
 
