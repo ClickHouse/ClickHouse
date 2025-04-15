@@ -9,7 +9,8 @@ CREATE TABLE t
     INDEX inv_idx str TYPE gin(0) GRANULARITY 1
 )
 ENGINE = MergeTree
-ORDER BY key;
+ORDER BY key
+SETTINGS min_bytes_for_full_part_storage = 0;
 
 INSERT INTO t VALUES (1, 'Hello World');
 
