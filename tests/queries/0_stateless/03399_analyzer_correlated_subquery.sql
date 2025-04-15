@@ -44,4 +44,5 @@ WHERE (age = 50) OR exists((
     WHERE u1.age != u2.age
 ))
 ORDER BY ALL
-SETTINGS allow_experimental_correlated_subqueries = 1; -- { serverError NOT_IMPLEMENTED }
+FORMAT Null
+SETTINGS allow_experimental_correlated_subqueries = 1;

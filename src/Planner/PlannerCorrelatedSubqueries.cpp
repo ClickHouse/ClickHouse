@@ -3,10 +3,8 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
 
-#include "Common/Exception.h"
-#include "Common/logger_useful.h"
-#include "Common/Logger.h"
-#include "Common/typeid_cast.h"
+#include <Common/Exception.h>
+#include <Common/typeid_cast.h>
 
 #include <Core/Joins.h>
 #include <Core/Settings.h>
@@ -15,6 +13,8 @@
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinInfo.h>
+
+#include <Parsers/SelectUnionMode.h>
 
 #include <Planner/Planner.h>
 #include <Planner/PlannerActionsVisitor.h>
@@ -26,6 +26,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/UnionStep.h>
 
 #include <memory>
 #include <string_view>
@@ -194,6 +195,27 @@ QueryPlan decorrelateQueryPlan(
         decorrelated_query_plan.addStep(std::move(node->step));
         return decorrelated_query_plan;
     }
+    if (auto * union_step = typeid_cast<UnionStep *>(node->step.get()))
+    {
+        auto decorrelated_lhs_plan = decorrelateQueryPlan(context, node->children.front());
+        auto decorrelated_rhs_plan = decorrelateQueryPlan(context, node->children.back());
+
+        Headers query_plans_headers{ decorrelated_lhs_plan.getCurrentHeader(), decorrelated_rhs_plan.getCurrentHeader() };
+
+        std::vector<QueryPlanPtr> child_plans;
+        child_plans.emplace_back(std::make_unique<QueryPlan>(std::move(decorrelated_lhs_plan)));
+        child_plans.emplace_back(std::make_unique<QueryPlan>(std::move(decorrelated_rhs_plan)));
+
+        Block union_common_header = buildCommonHeaderForUnion(query_plans_headers, SelectUnionMode::UNION_ALL); // Union mode doesn't matter here
+        addConvertingToCommonHeaderActionsIfNeeded(child_plans, union_common_header, query_plans_headers);
+
+        union_step->updateInputHeaders(std::move(query_plans_headers));
+
+        QueryPlan result_plan;
+        result_plan.unitePlans(std::move(node->step), std::move(child_plans));
+
+        return result_plan;
+    }
     throw Exception(
         ErrorCodes::NOT_IMPLEMENTED,
         "Cannot decorrelate query, because '{}' step is not supported",
@@ -263,10 +285,6 @@ bool optimizeCorrelatedPlanForExists(QueryPlan & correlated_query_plan)
     if (node != correlated_query_plan.getRootNode())
     {
         correlated_query_plan = correlated_query_plan.extractSubplan(node);
-        LOG_DEBUG(
-            getLogger(__func__),
-            "Simplified correlated subquery plan for EXISTS:\n{}",
-            dumpQueryPlan(correlated_query_plan));
     }
     return false;
 }

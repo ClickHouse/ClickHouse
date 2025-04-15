@@ -35,6 +35,12 @@ String dumpQueryPipeline(const QueryPlan & query_plan);
 /// Build common header for UNION query
 Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode union_mode);
 
+/// Add converting to common header actions if needed for each plan
+void addConvertingToCommonHeaderActionsIfNeeded(
+    std::vector<std::unique_ptr<QueryPlan>> & query_plans,
+    const Block & union_common_header,
+    Blocks & query_plans_headers);
+
 /// Convert query node to ASTSelectQuery
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node);
 

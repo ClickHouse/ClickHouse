@@ -42,9 +42,11 @@
 
 #include <Core/Settings.h>
 
-#include <Planner/PlannerActionsVisitor.h>
-#include <Planner/CollectTableExpressionData.h>
 #include <Planner/CollectSets.h>
+#include <Planner/CollectTableExpressionData.h>
+#include <Planner/PlannerActionsVisitor.h>
+
+#include <Processors/QueryPlan/ExpressionStep.h>
 
 #include <stack>
 
@@ -134,6 +136,30 @@ Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode 
     }
 
     return common_header;
+}
+
+void addConvertingToCommonHeaderActionsIfNeeded(
+    std::vector<std::unique_ptr<QueryPlan>> & query_plans,
+    const Block & union_common_header,
+    Blocks & query_plans_headers)
+{
+    size_t queries_size = query_plans.size();
+    for (size_t i = 0; i < queries_size; ++i)
+    {
+        auto & query_node_plan = query_plans[i];
+        if (blocksHaveEqualStructure(query_node_plan->getCurrentHeader(), union_common_header))
+            continue;
+
+        auto actions_dag = ActionsDAG::makeConvertingActions(
+            query_node_plan->getCurrentHeader().getColumnsWithTypeAndName(),
+            union_common_header.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Position);
+        auto converting_step = std::make_unique<ExpressionStep>(query_node_plan->getCurrentHeader(), std::move(actions_dag));
+        converting_step->setStepDescription("Conversion before UNION");
+        query_node_plan->addStep(std::move(converting_step));
+
+        query_plans_headers[i] = query_node_plan->getCurrentHeader();
+    }
 }
 
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node)
