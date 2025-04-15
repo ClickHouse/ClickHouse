@@ -712,7 +712,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.5",
         {
-            {"secondary_indices_on_columns_alter", "throw", "throw", "New setting"}
+            {"secondary_indices_on_columns_alter", "throw", "throw", "New setting"},
             {"default_compression_codec", "", "", "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",
