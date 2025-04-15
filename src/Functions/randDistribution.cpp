@@ -342,7 +342,7 @@ Returns a random number from the uniform distribution in the specified range.
 │    7.177741903868262 │
 │    6.483347380953762 │
 │    6.122286382885112 │
-└──────────────────────┘                
+└──────────────────────┘
                 )"
             }
         },
@@ -356,13 +356,13 @@ Returns a random number from the normal distribution.
         )",
         .syntax="randNormal(mean, stddev)",
         .arguments={
-            {"mean", "Mean value of distribution. `Float64`"}, 
+            {"mean", "Mean value of distribution. `Float64`"},
             {"stddev", "[standard deviation](https://en.wikipedia.org/wiki/Standard_deviation) of the distribution. `Float64`."}
         },
         .returned_value="Random number. [Float64](../data-types/float.md).",
         .examples{
             {
-                "Typical usage", 
+                "Typical usage",
                 "SELECT randNormal(10, 2) FROM numbers(5)",
                 R"(
 ┌──randNormal(10, 2)─┐
@@ -371,7 +371,7 @@ Returns a random number from the normal distribution.
 │ 10.801887062682981 │
 │ 4.5220192605895315 │
 │ 10.901239123982567 │
-└────────────────────┘                
+└────────────────────┘
                 )"
             }
         },
@@ -402,7 +402,7 @@ Accepts two parameters - mean and standard deviation.
 │  6.110868203189557e42 │
 │  9.912675872925529e39 │
 │ 2.3564708490552458e42 │
-└───────────────────────┘                
+└───────────────────────┘
                 )"}
         },
         .category=FunctionDocumentation::Category::RandomNumber
@@ -431,7 +431,7 @@ Accepts one parameter - lambda value.
 │             10.809402553207766 │
 │              15.63959406553284 │
 │             1.8148392319860158 │
-└────────────────────────────────┘                
+└────────────────────────────────┘
                 )"
             }
         },
@@ -460,7 +460,7 @@ Returns a random number from the chi-squared distribution (a distribution of a s
 │   2.71785015634699 │
 │ 11.128188665931908 │
 │  4.902063104425469 │
-└────────────────────┘                
+└────────────────────┘
                 )"
             }
         },
@@ -488,7 +488,7 @@ Returns a random number from the t-distribution.
 │ -0.28192176076784664 │
 │   0.2508897721303792 │
 │  -2.7858432909761186 │
-└──────────────────────┘                
+└──────────────────────┘
                 )"
             }
         },
@@ -520,7 +520,7 @@ Accepts two parameters - degrees of freedom.
 │ 0.22207610901168987 │
 │  0.7953362728449572 │
 │ 0.19278885985221572 │
-└─────────────────────┘                
+└─────────────────────┘
                 )"
             }
         },
@@ -581,7 +581,7 @@ Accepts two parameters - number of experiments and probability of success in eac
 │                      76 │
 │                      77 │
 │                      80 │
-└─────────────────────────┘                
+└─────────────────────────┘
                 )"
             }
         },
@@ -612,7 +612,7 @@ Accepts two parameters - number of experiments and probability of success in eac
 │                              39 │
 │                              40 │
 │                              50 │
-└─────────────────────────────────┘                
+└─────────────────────────────────┘
                 )"
             }
         },
@@ -642,7 +642,7 @@ Accepts one parameter - the mean number of occurrences.
 │               7 │
 │              10 │
 │               6 │
-└─────────────────┘                
+└─────────────────┘
                 )"
             }
         },

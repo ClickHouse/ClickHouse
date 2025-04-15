@@ -84,8 +84,8 @@ The function returns a value of type FixedString(26).
         .syntax="generateULID([x])",
         .arguments={
             {"x", R"(
-Expression resulting in any of the supported data types. The resulting value is discarded, but the expression itself if used for bypassing common 
-subexpression elimination if the function is called multiple times in one query. Optional parameter.            
+Expression resulting in any of the supported data types. The resulting value is discarded, but the expression itself if used for bypassing common
+subexpression elimination if the function is called multiple times in one query. Optional parameter.
             )"
             }
         },

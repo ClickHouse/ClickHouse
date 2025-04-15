@@ -82,7 +82,7 @@ SELECT * FROM fuzzJSON(json_fuzzer) LIMIT 3;
                     R"(
 {"52Xz2Zd4vKNcuP2":true}
 {"UPbOhOQAdPKIg91":3405264103600403024}
-{"X0QUWu8yT":[]}                    
+{"X0QUWu8yT":[]}
                     )"
                 }
             },

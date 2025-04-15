@@ -47,12 +47,12 @@ The list of "insignificant" second-level domains and other implementation detail
                 R"(
 SELECT
     firstSignificantSubdomain('http://user:password@example.com:8080/path?query=value#fragment'),
-    firstSignificantSubdomainRFC('http://user:password@example.com:8080/path?query=value#fragment');                
+    firstSignificantSubdomainRFC('http://user:password@example.com:8080/path?query=value#fragment');
                 )",
                 R"(
 ┌─firstSignificantSubdomain('http://user:password@example.com:8080/path?query=value#fragment')─┬─firstSignificantSubdomainRFC('http://user:password@example.com:8080/path?query=value#fragment')─┐
 │                                                                                              │ example                                                                                         │
-└──────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────┘                
+└──────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────┘
                 )"
             }
         },

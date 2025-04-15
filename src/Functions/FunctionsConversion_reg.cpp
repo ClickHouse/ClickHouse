@@ -35,11 +35,11 @@ Supported arguments:
     FunctionDocumentation::Examples examples_toBFloat16 = {{"typical", "SELECT toBFloat16(12.3::Float32);", "12.3125"}};
     FunctionDocumentation::Category categories_toBFloat16 = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toBFloat16 = {
-        description_toBFloat16, 
-        syntax_toBFloat16, 
-        arguments_toBFloat16, 
-        returned_value_toBFloat16, 
-        examples_toBFloat16, 
+        description_toBFloat16,
+        syntax_toBFloat16,
+        arguments_toBFloat16,
+        returned_value_toBFloat16,
+        examples_toBFloat16,
         categories_toBFloat16
     };
 

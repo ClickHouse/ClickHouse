@@ -183,7 +183,7 @@ SELECT jsonMergePatch('{"a":1}', '{"name": "joey"}', '{"name": "tom"}', '{"name"
             )", R"(
 ┌─res───────────────────┐
 │ {"a":1,"name":"zoey"} │
-└───────────────────────┘        
+└───────────────────────┘
             )"}
         },
         .category=FunctionDocumentation::Category::JSON

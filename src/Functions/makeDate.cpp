@@ -750,7 +750,7 @@ The output is undefined if the input does not encode a valid Date value.
                     R"(
 ┌─YYYYMMDDToDate(20250412)─┐
 │               2025-04-12 │
-└──────────────────────────┘                    
+└──────────────────────────┘
                     )"
                 }
             },
@@ -775,7 +775,7 @@ Like function `YYYYMMDDToDate()` but produces a Date32.
                     R"(
 ┌─YYYYMMDDToDate32(20250412)─┐
 │                 2025-04-12 │
-└────────────────────────────┘                
+└────────────────────────────┘
                     )"
                 }
             },
@@ -800,7 +800,7 @@ This functions is the opposite of function `toYYYYMMDD()`.
                     "Usage example",
                     "SELECT YYYYMMDDhhmmssToDateTime(20230911131415)",
                     R"(
-2023-09-11 13:14:15.000                
+2023-09-11 13:14:15.000
                     )"
                 }
             },
@@ -824,7 +824,7 @@ Accepts an additional, optional `precision` parameter after the `timezone` param
                     "Usage example",
                     "SELECT YYYYMMDDhhmmssToDateTime64(20230911131415)",
                     R"(
-2023-09-11 13:14:15.000                
+2023-09-11 13:14:15.000
                     )"
                 }
             },

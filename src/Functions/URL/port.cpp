@@ -150,12 +150,12 @@ Returns the port or `default_port` if there is no port in the URL (or in case of
             {
                 "Usage example",
                 R"(
-SELECT port('http://paul@www.example.com:80/');              
+SELECT port('http://paul@www.example.com:80/');
                 )",
                 R"(
 ┌─port('http://paul@www.example.com:80/')─┐
 │                                      80 │
-└─────────────────────────────────────────┘               
+└─────────────────────────────────────────┘
                 )"
             }
         },
@@ -178,12 +178,12 @@ Similar to `port`, but conforms to RFC 3986.
                 R"(
 SELECT
     port('http://user:password@example.com:8080'),
-    portRFC('http://user:password@example.com:8080');                
+    portRFC('http://user:password@example.com:8080');
                 )",
                 R"(
 ┌─port('http://user:password@example.com:8080')─┬─portRFC('http://user:password@example.com:8080')─┐
 │                                             0 │                                             8080 │
-└───────────────────────────────────────────────┴──────────────────────────────────────────────────┘                
+└───────────────────────────────────────────────┴──────────────────────────────────────────────────┘
                 )"
             }
         },

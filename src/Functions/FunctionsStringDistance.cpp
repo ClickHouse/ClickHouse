@@ -531,7 +531,7 @@ REGISTER_FUNCTION(StringDistance)
                 {"", "SELECT byteHammingDistance('karolin', 'kathrin');", R"(
 ┌─byteHammingDistance('karolin', 'kathrin')─┐
 │                                         3 │
-└───────────────────────────────────────────┘                    
+└───────────────────────────────────────────┘
                 )"}
             },
             .category=FunctionDocumentation::Category::String
@@ -551,7 +551,7 @@ REGISTER_FUNCTION(StringDistance)
                 {"", "SELECT editDistance('clickhouse', 'mouse');", R"(
 ┌─editDistance('clickhouse', 'mouse')─┐
 │                                   6 │
-└─────────────────────────────────────┘                  
+└─────────────────────────────────────┘
                 )"}
             },
             .category=FunctionDocumentation::Category::String
@@ -571,7 +571,7 @@ REGISTER_FUNCTION(StringDistance)
                 {"", "SELECT editDistanceUTF8('我是谁', '我是我');", R"(
 ┌─editDistanceUTF8('我是谁', '我是我')──┐
 │                                   1 │
-└─────────────────────────────────────┘                
+└─────────────────────────────────────┘
                 )"}
             },
             .category=FunctionDocumentation::Category::String
@@ -591,7 +591,7 @@ REGISTER_FUNCTION(StringDistance)
                 {"", "SELECT damerauLevenshteinDistance('clickhouse', 'mouse');", R"(
 ┌─damerauLevenshteinDistance('clickhouse', 'mouse')─┐
 │                                                 6 │
-└───────────────────────────────────────────────────┘              
+└───────────────────────────────────────────────────┘
                 )"}
             },
             .category=FunctionDocumentation::Category::String
@@ -610,7 +610,7 @@ REGISTER_FUNCTION(StringDistance)
                 {"", "SELECT stringJaccardIndex('clickhouse', 'mouse');", R"(
 ┌─stringJaccardIndex('clickhouse', 'mouse')─┐
 │                                       0.4 │
-└───────────────────────────────────────────┘             
+└───────────────────────────────────────────┘
                 )"}
             },
             .category=FunctionDocumentation::Category::String
@@ -628,7 +628,7 @@ REGISTER_FUNCTION(StringDistance)
                 {"", "SELECT stringJaccardIndex('我是谁', '我是我');", R"(
 ┌─stringJaccar⋯, '我是我') ─┐
 │                    0.625 │
-└──────────────────────────┘            
+└──────────────────────────┘
                 )"}
             },
             .category=FunctionDocumentation::Category::String
@@ -647,7 +647,7 @@ REGISTER_FUNCTION(StringDistance)
                 {"", "SELECT jaroSimilarity('clickhouse', 'click');", R"(
 ┌─jaroSimilarity('clickhouse', 'click')─┐
 │                    0.8333333333333333 │
-└───────────────────────────────────────┘       
+└───────────────────────────────────────┘
                 )"}
             },
             .category=FunctionDocumentation::Category::String
@@ -666,7 +666,7 @@ REGISTER_FUNCTION(StringDistance)
                 {"", "SELECT jaroWinklerSimilarity('clickhouse', 'click');", R"(
 ┌─jaroWinklerSimilarity('clickhouse', 'click')─┐
 │                           0.8999999999999999 │
-└──────────────────────────────────────────────┘       
+└──────────────────────────────────────────────┘
                 )"}
             },
             .category=FunctionDocumentation::Category::String

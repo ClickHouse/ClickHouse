@@ -173,34 +173,34 @@ A key-value pair consists of a key followed by a `key_value_delimiter` and a val
         {
             "Simple case",
             R"(
-SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv            
+SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
             )",
             R"(
 ┌─kv──────────────────────────────────────────────────────────────────────┐
 │ {'name':'neymar','age':'31','team':'psg','nationality':'brazil'}        │
-└─────────────────────────────────────────────────────────────────────────┘            
+└─────────────────────────────────────────────────────────────────────────┘
             )"
         },
         {
             "Single quote as quoting character",
             R"(
-SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv            
+SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
             )",
             R"(
 ┌─kv───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ {'name':'neymar','age':'31','team':'psg','nationality':'brazil','last_key':'last_value'}                                 │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘            
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
             )"
         },
         {
             "Escape sequences without escape sequences support",
             R"(
-SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv            
+SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv
             )",
             R"(
 ┌─kv────────────────────┐
 │ {'age':'a\\x0A\\n\\0'}│
-└───────────────────────┘            
+└───────────────────────┘
             )"
         }
     },
@@ -235,12 +235,12 @@ Leading escape sequences will be skipped in keys and will be considered invalid 
                 {
                     "Escape sequences with escape sequence support turned on",
                     R"(
-SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv              
+SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv
                     )",
                     R"(
 ┌─kv───────────────┐
 │ {'age':'a\n\n\0'}│
-└──────────────────┘          
+└──────────────────┘
                     )"
                 },
             },

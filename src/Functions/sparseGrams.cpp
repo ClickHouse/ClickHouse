@@ -259,10 +259,10 @@ REGISTER_FUNCTION(SparseGrams)
 {
     factory.registerFunction<FunctionSparseGrams>(FunctionDocumentation{
         .description=R"(
-Finds all substrings of a given string that have a length of at least `n`, 
+Finds all substrings of a given string that have a length of at least `n`,
 where the hashes of the (n-1)-grams at the borders of the substring
 are strictly greater than those of any (n-1)-gram inside the substring.
-Uses [crc32](./string-functions.md#crc32) as a hash function.        
+Uses [crc32](./string-functions.md#crc32) as a hash function.
         )",
         .syntax="sparseGrams(s[, min_ngram_length]);",
         .arguments={
@@ -278,7 +278,7 @@ Uses [crc32](./string-functions.md#crc32) as a hash function.
                 R"(
    ┌─result─────────────────────┐
 1. │ ['ali','lic','lice','ice'] │
-   └────────────────────────────┘                
+   └────────────────────────────┘
                 )"
             },
         },
@@ -290,7 +290,7 @@ Finds all substrings of a given string that have a length of at least `n`,
 where the hashes of the (n-1)-grams at the borders of the substring
 are strictly greater than those of any (n-1)-gram inside the substring.
 Uses [crc32](./string-functions.md#crc32) as a hash function.
-Expects UTF-8 string, throws an exception in case of invalid UTF-8 sequence. 
+Expects UTF-8 string, throws an exception in case of invalid UTF-8 sequence.
         )",
         .syntax="sparseGramsUTF8(s[, min_ngram_length])",
         .arguments={
@@ -306,7 +306,7 @@ Expects UTF-8 string, throws an exception in case of invalid UTF-8 sequence.
                 R"(
    ┌─result──────────────┐
 1. │ ['али','лис','иса'] │
-   └─────────────────────┘             
+   └─────────────────────┘
                 )"
             }
         },
@@ -334,7 +334,7 @@ Uses [crc32](./string-functions.md#crc32) as a hash function.
                 R"(
    ┌─result────────────────────────────────────────┐
 1. │ [1265796434,3725069146,1689963195,3410985998] │
-   └───────────────────────────────────────────────┘             
+   └───────────────────────────────────────────────┘
                 )"
             },
             },
@@ -362,7 +362,7 @@ Expects UTF-8 string, throws an exception in case of invalid UTF-8 sequence.
                 R"(
    ┌─result───────────────────────────┐
 1. │ [417784657,728683856,3071092609] │
-   └──────────────────────────────────┘        
+   └──────────────────────────────────┘
                 )"
             },
         },

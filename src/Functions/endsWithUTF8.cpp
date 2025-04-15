@@ -17,7 +17,7 @@ Returns whether string `str` ends with `suffix`, the difference between `endsWit
         .syntax="endsWithUTF8(x, y)",
         .arguments={
                 {"x", "String to check if ends in suffix `y`. String."},
-                {"y", "String suffix. String."} 
+                {"y", "String suffix. String."}
 
         },
         .returned_value="Returns `1` if `x` ends in suffix `y`, otherwise `0`. UInt8.",

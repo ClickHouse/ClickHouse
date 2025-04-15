@@ -71,12 +71,12 @@ REGISTER_FUNCTION(CutToFirstSignificantSubdomain)
 SELECT
     cutToFirstSignificantSubdomainWithWWW('https://news.clickhouse.com.tr/'),
     cutToFirstSignificantSubdomainWithWWW('www.tr'),
-    cutToFirstSignificantSubdomainWithWWW('tr');                    
+    cutToFirstSignificantSubdomainWithWWW('tr');
                     )",
                     R"(
 ┌─cutToFirstSignificantSubdomainWithWWW('https://news.clickhouse.com.tr/')─┬─cutToFirstSignificantSubdomainWithWWW('www.tr')─┬─cutToFirstSignificantSubdomainWithWWW('tr')─┐
 │ clickhouse.com.tr                                                        │ www.tr                                          │                                             │
-└──────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────┴─────────────────────────────────────────────┘                    
+└──────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────┴─────────────────────────────────────────────┘
                     )"
                 }
             },
@@ -94,12 +94,12 @@ SELECT
                     R"(
 SELECT
     cutToFirstSignificantSubdomain('http://user:password@example.com:8080'),
-    cutToFirstSignificantSubdomainRFC('http://user:password@example.com:8080');                    
-                    )", 
+    cutToFirstSignificantSubdomainRFC('http://user:password@example.com:8080');
+                    )",
                     R"(
 ┌─cutToFirstSignificantSubdomain('http://user:password@example.com:8080')─┬─cutToFirstSignificantSubdomainRFC('http://user:password@example.com:8080')─┐
 │                                                                         │ example.com                                                                │
-└─────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────┘                    
+└─────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────┘
                     )"
                 }
             },

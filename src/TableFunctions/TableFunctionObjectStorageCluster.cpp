@@ -73,7 +73,7 @@ void registerTableFunctionObjectStorageCluster(TableFunctionFactory & factory)
             .description=R"(The table function can be used to read the data stored on S3 in parallel for many nodes in a specified cluster.)",
             .syntax=R"(
 s3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,structure] [,compression_method],[,headers])
-s3Cluster(cluster_name, named_collection[, option=value [,..]])            
+s3Cluster(cluster_name, named_collection[, option=value [,..]])
             )",
             .arguments={
                 {"cluster_name", "Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers."},
@@ -140,7 +140,7 @@ s3Cluster(cluster_name, named_collection[, option=value [,..]])
             },
             .returned_value="A table with the specified structure for reading data in the specified file.",
             .examples{{"HDFSCluster", "SELECT * FROM HDFSCluster(cluster, uri, format)", ""}},
-            .category=FunctionDocumentation::Category::TableFunction    
+            .category=FunctionDocumentation::Category::TableFunction
         },
             .allow_readonly = false
         }
@@ -162,7 +162,7 @@ void registerTableFunctionIcebergCluster(TableFunctionFactory & factory)
             .description = R"(The table function can be used to read the Iceberg table stored on S3 object store in parallel for many nodes in a specified cluster.)",
             .syntax=R"(
 icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
-icebergS3Cluster(cluster_name, named_collection[, option=value [,..]])            
+icebergS3Cluster(cluster_name, named_collection[, option=value [,..]])
             )",
             .arguments={
                 {"cluster_name", "Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers."},
@@ -186,12 +186,12 @@ icebergS3Cluster(cluster_name, named_collection[, option=value [,..]])
             .description = R"(The table function can be used to read the Iceberg table stored on Azure object store in parallel for many nodes in a specified cluster.)",
             .syntax=R"(
 icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
-icebergAzureCluster(cluster_name, named_collection[, option=value [,..]])            
+icebergAzureCluster(cluster_name, named_collection[, option=value [,..]])
             )",
             .arguments={
                 {"cluster_name", "Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers."},
                 {"connection_string|storage_account_url", ""},
-                {"container_name", ""}, 
+                {"container_name", ""},
                 {"blobpath", ""},
                 {"account_name", ""},
                 {"account_key", ""},
@@ -213,12 +213,12 @@ icebergAzureCluster(cluster_name, named_collection[, option=value [,..]])
          = {.description = R"(The table function can be used to read the Iceberg table stored on HDFS virtual filesystem in parallel for many nodes in a specified cluster.)",
             .syntax=R"(
 icebergHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
-icebergHDFSCluster(cluster_name, named_collection[, option=value [,..]])            
+icebergHDFSCluster(cluster_name, named_collection[, option=value [,..]])
             )",
             .arguments={
                 {"cluster_name", "Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers."},
                 {"path_to_table", ""},
-                {"format", ""}, 
+                {"format", ""},
                 {"compression_method", ""},
                 {"named_collection", ""},
                 {"option=value", ""}

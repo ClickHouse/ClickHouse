@@ -211,7 +211,7 @@ s3(named_collection[, option=value [,..]])
 )",
             .arguments{
                 {"url", R"(
-Bucket url with path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings. For more information see [here](../../engines/table-engines/integrations/s3.md#wildcards-in-path).                    
+Bucket url with path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings. For more information see [here](../../engines/table-engines/integrations/s3.md#wildcards-in-path).
 :::note GCS
 The GCS url is in this format as the endpoint for the Google XML API is different than the JSON API:
 ```text
@@ -405,7 +405,7 @@ void registerTableFunctionIceberg(TableFunctionFactory & factory)
          = {.description = R"(The table function can be used to read the Iceberg table stored on S3 object store.)",
             .syntax = R"(
 icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
-icebergS3(named_collection[, option=value [,..]])            
+icebergS3(named_collection[, option=value [,..]])
             )",
             .arguments={
                 {"url",""},
@@ -430,7 +430,7 @@ icebergS3(named_collection[, option=value [,..]])
          = {.description = R"(The table function can be used to read the Iceberg table stored on Azure object store.)",
             .syntax=R"(
 icebergAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
-icebergAzure(named_collection[, option=value [,..]])            
+icebergAzure(named_collection[, option=value [,..]])
             )",
             .arguments = {
                 {"connection_string|storage_account_url", ""},
@@ -473,7 +473,7 @@ icebergHDFS(named_collection[, option=value [,..]])
          = {.description = R"(The table function can be used to read the Iceberg table stored locally.)",
             .syntax = R"(
 icebergLocal(path_to_table, [,format] [,compression_method])
-icebergLocal(named_collection[, option=value [,..]])            
+icebergLocal(named_collection[, option=value [,..]])
             )",
             .arguments = {
                 {"path_to_table", ""},

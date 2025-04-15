@@ -205,7 +205,7 @@ Returns the timezone name in which server operates.
                 R"(
 ┌─serverTimeZone()─┐
 │ UTC              │
-└──────────────────┘               
+└──────────────────┘
                 )"}},
         .category=FunctionDocumentation::Category::Other
 });

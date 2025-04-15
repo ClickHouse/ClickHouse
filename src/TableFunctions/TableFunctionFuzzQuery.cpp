@@ -62,7 +62,7 @@ void registerTableFunctionFuzzQuery(TableFunctionFactory & factory)
    ┌─query──────────────────────────────────────────────────────────┐
 1. │ SELECT 'a' AS key GROUP BY key                                 │
 2. │ EXPLAIN PIPELINE compact = true SELECT 'a' AS key GROUP BY key │
-   └────────────────────────────────────────────────────────────────┘                
+   └────────────────────────────────────────────────────────────────┘
                     )"
                 }
             },

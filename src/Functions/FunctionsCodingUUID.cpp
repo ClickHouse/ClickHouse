@@ -486,7 +486,7 @@ REGISTER_FUNCTION(CodingUUID)
         FunctionDocumentation{
             .description = R"(
 Accepts a [UUID](../data-types/uuid.md) and returns its binary representation as a [FixedString(16)](../data-types/fixedstring.md),
-with its format optionally specified by `variant` (`Big-endian` by default). This function replaces calls to two separate functions 
+with its format optionally specified by `variant` (`Big-endian` by default). This function replaces calls to two separate functions
 `UUIDStringToNum(toString(uuid))` so no intermediate conversion from UUID to string is required to extract bytes from a UUID.
 )",
             .syntax="UUIDToNum(uuid[, variant = 1])",

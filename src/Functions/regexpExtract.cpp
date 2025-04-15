@@ -264,8 +264,8 @@ REGISTER_FUNCTION(RegexpExtract)
                 {"index", "An integer number greater or equal 0 with default 1. It represents which regex group to extract. [UInt or Int](../data-types/int-uint.md). Optional."}
             },
             .returned_value=R"(
-`pattern` may contain multiple regexp groups, `index` indicates which regex group to extract. 
-An index of 0 means matching the entire regular expression. [String](../data-types/string.md).            
+`pattern` may contain multiple regexp groups, `index` indicates which regex group to extract.
+An index of 0 means matching the entire regular expression. [String](../data-types/string.md).
             )",
             .examples={
                 {
@@ -275,12 +275,12 @@ SELECT
     regexpExtract('100-200', '(\\d+)-(\\d+)', 1),
     regexpExtract('100-200', '(\\d+)-(\\d+)', 2),
     regexpExtract('100-200', '(\\d+)-(\\d+)', 0),
-    regexpExtract('100-200', '(\\d+)-(\\d+)');                    
+    regexpExtract('100-200', '(\\d+)-(\\d+)');
                     )",
                     R"(
 ┌─regexpExtract('100-200', '(\\d+)-(\\d+)', 1)─┬─regexpExtract('100-200', '(\\d+)-(\\d+)', 2)─┬─regexpExtract('100-200', '(\\d+)-(\\d+)', 0)─┬─regexpExtract('100-200', '(\\d+)-(\\d+)')─┐
 │ 100                                          │ 200                                          │ 100-200                                      │ 100                                       │
-└──────────────────────────────────────────────┴──────────────────────────────────────────────┴──────────────────────────────────────────────┴───────────────────────────────────────────┘                    
+└──────────────────────────────────────────────┴──────────────────────────────────────────────┴──────────────────────────────────────────────┴───────────────────────────────────────────┘
                     )"
                 }
             },

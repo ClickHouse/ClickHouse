@@ -745,7 +745,7 @@ Assumes that the string contains valid UTF-8 encoded text. If this assumption is
                 R"(
 ┌─res───────────────────────────┐
 │ Mein Vater ist aus der Türkei.│
-└───────────────────────────────┘                
+└───────────────────────────────┘
                 )"
             }
         },

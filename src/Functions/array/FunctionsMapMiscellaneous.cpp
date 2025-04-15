@@ -459,7 +459,7 @@ REGISTER_FUNCTION(MapMiscellaneous)
             {
                 "key",
                 "Key. Type must match the key type of `map`."
-            }    
+            }
         },
         .returned_value="`1` if `map` contains `key`, `0` if not. [UInt8](../data-types/int-uint.md).",
         .examples{{"mapContains", "SELECT mapContains(map('k1', 'v1', 'k2', 'v2'), 'k1')", ""}},
@@ -478,7 +478,7 @@ REGISTER_FUNCTION(MapMiscellaneous)
             {
                 "map",
                 "Map to sort. [Map](../data-types/map.md)."
-            }    
+            }
         },
         .returned_value="Returns a map containing only the elements in `map` for which `func(map1[i], ..., mapN[i])` returns something other than 0.",
         .examples{{"mapFilter", "SELECT mapFilter((k, v) -> v > 1, map('k1', 1, 'k2', 2))", ""}},
@@ -497,7 +497,7 @@ REGISTER_FUNCTION(MapMiscellaneous)
             {
                 "map",
                 "Map to sort. [Map](../data-types/map.md)."
-            }    
+            }
         },
         .returned_value="Returns a map obtained from the original map by application of `func(map1[i], ..., mapN[i])` for each element.",
         .examples{{"mapApply", "SELECT mapApply((k, v) -> (k, v * 2), map('k1', 1, 'k2', 2))", ""}},
@@ -516,7 +516,7 @@ REGISTER_FUNCTION(MapMiscellaneous)
             {
                 "map",
                 "Map to sort. [Map](../data-types/map.md)."
-            }    
+            }
         },
         .returned_value="Returns `1` if at least one key-value pair in `map` exists for which `func(key, value)` returns something other than `0`. Otherwise, it returns `0`.",
         .examples{{"mapExists", "SELECT mapExists((k, v) -> v = 1, map('k1', 1, 'k2', 2))", ""}},
@@ -535,7 +535,7 @@ REGISTER_FUNCTION(MapMiscellaneous)
             {
                 "map",
                 "Map to sort. [Map](../data-types/map.md)."
-            }    
+            }
         },
         .returned_value="Returns `1` if `func(key, value)` returns something other than `0` for all key-value pairs in `map`. Otherwise, it returns `0`.",
         .examples{{"mapAll", "SELECT mapAll((k, v) -> v = 1, map('k1', 1, 'k2', 2))", ""}},
@@ -554,7 +554,7 @@ REGISTER_FUNCTION(MapMiscellaneous)
             {
                 "map",
                 "Map to sort. [Map](../data-types/map.md)."
-            }    
+            }
         },
         .returned_value="Map with keys sorted ascending by value. [Map](../data-types/map.md).",
         .examples{{"mapSort", "SELECT mapSort((k, v) -> v, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
@@ -573,7 +573,7 @@ REGISTER_FUNCTION(MapMiscellaneous)
             {
                 "map",
                 "Map to sort. [Map](../data-types/map.md)."
-            }    
+            }
         },
         .returned_value="Reverse sorted map. [Map](../data-types/map.md).",
         .examples{{"mapReverseSort", "SELECT mapReverseSort((k, v) -> v, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
@@ -596,7 +596,7 @@ REGISTER_FUNCTION(MapMiscellaneous)
             {
                 "map",
                 "Map to sort. [Map](../data-types/map.md)."
-            }    
+            }
         },
         .returned_value="Partially sorted map. [Map](../data-types/map.md).",
         .examples{{"mapPartialSort", "SELECT mapPartialSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},

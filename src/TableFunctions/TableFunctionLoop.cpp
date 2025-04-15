@@ -147,7 +147,7 @@ namespace DB
 SELECT ... FROM loop(database, table);
 SELECT ... FROM loop(database.table);
 SELECT ... FROM loop(table);
-SELECT ... FROM loop(other_table_function(...));                    
+SELECT ... FROM loop(other_table_function(...));
                     )",
                     .arguments={
                         {"database", "database name."},
@@ -158,7 +158,7 @@ SELECT ... FROM loop(other_table_function(...));
                     .examples{
                                 {
                                     "loop",
-                                    "SELECT * FROM loop((numbers(3)) LIMIT 7", 
+                                    "SELECT * FROM loop((numbers(3)) LIMIT 7",
                                     R"(
    ┌─number─┐
 1. │      0 │
@@ -172,7 +172,7 @@ SELECT ... FROM loop(other_table_function(...));
    └────────┘
    ┌─number─┐
 7. │      0 │
-   └────────┘                            
+   └────────┘
                                     )"
                                 }
                             },

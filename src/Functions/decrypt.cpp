@@ -31,7 +31,7 @@ This function decrypts ciphertext into a plaintext using these modes:
 - aes-128-ofb, aes-192-ofb, aes-256-ofb
 - aes-128-gcm, aes-192-gcm, aes-256-gcm
 - aes-128-ctr, aes-192-ctr, aes-256-ctr
-- aes-128-cfb, aes-128-cfb1, aes-128-cfb8        
+- aes-128-cfb, aes-128-cfb1, aes-128-cfb8
         )",
         .syntax="decrypt('mode', 'ciphertext', 'key' [, iv, aad])",
         .arguments={
@@ -76,7 +76,7 @@ Query:
 
 ```sql
 SELECT comment, decrypt('aes-256-cfb128', secret, '12345678910121314151617181920212') as plaintext FROM encryption_test
-```  
+```
                 )",
                 R"(
 Result:
@@ -97,8 +97,8 @@ Result:
 └──────────────────────────────────┴───────────┘
 ```
 
-Notice how only a portion of the data was properly decrypted, and the rest is gibberish since either `mode`, `key`, or `iv` were different upon encryption.        
-                )"    
+Notice how only a portion of the data was properly decrypted, and the rest is gibberish since either `mode`, `key`, or `iv` were different upon encryption.
+                )"
             }
         },
         .category=FunctionDocumentation::Category::Encryption

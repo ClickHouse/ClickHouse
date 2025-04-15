@@ -2223,7 +2223,7 @@ If the index falls outside of the bounds of an array, it returns some default va
                 R"(
 ┌─arrayElement(['a', 'b', 'c'], 2)─┐
 │ b                                │
-└──────────────────────────────────┘                
+└──────────────────────────────────┘
                 )"
             },
             {
@@ -2232,7 +2232,7 @@ If the index falls outside of the bounds of an array, it returns some default va
                 R"(
 ┌─arrayElement([2, 4, 6], 6)─┐
 │                          0 │
-└────────────────────────────┘                
+└────────────────────────────┘
                 )"
             }
         },
@@ -2258,7 +2258,7 @@ If the index falls outside of the bounds of an array, it returns `NULL` instead 
                 R"(
 ┌─arrayElementOrNull(['a', 'b', 'c'], 2)─┐
 │ b                                      │
-└────────────────────────────────────────┘               
+└────────────────────────────────────────┘
                 )"
             },
             {
@@ -2267,7 +2267,7 @@ If the index falls outside of the bounds of an array, it returns `NULL` instead 
                 R"(
 ┌─arrayElementOrNull(['a', 'b', 'c'], 6)─┐
 │ ᴺᵁᴸᴸ                                   │
-└────────────────────────────────────────┘                
+└────────────────────────────────────────┘
                 )"
             }
         },

@@ -201,7 +201,7 @@ At least four data points are required in `series` to detect outliers.
 )",
         .syntax=R"(
 seriesOutliersDetectTukey(series);
-seriesOutliersDetectTukey(series, min_percentile, max_percentile, k);        
+seriesOutliersDetectTukey(series, min_percentile, max_percentile, k);
         )",
         .arguments={
             {"series", "An array of numeric values."},
@@ -217,7 +217,7 @@ seriesOutliersDetectTukey(series, min_percentile, max_percentile, k);
                 R"(
 ┌───────────print_0─────────────────┐
 │[0,0,0,0,0,0,0,0,0,27,0,0,0,0,0,0] │
-└───────────────────────────────────┘                
+└───────────────────────────────────┘
                 )"
             },
             {
@@ -226,7 +226,7 @@ seriesOutliersDetectTukey(series, min_percentile, max_percentile, k);
                 R"(
 ┌─print_0──────────────────────────────┐
 │ [0,0,0,0,0,0,0,0,0,19.5,0,0,0,0,0,0] │
-└──────────────────────────────────────┘                
+└──────────────────────────────────────┘
                 )"
             }
         },

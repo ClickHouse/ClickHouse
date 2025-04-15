@@ -41,7 +41,7 @@ clickhouse.com
                 R"(
 ┌─domain('svn+ssh://some.svn-hosting.com:80/repo/trunk')─┐
 │ some.svn-hosting.com                                   │
-└────────────────────────────────────────────────────────┘                
+└────────────────────────────────────────────────────────┘
                 )"
             }
         },
@@ -62,12 +62,12 @@ Similar to `domain` but follows stricter rules to be compatible with RFC 3986 an
                 R"(
 SELECT
     domain('http://user:password@example.com:8080/path?query=value#fragment'),
-    domainRFC('http://user:password@example.com:8080/path?query=value#fragment');                
+    domainRFC('http://user:password@example.com:8080/path?query=value#fragment');
                 )",
                 R"(
 ┌─domain('http://user:password@example.com:8080/path?query=value#fragment')─┬─domainRFC('http://user:password@example.com:8080/path?query=value#fragment')─┐
 │                                                                           │ example.com                                                                  │
-└───────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────┘                
+└───────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────┘
                 )"
             }
         },

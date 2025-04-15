@@ -179,7 +179,7 @@ FFT - Fast Fourier transform (https://en.wikipedia.org/wiki/Fast_Fourier_transfo
         },
         .returned_value=R"(
 - A real value equal to the period of time series. [Float64](../../sql-reference/data-types/float.md).
-- Returns `NAN` when number of data points are less than four.        
+- Returns `NAN` when number of data points are less than four.
         )",
         .examples={
             {
@@ -188,7 +188,7 @@ FFT - Fast Fourier transform (https://en.wikipedia.org/wiki/Fast_Fourier_transfo
                 R"(
 ┌───────────print_0──────┐
 │                      3 │
-└────────────────────────┘                
+└────────────────────────┘
                 )"
             },
             {
@@ -197,7 +197,7 @@ FFT - Fast Fourier transform (https://en.wikipedia.org/wiki/Fast_Fourier_transfo
                 R"(
 ┌─print_0─┐
 │       6 │
-└─────────┘                
+└─────────┘
                 )"
             }
         },

@@ -281,7 +281,7 @@ For more details see documentation of `arraySort`.
         },
         .returned_value=R"(
 Returns an array of the same size as the original array where elements in range `[1..limit]`
-are sorted in descending order. The remaining elements `(limit..N]` remain in an unspecified order.      
+are sorted in descending order. The remaining elements `(limit..N]` remain in an unspecified order.
         )",
         .examples{
             {"simple_int", "SELECT arrayPartialReverseSort(2, [5, 9, 1, 3])", ""},

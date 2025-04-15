@@ -282,7 +282,7 @@ the second argument is the desired number of digits in fractional part. Returns 
                 {"scale", R"(
 Number of fractional digits, UInt8.
 - Maximum scale for Decimal and Int, UInt types is 77 (it is the maximum possible number of significant digits for Decimal),
-- Maximum scale for Float is 60.                    
+- Maximum scale for Float is 60.
                     )"
                 }
             },

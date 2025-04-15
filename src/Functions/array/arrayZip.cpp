@@ -188,7 +188,7 @@ Combines multiple arrays into a single array. The resulting array contains the c
                     R"(
 ┌─arrayZip(['a', 'b', 'c'], [5, 2, 1])─┐
 │ [('a',5),('b',2),('c',1)]            │
-└──────────────────────────────────────┘                    
+└──────────────────────────────────────┘
                     )"
                 }
             },
@@ -215,7 +215,7 @@ If the arrays have different sizes, the shorter arrays will be padded with `null
                     R"(
 ┌─arrayZipUnaligned(['a'], [1, 2, 3])─┐
 │ [('a',1),(NULL,2),(NULL,3)]         │
-└─────────────────────────────────────┘                    
+└─────────────────────────────────────┘
                     )"
                 }
             },

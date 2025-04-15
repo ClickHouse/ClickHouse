@@ -128,7 +128,7 @@ struct Message
     column1 @0 : Data;
     column2 @1 : UInt32;
     column3 @2 : List(Data);
-}                
+}
                     )"
                },
                {
@@ -164,7 +164,7 @@ struct Message
         entries @0 : List(Entry);
     }
     column3 @2 : Column3;
-}                    
+}
                     )"
                },
                {
@@ -177,7 +177,7 @@ struct Root
 {
     column1 @0 : Data;
     column2 @1 : UInt32;
-}                    
+}
                     )"
                }
             },
@@ -211,7 +211,7 @@ message Message
     bytes column1 = 1;
     uint32 column2 = 2;
     repeated bytes column3 = 3;
-}                    
+}
                     )"
                 },
                 {
@@ -230,7 +230,7 @@ message Message
     }
     Column2 column2 = 2;
     map<string, bytes> column3 = 3;
-}                    
+}
                     )"
                 },
                 {
@@ -243,7 +243,7 @@ message Root
 {
     bytes column1 = 1;
     uint32 column2 = 2;
-}                    
+}
                     )"
                 }
             },

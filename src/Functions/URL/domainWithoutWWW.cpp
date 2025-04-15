@@ -43,12 +43,12 @@ If the argument can't be parsed as URL, the function returns an empty string.
             R"(
 SELECT
     domainWithoutWWW('http://user:password@www.example.com:8080/path?query=value#fragment'),
-    domainWithoutWWWRFC('http://user:password@www.example.com:8080/path?query=value#fragment');            
+    domainWithoutWWWRFC('http://user:password@www.example.com:8080/path?query=value#fragment');
             )",
             R"(
 ┌─domainWithoutWWW('http://user:password@www.example.com:8080/path?query=value#fragment')─┬─domainWithoutWWWRFC('http://user:password@www.example.com:8080/path?query=value#fragment')─┐
 │                                                                                         │ example.com                                                                                │
-└─────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────┘            
+└─────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────┘
             )"
         }},
         .category=FunctionDocumentation::Category::URL

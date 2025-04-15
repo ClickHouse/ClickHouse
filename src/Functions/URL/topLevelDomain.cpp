@@ -84,7 +84,7 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk'
                 R"(
 ┌─topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')─┐
 │ com                                                                │
-└────────────────────────────────────────────────────────────────────┘                
+└────────────────────────────────────────────────────────────────────┘
                 )"
             }
         },
@@ -116,12 +116,12 @@ https://clickhouse.com/time/
             {
                 "Usage example",
                 R"(
-SELECT topLevelDomain('http://foo:foo%41bar@foo.com'), topLevelDomainRFC('http://foo:foo%41bar@foo.com');            
+SELECT topLevelDomain('http://foo:foo%41bar@foo.com'), topLevelDomainRFC('http://foo:foo%41bar@foo.com');
                 )",
                 R"(
 ┌─topLevelDomain('http://foo:foo%41bar@foo.com')─┬─topLevelDomainRFC('http://foo:foo%41bar@foo.com')─┐
 │                                                │ com                                               │
-└────────────────────────────────────────────────┴───────────────────────────────────────────────────┘            
+└────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
                 )"
             }
         },

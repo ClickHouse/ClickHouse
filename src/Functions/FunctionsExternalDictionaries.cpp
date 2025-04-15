@@ -8,7 +8,7 @@ namespace DB
     /// dictGet<T> FunctionDocumentation parameters
     constexpr auto dict_get_description { R"(
 Retrieves values from a dictionary.
-    
+
 Throws an exception if unable to parse the value of the attribute or the value does not match {}.
     )" };
     constexpr auto dict_get_syntax = "dictGet(dict_name, attr_names, id_expr)";
@@ -18,7 +18,7 @@ Throws an exception if unable to parse the value of the attribute or the value d
         {"id_expr", "Key value. Expression returning dictionary key-type value or Tuple-type value depending on the dictionary configuration."}
     };
     constexpr auto dict_get_return_value = "Value of the dictionary attribute parsed in the {} if key is found, otherwise <null_value> element specified in the dictionary configuration.";
-        
+
     /// dictGet<T>OrDefault FunctionDocumentation parameters
     constexpr auto dict_get_or_default_description { R"(
 Retrieves values from a dictionary.
@@ -42,7 +42,7 @@ Throws an exception if unable to parse the value of the attribute or the value d
     )" };
     constexpr auto dict_get_or_null_syntax = "dictGetOrNull('dict_name', attr_name, id_expr)";
     constexpr auto dict_get_or_null_return_value = "Value of the dictionary attribute parsed in the {} if key is found, otherwise NULL.";
-    
+
     /// dictGetAll FunctionDocumentation parameters
     constexpr auto dict_get_all_description { R"(
 Retrieves all values from a dictionary corresponding to the given key values.
@@ -71,7 +71,7 @@ Throws an exception if unable to parse the value of the attribute, the value doe
                     .examples = {{"", "", ""}},
                     .category = FunctionDocumentation::Category::Dictionary
                 };
-            
+
             case dictGetType::dictGetOrDefault:
                 return FunctionDocumentation{
                     .description = fmt::format(dict_get_or_default_description, type_name),
@@ -145,7 +145,7 @@ REGISTER_FUNCTION(ExternalDictionaries)
     factory.registerFunction<FunctionDictGetIPv6OrDefault>(createDictGetDocumentation(dictGetType::dictGet, "IPv6"));
     factory.registerFunction<FunctionDictGetStringOrDefault>(createDictGetDocumentation(dictGetType::dictGetOrDefault, "String"));
 
-    factory.registerFunction<FunctionDictHas>(FunctionDocumentation{ 
+    factory.registerFunction<FunctionDictHas>(FunctionDocumentation{
         .description="Checks whether a key is present in a dictionary.",
         .syntax="dictHas('dict_name', id_expr)",
         .arguments={
@@ -154,13 +154,13 @@ REGISTER_FUNCTION(ExternalDictionaries)
         },
         .returned_value=R"(
 - 0, if there is no key. [UInt8](../data-types/int-uint.md).
-- 1, if there is a key. [UInt8](../data-types/int-uint.md).        
+- 1, if there is a key. [UInt8](../data-types/int-uint.md).
         )",
         .examples={{"", "", ""}},
         .category=FunctionDocumentation::Category::Dictionary
     });
 
-    factory.registerFunction<FunctionDictGetHierarchy>(FunctionDocumentation{ 
+    factory.registerFunction<FunctionDictGetHierarchy>(FunctionDocumentation{
         .description="Creates an array, containing all the parents of a key in the hierarchical dictionary.",
         .syntax="dictGetHierarchy('dict_name', key)",
         .arguments={
@@ -172,7 +172,7 @@ REGISTER_FUNCTION(ExternalDictionaries)
         .category=FunctionDocumentation::Category::Dictionary
     });
 
-    factory.registerFunction<FunctionDictIsIn>(FunctionDocumentation{ 
+    factory.registerFunction<FunctionDictIsIn>(FunctionDocumentation{
         .description="Checks the ancestor of a key through the whole hierarchical chain in the dictionary.",
         .syntax="dictIsIn('dict_name', child_id_expr, ancestor_id_expr)",
         .arguments={
@@ -182,13 +182,13 @@ REGISTER_FUNCTION(ExternalDictionaries)
         },
         .returned_value=R"(
 - `0`, if `child_id_expr` is not a child of `ancestor_id_expr`. [UInt8](../data-types/int-uint.md).
-- `1`, if `child_id_expr` is a child of `ancestor_id_expr` or if `child_id_expr` is an `ancestor_id_expr`. [UInt8](../data-types/int-uint.md).        
+- `1`, if `child_id_expr` is a child of `ancestor_id_expr` or if `child_id_expr` is an `ancestor_id_expr`. [UInt8](../data-types/int-uint.md).
         )",
         .examples={{"","",""}},
         .category=FunctionDocumentation::Category::Dictionary
     });
 
-    factory.registerFunction<FunctionDictGetChildrenOverloadResolver>(FunctionDocumentation{ 
+    factory.registerFunction<FunctionDictGetChildrenOverloadResolver>(FunctionDocumentation{
         .description="Returns first-level children as an array of indexes. It is the inverse transformation for dictGetHierarchy.",
         .syntax="dictGetChildren(dict_name, key)",
         .arguments={
@@ -215,7 +215,7 @@ First-level children:
 
 ```sql
 SELECT dictGetChildren('hierarchy_flat_dictionary', number) FROM system.numbers LIMIT 4;
-```                
+```
                 )",
                 R"(
 ```text
@@ -225,13 +225,13 @@ SELECT dictGetChildren('hierarchy_flat_dictionary', number) FROM system.numbers 
 │ [4]                                                  │
 │ []                                                   │
 └──────────────────────────────────────────────────────┘
-```                
+```
                 )"
             }
         }
     });
 
-    factory.registerFunction<FunctionDictGetDescendantsOverloadResolver>(FunctionDocumentation{ 
+    factory.registerFunction<FunctionDictGetDescendantsOverloadResolver>(FunctionDocumentation{
         .description=R"(
 Returns all descendants as if dictGetChildren function was applied level times recursively.
 Accepts 3 parameters: name of the dictionary, key value - expression returning a UInt64-type value, level — hierarchy level - If level = 0 returns all descendants to the end - UInt8
@@ -262,7 +262,7 @@ All descendants:
 
 ```sql
 SELECT dictGetDescendants('hierarchy_flat_dictionary', number) FROM system.numbers LIMIT 4;
-```              
+```
                 )",
                 R"(
 ```text
@@ -272,7 +272,7 @@ SELECT dictGetDescendants('hierarchy_flat_dictionary', number) FROM system.numbe
 │ [4]                                                     │
 │ []                                                      │
 └─────────────────────────────────────────────────────────┘
-```                  
+```
                 )"
             },
             {
@@ -282,7 +282,7 @@ First-level descendants:
 
 ```sql
 SELECT dictGetDescendants('hierarchy_flat_dictionary', number, 1) FROM system.numbers LIMIT 4;
-```                
+```
                 )",
                 R"(
 ```text
@@ -292,7 +292,7 @@ SELECT dictGetDescendants('hierarchy_flat_dictionary', number, 1) FROM system.nu
 │ [4]                                                        │
 │ []                                                         │
 └────────────────────────────────────────────────────────────┘
-```                
+```
                 )"
             }
         },

@@ -1666,7 +1666,7 @@ Intervals of the same type will be combined into a single interval. For instance
                     R"(
 ┌─subtractInterval(toIntervalDay(1), toIntervalMonth(1))─┐
 │ (1,-1)                                                 │
-└────────────────────────────────────────────────────────┘                    
+└────────────────────────────────────────────────────────┘
                     )"},
                 {
                     "interval1",
@@ -1674,7 +1674,7 @@ Intervals of the same type will be combined into a single interval. For instance
                     R"(
 ┌─subtractInterval((toIntervalDay(1), toIntervalYear(1)), toIntervalMonth(1))─┐
 │ (1,1,-1)                                                                    │
-└─────────────────────────────────────────────────────────────────────────────┘                    
+└─────────────────────────────────────────────────────────────────────────────┘
                     )"
                 },
                 {
@@ -1683,7 +1683,7 @@ Intervals of the same type will be combined into a single interval. For instance
                     R"(
 ┌─subtractInterval(toIntervalDay(2), toIntervalDay(1))─┐
 │ (1)                                                  │
-└──────────────────────────────────────────────────────┘                    
+└──────────────────────────────────────────────────────┘
                     )"
                 },
                 },

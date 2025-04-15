@@ -65,7 +65,7 @@ SELECT
     tryDecrypt('aes-256-gcm', encrypted, 'keykeykeykeykeykeykeykeykeykey02', iv) AS value
 FROM decrypt_null
 ORDER BY user_id ASC
-```            
+```
             )",
             R"(
 ```response
@@ -74,8 +74,8 @@ ORDER BY user_id ASC
 │ 2022-09-02 00:00:00 │       2 │ value2 │
 │ 2022-09-02 00:00:01 │       3 │ ᴺᵁᴸᴸ   │
 └─────────────────────┴─────────┴────────┘
-```            
-            )"    
+```
+            )"
         }},
         .category=FunctionDocumentation::Category::Encryption
     });

@@ -187,9 +187,9 @@ REGISTER_FUNCTION(ConcatWithSeparator)
         .arguments={
             {"sep", "separator. Const String or FixedString."},
             {"exprN", R"(
-expression to be concatenated. Arguments which are not of types String or FixedString are 
-converted to strings using their default serialization. As this decreases performance, it is not 
-recommended to use non-String/FixedString arguments.             
+expression to be concatenated. Arguments which are not of types String or FixedString are
+converted to strings using their default serialization. As this decreases performance, it is not
+recommended to use non-String/FixedString arguments.
                 )"
             }
         },
@@ -210,9 +210,9 @@ In other words: different arguments never produce identical result.
         .arguments={
             {"sep", "separator. Const String or FixedString."},
             {"exprN", R"(
-expression to be concatenated. Arguments which are not of types String or FixedString are 
-converted to strings using their default serialization. As this decreases performance, it is not 
-recommended to use non-String/FixedString arguments.             
+expression to be concatenated. Arguments which are not of types String or FixedString are
+converted to strings using their default serialization. As this decreases performance, it is not
+recommended to use non-String/FixedString arguments.
                 )"
             }
         },

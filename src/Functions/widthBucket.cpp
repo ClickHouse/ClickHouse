@@ -256,7 +256,7 @@ REGISTER_FUNCTION(WidthBucket)
 {
     factory.registerFunction<FunctionWidthBucket>(FunctionDocumentation{
         .description=R"(
-Returns the number of the bucket in which `operand` falls in a histogram having `count` equal-width buckets spanning the range `low` to `high`. 
+Returns the number of the bucket in which `operand` falls in a histogram having `count` equal-width buckets spanning the range `low` to `high`.
 
 `operand`, `low`, `high` can be any native number type.
 
@@ -277,7 +277,7 @@ There is also a case insensitive alias called `WIDTH_BUCKET` to provide compatib
                 R"(
 ┌─widthBucket(⋯.6, 23, 18)─┐
 │                       11 │
-└──────────────────────────┘                
+└──────────────────────────┘
                 )"
             },
         },
