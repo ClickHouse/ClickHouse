@@ -60,7 +60,7 @@ Throws an exception if unable to parse the value of the attribute, the value doe
 
     FunctionDocumentation createDictGetDocumentation(const dictGetType& type, const std::string& type_name)
     {
-        if (type = dictGetType::dictGet)
+        if (type == dictGetType::dictGet)
         {
             return FunctionDocumentation{
                 .description = fmt::format(dict_get_description, type_name),
@@ -71,7 +71,7 @@ Throws an exception if unable to parse the value of the attribute, the value doe
                 .category = FunctionDocumentation::Category::Dictionary
             };
         } 
-        else if (type = dictGetType::dictGetOrDefault)
+        else if (type == dictGetType::dictGetOrDefault)
         {
             return FunctionDocumentation{
                 .description = fmt::format(dict_get_or_default_description, type_name),
@@ -81,7 +81,8 @@ Throws an exception if unable to parse the value of the attribute, the value doe
                 .examples = {{"", "", ""}},
                 .category = FunctionDocumentation::Category::Dictionary
             };
-        } else if (type = dictGetType::dictGetOrNull)
+        } 
+        else if (type == dictGetType::dictGetOrNull)
         {
             return FunctionDocumentation{
                 .description = dict_get_or_null_description,
@@ -91,7 +92,8 @@ Throws an exception if unable to parse the value of the attribute, the value doe
                 .examples = {{"", "", ""}},
                 .category = FunctionDocumentation::Category::Dictionary
             };
-        } else if (type = dictGetType::dictGetAll)
+        } 
+        else if (type == dictGetType::dictGetAll)
         {
             return FunctionDocumentation{
                 .description = dict_get_all_description,

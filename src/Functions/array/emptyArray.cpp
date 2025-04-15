@@ -67,25 +67,21 @@ REGISTER_FUNCTION(EmptyArray)
         FunctionDocumentation::Description description = "Returns an empty " + type_name + " array";
         FunctionDocumentation::Syntax syntax = "empty" + type_name + "()";
         FunctionDocumentation::ReturnedValue returned_value = "An empty array of type " + type_name;
-
         FunctionDocumentation::Example example = {
             "Create an empty " + type_name + " array",
             "SELECT empty" + type_name + "()",
             "[]"
         };
-
         FunctionDocumentation::Category categories = FunctionDocumentation::Category::Array;
-
         return FunctionDocumentation{
             description, syntax, {}, returned_value, {example}, categories
         };
     };
 
     // Register all functions
-    for(const auto& type : types)
+    for (const auto& type : types)
     {
         registerFunction(factory, type, createDocumentation(type));
     }
 }
-
 }
