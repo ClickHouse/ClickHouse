@@ -119,7 +119,7 @@ private:
     mutable std::mutex mutate_mutex;
 
     void insertBlock(const Block & block, ContextPtr context) override;
-    void finishInsert() override {}
+    void finishInsert(ContextPtr) override { }
     size_t getSize(ContextPtr context) const override;
     RWLockImpl::LockHolder tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const;
     /// Same as tryLockTimedWithContext, but returns `nullptr` if lock is already acquired by current query.

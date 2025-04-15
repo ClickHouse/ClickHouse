@@ -1,22 +1,28 @@
-#include <Storages/SetSettings.h>
-#include <Storages/StorageSet.h>
-#include <Storages/StorageFactory.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <IO/WriteBufferFromFile.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <Formats/NativeWriter.h>
-#include <Formats/NativeReader.h>
-#include <QueryPipeline/ProfileInfo.h>
-#include <Disks/IDisk.h>
-#include <Common/formatReadable.h>
-#include <Common/StringUtils.h>
-#include <Interpreters/Context.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <Common/logger_useful.h>
-#include <Interpreters/Set.h>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <filesystem>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Core/Settings.h>
+#include <Disks/IDisk.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/WriteBufferFromFile.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/Set.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <QueryPipeline/ProfileInfo.h>
+#include <Storages/SetSettings.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/StorageSet.h>
+#include <Common/StringUtils.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
+
+#include <QueryPipeline/Pipe.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/ISource.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace fs = std::filesystem;
 
@@ -30,9 +36,15 @@ namespace SetSetting
     extern const SetSettingsBool persistent;
 }
 
+namespace Setting
+{
+extern const SettingsSeconds lock_acquire_timeout;
+}
+
 namespace ErrorCodes
 {
     extern const int INCORRECT_FILE_NAME;
+    extern const int DEADLOCK_AVOIDED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -111,7 +123,7 @@ void SetOrJoinSink::consume(Chunk & chunk)
 
 void SetOrJoinSink::onFinish()
 {
-    table.finishInsert();
+    table.finishInsert(getContext());
     if (persistent)
     {
         backup_stream.flush();
@@ -175,6 +187,28 @@ StorageSet::StorageSet(
     restore();
 }
 
+RWLockImpl::LockHolder StorageSet::tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const
+{
+    const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
+    const std::chrono::milliseconds acquire_timeout
+        = context ? context->getSettingsRef()[Setting::lock_acquire_timeout] : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
+    return tryLockTimed(lock, type, query_id, acquire_timeout);
+}
+
+RWLockImpl::LockHolder StorageSet::tryLockForCurrentQueryTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context)
+{
+    const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
+    const std::chrono::milliseconds acquire_timeout
+        = context ? context->getSettingsRef()[Setting::lock_acquire_timeout] : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
+    return lock->getLock(type, query_id, acquire_timeout, false);
+}
+
+SinkToStoragePtr
+StorageSet::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
+{
+    std::lock_guard mutate_lock(mutex);
+    return StorageSetOrJoinBase::write(query, metadata_snapshot, context, /*async_insert=*/false);
+}
 
 SetPtr StorageSet::getSet() const
 {
@@ -183,58 +217,52 @@ SetPtr StorageSet::getSet() const
 }
 
 
-void StorageSet::insertBlock(const Block & block, ContextPtr)
+void StorageSet::insertBlock(const Block & block, ContextPtr context)
 {
-    SetPtr current_set;
-    {
-        std::lock_guard lock(mutex);
-        current_set = set;
-    }
-    current_set->insertFromBlock(block.getColumnsWithTypeAndName());
+    TableLockHolder holder = tryLockForCurrentQueryTimedWithContext(rwlock, RWLockImpl::Write, context);
+
+    if (!holder)
+        throw Exception(
+            ErrorCodes::DEADLOCK_AVOIDED, "StorageSet: cannot insert data because current query tries to read from this storage");
+
+    set->insertFromBlock(block.getColumnsWithTypeAndName());
 }
 
-void StorageSet::finishInsert()
+void StorageSet::finishInsert(ContextPtr context)
 {
-    SetPtr current_set;
-    {
-        std::lock_guard lock(mutex);
-        current_set = set;
-    }
-    current_set->finishInsert();
+    TableLockHolder holder = tryLockForCurrentQueryTimedWithContext(rwlock, RWLockImpl::Write, context);
+
+    if (!holder)
+        throw Exception(
+            ErrorCodes::DEADLOCK_AVOIDED, "StorageSet: cannot insert data because current query tries to read from this storage");
+    set->finishInsert();
 }
 
-size_t StorageSet::getSize(ContextPtr) const
+size_t StorageSet::getSize(ContextPtr context) const
 {
-    SetPtr current_set;
-    {
-        std::lock_guard lock(mutex);
-        current_set = set;
-    }
-    return current_set->getTotalRowCount();
+    TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
+    return set->getTotalRowCount();
 }
 
-std::optional<UInt64> StorageSet::totalRows(ContextPtr) const
+std::optional<UInt64> StorageSet::totalRows(ContextPtr query_context) const
 {
-    SetPtr current_set;
-    {
-        std::lock_guard lock(mutex);
-        current_set = set;
-    }
-    return current_set->getTotalRowCount();
+    const auto & settings = query_context->getSettingsRef();
+    TableLockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, RWLockImpl::NO_QUERY, settings[Setting::lock_acquire_timeout]);
+    return set->getTotalRowCount();
 }
 
-std::optional<UInt64> StorageSet::totalBytes(ContextPtr) const
+std::optional<UInt64> StorageSet::totalBytes(ContextPtr query_context) const
 {
-    SetPtr current_set;
-    {
-        std::lock_guard lock(mutex);
-        current_set = set;
-    }
-    return current_set->getTotalByteCount();
+    const auto & settings = query_context->getSettingsRef();
+    TableLockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, RWLockImpl::NO_QUERY, settings[Setting::lock_acquire_timeout]);
+    return set->getTotalByteCount();
 }
 
-void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &)
+void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, TableExclusiveLockHolder &)
 {
+    std::lock_guard mutate_lock(mutex);
+    TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
+
     if (disk->existsDirectory(path))
         disk->removeRecursive(path);
     else
@@ -247,12 +275,8 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
 
     increment = 0;
 
-    auto new_set = std::make_shared<Set>(SizeLimits(), 0, true);
-    new_set->setHeader(header.getColumnsWithTypeAndName());
-    {
-        std::lock_guard lock(mutex);
-        set = new_set;
-    }
+    set = std::make_shared<Set>(SizeLimits(), 0, true);
+    set->setHeader(header.getColumnsWithTypeAndName());
 }
 
 
@@ -312,7 +336,7 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
         insertBlock(block, ctx);
     }
 
-    finishInsert();
+    finishInsert(ctx);
 
     /// TODO Add speed, compressed bytes, data volume in memory, compression ratio ... Generalize all statistics logging in project.
     LOG_INFO(getLogger("StorageSetOrJoinBase"), "Loaded from backup file {}. {} rows, {}. State has {} unique rows.",
@@ -329,6 +353,50 @@ void StorageSetOrJoinBase::rename(const String & new_path_to_table_data, const S
     renameInMemory(new_table_id);
 }
 
+class SetSource : public ISource
+{
+public:
+    SetSource(SetPtr set_, TableLockHolder lock_holder_, UInt64 max_block_size_, Block sample_block_)
+        : ISource(sample_block_)
+        , set(set_)
+        , lock_holder(lock_holder_)
+        , max_block_size(max_block_size_)
+        , sample_block(std::move(sample_block_))
+    {
+    }
+
+protected:
+    Chunk generate() override
+    {
+        Chunk chunk;
+        return chunk;
+    }
+
+private:
+    SetPtr set;
+    TableLockHolder lock_holder;
+
+    UInt64 max_block_size;
+    Block sample_block;
+};
+
+Pipe StorageSet::read(
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & /*query_info*/,
+    ContextPtr context,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    size_t max_block_size,
+    size_t /*num_streams*/)
+{
+    storage_snapshot->check(column_names);
+
+    Block source_sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
+    Block sample_block = storage_snapshot->getColumnsByNames(column_names);
+
+    RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
+    return Pipe(std::make_shared<SetSource>(set, std::move(holder), max_block_size, source_sample_block));
+}
 
 void registerStorageSet(StorageFactory & factory)
 {
@@ -348,6 +416,5 @@ void registerStorageSet(StorageFactory & factory)
             disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings[SetSetting::persistent]);
     }, StorageFactory::StorageFeatures{ .supports_settings = true, .has_builtin_setting_fn = SetSettings::hasBuiltin, });
 }
-
 
 }

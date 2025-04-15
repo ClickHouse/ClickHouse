@@ -3,7 +3,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage.h>
 
-
 namespace DB
 {
 
@@ -53,7 +52,7 @@ private:
     /// Insert the block into the state.
     virtual void insertBlock(const Block & block, ContextPtr context) = 0;
     /// Call after all blocks were inserted.
-    virtual void finishInsert() = 0;
+    virtual void finishInsert(ContextPtr) = 0;
     virtual size_t getSize(ContextPtr context) const = 0;
 };
 
@@ -82,17 +81,35 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 
+    Pipe read(
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        size_t num_streams) override;
+
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
+
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
+
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
 private:
     /// Allows to concurrently truncate the set and work (read/fill) the existing set.
     mutable std::mutex mutex;
-    SetPtr set TSA_GUARDED_BY(mutex);
+    SetPtr set;
 
     void insertBlock(const Block & block, ContextPtr) override;
-    void finishInsert() override;
+    void finishInsert(ContextPtr) override;
     size_t getSize(ContextPtr) const override;
+
+    mutable RWLock rwlock = RWLockImpl::create();
+
+    RWLockImpl::LockHolder tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const;
+    static RWLockImpl::LockHolder tryLockForCurrentQueryTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context);
 };
 
 }
