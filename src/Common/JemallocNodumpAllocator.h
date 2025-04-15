@@ -61,12 +61,12 @@ public:
     T* allocate(std::size_t n)
     {
         constexpr size_t element_size = sizeof(T);
-    
+
         if (n > std::numeric_limits<std::size_t>::max() / element_size)
         {
             throw std::bad_alloc();
         }
-    
+
         const std::size_t bytes = n * element_size;
         void * ptr = JemallocNodumpAllocatorImpl::instance().allocate(bytes);
         if (!ptr)
