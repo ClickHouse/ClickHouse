@@ -22,12 +22,12 @@ SELECT toTypeName(array), toTypeName(float) FROM file('$CURDIR/data_hive/partiti
 SELECT count(*) FROM file('$CURDIR/data_hive/partitioning/number=42/date=2020-01-01/sample.parquet') WHERE number = 42;
 """
 
+$CLICKHOUSE_LOCAL -q """
+set use_hive_partitioning = 1;
+
 SELECT identifier FROM file('$CURDIR/data_hive/partitioning/identifier=*/email.csv') LIMIT 2;
 SELECT a FROM file('$CURDIR/data_hive/partitioning/a=b/a=b/sample.parquet') LIMIT 1;
 """
-
-$CLICKHOUSE_LOCAL -q """
-set use_hive_partitioning = 1;
 
 $CLICKHOUSE_LOCAL -q """
 set use_hive_partitioning = 1;
