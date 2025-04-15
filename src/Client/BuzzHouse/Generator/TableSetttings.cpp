@@ -41,6 +41,16 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
             },
             {},
             false)},
+       {"default_compression_codec",
+        CHSetting(
+            [](RandomGenerator & rg)
+            {
+                const DB::Strings & choices
+                    = {"'NONE'", "'LZ4'", "'LZ4HC'", "'ZSTD'", "'Multiple'", "'Delta'", "'T64'", "'AES_128_GCM_SIV'"};
+                return rg.pickRandomly(choices);
+            },
+            {},
+            false)},
        {"detach_not_byte_identical_parts", CHSetting(trueOrFalse, {}, false)},
        {"detach_old_local_parts_when_cloning_replica", CHSetting(trueOrFalse, {}, false)},
        {"disable_detach_partition_for_zero_copy_replication", CHSetting(trueOrFalse, {}, false)},
