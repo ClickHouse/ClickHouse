@@ -19,6 +19,7 @@
 #include <Common/randomSeed.h>
 #include <Common/DNSResolver.h>
 #include <shared_mutex>
+#include <Core/ServerUUID.h>
 
 
 namespace ProfileEvents
@@ -156,6 +157,9 @@ ObjectStorageQueueMetadata::~ObjectStorageQueueMetadata()
 
 void ObjectStorageQueueMetadata::startup()
 {
+    if (startup_called.exchange(true))
+         return;
+
     if (!task
         && mode == ObjectStorageQueueMode::UNORDERED
         && (table_metadata.tracked_files_limit || table_metadata.tracked_files_ttl_sec))
@@ -502,10 +506,14 @@ namespace
     {
         std::string hostname;
         std::string table_id;
+        std::string server_uuid;
+
+        size_t version = 1;
 
         bool operator ==(const Info & other) const
         {
-            return hostname == other.hostname && table_id == other.table_id;
+            return hostname == other.hostname && table_id == other.table_id
+                && (version == 0 || other.version == 0 || server_uuid == other.server_uuid);
         }
 
         static Info create(const StorageID & storage_id)
@@ -513,6 +521,7 @@ namespace
             Info self;
             self.hostname = DNSResolver::instance().getHostName();
             self.table_id = storage_id.hasUUID() ? toString(storage_id.uuid) : storage_id.getFullTableName();
+            self.server_uuid = toString(ServerUUID::get());
             return self;
         }
 
@@ -521,16 +530,18 @@ namespace
             SipHash hash;
             hash.update(hostname);
             hash.update(table_id);
+            hash.update(server_uuid);
             return hash.get128();
         }
 
         std::string serialize() const
         {
             WriteBufferFromOwnString buf;
-            size_t version = 0;
             buf << version << "\n";
             buf << hostname << "\n";
             buf << table_id << "\n";
+            if (version >= 1)
+                buf << server_uuid << "\n";
             return buf.str();
         }
 
@@ -538,10 +549,11 @@ namespace
         {
             ReadBufferFromString buf(str);
             Info info;
-            size_t version;
-            buf >> version >> "\n";
+            buf >> info.version >> "\n";
             buf >> info.hostname >> "\n";
             buf >> info.table_id >> "\n";
+            if (info.version >= 1)
+                buf >> info.server_uuid >> "\n";
             return info;
         }
     };
@@ -578,6 +590,7 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id)
 {
     const auto registry_path = zookeeper_path / "registry";
     const auto self = Info::create(storage_id);
+    const auto drop_lock_path = zookeeper_path / "drop";
 
     Coordination::Error code;
     for (size_t i = 0; i < 1000; ++i)
@@ -585,6 +598,10 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id)
         Coordination::Stat stat;
         std::string registry_str;
         auto zk_client = getZooKeeper();
+        bool supports_remove_recursive = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE);
+
+        Coordination::Requests requests;
+        Coordination::Responses responses;
 
         if (zk_client->tryGet(registry_path, registry_str, &stat))
         {
@@ -605,14 +622,20 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id)
             }
 
             auto new_registry_str = registry_str + "," + self.serialize();
-            code = zk_client->trySet(registry_path, new_registry_str, stat.version);
+            requests.push_back(zkutil::makeSetRequest(registry_path, new_registry_str, stat.version));
         }
         else
-            code = zk_client->tryCreate(
+        {
+            requests.push_back(zkutil::makeCreateRequest(
                 registry_path,
                 self.serialize(),
-                zkutil::CreateMode::Persistent);
+                zkutil::CreateMode::Persistent));
 
+            if (!supports_remove_recursive)
+                zkutil::addCheckNotExistsRequest(requests, *zk_client, drop_lock_path);
+        }
+
+        code = zk_client->tryMulti(requests, responses);
         if (code == Coordination::Error::ZOK)
         {
             LOG_TRACE(log, "Added {} to registry", self.table_id);
@@ -649,12 +672,12 @@ Strings ObjectStorageQueueMetadata::getRegistered(bool active)
     return registered;
 }
 
-size_t ObjectStorageQueueMetadata::unregister(const StorageID & storage_id, bool active)
+size_t ObjectStorageQueueMetadata::unregister(const StorageID & storage_id, bool active, bool remove_metadata_if_no_registered)
 {
     if (active)
         return unregisterActive(storage_id);
     else
-        return unregisterNonActive(storage_id);
+        return unregisterNonActive(storage_id, remove_metadata_if_no_registered);
 }
 
 size_t ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id)
@@ -684,56 +707,134 @@ size_t ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id
     return remaining_nodes_num;
 }
 
-size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_id)
+size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_id, bool remove_metadata_if_no_registered)
 {
     const auto registry_path = zookeeper_path / "registry";
+    const auto drop_lock_path = zookeeper_path / "drop";
     const auto self = Info::create(storage_id);
 
     Coordination::Error code = Coordination::Error::ZOK;
+
     for (size_t i = 0; i < 1000; ++i)
     {
-        Coordination::Stat stat;
-        std::string registry_str;
-        auto zk_client = getZooKeeper();
-
-        bool node_exists = zk_client->tryGet(registry_path, registry_str, &stat);
-        if (!node_exists)
-        {
-            LOG_WARNING(log, "Cannot unregister: registry does not exist");
-            chassert(false);
-            return 0;
-        }
-
-        Strings registered;
-        splitInto<','>(registered, registry_str);
-
-        bool found = false;
-        std::string new_registry_str;
+        Coordination::Requests requests;
+        Coordination::Responses responses;
         size_t count = 0;
-        for (const auto & elem : registered)
-        {
-            if (elem.empty())
-                continue;
 
-            auto info = Info::deserialize(elem);
-            if (info == self)
-                found = true;
+        bool supports_remove_recursive = true;
+        zkutil::ZooKeeperPtr zk_client;
+
+        try
+        {
+            zk_client = getZooKeeper();
+            supports_remove_recursive = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE);
+
+            Coordination::Stat stat;
+            std::string registry_str;
+            bool node_exists = zk_client->tryGet(registry_path, registry_str, &stat);
+            if (!node_exists)
+            {
+                LOG_WARNING(log, "Cannot unregister: registry does not exist");
+                chassert(false);
+                return 0;
+            }
+
+            Strings registered;
+            splitInto<','>(registered, registry_str);
+
+            bool found = false;
+            std::string new_registry_str;
+            for (const auto & elem : registered)
+            {
+                if (elem.empty())
+                    continue;
+
+                auto info = Info::deserialize(elem);
+                if (info == self)
+                    found = true;
+                else
+                {
+                    if (!new_registry_str.empty())
+                        new_registry_str += ",";
+                    new_registry_str += elem;
+                    count += 1;
+                }
+            }
+            if (!found)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unregister: table '{}' is not registered", self.table_id);
+
+            if (remove_metadata_if_no_registered && count == 0)
+            {
+                LOG_TRACE(log, "Removing all metadata in keeper by path: {}", zookeeper_path.string());
+                if (supports_remove_recursive)
+                {
+                    requests.push_back(zkutil::makeCheckRequest(registry_path, stat.version));
+                    requests.push_back(zkutil::makeRemoveRecursiveRequest(zookeeper_path, std::numeric_limits<uint32_t>::max()));
+                }
+                else
+                {
+                    requests.push_back(zkutil::makeCheckRequest(registry_path, stat.version));
+                    requests.push_back(zkutil::makeCreateRequest(drop_lock_path, "", zkutil::CreateMode::Ephemeral));
+                }
+                code = zk_client->tryMulti(requests, responses);
+            }
             else
             {
-                if (!new_registry_str.empty())
-                    new_registry_str += ",";
-                new_registry_str += elem;
-                count += 1;
+                code = zk_client->trySet(registry_path, new_registry_str, stat.version);
             }
         }
-        if (!found)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unregister: table '{}' is not registered", self.table_id);
-
-        code = zk_client->trySet(registry_path, new_registry_str, stat.version);
+        catch (const zkutil::KeeperMultiException & e)
+        {
+            if (Coordination::isHardwareError(e.code))
+            {
+                LOG_TEST(log, "Lost connection to zookeeper, will retry");
+                continue;
+            }
+            throw;
+        }
+        catch (const zkutil::KeeperException & e)
+        {
+            if (Coordination::isHardwareError(e.code))
+            {
+                LOG_TEST(log, "Lost connection to zookeeper, will retry");
+                continue;
+            }
+            throw;
+        }
 
         if (code == Coordination::Error::ZOK)
         {
             LOG_TRACE(log, "Table '{}' has been removed from the registry", self.table_id);
+
+            if (!supports_remove_recursive && remove_metadata_if_no_registered && count == 0)
+            {
+                /// Take a drop lock and do recursive remove as a separate request.
+                /// In case of unsupported "remove_recursive" feature, it will
+                /// do getChildren and remove them one by one.
+                auto drop_lock = zkutil::EphemeralNodeHolder::existing(drop_lock_path, *zk_client);
+                try
+                {
+                    zk_client->removeRecursive(zookeeper_path);
+                }
+                catch (const zkutil::KeeperMultiException & e)
+                {
+                    if (Coordination::isHardwareError(e.code))
+                    {
+                        LOG_TEST(log, "Lost connection to zookeeper, will retry");
+                        continue;
+                    }
+                    throw;
+                }
+                catch (const zkutil::KeeperException & e)
+                {
+                    if (Coordination::isHardwareError(e.code))
+                    {
+                        LOG_TEST(log, "Lost connection to zookeeper, will retry");
+                        continue;
+                    }
+                    throw;
+                }
+            }
             return count;
         }
 
@@ -741,6 +842,10 @@ size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage
             || code == Coordination::Error::ZBADVERSION)
             continue;
 
+        if (!responses.empty())
+        {
+            zkutil::KeeperMultiException::check(code, requests, responses);
+        }
         throw zkutil::KeeperException(code);
     }
 

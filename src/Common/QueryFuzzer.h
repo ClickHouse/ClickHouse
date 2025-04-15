@@ -9,6 +9,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/IASTHash.h>
 #include <Parsers/NullsAction.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/parseQuery.h>
@@ -69,7 +70,7 @@ public:
 
 private:
     template <typename Parser>
-    ASTPtr tryParseQueryForFuzzedTables(const String & full_query)
+    ASTPtr tryParseQueryForFuzzedTables(const std::string_view & full_query)
     {
         String message;
         const char * pos = full_query.data();
@@ -111,7 +112,7 @@ private:
 
 public:
     template <typename ParsedAST, typename Parser>
-    ASTs getQueriesForFuzzedTables(const String & full_query)
+    ASTs getQueriesForFuzzedTables(const std::string_view & full_query)
     {
         auto parsed_query = tryParseQueryForFuzzedTables<Parser>(full_query);
         if (!parsed_query)
@@ -174,7 +175,7 @@ private:
 
     std::unordered_map<std::string, std::unordered_set<std::string>> original_table_name_to_fuzzed;
     std::unordered_map<std::string, size_t> index_of_fuzzed_table;
-    std::set<IAST::Hash> created_tables_hashes;
+    std::set<IASTHash> created_tables_hashes;
 
     // Various helper functions follow, normally you shouldn't have to call them.
     Field getRandomField(int type);
