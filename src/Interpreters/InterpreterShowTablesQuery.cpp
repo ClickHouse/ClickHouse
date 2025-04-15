@@ -11,6 +11,7 @@
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Access/Common/AccessFlags.h>
+#include <Common/Macros.h>
 #include <Common/typeid_cast.h>
 #include <IO/Operators.h>
 
