@@ -82,14 +82,14 @@ In case you don't really need controlled precision and/or need fast computation,
                 R"(
 ┌─multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)─┐
 │                                                           25.2 │
-└────────────────────────────────────────────────────────────────┘                
+└────────────────────────────────────────────────────────────────┘
                 )"
             },
             {
                 "How it differs from regular multiplication",
                 R"(
 SELECT toDecimal64(-12.647, 3) * toDecimal32(2.1239, 4);
-SELECT toDecimal64(-12.647, 3) as a, toDecimal32(2.1239, 4) as b, multiplyDecimal(a, b);                
+SELECT toDecimal64(-12.647, 3) as a, toDecimal32(2.1239, 4) as b, multiplyDecimal(a, b);
                 )",
                 R"(
 ┌─multiply(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4))─┐
@@ -97,7 +97,7 @@ SELECT toDecimal64(-12.647, 3) as a, toDecimal32(2.1239, 4) as b, multiplyDecima
 └───────────────────────────────────────────────────────────┘
 ┌─multiplyDecimal(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4))─┐
 │                                                         -26.8609 │
-└──────────────────────────────────────────────────────────────────┘                
+└──────────────────────────────────────────────────────────────────┘
                 )"
             },
             {
