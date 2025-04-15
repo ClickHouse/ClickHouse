@@ -1569,44 +1569,74 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
             parts_to_merge_ranges[range_index]->data_part->info.level > 0 && !reader_settings.read_in_order;
 
-        // if do_not_merge_across_partitions_select_final = 1 and the partition contains a single part,
-        // there is no reason to handle `is_deleted` using slow inorder reading. Faster to do it with prewhere
+        /// if do_not_merge_across_partitions_select_final = 1 and the partition contains a single part,
+        /// there is no reason to handle `is_deleted` using slow inorder reading. Faster to do it with prewhere
         if (no_merging_final && !data.merging_params.is_deleted_column.empty())
         {
             if (!prewhere_info)
             {
                 prewhere_info = std::make_shared<PrewhereInfo>();
-            }
+                // Keep rows where is_deleted is False
+                const auto & is_deleted_input = &prewhere_info->prewhere_actions.addInput(data.merging_params.is_deleted_column, std::make_shared<DataTypeUInt8>());
 
-            prewhere_info->prewhere_column_name = data.merging_params.is_deleted_column;
+                ActionsDAG::NodeRawConstPtrs children = {is_deleted_input};
 
-            if (std::find(origin_column_names.begin(), origin_column_names.end(), data.merging_params.is_deleted_column) == origin_column_names.end())
-            {
-                origin_column_names.push_back(data.merging_params.is_deleted_column);
-            }
+                auto not_is_deleted_func = FunctionFactory::instance().get("not", context);
 
-            // Keep rows where is_deleted is False
-            const auto & input = &prewhere_info->prewhere_actions.addInput(data.merging_params.is_deleted_column, std::make_shared<DataTypeUInt8>());
-
-            ActionsDAG::NodeRawConstPtrs children = {input};
-
-            auto not_function = FunctionFactory::instance().get("not", context);
-
-            prewhere_info->prewhere_actions.getOutputs().push_back(
-                &prewhere_info->prewhere_actions.addFunction(
-                    not_function,
-                    std::move(children),
-                    data.merging_params.is_deleted_column
+                prewhere_info->prewhere_actions.getOutputs().push_back(
+                    &prewhere_info->prewhere_actions.addFunction(
+                        not_is_deleted_func,
+                        std::move(children),
+                        {}
                     )
-            );
+                );
+
+                prewhere_info->prewhere_actions.getOutputs().push_back(is_deleted_input);
+            }
+            else
+            {
+                const auto & is_deleted_input = &prewhere_info->prewhere_actions.addInput(data.merging_params.is_deleted_column, std::make_shared<DataTypeUInt8>());
+                auto not_function = FunctionFactory::instance().get("not", context);
+                ActionsDAG::NodeRawConstPtrs not_is_deleted_children = {is_deleted_input};
+
+                const auto not_is_deleted_func = prewhere_info->prewhere_actions.addFunction(
+                    not_function,
+                    std::move(not_is_deleted_children),
+                    {}
+                );
+
+                auto & outputs = prewhere_info->prewhere_actions.getOutputs();
+                if (outputs.empty())
+                {
+                    // no existing output — just use our filter
+                    outputs.push_back(&not_is_deleted_func);
+                }
+                else
+                {
+                    const auto *const existing_output = outputs.at(0);
+                    const auto and_function = FunctionFactory::instance().get("and", context);
+                    ActionsDAG::NodeRawConstPtrs and_children = { existing_output, &not_is_deleted_func };
+
+                    const auto *const combined_filter = &prewhere_info->prewhere_actions.addFunction(
+                        and_function,
+                        std::move(and_children),
+                        {}
+                    );
+
+                    /// We need to be careful not to remove other outputs -- they may be there on purpose. So, we just replace the main one.
+                    outputs.at(0) = combined_filter;
+                }
+                prewhere_info->prewhere_actions.getOutputs().push_back(is_deleted_input);
+
+            }
+            prewhere_info->prewhere_column_name = prewhere_info->prewhere_actions.getOutputs().at(0)->result_name;
         }
 
-        if (no_merging_final)
+        if (no_merging_final && data.merging_params.is_deleted_column.empty())
         {
             non_intersecting_parts_by_primary_key.push_back(std::move(*parts_to_merge_ranges[range_index]));
             continue;
         }
-
         Pipes pipes;
         {
             RangesInDataParts new_parts;
