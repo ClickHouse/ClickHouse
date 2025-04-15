@@ -52,8 +52,8 @@ NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema() const
 
 void DeltaLakeMetadataDeltaKernel::modifyFormatSettings(FormatSettings & format_settings) const
 {
-    /// There can be missing columns becausse of ALTER ADD/DROP COLUMN.
-    /// So support reading from such tables it is enough to turn on this setting.
+    /// There can be missing columns because of ALTER ADD/DROP COLUMN.
+    /// So to support reading from such tables it is enough to turn on this setting.
     format_settings.parquet.allow_missing_columns = true;
 }
 
