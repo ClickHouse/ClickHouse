@@ -95,7 +95,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_iceberg_metadata_files_cache", true, true, "New setting"},
             {"query_plan_join_shard_by_pk_ranges", false, false, "New setting"},
             /// Release closed. Please use 25.5
-            {"hedged_connections_preffer_stable_pools", false, false, "New setting."},
+            {"hedged_connections_prefer_stable_pools", false, false, "New setting."},
             {"distributed_min_unstable_period_for_replica", 1, 1, "New setting."},
             {"distributed_max_unstable_period_for_replica", 600, 600, "New setting."},
         });
