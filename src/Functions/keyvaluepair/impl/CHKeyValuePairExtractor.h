@@ -17,21 +17,28 @@ namespace ErrorCodes
     extern const int LIMIT_EXCEEDED;
 }
 
+namespace extractKV
+{
 /*
  * Handle state transitions and a few states like `FLUSH_PAIR` and `END`.
  * */
 template <typename StateHandler>
-class CHKeyValuePairExtractorImpl
+class KeyValuePairExtractor
 {
     using State = typename DB::extractKV::StateHandler::State;
     using NextState = DB::extractKV::StateHandler::NextState;
 
 public:
-    CHKeyValuePairExtractorImpl(StateHandler state_handler_, uint64_t max_number_of_pairs_)
-        : state_handler(std::move(state_handler_)), max_number_of_pairs(max_number_of_pairs_)
-    {}
+    using PairWriter = typename StateHandler::StringWriter;
 
-    uint64_t extract(std::string_view data, typename StateHandler::StringWriter & pair_writer)
+    KeyValuePairExtractor(const Configuration & configuration_, uint64_t max_number_of_pairs_)
+        : state_handler(StateHandler(configuration_))
+        , max_number_of_pairs(max_number_of_pairs_)
+    {
+    }
+
+protected:
+    uint64_t extractImpl(std::string_view data, typename StateHandler::StringWriter & pair_writer)
     {
         auto state =  State::WAITING_KEY;
 
@@ -128,63 +135,45 @@ private:
     uint64_t max_number_of_pairs;
 };
 
-template <typename StateHandler>
-struct CHKeyValuePairExtractor
-{
-};
+}
 
-template <>
-struct CHKeyValuePairExtractor<extractKV::NoEscapingStateHandler>
+struct KeyValuePairExtractorNoEscaping : extractKV::KeyValuePairExtractor<extractKV::NoEscapingStateHandler>
 {
     using StateHandler = extractKV::NoEscapingStateHandler;
-    explicit CHKeyValuePairExtractor(const extractKV::Configuration & configuration_, std::size_t max_number_of_pairs_)
-        : state_handler(configuration_), max_number_of_pairs(max_number_of_pairs_) {}
+    explicit KeyValuePairExtractorNoEscaping(const extractKV::Configuration & configuration_, std::size_t max_number_of_pairs_)
+        : KeyValuePairExtractor(configuration_, max_number_of_pairs_) {}
 
     uint64_t extract(std::string_view data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values)
     {
         auto pair_writer = typename StateHandler::StringWriter(*keys, *values);
-        return CHKeyValuePairExtractorImpl(state_handler, max_number_of_pairs).extract(data, pair_writer);
+        return extractImpl(data, pair_writer);
     }
-
-private:
-    StateHandler state_handler;
-    std::size_t max_number_of_pairs;
 };
 
-template <>
-struct CHKeyValuePairExtractor<extractKV::InlineEscapingStateHandler>
+struct KeyValuePairExtractorInlineEscaping : extractKV::KeyValuePairExtractor<extractKV::InlineEscapingStateHandler>
 {
     using StateHandler = extractKV::InlineEscapingStateHandler;
-    explicit CHKeyValuePairExtractor(const extractKV::Configuration & configuration_, std::size_t max_number_of_pairs_)
-        : state_handler(configuration_), max_number_of_pairs(max_number_of_pairs_) {}
+    explicit KeyValuePairExtractorInlineEscaping(const extractKV::Configuration & configuration_, std::size_t max_number_of_pairs_)
+        : KeyValuePairExtractor(configuration_, max_number_of_pairs_) {}
 
     uint64_t extract(std::string_view data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values)
     {
         auto pair_writer = typename StateHandler::StringWriter(*keys, *values);
-        return CHKeyValuePairExtractorImpl(state_handler, max_number_of_pairs).extract(data, pair_writer);
+        return extractImpl(data, pair_writer);
     }
-
-private:
-    StateHandler state_handler;
-    std::size_t max_number_of_pairs;
 };
 
-template <>
-struct CHKeyValuePairExtractor<extractKV::ReferencesOnlyStateHandler>
+struct KeyValuePairExtractorReferenceMap : extractKV::KeyValuePairExtractor<extractKV::ReferencesOnlyStateHandler>
 {
     using StateHandler = extractKV::ReferencesOnlyStateHandler;
-    explicit CHKeyValuePairExtractor(const extractKV::Configuration & configuration_, std::size_t max_number_of_pairs_)
-        : state_handler(configuration_), max_number_of_pairs(max_number_of_pairs_) {}
+    explicit KeyValuePairExtractorReferenceMap(const extractKV::Configuration & configuration_, std::size_t max_number_of_pairs_)
+        : KeyValuePairExtractor(configuration_, max_number_of_pairs_) {}
 
     uint64_t extract(std::string_view data, absl::flat_hash_map<std::string_view, std::string_view> & map)
     {
         auto pair_writer = typename StateHandler::StringWriter(map);
-        return CHKeyValuePairExtractorImpl(state_handler, max_number_of_pairs).extract(data, pair_writer);
+        return extractImpl(data, pair_writer);
     }
-
-private:
-    StateHandler state_handler;
-    std::size_t max_number_of_pairs;
 };
 
 }
