@@ -60,7 +60,8 @@ Throws an exception if unable to parse the value of the attribute, the value doe
 
     FunctionDocumentation createDictGetDocumentation(const dictGetType& type, const std::string& type_name)
     {
-        switch (type) {
+        switch (type) 
+        {
             case dictGetType::dictGet:
                 return FunctionDocumentation{
                     .description = fmt::format(dict_get_description, type_name),

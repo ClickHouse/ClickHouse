@@ -50,13 +50,15 @@ namespace ErrorCodes
 }
 
 /// Helper function and enum type for generating documentation
-enum class dictGetType : uint8_t {
+enum class dictGetType : uint8_t 
+{
     dictGet,
     dictGetOrDefault,
     dictGetOrNull,
     dictGetAll
 };
-FunctionDocumentation createDictGetDocumentation(const dictGetType& type, const std::string& type_name );
+
+FunctionDocumentation createDictGetDocumentation(const dictGetType& type, const std::string& type_name);
 
 /** Functions that use plug-ins (external) dictionaries_loader.
   *
