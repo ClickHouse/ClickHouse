@@ -159,14 +159,14 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     packages_path = temp_path / "packages"
     packages_path.mkdir(parents=True, exist_ok=True)
 
-    if check_name.startswith("amd_") or check_name.startswith("arm_"):
-        # this is praktika based CI
-        print("Copy input *.deb artifacts")
-        assert Shell.check(f"cp {REPO_COPY}/ci/tmp/*.deb {packages_path}", verbose=True)
-        docker_image = pull_image(get_docker_image("clickhouse/stateless-test"))
-    else:
-        download_all_deb_packages(check_name, reports_path, packages_path)
-        docker_image = pull_image(get_docker_image("clickhouse/stress-test"))
+    # if check_name.startswith("amd_") or check_name.startswith("arm_"):
+    # this is praktika based CI
+    # print("Copy input *.deb artifacts")
+    # assert Shell.check(f"cp {REPO_COPY}/ci/tmp/*.deb {packages_path}", verbose=True)
+    docker_image = pull_image(get_docker_image("clickhouse/stateless-test"))
+    # else:
+    download_all_deb_packages(check_name, reports_path, packages_path)
+    #     docker_image = pull_image(get_docker_image("clickhouse/stress-test"))
 
     server_log_path = temp_path / "server_log"
     server_log_path.mkdir(parents=True, exist_ok=True)
