@@ -18,20 +18,9 @@ void * JemallocNodumpAllocatorImpl::allocate(size_t size) const
     return mallocx(size, flags);
 }
 
-void * JemallocNodumpAllocatorImpl::reallocate(void * p, size_t size) const
-{
-    return rallocx(p, size, flags);
-}
-
 void JemallocNodumpAllocatorImpl::deallocate(void * p) const
 {
     dallocx(p, flags);
-}
-
-void JemallocNodumpAllocatorImpl::deallocate(void * p, void * userData)
-{
-    const auto flags = reinterpret_cast<uint64_t>(userData);
-    dallocx(p, static_cast<int>(flags));
 }
 
 void * JemallocNodumpAllocatorImpl::alloc(
@@ -42,7 +31,7 @@ void * JemallocNodumpAllocatorImpl::alloc(
     {
         if (auto ret = madvise(result, size, MADV_DONTDUMP))
         {
-            throw std::runtime_error(Poco::format("Failed to run madvise: {}", errnoToString(ret)));
+            throw std::runtime_error(Poco::format("Failed to run madvise: %s", errnoToString(ret)));
         }
     }
     return result;
@@ -58,16 +47,16 @@ void JemallocNodumpAllocatorImpl::setupArena()
     size_t len = sizeof(arena_index);
     if (auto ret = mallctl("arenas.create", &arena_index, &len, nullptr, 0))
     {
-        throw std::runtime_error(Poco::format("Failed to create jemalloc arena: {}", errnoToString(ret)));
+        throw std::runtime_error(Poco::format("Failed to create jemalloc arena: %s", errnoToString(ret)));
     }
     flags = MALLOCX_ARENA(arena_index) | MALLOCX_TCACHE_NONE;
 
-    const std::string key = Poco::format("arena.{}.extent_hooks", arena_index);
+    const std::string key = Poco::format("arena.%d.extent_hooks", arena_index);
     extent_hooks_t * hooks;
     len = sizeof(extent_hooks_t *);
     if (auto ret = mallctl(key.c_str(), &hooks, &len, nullptr, 0))
     {
-        throw std::runtime_error(Poco::format("Failed to get default extent hooks: {}", errnoToString(ret)));
+        throw std::runtime_error(Poco::format("Failed to get default extent hooks: %s", errnoToString(ret)));
     }
     chassert(original_alloc_ == nullptr);
     original_alloc_ = hooks->alloc;
@@ -77,10 +66,10 @@ void JemallocNodumpAllocatorImpl::setupArena()
     extent_hooks_t * new_hooks = &extent_hooks_;
     if (auto ret = mallctl(key.c_str(), nullptr, nullptr, &new_hooks, sizeof(extent_hooks_t *)))
     {
-        throw std::runtime_error(Poco::format("Failed to set custom extent hooks: {}", errnoToString(ret)));
+        throw std::runtime_error(Poco::format("Failed to set custom extent hooks: %s", errnoToString(ret)));
     }
 
-    const std::string arena_name_key = Poco::format("arena.{}.name", arena_index);
+    const std::string arena_name_key = Poco::format("arena.%d.name", arena_index);
     const char * arena_name_str = "JemallocNodumpAllocator";
     mallctl(arena_name_key.c_str(), nullptr, nullptr, &arena_name_str, sizeof(void *));
 }

@@ -22,12 +22,7 @@ public:
     JemallocNodumpAllocatorImpl & operator =(const JemallocNodumpAllocatorImpl &) = delete;
 
     void * allocate(size_t size) const;
-
-    void * reallocate(void * p, size_t size) const;
-
     void deallocate(void * p) const;
-
-    static void deallocate(void * p, void * userData);
 
 private:
     inline static extent_hooks_t extent_hooks_{};
