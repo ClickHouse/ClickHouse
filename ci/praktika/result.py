@@ -48,6 +48,7 @@ class Result(MetaClasses.Serializable):
         ERROR = "error"
 
     class Label:
+        REQUIRED = "required"
         NOT_REQUIRED = "not required"
         FLAKY = "flaky"
         BROKEN = "broken"
@@ -288,12 +289,29 @@ class Result(MetaClasses.Serializable):
         return self
 
     def set_label(self, label):
-        if not self.ext["labels"]:
+        if not self.ext.get("labels", None):
             self.ext["labels"] = []
         self.ext["labels"].append(label)
 
-    def set_not_required_label(self):
-        self.set_label(self.Label.NOT_REQUIRED)
+    def set_required_label(self):
+        self.set_label(self.Label.REQUIRED)
+
+    @classmethod
+    def filter_out_ok_results(cls, result_obj):
+        if not result_obj.results:
+            return result_obj
+
+        filtered = []
+        for r in result_obj.results:
+            if not r.is_ok():
+                filtered.append(cls.filter_out_ok_results(r))
+
+        if len(filtered) == len(result_obj.results):
+            return result_obj  # No filtering needed
+
+        result_copy = copy.deepcopy(result_obj)
+        result_copy.results = filtered
+        return result_copy
 
     def update_sub_result(self, result: "Result", drop_nested_results=False):
         assert self.results, "BUG?"
@@ -301,6 +319,9 @@ class Result(MetaClasses.Serializable):
             if result_.name == result.name:
                 if drop_nested_results:
                     res_ = copy.deepcopy(result)
+                    res_.ext["results_preview"] = self.filter_out_ok_results(
+                        res_
+                    ).results
                     res_.results = []
                     self.results[i] = res_
                 else:
@@ -607,11 +628,15 @@ class _ResultS3:
             local_path=result.file_name(),
             if_none_matched=True,
             no_strict=no_strict,
+            text=True,
         ):
             print("Failed to put versioned Result")
             return False
         if not S3.put(
-            s3_path=s3_path, local_path=result.file_name(), no_strict=no_strict
+            s3_path=s3_path,
+            local_path=result.file_name(),
+            no_strict=no_strict,
+            text=True,
         ):
             print("Failed to put non-versioned Result")
         return True

@@ -18,6 +18,24 @@ build_digest_config = Job.CacheDigestConfig(
     with_git_submodules=True,
 )
 
+common_ft_job_config = Job.Config(
+    name=JobNames.STATELESS,
+    runs_on=["..params.."],
+    command='python3 ./ci/jobs/functional_tests.py --options "{PARAMETER}"',
+    # some tests can be flaky due to very slow disks - use tmpfs for temporary ClickHouse files
+    # TODO: switch to refactored stateless-test image and remove +root
+    run_in_docker="clickhouse/stateless-test+--network=host+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse",
+    digest_config=Job.CacheDigestConfig(
+        include_paths=[
+            "./ci/jobs/functional_tests.py",
+            "./tests/queries",
+            "./tests/clickhouse-test",
+            "./tests/config",
+            "./tests/*.txt",
+        ],
+    ),
+)
+
 
 class JobConfigs:
     docker_build_arm = Job.Config(
@@ -287,55 +305,25 @@ class JobConfigs:
             ["Build (arm_release)"],
         ],
     )
-    stateless_tests_flaky_pr_jobs = Job.Config(
-        name=JobNames.STATELESS,
-        runs_on=RunnerLabels.FUNC_TESTER_AMD,
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./tests/ci/functional_test_check.py",
-                "./tests/queries/0_stateless/",
-                "./tests/clickhouse-test",
-                "./tests/config",
-                "./tests/*.txt",
-                "./tests/docker_scripts/",
-                "./docker",
-            ],
-        ),
-    ).parametrize(
+    stateless_tests_flaky_pr_jobs = common_ft_job_config.parametrize(
         parameter=[
-            "asan, flaky check",
+            "amd_asan, flaky check",
         ],
         runs_on=[
             RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
-            ["Build (amd_asan)"],
+            [ArtifactNames.CH_AMD_ASAN],
         ],
     )
-    functional_tests_jobs_required = Job.Config(
-        name=JobNames.STATELESS,
-        runs_on=RunnerLabels.FUNC_TESTER_AMD,
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./tests/ci/functional_test_check.py",
-                "./tests/queries/0_stateless/",
-                "./tests/clickhouse-test",
-                "./tests/config",
-                "./tests/*.txt",
-                "./tests/docker_scripts/",
-                "./docker",
-            ],
-        ),
-    ).parametrize(
+    functional_tests_jobs_required = common_ft_job_config.parametrize(
         parameter=[
-            "asan, distributed plan, 1/2",
-            "asan, distributed plan, 2/2",
-            "release",
-            "release, old analyzer, s3, DatabaseReplicated, 1/2",
-            "release, old analyzer, s3, DatabaseReplicated, 2/2",
-            "release, ParallelReplicas, s3 storage",
+            "amd_asan, distributed plan, 1/2",
+            "amd_asan, distributed plan, 2/2",
+            "amd_binary",
+            "amd_binary, old analyzer, s3 storage, DatabaseReplicated, 1/2",
+            "amd_binary, old analyzer, s3 storage, DatabaseReplicated, 2/2",
+            "amd_binary, ParallelReplicas, s3 storage",
             "debug, AsyncInsert, s3 storage",
         ],
         runs_on=[
@@ -348,129 +336,87 @@ class JobConfigs:
             RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
-            ["Build (amd_asan)"],
-            ["Build (amd_asan)"],
-            ["Build (amd_release)"],
-            ["Build (amd_release)"],
-            ["Build (amd_release)"],
-            ["Build (amd_release)"],
-            ["Build (amd_debug)"],
+            [ArtifactNames.CH_AMD_ASAN],
+            [ArtifactNames.CH_AMD_ASAN],
+            [ArtifactNames.CH_AMD_BINARY],
+            [ArtifactNames.CH_AMD_BINARY],
+            [ArtifactNames.CH_AMD_BINARY],
+            [ArtifactNames.CH_AMD_BINARY],
+            [ArtifactNames.CH_AMD_DEBUG],
         ],
     )
-    functional_tests_jobs_coverage = Job.Config(
-        name=JobNames.STATELESS,
-        runs_on=["..."],
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./tests/ci/functional_test_check.py",
-                "./tests/queries/0_stateless/",
-                "./tests/clickhouse-test",
-                "./tests/config",
-                "./tests/*.txt",
-                "./tests/docker_scripts/",
-                "./docker",
-            ],
-        ),
-        allow_merge_on_failure=True,
+    functional_tests_jobs_coverage = common_ft_job_config.set_allow_merge_on_failure(
+        True
     ).parametrize(
-        parameter=[f"coverage, {i}/6" for i in range(1, 7)],
+        parameter=[f"amd_coverage, {i}/6" for i in range(1, 7)],
         runs_on=[RunnerLabels.FUNC_TESTER_ARM for _ in range(6)],
-        requires=[["Build (arm_coverage)"] for _ in range(6)],
+        requires=[[ArtifactNames.CH_COV_BIN] for _ in range(6)],
     )
-    functional_tests_jobs_non_required = Job.Config(
-        name=JobNames.STATELESS,
-        runs_on=RunnerLabels.FUNC_TESTER_AMD,
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./tests/ci/functional_test_check.py",
-                "./tests/queries/0_stateless/",
-                "./tests/clickhouse-test",
-                "./tests/config",
-                "./tests/*.txt",
-                "./tests/docker_scripts/",
-                "./docker",
+    functional_tests_jobs_non_required = (
+        common_ft_job_config.set_allow_merge_on_failure(True).parametrize(
+            parameter=[
+                "amd_debug",
+                "amd_tsan, 1/3",
+                "amd_tsan, 2/3",
+                "amd_tsan, 3/3",
+                "amd_msan, 1/4",
+                "amd_msan, 2/4",
+                "amd_msan, 3/4",
+                "amd_msan, 4/4",
+                "amd_ubsan",
+                "amd_debug, distributed plan, s3 storage",
+                "amd_tsan, s3 storage, 1/3",
+                "amd_tsan, s3 storage, 2/3",
+                "amd_tsan, s3 storage, 3/3",
+                "arm_binary",
             ],
-        ),
-        allow_merge_on_failure=True,
-    ).parametrize(
-        parameter=[
-            "debug",
-            "tsan, 1/3",
-            "tsan, 2/3",
-            "tsan, 3/3",
-            "msan, 1/4",
-            "msan, 2/4",
-            "msan, 3/4",
-            "msan, 4/4",
-            "ubsan",
-            "debug, distributed plan, s3 storage",
-            "tsan, s3 storage, 1/3",
-            "tsan, s3 storage, 2/3",
-            "tsan, s3 storage, 3/3",
-            "aarch64",
-        ],
-        runs_on=[
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_ARM,
-        ],
-        requires=[
-            ["Build (amd_debug)"],
-            ["Build (amd_tsan)"],
-            ["Build (amd_tsan)"],
-            ["Build (amd_tsan)"],
-            ["Build (amd_msan)"],
-            ["Build (amd_msan)"],
-            ["Build (amd_msan)"],
-            ["Build (amd_msan)"],
-            ["Build (amd_ubsan)"],
-            ["Build (amd_debug)"],
-            ["Build (amd_tsan)"],
-            ["Build (amd_tsan)"],
-            ["Build (amd_tsan)"],
-            ["Build (arm_release)"],
-        ],
+            runs_on=[
+                RunnerLabels.FUNC_TESTER_AMD,
+                RunnerLabels.FUNC_TESTER_AMD,
+                RunnerLabels.FUNC_TESTER_AMD,
+                RunnerLabels.FUNC_TESTER_AMD,
+                RunnerLabels.FUNC_TESTER_AMD,
+                RunnerLabels.FUNC_TESTER_AMD,
+                RunnerLabels.FUNC_TESTER_AMD,
+                RunnerLabels.FUNC_TESTER_AMD,
+                RunnerLabels.FUNC_TESTER_AMD,
+                RunnerLabels.FUNC_TESTER_AMD,
+                RunnerLabels.FUNC_TESTER_AMD,
+                RunnerLabels.FUNC_TESTER_AMD,
+                RunnerLabels.FUNC_TESTER_AMD,
+                RunnerLabels.FUNC_TESTER_ARM,
+            ],
+            requires=[
+                [ArtifactNames.CH_AMD_DEBUG],
+                [ArtifactNames.CH_AMD_TSAN],
+                [ArtifactNames.CH_AMD_TSAN],
+                [ArtifactNames.CH_AMD_TSAN],
+                [ArtifactNames.CH_AMD_MSAN],
+                [ArtifactNames.CH_AMD_MSAN],
+                [ArtifactNames.CH_AMD_MSAN],
+                [ArtifactNames.CH_AMD_MSAN],
+                [ArtifactNames.CH_AMD_UBSAN],
+                [ArtifactNames.CH_AMD_DEBUG],
+                [ArtifactNames.CH_AMD_TSAN],
+                [ArtifactNames.CH_AMD_TSAN],
+                [ArtifactNames.CH_AMD_TSAN],
+                [ArtifactNames.CH_ARM_BIN],
+            ],
+        )
     )
-    functional_tests_jobs_azure_master_only = Job.Config(
-        name=JobNames.STATELESS,
-        runs_on=RunnerLabels.FUNC_TESTER_ARM,
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./tests/ci/functional_test_check.py",
-                "./tests/queries/0_stateless/",
-                "./tests/clickhouse-test",
-                "./tests/config",
-                "./tests/*.txt",
-                "./tests/docker_scripts/",
-                "./docker",
+    functional_tests_jobs_azure_master_only = (
+        common_ft_job_config.set_allow_merge_on_failure(True).parametrize(
+            parameter=[
+                "azure, arm_asan, 1/3",
+                "azure, arm_asan, 2/3",
+                "azure, arm_asan, 3/3",
             ],
-        ),
-        allow_merge_on_failure=True,
-    ).parametrize(
-        parameter=[
-            "azure, arm_asan, 1/3",
-            "azure, arm_asan, 2/3",
-            "azure, arm_asan, 3/3",
-        ],
-        requires=[
-            ["Build (arm_asan)"],  # azure asan 1
-            ["Build (arm_asan)"],  # azure asan 2
-            ["Build (arm_asan)"],  # azure asan 3
-        ],
+            requires=[
+                [ArtifactNames.CH_ARM_BIN],  # azure asan 1
+                [ArtifactNames.CH_ARM_BIN],  # azure asan 2
+                [ArtifactNames.CH_ARM_BIN],  # azure asan 3
+            ],
+        )
     )
     bugfix_validation_job = Job.Config(
         name=JobNames.BUGFIX_VALIDATE,
