@@ -1788,6 +1788,8 @@ namespace ErrorCodes
     - `throw`
     - `drop`
     - `rebuild`
+    )", 0) \
+    /** Default compression codec settings. */ \
     DECLARE(String, default_compression_codec, "", R"(
     Specifies the default compression codec to be used if none is defined for a particular column in the table declaration.
     Compression codec selecting order for a column:
