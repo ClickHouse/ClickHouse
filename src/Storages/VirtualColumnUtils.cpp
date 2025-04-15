@@ -1,7 +1,6 @@
 #include <memory>
 #include <stack>
 
-#include <absl/container/flat_hash_map.h>
 #include <Storages/VirtualColumnUtils.h>
 
 #include <Core/NamesAndTypes.h>
@@ -147,14 +146,33 @@ NameSet getVirtualNamesForFileLikeStorage()
     return getCommonVirtualsForFileLikeStorage().getNameSet();
 }
 
-using HivePartitioningKeysAndValues = absl::flat_hash_map<std::string_view, std::string_view>;
-
 static auto makeExtractor()
 {
     return KeyValuePairExtractorBuilder().withItemDelimiters({'/'}).withKeyValueDelimiter('=').buildWithReferenceMap();
 }
 
-static HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & path)
+HivePartitioningKeysAndValues parseHivePartitioningKeysAndValuesRegex(const String & path)
+{
+    const static RE2 pattern_re("([^/]+)=([^/]*)/");
+    re2::StringPiece input_piece(path);
+
+    HivePartitioningKeysAndValues result;
+    std::string_view key;
+    std::string_view value;
+
+    while (RE2::FindAndConsume(&input_piece, pattern_re, &key, &value))
+    {
+        auto it = result.find(key);
+        if (it != result.end() && it->second != value)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Path '{}' to file with enabled hive-style partitioning contains duplicated partition key {} with different values, only unique keys are allowed", path, key);
+
+        auto col_name = key;
+        result[col_name] = value;
+    }
+    return result;
+}
+
+HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & path)
 {
     static auto extractor = makeExtractor();
 
