@@ -70,6 +70,7 @@ public:
         LoadingStrictnessLevel mode,
         bool distributed_processing_ = false,
         ASTPtr partition_by_ = nullptr,
+        bool is_table_function_ = false,
         bool lazy_init = false);
 
     String getName() const override;
@@ -156,6 +157,7 @@ protected:
     const std::optional<FormatSettings> format_settings;
     const ASTPtr partition_by;
     const bool distributed_processing;
+    bool update_configuration_on_read;
 
     LoggerPtr log;
 };
@@ -222,16 +224,14 @@ public:
 
     virtual bool isDataLakeConfiguration() const { return false; }
 
-    virtual void implementPartitionPruning(const ActionsDAG &) { }
-
     virtual std::optional<size_t> totalRows() { return {}; }
     virtual std::optional<size_t> totalBytes() { return {}; }
 
     virtual bool hasExternalDynamicMetadata() { return false; }
 
-    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String&) const { return {}; }
+    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String &) const { return {}; }
 
-    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String&) const { return {}; }
+    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String &) const { return {}; }
 
     virtual ColumnsDescription updateAndGetCurrentSchema(ObjectStoragePtr, ContextPtr)
     {
@@ -248,7 +248,12 @@ public:
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
 
     virtual bool supportsFileIterator() const { return false; }
-    virtual ObjectIterator iterate()
+    virtual bool supportsWrites() const { return true; }
+
+    virtual ObjectIterator iterate(
+        const ActionsDAG * /* filter_dag */,
+        std::function<void(FileProgress)> /* callback */,
+        size_t /* list_batch_size */)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }

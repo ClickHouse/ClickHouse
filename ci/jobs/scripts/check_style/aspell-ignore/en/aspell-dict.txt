@@ -33,6 +33,7 @@ Approximative
 ArrayJoin
 ArrowCompression
 ArrowStream
+aspell
 AsyncInsertCacheSize
 AsynchronousHeavyMetricsCalculationTimeSpent
 AsynchronousHeavyMetricsUpdateInterval
@@ -129,6 +130,7 @@ CMPLNT
 CMake
 CMakeLists
 CODECS
+codespell
 CORS
 COVID
 CPUFrequencyMHz
@@ -659,6 +661,7 @@ Multiqueries
 Multithreading
 Multiword
 MurmurHash
+mypy
 MySQLConnection
 MySQLDataTypesSupport
 MySQLDump
@@ -986,6 +989,7 @@ SelfManaged
 Sematext
 SendExternalTables
 SendScalars
+ServerSettings
 SetOperationMode
 ShareAlike
 ShareSet
@@ -1304,6 +1308,8 @@ arrayJoin
 arrayLast
 arrayLastIndex
 arrayLastOrNull
+arrayLevenshteinDistance
+arrayLevenshteinDistanceWeighted
 arrayMap
 arrayMax
 arrayMin
@@ -1331,6 +1337,7 @@ arrayShiftLeft
 arrayShiftRight
 arrayShingles
 arrayShuffle
+arraySimilarity
 arraySlice
 arraySort
 arraySplit
@@ -1644,6 +1651,7 @@ dbal
 dbeaver
 dbgen
 dbms
+dbpedia
 ddl
 deallocated
 deallocation
@@ -2092,8 +2100,8 @@ kRing
 kafka
 kafkaMurmurHash
 kafkacat
-keccak
 kbytes
+keccak
 keepalive
 keepermap
 kerberized
@@ -2567,6 +2575,7 @@ quantiletdigest
 quantiletdigestweighted
 quantiletiming
 quantiletimingweighted
+quantized
 quartile
 queryID
 queryString
@@ -2698,6 +2707,7 @@ runningConcurrency
 runningDifference
 runningDifferenceStartingWithFirstValue
 runtime
+runtimes
 russian
 rustc
 rustup
@@ -2765,6 +2775,10 @@ socketcache
 soundex
 sparkBar
 sparkbar
+sparseGrams
+sparseGramsHashes
+sparseGramsHashesUTF
+sparseGramsUTF
 sparsehash
 speedscope
 splitBy
@@ -2942,6 +2956,7 @@ timeZoneOffset
 timezones
 tinylog
 tmp
+tmpfs
 toBFloat
 toBool
 toColumnTypeName
@@ -3069,7 +3084,6 @@ tryPunycodeDecode
 tskv
 tsv
 tui
-tmpfs
 tukey
 tumbleEnd
 tumbleStart

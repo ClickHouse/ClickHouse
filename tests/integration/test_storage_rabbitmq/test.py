@@ -1,8 +1,6 @@
 import json
 import logging
-import os.path as p
 import random
-import subprocess
 import threading
 import time
 import uuid
@@ -10,7 +8,6 @@ from random import randrange
 
 import pika
 import pytest
-from google.protobuf.internal.encoder import _VarintBytes
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -511,6 +508,7 @@ def test_rabbitmq_materialized_view_with_subquery(rabbitmq_cluster):
 def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
     instance.query(
         """
+        SET allow_materialized_view_with_bad_select = true;
         DROP TABLE IF EXISTS test.view1;
         DROP TABLE IF EXISTS test.view2;
         DROP TABLE IF EXISTS test.view3;

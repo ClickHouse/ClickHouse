@@ -1,9 +1,10 @@
-#include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
-
 #include <Columns/ColumnSparse.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Compression/CompressionFactory.h>
+#include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 
 namespace DB
 {
@@ -12,6 +13,11 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
+}
+
+namespace MergeTreeSetting
+{
+extern const MergeTreeSettingsString default_compression_codec;
 }
 
 Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation)
@@ -116,19 +122,21 @@ SerializationPtr IMergeTreeDataPartWriter::getSerialization(const String & colum
 
 ASTPtr IMergeTreeDataPartWriter::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
 {
-    auto get_codec_or_default = [&](const auto & column_desc)
-    {
-        return column_desc.codec ? column_desc.codec : default_codec->getFullCodecDesc();
-    };
+    ASTPtr default_codec_desc = default_codec->getFullCodecDesc();
+
+    auto default_compression_codec_mergetree_settings = (*storage_settings)[MergeTreeSetting::default_compression_codec].value;
+    // Prioritize the codec from the settings over `default_codec`
+    if (!default_compression_codec_mergetree_settings.empty())
+        default_codec_desc = CompressionCodecFactory::instance().get(default_compression_codec_mergetree_settings)->getFullCodecDesc();
 
     const auto & columns = metadata_snapshot->getColumns();
     if (const auto * column_desc = columns.tryGet(column_name))
-        return get_codec_or_default(*column_desc);
+        return column_desc->codec ? column_desc->codec : default_codec_desc;
 
     if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name))
-        return get_codec_or_default(*virtual_desc);
+        return virtual_desc->codec ? virtual_desc->codec : default_codec_desc;
 
-    return default_codec->getFullCodecDesc();
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
 }
 
 
