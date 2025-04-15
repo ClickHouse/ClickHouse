@@ -70,7 +70,7 @@ Throws an exception if unable to parse the value of the attribute, the value doe
                 .examples = {{"", "", ""}},
                 .category = FunctionDocumentation::Category::Dictionary
             };
-        } 
+        }
         else if (type == dictGetType::dictGetOrDefault)
         {
             return FunctionDocumentation{
@@ -81,7 +81,7 @@ Throws an exception if unable to parse the value of the attribute, the value doe
                 .examples = {{"", "", ""}},
                 .category = FunctionDocumentation::Category::Dictionary
             };
-        } 
+        }
         else if (type == dictGetType::dictGetOrNull)
         {
             return FunctionDocumentation{
@@ -92,7 +92,7 @@ Throws an exception if unable to parse the value of the attribute, the value doe
                 .examples = {{"", "", ""}},
                 .category = FunctionDocumentation::Category::Dictionary
             };
-        } 
+        }
         else if (type == dictGetType::dictGetAll)
         {
             return FunctionDocumentation{
