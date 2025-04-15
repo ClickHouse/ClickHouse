@@ -25,7 +25,6 @@ REGISTER_FUNCTION(Decrypt)
     factory.registerFunction<FunctionDecrypt<DecryptImpl>>(FunctionDocumentation{
         .description=R"(
 This function decrypts ciphertext into a plaintext using these modes:
-
 - aes-128-ecb, aes-192-ecb, aes-256-ecb
 - aes-128-cbc, aes-192-cbc, aes-256-cbc
 - aes-128-ofb, aes-192-ofb, aes-256-ofb

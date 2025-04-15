@@ -358,7 +358,7 @@ Literal `%` character can be escaped by `%%`.)",
                 {"argN", "Values to format the provided string with."}
             },
             .returned_value="Returns a formatted string. String.",
-            .examples{{"sum", "select printf('%%%s %s %d', 'Hello', 'World', 2024);", "%Hello World 2024"}}, 
+            .examples{{"sum", "select printf('%%%s %s %d', 'Hello', 'World', 2024);", "%Hello World 2024"}},
             .category=FunctionDocumentation::Category::StringReplacement
 });
 

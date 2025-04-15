@@ -276,9 +276,9 @@ Uses [crc32](./string-functions.md#crc32) as a hash function.
                 "Usage example",
                 "SELECT sparseGrams('alice', 3) AS result",
                 R"(
-   ┌─result─────────────────────┐
-1. │ ['ali','lic','lice','ice'] │
-   └────────────────────────────┘
+┌─result─────────────────────┐
+│ ['ali','lic','lice','ice'] │
+└────────────────────────────┘
                 )"
             },
         },
@@ -304,9 +304,9 @@ Expects UTF-8 string, throws an exception in case of invalid UTF-8 sequence.
                 "Usage example",
                 "SELECT sparseGramsUTF8('алиса', 3) AS result",
                 R"(
-   ┌─result──────────────┐
-1. │ ['али','лис','иса'] │
-   └─────────────────────┘
+┌─result──────────────┐
+│ ['али','лис','иса'] │
+└─────────────────────┘
                 )"
             }
         },
@@ -332,9 +332,9 @@ Uses [crc32](./string-functions.md#crc32) as a hash function.
                 "Usage example",
                 "SELECT sparseGramsHashes('alice', 3) AS result",
                 R"(
-   ┌─result────────────────────────────────────────┐
-1. │ [1265796434,3725069146,1689963195,3410985998] │
-   └───────────────────────────────────────────────┘
+┌─result────────────────────────────────────────┐
+│ [1265796434,3725069146,1689963195,3410985998] │
+└───────────────────────────────────────────────┘
                 )"
             },
             },
@@ -360,9 +360,9 @@ Expects UTF-8 string, throws an exception in case of invalid UTF-8 sequence.
                 "Usage example",
                 "SELECT sparseGramsHashesUTF8('алиса', 3) AS result",
                 R"(
-   ┌─result───────────────────────────┐
-1. │ [417784657,728683856,3071092609] │
-   └──────────────────────────────────┘
+┌─result───────────────────────────┐
+│ [417784657,728683856,3071092609] │
+└──────────────────────────────────┘
                 )"
             },
         },

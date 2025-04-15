@@ -58,9 +58,8 @@ Throws an exception if unable to parse the value of the attribute, the value doe
     };
     constexpr auto dict_get_all_return_value = "array of dictionary attribute values parsed in the attribute's data type if key is found, otherwise empty array.";
 
-    FunctionDocumentation createDictGetDocumentation(const dictGetType& type, const std::string& type_name )
+    FunctionDocumentation createDictGetDocumentation(const dictGetType& type, const std::string& type_name)
     {
-
         switch (type) {
             case dictGetType::dictGet:
                 return FunctionDocumentation{

@@ -42,10 +42,10 @@ Let's create a table where `user_id` is the unique user id, `encrypted` is an en
 
 ```sql
 CREATE TABLE decrypt_null (
-  dt DateTime,
-  user_id UInt32,
-  encrypted String,
-  iv String
+    dt DateTime,
+    user_id UInt32,
+    encrypted String,
+    iv String
 ) ENGINE = Memory;
 ```
 
