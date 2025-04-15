@@ -50,7 +50,7 @@ namespace ErrorCodes
 }
 
 /// Helper function and enum type for generating documentation
-enum class dictGetType : uint8_t 
+enum class dictGetType : uint8_t
 {
     dictGet,
     dictGetOrDefault,

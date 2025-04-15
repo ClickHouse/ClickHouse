@@ -62,7 +62,7 @@ REGISTER_FUNCTION(EmptyArray)
         "Float32", "Float64", "Date", "DateTime", "String"
     };
 
-    auto createDocumentation = [](const std::string& type_name) 
+    auto createDocumentation = [](const std::string& type_name)
     {
         FunctionDocumentation::Description description = "Returns an empty " + type_name + " array";
         FunctionDocumentation::Syntax syntax = "empty" + type_name + "()";
@@ -82,7 +82,8 @@ REGISTER_FUNCTION(EmptyArray)
     };
 
     // Register all functions
-    for(const auto& type : types) {
+    for(const auto& type : types)
+    {
         registerFunction(factory, type, createDocumentation(type));
     }
 }
