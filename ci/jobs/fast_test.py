@@ -1,4 +1,5 @@
 import argparse
+import os
 import time
 from pathlib import Path
 
@@ -140,6 +141,11 @@ def main():
         if not clickhouse_server_link.is_file():
             Shell.check(f"ln -sf {clickhouse_bin_path} {clickhouse_server_link}")
         Shell.check(f"chmod +x {clickhouse_bin_path}")
+    else:
+        os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
+        os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
+        os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
+        Shell.check("sccache --show-stats", verbose=True)
 
     Utils.add_to_PATH(f"{build_dir}/programs:{current_directory}/tests")
 
