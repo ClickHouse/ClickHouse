@@ -212,7 +212,7 @@ bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const
 {
     return rpnEvaluatesAlwaysUnknownOrTrue(
         rpn,
-        [&](RPNElement::Function function)
+        [](RPNElement::Function function)
         {
             return (
                 function == RPNElement::FUNCTION_EQUALS || function == RPNElement::FUNCTION_NOT_EQUALS
