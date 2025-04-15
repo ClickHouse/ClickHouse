@@ -15,16 +15,16 @@ SELECT icebergHash(34 :: UInt64);
 SELECT icebergHash(14.20 :: Decimal32(2));
 SELECT icebergHash(14.20 :: Decimal64(2));
 SELECT icebergHash(14.20 :: Decimal128(2));
-WITH
-    timestamp('1970-01-01 22:31:08') AS ts,
-    toUnixTimestamp64Micro(ts) - toUnixTimestamp64Micro(toStartOfDay(ts)) AS microseconds_since_day_start
-SELECT icebergHash(microseconds_since_day_start);
 SELECT icebergHash('2017-11-16' :: Date);
-SELECT icebergHash('2017-11-16 22:31:08' :: DateTime64(6));
-SELECT icebergHash('2017-11-16T22:31:08.000001' :: DateTime64(6));
-SELECT icebergHash('2017-11-16 22:31:08' :: DateTime64(9));
-SELECT icebergHash('2017-11-16T22:31:08.000001' :: DateTime64(9));
-SELECT icebergHash('2017-11-16T22:31:08.000001001' :: DateTime64(9));
+WITH
+    toDateTime64('1970-01-01 22:31:08', 6, 'UTC') AS ts,
+    toUnixTimestamp64Micro(ts) AS microseconds_since_day_start
+SELECT icebergHash(microseconds_since_day_start);
+SELECT icebergHash(toDateTime64('2017-11-16T22:31:08', 6, 'UTC'));
+SELECT icebergHash(toDateTime64('2017-11-16T22:31:08.000001', 6, 'UTC'));
+SELECT icebergHash(toDateTime64('2017-11-16T22:31:08', 9, 'UTC'));
+SELECT icebergHash(toDateTime64('2017-11-16T22:31:08.000001', 9, 'UTC'));
+SELECT icebergHash(toDateTime64('2017-11-16T22:31:08.000001001', 9, 'UTC'));
 SELECT icebergHash('iceberg');
 SELECT icebergHash('iceberg' :: String);
 SELECT icebergHash('iceberg' :: FixedString(7));

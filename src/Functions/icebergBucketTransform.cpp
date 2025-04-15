@@ -152,7 +152,9 @@ public:
                 if (scale == 9) {
                     value_int = value_int / 1000;
                 }
+                LOG_DEBUG(&Poco::Logger::get("FunctionIcebergHash"), "value_int: {}", value_int);
                 result_data[i] = hashLong(value_int);
+                LOG_DEBUG(&Poco::Logger::get("FunctionIcebergHash"), "hash long: {}", result_data[i]);
             }
         }
         else if (which.isDecimal())
