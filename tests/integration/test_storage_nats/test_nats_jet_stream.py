@@ -1316,15 +1316,27 @@ def test_nats_format_factory_settings(nats_cluster, consumer_mode):
 
     assert result == expected
 
-
-@pytest.mark.skip("need modify")
-def test_nats_bad_args(nats_cluster):
+@pytest.mark.parametrize("consumer_mode", consumer_modes)
+def test_nats_bad_args(nats_cluster, consumer_mode):
     instance.query_and_get_error(
         """
         CREATE TABLE test.drop (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
-                     nats_secure = true,
+                     nats_stream = 'test_stream',
+                     nats_consumer_mode = '{consumer_mode}',
+                     nats_subjects = 'test_subject',
+                     nats_format = 'JSONEachRow';
+        """
+    )
+    instance.query_and_get_error(
+        """
+        CREATE TABLE test.drop (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_consumer_name = 'test_consumer',
+                     nats_consumer_mode = '{consumer_mode}',
+                     nats_subjects = 'test_subject',
                      nats_format = 'JSONEachRow';
         """
     )
