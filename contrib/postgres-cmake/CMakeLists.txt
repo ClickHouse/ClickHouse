@@ -79,6 +79,25 @@ if (OS_DARWIN OR OS_FREEBSD OR USE_MUSL)
     target_compile_definitions(_libpq PRIVATE -DSTRERROR_R_INT=1)
 endif()
 
+# Mac 15.4 / Xcode 16.3 started defining srtchrnul
+# Could be cleaned up after resolved in upstream https://www.postgresql.org/message-id/flat/385134.1743523038%40sss.pgh.pa.us
+if (OS_DARWIN AND NOT USE_MUSL)
+    execute_process(
+            COMMAND xcrun --sdk macosx --show-sdk-version
+            OUTPUT_VARIABLE XCRUN
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+
+    string(REGEX MATCH "([0-9]+)\\.([0-9]+)" _ ${XCRUN})
+    set(SDK_VERSION_MAJOR "${CMAKE_MATCH_1}")
+    set(SDK_VERSION_MINOR "${CMAKE_MATCH_2}")
+
+    message(STATUS "Detected SDK Version: ${SDK_VERSION_MAJOR}.${SDK_VERSION_MINOR}")
+    if(SDK_VERSION_MAJOR GREATER 15 OR (SDK_VERSION_MAJOR EQUAL 15 AND SDK_VERSION_MINOR GREATER_EQUAL 4))
+        target_compile_definitions(_libpq PRIVATE -DHAVE_STRCHRNUL)
+    endif()
+endif()
+
 target_link_libraries (_libpq PRIVATE OpenSSL::SSL)
 
 add_library(ch_contrib::libpq ALIAS _libpq)
