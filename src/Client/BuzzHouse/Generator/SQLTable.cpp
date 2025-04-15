@@ -7,6 +7,11 @@
 namespace BuzzHouse
 {
 
+String StatementGenerator::nextComment(RandomGenerator & rg)
+{
+    return rg.nextSmallNumber() < 4 ? "''" : rg.nextString("'", true, rg.nextRandomUInt32() % 1009);
+}
+
 void collectColumnPaths(
     const String cname, SQLType * tp, const uint32_t flags, ColumnPathChain & next, std::vector<ColumnPathChain> & paths)
 {
@@ -1270,7 +1275,7 @@ void StatementGenerator::addTableColumnInternal(
     }
     if (rg.nextSmallNumber() < 3)
     {
-        cd->set_comment(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
+        cd->set_comment(nextComment(rg));
     }
 }
 
@@ -2072,7 +2077,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     this->allow_not_deterministic = prev_allow_not_deterministic;
     if (rg.nextSmallNumber() < 3)
     {
-        cd->set_comment(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
+        cd->set_comment(nextComment(rg));
     }
     this->staged_dictionaries[tname] = std::move(next);
 }

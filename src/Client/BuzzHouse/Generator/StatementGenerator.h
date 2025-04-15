@@ -281,6 +281,7 @@ private:
     String getNextAlias() { return "a" + std::to_string(this->levels[this->current_level].aliases_counter++); }
     void columnPathRef(const ColumnPathChain & entry, Expr * expr) const;
     void columnPathRef(const ColumnPathChain & entry, ColumnPath * cp) const;
+    String nextComment(RandomGenerator & rg);
     void addTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
     void addViewRelation(const String & rel_name, const SQLView & v);
     void addDictionaryRelation(const String & rel_name, const SQLDictionary & d);

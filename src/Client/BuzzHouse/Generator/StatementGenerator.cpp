@@ -128,7 +128,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     next.setName(cd->mutable_database());
     if (rg.nextSmallNumber() < 3)
     {
-        cd->set_comment(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
+        cd->set_comment(nextComment(rg));
     }
     this->staged_databases[dname] = std::make_shared<SQLDatabase>(std::move(next));
 }
@@ -355,7 +355,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     matchQueryAliases(next, cv->release_select(), cv->mutable_select());
     if (rg.nextSmallNumber() < 3)
     {
-        cv->set_comment(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
+        cv->set_comment(nextComment(rg));
     }
     this->staged_views[tname] = std::move(next);
 }
@@ -1204,7 +1204,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 flatTableColumnPath(flat_nested, t.cols, [](const SQLColumn &) { return true; });
                 columnPathRef(rg.pickRandomly(this->entries), ccol->mutable_col());
                 this->entries.clear();
-                ccol->set_comment(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
+                ccol->set_comment(nextComment(rg));
             }
             else if (
                 delete_mask
@@ -1841,7 +1841,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                        + freeze_partition + unfreeze_partition + clear_index_partition + move_partition + modify_ttl + remove_ttl
                        + comment_table + 1))
             {
-                ati->set_comment(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
+                ati->set_comment(nextComment(rg));
             }
             else
             {
@@ -1860,7 +1860,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
         {
             AlterItem * ati = i == 0 ? at->mutable_alter() : at->add_other_alters();
 
-            ati->set_comment(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
+            ati->set_comment(nextComment(rg));
         }
     }
     else
