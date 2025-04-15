@@ -530,8 +530,8 @@ struct ContextSharedPart : boost::noncopyable
     /// Only for system.server_settings, actually value stored in reloader itself
     std::atomic_size_t config_reload_interval_ms = ConfigReloader::DEFAULT_RELOAD_INTERVAL.count();
 
-    double min_os_cpu_wait_time_ratio_to_drop_connection = 10.0;
-    double max_os_cpu_wait_time_ratio_to_drop_connection = 20.0;
+    double min_os_cpu_wait_time_ratio_to_drop_connection = 15.0;
+    double max_os_cpu_wait_time_ratio_to_drop_connection = 30.0;
 
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     String google_protos_path; /// Path to a directory that contains the proto files for the well-known Protobuf types.
