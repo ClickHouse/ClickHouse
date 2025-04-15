@@ -60,7 +60,7 @@ public:
 
     T* allocate(std::size_t n)
     {
-        constexpr size_t element_size = sizeof(T);
+        static constexpr size_t element_size = sizeof(T);
 
         if (n > std::numeric_limits<std::size_t>::max() / element_size)
         {
