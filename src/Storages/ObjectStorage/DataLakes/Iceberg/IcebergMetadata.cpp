@@ -707,6 +707,85 @@ ManifestListPtr IcebergMetadata::getManifestList(const String & filename) const
     return manifest_list_ptr;
 }
 
+IcebergMetadata::IcebergHistory IcebergMetadata::getHistory() const
+{
+    auto configuration_ptr = configuration.lock();
+
+    const auto [metadata_version, metadata_file_path] = getLatestOrExplicitMetadataFileAndVersion(object_storage, *configuration_ptr, getContext(), log.get());
+
+    chassert(metadata_version == last_metadata_version);
+
+    auto metadata_object = readJSON(metadata_file_path, object_storage, getContext(), log);
+
+    chassert(format_version == metadata_object->getValue<int>(FORMAT_VERSION_FIELD));
+
+    /// History
+    std::vector<Iceberg::IcebergHistoryRecord> iceberg_history;
+
+    auto snapshots = metadata_object->get("snapshots").extract<Poco::JSON::Array::Ptr>();
+    auto snapshot_logs = metadata_object->get("snapshot-log").extract<Poco::JSON::Array::Ptr>();
+
+    std::vector<Int64> ancestors;
+    std::map<Int64, Int64> parents_list;
+    for (size_t i = 0; i < snapshots->size(); ++i)
+    {
+        const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
+        auto snapshot_id = snapshot->getValue<Int64>("snapshot-id");
+
+        if (snapshot->has("parent-snapshot-id") && !snapshot->isNull("parent-snapshot-id"))
+            parents_list[snapshot_id] = snapshot->getValue<Int64>("parent-snapshot-id");
+        else
+            parents_list[snapshot_id] = 0;
+    }
+
+    auto current_snapshot_id = metadata_object->getValue<Int64>("current-snapshot-id");
+
+    /// Add current snapshot-id to ancestors list
+    ancestors.push_back(current_snapshot_id);
+    while (parents_list[current_snapshot_id] != 0)
+    {
+        ancestors.push_back(parents_list[current_snapshot_id]);
+        current_snapshot_id = parents_list[current_snapshot_id];
+    }
+
+    for (size_t i = 0; i < snapshots->size(); ++i)
+    {
+        IcebergHistoryRecord history_record;
+
+        const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
+        history_record.snapshot_id = snapshot->getValue<Int64>("snapshot-id");
+
+        if (snapshot->has("parent-snapshot-id") && !snapshot->isNull("parent-snapshot-id"))
+            history_record.parent_id = snapshot->getValue<Int64>("parent-snapshot-id");
+        else
+            history_record.parent_id = 0;
+
+        for (size_t j = 0; j < snapshot_logs->size(); ++j)
+        {
+            const auto snapshot_log = snapshot_logs->getObject(static_cast<UInt32>(j));
+            if (snapshot_log->getValue<Int64>("snapshot-id") == history_record.snapshot_id)
+            {
+                auto value = snapshot_log->getValue<std::string>("timestamp-ms");
+                ReadBufferFromString in(value);
+                DateTime64 time = 0;
+                readDateTime64Text(time, 6, in);
+
+                history_record.made_current_at = time;
+                break;
+            }
+        }
+
+        if (std::find(ancestors.begin(), ancestors.end(), history_record.snapshot_id) != ancestors.end())
+            history_record.is_current_ancestor = true;
+        else
+            history_record.is_current_ancestor = false;
+
+        iceberg_history.push_back(history_record);
+    }
+
+    return iceberg_history;
+}
+
 ManifestFilePtr IcebergMetadata::getManifestFile(const String & filename, Int64 inherited_sequence_number) const
 {
     auto configuration_ptr = configuration.lock();

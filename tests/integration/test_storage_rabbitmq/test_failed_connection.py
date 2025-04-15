@@ -202,7 +202,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, r
     """
     )
 
-    messages_num = 200000
+    messages_num = 300000
     rabbitmq_monitor.set_expectations(published=messages_num, delivered=messages_num)
     deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
@@ -282,7 +282,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster, r
     """
     )
 
-    messages_num = 200000
+    messages_num = 300000
     rabbitmq_monitor.set_expectations(published=messages_num, delivered=messages_num)
     deadline = time.monotonic() + 180
     while time.monotonic() < deadline:

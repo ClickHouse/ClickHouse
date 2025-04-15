@@ -373,7 +373,9 @@ class Runner:
                     name = check.__name__
                 else:
                     name = str(check)
-                results_.append(Result.from_commands_run(name=name, command=check))
+                results_.append(
+                    Result.from_commands_run(name=name, command=check, with_info=True)
+                )
             result.results.append(
                 Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
             )
