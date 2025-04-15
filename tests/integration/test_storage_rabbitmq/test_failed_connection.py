@@ -176,6 +176,13 @@ timeout = 60
 
 
 def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, rabbitmq_monitor):
+    """
+    This test checks that after inserting through a RabbitMQ Engine, we can keep consuming from it
+    automatically after suspending and resuming the RabbitMQ server. To do that, we need the
+    consumption to be slow enough (hence, the rabbitmq_max_block_size = 1) so that we can check that
+    something has already been consumed before suspending RabbitMQ server, but not so fast so that
+    everything is consumed before suspending and resuming the RabbitMQ server.
+    """
     instance.query(
         """
         DROP TABLE IF EXISTS test.consume;
@@ -269,6 +276,13 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, r
 
 
 def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster, rabbitmq_monitor):
+    """
+    This test checks that after inserting through a RabbitMQ Engine, we can keep consuming from it
+    automatically after suspending and resuming the RabbitMQ server. To do that, we need the
+    consumption to be slow enough (hence, the rabbitmq_max_block_size = 1) so that we can check that
+    something has already been consumed before suspending RabbitMQ server, but not so fast so that
+    everything is consumed before suspending and resuming the RabbitMQ server.
+    """
     instance.query(
         """
         DROP TABLE IF EXISTS test.consumer_reconnect;
