@@ -503,14 +503,14 @@ void executeQueryWithParallelReplicas(
         if (settings[Setting::use_hedged_requests].changed)
         {
             LOG_WARNING(
-                getLogger("executeQueryWithParallelReplicas"),
+                logger,
                 "Setting 'use_hedged_requests' explicitly with enabled 'enable_parallel_replicas' has no effect. "
                 "Hedged connections are not used for parallel reading from replicas");
         }
         else
         {
             LOG_INFO(
-                getLogger("executeQueryWithParallelReplicas"),
+                logger,
                 "Disabling 'use_hedged_requests' in favor of 'enable_parallel_replicas'. Hedged connections are "
                 "not used for parallel reading from replicas");
         }
@@ -546,8 +546,7 @@ void executeQueryWithParallelReplicas(
 
         chassert(shard_count == not_optimized_cluster->getShardsAddresses().size());
 
-        LOG_DEBUG(getLogger("executeQueryWithParallelReplicas"), "Parallel replicas query in shard scope: shard_num={} cluster={}",
-                  shard_num, not_optimized_cluster->getName());
+        LOG_DEBUG(logger, "Parallel replicas query in shard scope: shard_num={} cluster={}", shard_num, not_optimized_cluster->getName());
 
         // get cluster for shard specified by shard_num
         // shard_num is 1-based, but getClusterWithSingleShard expects 0-based index
@@ -566,7 +565,7 @@ void executeQueryWithParallelReplicas(
     if (max_replicas_to_use > shard.getAllNodeCount())
     {
         LOG_INFO(
-            getLogger("ReadFromParallelRemoteReplicasStep"),
+            logger,
             "The number of replicas requested ({}) is bigger than the real number available in the cluster ({}). "
             "Will use the latter number to execute the query.",
             settings[Setting::max_parallel_replicas].value,
@@ -1115,6 +1114,8 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         local_replica_index = max_replicas_to_use - 1;
     }
     pools_to_use.resize(max_replicas_to_use);
+
+    LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index.value());
 
     String formatted_query;
     {
