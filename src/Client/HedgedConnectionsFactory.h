@@ -54,7 +54,7 @@ public:
         bool fallback_to_stale_replicas_,
         UInt64 max_parallel_replicas_,
         bool skip_unavailable_shards_,
-        bool preffer_stable_pools_,
+        bool prefer_stable_pools_,
         std::shared_ptr<QualifiedTableName> table_to_check_ = nullptr,
         GetPriorityForLoadBalancing::Func priority_func = {});
 
@@ -163,7 +163,7 @@ private:
 
     const size_t max_parallel_replicas = 1;
     const bool skip_unavailable_shards = false;
-    bool preffer_stable_pools = false;
+    bool prefer_stable_pools = false;
     size_t stable_pools_to_try_connections = 0;
 };
 
