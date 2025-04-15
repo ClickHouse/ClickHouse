@@ -70,6 +70,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"secondary_indices_enable_bulk_filtering", false, true, "A new algorithm for filtering by data skipping indices"},
             {"implicit_table_at_top_level", "", "", "A new setting, used in clickhouse-local"},
+            {"use_skip_indexes_if_final_exact_mode", 0, 0, "This setting was introduced to help FINAL query return correct results with skip indexes"},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
@@ -79,7 +80,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_max_limit_for_lazy_materialization", 10, 10, "Added new setting to control maximum limit value that allows to use query plan for lazy materialization optimisation. If zero, there is no limit"},
             {"query_plan_convert_join_to_in", false, false, "New setting"},
             {"enable_hdfs_pread", true, true, "New setting."},
-            {"use_skip_indexes_if_final_exact_mode", 0, 0, "This setting was introduced to help FINAL query return correct results with skip indexes"},
             {"low_priority_query_wait_time_ms", 1000, 1000, "New setting."},
             {"serialize_query_plan", false, false, "NewSetting"},
             {"allow_experimental_shared_set_join", 0, 1, "A setting for ClickHouse Cloud to enable SharedSet and SharedJoin"},
