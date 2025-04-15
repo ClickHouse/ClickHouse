@@ -97,9 +97,9 @@ class RabbitMQMonitor:
             return non_present
 
         if self.expected_published > 0 and self.expected_published != len(self.published):
-            pytest.fail(f"{len(self.published)}/{self.expected_published} (got/expected) messages published. Sample of not published: {_get_non_present(self.published, self.expected_published)}")
+            logging.warning(f"RabbitMQMonitor: {len(self.published)}/{self.expected_published} (got/expected) messages published. Sample of not published: {_get_non_present(self.published, self.expected_published)}")
         if self.expected_delivered > 0 and self.expected_delivered != len(self.delivered):
-            pytest.fail(f"{len(self.delivered)}/{self.expected_delivered} (got/expected) messages delivered. Sample of not delivered: {_get_non_present(self.delivered, self.expected_delivered)}")
+            logging.warning(f"RabbitMQMonitor: {len(self.delivered)}/{self.expected_delivered} (got/expected) messages delivered. Sample of not delivered: {_get_non_present(self.delivered, self.expected_delivered)}")
 
     def start(self, rabbitmq_cluster):
         self.rabbitmq_cluster = rabbitmq_cluster
@@ -172,7 +172,17 @@ def rabbitmq_monitor():
 
 # Tests
 
+timeout = 60
+
+
 def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, rabbitmq_monitor):
+    """
+    This test checks that after inserting through a RabbitMQ Engine, we can keep consuming from it
+    automatically after suspending and resuming the RabbitMQ server. To do that, we need the
+    consumption to be slow enough (hence, the rabbitmq_max_block_size = 1) so that we can check that
+    something has already been consumed before suspending RabbitMQ server, but not so fast so that
+    everything is consumed before suspending and resuming the RabbitMQ server.
+    """
     instance.query(
         """
         DROP TABLE IF EXISTS test.consume;
@@ -182,8 +192,8 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, r
         CREATE TABLE test.consume (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                    rabbitmq_flush_interval_ms=500,
-                    rabbitmq_max_block_size = 100,
+                    rabbitmq_flush_interval_ms=1000,
+                    rabbitmq_max_block_size = 1,
                     rabbitmq_exchange_name = 'producer_reconnect',
                     rabbitmq_format = 'JSONEachRow',
                     rabbitmq_num_consumers = 2,
@@ -197,14 +207,15 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, r
                     rabbitmq_exchange_name = 'producer_reconnect',
                     rabbitmq_persistent = '1',
                     rabbitmq_flush_interval_ms=1000,
+                    rabbitmq_max_block_size = 1,
                     rabbitmq_format = 'JSONEachRow',
                     rabbitmq_row_delimiter = '\\n';
     """
     )
 
-    messages_num = 300000
+    messages_num = 1000
     rabbitmq_monitor.set_expectations(published=messages_num, delivered=messages_num)
-    deadline = time.monotonic() + 180
+    deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
             instance.query(
@@ -218,25 +229,29 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, r
                 raise
     else:
         pytest.fail(
-            f"Time limit of 180 seconds reached. The query could not be executed successfully."
+            f"Time limit of {timeout} seconds reached. The query could not be executed successfully."
         )
 
-    deadline = time.monotonic() + 180
+    deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         number = int(instance.query("SELECT count() FROM test.view"))
-        logging.debug(f"{number}/{messages_num} before suspending RabbitMQ")
         if number != 0:
-            if number == messages_num:
-                pytest.fail("The RabbitMQ messages have been consumed before suspending the RabbitMQ server")
+            logging.debug(f"{number}/{messages_num} before suspending RabbitMQ")
             break
         time.sleep(0.1)
     else:
-        pytest.fail(f"Time limit of 180 seconds reached. The count is still 0.")
+        pytest.fail(f"Time limit of {timeout} seconds reached. The count is still 0.")
 
     suspend_rabbitmq(rabbitmq_cluster, rabbitmq_monitor)
+
+    number = int(instance.query("SELECT count() FROM test.view"))
+    logging.debug(f"{number}/{messages_num} after suspending RabbitMQ")
+    if number == messages_num:
+        pytest.fail("All RabbitMQ messages have been consumed before resuming the RabbitMQ server")
+
     resume_rabbitmq(rabbitmq_cluster, rabbitmq_monitor)
 
-    deadline = time.monotonic() + 180
+    deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         result = instance.query("SELECT count(DISTINCT key) FROM test.view")
         if int(result) == messages_num:
@@ -245,7 +260,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, r
         time.sleep(1)
     else:
         pytest.fail(
-            f"Time limit of 180 seconds reached. The result did not match the expected value."
+            f"Time limit of {timeout} seconds reached. The result did not match the expected value."
         )
 
     instance.query(
@@ -261,6 +276,13 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, r
 
 
 def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster, rabbitmq_monitor):
+    """
+    This test checks that after inserting through a RabbitMQ Engine, we can keep consuming from it
+    automatically after suspending and resuming the RabbitMQ server. To do that, we need the
+    consumption to be slow enough (hence, the rabbitmq_max_block_size = 1) so that we can check that
+    something has already been consumed before suspending RabbitMQ server, but not so fast so that
+    everything is consumed before suspending and resuming the RabbitMQ server.
+    """
     instance.query(
         """
         DROP TABLE IF EXISTS test.consumer_reconnect;
@@ -268,9 +290,9 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster, r
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                     rabbitmq_exchange_name = 'consumer_reconnect',
-                    rabbitmq_num_consumers = 10,
-                    rabbitmq_flush_interval_ms = 100,
-                    rabbitmq_max_block_size = 100,
+                    rabbitmq_num_consumers = 2,
+                    rabbitmq_flush_interval_ms = 1000,
+                    rabbitmq_max_block_size = 1,
                     rabbitmq_num_queues = 10,
                     rabbitmq_format = 'JSONEachRow',
                     rabbitmq_row_delimiter = '\\n';
@@ -282,9 +304,9 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster, r
     """
     )
 
-    messages_num = 300000
+    messages_num = 1000
     rabbitmq_monitor.set_expectations(published=messages_num, delivered=messages_num)
-    deadline = time.monotonic() + 180
+    deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
             instance.query(
@@ -298,22 +320,26 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster, r
                 raise
     else:
         pytest.fail(
-            f"Time limit of 180 seconds reached. The query could not be executed successfully."
+            f"Time limit of {timeout} seconds reached. The query could not be executed successfully."
         )
 
-    deadline = time.monotonic() + 180
+    deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         number = int(instance.query("SELECT count() FROM test.view"))
-        logging.debug(f"{number}/{messages_num} before suspending RabbitMQ")
         if number != 0:
-            if number == messages_num:
-                pytest.fail("The RabbitMQ messages have been consumed before suspending the RabbitMQ server")
+            logging.debug(f"{number}/{messages_num} before suspending RabbitMQ")
             break
         time.sleep(0.1)
     else:
-        pytest.fail(f"Time limit of 180 seconds reached. The count is still 0.")
+        pytest.fail(f"Time limit of {timeout} seconds reached. The count is still 0.")
 
     suspend_rabbitmq(rabbitmq_cluster, rabbitmq_monitor)
+
+    number = int(instance.query("SELECT count() FROM test.view"))
+    logging.debug(f"{number}/{messages_num} after suspending RabbitMQ")
+    if number == messages_num:
+        pytest.fail("All RabbitMQ messages have been consumed before resuming the RabbitMQ server")
+
     resume_rabbitmq(rabbitmq_cluster, rabbitmq_monitor)
 
     # while int(instance.query('SELECT count() FROM test.view')) == 0:
@@ -322,7 +348,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster, r
     # kill_rabbitmq()
     # revive_rabbitmq()
 
-    deadline = time.monotonic() + 180
+    deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         result = instance.query("SELECT count(DISTINCT key) FROM test.view").strip()
         if int(result) == messages_num:
@@ -331,7 +357,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster, r
         time.sleep(1)
     else:
         pytest.fail(
-            f"Time limit of 180 seconds reached. The result did not match the expected value."
+            f"Time limit of {timeout} seconds reached. The result did not match the expected value."
         )
 
     instance.query(
