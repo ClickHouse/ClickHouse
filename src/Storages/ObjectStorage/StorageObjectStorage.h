@@ -261,7 +261,7 @@ public:
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
-    std::string partition_strategy = "auto";
+    std::string partition_strategy = "wildcard";
     /*
      * Only supported by hive partitioning style for now
      */

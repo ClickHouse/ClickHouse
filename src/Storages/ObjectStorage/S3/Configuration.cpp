@@ -20,6 +20,7 @@
 #include <boost/algorithm/string.hpp>
 #include <filesystem>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Storages/PartitionStrategy.h>
 
 namespace DB
 {
@@ -52,61 +53,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-}
-
-namespace
-{
-
-    ASTs::const_iterator getValueForNamedArgument(const ASTs & arguments, const std::string & argument_name, Field & value)
-    {
-        for (const auto * arg_it = arguments.begin(); arg_it != arguments.end(); ++arg_it)
-        {
-            auto argument = *arg_it;
-            const auto * type_ast_function = argument->as<ASTFunction>();
-
-            if (!type_ast_function || type_ast_function->name != "equals" || !type_ast_function->arguments || type_ast_function->arguments->children.size() != 2)
-            {
-                continue;
-            }
-
-            const auto * name = type_ast_function->arguments->children[0]->as<ASTIdentifier>();
-
-            if (name && name->name() == argument_name)
-            {
-                const auto * ast_literal = type_ast_function->arguments->children[1]->as<ASTLiteral>();
-
-                if (!ast_literal)
-                {
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Wrong parameter type for '{}'",
-                        name->name());
-                }
-
-                value = ast_literal->value;
-
-                return arg_it;
-            }
-        }
-
-        return arguments.end();
-    }
-
-    template <typename T>
-    std::optional<T> extractNamedArgumentAndRemoveFromList(ASTs & arguments, const std::string & argument_name)
-    {
-        Field value;
-        const auto * p = getValueForNamedArgument(arguments, argument_name, value);
-
-        if (p == arguments.end())
-        {
-            return std::nullopt;
-        }
-
-        arguments.erase(p);
-
-        return value.safeGet<T>();
-    }
 }
 
 static const std::unordered_set<std::string_view> required_configuration_keys = {
@@ -230,7 +176,7 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
     else
         url = S3::URI(collection.get<String>("url"), settings[Setting::allow_archive_path_syntax]);
 
-    partition_strategy = collection.getOrDefault<String>("partition_strategy", "auto");
+    partition_strategy = collection.getOrDefault<String>("partition_strategy", "wildcard");
     hive_partition_strategy_write_partition_columns_into_files = collection.getOrDefault<bool>("hive_partition_strategy_write_partition_columns_into_files", false);
 
     auth_settings[S3AuthSetting::access_key_id] = collection.getOrDefault<String>("access_key_id", "");
@@ -253,14 +199,6 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
 
 void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
-    /*
-     * Calls to `extractNamedArgumentAndRemoveFromList` need to happen before count is determined:
-     * `size_t count = StorageURL::evalArgsAndCollectHeaders`
-     * This is because extractNamedArgumentAndRemoveFromList alters the list of arguments
-     * */
-    partition_strategy = extractNamedArgumentAndRemoveFromList<std::string>(args, "partition_strategy").value_or("auto");
-    hive_partition_strategy_write_partition_columns_into_files = extractNamedArgumentAndRemoveFromList<bool>(args, "hive_partition_strategy_write_partition_columns_into_files").value_or(false);
-
     size_t count = StorageURL::evalArgsAndCollectHeaders(args, headers_from_ast, context);
 
     if (count == 0 || count > getMaxNumberOfArguments(with_structure))
@@ -422,10 +360,60 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
             engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"compression_method", 5}};
         }
     }
-    /// s3(source, access_key_id, secret_access_key, session_token, format, structure, compression_method)
-    else if (with_structure && count == 7)
+    /// For 7 arguments we support:
+    /// if with_structure == 0:
+    /// - s3(source, access_key_id, secret_access_key, session_token, format, compression_method, partition_strategy)
+    /// if with_structure == 1:
+    /// - s3(source, access_key_id, secret_access_key, session_token, format, structure, partition_strategy)
+    /// - s3(source, access_key_id, secret_access_key, session_token, format, structure, compression_method)
+    else if (count == 7)
     {
-        engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"compression_method", 6}};
+        if (with_structure)
+        {
+            auto sixth_arg = checkAndGetLiteralArgument<String>(args[6], "compression_method/partition_strategy");
+            if (PartitionStrategy::partition_strategy_to_wildcard_acceptance.contains(sixth_arg))
+            {
+                engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"partition_strategy", 6}};
+            }
+            else
+            {
+                engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"compression_method", 6}};
+            }
+        }
+        else
+        {
+            engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"compression_method", 5}, {"partition_strategy", 6}};
+        }
+    }
+    /// For 8 arguments we support:
+    /// if with_structure == 0:
+    /// - s3(source, access_key_id, secret_access_key, session_token, format, compression_method, partition_strategy, hive_partition_strategy_write_partition_columns_into_files)
+    /// if with_structure == 1:
+    /// - s3(source, access_key_id, secret_access_key, session_token, format, structure, partition_strategy, hive_partition_strategy_write_partition_columns_into_files)
+    /// - s3(source, access_key_id, secret_access_key, session_token, format, structure, compression_method, partition_strategy)
+    else if (count == 8)
+    {
+        if (with_structure)
+        {
+            auto sixth_arg = checkAndGetLiteralArgument<String>(args[6], "compression_method/partition_strategy");
+            if (PartitionStrategy::partition_strategy_to_wildcard_acceptance.contains(sixth_arg))
+            {
+                engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"partition_strategy", 6}, {"hive_partition_strategy_write_partition_columns_into_files", 7}};
+            }
+            else
+            {
+                engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"compression_method", 6}, {"partition_strategy", 7}};
+            }
+        }
+        else
+        {
+            engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"compression_method", 5}, {"partition_strategy", 6}, {"hive_partition_strategy_write_partition_columns_into_files", 7}};
+        }
+    }
+    /// s3(source, access_key_id, secret_access_key, session_token, format, structure, compression_method)
+    else if (with_structure && count == 9)
+    {
+        engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"compression_method", 6}, {"partition_strategy", 7}, {"hive_partition_strategy_write_partition_columns_into_files", 8}};
     }
 
     /// This argument is always the first
@@ -445,6 +433,12 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
 
     if (engine_args_to_idx.contains("compression_method"))
         compression_method = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["compression_method"]], "compression_method");
+
+    if (engine_args_to_idx.contains("partition_strategy"))
+        partition_strategy = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["partition_strategy"]], "partition_strategy");
+
+    if (engine_args_to_idx.contains("hive_partition_strategy_write_partition_columns_into_files"))
+        hive_partition_strategy_write_partition_columns_into_files = checkAndGetLiteralArgument<bool>(args[engine_args_to_idx["hive_partition_strategy_write_partition_columns_into_files"]], "hive_partition_strategy_write_partition_columns_into_files");
 
     if (engine_args_to_idx.contains("access_key_id"))
         auth_settings[S3AuthSetting::access_key_id] = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["access_key_id"]], "access_key_id");
@@ -645,7 +639,7 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
             }
         }
         /// s3(source, access_key_id, secret_access_key, session_token, format, structure, compression_method)
-        else if (count == 7)
+        else
         {
             if (checkAndGetLiteralArgument<String>(args[4], "format") == "auto")
                 args[4] = format_literal;

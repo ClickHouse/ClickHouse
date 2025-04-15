@@ -91,20 +91,14 @@ namespace
             const std::string & partition_strategy,
             bool has_partition_wildcard)
     {
-        static std::unordered_map<std::string, bool> partition_strategy_to_wildcard_acceptance =
-        {
-            {"auto", true},
-            {"hive", false}
-        };
-
-        if (!partition_strategy_to_wildcard_acceptance.contains(partition_strategy))
+        if (!PartitionStrategy::partition_strategy_to_wildcard_acceptance.contains(partition_strategy))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Unknown partitioning style '{}'",
                             partition_strategy);
         }
 
-        bool partition_strategy_supports_wildcard = partition_strategy_to_wildcard_acceptance.at(partition_strategy);
+        bool partition_strategy_supports_wildcard = PartitionStrategy::partition_strategy_to_wildcard_acceptance.at(partition_strategy);
 
         if (has_partition_wildcard && !partition_strategy_supports_wildcard)
         {
@@ -121,6 +115,12 @@ namespace
         }
     }
 }
+
+std::unordered_map<std::string, bool> PartitionStrategy::partition_strategy_to_wildcard_acceptance =
+{
+    {"wildcard", true},
+    {"hive", false}
+};
 
 PartitionStrategy::PartitionStrategy(ASTPtr partition_by_, const Block & sample_block_, ContextPtr context_)
 : partition_by(partition_by_), sample_block(sample_block_), context(context_)

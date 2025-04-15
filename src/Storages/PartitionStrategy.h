@@ -16,6 +16,8 @@ struct PartitionStrategy
         std::string column_name;
     };
 
+    static std::unordered_map<std::string, bool> partition_strategy_to_wildcard_acceptance;
+
     PartitionStrategy(ASTPtr partition_by_, const Block & sample_block_, ContextPtr context_);
 
     virtual ~PartitionStrategy() = default;
@@ -59,7 +61,7 @@ struct PartitionStrategyFactory
         ContextPtr context,
         const std::string & file_format,
         bool has_partition_wildcard,
-        const std::string & partition_strategy = "auto",
+        const std::string & partition_strategy = "wildcard",
         bool hive_partition_strategy_write_partition_columns_into_files = false);
 };
 
