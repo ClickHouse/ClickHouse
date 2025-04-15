@@ -231,14 +231,34 @@ select parseDateTime64('2106-02-08 06:28:15', '%Y-%m-%d %H:%i:%s') = toDateTime6
 select parseDateTime64('2299-12-31 23:59:59', '%Y-%m-%d %H:%i:%s') = toDateTime64('2299-12-31 23:59:59', 0);
 select parseDateTime64('2300-01-01 00:00:00', '%Y-%m-%d %H:%i:%s'); -- { serverError CANNOT_PARSE_DATETIME }
 
+-- New behaviour for %e with leading whitespaces (default, MySQL compatible)
+SELECT are_equal
+FROM
+(
+    SELECT
+        toDateTime('2024-12-01 00:00:00', 0) AS a,
+        parseDateTime('1/12/2024', '%e/%m/%Y') AS b,
+        a = b AS are_equal
+    SETTINGS parsedatetime_parse_without_leading_space=false
+);
+
+SELECT are_equal
+FROM
+(
+    SELECT
+        toDateTime('2024-12-31 00:00:00', 0) AS a,
+        parseDateTime('31/12/2024', '%e/%m/%Y') AS b,
+        a = b AS are_equal
+    SETTINGS parsedatetime_parse_without_leading_space=false
+);
+
+-- Legacy behaviour has various strange errors
+SELECT
+    toDateTime('2024-12-1 00:00:00', 0) AS a,
+    parseDateTime('1/12/2024', '%e/%m/%Y') AS b,
+    a = b AS are_equal
+SETTINGS parsedatetime_parse_without_leading_space=true;  -- { serverError CANNOT_PARSE_TEXT }
+
+SELECT parseDateTime('1/12/2024', '%e/%m/%Y') SETTINGS parsedatetime_parse_without_leading_space=true; -- { serverError CANNOT_PARSE_DATETIME }
 -- -------------------------------------------------------------------------------------------------------------------------
-
--- Test parseDateTime should ignore leading spaces with %e
-SELECT parseDateTime('1/12/2024', '%e/%m/%Y') SETTINGS parsedatetime_parse_without_leading_space=0 = toDateTime('2024-12-01 00:00:00', 0);
-SELECT parseDateTime('31/12/2024', '%e/%m/%Y') SETTINGS parsedatetime_parse_without_leading_space=0 = toDateTime('2024-12-31 00:00:00', 0);
-
--- Legacy behaviour: Test parseDateTime should return an error with %e when parsing a single digit date
-SELECT parseDateTime('1/12/2024', '%e/%m/%Y') SETTINGS parsedatetime_parse_without_leading_space=1; -- { serverError CANNOT_PARSE_DATETIME }
-
-
 -- { echoOff }
