@@ -81,6 +81,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_read_request_max_tries", 20, 20, "New setting"},
             {"min_os_cpu_wait_time_ratio_to_throw", 0, 2, "New setting"},
             {"max_os_cpu_wait_time_ratio_to_throw", 0, 6, "New setting"},
+            {"query_plan_merge_filter_into_join_condition", false, true, "Added new setting to merge filter into join condition"},
+            {"use_local_cache_for_remote_storage", true, false, "Obsolete setting."},
+            {"iceberg_timestamp_ms", 0, 0, "New setting."},
+            {"iceberg_snapshot_id", 0, 0, "New setting."},
+            {"use_iceberg_metadata_files_cache", true, true, "New setting"},
+            {"query_plan_join_shard_by_pk_ranges", false, false, "New setting"},
+            /// Release closed. Please use 25.5
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {
