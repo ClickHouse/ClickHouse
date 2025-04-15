@@ -66,6 +66,9 @@ def cleanup():
 
 def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
     for node in nodes:
+        # (Use different znode path for each test because even `drop database ... sync` doesn't seem
+        # to guarantee that a new database can be immediately created with the same znode path:
+        # https://github.com/ClickHouse/ClickHouse/issues/76418 )
         node.query(
             f"create database re engine = Replicated('/test/re_{test_idx}', 'shard1', '{{replica}}');"
         )
