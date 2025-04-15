@@ -13,14 +13,22 @@ if [ $# -ge 2 ]; then
 fi
 
 FAST_TEST=0
-
-NO_AZURE=0
+EXPORT_S3_STORAGE_POLICIES=1
+USE_AZURE_STORAGE_FOR_MERGE_TREE=0
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
-        --fast-test) FAST_TEST=1 ;;
-        --s3-storage) EXPORT_S3_STORAGE_POLICIES=1 ;;
-        --no-azure) NO_AZURE=1 ;;
+        --fast-test) FAST_TEST=1 && EXPORT_S3_STORAGE_POLICIES=0 ;;
+        --analyzer) USE_OLD_ANALYZER=1 ;;
+        --s3-storage) EXPORT_S3_STORAGE_POLICIES=1 && USE_S3_STORAGE_FOR_MERGE_TREE=1 && RANDOMIZE_OBJECT_KEY_TYPE=1 ;;
+        --parallel-rep) USE_PARALLEL_REPLICAS=1 ;;
+        --db-replicated) USE_DATABASE_REPLICATED=1 ;;
+        --distributed-plan) USE_DISTRIBUTED_PLAN=1 ;;
+
+        --wide-parts) USE_POLYMORPHIC_PARTS=1 ;;
+        --db-ordinary) USE_DATABASE_ORDINARY=1 ;;
+
+        --azure) USE_AZURE_STORAGE_FOR_MERGE_TREE=1 ;;
         *) echo "Unknown option: $1" ; exit 1 ;;
     esac
     shift
@@ -242,9 +250,7 @@ elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
 fi
 
 if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
-    if [[ "$NO_AZURE" != "1" ]]; then
-      ln -sf $SRC_PATH/config.d/azure_storage_conf.xml $DEST_SERVER_PATH/config.d/
-    fi
+    ln -sf $SRC_PATH/config.d/azure_storage_conf.xml $DEST_SERVER_PATH/config.d/
 
     if check_clickhouse_version 25.5; then
       ln -sf $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/
@@ -253,6 +259,8 @@ if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
       cat $SRC_PATH/config.d/storage_conf.xml | sed "s|<allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>||" > $DEST_SERVER_PATH/config.d/storage_conf.xml
       cat $SRC_PATH/config.d/storage_conf_02944.xml | sed "s|<allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>||" > $DEST_SERVER_PATH/config.d/storage_conf_02944.xml
     fi
+    ln -sf $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/
+    ln -sf $SRC_PATH/config.d/storage_conf_02944.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_02963.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_02961.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_03517.xml $DEST_SERVER_PATH/config.d/
