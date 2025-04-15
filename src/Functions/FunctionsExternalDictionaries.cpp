@@ -60,47 +60,48 @@ Throws an exception if unable to parse the value of the attribute, the value doe
 
     FunctionDocumentation createDictGetDocumentation(const dictGetType& type, const std::string& type_name)
     {
-        switch(type)
+        if(type = dictGetType::dictGet)
         {
-            case dictGetType::dictGet:
-                return FunctionDocumentation{
-                    .description = fmt::format(dict_get_description, type_name),
-                    .syntax = dict_get_syntax,
-                    .arguments = dict_get_arguments,
-                    .returned_value = fmt::format(dict_get_return_value, type_name),
-                    .examples = {{"", "", ""}},
-                    .category = FunctionDocumentation::Category::Dictionary
-                };
-
-            case dictGetType::dictGetOrDefault:
-                return FunctionDocumentation{
-                    .description = fmt::format(dict_get_or_default_description, type_name),
-                    .syntax = dict_get_or_default_syntax,
-                    .arguments = dict_get_or_default_arguments,
-                    .returned_value = fmt::format(dict_get_or_default_return_value, type_name),
-                    .examples = {{"", "", ""}},
-                    .category = FunctionDocumentation::Category::Dictionary
-                };
-
-            case dictGetType::dictGetOrNull:
-                return FunctionDocumentation{
-                    .description = dict_get_or_null_description,
-                    .syntax = dict_get_or_null_syntax,
-                    .arguments = dict_get_arguments,
-                    .returned_value = fmt::format(dict_get_or_null_return_value, type_name),
-                    .examples = {{"", "", ""}},
-                    .category = FunctionDocumentation::Category::Dictionary
-                };
-
-            case dictGetType::dictGetAll:
-                return FunctionDocumentation{
-                    .description = dict_get_all_description,
-                    .syntax = dict_get_all_syntax,
-                    .arguments = dict_get_arguments,
-                    .returned_value = dict_get_all_return_value,
-                    .examples = {{"", "", ""}},
-                    .category = FunctionDocumentation::Category::Dictionary
-                };
+            return FunctionDocumentation{
+                .description = fmt::format(dict_get_description, type_name),
+                .syntax = dict_get_syntax,
+                .arguments = dict_get_arguments,
+                .returned_value = fmt::format(dict_get_return_value, type_name),
+                .examples = {{"", "", ""}},
+                .category = FunctionDocumentation::Category::Dictionary
+            };
+        } 
+        else if (type = dictGetType::dictGetOrDefault)
+        {
+            return FunctionDocumentation{
+                .description = fmt::format(dict_get_or_default_description, type_name),
+                .syntax = dict_get_or_default_syntax,
+                .arguments = dict_get_or_default_arguments,
+                .returned_value = fmt::format(dict_get_or_default_return_value, type_name),
+                .examples = {{"", "", ""}},
+                .category = FunctionDocumentation::Category::Dictionary
+            };
+        } else if (type = dictGetType::dictGetOrNull)
+        {
+            return FunctionDocumentation{
+                .description = dict_get_or_null_description,
+                .syntax = dict_get_or_null_syntax,
+                .arguments = dict_get_arguments,
+                .returned_value = fmt::format(dict_get_or_null_return_value, type_name),
+                .examples = {{"", "", ""}},
+                .category = FunctionDocumentation::Category::Dictionary
+            };
+        } else if (type = dictGetType::dictGetAll)
+        {
+            return FunctionDocumentation{
+                .description = dict_get_all_description,
+                .syntax = dict_get_all_syntax,
+                .arguments = dict_get_arguments,
+                .returned_value = dict_get_all_return_value,
+                .examples = {{"", "", ""}},
+                .category = FunctionDocumentation::Category::Dictionary
+            };
+        }
         }
     }
 

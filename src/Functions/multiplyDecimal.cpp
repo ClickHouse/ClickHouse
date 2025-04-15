@@ -110,17 +110,17 @@ SELECT
 SELECT
     toDecimal64(-12.647987876, 9) AS a,
     toDecimal64(123.967645643, 9) AS b,
-    a * b;                
+    a * b;
                 )",
                 R"(
 ┌─────────────a─┬─────────────b─┬─multiplyDecimal(toDecimal64(-12.647987876, 9), toDecimal64(123.967645643, 9))─┐
 │ -12.647987876 │ 123.967645643 │                                                               -1567.941279108 │
 └───────────────┴───────────────┴───────────────────────────────────────────────────────────────────────────────┘
 Received exception from server (version 22.11.1):
-Code: 407. DB::Exception: Received from localhost:9000. DB::Exception: Decimal math overflow: While processing toDecimal64(-12.647987876, 9) AS a, toDecimal64(123.967645643, 9) AS b, a * b. (DECIMAL_OVERFLOW)                
+Code: 407. DB::Exception: Received from localhost:9000. DB::Exception: Decimal math overflow: While processing toDecimal64(-12.647987876, 9) AS a, toDecimal64(123.967645643, 9) AS b, a * b. (DECIMAL_OVERFLOW)
                 )"
             }
-        }
+        },
         .returned_value="The result of multiplication with given scale. [Decimal256](../../sql-reference/data-types/decimal.md).",
         .category=FunctionDocumentation::Category::Arithmetic
 });

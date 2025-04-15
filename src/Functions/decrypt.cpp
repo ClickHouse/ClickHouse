@@ -81,19 +81,16 @@ SELECT comment, decrypt('aes-256-cfb128', secret, '12345678910121314151617181920
 Result:
 
 ```text
-┌─comment──────────────┬─plaintext──┐
-│ aes-256-gcm          │ OQ�E
-                             �t�7T�\���\�   │
-│ aes-256-gcm with AAD │ OQ�E
-                             �\��si����;�o�� │
-└──────────────────────┴────────────┘
-┌─comment──────────────────────────┬─plaintext─┐
-│ aes-256-ofb no IV                │ Secret    │
-│ aes-256-ofb no IV, different key │ �4�
-                                        �         │
+┌─comment──────────────┬─plaintext───────────┐
+│ aes-256-gcm          │ OQ�E�t�7T�\���\�    │
+│ aes-256-gcm with AAD │ OQ�E�\��si����;�o�� │
+└──────────────────────┴─────────────────────┘
+┌─comment──────────────────────────┬─plaintext─────┐
+│ aes-256-ofb no IV                │ Secret        │
+│ aes-256-ofb no IV, different key │ �4��          │
 │ aes-256-ofb with IV              │ ���6�~        │
- │aes-256-cbc no IV                │ �2*4�h3c�4w��@
-└──────────────────────────────────┴───────────┘
+│ aes-256-cbc no IV                │ �2*4�h3c�4w��@│
+└──────────────────────────────────┴───────────────┘
 ```
 
 Notice how only a portion of the data was properly decrypted, and the rest is gibberish since either `mode`, `key`, or `iv` were different upon encryption.
