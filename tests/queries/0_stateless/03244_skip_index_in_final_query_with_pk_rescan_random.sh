@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-random-settings, no-tsan, no-asan, no-msan, no-s3-storage
+# Tags: long, no-tsan, no-asan, no-msan, no-s3-storage
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

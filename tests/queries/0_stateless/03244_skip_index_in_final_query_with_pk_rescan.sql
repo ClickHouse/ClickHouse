@@ -1,4 +1,4 @@
--- Tags: long, no-random-settings, no-tsan, no-asan, no-msan, no-s3-storage
+-- Tags: long, no-tsan, no-asan, no-msan, no-s3-storage
 SET use_skip_indexes = 1;
 SET use_skip_indexes_if_final = 1;
 
