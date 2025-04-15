@@ -220,7 +220,7 @@ The maximum number of threads to parse data in input formats that support parall
     DECLARE(UInt64, max_download_buffer_size, 10*1024*1024, R"(
 The maximal size of buffer for parallel downloading (e.g. for URL engine) per each thread.
 )", 0) \
-    DECLARE(NonZeroUInt64, max_read_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, R"(
+    DECLARE(UInt64, max_read_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, R"(
 The maximum size of the buffer to read from the filesystem.
 )", 0) \
     DECLARE(UInt64, max_read_buffer_size_local_fs, 128*1024, R"(
@@ -1530,9 +1530,7 @@ SELECT * FROM data_01515 WHERE d1 = 0 SETTINGS force_data_skipping_indices='`d1_
 SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS force_data_skipping_indices='`d1_idx`, d1_null_idx'; -- Ok.
 ```
 )", 0) \
-    DECLARE(Bool, secondary_indices_enable_bulk_filtering, true, R"(
-Enable the bulk filtering algorithm for indices. It is expected to be always better, but we have this setting for compatibility and control.
-)", 0) \
+    \
     DECLARE(Float, max_streams_to_max_threads_ratio, 1, R"(
 Allows you to use more sources than the number of threads - to more evenly distribute work across threads. It is assumed that this is a temporary solution since it will be possible in the future to make the number of sources equal to the number of threads, but for each source to dynamically select available work for itself.
 )", 0) \
@@ -4830,16 +4828,6 @@ Allow sharing set objects build for IN subqueries between different tasks of the
     DECLARE(Bool, use_query_condition_cache, false, R"(
 Enable the [query condition cache](/operations/query-condition-cache). The cache stores ranges of granules in data parts which do not satisfy the condition in the `WHERE` clause,
 and reuse this information as an ephemeral index for subsequent queries.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-)", 0) \
-    DECLARE(Bool, query_condition_cache_store_conditions_as_plaintext, false, R"(
-Stores the filter condition for the [query condition cache](/operations/query-condition-cache) in plaintext.
-If enabled, system.query_condition_cache shows the verbatim filter condition which makes it easier to debug issues with the cache.
-Disabled by default because plaintext filter conditions may expose sensitive information.
 
 Possible values:
 

@@ -62,6 +62,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/UseSSL.h>
 #include <Interpreters/CancellationChecker.h>
 #include <Interpreters/ServerAsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
@@ -965,6 +966,8 @@ try
     Stopwatch startup_watch;
 
     Poco::Logger * log = &logger();
+
+    UseSSL use_ssl;
 
     MainThreadStatus::getInstance();
 
@@ -2400,7 +2403,7 @@ try
 
     /// Set current database name before loading tables and databases because
     /// system logs may copy global context.
-    std::string default_database = server_settings[ServerSetting::default_database];
+    std::string default_database = server_settings[ServerSetting::default_database].toString();
     if (default_database.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_database cannot be empty");
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
