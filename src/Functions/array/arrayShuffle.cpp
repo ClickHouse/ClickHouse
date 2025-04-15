@@ -187,11 +187,17 @@ If no seed is provided a random one will be used:
 It is possible to override the seed to produce stable results:
 [example:explicit_seed]
 )",
+            .syntax{"arrayShuffle(arr[, seed])"},
+            .arguments{
+                {"arr", "The array to partially shuffle. [Array](/sql-reference/data-types/array)."},
+                {"seed", "(optional): seed to be used with random number generation. If not provided a random one is used. [UInt or Int](../data-types/int-uint.md)."}
+            },
+            .returned_value="Array with elements shuffled.",
             .examples{
                 {"random_seed", "SELECT arrayShuffle([1, 2, 3, 4])", ""},
                 {"explicit_seed", "SELECT arrayShuffle([1, 2, 3, 4], 41)", ""},
                 {"materialize", "SELECT arrayShuffle(materialize([1, 2, 3]), 42), arrayShuffle([1, 2, 3], 42) FROM numbers(10)", ""}},
-            .category{"Arrays"}},
+            .category=FunctionDocumentation::Category::Array},
         FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<FunctionArrayShuffleImpl<FunctionArrayPartialShuffleTraits>>(
@@ -212,13 +218,30 @@ If no seed is provided a random one will be used:
 It is possible to override the seed to produce stable results:
 [example:explicit_seed]
 )",
+            .syntax="arrayPartialShuffle(arr[, limit[, seed]])",
+            .arguments={
+                {
+                    "arr",
+                    "The array size `N` to partially shuffle. [Array](/sql-reference/data-types/array)."
+                },
+                {
+                    "limit",
+                    "(optional): The number to limit element swaps to, in the range `[1..N]`. [UInt or Int](../data-types/int-uint.md)."
+                },
+                {
+                    "seed",
+                    "(optional): The seed value to be used with random number generation. If not provided a random one is used. [UInt or Int](../data-types/int-uint.md)"
+                }
+            },
+            .returned_value="Array with elements partially shuffled.",
             .examples{
                 {"no_limit1", "SELECT arrayPartialShuffle([1, 2, 3, 4], 0)", ""},
                 {"no_limit2", "SELECT arrayPartialShuffle([1, 2, 3, 4])", ""},
                 {"random_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2)", ""},
                 {"explicit_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2, 41)", ""},
                 {"materialize",
-                 "SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffle([1, 2, 3], 2, 42) FROM numbers(10)", ""}},
+                 "SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffle([1, 2, 3], 2, 42) FROM numbers(10)", ""}
+                },
             .category=FunctionDocumentation::Category::Array},
         FunctionFactory::Case::Insensitive);
 }

@@ -172,19 +172,55 @@ private:
 REGISTER_FUNCTION(ArrayZip)
 {
     factory.registerFunction<FunctionArrayZip<false>>(
-        {.description = R"(
+        {
+            .description = R"(
 Combines multiple arrays into a single array. The resulting array contains the corresponding elements of the source arrays grouped into tuples in the listed order of arguments.
-)",
-         .category{"Arrays"}});
+            )",
+            .syntax="arrayZip(arr1, arr2, ..., arrN)",
+            .arguments={
+                {"arrN", "[Array](/sql-reference/data-types/array)."}
+            },
+            .returned_value="Array with elements from the source arrays grouped into [tuples](../data-types/tuple.md). Data types in the tuple are the same as types of the input arrays and in the same order as arrays are passed. [Array](/sql-reference/data-types/array).",
+            .examples={
+                {
+                    "Usage example",
+                    "SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);",
+                    R"(
+┌─arrayZip(['a', 'b', 'c'], [5, 2, 1])─┐
+│ [('a',5),('b',2),('c',1)]            │
+└──────────────────────────────────────┘                    
+                    )"
+                }
+            },
+            .category=FunctionDocumentation::Category::Array
+        }
+    );
 
     factory.registerFunction<FunctionArrayZip<true>>(
-        {.description = R"(
+        {
+            .description = R"(
 Combines multiple arrays into a single array, allowing for unaligned arrays. The resulting array contains the corresponding elements of the source arrays grouped into tuples in the listed order of arguments.
 
 If the arrays have different sizes, the shorter arrays will be padded with `null` values.
-)",
-         .category{"Arrays"}}
-
+            )",
+            .syntax="arrayZipUnaligned(arr1, arr2, ..., arrN)",
+            .arguments={
+                {"arrN", "[Array](/sql-reference/data-types/array)."}
+            },
+            .returned_value="Array with elements from the source arrays grouped into [tuples](../data-types/tuple.md). Data types in the tuple are the same as types of the input arrays and in the same order as arrays are passed. [Array](/sql-reference/data-types/array). If the arrays have different sizes, the shorter arrays will be padded with `null` values.",
+            .examples={
+                {
+                    "Usage example",
+                    "SELECT arrayZipUnaligned(['a'], [1, 2, 3]);",
+                    R"(
+┌─arrayZipUnaligned(['a'], [1, 2, 3])─┐
+│ [('a',1),(NULL,2),(NULL,3)]         │
+└─────────────────────────────────────┘                    
+                    )"
+                }
+            },
+            .category=FunctionDocumentation::Category::Array
+        }
     );
 }
 

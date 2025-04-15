@@ -46,10 +46,10 @@ private:
     }
 };
 
-void registerFunction(FunctionFactory & factory, const String & element_type)
+void registerFunction(FunctionFactory & factory, const String & element_type, const FunctionDocumentation & documentation)
 {
     factory.registerFunction(FunctionEmptyArray::getNameImpl(element_type),
-        [element_type](ContextPtr){ return std::make_shared<FunctionEmptyArray>(element_type); });
+        [element_type](ContextPtr){ return std::make_shared<FunctionEmptyArray>(element_type); }, documentation);
 }
 
 }
@@ -73,7 +73,7 @@ REGISTER_FUNCTION(EmptyArray)
             "[]"
         };
 
-        FunctionDocumentation::Category categories = {"array"};
+        FunctionDocumentation::Category categories = FunctionDocumentation::Category::Array;
 
         return FunctionDocumentation{
             description, syntax, {}, returned_value, {example}, categories

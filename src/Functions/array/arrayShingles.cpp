@@ -91,11 +91,17 @@ REGISTER_FUNCTION(ArrayShingles)
         FunctionDocumentation{
             .description = R"(
 Generates an array of "shingles", i.e. consecutive sub-arrays with specified length of the input array.
-)",
-            .examples{
-                {"example 1", "SELECT arrayShingles([1,2,3,4,5], 3)", "[[1,2,3],[2,3,4],[3,4,5]]"}
+            )",
+            .syntax="arrayShingles(array, length)",
+            .arguments={
+                {"array", "Input array Array."},
+                {"length", "The length of each shingle."}
             },
-            .category = {"Array"},
+            .returned_value="An array of generated shingles. [Array](/sql-reference/data-types/array).",
+            .examples{
+                {"Usage example", "SELECT arrayShingles([1,2,3,4,5], 3)", "[[1,2,3],[2,3,4],[3,4,5]]"}
+            },
+            .category = FunctionDocumentation::Category::Array,
         });
 }
 

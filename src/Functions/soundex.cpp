@@ -128,7 +128,7 @@ REGISTER_FUNCTION(Soundex)
                     )"
                 }
             },
-            .category=FunctionDocumentation::Category::Strings
+            .category=FunctionDocumentation::Category::String
         }, FunctionFactory::Case::Insensitive);
 }
 

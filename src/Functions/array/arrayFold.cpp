@@ -289,9 +289,19 @@ private:
 
 REGISTER_FUNCTION(ArrayFold)
 {
-    factory.registerFunction<FunctionArrayFold>(FunctionDocumentation{.description=R"(
-        Function arrayFold(acc,a1,...,aN->expr, arr1, ..., arrN, acc_initial) applies a lambda function to each element
-        in each (equally-sized) array and collects the result in an accumulator.
-        )", .examples{{"sum", "SELECT arrayFold(acc,x->acc+x, [1,2,3,4], toInt64(1));", "11"}}, .category{"Array"}});
+    factory.registerFunction<FunctionArrayFold>(FunctionDocumentation{
+        .description=R"(
+Function arrayFold(acc,a1,...,aN->expr, arr1, ..., arrN, acc_initial) applies a lambda function to each element
+in each (equally-sized) array and collects the result in an accumulator.
+        )",
+        .syntax="arrayFold(acc, func, arr, [... arrN, ] acc_initial)",
+        .arguments={
+            {"acc", "Accumulator."},
+            {"func", "Lambda function with return type equal to the accumulator type. [Lambda function](/sql-reference/functions/overview#higher-order-functions)."},
+            {"arr, [... arrN, ]", "N equal size arrays to operate on. [Array](/sql-reference/data-types/array)."},
+            {"acc_initial", "Initial value of the accumulator. Type equal to that of `acc`, `arr`."}
+        },
+        .returned_value="Returns `acc`",
+        .examples{{"sum", "SELECT arrayFold(acc,x->acc+x, [1,2,3,4], toInt64(1));", "11"}}, .category=FunctionDocumentation::Category::Array});
 }
 }

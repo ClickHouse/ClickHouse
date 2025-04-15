@@ -131,7 +131,12 @@ But the range tuple must still be a constant:
 Please note that you can fit only so much bits of information into Hilbert code as UInt64 has.
 Two arguments will have a range of maximum 2^32 (64/2) each
 All overflow will be clamped to zero
-)",
+        )",
+        .syntax="hilbertEncode(args)",
+        .arguments={
+            {"args", "up to 2 [unsigned integers](../../sql-reference/data-types/int-uint.md) or columns of the aforementioned type."}
+        },
+        .returned_value="A UInt64 code. [UInt64](../../sql-reference/data-types/int-uint.md).",
         .examples{
             {"simple", "SELECT hilbertEncode(3, 4)", ""},
             {"range_expanded", "SELECT hilbertEncode((10,6), 1024, 16)", ""},
@@ -140,7 +145,7 @@ All overflow will be clamped to zero
             {"from_table", "SELECT hilbertEncode(n1, n2) FROM table", ""},
             {"from_table_range", "SELECT hilbertEncode((1,2), n1, n2) FROM table", ""},
         },
-        .category{"Encoding"}
+        .category=FunctionDocumentation::Category::Encoding
     });
 }
 

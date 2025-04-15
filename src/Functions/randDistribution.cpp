@@ -322,165 +322,331 @@ REGISTER_FUNCTION(Distribution)
 {
     factory.registerFunction<FunctionRandomDistribution<UniformDistribution>>(
     FunctionDocumentation{
-    .description=R"(
+        .description=R"(
 Returns a random number from the uniform distribution in the specified range.
-Accepts two parameters - minimum bound and maximum bound.
-
-Typical usage:
-[example:typical]
-)",
-    .examples{
-        {"typical", "SELECT randUniform(0, 1) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+        )",
+        .syntax="randUniform(min, max)",
+        .arguments={
+            {"min", "Left boundary of the range. `Float64`."},
+            {"max", "Right boundary of the range. `Float64`."}
+        },
+        .returned_value="A random number of type Float64.",
+        .examples{
+            {
+                "Typical usage",
+                "SELECT randUniform(5.5, 10) FROM numbers(5)",
+                R"(
+┌─randUniform(5.5, 10)─┐
+│    8.094978491443102 │
+│   7.3181248914450885 │
+│    7.177741903868262 │
+│    6.483347380953762 │
+│    6.122286382885112 │
+└──────────────────────┘                
+                )"
+            }
+        },
+        .category=FunctionDocumentation::Category::RandomNumber
     });
 
     factory.registerFunction<FunctionRandomDistribution<NormalDistribution>>(
     FunctionDocumentation{
-    .description=R"(
+        .description=R"(
 Returns a random number from the normal distribution.
-Accepts two parameters - mean and standard deviation.
-
-Typical usage:
-[example:typical]
-)",
-    .examples{
-        {"typical", "SELECT randNormal(0, 5) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+        )",
+        .syntax="randNormal(mean, stddev)",
+        .arguments={
+            {"mean", "Mean value of distribution. `Float64`"}, 
+            {"stddev", "[standard deviation](https://en.wikipedia.org/wiki/Standard_deviation) of the distribution. `Float64`."}
+        },
+        .returned_value="Random number. [Float64](../data-types/float.md).",
+        .examples{
+            {
+                "Typical usage", 
+                "SELECT randNormal(10, 2) FROM numbers(5)",
+                R"(
+┌──randNormal(10, 2)─┐
+│ 13.389228911709653 │
+│  8.622949707401295 │
+│ 10.801887062682981 │
+│ 4.5220192605895315 │
+│ 10.901239123982567 │
+└────────────────────┘                
+                )"
+            }
+        },
+        .category=FunctionDocumentation::Category::RandomNumber
     });
 
 
     factory.registerFunction<FunctionRandomDistribution<LogNormalDistribution>>(
     FunctionDocumentation{
-    .description=R"(
+        .description=R"(
 Returns a random number from the lognormal distribution (a distribution of a random variable whose logarithm is normally distributed).
 Accepts two parameters - mean and standard deviation.
-
-Typical usage:
-[example:typical]
-)",
-    .examples{
-        {"typical", "SELECT randLogNormal(0, 5) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+        )",
+        .syntax="randLogNormal(mean, stddev)",
+        .arguments={
+            {"mean", "The mean value of the distribution. `Float64`"},
+            {"stddev", "The [standard deviation](https://en.wikipedia.org/wiki/Standard_deviation) of the distribution.`Float64`"}
+        },
+        .returned_value="Random number. [Float64](../data-types/float.md).",
+        .examples{
+            {
+                "Typical usage",
+                "SELECT randLogNormal(100, 5) FROM numbers(5)",
+                R"(
+┌─randLogNormal(100, 5)─┐
+│  1.295699673937363e48 │
+│  9.719869109186684e39 │
+│  6.110868203189557e42 │
+│  9.912675872925529e39 │
+│ 2.3564708490552458e42 │
+└───────────────────────┘                
+                )"}
+        },
+        .category=FunctionDocumentation::Category::RandomNumber
     });
 
 
     factory.registerFunction<FunctionRandomDistribution<ExponentialDistribution>>(
     FunctionDocumentation{
-    .description=R"(
+        .description=R"(
 Returns a random number from the exponential distribution.
 Accepts one parameter - lambda value.
-
-Typical usage:
-[example:typical]
-)",
-    .examples{
-        {"typical", "SELECT randExponential(0, 5) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+        )",
+        .syntax="randExponential(lambda)",
+        .arguments={
+            {"lambda", "Lambda value. `Float64`."}
+        },
+        .returned_value="Random number. [Float64](../data-types/float.md).",
+        .examples{
+            {
+                "Typical usage",
+                "SELECT randExponential(1/10) FROM numbers(5)",
+                R"(
+┌─randExponential(divide(1, 10))─┐
+│              44.71628934340778 │
+│              4.211013337903262 │
+│             10.809402553207766 │
+│              15.63959406553284 │
+│             1.8148392319860158 │
+└────────────────────────────────┘                
+                )"
+            }
+        },
+        .category=FunctionDocumentation::Category::RandomNumber
     });
 
 
     factory.registerFunction<FunctionRandomDistribution<ChiSquaredDistribution>>(
     FunctionDocumentation{
-    .description=R"(
+        .description=R"(
 Returns a random number from the chi-squared distribution (a distribution of a sum of the squares of k independent standard normal random variables).
-Accepts one parameter - degree of freedom.
-
-Typical usage:
-[example:typical]
-)",
-    .examples{
-        {"typical", "SELECT randChiSquared(5) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+        )",
+        .syntax="randChiSquared(degree_of_freedom)",
+        .arguments={
+            {"degree_of_freedom", "The degree of freedom. `Float64`."}
+        },
+        .returned_value="Random number. [Float64](../data-types/float.md).",
+        .examples{
+            {
+                "Typical usage",
+                "SELECT randChiSquared(10) FROM numbers(5)",
+                R"(
+┌─randChiSquared(10)─┐
+│ 10.015463656521543 │
+│  9.621799919882768 │
+│   2.71785015634699 │
+│ 11.128188665931908 │
+│  4.902063104425469 │
+└────────────────────┘                
+                )"
+            }
+        },
+        .category=FunctionDocumentation::Category::RandomNumber
     });
 
     factory.registerFunction<FunctionRandomDistribution<StudentTDistribution>>(
     FunctionDocumentation{
-    .description=R"(
+        .description=R"(
 Returns a random number from the t-distribution.
-Accepts one parameter - degree of freedom.
-
-Typical usage:
-[example:typical]
-)",
-    .examples{
-        {"typical", "SELECT randStudentT(5) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+        )",
+        .syntax="randStudentT(degree_of_freedom)",
+        .arguments={
+            {"degree_of_freedom", "Degree of freedom. `Float64`."}
+        },
+        .returned_value="Random number. [Float64](../data-types/float.md).",
+        .examples{
+            {
+                "Typical usage",
+                "SELECT randStudentT(10) FROM numbers(5)",
+                R"(
+┌─────randStudentT(10)─┐
+│   1.2217309938538725 │
+│   1.7941971681200541 │
+│ -0.28192176076784664 │
+│   0.2508897721303792 │
+│  -2.7858432909761186 │
+└──────────────────────┘                
+                )"
+            }
+        },
+        .category=FunctionDocumentation::Category::RandomNumber
     });
 
 
     factory.registerFunction<FunctionRandomDistribution<FisherFDistribution>>(
     FunctionDocumentation{
-    .description=R"(
+        .description=R"(
 Returns a random number from the f-distribution.
 The F-distribution is the distribution of X = (S1 / d1) / (S2 / d2) where d1 and d2 are degrees of freedom.
 Accepts two parameters - degrees of freedom.
-
-Typical usage:
-[example:typical]
-)",
-    .examples{
-        {"typical", "SELECT randFisherF(5) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+        )",
+        .syntax="randFisherF(d1, d2)",
+        .arguments={
+            {"d1", "d1 degree of freedom in `X = (S1 / d1) / (S2 / d2)`. `Float64`."},
+            {"d2", "d2 degree of freedom in `X = (S1 / d1) / (S2 / d2)`. `Float64`."}
+        },
+        .returned_value="Random number. [Float64](../data-types/float.md).",
+        .examples{
+            {
+                "Typical usage",
+                "SELECT randFisherF(10, 3) FROM numbers(5)",
+                R"(
+┌──randFisherF(10, 3)─┐
+│   7.286287504216609 │
+│ 0.26590779413050386 │
+│ 0.22207610901168987 │
+│  0.7953362728449572 │
+│ 0.19278885985221572 │
+└─────────────────────┘                
+                )"
+            }
+        },
+        .category=FunctionDocumentation::Category::RandomNumber
     });
 
 
     factory.registerFunction<FunctionRandomDistribution<BernoulliDistribution>>(
     FunctionDocumentation{
-    .description=R"(
+        .description=R"(
 Returns a random number from the Bernoulli distribution.
 Accepts one parameter - probability of success.
-
-Typical usage:
-[example:typical]
-)",
-    .examples{
-        {"typical", "SELECT randBernoulli(0.1) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+        )",
+        .syntax="randBernoulli(probability)",
+        .arguments={
+            {"probability", "The probability of success, a value between `0` and `1`. `Float64`"}
+        },
+        .returned_value="Random number. [UInt64](../data-types/int-uint.md).",
+        .examples{
+            {
+                "Typical usage",
+                "SELECT randBernoulli(.75) FROM numbers(5);",
+                R"(
+┌─randBernoulli(0.75)─┐
+│                   1 │
+│                   1 │
+│                   0 │
+│                   1 │
+│                   1 │
+└─────────────────────┘
+                )"
+            }
+        },
+        .category=FunctionDocumentation::Category::RandomNumber
     });
 
 
     factory.registerFunction<FunctionRandomDistribution<BinomialDistribution>>(
     FunctionDocumentation{
-    .description=R"(
+        .description=R"(
 Returns a random number from the binomial distribution.
 Accepts two parameters - number of experiments and probability of success in each experiment.
-
-Typical usage:
-[example:typical]
-)",
-    .examples{
-        {"typical", "SELECT randBinomial(10, 0.1) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+        )",
+        .syntax="randBinomial(experiments, probability)",
+        .arguments={
+            {"experiments", "Number of experiments. `UInt64`."},
+            {"probability", "Probability of success in each experiment, a value between `0` and `1`. `Float64`."}
+        },
+        .returned_value="Random number. [UInt64](../data-types/int-uint.md).",
+        .examples{
+            {
+                "Typical usage",
+                "SELECT randBinomial(100, .75) FROM numbers(5)",
+                R"(
+┌─randBinomial(100, 0.75)─┐
+│                      74 │
+│                      78 │
+│                      76 │
+│                      77 │
+│                      80 │
+└─────────────────────────┘                
+                )"
+            }
+        },
+        .category=FunctionDocumentation::Category::RandomNumber
     });
 
 
     factory.registerFunction<FunctionRandomDistribution<NegativeBinomialDistribution>>(
     FunctionDocumentation{
-    .description=R"(
+        .description=R"(
 Returns a random number from the negative binomial distribution.
 Accepts two parameters - number of experiments and probability of success in each experiment.
-
-Typical usage:
-[example:typical]
-)",
-    .examples{
-        {"typical", "SELECT randNegativeBinomial(10, 0.1) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+        )",
+        .syntax="randNegativeBinomial(experiments, probability)",
+        .arguments={
+            {"experiments", "Number of experiments. `UInt64`."},
+            {"probability", "Probability of success in each experiment, a value between `0` and `1`. `Float64`."}
+        },
+        .returned_value="Random number. [UInt64](../data-types/int-uint.md).",
+        .examples{
+            {
+                "Typical usage",
+                "SELECT randNegativeBinomial(100, .75) FROM numbers(5)",
+                R"(
+┌─randNegativeBinomial(100, 0.75)─┐
+│                              33 │
+│                              32 │
+│                              39 │
+│                              40 │
+│                              50 │
+└─────────────────────────────────┘                
+                )"
+            }
+        },
+        .category=FunctionDocumentation::Category::RandomNumber
     });
 
 
     factory.registerFunction<FunctionRandomDistribution<PoissonDistribution>>(
     FunctionDocumentation{
-    .description=R"(
+        .description=R"(
 Returns a random number from the poisson distribution.
 Accepts one parameter - the mean number of occurrences.
-
-Typical usage:
-[example:typical]
-)",
-    .examples{
-        {"typical", "SELECT randPoisson(3) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+        )",
+        .syntax="randPoisson(n)",
+        .arguments={
+            {"n", "Mean number of occurrences. `UInt64`."}
+        },
+        .returned_value="Random number. [UInt64](../data-types/int-uint.md).",
+        .examples{
+            {
+                "Typical usage",
+                "SELECT randPoisson(10) FROM numbers(5)",
+                R"(
+┌─randPoisson(10)─┐
+│               8 │
+│               8 │
+│               7 │
+│              10 │
+│               6 │
+└─────────────────┘                
+                )"
+            }
+        },
+        .category=FunctionDocumentation::Category::RandomNumber
     });
 }
 

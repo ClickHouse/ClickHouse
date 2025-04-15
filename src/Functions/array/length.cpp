@@ -71,7 +71,7 @@ REGISTER_FUNCTION(Length)
     └─────┴─────────────┘
     )"};
     FunctionDocumentation::Examples examples = {example1, example2, example3, example4, example5};
-    FunctionDocumentation::Category categories = {"array", "string"};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
 
     factory.registerFunction<FunctionLength>(documentation, FunctionFactory::Case::Insensitive);

@@ -183,36 +183,18 @@ REGISTER_FUNCTION(seriesDecomposeSTL)
     factory.registerFunction<FunctionSeriesDecomposeSTL>(FunctionDocumentation{
         .description = R"(
 Decomposes a time series using STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.wessa.net/download/stl.pdf) into a season, a trend and a residual component.
-
-**Syntax**
-
-```sql
-seriesDecomposeSTL(series, period);
-```
-
-**Arguments**
-
-- `series` - An array of numeric values
-- `period` - A positive number
-
-The number of data points in `series` should be at least twice the value of `period`.
-
-**Returned value**
-
-- An array of four arrays where the first array include seasonal components, the second array - trend, the third array - residue component, and the fourth array - baseline(seasonal + trend) component.
-
-Type: [Array](../../sql-reference/data-types/array.md).
-
-**Examples**
-
-Query:
-
-```sql
-SELECT seriesDecomposeSTL([10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34], 3) AS print_0;
-```
-
-Result:
-
+        )",
+        .syntax="seriesDecomposeSTL(series, period);",
+        .arguments={
+            {"series", "An array of numeric values. The number of data points in `series` should be at least twice the value of `period`."},
+            {"period", "A positive number"}
+        },
+        .returned_value="An array of four arrays where the first array include seasonal components, the second array - trend, the third array - residue component, and the fourth array - baseline(seasonal + trend) component. [Array](../../sql-reference/data-types/array.md).",
+        .examples={
+            {
+                "Usage example",
+                "SELECT seriesDecomposeSTL([10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34], 3) AS print_0;",
+                R"(
 ```text
 ┌───────────print_0──────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ [[
@@ -234,7 +216,10 @@ Result:
         10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.100002, 20.45, 40.34
     ]]                                                                                                                   │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-```)",
-        .category{"Time Series"}});
+```                
+                )"
+            }
+        },
+        .category=FunctionDocumentation::Category::TimeSeries});
 }
 }

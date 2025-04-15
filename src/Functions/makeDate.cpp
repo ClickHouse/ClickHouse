@@ -747,7 +747,7 @@ The output is undefined if the input does not encode a valid Date value.
                 {
                     "Valid usage",
                     "SELECT YYYYMMDDToDate(20250412)",
-                    "R(
+                    R"(
 ┌─YYYYMMDDToDate(20250412)─┐
 │               2025-04-12 │
 └──────────────────────────┘                    
@@ -761,7 +761,7 @@ The output is undefined if the input does not encode a valid Date value.
         FunctionDocumentation{
             .description = R"(
 Like function `YYYYMMDDToDate()` but produces a Date32.
-)",
+            )",
             .syntax="SELECT YYYYMMDDToDate32(date, 'US/Eastern')",
             .arguments={
                 {"date", "Numerical representation of a date in YYYYMMDD format. DateTime."},
@@ -772,7 +772,7 @@ Like function `YYYYMMDDToDate()` but produces a Date32.
                 {
                     "Valid usage",
                     "SELECT YYYYMMDDToDate32(20250412)",
-                    "R(
+                    R"(
 ┌─YYYYMMDDToDate32(20250412)─┐
 │                 2025-04-12 │
 └────────────────────────────┘                
@@ -788,7 +788,22 @@ Like function `YYYYMMDDToDate()` but produces a Date32.
 Converts a number containing the year, month, day, hour, minute and second number to a DateTime.
 The output is undefined if the input does not encode a valid DateTime value.
 This functions is the opposite of function `toYYYYMMDD()`.
-)",
+            )",
+            .syntax="YYYYMMDDhhmmssToDateTime(yyyymmddhhmmss[, timezone]);",
+            .arguments={
+                {"yyyymmddhhmmss", "A number representing the year, month and day. [Integer](../data-types/int-uint.md), [Float](../data-types/float.md) or [Decimal](../data-types/decimal.md)."},
+                {"timezone", "[Timezone](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional)."}
+            },
+            .returned_value="A date with time created from the arguments. [DateTime](../data-types/datetime.md).",
+            .examples={
+                {
+                    "Usage example",
+                    "SELECT YYYYMMDDhhmmssToDateTime(20230911131415)",
+                    R"(
+2023-09-11 13:14:15.000                
+                    )"
+                }
+            },
             .category=FunctionDocumentation::Category::DateAndTime
         }
     );
@@ -797,7 +812,22 @@ This functions is the opposite of function `toYYYYMMDD()`.
             .description = R"(
 Like function `YYYYMMDDhhmmssToDate()` but produces a DateTime64.
 Accepts an additional, optional `precision` parameter after the `timezone` parameter.
-)",
+            )",
+            .syntax="YYYYMMDDhhmmssToDateTime64(yyyymmddhhmmss[, timezone]);",
+            .arguments={
+                {"yyyymmddhhmmss", "A number representing the year, month and day. [Integer](../data-types/int-uint.md), [Float](../data-types/float.md) or [Decimal](../data-types/decimal.md)."},
+                {"timezone", "[Timezone](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional)."}
+            },
+            .returned_value="A date with time created from the arguments. [DateTime64](../data-types/datetime64.md).",
+            .examples={
+                {
+                    "Usage example",
+                    "SELECT YYYYMMDDhhmmssToDateTime64(20230911131415)",
+                    R"(
+2023-09-11 13:14:15.000                
+                    )"
+                }
+            },
             .category=FunctionDocumentation::Category::DateAndTime
         }
     );

@@ -61,7 +61,13 @@ REGISTER_FUNCTION(GetSubcolumn)
 Receives the expression or identifier and constant string with the name of subcolumn.
 
 Returns requested subcolumn extracted from the expression.
-)",
+        )",
+        .syntax="getSubcolumn(col_name, subcol_name)",
+        .arguments={
+            {"col_name", "Table expression or identifier. [Expression](../syntax.md/#expressions), [Identifier](../syntax.md/#identifiers)."},
+            {"subcol_name", "The name of the sub-column. [String](../data-types/string.md)."}
+        },
+        .returned_value="Returns the extracted sub-column.",
         .examples{{"getSubcolumn", "SELECT getSubcolumn(array_col, 'size0'), getSubcolumn(tuple_col, 'elem_name')", ""}},
         .category=FunctionDocumentation::Category::Other
     });

@@ -137,13 +137,57 @@ REGISTER_FUNCTION(Port)
 {
     factory.registerFunction<FunctionPort>(FunctionDocumentation
     {
-        .description=R"(Returns the port or `default_port` if there is no port in the URL (or in case of validation error).)",
-        .category{"URLs"}
+        .description=R"(
+Returns the port or `default_port` if there is no port in the URL (or in case of validation error).
+        )",
+        .syntax="port(url [, default_port = 0])",
+        .arguments={
+            {"url", "URL. [String](../data-types/string.md)."},
+            {"default_port", "The default port number to be returned. [UInt16](../data-types/int-uint.md)."}
+        },
+        .returned_value="Port or the default port if there is no port in the URL or in case of a validation error. [UInt16](../data-types/int-uint.md).",
+        .examples={
+            {
+                "Usage example",
+                R"(
+SELECT port('http://paul@www.example.com:80/');              
+                )",
+                R"(
+┌─port('http://paul@www.example.com:80/')─┐
+│                                      80 │
+└─────────────────────────────────────────┘               
+                )"
+            }
+        },
+        .category=FunctionDocumentation::Category::URL
     });
     factory.registerFunction<FunctionPortRFC>(FunctionDocumentation
     {
-        .description=R"(Similar to `port`, but conforms to RFC 3986.)",
-        .category{"URLs"}
+        .description=R"(
+Similar to `port`, but conforms to RFC 3986.
+        )",
+        .syntax="portRFC(url [, default_port = 0])",
+        .arguments={
+            {"url", "URL. [String](../data-types/string.md)."},
+            {"default_port", "The default port number to be returned. [UInt16](../data-types/int-uint.md)."}
+        },
+        .returned_value="Port or the default port if there is no port in the URL or in case of a validation error. [UInt16](../data-types/int-uint.md).",
+        .examples={
+            {
+                "Usage example",
+                R"(
+SELECT
+    port('http://user:password@example.com:8080'),
+    portRFC('http://user:password@example.com:8080');                
+                )",
+                R"(
+┌─port('http://user:password@example.com:8080')─┬─portRFC('http://user:password@example.com:8080')─┐
+│                                             0 │                                             8080 │
+└───────────────────────────────────────────────┴──────────────────────────────────────────────────┘                
+                )"
+            }
+        },
+        .category=FunctionDocumentation::Category::URL
     });
 }
 

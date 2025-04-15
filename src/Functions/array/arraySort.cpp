@@ -241,6 +241,10 @@ For more details see documentation of `arraySort`.
             {"limit", "The number to limit element swaps to, in the range `[1..N]`. [(U)Int](/sql-reference/data-types/int-uint). "},
             {"arr", "Input array Array."}
         },
+        .returned_value=R"(
+Returns an array of the same size as the original array where elements in range `[1..limit]`
+are sorted in ascending order. The remaining elements `(limit..N]` remain in an unspecified order.
+        )",
         .examples{
             {"simple_int", "SELECT arrayPartialSort(2, [5, 9, 1, 3])", ""},
             {"simple_string", "SELECT arrayPartialSort(2, ['expenses','lasso','embolism','gladly'])", ""},
@@ -269,6 +273,16 @@ that the arguments of `func` will correspond to.
 
 For more details see documentation of `arraySort`.
 )",
+        .syntax{"arrayPartialReverseSort([func,] limit, arr, ...)"},
+        .arguments={
+            {"func (optional)", "Lambda function. [Lambda function](/sql-reference/functions/overview#higher-order-functions)."},
+            {"limit", "The number to limit element swaps to, in the range `[1..N]`. [(U)Int](/sql-reference/data-types/int-uint). "},
+            {"arr", "Input array Array."}
+        },
+        .returned_value=R"(
+Returns an array of the same size as the original array where elements in range `[1..limit]`
+are sorted in descending order. The remaining elements `(limit..N]` remain in an unspecified order.      
+        )",
         .examples{
             {"simple_int", "SELECT arrayPartialReverseSort(2, [5, 9, 1, 3])", ""},
             {"simple_string", "SELECT arrayPartialReverseSort(2, ['expenses','lasso','embolism','gladly'])", ""},

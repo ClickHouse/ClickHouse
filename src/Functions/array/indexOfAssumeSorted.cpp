@@ -22,7 +22,15 @@ If the array type is Nullable, the 'indexOf' function will be used.
 The binary search algorithm is used for the search.
 For more details, see [https://en.wikipedia.org/wiki/Binary_search]
 For an unsorted array, the behavior is undefined.
-)",
-        .examples = {{.name = "", .query = "SELECT indexOfAssumeSorted([1, 2, 2, 2, 3, 3, 3, 4], 3) FROM test_table;", .result=""}}});
+        )",
+        .syntax="indexOfAssumeSorted(arr, x)",
+        .arguments={
+                {"arr", "Input array. Array."},
+                {"x", "Element to find in the array with type matching that of the array elements, or their supertype."}
+        },
+        .returned_value="Returns the position of the first occurence of `x` in `arr`.",
+        .examples = {{.name = "", .query = "SELECT indexOfAssumeSorted([1, 2, 2, 2, 3, 3, 3, 4], 3) FROM test_table;", .result=""}},
+        .category=FunctionDocumentation::Category::Array}
+);
 }
 }
