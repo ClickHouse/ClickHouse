@@ -33,12 +33,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-
-}
+    }
 
 /// This function specification https://iceberg.apache.org/spec/#truncate-transform-details
 class FunctionIcebergHash : public IFunction
@@ -88,9 +83,8 @@ public:
 
         WhichDataType which(type);
 
-        if (which.isInteger())
+        if (isBool(type) || which.isInteger())
         {
-            // Handle integer types
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 auto value = column->getInt(i);
@@ -99,7 +93,6 @@ public:
         }
         else if (which.isFloat())
         {
-            // Handle floating-point types
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 auto value = column->getFloat64(i);
@@ -120,16 +113,15 @@ public:
         else if (which.isUUID())
         {
             // Handle UUID types
+            ColumnPtr intermediate_representation = FunctionFactory::instance()
+                                                        .get("toUInt128", context)
+                                                        ->build(arguments)
+                                                        ->execute(arguments, std::make_shared<DataTypeUInt128>(), input_rows_count, false);
+            const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(intermediate_representation.get());
+            const IColumn & wrapper_column = const_column ? const_column->getDataColumn() : *intermediate_representation.get();
+            const ColumnVector<UInt128> & uuid_column = checkAndGetColumn<const ColumnVector<UInt128> &>(wrapper_column);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                ColumnPtr intermediate_representation
-                    = FunctionFactory::instance()
-                          .get("toUInt128", context)
-                          ->build(arguments)
-                          ->execute(arguments, std::make_shared<DataTypeUInt128>(), input_rows_count, false);
-                const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(intermediate_representation.get());
-                const IColumn & wrapper_column = const_column ? const_column->getDataColumn() : *intermediate_representation.get();
-                const ColumnVector<UInt128> & uuid_column = checkAndGetColumn<const ColumnVector<UInt128> &>(wrapper_column);
                 UInt128 value = uuid_column.getData()[i];
                 result_data[i] = hashUnderlyingIntBigEndian(value, /*reduce_two_complement*/ false);
             }
@@ -151,14 +143,10 @@ public:
             const auto & source_col = checkAndGetColumn<DataTypeDateTime64::ColumnType>(wrapper_column);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                LOG_DEBUG(
-                    &Poco::Logger::get("FunctionIcebergHash"), "column type: {}, family: {}", column->getName(), column->getFamilyName());
                 const ColumnDateTime64 * decimal_column = &source_col;
                 assert(decimal_column != nullptr);
                 DateTime64 value = decimal_column->getElement(i);
                 UInt32 scale = decimal_column->getScale();
-                LOG_DEBUG(&Poco::Logger::get("FunctionIcebergHash"), "scale: {}", scale);
-                LOG_DEBUG(&Poco::Logger::get("static_cast<const DataTypeDateTime64 *>(type.get())->getScale()"), "scale: {}", scale);
                 assert(scale == 6 || scale == 9);
                 Int64 value_int = value.convertTo<Int64>();
                 if (scale == 9) {
@@ -350,57 +338,4 @@ REGISTER_FUNCTION(IcebergBucket)
     factory.registerFunction<FunctionIcebergBucket>({description, syntax, arguments, returned_value, examples, category});
 }
 
-
-class FunctionIcebergHashBitAnd : public IFunction
-{
-public:
-    static inline const char * name = "icebergHashBitAnd";
-
-    explicit FunctionIcebergHashBitAnd(ContextPtr) { }
-
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionIcebergHashBitAnd>(context_); }
-
-    String getName() const override { return name; }
-
-    size_t getNumberOfArguments() const override { return 1; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeInt32>(); }
-
-    ColumnPtr
-    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
-    {
-        auto context = Context::getGlobalContextInstance();
-
-        auto iceberg_hash_arguments = {arguments[0]};
-        auto iceberg_hash_func = FunctionFactory::instance().get("icebergHash", context)->build(iceberg_hash_arguments);
-        auto iceberg_hash_result_type = iceberg_hash_func->getResultType();
-        auto iceberg_hash_result = iceberg_hash_func->execute(iceberg_hash_arguments, iceberg_hash_result_type, input_rows_count, false);
-
-        auto iceberg_hash_result_with_type = ColumnWithTypeAndName(iceberg_hash_result, std::make_shared<DataTypeInt32>(), "");
-        auto max_int_with_type = ColumnWithTypeAndName(
-            std::make_shared<DataTypeInt32>()->createColumnConst(input_rows_count, std::numeric_limits<Int32>::max()),
-            std::make_shared<DataTypeInt32>(),
-            "");
-
-        auto bitand_result_type = std::make_shared<DataTypeInt32>();
-        return FunctionFactory::instance()
-            .get("bitAnd", context)
-            ->build({iceberg_hash_result_with_type, max_int_with_type})
-            ->execute({iceberg_hash_result_with_type, max_int_with_type}, bitand_result_type, input_rows_count, false);
-    }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-};
-
-REGISTER_FUNCTION(IcebergHashBitAnd)
-{
-    FunctionDocumentation::Description description = R"(Implements logic of iceberg truncate transform: https://iceberg.apache.org/spec/#truncate-transform-details.)";
-    FunctionDocumentation::Syntax syntax = "icebergHashBitAnd(N, value)";
-    FunctionDocumentation::Arguments arguments = {{"value", "String, integer or Decimal value."}};
-    FunctionDocumentation::ReturnedValue returned_value = "The same type as argument";
-    FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergBucket(3, 'iceberg')", "ice"}};
-    FunctionDocumentation::Category category = {"Other"};
-
-    factory.registerFunction<FunctionIcebergHashBitAnd>({description, syntax, arguments, returned_value, examples, category});
-}
-}
+} // namespace DB
