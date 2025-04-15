@@ -231,7 +231,7 @@ public:
     virtual std::optional<size_t> totalBytes() { return {}; }
 
     virtual bool hasExternalDynamicMetadata() { return false; }
-    
+
     virtual IDataLakeMetadata * getExternalMetadata() const { return nullptr; }
 
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String &) const { return {}; }
