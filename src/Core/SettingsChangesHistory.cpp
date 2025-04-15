@@ -70,7 +70,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"secondary_indices_enable_bulk_filtering", false, true, "A new algorithm for filtering by data skipping indices"},
             {"implicit_table_at_top_level", "", "", "A new setting, used in clickhouse-local"},
-            {"parsedatetime_parse_without_leading_space", true, false, "Improved compatibility with MySQL DATE_FORMAT/STR_TO_DATE"},
+            {"parsedatetime_e_requires_space_padding", true, false, "Improved compatibility with MySQL DATE_FORMAT/STR_TO_DATE"},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
