@@ -28,7 +28,7 @@ For an unsorted array, the behavior is undefined.
                 {"arr", "Input array. Array."},
                 {"x", "Element to find in the array with type matching that of the array elements, or their supertype."}
         },
-        .returned_value="Returns the position of the first occurence of `x` in `arr`.",
+        .returned_value="Returns the position of the first occurrence of `x` in `arr`.",
         .examples = {{.name = "", .query = "SELECT indexOfAssumeSorted([1, 2, 2, 2, 3, 3, 3, 4], 3) FROM test_table;", .result=""}},
         .category=FunctionDocumentation::Category::Array}
 );
