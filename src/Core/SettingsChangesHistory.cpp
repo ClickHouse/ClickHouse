@@ -70,6 +70,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"secondary_indices_enable_bulk_filtering", false, true, "A new algorithm for filtering by data skipping indices"},
             {"implicit_table_at_top_level", "", "", "A new setting, used in clickhouse-local"},
+            {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
@@ -107,7 +108,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_variant_type", false, true, "Variant data type is production-ready"},
             {"allow_experimental_database_unity_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'"},
             {"allow_experimental_database_glue_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'"},
-            {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
             {"use_page_cache_with_distributed_cache", false, false, "New setting"},
             {"use_query_condition_cache", false, false, "New setting."},
             {"parallel_replicas_for_cluster_engines", false, true, "New setting."},
