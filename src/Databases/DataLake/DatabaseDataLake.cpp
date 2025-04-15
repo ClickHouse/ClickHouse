@@ -1,4 +1,5 @@
 #include <Databases/DataLake/DatabaseDataLake.h>
+#include "Storages/ObjectStorage/StorageObjectStorageSettings.h"
 
 #if USE_AVRO && USE_PARQUET
 
@@ -56,6 +57,7 @@ namespace Setting
 namespace StorageObjectStorageSetting
 {
     extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
+    extern const StorageObjectStorageSettingsBool iceberg_use_version_hint;
 }
 
 namespace ErrorCodes
