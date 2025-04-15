@@ -175,7 +175,7 @@ bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
 {
     return rpnEvaluatesAlwaysUnknownOrTrue(
         condition.getRPN(),
-        [&](KeyCondition::RPNElement::Function function)
+        [](KeyCondition::RPNElement::Function function)
         {
             return (
                 function == KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE || function == KeyCondition::RPNElement::FUNCTION_IN_RANGE

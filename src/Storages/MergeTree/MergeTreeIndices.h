@@ -173,8 +173,9 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
     }
 
-    template <typename RPNElement, typename FUNC>
-    bool rpnEvaluatesAlwaysUnknownOrTrue(const std::vector<RPNElement> & rpn, FUNC && isMatchingRPNFunction) const
+    template <typename RPNElement>
+    bool rpnEvaluatesAlwaysUnknownOrTrue(
+        const std::vector<RPNElement> & rpn, std::function<bool(typename RPNElement::Function)> isMatchingRPNFunction) const
     {
         std::vector<Internal::RPNEvaluationIndexUsefulnessState> rpn_stack;
         rpn_stack.reserve(rpn.size() - 1);
