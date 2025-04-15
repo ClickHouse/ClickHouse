@@ -3,6 +3,7 @@
 #include <Functions/keyvaluepair/impl/Configuration.h>
 #include <Functions/keyvaluepair/impl/StateHandler.h>
 #include <Functions/keyvaluepair/impl/NeedleFactory.h>
+#include <Functions/keyvaluepair/impl/DuplicateKeyFoundException.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
@@ -13,6 +14,7 @@
 #include <string>
 #include <vector>
 #include <absl/container/flat_hash_map.h>
+
 
 namespace DB
 {
@@ -655,7 +657,7 @@ struct ReferencesMapStateHandler : public StateHandlerImpl<false>
         {
             if (map.contains(key) && value != map[key])
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "bla bla bla");
+                throw DuplicateKeyFoundException(key);
             }
 
             map[key] = value;

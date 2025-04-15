@@ -51,7 +51,7 @@ protected:
             if (next_state.position_in_string > data.size() && next_state.state != State::END)
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Attempt to move read pointer past end of available data, from state {} to new state: {}, n ew position: {}, available data: {}",
+                        "Attempt to move read pointer past end of available data, from state {} to new state: {}, new position: {}, available data: {}",
                         magic_enum::enum_name(state), magic_enum::enum_name(next_state.state),
                         next_state.position_in_string, data.size());
             }

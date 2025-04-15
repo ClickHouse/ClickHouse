@@ -2,6 +2,7 @@
 #include <stack>
 
 #include <Storages/VirtualColumnUtils.h>
+#include "Formats/NumpyDataTypes.h"
 
 #include <Core/NamesAndTypes.h>
 #include <Core/TypeId.h>
@@ -55,6 +56,7 @@
 #include <IO/WriteHelpers.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Functions/keyvaluepair/impl/DuplicateKeyFoundException.h>
 
 
 namespace DB
@@ -190,7 +192,14 @@ HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & 
 
     std::string_view path_without_filename(path.data(), last_slash_pos);
 
-    extractor.extract(path_without_filename, key_values);
+    try
+    {
+        extractor.extract(path_without_filename, key_values);
+    }
+    catch (const extractKV::DuplicateKeyFoundException & ex)
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Path '{}' to file with enabled hive-style partitioning contains duplicated partition key {} with different values, only unique keys are allowed", path, ex.key);
+    }
 
     return key_values;
 }
