@@ -228,7 +228,7 @@ namespace Setting
     extern const SettingsUInt64 max_local_read_bandwidth;
     extern const SettingsUInt64 max_local_write_bandwidth;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
-    extern const SettingsUInt64 max_read_buffer_size;
+    extern const SettingsNonZeroUInt64 max_read_buffer_size;
     extern const SettingsUInt64 max_read_buffer_size_local_fs;
     extern const SettingsUInt64 max_read_buffer_size_remote_fs;
     extern const SettingsUInt64 max_remote_read_network_bandwidth;
@@ -1036,6 +1036,7 @@ ContextData::ContextData(const ContextData &o) :
     merge_tree_read_task_callback(o.merge_tree_read_task_callback),
     merge_tree_all_ranges_callback(o.merge_tree_all_ranges_callback),
     parallel_replicas_group_uuid(o.parallel_replicas_group_uuid),
+    is_under_restore(o.is_under_restore),
     client_protocol_version(o.client_protocol_version),
     query_access_info(std::make_shared<QueryAccessInfo>(*o.query_access_info)),
     query_factories_info(o.query_factories_info),
@@ -5591,6 +5592,18 @@ void Context::initializeExternalTablesIfSet()
     }
 }
 
+void Context::setQueryPlanDeserializationCallback(QueryPlanDeserializationCallback && callback)
+{
+    query_plan_deserialization_callback = std::move(callback);
+}
+
+std::shared_ptr<QueryPlanAndSets> Context::getDeserializedQueryPlan()
+{
+    if (!query_plan_deserialization_callback)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query plan deserialization callback is not set");
+
+    return query_plan_deserialization_callback();
+}
 
 void Context::setInputInitializer(InputInitializer && initializer)
 {
