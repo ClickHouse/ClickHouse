@@ -1063,6 +1063,9 @@ Possible values:
 
     If a shard is unavailable, ClickHouse throws an exception.
 )", 0) \
+    DECLARE(Bool, hedged_connections_preffer_stable_pools, false, R"(
+Preffer using stable pools for creating connections.
+)", 0) \
     \
     DECLARE(UInt64, parallel_distributed_insert_select, 0, R"(
 Enables parallel distributed `INSERT ... SELECT` query.
@@ -3788,6 +3791,22 @@ See also:
 - [Table engine Distributed](../../engines/table-engines/special/distributed.md)
 - [distributed_replica_error_half_life](#distributed_replica_error_half_life)
 - [distributed_replica_max_ignored_errors](#distributed_replica_max_ignored_errors)
+)", 0) \
+    DECLARE(Seconds, distributed_min_unstable_period_for_replica, 1, R"(
+Minimal period of time when replica can be unstable. Replica can become unstable if the last connection couldn't be established. It follows exponential policy with [distributed_min_unstable_period_for_replica; distributed_max_unstable_period_for_replica] bounds.
+
+See also:
+
+- [hedged_connections_preffer_stable_pools](#hedged_connections_preffer_stable_pools)
+- [distributed_max_unstable_period_for_replica](#distributed_max_unstable_period_for_replica)
+)", 0) \
+    DECLARE(Seconds, distributed_max_unstable_period_for_replica, 600, R"(
+Max period of time when replica can be unstable. Replica can become unstable if the last connection couldn't be established. It follows exponential policy with [distributed_min_unstable_period_for_replica; distributed_max_unstable_period_for_replica] bounds.
+
+See also:
+
+- [hedged_connections_preffer_stable_pools](#hedged_connections_preffer_stable_pools)
+- [distributed_min_unstable_period_for_replica](#distributed_min_unstable_period_for_replica)
 )", 0) \
     DECLARE(UInt64, distributed_replica_max_ignored_errors, 0, R"(
 - Type: unsigned int

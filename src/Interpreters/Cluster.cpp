@@ -27,6 +27,8 @@ namespace Setting
     extern const SettingsSeconds distributed_replica_error_half_life;
     extern const SettingsLoadBalancing load_balancing;
     extern const SettingsBool prefer_localhost_replica;
+    extern const SettingsSeconds distributed_min_unstable_period_for_replica;
+    extern const SettingsSeconds distributed_max_unstable_period_for_replica;
 }
 
 namespace ErrorCodes
@@ -670,7 +672,9 @@ void Cluster::addShard(
         all_replicas_pools,
         settings[Setting::load_balancing],
         settings[Setting::distributed_replica_error_half_life].totalSeconds(),
-        settings[Setting::distributed_replica_error_cap]);
+        settings[Setting::distributed_replica_error_cap],
+        settings[Setting::distributed_min_unstable_period_for_replica].totalSeconds(),
+        settings[Setting::distributed_max_unstable_period_for_replica].totalSeconds());
 
     if (weight)
         slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
