@@ -726,8 +726,8 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"regexp_dict_allow_hyperscan", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"regexp_dict_flag_case_insensitive", CHSetting(trueOrFalse, {}, false)},
     {"regexp_dict_flag_dotall", CHSetting(trueOrFalse, {}, false)},
-    {"remote_filesystem_read_method",
-     CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'read'" : "'threadpool'"; }, {"'read'", "'threadpool'"}, false)},
+    /*{"remote_filesystem_read_method", Gives issues on cloud
+     CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'read'" : "'threadpool'"; }, {"'read'", "'threadpool'"}, false)},*/
     {"reject_expensive_hyperscan_regexps", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"remote_filesystem_read_prefetch", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"replace_running_query", CHSetting(trueOrFalse, {}, false)},
