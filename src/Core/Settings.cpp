@@ -3631,8 +3631,8 @@ Formatter '%M' in functions 'formatDateTime' and 'parseDateTime' print/parse the
     DECLARE(Bool, parsedatetime_parse_without_leading_zeros, true, R"(
 Formatters '%c', '%l' and '%k' in function 'parseDateTime' parse months and hours without leading zeros.
 )", 0) \
-    DECLARE(Bool, parsedatetime_parse_without_leading_space, false, R"(
-Formatter '%e' in function 'parseDateTime' keeps leading spaces while parsing day of month instead of ignoring them.
+    DECLARE(Bool, parsedatetime_e_requires_space_padding, false, R"(
+Formatter '%e' in function 'parseDateTime' expects that single-digit days are space-padded, i.e. ' 2' works but '2' raises an error.
     )", 0) \
     DECLARE(Bool, formatdatetime_format_without_leading_zeros, false, R"(
 Formatters '%c', '%l' and '%k' in function 'formatDateTime' print months and hours without leading zeros.

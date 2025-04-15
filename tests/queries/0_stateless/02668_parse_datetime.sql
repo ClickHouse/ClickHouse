@@ -192,6 +192,14 @@ set session_timezone = 'UTC'; -- don't randomize the session timezone
 select parseDateTime('2021-01-04 23:12:34') = toDateTime('2021-01-04 23:12:34');
 select parseDateTime(''); -- { serverError NOT_ENOUGH_SPACE }
 
+-- Test setting 'parsedatetime_e_requires_space_padding'
+--     In the default behavior, leading spaces for %e are optional
+select parseDateTime('1/12/2024', '%e/%m/%Y') settings parsedatetime_e_requires_space_padding = 0;
+select parseDateTime(' 1/12/2024', '%e/%m/%Y') settings parsedatetime_e_requires_space_padding = 0;
+--     If we enable the legacy behavior, leading spaces for %e are mandatory
+select parseDateTime(' 1/12/2024', '%e/%m/%Y') settings parsedatetime_e_requires_space_padding = 1;
+select parseDateTime('1/12/2024', '%e/%m/%Y') settings parsedatetime_e_requires_space_padding = 1; -- { serverError CANNOT_PARSE_DATETIME }
+
 -- -------------------------------------------------------------------------------------------------------------------------
 -- Tests for parseDateTime64, these are not systematic
 
@@ -230,35 +238,3 @@ select parseDateTime64('2106-02-07 06:28:15', '%Y-%m-%d %H:%i:%s') = toDateTime6
 select parseDateTime64('2106-02-08 06:28:15', '%Y-%m-%d %H:%i:%s') = toDateTime64('2106-02-08 06:28:15', 0);
 select parseDateTime64('2299-12-31 23:59:59', '%Y-%m-%d %H:%i:%s') = toDateTime64('2299-12-31 23:59:59', 0);
 select parseDateTime64('2300-01-01 00:00:00', '%Y-%m-%d %H:%i:%s'); -- { serverError CANNOT_PARSE_DATETIME }
-
--- New behaviour for %e with leading whitespaces (default, MySQL compatible)
-SELECT are_equal
-FROM
-(
-    SELECT
-        toDateTime('2024-12-01 00:00:00', 0) AS a,
-        parseDateTime('1/12/2024', '%e/%m/%Y') AS b,
-        a = b AS are_equal
-    SETTINGS parsedatetime_parse_without_leading_space=false
-);
-
-SELECT are_equal
-FROM
-(
-    SELECT
-        toDateTime('2024-12-31 00:00:00', 0) AS a,
-        parseDateTime('31/12/2024', '%e/%m/%Y') AS b,
-        a = b AS are_equal
-    SETTINGS parsedatetime_parse_without_leading_space=false
-);
-
--- Legacy behaviour has various strange errors
-SELECT
-    toDateTime('2024-12-1 00:00:00', 0) AS a,
-    parseDateTime('1/12/2024', '%e/%m/%Y') AS b,
-    a = b AS are_equal
-SETTINGS parsedatetime_parse_without_leading_space=true;  -- { serverError CANNOT_PARSE_TEXT }
-
-SELECT parseDateTime('1/12/2024', '%e/%m/%Y') SETTINGS parsedatetime_parse_without_leading_space=true; -- { serverError CANNOT_PARSE_DATETIME }
--- -------------------------------------------------------------------------------------------------------------------------
--- { echoOff }
