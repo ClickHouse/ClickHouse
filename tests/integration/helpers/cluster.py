@@ -348,14 +348,14 @@ def rabbitmq_debuginfo(rabbitmq_id, cookie):
 
 async def check_nats_is_available(nats_port, ssl_ctx=None):
     nc = await nats_connect_ssl(
-        nats_port, user="click", password="house", ssl_ctx=ssl_ctx
+        nats_port, user="click", password="house", ssl_ctx=ssl_ctx, max_reconnect_attempts=1
     )
     available = nc.is_connected
     await nc.close()
     return available
 
 
-async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None):
+async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None, **connect_options):
     if not ssl_ctx:
         ssl_ctx = ssl.create_default_context()
         ssl_ctx.check_hostname = False
@@ -365,6 +365,7 @@ async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None):
         user=user,
         password=password,
         tls=ssl_ctx,
+        **connect_options
     )
     return nc
 
