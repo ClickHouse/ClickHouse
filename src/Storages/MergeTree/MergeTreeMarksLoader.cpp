@@ -1,6 +1,7 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
+#include "Common/JemallocNodumpAllocator.h"
 #include <Common/threadPoolCallbackRunner.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
@@ -208,7 +209,8 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
             });
     }
 
-    auto res = std::make_shared<MarksInCompressedFile>(plain_marks);
+    JemallocNodumpAllocator<MarksInCompressedFile> allocator;
+    auto res = std::allocate_shared<MarksInCompressedFile>(allocator, plain_marks);
 
     ProfileEvents::increment(ProfileEvents::LoadedMarksFiles);
     ProfileEvents::increment(ProfileEvents::LoadedMarksCount, marks_count * num_columns_in_mark);
