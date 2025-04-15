@@ -1,4 +1,4 @@
-#include <Storages/NATS/NATSProducer.h>
+#include <Storages/NATS/INATSProducer.h>
 
 #include <atomic>
 #include <Columns/ColumnString.h>
@@ -19,7 +19,7 @@ namespace ErrorCodes
     extern const int INVALID_STATE;
 }
 
-NATSProducer::NATSProducer(NATSConnectionPtr connection_, const String & subject_, std::atomic<bool> & shutdown_called_, LoggerPtr log_)
+INATSProducer::INATSProducer(NATSConnectionPtr connection_, const String & subject_, std::atomic<bool> & shutdown_called_, LoggerPtr log_)
     : AsynchronousMessageProducer(log_)
     , connection(std::move(connection_))
     , subject(subject_)
@@ -28,7 +28,7 @@ NATSProducer::NATSProducer(NATSConnectionPtr connection_, const String & subject
 {
 }
 
-void NATSProducer::finishImpl()
+void INATSProducer::finishImpl()
 {
     try
     {
@@ -46,7 +46,7 @@ void NATSProducer::finishImpl()
     }
 }
 
-void NATSProducer::cancel() noexcept
+void INATSProducer::cancel() noexcept
 {
     try
     {
@@ -58,13 +58,13 @@ void NATSProducer::cancel() noexcept
     }
 }
 
-void NATSProducer::produce(const String & message, size_t, const Columns &, size_t)
+void INATSProducer::produce(const String & message, size_t, const Columns &, size_t)
 {
     if (!payloads.push(message))
         throw Exception(ErrorCodes::INVALID_STATE, "Could not push to payloads queue");
 }
 
-void NATSProducer::publish()
+void INATSProducer::publish()
 {
     String payload;
 
@@ -91,12 +91,12 @@ void NATSProducer::publish()
     }
 }
 
-void NATSProducer::stopProducingTask()
+void INATSProducer::stopProducingTask()
 {
     payloads.finish();
 }
 
-void NATSProducer::startProducingTaskLoop()
+void INATSProducer::startProducingTaskLoop()
 {
     SCOPE_EXIT(nats_ReleaseThreadMemory());
 
