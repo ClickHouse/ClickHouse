@@ -73,6 +73,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_convert_join_to_in", false, false, "New setting"},
             {"enable_hdfs_pread", true, true, "New setting."},
             {"low_priority_query_wait_time_ms", 1000, 1000, "New setting."},
+            {"parsedatetime_parse_without_leading_space", true, false, "Improved compatibility with MySQL DATE_FORMAT/STR_TO_DATE"},
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {
