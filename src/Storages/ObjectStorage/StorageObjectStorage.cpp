@@ -421,6 +421,9 @@ SinkToStoragePtr StorageObjectStorage::write(
                         configuration->getPath());
     }
 
+    if (!configuration->supportsWrites())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
+
     if (configuration->withPartitionWildcard())
     {
         ASTPtr partition_by_ast = nullptr;

@@ -273,7 +273,7 @@ class JobConfigs:
             RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_V80COMPAT,
             RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_FREEBSD,
             RunnerLabels.BUILDER_ARM,  # BuildTypes.PPC64LE,
-            RunnerLabels.BUILDER_ARM,  # BuildTypes.AMD_COMPAT,
+            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_COMPAT,
             RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_MUSL,
             RunnerLabels.BUILDER_ARM,  # BuildTypes.RISCV64,
             RunnerLabels.BUILDER_AMD,  # BuildTypes.S390X,
@@ -346,8 +346,8 @@ class JobConfigs:
         ),
     ).parametrize(
         parameter=[
-            "asan, 1/2",
-            "asan, 2/2",
+            "asan, distributed plan, 1/2",
+            "asan, distributed plan, 2/2",
             "release",
             "release, old analyzer, s3, DatabaseReplicated, 1/2",
             "release, old analyzer, s3, DatabaseReplicated, 2/2",
@@ -418,7 +418,7 @@ class JobConfigs:
             "msan, 3/4",
             "msan, 4/4",
             "ubsan",
-            "debug, s3 storage",
+            "debug, distributed plan, s3 storage",
             "tsan, s3 storage, 1/3",
             "tsan, s3 storage, 2/3",
             "tsan, s3 storage, 3/3",
@@ -667,10 +667,10 @@ class JobConfigs:
             "release, 2/4",
             "release, 3/4",
             "release, 4/4",
-            "aarch64, 1/4",
-            "aarch64, 2/4",
-            "aarch64, 3/4",
-            "aarch64, 4/4",
+            "aarch64, distributed plan, 1/4",
+            "aarch64, distributed plan, 2/4",
+            "aarch64, distributed plan, 3/4",
+            "aarch64, distributed plan, 4/4",
         ],
         runs_on=[RunnerLabels.FUNC_TESTER_AMD for _ in range(10)]
         + [RunnerLabels.FUNC_TESTER_ARM for _ in range(4)],
@@ -738,6 +738,9 @@ class JobConfigs:
         name=JobNames.ASTFUZZER,
         runs_on=["..params.."],
         command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./docker/test/fuzzer", "./tests/ci/ci_fuzzer_check.py"],
+        ),
         allow_merge_on_failure=True,
     ).parametrize(
         parameter=[
@@ -766,6 +769,9 @@ class JobConfigs:
         name=JobNames.BUZZHOUSE,
         runs_on=["..params.."],
         command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./docker/test/fuzzer", "./tests/ci/ci_fuzzer_check.py"],
+        ),
         allow_merge_on_failure=True,
     ).parametrize(
         parameter=[
@@ -879,7 +885,7 @@ class JobConfigs:
     )
     docs_job = Job.Config(
         name=JobNames.Docs,
-        runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="python3 ./ci/jobs/docs_job.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
@@ -904,6 +910,7 @@ class JobConfigs:
             ],
         ),
         requires=["Build (amd_release)", "Build (arm_release)"],
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     )
     docker_keeper = Job.Config(
         name=JobNames.DOCKER_KEEPER,
@@ -918,6 +925,7 @@ class JobConfigs:
             ],
         ),
         requires=["Build (amd_release)", "Build (arm_release)"],
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     )
     sqlancer_master_jobs = Job.Config(
         name=JobNames.SQLANCER,
