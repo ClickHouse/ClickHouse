@@ -63,7 +63,7 @@ namespace ErrorCodes
 }
 
 RefreshTask::RefreshTask(
-    StorageMaterializedView * view_, ContextPtr context, const DB::ASTRefreshStrategy & strategy, bool /*attach*/, bool coordinated, bool empty)
+    StorageMaterializedView * view_, ContextPtr context, const DB::ASTRefreshStrategy & strategy, bool /* attach */, bool coordinated, bool empty)
     : log(getLogger("RefreshTask"))
     , view(view_)
     , refresh_schedule(strategy)
