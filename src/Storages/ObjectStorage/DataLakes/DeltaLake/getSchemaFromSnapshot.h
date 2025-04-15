@@ -27,8 +27,6 @@ DB::NamesAndTypesList getTableSchemaFromSnapshot(ffi::SharedSnapshot * snapshot)
 std::pair<DB::NamesAndTypesList, DB::Names>
 getReadSchemaAndPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot, ffi::SharedExternEngine * engine);
 
-DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot, ffi::SharedExternEngine * engine);
-
 }
 
 #endif

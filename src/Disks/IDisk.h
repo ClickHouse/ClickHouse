@@ -72,8 +72,6 @@ using DiskObjectStoragePtr = std::shared_ptr<DiskObjectStorage>;
 
 using ObjectAttributes = std::map<std::string, std::string>;
 
-struct PartitionCommand;
-
 /**
  * Provide interface for reservation.
  */
@@ -445,8 +443,6 @@ public:
     virtual bool isWriteOnce() const { return false; }
 
     virtual bool supportsHardLinks() const { return true; }
-
-    virtual bool supportsPartitionCommand(const PartitionCommand & command) const;
 
     /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }

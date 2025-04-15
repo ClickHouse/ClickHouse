@@ -148,7 +148,7 @@ def _build_dockers(workflow, job_name):
                     with_log=True,
                 )
             )
-            if results[-1].is_ok():
+            if results[0].is_ok():
                 ready.append(docker.name)
             else:
                 job_status = Result.Status.FAILED
@@ -165,7 +165,7 @@ def _build_dockers(workflow, job_name):
                     config=docker,
                     digests=docker_digests,
                     with_log=True,
-                    add_latest=workflow.set_latest_in_dockers_build,
+                    add_latest=False,
                 )
             )
 
@@ -233,34 +233,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     print(f"Start [{job_name}], workflow [{workflow.name}]")
     results = []
     files = []
-    env = _Environment.get()
-    _ = RunConfig(
-        name=workflow.name,
-        digest_jobs={},
-        digest_dockers={},
-        sha=env.SHA,
-        cache_success=[],
-        cache_success_base64=[],
-        cache_artifacts={},
-        cache_jobs={},
-        filtered_jobs={},
-        custom_data={},
-    ).dump()
-
-    if env.PR_NUMBER > 0:
-        # refresh PR data
-        title, body, labels = GH.get_pr_title_body_labels()
-        if title:
-            if title != env.PR_TITLE:
-                print("PR title has been changed")
-                env.PR_TITLE = title
-            if env.PR_BODY != body:
-                print("PR body has been changed")
-                env.PR_BODY = body
-            if env.PR_LABELS != labels:
-                print("PR labels have been changed")
-                env.PR_LABELS = labels
-            env.dump()
 
     if workflow.pre_hooks:
         sw_ = Utils.Stopwatch()
@@ -295,27 +267,48 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         result_ = _check_db(workflow)
         results.append(result_)
 
+    if Path(Settings.CUSTOM_DATA_FILE).is_file():
+        with open(Settings.CUSTOM_DATA_FILE, "r", encoding="utf8") as f:
+            custom_data = json.load(f)
+        print(f"Custom data: [{custom_data}]")
+    else:
+        custom_data = {}
+        print(f"Custom data has not been provided")
+
+    env = _Environment.get()
+    workflow_config = RunConfig(
+        name=workflow.name,
+        digest_jobs={},
+        digest_dockers={},
+        sha=env.SHA,
+        cache_success=[],
+        cache_success_base64=[],
+        cache_artifacts={},
+        cache_jobs={},
+        filtered_jobs={},
+        custom_data=custom_data,
+    ).dump()
+
     if workflow.enable_merge_commit:
         assert False, "NOT implemented"
-
-    # read object from fs after .pre_hooks as some users's custom data may be added there
-    workflow_config = RunConfig.from_fs(workflow.name)
 
     if results[-1].is_ok() and workflow.dockers:
         sw_ = Utils.Stopwatch()
         print("Calculate docker's digests")
-        dockers = workflow.dockers
-        dockers = Docker.sort_in_build_order(dockers)
-        for docker in dockers:
-            workflow_config.digest_dockers[docker.name] = Digest().calc_docker_digest(
-                docker, dockers
-            )
-        workflow_config.dump()
+        try:
+            dockers = workflow.dockers
+            dockers = Docker.sort_in_build_order(dockers)
+            for docker in dockers:
+                workflow_config.digest_dockers[docker.name] = (
+                    Digest().calc_docker_digest(docker, dockers)
+                )
+            workflow_config.dump()
+            res = True
+        except Exception as e:
+            res = False
         results.append(
             Result.create_from(
-                name="Calculate docker digests",
-                status=Result.Status.SUCCESS,
-                stopwatch=sw_,
+                name="Calculate docker digests", status=res, stopwatch=sw_
             )
         )
 
@@ -462,9 +455,9 @@ def _finish_workflow(workflow, job_name):
         if failed_jobs_csv and len(failed_jobs_csv) < 80:
             ready_for_merge_description = f"Failed: {failed_jobs_csv}"
         else:
-            ready_for_merge_description = f"Failed: {len(failed_results)}"
+            ready_for_merge_description = f"Failed: {len(failed_results)} jobs"
         if skipped_results:
-            ready_for_merge_description += f", Skipped: {len(skipped_results)}"
+            ready_for_merge_description += f", Skipped: {len(skipped_results)} of them"
 
     if workflow.enable_merge_ready_status:
         pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
@@ -516,8 +509,7 @@ if __name__ == "__main__":
             name=job_name,
             status=Result.Status.ERROR,
             stopwatch=sw,
-            # try out .info generated in runner._run() which works for all jobs automatically
-            # info=f"Failed with Exception [{e}]\n{error_traceback}",
+            info=f"Failed with Exception [{e}]\n{error_traceback}",
         )
 
     result.dump().complete_job()

@@ -9,7 +9,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/IASTHash.h>
 #include <Parsers/NullsAction.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/parseQuery.h>
@@ -175,7 +174,7 @@ private:
 
     std::unordered_map<std::string, std::unordered_set<std::string>> original_table_name_to_fuzzed;
     std::unordered_map<std::string, size_t> index_of_fuzzed_table;
-    std::set<IASTHash> created_tables_hashes;
+    std::set<IAST::Hash> created_tables_hashes;
 
     // Various helper functions follow, normally you shouldn't have to call them.
     Field getRandomField(int type);

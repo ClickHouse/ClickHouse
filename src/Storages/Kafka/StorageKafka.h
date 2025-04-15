@@ -143,7 +143,7 @@ private:
     KafkaConsumerPtr createKafkaConsumer(size_t consumer_number);
     /// Returns full consumer related configuration, also the configuration
     /// contains global kafka properties.
-    cppkafka::Configuration getConsumerConfiguration(size_t consumer_number, IKafkaExceptionInfoSinkPtr exception_info_sink_ptr);
+    cppkafka::Configuration getConsumerConfiguration(size_t consumer_number);
     /// Returns full producer related configuration, also the configuration
     /// contains global kafka properties.
     cppkafka::Configuration getProducerConfiguration();

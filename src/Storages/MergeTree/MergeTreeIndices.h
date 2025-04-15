@@ -43,7 +43,6 @@ struct MergeTreeIndexFormat
 /// A vehicle which transports elements of the SELECT query to the vector similarity index.
 struct VectorSearchParameters
 {
-    String column;
     String distance_function;
     size_t limit;
     std::vector<Float64> reference_vector;
@@ -73,9 +72,6 @@ struct IMergeTreeIndexGranule
     virtual void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) = 0;
 
     virtual bool empty() const = 0;
-
-    /// The in-memory size of the granule. Not expected to be 100% accurate.
-    virtual size_t memoryUsageBytes() const = 0;
 };
 
 using MergeTreeIndexGranulePtr = std::shared_ptr<IMergeTreeIndexGranule>;

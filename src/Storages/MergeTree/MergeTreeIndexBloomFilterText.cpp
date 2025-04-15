@@ -65,15 +65,6 @@ void MergeTreeIndexGranuleBloomFilterText::deserializeBinary(ReadBuffer & istr, 
 }
 
 
-size_t MergeTreeIndexGranuleBloomFilterText::memoryUsageBytes() const
-{
-    size_t sum = 0;
-    for (const auto & bloom_filter : bloom_filters)
-        sum += bloom_filter.memoryUsageBytes();
-    return sum;
-}
-
-
 MergeTreeIndexAggregatorBloomFilterText::MergeTreeIndexAggregatorBloomFilterText(
     const Names & index_columns_,
     const String & index_name_,
@@ -162,12 +153,8 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
         return;
     }
 
-    /// Clone ActionsDAG with re-generated column name for constants.
-    /// DAG from the query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
-    /// DAG from the skip indexes does not use it. This breaks matching by column name sometimes.
-    auto cloned_filter_actions_dag = cloneFilterDAGForIndexesAnalysis(*filter_actions_dag);
     RPNBuilder<RPNElement> builder(
-        cloned_filter_actions_dag.getOutputs().at(0),
+        filter_actions_dag->getOutputs().at(0),
         context,
         [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
     rpn = std::move(builder).extractRPN();
@@ -194,7 +181,6 @@ bool MergeTreeConditionBloomFilterText::alwaysUnknownOrTrue() const
              || element.function == RPNElement::FUNCTION_MULTI_SEARCH
              || element.function == RPNElement::FUNCTION_MATCH
              || element.function == RPNElement::FUNCTION_HAS_ANY
-             || element.function == RPNElement::FUNCTION_HAS_ALL
              || element.function == RPNElement::ALWAYS_FALSE)
         {
             rpn_stack.push_back(false);
@@ -269,8 +255,7 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
                 rpn_stack.back() = !rpn_stack.back();
         }
         else if (element.function == RPNElement::FUNCTION_MULTI_SEARCH
-            || element.function == RPNElement::FUNCTION_HAS_ANY
-            || element.function == RPNElement::FUNCTION_HAS_ALL)
+            || element.function == RPNElement::FUNCTION_HAS_ANY)
         {
             std::vector<bool> result(element.set_bloom_filters.back().size(), true);
 
@@ -279,10 +264,7 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
             for (size_t row = 0; row < bloom_filters.size(); ++row)
                 result[row] = result[row] && granule->bloom_filters[element.key_column].contains(bloom_filters[row]);
 
-            if (element.function == RPNElement::FUNCTION_HAS_ALL)
-                rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), false) == std::end(result), true);
-            else
-                rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
+            rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
         }
         else if (element.function == RPNElement::FUNCTION_MATCH)
         {
@@ -415,8 +397,7 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
                  function_name == "startsWith" ||
                  function_name == "endsWith" ||
                  function_name == "multiSearchAny" ||
-                 function_name == "hasAny" ||
-                 function_name == "hasAll")
+                 function_name == "hasAny")
         {
             Field const_value;
             DataTypePtr const_type;
@@ -601,12 +582,10 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         token_extractor->substringToBloomFilter(value.data(), value.size(), *out.bloom_filter, false, true);
         return true;
     }
-    if (function_name == "multiSearchAny" || function_name == "hasAny" || function_name == "hasAll")
+    if (function_name == "multiSearchAny" || function_name == "hasAny")
     {
         out.key_column = *key_index;
-        out.function = function_name == "multiSearchAny" ? RPNElement::FUNCTION_MULTI_SEARCH
-                     : function_name == "hasAny"         ? RPNElement::FUNCTION_HAS_ANY
-                                                         : RPNElement::FUNCTION_HAS_ALL;
+        out.function = function_name == "multiSearchAny" ? RPNElement::FUNCTION_MULTI_SEARCH : RPNElement::FUNCTION_HAS_ANY;
 
         /// 2d vector is not needed here but is used because already exists for FUNCTION_IN
         std::vector<std::vector<BloomFilter>> bloom_filters;

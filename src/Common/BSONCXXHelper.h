@@ -4,7 +4,6 @@
 
 #if USE_MONGODB
 #include <Common/Base64.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/JSONBuilder.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>

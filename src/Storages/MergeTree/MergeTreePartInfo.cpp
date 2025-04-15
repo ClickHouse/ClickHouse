@@ -2,7 +2,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/DateLUTImpl.h>
 #include <Core/ProtocolDefines.h>
 #include <Parsers/ASTLiteral.h>
 

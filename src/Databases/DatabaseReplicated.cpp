@@ -40,7 +40,6 @@
 #include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/PoolId.h>
@@ -96,12 +95,6 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
     extern const int QUERY_IS_PROHIBITED;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int ASYNC_LOAD_CANCELED;
-}
-
-namespace FailPoints
-{
-    extern const char database_replicated_startup_pause[];
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -301,22 +294,19 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
         Int32 cversion = stat.cversion;
         ::sort(hosts.begin(), hosts.end());
 
-        std::vector<String> host_paths;
-        host_paths.reserve(hosts.size());
+        std::vector<zkutil::ZooKeeper::FutureGet> futures;
+        futures.reserve(hosts.size());
         host_ids.reserve(hosts.size());
-
         for (const auto & host : hosts)
-            host_paths.emplace_back(zookeeper_path + "/replicas/" + host);
-
-        auto host_result = zookeeper->tryGet(host_paths);
+            futures.emplace_back(zookeeper->asyncTryGet(zookeeper_path + "/replicas/" + host));
 
         success = true;
-        for (size_t i = 0; i < hosts.size(); ++i)
+        for (auto & future : futures)
         {
-            auto & res = host_result[i];
+            auto res = future.get();
             if (res.error != Coordination::Error::ZOK)
                 success = false;
-            host_ids.emplace_back(std::move(res.data));
+            host_ids.emplace_back(res.data);
         }
 
         zookeeper->get(zookeeper_path + "/replicas", &stat);
@@ -375,7 +365,6 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
         treat_local_as_remote,
         treat_local_port_as_remote,
         cluster_auth_info.cluster_secure_connection,
-        /* bind_host= */ "",
         Priority{1},
         cluster_name,
         cluster_auth_info.cluster_secret};
@@ -773,8 +762,6 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
 
             if (is_probably_dropped)
                 return;
-
-            FailPointInjection::pauseFailPoint(FailPoints::database_replicated_startup_pause);
 
             {
                 std::lock_guard lock{ddl_worker_mutex};
@@ -1551,32 +1538,20 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
         if (filter_by_table_name)
             std::erase_if(escaped_table_names, [&](const String & table) { return !filter_by_table_name(unescapeForFileName(table)); });
 
-        std::vector<String> paths_to_fetch;
-        paths_to_fetch.reserve(escaped_table_names.size() + 1);
-
+        std::vector<zkutil::ZooKeeper::FutureGet> futures;
+        futures.reserve(escaped_table_names.size());
         for (const auto & table : escaped_table_names)
-            paths_to_fetch.push_back(zookeeper_path + "/metadata/" + table);
-
-        paths_to_fetch.push_back(zookeeper_path + "/max_log_ptr");
-
-        auto table_metadata_and_version = zookeeper->tryGet(paths_to_fetch);
+            futures.emplace_back(zookeeper->asyncTryGet(zookeeper_path + "/metadata/" + table));
 
         for (size_t i = 0; i < escaped_table_names.size(); ++i)
         {
-            auto & res = table_metadata_and_version[i];
+            auto res = futures[i].get();
             if (res.error != Coordination::Error::ZOK)
                 break;
-
-            table_name_to_metadata.emplace(unescapeForFileName(escaped_table_names[i]), std::move(res.data));
+            table_name_to_metadata.emplace(unescapeForFileName(escaped_table_names[i]), res.data);
         }
 
-        auto current_max_log_ptr_idx = paths_to_fetch.size() - 1;
-        auto current_max_log_ptr = table_metadata_and_version[current_max_log_ptr_idx];
-
-        if (current_max_log_ptr.error != Coordination::Error::ZOK)
-            Coordination::Exception::fromPath(current_max_log_ptr.error, zookeeper_path + "/max_log_ptr");
-
-        UInt32 new_max_log_ptr = parse<UInt32>(current_max_log_ptr.data);
+        UInt32 new_max_log_ptr = parse<UInt32>(zookeeper->get(zookeeper_path + "/max_log_ptr"));
         if (new_max_log_ptr == max_log_ptr && escaped_table_names.size() == table_name_to_metadata.size())
             break;
 
@@ -1704,17 +1679,6 @@ void DatabaseReplicated::renameDatabase(ContextPtr query_context, const String &
 
 void DatabaseReplicated::stopReplication()
 {
-    try
-    {
-        /// Make sure startupDatabaseAsync doesn't start ddl_worker after stopReplication().
-        waitDatabaseStarted();
-    }
-    catch (Exception & e)
-    {
-        if (e.code() != ErrorCodes::ASYNC_LOAD_CANCELED)
-            tryLogCurrentException("DatabaseReplicated", "Async loading failed", LogsLevel::warning);
-    }
-
     std::lock_guard lock{ddl_worker_mutex};
     if (ddl_worker)
         ddl_worker->shutdown();

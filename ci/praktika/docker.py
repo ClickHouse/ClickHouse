@@ -19,7 +19,7 @@ class Docker:
 
     @classmethod
     def build(cls, config: "Docker.Config", digests, amd_only, arm_only, with_log):
-        from .result import Result
+        from praktika.result import Result
 
         sw = Utils.Stopwatch()
         tag = digests[config.name]
@@ -75,7 +75,7 @@ class Docker:
         cls, config: "Docker.Config", digests, add_latest, with_log=False
     ):
 
-        from .result import Result
+        from praktika.result import Result
 
         tags = [digests[config.name]]
 
@@ -94,11 +94,10 @@ class Docker:
         commands.append(f"docker manifest push {config.name}:{digests[config.name]}")
 
         if add_latest:
-            tags[0] = "latest"
-            commands += [
+            commands.append(
                 "docker manifest create --amend "
-                + " ".join(f"{config.name}:{t}" for t in tags)
-            ]
+                + " ".join((f"{config.name}:{t}" for t in tags))
+            )
             commands.append(f"docker manifest push {config.name}:latest")
 
         return Result.from_commands_run(

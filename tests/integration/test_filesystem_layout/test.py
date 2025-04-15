@@ -12,7 +12,6 @@ node = cluster.add_instance(
     ],
     with_minio=True,
     stay_alive=True,
-    with_remote_database_disk=False,  # The tests work on the local disk and check symlink
 )
 
 

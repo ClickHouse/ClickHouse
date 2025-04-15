@@ -16,7 +16,7 @@ If you want to use the `JSON` type, and for the examples on this page, please us
 SET enable_json_type = 1
 ```
 
-However, if you are using ClickHouse Cloud, you must first [get in touch with support](https://clickhouse.com/docs/about-us/support) to enable the usage of the `JSON` type.
+:::
 
 To declare a column of `JSON` type, you can use the following syntax:
 
