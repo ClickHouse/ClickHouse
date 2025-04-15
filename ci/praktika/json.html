@@ -42,7 +42,7 @@
             --header-background-color: #f4f4f4;
             --link-color: blue;
             --link-hover-color: darkblue;
-            --job-name-color: #654cf0;
+            --job-name-color: var(--text-color);
             --file-link-color: blue;
             --file-link-hover-color: darkblue;
             --table-border-color: #ccc;
@@ -56,7 +56,7 @@
             --pending-bar-color: #595801;
             --skipped-bar-color: #575757;
             --table-border-color: #444;
-            --job-name-color: #ffea00;
+            --job-name-color: var(--text-color);
             --link-color: #ffea00;
             --link-hover-color: #ffaa00;
             --file-link-color: #007efc;
@@ -564,7 +564,7 @@
         const chartWrapper = document.createElement("div");
         chartWrapper.className = 'status-widget';
 
-        const stats = persistentStorage.statisticsObject?.[jobName]?.["7d"];
+        const stats = persistentStorage.statisticsObject?.[jobName]?.["3d"];
         if (!stats) {
             console.warn(`No stats found for job: ${jobName}`);
             return;
@@ -1418,7 +1418,9 @@
         let statusWidget = addStatusWidget(result.name, result.status, result.start_time, result.duration);
         if (nameParams.length > 1) {
             addFileLinksWidget(result.links);
-            addStatisticsWidget(nameParams[1], result.duration * 1000)
+            if (nameParams.length === 2) {
+                addStatisticsWidget(nameParams[1], result.duration * 1000)
+            }
         } else {
             addTimeTraceWidget(result.results, statusWidget, originalWorkflowDetails);
         }
@@ -1457,7 +1459,7 @@
             !persistentStorage.updatedAt ||
             now > persistentStorage.updatedAt + HALF_DAY
         ) {
-            const url = `https://s3.amazonaws.com/${bucketName}/statistics/${name.toLowerCase()}.json.gz`;
+            const url = `https://s3.amazonaws.com/${bucketName}/statistics/statistics.json.gz`;
 
             try {
                 const response = await fetch(url);

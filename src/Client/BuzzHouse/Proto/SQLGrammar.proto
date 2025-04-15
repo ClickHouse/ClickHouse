@@ -2455,10 +2455,15 @@ message TableOrFunction {
 }
 
 message RemoteFunc {
-    required string address = 1;
-    required TableOrFunction tof = 2;
-    optional string user = 3;
-    optional string password = 4;
+    enum RName {
+        remote = 1;
+        remoteSecure = 2;
+    }
+    required RName rname = 1;
+    required string address = 2;
+    required TableOrFunction tof = 3;
+    optional string user = 4;
+    optional string password = 5;
 }
 
 message MySQLFunc {

@@ -57,7 +57,7 @@ namespace ErrorCodes
     for this setting.
     )", 0) \
     DECLARE(UInt64, max_compress_block_size, 0, R"(
-    Maximum size of blocks of uncompressed data before compressing for writing
+    The maximum size of blocks of uncompressed data before compressing for writing
     to a table. You can also specify this setting in the global settings
     (see [max_compress_block_size](/operations/settings/merge-tree-settings#max_compress_block_size)
     setting). The value specified when the table is created overrides the global
@@ -1271,6 +1271,10 @@ namespace ErrorCodes
     Background task which reduces blocking parts for shared merge tree tables.
     Only in ClickHouse Cloud
     )", 0) \
+    DECLARE(Seconds, refresh_parts_interval, 0, R"(
+    If it is greater than zero - refresh the list of data parts from the underlying filesystem to check if the data was updated under the hood.
+    It can be set only if the table is located on readonly disks (which means that this is a readonly replica, while data is being written by another replica).
+    )", 0) \
     \
     /** Check delay of replicas settings. */ \
     DECLARE(UInt64, min_relative_delay_to_measure, 120, R"(
@@ -1770,6 +1774,14 @@ namespace ErrorCodes
     DECLARE(Bool, columns_and_secondary_indices_sizes_lazy_calculation, true, R"(
     Calculate columns and secondary indices sizes lazily on first request instead
     of on table initialization.
+    )", 0) \
+    DECLARE(String, default_compression_codec, "", R"(
+    Specifies the default compression codec to be used if none is defined for a particular column in the table declaration.
+    Compression codec selecting order for a column:
+        1. Compression codec defined for the column in the table declaration
+        2. Compression codec defined in `default_compression_codec` (this setting)
+        3. Default compression codec defined in `compression` settings
+    Default value: an empty string (not defined).
     )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
