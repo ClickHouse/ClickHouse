@@ -73,7 +73,7 @@ class Runner:
 
         workflow_config.dump()
 
-        Result.generate_pending(job.name).dump()
+        Result.create_from(name=job.name, status=Result.Status.PENDING).dump()
 
     def _setup_env(self, _workflow, job):
         # source env file to write data into fs (workflow config json, workflow status json)
@@ -323,7 +323,7 @@ class Runner:
                 info=info,
             ).dump()
         elif prerun_exit_code != 0:
-            info = f"ERROR: {ResultInfo.PRE_JOB_FAILED}"
+            info = ResultInfo.PRE_JOB_FAILED
             print(info)
             # set Result with error and logs
             Result(
@@ -373,9 +373,7 @@ class Runner:
                     name = check.__name__
                 else:
                     name = str(check)
-                results_.append(
-                    Result.from_commands_run(name=name, command=check, with_info=True)
-                )
+                results_.append(Result.from_commands_run(name=name, command=check))
             result.results.append(
                 Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
             )
