@@ -24,7 +24,7 @@ cp ${DATA_FILE} ${DATA_FILE_USER_PATH}
 query_id="${CLICKHOUSE_DATABASE}_parquet_group_group_prune_profile_$RANDOM"
 
 # A parquet file with 10 row groups from 1 to 100, 10 rows per row group.
-${CLICKHOUSE_CLIENT} "${opts[@]}" --query_id="${query_id}" --query="SELECT * FROM file('${DATA_FILE_USER_PATH}') WHERE col_int > 70 format Null" --format Null
+${CLICKHOUSE_CLIENT} "${opts[@]}" --query_id="${query_id}" --query="SELECT * FROM file('${DATA_FILE_USER_PATH}', Parquet) WHERE col_int > 70 format Null" --format Null
 
 ${CLICKHOUSE_CLIENT} -nq "
   SYSTEM FLUSH LOGS query_log;
