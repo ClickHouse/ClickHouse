@@ -1,6 +1,5 @@
 #pragma once
 
-#include <memory>
 #include <vector>
 #include <Functions/keyvaluepair/impl/CHKeyValuePairExtractor.h>
 #include <Functions/keyvaluepair/impl/Configuration.h>
