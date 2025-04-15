@@ -113,7 +113,6 @@ namespace Setting
     extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsBool allow_not_comparable_types_in_order_by;
     extern const SettingsBool use_concurrency_control;
-    extern const SettingsString implicit_table_at_top_level;
 }
 
 
@@ -582,7 +581,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         Settings subquery_settings = context->getSettingsCopy();
         subquery_settings[Setting::max_result_rows] = 1;
         subquery_settings[Setting::extremes] = false;
-        subquery_settings[Setting::implicit_table_at_top_level] = "";
         /// When execute `INSERT INTO t WITH ... SELECT ...`, it may lead to `Unknown columns`
         /// exception with this settings enabled(https://github.com/ClickHouse/ClickHouse/issues/52494).
         subquery_settings[Setting::use_structure_from_insertion_table_in_table_functions] = false;

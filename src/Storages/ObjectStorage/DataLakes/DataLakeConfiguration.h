@@ -119,8 +119,6 @@ public:
 
     bool supportsFileIterator() const override { return true; }
 
-    bool supportsWrites() const override { return current_metadata->supportsWrites(); }
-
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
         IDataLakeMetadata::FileProgressCallback callback,

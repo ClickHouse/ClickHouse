@@ -62,6 +62,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/UseSSL.h>
 #include <Interpreters/CancellationChecker.h>
 #include <Interpreters/ServerAsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
@@ -966,6 +967,8 @@ try
 
     Poco::Logger * log = &logger();
 
+    UseSSL use_ssl;
+
     MainThreadStatus::getInstance();
 
     ServerSettings server_settings;
@@ -992,6 +995,23 @@ try
         setenv("LIBHDFS3_CONF", libhdfs3_conf.c_str(), true /* overwrite */); // NOLINT
     }
 #endif
+
+    /// When building openssl into clickhouse, clickhouse owns the configuration
+    /// Therefore, the clickhouse openssl configuration should be kept separate from
+    /// the OS. Default to the one in the standard config directory, unless overridden
+    /// by a key in the config.
+    /// Note: this has to be done once at server initialization, because 'setenv' is not thread-safe.
+    if (config().has("opensslconf"))
+    {
+        std::string opensslconf_path = config().getString("opensslconf");
+        setenv("OPENSSL_CONF", opensslconf_path.c_str(), true); /// NOLINT
+    }
+    else
+    {
+        const String config_path = config().getString("config-file", "config.xml");
+        const auto config_dir = std::filesystem::path{config_path}.replace_filename("openssl.conf");
+        setenv("OPENSSL_CONF", config_dir.c_str(), true); /// NOLINT
+    }
 
     if (auto total_numa_memory = getNumaNodesTotalMemory(); total_numa_memory.has_value())
     {
@@ -2383,7 +2403,7 @@ try
 
     /// Set current database name before loading tables and databases because
     /// system logs may copy global context.
-    std::string default_database = server_settings[ServerSetting::default_database];
+    std::string default_database = server_settings[ServerSetting::default_database].toString();
     if (default_database.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_database cannot be empty");
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
