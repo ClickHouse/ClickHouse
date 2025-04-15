@@ -127,6 +127,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_replicas_insert_select_local_pipeline", false, false, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"},
             {"parallel_hash_join_threshold", 0, 0, "New setting"},
             /// Release closed. Please use 25.5
+            {"parsedatetime_parse_without_leading_space", true, false, "Improved compatibility with MySQL DATE_FORMAT/STR_TO_DATE"},
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {
