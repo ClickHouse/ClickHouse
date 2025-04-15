@@ -77,7 +77,8 @@ public:
     }
 
     template<typename U>
-    struct rebind { // NOLINT(readability-identifier-naming)
+    struct rebind // NOLINT(readability-identifier-naming)
+    {
         using other = JemallocNodumpAllocator<U>;
     };
 };
