@@ -718,7 +718,9 @@ protected:
 
                 if (table_merge_tree)
                 {
-                    auto mutation_counters = table_merge_tree->getMutationCounters();
+                    MutationCounters mutation_counters;
+                    if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2])
+                        mutation_counters = table_merge_tree->getMutationCounters();
 
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(mutation_counters.num_data);
