@@ -385,10 +385,10 @@ void TableSnapshot::initSnapshotImpl() const
     LOG_TRACE(log, "Initialized scan state");
 
     std::tie(table_schema, physical_names_map) = getTableSchemaFromSnapshot(snapshot.get());
-    LOG_TRACE(log, "Table schema: {}", fmt::join(table_schema.getNames(), ", "));
+    LOG_TRACE(log, "Table logical schema: {}", fmt::join(table_schema.getNames(), ", "));
 
     read_schema = getReadSchemaFromSnapshot(scan_state.get());
-    LOG_TRACE(log, "Read schema: {}", fmt::join(read_schema.getNames(), ", "));
+    LOG_TRACE(log, "Table read schema: {}", fmt::join(read_schema.getNames(), ", "));
 
     partition_columns = getPartitionColumnsFromSnapshot(scan_state.get());
     LOG_TRACE(log, "Partition columns: {}", fmt::join(partition_columns, ", "));
