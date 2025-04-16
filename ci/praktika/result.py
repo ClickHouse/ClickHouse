@@ -386,6 +386,7 @@ class Result(MetaClasses.Serializable):
         command,
         with_log=False,
         with_info=False,
+        with_info_on_failure=True,
         fail_fast=True,
         workdir=None,
         command_args=None,
@@ -399,6 +400,7 @@ class Result(MetaClasses.Serializable):
         :param workdir: Optional working directory.
         :param with_log: Boolean flag to log output to a file.
         :param with_info: Fill in Result.info from command output
+        :param with_info_on_failure: Fill in Result.info from command output on failure only
         :param fail_fast: Boolean flag to stop execution if one command fails.
         :param command_args: Positional arguments for the callable command.
         :param command_kwargs: Keyword arguments for the callable command.
@@ -413,7 +415,7 @@ class Result(MetaClasses.Serializable):
         # Set log file path if logging is enabled
         if with_log:
             log_file = f"{Utils.absolute_path(Settings.TEMP_DIR)}/{Utils.normalize_string(name)}.log"
-        elif with_info:
+        elif with_info or with_info_on_failure:
             log_file = f"/tmp/praktika_{Utils.normalize_string(name)}.log"
         else:
             log_file = None
@@ -430,11 +432,10 @@ class Result(MetaClasses.Serializable):
             for command_ in command:
                 if callable(command_):
                     # If command is a Python function, call it with provided arguments
-                    if with_info:
+                    if with_info or with_info_on_failure:
                         buffer = io.StringIO()
                         with redirect_stdout(buffer):
                             result = command_(*command_args, **command_kwargs)
-                        error_infos = buffer.getvalue()
                     else:
                         result = command_(*command_args, **command_kwargs)
                     if isinstance(result, bool):
@@ -442,10 +443,12 @@ class Result(MetaClasses.Serializable):
                     elif result:
                         error_infos.append(str(result))
                         res = False
+                    if with_info or (with_info_on_failure and not res):
+                        error_infos = buffer.getvalue()
                 else:
                     # Run shell command in a specified directory with logging and verbosity
                     exit_code = Shell.run(command_, verbose=True, log_file=log_file)
-                    if with_info:
+                    if with_info or (with_info_on_failure and exit_code != 0):
                         with open(log_file, "r") as f:
                             error_infos.append(f.read().strip())
                     res = exit_code == 0
@@ -456,11 +459,17 @@ class Result(MetaClasses.Serializable):
                     break
 
         # Create and return the result object with status and log file (if any)
+        MAX_LINES_IN_INFO = 100
         return Result.create_from(
             name=name,
             status=res,
             stopwatch=stop_watch_,
-            info=error_infos,
+            info=(
+                error_infos
+                if len(error_infos) < MAX_LINES_IN_INFO
+                else [f" ~~~ truncated {len(error_infos)-MAX_LINES_IN_INFO} lines ~~~"]
+                + error_infos[-MAX_LINES_IN_INFO:]
+            ),
             files=[log_file] if with_log else None,
         )
 
