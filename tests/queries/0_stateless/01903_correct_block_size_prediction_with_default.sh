@@ -21,9 +21,9 @@ function test()
     where=$1
 
     uuid_1=$(cat /proc/sys/kernel/random/uuid)
-    $CLICKHOUSE_CLIENT --query="SELECT uniq(15Id) FROM test_extract $where SETTINGS max_threads=1" --query_id=$uuid_1
+    $CLICKHOUSE_CLIENT --max_execution_time 300 --query="SELECT uniq(15Id) FROM test_extract $where SETTINGS max_threads=1" --query_id=$uuid_1
     uuid_2=$(cat /proc/sys/kernel/random/uuid)
-    $CLICKHOUSE_CLIENT --query="SELECT uniq($sql) FROM test_extract $where SETTINGS max_threads=1" --query_id=$uuid_2
+    $CLICKHOUSE_CLIENT --max_execution_time 300 --query="SELECT uniq($sql) FROM test_extract $where SETTINGS max_threads=1" --query_id=$uuid_2
     $CLICKHOUSE_CLIENT --query="
         SYSTEM FLUSH LOGS query_log;
         WITH memory_1 AS (SELECT memory_usage FROM system.query_log WHERE current_database = currentDatabase() AND query_id='$uuid_1' AND type = 'QueryFinish' as memory_1),
