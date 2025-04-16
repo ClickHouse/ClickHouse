@@ -6,6 +6,10 @@ slug: /operations/quotas
 title: 'Quotas'
 ---
 
+:::note Quotas in ClickHouse Cloud
+Quotas are supported in ClickHouse Cloud but must be created using the [DDL syntax](/sql-reference/statements/create/quota). The XML configuration approach documented below is **not supported**.
+:::
+
 Quotas allow you to limit resource usage over a period of time or track the use of resources.
 Quotas are set up in the user config, which is usually 'users.xml'.
 
@@ -117,3 +121,7 @@ The quota is assigned to users in the 'users' section of the config. See the sec
 For distributed query processing, the accumulated amounts are stored on the requestor server. So if the user goes to another server, the quota there will "start over".
 
 When the server is restarted, quotas are reset.
+
+## Related Content {#related-content}
+
+- Blog: [Building single page applications with ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)
