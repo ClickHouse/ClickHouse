@@ -904,6 +904,7 @@ class FailureReason(enum.Enum):
     REPLICATED_DB = "replicated-database"
     NON_ATOMIC_DB = "database engine not Atomic"
     OBJECT_STORAGE = "object-storage"
+    COVERAGE = "coverage"
     S3_STORAGE = "s3-storage"
     AZURE_BLOB_STORAGE = "azure-blob-storage"
     BUILD = "not running for current build"
@@ -1088,6 +1089,7 @@ class SettingsRandomizer:
         "optimize_extract_common_expressions": lambda: random.randint(0, 1),
         "use_query_condition_cache": lambda: random.randint(0, 1),
         "input_format_parquet_use_native_reader_v2": lambda: random.randint(0, 1),
+        "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
         **randomize_external_sort_group_by(),
     }
 
@@ -1507,6 +1509,12 @@ class TestCase:
             and BuildFlags.RELEASE not in args.build_flags
         ):
             return FailureReason.OBJECT_STORAGE
+        if (
+            tags
+            and ("no-coverage" in tags)
+            and (args.collect_per_test_coverage)
+        ):
+            return FailureReason.COVERAGE
 
         if "no-batch" in tags and (
             args.run_by_hash_num is not None or args.run_by_hash_total is not None

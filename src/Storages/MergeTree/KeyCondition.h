@@ -30,6 +30,18 @@ struct ActionDAGNodes;
 class MergeTreeSetIndex;
 
 
+/// Canonize the predicate
+/// * push down NOT to leaf nodes
+/// * remove aliases and re-generate function names
+/// * remove unneeded functions (e.g. materialize)
+struct ActionsDAGWithInversionPushDown
+{
+    std::optional<ActionsDAG> dag;
+    const ActionsDAG::Node * predicate = nullptr;
+
+    explicit ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context);
+};
+
 /** Condition on the index.
   *
   * Consists of the conditions for the key belonging to all possible ranges or sets,
@@ -43,7 +55,7 @@ class KeyCondition
 public:
     /// Construct key condition from ActionsDAG nodes
     KeyCondition(
-        const ActionsDAG * filter_dag,
+        const ActionsDAGWithInversionPushDown & filter_dag,
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
@@ -152,8 +164,6 @@ public:
         bool single_point = false);
 
     const std::shared_ptr<ColumnFilterHelper> & getColumnFilterHelper() const { return column_filter_helper; }
-
-    static ActionsDAG cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context);
 
     bool matchesExactContinuousRange() const;
 
