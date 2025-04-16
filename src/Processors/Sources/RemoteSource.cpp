@@ -309,10 +309,13 @@ Pipe createRemoteSourcePipe(
     bool add_totals,
     bool add_extremes,
     bool async_read,
-    bool async_query_sending)
+    bool async_query_sending,
+    size_t parallel_marshalling_threads)
 {
     Pipe pipe(std::make_shared<RemoteSource>(query_executor, add_aggregation_info, async_read, async_query_sending));
-    pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<AddSequenceNumber>(header); });
+
+    if (parallel_marshalling_threads)
+        pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<AddSequenceNumber>(header); });
 
     if (add_totals)
         pipe.addTotalsSource(std::make_shared<RemoteTotalsSource>(query_executor));
@@ -320,10 +323,12 @@ Pipe createRemoteSourcePipe(
     if (add_extremes)
         pipe.addExtremesSource(std::make_shared<RemoteExtremesSource>(query_executor));
 
-    // TODO(nickitat): implement
-    pipe.resize(16);
-    pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<ConvertBlobColumnsTransform>(header); });
-    pipe.addTransform(std::make_shared<SortChunksBySequenceNumber>(pipe.getHeader(), 16));
+    if (parallel_marshalling_threads)
+    {
+        pipe.resize(parallel_marshalling_threads);
+        pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<ConvertBlobColumnsTransform>(header); });
+        pipe.addTransform(std::make_shared<SortChunksBySequenceNumber>(pipe.getHeader(), parallel_marshalling_threads));
+    }
 
     return pipe;
 }

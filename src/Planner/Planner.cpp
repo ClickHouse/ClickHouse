@@ -140,6 +140,7 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
+    extern const SettingsBool enable_parallel_blocks_marshalling;
 }
 
 namespace ServerSetting
@@ -1843,7 +1844,8 @@ void Planner::buildPlanForQueryNode()
         addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context);
     }
 
-    if (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+    if (query_context->getSettingsRef()[Setting::enable_parallel_blocks_marshalling]
+        && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
         && select_query_options.to_stage != QueryProcessingStage::Complete // Don't do it for INSERT SELECT, for example
         && query_context->getClientInfo().distributed_depth <= 1 // Makes sense for higher depths too, just not supported
     )
