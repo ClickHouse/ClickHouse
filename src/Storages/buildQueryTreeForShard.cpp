@@ -14,8 +14,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <IO/WriteHelpers.h>
-#include <Planner/PlannerContext.h>
+#include <Planner/Utils.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -25,10 +24,8 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 
-
 namespace DB
 {
-
 namespace Setting
 {
     extern const SettingsDistributedProductMode distributed_product_mode;
@@ -41,7 +38,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED;
 }
 
@@ -383,7 +379,8 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
             }
             else
             {
-                throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "Unexpected global join kind: {}", toString(join_kind));
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Unexpected join kind: {}", join_kind);
             }
 
             auto subquery_node
@@ -405,28 +402,19 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
                 && in_function_node_type != QueryTreeNodeType::TABLE)
                 continue;
 
-            QueryTreeNodePtr replacement_table_expression;
             auto & temporary_table_expression_node = global_in_temporary_tables[in_function_subquery_node];
             if (!temporary_table_expression_node)
             {
                 auto subquery_to_execute = in_function_subquery_node;
                 if (subquery_to_execute->as<TableNode>())
-                    subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(
-                        subquery_to_execute,
-                        planner_context->getQueryContext());
+                    subquery_to_execute
+                        = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context->getQueryContext());
 
                 temporary_table_expression_node = executeSubqueryNode(
-                    subquery_to_execute,
-                    planner_context->getMutableQueryContext(),
-                    global_in_or_join_node.subquery_depth);
-                    replacement_table_expression = temporary_table_expression_node;
-            }
-            else
-            {
-                replacement_table_expression = temporary_table_expression_node->clone();
+                    subquery_to_execute, planner_context->getMutableQueryContext(), global_in_or_join_node.subquery_depth);
             }
 
-            replacement_map.emplace(in_function_subquery_node.get(), replacement_table_expression);
+            replacement_map.emplace(in_function_subquery_node.get(), temporary_table_expression_node);
         }
         else
         {

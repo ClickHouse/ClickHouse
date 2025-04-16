@@ -11,7 +11,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/PODArray.h>
 #include <Common/HashTable/HashMap.h>
-#include <Columns/IColumn_fwd.h>
+#include <Columns/IColumn.h>
 #include <Dictionaries/ICacheDictionaryStorage.h>
 
 namespace CurrentMetrics

@@ -84,7 +84,12 @@ private:
         size_t pos = 0;
         size_t size = 0;
 
-        void update(ColumnPtr column_);
+        void update(ColumnPtr column_)
+        {
+            column = std::move(column_);
+            size = column->size();
+            pos = 0;
+        }
     };
 
     MutableColumnPtr result_column;

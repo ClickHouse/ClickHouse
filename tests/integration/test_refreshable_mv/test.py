@@ -94,10 +94,7 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
             # Wait twice to make sure we wait for a refresh that started after we adjusted the clock.
             # Otherwise another refresh may start right after (because clock moved far forward).
             node.query(
-                f"system wait view re.{name};\
-                system refresh view re.{name};\
-                system wait view re.{name};\
-                system sync replica re.{name};"
+                f"system wait view re.{name}; system refresh view re.{name}; system wait view re.{name};"
             )
         rows_before = int(nodes[randint(0, 1)].query(f"select count() from re.{name}"))
         # Advance the clocks.
@@ -190,11 +187,10 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
 
     # Drop all tables and check that coordination znodes were deleted.
     for name, uuid, coordinated in tables:
-        sync = randint(0, 1) == 0
-        nodes[randint(0, 1)].query(f"drop table re.{name}{' sync' if sync else ''}")
+        maybe_sync = " sync" if randint(0, 1) == 0 else ""
+        nodes[randint(0, 1)].query(f"drop table re.{name}{maybe_sync}")
         # TODO: After https://github.com/ClickHouse/ClickHouse/issues/61065 is done (for MVs, not ReplicatedMergeTree), check the parent znode instead.
-        if sync:
-            assert not znode_exists(uuid)
+        assert not znode_exists(uuid)
 
     # A little stress test dropping MV while it's refreshing, hoping to hit various cases where the
     # drop happens while creating/exchanging/dropping the inner table.

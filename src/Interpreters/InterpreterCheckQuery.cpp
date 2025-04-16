@@ -2,7 +2,6 @@
 #include <Interpreters/InterpreterFactory.h>
 
 #include <memory>
-#include <thread>
 
 #include <Access/Common/AccessFlags.h>
 
@@ -12,7 +11,6 @@
 #include <Common/FailPoint.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
-#include <Common/logger_useful.h>
 
 #include <Core/Settings.h>
 
@@ -30,8 +28,6 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-
-#include <QueryPipeline/Pipe.h>
 
 #include <Storages/IStorage.h>
 
@@ -138,19 +134,10 @@ public:
             std::this_thread::sleep_for(sleep_time);
         });
 
-        try
-        {
-            IStorage::DataValidationTasksPtr tmp = check_data_tasks;
-            auto result = table->checkDataNext(tmp);
-            is_finished = !result.has_value();
-            return result;
-        }
-        catch (const Exception & e)
-        {
-            is_finished = true;
-            CheckResult result{"", false, e.displayText()};
-            return result;
-        }
+        IStorage::DataValidationTasksPtr tmp = check_data_tasks;
+        auto result = table->checkDataNext(tmp);
+        is_finished = !result.has_value();
+        return result;
     }
 
     bool isFinished() const { return is_finished || !table || !check_data_tasks; }

@@ -30,8 +30,7 @@ SELECT t1.key, t1.key2 FROM t1 INNER ALL JOIN t2 ON t1.id == t2.id AND t2.key ==
 
 SELECT '--';
 SELECT t1.key FROM t1 INNER ANY JOIN t2 ON t1.id == t2.id AND t2.key == t2.key2 AND t1.key == t1.key2;
-SELECT t1.key FROM t1 INNER ANY JOIN t2 ON t1.id == t2.id AND t2.key == t2.key2 AND t1.key == t1.key2 AND 0 SETTINGS query_plan_use_new_logical_join_step = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION,NOT_FOUND_COLUMN_IN_BLOCK }
-SELECT t1.key FROM t1 INNER ANY JOIN t2 ON t1.id == t2.id AND t2.key == t2.key2 AND t1.key == t1.key2 AND 0 SETTINGS query_plan_use_new_logical_join_step = 1, enable_analyzer = 1, enable_parallel_replicas = 0;
+SELECT t1.key FROM t1 INNER ANY JOIN t2 ON t1.id == t2.id AND t2.key == t2.key2 AND t1.key == t1.key2 AND 0; -- { serverError INVALID_JOIN_ON_EXPRESSION,NOT_FOUND_COLUMN_IN_BLOCK }
 
 SELECT '--';
 SELECT '333' = t1.key FROM t1 INNER ANY JOIN t2 ON t1.id == t2.id AND t2.key == t2.key2 AND t1.key == t1.key2 AND t2.id > 2;
@@ -59,25 +58,18 @@ SELECT DISTINCT t1.id FROM t1 INNER ANY JOIN t2 ON t1.id == t2.id AND toNullable
 
 SELECT '--';
 SELECT DISTINCT t1.key, toUInt8(t1.id) as e FROM t1 INNER ANY JOIN t2 ON t1.id == t2.id AND e;
--- `e + 1` is UInt16, but `t1.id == t2.id AND e + 1` is UInt8
-SELECT DISTINCT t1.key, toUInt8(t1.id) as e FROM t1 INNER ANY JOIN t2 ON t1.id == t2.id AND e + 1 SETTINGS query_plan_use_new_logical_join_step = 0; -- { serverError 403 }
-SELECT DISTINCT t1.key, toUInt8(t1.id) as e FROM t1 INNER ANY JOIN t2 ON t1.id == t2.id AND e + 1 SETTINGS query_plan_use_new_logical_join_step = 1, enable_analyzer = 1, enable_parallel_replicas = 0;
+-- `e + 1` is UInt16
+SELECT DISTINCT t1.key, toUInt8(t1.id) as e FROM t1 INNER ANY JOIN t2 ON t1.id == t2.id AND e + 1; -- { serverError 403 }
 SELECT DISTINCT t1.key, toUInt8(t1.id) as e FROM t1 INNER ANY JOIN t2 ON t1.id == t2.id AND toUInt8(e + 1);
 
 SELECT '--';
 SELECT t1.id, t1.key, t1.key2, t2.id, t2.key, t2.key2  FROM t1 FULL JOIN t2 ON t1.id == t2.id AND t2.key == t2.key2 AND t1.key == t1.key2 ORDER BY t1.id NULLS FIRST, t2.id NULLS FIRST;
 SELECT t1.id, t1.key, t1.key2, t22.id, t22.idd, t22.key, t22.key2  FROM t1 FULL JOIN t22 ON t1.id == t22.id AND t22.key == t22.key2 AND t1.key == t1.key2 OR t1.id = t22.idd AND t1.key = t1.key2 ORDER BY t1.id NULLS FIRST, t22.id NULLS FIRST;
 
-SELECT * FROM t1 INNER ALL JOIN t2 ON t1.id == t2.id AND t1.id SETTINGS query_plan_use_new_logical_join_step = 0; -- { serverError 403 }
-SELECT * FROM t1 INNER ALL JOIN t2 ON t1.id == t2.id AND t2.id SETTINGS query_plan_use_new_logical_join_step = 0; -- { serverError 403 }
-SELECT * FROM t1 INNER ALL JOIN t2 ON t1.id == t2.id AND t1.id + 2 SETTINGS query_plan_use_new_logical_join_step = 0; -- { serverError 403 }
-SELECT * FROM t1 INNER ALL JOIN t2 ON t1.id == t2.id AND t2.id + 2 SETTINGS query_plan_use_new_logical_join_step = 0; -- { serverError 403 }
-
-SELECT * FROM t1 INNER ALL JOIN t2 ON t1.id == t2.id AND t2.id ORDER BY ALL SETTINGS query_plan_use_new_logical_join_step = 1, enable_analyzer = 1, enable_parallel_replicas = 0;
-SELECT * FROM t1 INNER ALL JOIN t2 ON t1.id == t2.id AND t1.id ORDER BY ALL SETTINGS query_plan_use_new_logical_join_step = 1, enable_analyzer = 1, enable_parallel_replicas = 0;
-SELECT * FROM t1 INNER ALL JOIN t2 ON t1.id == t2.id AND t1.id + 2 ORDER BY ALL SETTINGS query_plan_use_new_logical_join_step = 1, enable_analyzer = 1, enable_parallel_replicas = 0;
-SELECT * FROM t1 INNER ALL JOIN t2 ON t1.id == t2.id AND t2.id + 2 ORDER BY ALL SETTINGS query_plan_use_new_logical_join_step = 1, enable_analyzer = 1, enable_parallel_replicas = 0;
-
+SELECT * FROM t1 INNER ALL JOIN t2 ON t1.id == t2.id AND t1.id; -- { serverError 403 }
+SELECT * FROM t1 INNER ALL JOIN t2 ON t1.id == t2.id AND t2.id; -- { serverError 403 }
+SELECT * FROM t1 INNER ALL JOIN t2 ON t1.id == t2.id AND t1.id + 2; -- { serverError 403 }
+SELECT * FROM t1 INNER ALL JOIN t2 ON t1.id == t2.id AND t2.id + 2; -- { serverError 403 }
 SELECT * FROM t1 INNER ALL JOIN t2 ON t1.id == t2.id AND t1.key; -- { serverError 43, 403 }
 SELECT * FROM t1 INNER ALL JOIN t2 ON t1.id == t2.id AND t2.key; -- { serverError 43, 403 }
 SELECT * FROM t1 JOIN t2 ON t2.key == t2.key2 OR t1.id == t2.id ORDER BY ALL SETTINGS enable_analyzer = 1;

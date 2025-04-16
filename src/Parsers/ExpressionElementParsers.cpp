@@ -36,12 +36,12 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/IAST_erase.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserExplainQuery.h>
+#include <Parsers/queryToString.h>
 
 #include <Interpreters/StorageID.h>
 
@@ -135,7 +135,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             if (!settings_ast->as<ASTSetQuery>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN settings must be a SET query");
-            settings_str = settings_ast->formatWithSecretsOneLine();
+            settings_str = queryToString(settings_ast);
         }
 
         const ASTPtr & explained_ast = explain_query.getExplainedQuery();
@@ -433,7 +433,7 @@ std::optional<std::pair<char, String>> ParserCompoundIdentifier::splitSpecialDel
 ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast)
 {
     /// Convert to canonical representation in functional form: CAST(expr, 'type')
-    auto type_literal = std::make_shared<ASTLiteral>(type_ast->formatWithSecretsOneLine());
+    auto type_literal = std::make_shared<ASTLiteral>(queryToString(type_ast));
     return makeASTFunction("CAST", expr_ast, std::move(type_literal));
 }
 
@@ -1724,7 +1724,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             if (!parser_string_literal.parse(pos, ast_prefix_name, expected))
                 return false;
 
-            column_name_prefix = ast_prefix_name->as<ASTLiteral &>().value.safeGet<String>();
+            column_name_prefix = ast_prefix_name->as<ASTLiteral &>().value.safeGet<const String &>();
         }
 
         if (with_open_round_bracket)
@@ -2451,7 +2451,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!parser_string_literal.parse(pos, ast_space_name, expected))
             return false;
 
-        destination_name = ast_space_name->as<ASTLiteral &>().value.safeGet<String>();
+        destination_name = ast_space_name->as<ASTLiteral &>().value.safeGet<const String &>();
     }
     else if (mode == TTLMode::GROUP_BY)
     {

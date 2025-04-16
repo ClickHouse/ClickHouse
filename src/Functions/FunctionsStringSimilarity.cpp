@@ -1,9 +1,9 @@
-#include <base/MemorySanitizer.h>
+#include <Functions/FunctionsStringSimilarity.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsHashing.h>
-#include <Functions/FunctionsStringSimilarity.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/MemorySanitizer.h>
 #include <Common/UTF8Helpers.h>
 
 #include <Core/Defines.h>

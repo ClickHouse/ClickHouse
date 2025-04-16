@@ -5,24 +5,19 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-set -e
-
 table_structure="id UInt64"
 
 for i in {1..250}; do
     table_structure+=", c$i String"
 done
 
-MY_CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --enable_parsing_to_custom_serialization 1 --parallel_replicas_for_cluster_engines 0"
+MY_CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --enable_parsing_to_custom_serialization 1"
 
 $MY_CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_insert_mem;
     DROP TABLE IF EXISTS t_reference;
 
-    CREATE TABLE t_insert_mem ($table_structure)
-    ENGINE = MergeTree ORDER BY id
-    SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9, index_granularity = 8192, index_granularity_bytes = '10M';
-
+    CREATE TABLE t_insert_mem ($table_structure) ENGINE = MergeTree ORDER BY id SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9;
     CREATE TABLE t_reference ($table_structure) ENGINE = Log;
 
     SYSTEM STOP MERGES t_insert_mem;
@@ -62,7 +57,7 @@ $MY_CLICKHOUSE_CLIENT --query "
     WHERE table = 't_insert_mem' AND database = '$CLICKHOUSE_DATABASE'
     GROUP BY serialization_kind ORDER BY serialization_kind;
 
-    SYSTEM FLUSH LOGS query_log;
+    SYSTEM FLUSH LOGS;
 
     SELECT written_bytes <= 10000000 FROM system.query_log
     WHERE query LIKE 'INSERT INTO t_insert_mem%' AND current_database = '$CLICKHOUSE_DATABASE' AND type = 'QueryFinish'

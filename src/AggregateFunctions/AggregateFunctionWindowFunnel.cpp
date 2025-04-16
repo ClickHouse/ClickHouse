@@ -5,13 +5,12 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <base/range.h>
 
+#include <unordered_set>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
-
-#include <list>
 
 
 namespace DB

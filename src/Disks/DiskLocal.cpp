@@ -24,7 +24,6 @@
 #include <Common/randomSeed.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <pcg_random.hpp>
 #include <Common/logger_useful.h>
 
 
@@ -445,11 +444,9 @@ bool DiskLocal::isSymlinkNoThrow(const String & path) const
     return FS::isSymlinkNoThrow(fs::path(disk_path) / path);
 }
 
-void DiskLocal::createDirectorySymlink(const String & target, const String & link)
+void DiskLocal::createDirectoriesSymlink(const String & target, const String & link)
 {
-    auto link_path_inside_disk = fs::path(disk_path) / link;
-    /// Symlinks will be relative.
-    fs::create_directory_symlink(fs::proximate(link_path_inside_disk.parent_path() / target, link_path_inside_disk.parent_path()), link_path_inside_disk);
+    fs::create_directory_symlink(fs::path(disk_path) / target, fs::path(disk_path) / link);
 }
 
 String DiskLocal::readSymlink(const fs::path & path) const
@@ -720,7 +717,7 @@ void DiskLocal::setup()
             pcg32_fast rng(randomSeed());
             UInt32 magic_number = rng();
             {
-                auto buf = writeFile(disk_checker_path, 32, WriteMode::Rewrite, {});
+                auto buf = writeFile(disk_checker_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
                 writeIntBinary(magic_number, *buf);
                 buf->finalize();
             }

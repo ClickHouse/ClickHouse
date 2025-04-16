@@ -32,7 +32,7 @@ namespace
         {
             if (field.getType() == Field::Types::String)
             {
-                const String & str = field.safeGet<String>();
+                const String & str = field.safeGet<const String &>();
                 if (str == "1" || boost::iequals(str, "true") || boost::iequals(str, "create"))
                 {
                     value = RestoreTableCreationMode::kCreate;
@@ -96,7 +96,7 @@ namespace
         {
             if (field.getType() == Field::Types::String)
             {
-                const String & str = field.safeGet<String>();
+                const String & str = field.safeGet<const String &>();
                 if (str == "1" || boost::iequals(str, "true") || boost::iequals(str, "create"))
                 {
                     value = RestoreAccessCreationMode::kCreate;

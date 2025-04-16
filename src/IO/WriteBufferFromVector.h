@@ -2,8 +2,8 @@
 
 #include <vector>
 
-#include <IO/AutoFinalizedWriteBuffer.h>
 #include <IO/WriteBuffer.h>
+
 
 namespace DB
 {

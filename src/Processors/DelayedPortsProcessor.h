@@ -1,12 +1,8 @@
 #pragma once
-
 #include <Processors/IProcessor.h>
-
-#include <vector>
 
 namespace DB
 {
-class Block;
 
 /// Processor with N inputs and N outputs. Only moves data from i-th input to i-th output as is.
 /// Some ports are delayed. Delayed ports are processed after other outputs are all finished.

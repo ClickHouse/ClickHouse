@@ -6,14 +6,10 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <Analyzer/Identifier.h>
 #include <Analyzer/TableNode.h>
-#include <Columns/ColumnSet.h>
 #include <Core/Settings.h>
+#include <Columns/ColumnSet.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
-#include <Formats/NativeReader.h>
-#include <Formats/NativeWriter.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
 #include <Storages/StorageSet.h>
 
@@ -33,9 +29,6 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_bytes_to_transfer;
-    extern const SettingsUInt64 max_rows_to_transfer;
-    extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
 enum class SetSerializationKind : UInt8
@@ -113,7 +106,7 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
 
                 encodeDataType(types[col], out);
                 auto serialization = types[col]->getSerialization(ISerialization::Kind::DEFAULT);
-                NativeWriter::writeData(*serialization, columns[col], out, {}, 0, 0, 0);
+                serialization->serializeBinaryBulk(*columns[col], out, 0, num_rows);
             }
         }
         else if (auto * from_subquery = typeid_cast<FutureSetFromSubquery *>(set.get()))
@@ -181,8 +174,8 @@ QueryPlanAndSets QueryPlan::deserializeSets(
             {
                 auto type = decodeDataType(in);
                 auto serialization = type->getSerialization(ISerialization::Kind::DEFAULT);
-                ColumnPtr column = type->createColumn();
-                NativeReader::readData(*serialization, column, in, {}, num_rows, 0);
+                auto column = type->createColumn();
+                serialization->deserializeBinaryBulk(*column, in, num_rows, 0);
 
                 set_columns.emplace_back(std::move(column), std::move(type), String{});
             }
@@ -263,14 +256,10 @@ static void makeSetsFromSubqueries(QueryPlan & plan, std::list<QueryPlanAndSets:
         subqueries.push_back(std::move(future_set));
     }
 
-    SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
-    auto prepared_sets_cache = context->getPreparedSetsCache();
-
     auto step = std::make_unique<DelayedCreatingSetsStep>(
         plan.getCurrentHeader(),
         std::move(subqueries),
-        network_transfer_limits,
-        prepared_sets_cache);
+        context);
 
     plan.addStep(std::move(step));
 }

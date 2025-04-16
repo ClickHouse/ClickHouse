@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings, no-flaky-check
-# no-flaky-check: Too slow
+# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings
 
 # set -x
 
@@ -108,7 +107,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     $CLICKHOUSE_CLIENT --echo --query "SELECT count(), sum(size) FROM system.filesystem_cache"
     $CLICKHOUSE_CLIENT --echo --enable_filesystem_cache_on_write_operations=1 --query "INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)"
 
-    $CLICKHOUSE_CLIENT --echo --query "SYSTEM FLUSH LOGS query_log"
+    $CLICKHOUSE_CLIENT --echo --query "SYSTEM FLUSH LOGS"
 
     $CLICKHOUSE_CLIENT --query "SELECT
         query, ProfileEvents['RemoteFSReadBytes'] > 0 as remote_fs_read

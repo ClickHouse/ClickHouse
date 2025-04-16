@@ -14,21 +14,16 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 void SerializationAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
-    const AggregateFunctionStateData & state = field.safeGet<AggregateFunctionStateData>();
+    const AggregateFunctionStateData & state = field.safeGet<const AggregateFunctionStateData &>();
     writeBinary(state.data, ostr);
 }
 
 void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
     field = AggregateFunctionStateData();
-    AggregateFunctionStateData & s = field.safeGet<AggregateFunctionStateData>();
+    AggregateFunctionStateData & s = field.safeGet<AggregateFunctionStateData &>();
     readBinary(s.data, istr);
     s.name = type_name;
 }
@@ -72,13 +67,8 @@ void SerializationAggregateFunction::serializeBinaryBulk(const IColumn & column,
     function->serializeBatch(vec, offset, end, ostr, version);
 }
 
-void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double /*avg_value_size_hint*/) const
+void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
-    if (rows_offset)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Method deserializeBinaryBulk of SerializationAggregateFunction does not support cases where rows_offset {} is non-zero",
-                        rows_offset);
-
     ColumnAggregateFunction & real_column = typeid_cast<ColumnAggregateFunction &>(column);
     ColumnAggregateFunction::Container & vec = real_column.getData();
 

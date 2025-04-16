@@ -30,7 +30,6 @@ services:
             - SYS_NICE
         security_opt:
             - label:disable
-            - seccomp:unconfined
         dns_opt:
             - attempts:2
             - timeout:1
@@ -67,7 +66,6 @@ services:
             - SYS_NICE
         security_opt:
             - label:disable
-            - seccomp:unconfined
         dns_opt:
             - attempts:2
             - timeout:1
@@ -104,7 +102,6 @@ services:
             - SYS_NICE
         security_opt:
             - label:disable
-            - seccomp:unconfined
         dns_opt:
             - attempts:2
             - timeout:1

@@ -22,12 +22,21 @@ void registerTableFunctionInput(TableFunctionFactory & factory);
 void registerTableFunctionGenerate(TableFunctionFactory & factory);
 #if USE_MONGODB
 void registerTableFunctionMongoDB(TableFunctionFactory & factory);
+void registerTableFunctionMongoDBPocoLegacy(TableFunctionFactory & factory);
 #endif
 void registerTableFunctionRedis(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeIndex(TableFunctionFactory & factory);
 void registerTableFunctionFuzzQuery(TableFunctionFactory & factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
 void registerTableFunctionFuzzJSON(TableFunctionFactory & factory);
+#endif
+
+#if USE_AWS_S3
+void registerTableFunctionS3(TableFunctionFactory & factory);
+void registerTableFunctionS3Cluster(TableFunctionFactory & factory);
+void registerTableFunctionCOS(TableFunctionFactory & factory);
+void registerTableFunctionOSS(TableFunctionFactory & factory);
+void registerTableFunctionGCS(TableFunctionFactory & factory);
 #endif
 
 #if USE_HIVE
@@ -65,6 +74,6 @@ void registerDataLakeClusterTableFunctions(TableFunctionFactory & factory);
 
 void registerTableFunctionTimeSeries(TableFunctionFactory & factory);
 
-void registerTableFunctions();
+void registerTableFunctions(bool use_legacy_mongodb_integration [[maybe_unused]]);
 
 }

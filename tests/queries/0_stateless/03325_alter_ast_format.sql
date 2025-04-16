@@ -1,3 +1,0 @@
--- https://github.com/ClickHouse/ClickHouse/issues/74369
--- Note that this is fixed by enabling format_alter_operations_with_parentheses. Otherwise in debug mode it'd throw a LOGICAL_ERROR
-ALTER TABLE t22 (DELETE WHERE ('叫' = c1) OR ((792.3673220441809 = c0) AND (c0 = c1))), (MODIFY SETTING persistent = 1), (UPDATE  c1 = 'would' WHERE NOT f2()), (MODIFY SETTING persistent = 0); -- { serverError UNKNOWN_TABLE }

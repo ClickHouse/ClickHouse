@@ -4,6 +4,7 @@
 #include <mutex>
 
 #include <Core/Names.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/StorageID.h>

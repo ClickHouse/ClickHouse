@@ -1,7 +1,6 @@
 ---
-description: 'Documentation for Odbc Bridge'
-slug: /operations/utilities/odbc-bridge
-title: 'clickhouse-odbc-bridge'
+slug: /en/operations/utilities/odbc-bridge
+title: clickhouse-odbc-bridge
 ---
 
 Simple HTTP-server which works like a proxy for ODBC driver. The main motivation
@@ -13,7 +12,7 @@ This tool works via HTTP, not via pipes, shared memory, or TCP because:
 - It's simpler to debug
 - jdbc-bridge can be implemented in the same way
 
-## Usage {#usage}
+## Usage
 
 `clickhouse-server` use this tool inside odbc table function and StorageODBC.
 However it can be used as standalone tool from command line with the following
@@ -25,7 +24,7 @@ parameters in POST-request URL:
 - `max_block_size` -- optional parameter, sets maximum size of single block.
 Query is send in post body. Response is returned in RowBinary format.
 
-## Example: {#example}
+## Example:
 
 ```bash
 $ clickhouse-odbc-bridge --http-port 9018 --daemon

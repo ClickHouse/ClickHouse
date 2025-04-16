@@ -6,7 +6,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
-#include <Columns/IColumn_fwd.h>
+#include <Columns/IColumn.h>
 #include <Core/Types.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <IO/ReadBuffer.h>

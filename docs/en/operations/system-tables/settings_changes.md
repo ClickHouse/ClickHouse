@@ -1,12 +1,7 @@
 ---
-description: 'System table containing information about setting changes in previous
-  ClickHouse versions.'
-keywords: ['system table', 'settings_changes']
-slug: /operations/system-tables/settings_changes
-title: 'system.settings_changes'
+slug: /en/operations/system-tables/settings_changes
 ---
-
-# system.settings_changes
+# settings_changes
 
 Contains information about setting changes in previous ClickHouse versions.
 
@@ -18,14 +13,14 @@ Columns:
 
 **Example**
 
-```sql
+``` sql
 SELECT *
 FROM system.settings_changes
 WHERE version = '23.5'
 FORMAT Vertical
 ```
 
-```text
+``` text
 Row 1:
 ──────
 type:    Core
@@ -35,5 +30,5 @@ changes: [('input_format_parquet_preserve_order','1','0','Allow Parquet reader t
 
 **See also**
 
-- [Settings](/operations/system-tables/overview#system-tables-introduction)
+- [Settings](../../operations/settings/index.md#session-settings-intro)
 - [system.settings](settings.md)

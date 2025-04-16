@@ -1,7 +1,7 @@
+#include <Processors/Formats/Impl/NullFormat.h>
 #include <Formats/FormatFactory.h>
 #include <IO/NullWriteBuffer.h>
-#include <Processors/Formats/Impl/NullFormat.h>
-#include <Processors/Port.h>
+
 
 namespace DB
 {

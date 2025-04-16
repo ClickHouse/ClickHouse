@@ -1,14 +1,12 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Cluster.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
+#include <Parsers/ASTExpressionList.h>
 
 namespace DB
 {
-
-class Cluster;
-using ClusterPtr = std::shared_ptr<Cluster>;
 
 
 /**

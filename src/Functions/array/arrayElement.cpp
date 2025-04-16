@@ -5,6 +5,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
@@ -1803,7 +1804,7 @@ bool FunctionArrayElement<mode>::matchKeyToIndexStringConst(
             using DataColumn = std::decay_t<decltype(data_column)>;
             if (index.getType() != Field::Types::String)
                 return false;
-            MatcherStringConst<DataColumn> matcher{data_column, index.safeGet<String>()};
+            MatcherStringConst<DataColumn> matcher{data_column, index.safeGet<const String &>()};
             executeMatchKeyToIndex(offsets, matched_idxs, matcher);
             return true;
         });

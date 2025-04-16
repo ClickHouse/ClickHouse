@@ -2,7 +2,6 @@
 
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>

@@ -7,7 +7,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
-#include <base/defines.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 
@@ -27,16 +26,16 @@ public:
     using BucketHolder = ObjectStorageQueueOrderedFileMetadata::BucketHolder;
     using FileMetadataPtr = ObjectStorageQueueMetadata::FileMetadataPtr;
 
-    struct ObjectStorageQueueObjectInfo : public ObjectInfo
+    struct ObjectStorageQueueObjectInfo : public Source::ObjectInfo
     {
         ObjectStorageQueueObjectInfo(
-            const ObjectInfo & object_info,
+            const Source::ObjectInfo & object_info,
             FileMetadataPtr file_metadata_);
 
         FileMetadataPtr file_metadata;
     };
 
-    class FileIterator : public IObjectIterator, private WithContext
+    class FileIterator : public StorageObjectStorageSource::IIterator, WithContext
     {
     public:
         FileIterator(
@@ -53,15 +52,15 @@ public:
             bool file_deletion_on_processed_enabled_,
             std::atomic<bool> & shutdown_called_);
 
-        bool isFinished();
+        bool isFinished() const;
 
-        ObjectInfoPtr next(size_t processor) override;
+        Source::ObjectInfoPtr nextImpl(size_t processor) override;
 
         size_t estimatedKeysCount() override;
 
         /// If the key was taken from iterator via next() call,
         /// we might later want to return it back for retrying.
-        void returnForRetry(ObjectInfoPtr object_info, FileMetadataPtr file_metadata);
+        void returnForRetry(Source::ObjectInfoPtr object_info);
 
         /// Release hold buckets.
         /// In fact, they could be released in destructors of BucketHolder,
@@ -87,13 +86,13 @@ public:
         ExpressionActionsPtr filter_expr;
         bool recursive{false};
 
-        Source::ObjectInfos object_infos TSA_GUARDED_BY(next_mutex);
+        Source::ObjectInfos object_infos;
         std::vector<FileMetadataPtr> file_metadatas;
         bool is_finished = false;
         std::mutex next_mutex;
         size_t index = 0;
 
-        std::pair<ObjectInfoPtr, FileMetadataPtr> next();
+        std::pair<Source::ObjectInfoPtr, FileMetadataPtr> next();
         void filterProcessableFiles(Source::ObjectInfos & objects);
         void filterOutProcessedAndFailed(Source::ObjectInfos & objects);
 
@@ -103,28 +102,22 @@ public:
 
         struct ListedKeys
         {
-            std::deque<std::pair<ObjectInfoPtr, FileMetadataPtr>> keys;
+            std::deque<Source::ObjectInfoPtr> keys;
             std::optional<Processor> processor;
         };
         /// A cache of keys which were iterated via glob_iterator, but not taken for processing.
-        std::unordered_map<Bucket, ListedKeys> listed_keys_cache TSA_GUARDED_BY(mutex);
+        std::unordered_map<Bucket, ListedKeys> listed_keys_cache;
 
         /// We store a vector of holders, because we cannot release them until processed files are committed.
-        std::unordered_map<size_t, std::vector<BucketHolderPtr>> bucket_holders TSA_GUARDED_BY(mutex);
+        std::unordered_map<size_t, std::vector<BucketHolderPtr>> bucket_holders;
 
         /// Is glob_iterator finished?
         std::atomic_bool iterator_finished = false;
 
         /// Only for processing without buckets.
-        std::deque<std::pair<ObjectInfoPtr, FileMetadataPtr>> objects_to_retry TSA_GUARDED_BY(mutex);
+        std::deque<Source::ObjectInfoPtr> objects_to_retry;
 
-        struct NextKeyFromBucket
-        {
-            ObjectInfoPtr object_info;
-            FileMetadataPtr file_metadata;
-            ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info;
-        };
-        NextKeyFromBucket getNextKeyFromAcquiredBucket(size_t processor) TSA_REQUIRES(mutex);
+        std::pair<Source::ObjectInfoPtr, ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr> getNextKeyFromAcquiredBucket(size_t processor);
         bool hasKeysForProcessor(const Processor & processor) const;
     };
 
@@ -177,8 +170,7 @@ public:
         Coordination::Requests & requests,
         bool insert_succeeded,
         StoredObjects & successful_files,
-        const std::string & exception_message = {},
-        int error_code = 0);
+        const std::string & exception_message = {});
 
     /// Do some work after Processed/Failed files were successfully committed to keeper.
     void finalizeCommit(bool insert_succeeded, const std::string & exception_message = {});
@@ -203,7 +195,6 @@ private:
     const CommitSettings commit_settings;
     const std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     const size_t max_block_size;
-    const ObjectStorageQueueMode mode;
 
     const std::atomic<bool> & shutdown_called;
     const std::atomic<bool> & table_is_being_dropped;

@@ -1,4 +1,4 @@
-< Access-Control-Expose-Headers: X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-ClickHouse-Exception-Code
+< Access-Control-Expose-Headers: X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone
 < X-ClickHouse-Progress: {"total_rows_to_read":"100000"}
 < X-ClickHouse-Progress: {"read_rows":"65505","read_bytes":"524040","total_rows_to_read":"100000"}
 < X-ClickHouse-Progress: {"read_rows":"100000","read_bytes":"800000","total_rows_to_read":"100000"}

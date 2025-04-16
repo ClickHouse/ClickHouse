@@ -2,6 +2,7 @@
 
 #if USE_AWS_S3
 #include <Core/Settings.h>
+#include <Common/quoteString.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
 #include <IO/SharedThreadPools.h>
@@ -191,7 +192,7 @@ UInt64 BackupReaderS3::getFileSize(const String & file_name)
     return objects[0].GetSize();
 }
 
-std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFile(const String & file_name)
+std::unique_ptr<SeekableReadBuffer> BackupReaderS3::readFile(const String & file_name)
 {
     return std::make_unique<ReadBufferFromS3>(
         client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, s3_settings.request_settings, read_settings);

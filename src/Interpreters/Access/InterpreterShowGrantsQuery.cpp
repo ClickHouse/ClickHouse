@@ -3,6 +3,7 @@
 #include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTShowGrantsQuery.h>
+#include <Parsers/formatAST.h>
 #include <Access/AccessControl.h>
 #include <Access/AccessRights.h>
 #include <Access/CachedAccessChecking.h>
@@ -154,14 +155,19 @@ QueryPipeline InterpreterShowGrantsQuery::executeImpl()
 
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
+    WriteBufferFromOwnString grant_buf;
     for (const auto & grant_query : grant_queries)
     {
-        column->insert(grant_query->formatWithSecretsOneLine());
+        grant_buf.restart();
+        formatAST(*grant_query, grant_buf, false, true);
+        column->insert(grant_buf.str());
     }
 
     /// Prepare description of the result column.
+    WriteBufferFromOwnString desc_buf;
     const auto & show_query = query_ptr->as<const ASTShowGrantsQuery &>();
-    String desc = show_query.formatWithSecretsOneLine();
+    formatAST(show_query, desc_buf, false, true);
+    String desc = desc_buf.str();
     String prefix = "SHOW ";
     if (desc.starts_with(prefix))
         desc = desc.substr(prefix.length()); /// `desc` always starts with "SHOW ", so we can trim this prefix.

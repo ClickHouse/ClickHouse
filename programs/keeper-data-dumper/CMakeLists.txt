@@ -1,5 +1,5 @@
 if (NOT TARGET ch_contrib::nuraft)
-    message (STATUS "Not building keeper-data-dumper because NuRaft is disabled")
+    message (WARNING "Not building keeper-data-dumper due to nuraft is disabled")
     return ()
 endif ()
 

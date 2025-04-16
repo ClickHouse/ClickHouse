@@ -1,11 +1,9 @@
 #include <Storages/Kafka/KafkaSource.h>
 
-#include <Columns/IColumn.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/Kafka/KafkaConsumer.h>
 #include <Common/logger_useful.h>
@@ -64,7 +62,7 @@ KafkaSource::~KafkaSource()
         return;
 
     if (broken)
-        consumer->markDirty();
+        consumer->unsubscribe();
 
     storage.pushConsumer(consumer);
 }
@@ -140,7 +138,7 @@ Chunk KafkaSource::generateImpl()
             consumer->currentTopic(),
             consumer->currentPartition(),
             consumer->currentOffset());
-        consumer->setExceptionInfo(e.message(), /* with_stacktrace = */ true);
+        consumer->setExceptionInfo(e.message());
         throw std::move(e);
     };
 

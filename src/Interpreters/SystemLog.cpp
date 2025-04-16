@@ -4,6 +4,7 @@
 #include <Common/Logger.h>
 #include <Common/SystemLogBase.h>
 #include <Common/logger_useful.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Core/ServerSettings.h>
@@ -21,8 +22,6 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/MetricLog.h>
-#include <Interpreters/TransposedMetricLog.h>
-#include <Interpreters/LatencyLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
@@ -42,6 +41,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -51,11 +51,6 @@
 
 #include <fmt/core.h>
 
-
-namespace ProfileEvents
-{
-    extern const Event SystemLogErrorOnFlush;
-}
 
 namespace DB
 {
@@ -132,7 +127,6 @@ namespace
 {
 
 constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
-constexpr size_t DEFAULT_LATENCY_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 constexpr size_t DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 
 /// Creates a system log with MergeTree engine using parameters from config
@@ -159,11 +153,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
     SystemLogSettings log_settings;
 
     log_settings.queue_settings.database = config.getString(config_prefix + ".database", default_database_name);
-
-    if (default_table_name != TransposedMetricLog::TABLE_NAME_WITH_VIEW)
-        log_settings.queue_settings.table = config.getString(config_prefix + ".table", default_table_name);
-    else
-        log_settings.queue_settings.table = default_table_name;
+    log_settings.queue_settings.table = config.getString(config_prefix + ".table", default_table_name);
 
     if (log_settings.queue_settings.database != default_database_name)
     {
@@ -209,7 +199,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
         log_settings.engine = "ENGINE = MergeTree";
 
         /// PARTITION expr is not necessary.
-        String partition_by = config.getString(config_prefix + ".partition_by", TSystemLog::getDefaultPartitionBy());
+        String partition_by = config.getString(config_prefix + ".partition_by", "toYYYYMM(event_date)");
         if (!partition_by.empty())
             log_settings.engine += " PARTITION BY (" + partition_by + ")";
 
@@ -223,7 +213,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
         log_settings.engine += " ORDER BY (" + order_by + ")";
 
         /// SETTINGS expr is not necessary.
-        ///   https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree#settings
+        ///   https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree#settings
         ///
         /// STORAGE POLICY expr is retained for backward compatible.
         String storage_policy = config.getString(config_prefix + ".storage_policy", "");
@@ -284,34 +274,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
 
     log_settings.queue_settings.turn_off_logger = TSystemLog::shouldTurnOffLogger();
 
-    if constexpr (std::is_same_v<TSystemLog, MetricLog>)
-    {
-        auto schema = config.getString(config_prefix + ".schema_type", "wide");
-        if (schema == "wide")
-            return std::make_shared<TSystemLog>(context, log_settings);
-
-        return {};
-    }
-    else if (std::is_same_v<TSystemLog, TransposedMetricLog>)
-    {
-        auto schema = config.getString(config_prefix + ".schema_type", "wide");
-        if (schema == "transposed_with_wide_view")
-        {
-            log_settings.view_name_for_transposed_metric_log = config.getString(config_prefix + ".table", "metric_log");
-            return std::make_shared<TSystemLog>(context, log_settings);
-        }
-        else if (schema == "transposed")
-        {
-            return std::make_shared<TSystemLog>(context, log_settings);
-        }
-        else if (schema != "wide")
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown schema type {} for metric_log table, only 'wide', 'transposed' and 'transposed_with_wide_view' are allowed", schema);
-        }
-    }
-
     return std::make_shared<TSystemLog>(context, log_settings);
-
 }
 
 
@@ -338,20 +301,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
 
     LIST_OF_ALL_SYSTEM_LOGS(CREATE_PUBLIC_MEMBERS)
 #undef CREATE_PUBLIC_MEMBERS
-
 /// NOLINTEND(bugprone-macro-parentheses)
-
-    if (metric_log == nullptr && config.has("metric_log") && config.getString("metric_log.schema_type", "wide") == "transposed")
-    {
-        transposed_metric_log = createSystemLog<TransposedMetricLog>(
-            global_context, "system", "metric_log", config, "metric_log", TransposedMetricLog::DESCRIPTION);
-    }
-    else if (metric_log == nullptr && config.has("metric_log") && config.getString("metric_log.schema_type", "wide") == "transposed_with_wide_view")
-    {
-        transposed_metric_log = createSystemLog<TransposedMetricLog>(
-            global_context, "system", TransposedMetricLog::TABLE_NAME_WITH_VIEW, config, "metric_log", TransposedMetricLog::DESCRIPTION);
-    }
-
 
     bool should_prepare = global_context->getServerSettings()[ServerSetting::prepare_system_log_tables_on_startup];
     try
@@ -359,7 +309,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         for (auto & log : getAllLogs())
         {
             log->startup();
-            if (should_prepare || log->mustBePreparedAtStartup())
+            if (should_prepare)
                 log->prepareTable();
         }
     }
@@ -375,20 +325,6 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
                                                                 DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
         metric_log->startCollect("MetricLog", collect_interval_milliseconds);
-    }
-
-    if (transposed_metric_log)
-    {
-        size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
-                                                                DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        transposed_metric_log->startCollect("TMetricLog", collect_interval_milliseconds);
-    }
-
-    if (latency_log)
-    {
-        size_t collect_interval_milliseconds = config.getUInt64("latency_log.collect_interval_milliseconds",
-                                                                DEFAULT_LATENCY_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        latency_log->startCollect("LatencyLog", collect_interval_milliseconds);
     }
 
     if (error_log)
@@ -420,78 +356,25 @@ std::vector<ISystemLog *> SystemLogs::getAllLogs() const
     return result;
 }
 
-namespace
+void SystemLogs::flush(bool should_prepare_tables_anyway)
 {
-constexpr String getLowerCaseAndRemoveUnderscores(const String & name)
-{
-    String result;
-    for (const auto & c : name)
-    {
-        /// Ignore underscores and dots to match things better
-        if ((c == '_') || (c == '.'))
-            continue;
+    auto logs = getAllLogs();
+    std::vector<ISystemLog::Index> logs_indexes(logs.size(), 0);
 
-        if (isAlphaASCII(c))
-            result += toLowerIfAlphaASCII(c);
-        else
-            result += c;
+    for (size_t i = 0; i < logs.size(); ++i)
+    {
+        auto last_log_index = logs[i]->getLastLogIndex();
+        logs_indexes[i] = last_log_index;
+        logs[i]->notifyFlush(last_log_index, should_prepare_tables_anyway);
     }
 
-    return result;
-}
-}
-
-void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names)
-{
-    std::vector<std::pair<ISystemLog *, ISystemLog::Index>> logs_to_wait;
-
-    if (names.empty())
-    {
-        for (auto * log : getAllLogs())
-        {
-            auto last_log_index = log->getLastLogIndex();
-            logs_to_wait.push_back({log, log->getLastLogIndex()});
-            log->notifyFlush(last_log_index, should_prepare_tables_anyway);
-        }
-    }
-    else
-    {
-        #define GET_MAP_VALUES(log_type, member, descr) \
-            { getLowerCaseAndRemoveUnderscores(#member), (member).get() }, \
-            { getLowerCaseAndRemoveUnderscores((member).get() ? (member)->getTableID().getFullTableName() : "system."#member), (member).get() },
-
-        std::unordered_map<String, ISystemLog *> logs_map
-        {
-            LIST_OF_ALL_SYSTEM_LOGS(GET_MAP_VALUES)
-        };
-        #undef GET_MAP_VALUES
-
-        for (const auto & name : names)
-        {
-            String log_name = getLowerCaseAndRemoveUnderscores(name);
-
-            auto it = logs_map.find(log_name);
-            if (it == logs_map.end())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Log name '{}' does not exist", name);
-
-            if (it->second == nullptr)
-                /// The log exists but it's not initialized. Nothing to do
-                continue;
-
-            auto last_log_index = it->second->getLastLogIndex();
-            logs_to_wait.push_back({it->second, it->second->getLastLogIndex()});
-            it->second->notifyFlush(last_log_index, should_prepare_tables_anyway);
-        }
-    }
-
-    /// We must wait for the async flushes to finish
-    for (const auto & [log, index] : logs_to_wait)
-        log->flush(index, should_prepare_tables_anyway);
+    for (size_t i = 0; i < logs.size(); ++i)
+        logs[i]->flush(logs_indexes[i], should_prepare_tables_anyway);
 }
 
 void SystemLogs::flushAndShutdown()
 {
-    flush(/* should_prepare_tables_anyway */ false, {});
+    flush(/* should_prepare_tables_anyway */ false);
     shutdown();
 }
 
@@ -519,7 +402,7 @@ SystemLog<LogElement>::SystemLog(
     , log(getLogger("SystemLog (" + settings_.queue_settings.database + "." + settings_.queue_settings.table + ")"))
     , table_id(settings_.queue_settings.database, settings_.queue_settings.table)
     , storage_def(settings_.engine)
-    , create_query(getCreateTableQuery()->formatWithSecretsOneLine())
+    , create_query(serializeAST(*getCreateTableQuery()))
 {
     assert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
 }
@@ -631,7 +514,6 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     }
     catch (...)
     {
-        ProfileEvents::increment(ProfileEvents::SystemLogErrorOnFlush);
         tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to flush system log {} with {} entries up to offset {}",
             table_id.getNameForLogs(), to_flush.size(), to_flush_end));
     }
@@ -657,7 +539,7 @@ void SystemLog<LogElement>::prepareTable()
     {
         if (old_create_query.empty())
         {
-            old_create_query = getCreateTableQueryClean(table_id, getContext())->formatWithSecretsOneLine();
+            old_create_query = serializeAST(*getCreateTableQueryClean(table_id, getContext()));
             if (old_create_query.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty CREATE QUERY for {}", backQuoteIfNeed(table_id.table_name));
         }
@@ -775,15 +657,6 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
         "Storage to create table for " + LogElement::name(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     StorageWithComment & storage_with_comment = storage_with_comment_ast->as<StorageWithComment &>();
-
-    if constexpr (std::is_same_v<LogElement, TransposedMetricLogElement>)
-    {
-        if (table_id.table_name == TransposedMetricLog::TABLE_NAME_WITH_VIEW)
-        {
-            auto * storage = storage_with_comment.storage->as<ASTStorage>();
-            storage->set(storage->order_by, TransposedMetricLog::getDefaultOrderByAST());
-        }
-    }
 
     create->set(create->storage, storage_with_comment.storage);
     create->set(create->comment, storage_with_comment.comment);
