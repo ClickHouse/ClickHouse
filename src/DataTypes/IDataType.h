@@ -362,7 +362,7 @@ protected:
         bool throw_if_null) const
     {
         if (throw_if_null)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDynamicSubcolumnData() is not implemented for type {}", getName());
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDynamicSubcolumnData is not implemented for type {}", getName());
         return nullptr;
     }
 };
