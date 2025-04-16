@@ -1,5 +1,6 @@
 #include <AggregateFunctions/SingleValueData.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
@@ -170,7 +171,7 @@ void SingleValueDataFixed<T>::insertResultInto(IColumn & to, const DataTypePtr &
 }
 
 template <typename T>
-void SingleValueDataFixed<T>::write(WriteBuffer & buf, const ISerialization &) const
+void SingleValueDataFixed<T>::write(WriteBuffer & buf, const ISerialization &, const DataTypePtr &) const
 {
     writeBinary(has(), buf);
     if (has())
@@ -940,9 +941,9 @@ void SingleValueDataNumeric<T>::insertResultInto(IColumn & to, const DataTypePtr
 }
 
 template <typename T>
-void SingleValueDataNumeric<T>::write(DB::WriteBuffer & buf, const DB::ISerialization & serialization) const
+void SingleValueDataNumeric<T>::write(DB::WriteBuffer & buf, const DB::ISerialization & serialization, const DataTypePtr & type) const
 {
-    return memory.get().write(buf, serialization);
+    return memory.get().write(buf, serialization, type);
 }
 
 template <typename T>
@@ -1175,7 +1176,7 @@ void SingleValueDataString::insertResultInto(DB::IColumn & to, const DataTypePtr
         assert_cast<ColumnString &>(to).insertDefault();
 }
 
-void SingleValueDataString::write(WriteBuffer & buf, const ISerialization & /*serialization*/) const
+void SingleValueDataString::write(WriteBuffer & buf, const ISerialization & /*serialization*/, const DataTypePtr & /*type*/) const
 {
     if (unlikely(MAX_STRING_SIZE < size))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "String size is too big ({}), it's a bug", size);
@@ -1319,12 +1320,18 @@ void SingleValueDataGeneric::insertResultInto(IColumn & to, const DataTypePtr & 
         type->insertDefaultInto(to);
 }
 
-void SingleValueDataGeneric::write(WriteBuffer & buf, const ISerialization & serialization) const
+void SingleValueDataGeneric::write(WriteBuffer & buf, const ISerialization & serialization, const DataTypePtr & type) const
 {
     if (value)
     {
         writeBinary(true, buf);
-        serialization.serializeBinary(*value, 0, buf, {});
+        /// Binary serialization of the value inside Field and inside IColumn are different for AggregateFunction data type.
+        /// Previously SingleValueDataGeneric used Field to store the value, but now it uses IColumn.
+        /// For compatibility we should serialize/deserialize values of type AggregateFunction using Field here.
+        if (hasAggregateFunctionType(type))
+            serialization.serializeBinary((*value)[0], buf, {});
+        else
+            serialization.serializeBinary(*value, 0, buf, {});
     }
     else
         writeBinary(false, buf);
@@ -1338,7 +1345,19 @@ void SingleValueDataGeneric::read(ReadBuffer & buf, const ISerialization & seria
     if (is_not_null)
     {
         auto new_value = type->createColumn();
-        serialization.deserializeBinary(*new_value, buf, {});
+        /// Binary serialization of the value inside Field and inside IColumn are different for AggregateFunction data type.
+        /// Previously SingleValueDataGeneric used Field to store the value, but now it uses IColumn.
+        /// For compatibility we should serialize/deserialize values of type AggregateFunction using Field here.
+        if (hasAggregateFunctionType(type))
+        {
+            Field value_field;
+            serialization.deserializeBinary(value_field, buf, {});
+            new_value->insert(value_field);
+        }
+        else
+        {
+            serialization.deserializeBinary(*new_value, buf, {});
+        }
         value = std::move(new_value);
     }
 }
