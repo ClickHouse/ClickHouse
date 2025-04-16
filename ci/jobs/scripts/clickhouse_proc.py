@@ -3,9 +3,25 @@ import subprocess
 import time
 from pathlib import Path
 
-from praktika.utils import Shell, Utils
+from ci.praktika import Secret
+from ci.praktika.utils import Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
+
+
+LOG_EXPORT_CONFIG_TEMPLATE = """
+remote_servers:
+    {CLICKHOUSE_CI_LOGS_CLUSTER}:
+        shard:
+            replica:
+                secure: 1
+                user: '{CLICKHOUSE_CI_LOGS_USER}'
+                host: '{CLICKHOUSE_CI_LOGS_HOST}'
+                port: 9440
+                password: '{CLICKHOUSE_CI_LOGS_PASSWORD}'
+"""
+CLICKHOUSE_CI_LOGS_CLUSTER = "system_logs_export"
+CLICKHOUSE_CI_LOGS_USER = "ci"
 
 
 class ClickHouseProc:
@@ -231,6 +247,27 @@ profiles:
         for command in commands:
             res = res and Shell.check(command, verbose=True)
         return res
+
+    def create_log_export_config(self):
+        config_file = Path(self.config_path) / "config.d" / "system_logs_export.yaml"
+
+        log_export_host = Secret.Config(
+            name="clickhouse_ci_logs_host", type=Secret.Type.AWS_SSM_SECRET
+        ).get_value()
+
+        log_export_password = Secret.Config(
+            name="clickhouse_ci_logs_password", type=Secret.Type.AWS_SSM_SECRET
+        ).get_value()
+
+        config_content = LOG_EXPORT_CONFIG_TEMPLATE.format(
+            CLICKHOUSE_CI_LOGS_CLUSTER=CLICKHOUSE_CI_LOGS_CLUSTER,
+            CLICKHOUSE_CI_LOGS_HOST=log_export_host,
+            CLICKHOUSE_CI_LOGS_USER=CLICKHOUSE_CI_LOGS_USER,
+            CLICKHOUSE_CI_LOGS_PASSWORD=log_export_password,
+        )
+
+        with open(config_file, "w") as f:
+            f.write(config_content)
 
     def start(self):
         print(f"Starting ClickHouse server")

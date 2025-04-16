@@ -16,7 +16,11 @@ def main():
         print("Install ClickHouse")
 
         def install():
-            return ch.install() and ch.clickbench_config_tweaks()
+            return (
+                ch.install()
+                and ch.clickbench_config_tweaks()
+                and ch.create_log_export_config()
+            )
 
         results.append(
             Result.from_commands_run(name="Install ClickHouse", command=install)
@@ -29,13 +33,12 @@ def main():
         def start():
             return ch.start()
 
-        log_export_config = f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --config-logs-export-cluster {ch.config_path}/config.d/system_logs_export.yaml"
         setup_logs_replication = f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --setup-logs-replication"
 
         results.append(
             Result.from_commands_run(
                 name="Start ClickHouse",
-                command=[start, log_export_config, setup_logs_replication],
+                command=[start, setup_logs_replication],
             )
         )
         res = results[-1].is_ok()

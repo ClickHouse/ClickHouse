@@ -10,7 +10,7 @@ set -e
 # CLICKHOUSE_CI_LOGS_HOST - remote host
 # CLICKHOUSE_CI_LOGS_USER - password for user
 # CLICKHOUSE_CI_LOGS_PASSWORD - password for user
-CLICKHOUSE_CI_LOGS_CREDENTIALS=${CLICKHOUSE_CI_LOGS_CREDENTIALS:-/tmp/export-logs-config.sh}
+
 CLICKHOUSE_CI_LOGS_USER=${CLICKHOUSE_CI_LOGS_USER:-ci}
 
 # Pre-configured destination cluster, where to export the data
@@ -75,51 +75,12 @@ function check_logs_credentials
     fi
 )
 
-function config_logs_export_cluster
-(
-    # The function is launched in a separate shell instance to not expose the
-    # exported values from CLICKHOUSE_CI_LOGS_CREDENTIALS
-    set +x
-    if ! [ -r "${CLICKHOUSE_CI_LOGS_CREDENTIALS}" ]; then
-        echo "File $CLICKHOUSE_CI_LOGS_CREDENTIALS does not exist, do not setup"
-        return
-    fi
-    set -a
-    # shellcheck disable=SC1090
-    source "${CLICKHOUSE_CI_LOGS_CREDENTIALS}"
-    set +a
-    __shadow_credentials
-    echo "Checking if the credentials work"
-    check_logs_credentials || return 0
-    cluster_config="${1:-/etc/clickhouse-server/config.d/system_logs_export.yaml}"
-    mkdir -p "$(dirname "$cluster_config")"
-    echo "remote_servers:
-    ${CLICKHOUSE_CI_LOGS_CLUSTER}:
-        shard:
-            replica:
-                secure: 1
-                user: '${CLICKHOUSE_CI_LOGS_USER}'
-                host: '${CLICKHOUSE_CI_LOGS_HOST}'
-                port: 9440
-                password: '${CLICKHOUSE_CI_LOGS_PASSWORD}'
-" > "$cluster_config"
-    echo "Cluster ${CLICKHOUSE_CI_LOGS_CLUSTER} is confugured in ${cluster_config}"
-)
-
 function setup_logs_replication
 (
     # The function is launched in a separate shell instance to not expose the
-    # exported values from CLICKHOUSE_CI_LOGS_CREDENTIALS
+    # exported values
     set +x
     # disable output
-    if ! [ -r "${CLICKHOUSE_CI_LOGS_CREDENTIALS}" ]; then
-        echo "File $CLICKHOUSE_CI_LOGS_CREDENTIALS does not exist, do not setup"
-        return 0
-    fi
-    set -a
-    # shellcheck disable=SC1090
-    source "${CLICKHOUSE_CI_LOGS_CREDENTIALS}"
-    set +a
     __shadow_credentials
     echo "Checking if the credentials work"
     check_logs_credentials || return 0
@@ -246,14 +207,9 @@ while [[ "$#" -gt 0 ]]; do
             echo "Setting up log replication..."
             setup_logs_replication
             ;;
-        --config-logs-export-cluster)
-            echo "Configuring logs export for the cluster..."
-            config_logs_export_cluster "$2"
-            shift
-            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--stop-log-replication | --setup-logs-replication | --config-logs-export-cluster ]"
+            echo "Usage: $0 [--stop-log-replication | --setup-logs-replication ]"
             exit 1
             ;;
     esac
