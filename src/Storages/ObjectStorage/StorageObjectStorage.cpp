@@ -37,7 +37,6 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsBool use_hive_partitioning;
-    extern const SettingsBool use_iceberg_partition_pruning;
 }
 
 namespace ErrorCodes
@@ -198,6 +197,11 @@ bool StorageObjectStorage::hasExternalDynamicMetadata() const
     return configuration->hasExternalDynamicMetadata();
 }
 
+IDataLakeMetadata * StorageObjectStorage::getExternalMetadata() const
+{
+    return configuration->getExternalMetadata();
+}
+
 void StorageObjectStorage::updateExternalDynamicMetadata(ContextPtr context_ptr)
 {
     StorageInMemoryMetadata metadata;
@@ -258,11 +262,6 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override
     {
         SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-        if (filter_actions_dag.has_value())
-        {
-            if (getContext()->getSettingsRef()[Setting::use_iceberg_partition_pruning])
-                configuration->implementPartitionPruning(*filter_actions_dag);
-        }
         createIterator();
     }
 
@@ -421,6 +420,9 @@ SinkToStoragePtr StorageObjectStorage::write(
                         "Path '{}' contains globs, so the table is in readonly mode",
                         configuration->getPath());
     }
+
+    if (!configuration->supportsWrites())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
 
     if (configuration->withPartitionWildcard())
     {
