@@ -55,6 +55,16 @@ TEST(PackedPartOffsetsTest, BasicInsertAndRetrieve)
     EXPECT_EQ(offsets[4], 20);
 }
 
+// Single value page test
+TEST(PackedPartOffsetsTest, SingleValuePage)
+{
+    PackedPartOffsets offsets;
+
+    offsets.insert(1);
+    offsets.flush();
+    EXPECT_EQ(offsets[0], 1);
+}
+
 // Test with exactly one page of data
 TEST(PackedPartOffsetsTest, ExactlyOnePage)
 {

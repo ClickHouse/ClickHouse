@@ -37,6 +37,15 @@ private:
     struct Page
     {
     public:
+        /// Special page that holds only one value
+        explicit Page(UInt64 val)
+            : num_vals(1)
+            , min_val(val)
+            , bits_per_val(0)
+            , compressed_data(nullptr)
+        {
+        }
+
         /// @param vals Vector of monotonic increasing _part_offset values
         /// @param bits_per_val_ Number of bits used to represent each value
         /// @param compressed_data_ Pre-allocated memory to store compressed values into 64-bit words
@@ -133,9 +142,16 @@ public:
         if (current_page_values.empty())
             return;
 
+        if (current_page_values.size() == 1)
+        {
+            /// Construct a single value page
+            pages.emplace_back(current_page_values[0]);
+            return;
+        }
+
         size_t bits_per_val = 64 - getLeadingZeroBits(current_page_values.back() - current_page_values.front());
         chassert(bits_per_val >= 1);
-        size_t num_uint64 = ((current_page_values.size() * bits_per_val) + 63) / 64;
+        size_t num_uint64 = (((current_page_values.size() - 1) * bits_per_val) + 63) / 64;
         chassert(num_uint64 >= 1);
 
         pages.emplace_back(
