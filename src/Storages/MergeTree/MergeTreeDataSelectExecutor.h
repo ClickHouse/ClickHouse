@@ -6,7 +6,6 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Interpreters/ActionsDAG.h>
 
 
 namespace DB
@@ -95,7 +94,6 @@ private:
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
-        VectorSimilarityIndexCache * vector_similarity_index_cache,
         LoggerPtr log);
 
     static MarkRanges filterMarksUsingMergedIndex(
@@ -107,7 +105,6 @@ private:
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
-        VectorSimilarityIndexCache * vector_similarity_index_cache,
         LoggerPtr log);
 
     struct PartFilterCounters
@@ -160,7 +157,7 @@ public:
 
     /// If possible, construct optional key condition from predicates containing _part_offset column.
     static void buildKeyConditionFromPartOffset(
-        std::optional<KeyCondition> & part_offset_condition, const ActionsDAG::Node * predicate, ContextPtr context);
+        std::optional<KeyCondition> & part_offset_condition, const ActionsDAG * filter_dag, ContextPtr context);
 
     /// If possible, filter using expression on virtual columns.
     /// Example: SELECT count() FROM table WHERE _part = 'part_name'
@@ -169,7 +166,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & data,
         const MergeTreeData::DataPartsVector & parts,
-        const ActionsDAG::Node * predicate,
+        const ActionsDAG * filter_dag,
         ContextPtr context);
 
     /// Filter parts using minmax index and partition key.
@@ -200,8 +197,7 @@ public:
         size_t num_streams,
         ReadFromMergeTree::IndexStats & index_stats,
         bool use_skip_indexes,
-        bool find_exact_ranges,
-        bool is_final_query);
+        bool find_exact_ranges);
 
     /// Filter parts using query condition cache.
     static void filterPartsByQueryConditionCache(

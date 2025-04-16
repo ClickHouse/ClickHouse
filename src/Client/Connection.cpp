@@ -23,7 +23,6 @@
 #include <Common/DNSResolver.h>
 #include <Common/StringUtils.h>
 #include <Common/OpenSSLHelpers.h>
-#include <Common/formatReadable.h>
 #include <Common/randomSeed.h>
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
@@ -34,7 +33,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <pcg_random.hpp>
 #include <base/scope_guard.h>
 #include <Common/FailPoint.h>
@@ -101,8 +99,7 @@ Connection::Connection(const String & host_, UInt16 port_,
     const String & cluster_secret_,
     const String & client_name_,
     Protocol::Compression compression_,
-    Protocol::Secure secure_,
-    const String & bind_host_)
+    Protocol::Secure secure_)
     : host(host_), port(port_), default_database(default_database_)
     , user(user_), password(password_)
     , proto_send_chunked(proto_send_chunked_), proto_recv_chunked(proto_recv_chunked_)
@@ -116,7 +113,6 @@ Connection::Connection(const String & host_, UInt16 port_,
     , client_name(client_name_)
     , compression(compression_)
     , secure(secure_)
-    , bind_host(bind_host_)
     , log_wrapper(*this)
 {
     /// Don't connect immediately, only on first need.
@@ -132,12 +128,11 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 {
     try
     {
-        LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}. Bind_Host: {}",
+        LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}",
             default_database.empty() ? "(not specified)" : default_database,
             user,
             static_cast<bool>(secure) ? ". Secure" : "",
-            static_cast<bool>(compression) ? "" : ". Uncompressed",
-            bind_host.empty() ? "(not specified)" : bind_host);
+            static_cast<bool>(compression) ? "" : ". Uncompressed");
 
         auto addresses = DNSResolver::instance().resolveAddressList(host, port);
         const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
@@ -161,13 +156,6 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 /// we want to postpone SSL handshake until first read or write operation
                 /// so any errors during negotiation would be properly processed
                 static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setLazyHandshake(true);
-
-                if (!bind_host.empty())
-                {
-                    Poco::Net::SocketAddress socket_address(bind_host, 0);
-
-                    static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->bind(socket_address, true);
-                }
 #else
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "tcp_secure protocol is disabled because poco library was built without NetSSL support.");
 #endif
@@ -175,13 +163,6 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             else
             {
                 socket = std::make_unique<Poco::Net::StreamSocket>();
-
-                if (!bind_host.empty())
-                {
-                    Poco::Net::SocketAddress socket_address(bind_host, 0);
-
-                    static_cast<Poco::Net::StreamSocket*>(socket.get())->bind(socket_address, true);
-                }
             }
 
             try
@@ -590,11 +571,6 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
             settings.read(*in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
             settings_from_server = settings.changes();
         }
-
-        if (server_revision >= DBMS_MIN_REVISION_WITH_QUERY_PLAN_SERIALIZATION)
-        {
-            readVarUInt(server_query_plan_serialization_version, *in);
-        }
     }
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();
@@ -969,12 +945,6 @@ void Connection::sendQuery(
     completed = true;
 }
 
-
-void Connection::sendQueryPlan(const QueryPlan & query_plan)
-{
-    writeVarUInt(Protocol::Client::QueryPlan, *out);
-    query_plan.serialize(*out, server_query_plan_serialization_version);
-}
 
 void Connection::sendCancel()
 {
@@ -1541,8 +1511,7 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         "", /* cluster_secret */
         std::string(DEFAULT_CLIENT_NAME),
         parameters.compression,
-        parameters.security,
-        parameters.bind_host);
+        parameters.security);
 }
 
 }

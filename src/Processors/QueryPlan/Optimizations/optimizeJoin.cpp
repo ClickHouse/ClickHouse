@@ -87,7 +87,7 @@ static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node, bool 
     }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
-        return reading->getStorage()->totalRows({});
+        return reading->getStorage()->totalRows(Settings{});
 
     if (node.children.size() != 1)
         return {};
@@ -304,7 +304,6 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
             settings.max_block_size);
         new_join_node.children = {new_left_node};
     }
-    new_join_node.step->setStepDescription(node.step->getStepDescription());
 
     QueryPlan::Node result_node;
     if (post_filter)

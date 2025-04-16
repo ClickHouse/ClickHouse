@@ -156,7 +156,6 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
     /// The create query of the table has been just changed, we need to update dependencies too.
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, local_context->getCurrentDatabase());
     auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query);
-    DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies, loading_dependencies);
     DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies, loading_dependencies);
 }
 
@@ -210,11 +209,6 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(co
     }
 
     return res;
-}
-
-void DatabaseMemory::alterDatabaseComment(const AlterCommand & command)
-{
-    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
 }
 
 void registerDatabaseMemory(DatabaseFactory & factory)

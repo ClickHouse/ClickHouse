@@ -113,7 +113,6 @@ namespace Setting
     extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsBool allow_not_comparable_types_in_order_by;
     extern const SettingsBool use_concurrency_control;
-    extern const SettingsString implicit_table_at_top_level;
 }
 
 
@@ -582,7 +581,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         Settings subquery_settings = context->getSettingsCopy();
         subquery_settings[Setting::max_result_rows] = 1;
         subquery_settings[Setting::extremes] = false;
-        subquery_settings[Setting::implicit_table_at_top_level] = "";
         /// When execute `INSERT INTO t WITH ... SELECT ...`, it may lead to `Unknown columns`
         /// exception with this settings enabled(https://github.com/ClickHouse/ClickHouse/issues/52494).
         subquery_settings[Setting::use_structure_from_insertion_table_in_table_functions] = false;
@@ -4683,7 +4681,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             table_name = table_identifier[1];
         }
 
-        /// Collect parameterized view arguments
+        /// Collect parametrized view arguments
         NameToNameMap view_params;
         for (const auto & argument : table_function_node_typed.getArguments())
         {
@@ -4716,18 +4714,18 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         }
 
         auto context = scope_context->getQueryContext();
-        auto parameterized_view_storage = context->buildParameterizedViewStorage(
+        auto parametrized_view_storage = context->buildParametrizedViewStorage(
             database_name,
             table_name,
             view_params);
 
-        if (parameterized_view_storage)
+        if (parametrized_view_storage)
         {
             /// Remove initial TableFunctionNode from the set. Otherwise it may lead to segfault
             /// when IdentifierResolveScope::dump() is used.
             scope.table_expressions_in_resolve_process.erase(table_function_node.get());
 
-            auto fake_table_node = std::make_shared<TableNode>(parameterized_view_storage, scope_context);
+            auto fake_table_node = std::make_shared<TableNode>(parametrized_view_storage, scope_context);
             fake_table_node->setAlias(table_function_node->getAlias());
             table_function_node = fake_table_node;
             return;

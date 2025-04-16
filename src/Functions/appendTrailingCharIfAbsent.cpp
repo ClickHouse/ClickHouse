@@ -3,6 +3,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <base/range.h>
 #include <Common/assert_cast.h>
 
 

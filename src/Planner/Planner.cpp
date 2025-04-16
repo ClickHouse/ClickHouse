@@ -133,9 +133,6 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsBool optimize_group_by_constant_keys;
-    extern const SettingsUInt64 max_bytes_to_transfer;
-    extern const SettingsUInt64 max_rows_to_transfer;
-    extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
 namespace ServerSetting
@@ -583,6 +580,7 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
         settings[Setting::distributed_aggregation_memory_efficient] && (is_remote_storage || parallel_replicas_from_merge_tree)
             && !query_analysis_result.aggregation_with_rollup_or_cube_or_grouping_sets,
+        settings[Setting::max_threads],
         settings[Setting::aggregation_memory_efficient_merge_threads],
         query_analysis_result.aggregation_should_produce_results_in_order_of_bucket_number,
         settings[Setting::max_block_size],
@@ -1174,16 +1172,11 @@ void addBuildSubqueriesForSetsStepIfNeeded(
 
     if (!subqueries.empty())
     {
-        const auto & settings = planner_context->getQueryContext()->getSettingsRef();
-        SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
-        auto prepared_sets_cache = planner_context->getQueryContext()->getPreparedSetsCache();
-
         auto step = std::make_unique<DelayedCreatingSetsStep>(
             query_plan.getCurrentHeader(),
             std::move(subqueries),
-            network_transfer_limits,
-            prepared_sets_cache);
-        step->setStepDescription("DelayedCreatingSetsStep");
+            planner_context->getQueryContext());
+
         query_plan.addStep(std::move(step));
     }
 }

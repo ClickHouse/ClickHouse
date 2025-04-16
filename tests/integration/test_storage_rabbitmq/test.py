@@ -1,6 +1,8 @@
 import json
 import logging
+import os.path as p
 import random
+import subprocess
 import threading
 import time
 import uuid
@@ -8,9 +10,10 @@ from random import randrange
 
 import pika
 import pytest
+from google.protobuf.internal.encoder import _VarintBytes
 
 from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, check_rabbitmq_is_available
 from helpers.test_tools import TSV
 
 
@@ -68,6 +71,9 @@ def rabbitmq_cluster():
     try:
         cluster.start()
         logging.debug("rabbitmq_id is {}".format(instance.cluster.rabbitmq_docker_id))
+        instance.query("CREATE DATABASE test")
+        instance3.query("CREATE DATABASE test")
+
         yield cluster
 
     finally:
@@ -77,12 +83,9 @@ def rabbitmq_cluster():
 @pytest.fixture(autouse=True)
 def rabbitmq_setup_teardown():
     logging.debug("RabbitMQ is available - running test")
-    instance.query("CREATE DATABASE test")
-    instance3.query("CREATE DATABASE test")
     yield  # run test
     instance.query("DROP DATABASE test SYNC")
-    instance3.query("DROP DATABASE test SYNC")
-    cluster.reset_rabbitmq()
+    instance.query("CREATE DATABASE test")
 
 
 # Tests
@@ -508,7 +511,6 @@ def test_rabbitmq_materialized_view_with_subquery(rabbitmq_cluster):
 def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
     instance.query(
         """
-        SET allow_materialized_view_with_bad_select = true;
         DROP TABLE IF EXISTS test.view1;
         DROP TABLE IF EXISTS test.view2;
         DROP TABLE IF EXISTS test.view3;
