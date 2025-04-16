@@ -1,3 +1,4 @@
+#include "Disks/ObjectStorages/StoredObject.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -27,6 +28,7 @@
 namespace ProfileEvents
 {
     extern const Event IcebergTrivialCountOptimizationApplied;
+    extern const Event IcebegerVersionHintUsed;
 }
 
 namespace DB
@@ -37,6 +39,7 @@ namespace StorageObjectStorageSetting
     extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
     extern const StorageObjectStorageSettingsString iceberg_metadata_table_uuid;
     extern const StorageObjectStorageSettingsBool iceberg_recent_metadata_file_by_last_updated_ms_field;
+    extern const StorageObjectStorageSettingsBool iceberg_use_version_hint;
 }
 
 namespace ErrorCodes
@@ -414,12 +417,30 @@ static std::pair<Int32, String> getLatestOrExplicitMetadataFileAndVersion(
         std::optional<String> table_uuid = configuration.getSettingsRef()[StorageObjectStorageSetting::iceberg_metadata_table_uuid].value;
         return getLatestMetadataFileAndVersion(object_storage, configuration, local_context, table_uuid);
     }
+    else if (configuration.getSettingsRef()[StorageObjectStorageSetting::iceberg_use_version_hint].value)
+    {
+        auto prefix_storage_path = configuration.getPath();
+        auto version_hint_path = std::filesystem::path(prefix_storage_path) / "metadata" / "version-hint.text";
+        std::string metadata_file;
+        StoredObject version_hint(version_hint_path);
+        auto buf = object_storage->readObject(version_hint, ReadSettings{});
+        readString(metadata_file, *buf);
+        if (!metadata_file.ends_with(".metadata.json"))
+        {
+            if (std::all_of(metadata_file.begin(), metadata_file.end(), isdigit))
+                metadata_file = "v" + metadata_file + ".metadata.json";
+            else
+                metadata_file = metadata_file + ".metadata.json";
+        }
+        LOG_TEST(log, "Version hint file points to {}, will read from this metadata file", metadata_file);
+        ProfileEvents::increment(ProfileEvents::IcebegerVersionHintUsed);
+        return getMetadataFileAndVersion(std::filesystem::path(prefix_storage_path) / "metadata" / metadata_file);
+    }
     else
     {
         return getLatestMetadataFileAndVersion(object_storage, configuration, local_context, std::nullopt);
     }
 }
-
 
 bool IcebergMetadata::update(const ContextPtr & local_context)
 {
@@ -684,6 +705,85 @@ ManifestListPtr IcebergMetadata::getManifestList(const String & filename) const
     ManifestListPtr manifest_list_ptr = std::make_shared<ManifestList>(std::move(manifest_list));
     initializeDataFiles(manifest_list_ptr);
     return manifest_list_ptr;
+}
+
+IcebergMetadata::IcebergHistory IcebergMetadata::getHistory() const
+{
+    auto configuration_ptr = configuration.lock();
+
+    const auto [metadata_version, metadata_file_path] = getLatestOrExplicitMetadataFileAndVersion(object_storage, *configuration_ptr, getContext(), log.get());
+
+    chassert(metadata_version == last_metadata_version);
+
+    auto metadata_object = readJSON(metadata_file_path, object_storage, getContext(), log);
+
+    chassert(format_version == metadata_object->getValue<int>(FORMAT_VERSION_FIELD));
+
+    /// History
+    std::vector<Iceberg::IcebergHistoryRecord> iceberg_history;
+
+    auto snapshots = metadata_object->get("snapshots").extract<Poco::JSON::Array::Ptr>();
+    auto snapshot_logs = metadata_object->get("snapshot-log").extract<Poco::JSON::Array::Ptr>();
+
+    std::vector<Int64> ancestors;
+    std::map<Int64, Int64> parents_list;
+    for (size_t i = 0; i < snapshots->size(); ++i)
+    {
+        const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
+        auto snapshot_id = snapshot->getValue<Int64>("snapshot-id");
+
+        if (snapshot->has("parent-snapshot-id") && !snapshot->isNull("parent-snapshot-id"))
+            parents_list[snapshot_id] = snapshot->getValue<Int64>("parent-snapshot-id");
+        else
+            parents_list[snapshot_id] = 0;
+    }
+
+    auto current_snapshot_id = metadata_object->getValue<Int64>("current-snapshot-id");
+
+    /// Add current snapshot-id to ancestors list
+    ancestors.push_back(current_snapshot_id);
+    while (parents_list[current_snapshot_id] != 0)
+    {
+        ancestors.push_back(parents_list[current_snapshot_id]);
+        current_snapshot_id = parents_list[current_snapshot_id];
+    }
+
+    for (size_t i = 0; i < snapshots->size(); ++i)
+    {
+        IcebergHistoryRecord history_record;
+
+        const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
+        history_record.snapshot_id = snapshot->getValue<Int64>("snapshot-id");
+
+        if (snapshot->has("parent-snapshot-id") && !snapshot->isNull("parent-snapshot-id"))
+            history_record.parent_id = snapshot->getValue<Int64>("parent-snapshot-id");
+        else
+            history_record.parent_id = 0;
+
+        for (size_t j = 0; j < snapshot_logs->size(); ++j)
+        {
+            const auto snapshot_log = snapshot_logs->getObject(static_cast<UInt32>(j));
+            if (snapshot_log->getValue<Int64>("snapshot-id") == history_record.snapshot_id)
+            {
+                auto value = snapshot_log->getValue<std::string>("timestamp-ms");
+                ReadBufferFromString in(value);
+                DateTime64 time = 0;
+                readDateTime64Text(time, 6, in);
+
+                history_record.made_current_at = time;
+                break;
+            }
+        }
+
+        if (std::find(ancestors.begin(), ancestors.end(), history_record.snapshot_id) != ancestors.end())
+            history_record.is_current_ancestor = true;
+        else
+            history_record.is_current_ancestor = false;
+
+        iceberg_history.push_back(history_record);
+    }
+
+    return iceberg_history;
 }
 
 ManifestFilePtr IcebergMetadata::getManifestFile(const String & filename, Int64 inherited_sequence_number) const
