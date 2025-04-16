@@ -4428,7 +4428,7 @@ CONV_FN(SystemCommand, cmd)
             can_set_cluster = true;
             break;
         default:
-            ret += "REFRESH VIEW";
+            ret += "FLUSH LOGS";
     }
     if (can_set_cluster && cmd.has_cluster())
     {

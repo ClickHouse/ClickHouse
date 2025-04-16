@@ -2060,7 +2060,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
     const uint32_t unload_pks = 3;
     const uint32_t unload_pk = 8 * has_merge_tree;
     /// for refreshable views
-    const uint32_t refresh_views = 3;
+    const uint32_t refresh_views = 0;
     const uint32_t refresh_view = 8 * has_refreshable_view;
     const uint32_t stop_views = 3;
     const uint32_t stop_view = 8 * has_refreshable_view;
