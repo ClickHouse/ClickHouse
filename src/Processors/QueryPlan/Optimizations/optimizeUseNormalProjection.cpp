@@ -122,11 +122,35 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         normal_projections.push_back(preferred_projection);
     }
 
+    Names required_columns = reading->getAllColumnNames();
+    bool need_parent_part_offset = false;
+    for (auto & name : required_columns)
+    {
+        if (name == "_part_offset")
+        {
+            name = "_parent_part_offset";
+            need_parent_part_offset = true;
+        }
+    }
+
     QueryDAG query;
     {
         auto & child = iter->node->children[iter->next_child - 1];
         if (!query.build(*child))
             return {};
+
+        if (need_parent_part_offset)
+        {
+            ActionsDAG rename_dag;
+            const auto * node = &rename_dag.addInput("_parent_part_offset", std::make_shared<DataTypeUInt64>());
+            node = &rename_dag.addAlias(*node, "_part_offset");
+            rename_dag.getOutputs() = {node};
+
+            if (query.dag)
+                query.dag = ActionsDAG::merge(std::move(rename_dag), *std::move(query.dag));
+            else
+                query.dag = std::move(rename_dag);
+        }
 
         if (query.dag)
             query.dag->removeUnusedActions();
@@ -135,7 +159,6 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     std::list<NormalProjectionCandidate> candidates;
     NormalProjectionCandidate * best_candidate = nullptr;
 
-    const Names & required_columns = reading->getAllColumnNames();
     const auto & query_info = reading->getQueryInfo();
     MergeTreeDataSelectExecutor reader(reading->getMergeTreeData());
 
