@@ -68,11 +68,15 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.5",
         {
+            {"geotoh3_lon_lat_input_order", true, false, "A new setting for legacy behaviour to set lon and lat order"},
             {"secondary_indices_enable_bulk_filtering", false, true, "A new algorithm for filtering by data skipping indices"},
+            {"implicit_table_at_top_level", "", "", "A new setting, used in clickhouse-local"},
+            {"use_skip_indexes_if_final_exact_mode", 0, 0, "This setting was introduced to help FINAL query return correct results with skip indexes"},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
             /// Release closed. Please use 25.5
+            {"use_query_condition_cache", false, true, "A new optimization"},
             {"allow_materialized_view_with_bad_select", true, false, "Don't allow creating MVs referencing nonexistent columns or tables"},
             {"query_plan_optimize_lazy_materialization", false, true, "Added new setting to use query plan for lazy materialization optimisation"},
             {"query_plan_max_limit_for_lazy_materialization", 10, 10, "Added new setting to control maximum limit value that allows to use query plan for lazy materialization optimisation. If zero, there is no limit"},
@@ -88,6 +92,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_condition_cache_store_conditions_as_plaintext", false, false, "New setting"},
             {"min_os_cpu_wait_time_ratio_to_throw", 0, 2, "New setting"},
             {"max_os_cpu_wait_time_ratio_to_throw", 0, 6, "New setting"},
+            {"query_plan_merge_filter_into_join_condition", false, true, "Added new setting to merge filter into join condition"},
             {"use_local_cache_for_remote_storage", true, false, "Obsolete setting."},
             {"iceberg_timestamp_ms", 0, 0, "New setting."},
             {"iceberg_snapshot_id", 0, 0, "New setting."},
@@ -711,6 +716,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.5",
         {
+            {"default_compression_codec", "", "", "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",
         {

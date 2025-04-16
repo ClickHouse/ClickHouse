@@ -10,7 +10,8 @@ CREATE TABLE tab (
     INDEX idx (v0, v1) TYPE gin GRANULARITY 1)
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1,
+         min_bytes_for_full_part_storage = 0; -- GIN indexes currently don't work with packed parts
 
 INSERT INTO tab VALUES('0,0', '0,1')('2,2','2,3');
 
