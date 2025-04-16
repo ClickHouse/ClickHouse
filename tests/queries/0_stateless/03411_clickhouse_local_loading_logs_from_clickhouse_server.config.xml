@@ -1,6 +1,5 @@
 <clickhouse>
     <tcp_port>0</tcp_port>
-    <allow_implicit_no_password>0</allow_implicit_no_password>
     <path>.</path>
     <listen_host>127.0.0.1</listen_host>
     <mark_cache_size>0</mark_cache_size>
