@@ -523,7 +523,7 @@ std::pair<std::vector<Chain>, std::vector<Chain>> InterpreterInsertQuery::buildP
 
 std::pair<QueryPipelineBuilder, ParallelReplicasReadingCoordinatorPtr> getSelectPipelineForInserSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context)
 {
-    auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
+    auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, /*subquery_depth_=*/1);
 
     InterpreterSelectQueryAnalyzer interpreter(select, context, select_query_options);
     auto & plan = interpreter.getQueryPlan();
@@ -770,29 +770,29 @@ InterpreterInsertQuery::buildLocalInsertSelectPipelineForParallelReplicas(ASTIns
 {
     ContextPtr context_ptr = getContext();
 
-    // const Settings & settings = context_ptr->getSettingsRef();
-    // chassert(isTrivialSelect(query.select));
-    // /** When doing trivial INSERT INTO ... SELECT ... FROM table,
-    //         * don't need to process SELECT with more than max_insert_threads
-    //         * and it's reasonable to set block size for SELECT to the desired block size for INSERT
-    //         * to avoid unnecessary squashing.
-    //         */
-    //
-    // Settings new_settings = context_ptr->getSettingsCopy();
-    //
-    // new_settings[Setting::max_threads] = std::max<UInt64>(1, settings[Setting::max_insert_threads] + 1);
-    //
-    // if (table->prefersLargeBlocks())
-    // {
-    //     if (settings[Setting::min_insert_block_size_rows])
-    //         new_settings[Setting::max_block_size] = settings[Setting::min_insert_block_size_rows];
-    //     if (settings[Setting::min_insert_block_size_bytes])
-    //         new_settings[Setting::preferred_block_size_bytes] = settings[Setting::min_insert_block_size_bytes];
-    // }
-    //
-    // auto context_for_trivial_select = Context::createCopy(context);
-    // context_for_trivial_select->setSettings(new_settings);
-    // context_for_trivial_select->setInsertionTable(context_ptr->getInsertionTable(), context_ptr->getInsertionTableColumnNames());
+    const Settings & settings = context_ptr->getSettingsRef();
+    chassert(isTrivialSelect(query.select));
+    /** When doing trivial INSERT INTO ... SELECT ... FROM table,
+            * don't need to process SELECT with more than max_insert_threads
+            * and it's reasonable to set block size for SELECT to the desired block size for INSERT
+            * to avoid unnecessary squashing.
+            */
+
+    Settings new_settings = context_ptr->getSettingsCopy();
+
+    new_settings[Setting::max_threads] = std::max<UInt64>(1, settings[Setting::max_insert_threads] + 1);
+
+    if (table->prefersLargeBlocks())
+    {
+        if (settings[Setting::min_insert_block_size_rows])
+            new_settings[Setting::max_block_size] = settings[Setting::min_insert_block_size_rows];
+        if (settings[Setting::min_insert_block_size_bytes])
+            new_settings[Setting::preferred_block_size_bytes] = settings[Setting::min_insert_block_size_bytes];
+    }
+
+    auto context_for_trivial_select = Context::createCopy(context);
+    context_for_trivial_select->setSettings(new_settings);
+    context_for_trivial_select->setInsertionTable(context_ptr->getInsertionTable(), context_ptr->getInsertionTableColumnNames());
 
     auto [pipeline_builder, coordinator] = getSelectPipelineForInserSelectWithParallelReplicas(query.select, context_ptr);
     auto local_pipeline = addInsertToSelectPipeline(query, table, pipeline_builder);
