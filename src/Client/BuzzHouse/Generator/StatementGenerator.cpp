@@ -3893,19 +3893,20 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
     {
         const Rename & ren = query.rename();
         const SQLObjectName & oobj = ren.old_object();
+        const SQLObjectName & nobj = ren.new_object();
         const bool istable = oobj.has_est() && oobj.est().table().table()[0] == 't';
         const bool isview = oobj.has_est() && oobj.est().table().table()[0] == 'v';
         const bool isdictionary = oobj.has_est() && oobj.est().table().table()[0] == 'd';
         const bool isdatabase = oobj.has_database();
         const uint32_t old_tname
             = static_cast<uint32_t>(std::stoul(isdatabase ? oobj.database().database().substr(1) : oobj.est().table().table().substr(1)));
-        const uint32_t new_tname = static_cast<uint32_t>(
-            std::stoul(isdatabase ? ren.new_object().database().database().substr(1) : ren.new_object().est().table().table().substr(1)));
+        const uint32_t new_tname
+            = static_cast<uint32_t>(std::stoul(isdatabase ? nobj.database().database().substr(1) : nobj.est().table().table().substr(1)));
         std::optional<uint32_t> new_db;
 
-        if (!isdatabase && oobj.est().database().database() != "default")
+        if (!isdatabase && nobj.est().database().database() != "default")
         {
-            new_db = static_cast<uint32_t>(std::stoul(oobj.est().database().database().substr(1)));
+            new_db = static_cast<uint32_t>(std::stoul(nobj.est().database().database().substr(1)));
         }
         if (istable)
         {
