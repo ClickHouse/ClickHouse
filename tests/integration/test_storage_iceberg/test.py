@@ -2014,19 +2014,6 @@ def check_validity_and_get_prunned_files_general(instance, table_name, settings1
 
     instance.query("SYSTEM FLUSH LOGS")
 
-    print(
-        "Unprunned: ",
-        instance.query(
-            f"SELECT ProfileEvents['{profile_event_name}'] FROM system.query_log WHERE query_id = '{query_id1}' AND type = 'QueryFinish'"
-        ),
-    )
-    print(
-        "Prunned: ",
-        instance.query(
-            f"SELECT ProfileEvents['{profile_event_name}'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
-        ),
-    )
-
     assert 0 == int(
         instance.query(
             f"SELECT ProfileEvents['{profile_event_name}'] FROM system.query_log WHERE query_id = '{query_id1}' AND type = 'QueryFinish'"

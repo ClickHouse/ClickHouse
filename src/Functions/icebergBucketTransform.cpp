@@ -1,7 +1,6 @@
 #include <cstddef>
 #include <memory>
 #include <string>
-#include <type_traits>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
