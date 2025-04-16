@@ -667,8 +667,8 @@ cache_dynamic_resize_config = """
             <cache_dynamic_resize_disabled>
                 <type>cache</type>
                 <disk>hdd_blob</disk>
-                <max_size>100000</max_size>
-                <max_elements>100</max_elements>
+                <max_size>{}</max_size>
+                <max_elements>{}</max_elements>
                 <max_file_segment_size>10</max_file_segment_size>
                 <boundary_alignment>10</boundary_alignment>
                 <allow_dynamic_cache_resize>0</allow_dynamic_cache_resize>
@@ -741,8 +741,8 @@ SELECT * FROM test;
     assert elements > 10
     assert elements == get_queue_elements()
 
-    default_config = cache_dynamic_resize_config.format(100000, 100)
-    new_config = cache_dynamic_resize_config.format(100000, 10)
+    default_config = cache_dynamic_resize_config.format(100000, 100, 100000, 100)
+    new_config = cache_dynamic_resize_config.format(100000, 10, 100000, 100)
     node.replace_config(
         "/etc/clickhouse-server/config.d/cache_dynamic_resize.xml", new_config
     )
@@ -754,7 +754,7 @@ SELECT * FROM test;
 
     node.query(f"SYSTEM ENABLE FAILPOINT file_cache_dynamic_resize_fail_to_evict")
 
-    new_config = cache_dynamic_resize_config.format(100000, 5)
+    new_config = cache_dynamic_resize_config.format(100000, 5, 100000, 100)
     node.replace_config(
         "/etc/clickhouse-server/config.d/cache_dynamic_resize.xml", new_config
     )
@@ -899,8 +899,8 @@ SELECT * FROM test;
     elements = get_downloaded_elements()
     assert elements > 10
 
-    default_config = cache_dynamic_resize_config.format(100000, 100)
-    new_config = cache_dynamic_resize_config.format(100000, 10)
+    default_config = cache_dynamic_resize_config.format(100000, 100, 100000, 100)
+    new_config = cache_dynamic_resize_config.format(100000, 100, 100000, 10)
     node.replace_config(
         "/etc/clickhouse-server/config.d/cache_dynamic_resize.xml", new_config
     )
