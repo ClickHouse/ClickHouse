@@ -9,7 +9,7 @@ from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 
-DEFAULT_TIMEOUT_SEC = 60
+DEFAULT_TIMEOUT_SEC = 120
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -213,7 +213,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, r
     """
     )
 
-    messages_num = 1000
+    messages_num = 10000
     rabbitmq_monitor.set_expectations(published=messages_num, delivered=messages_num)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -304,7 +304,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster, r
     """
     )
 
-    messages_num = 1000
+    messages_num = 10000
     rabbitmq_monitor.set_expectations(published=messages_num, delivered=messages_num)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:

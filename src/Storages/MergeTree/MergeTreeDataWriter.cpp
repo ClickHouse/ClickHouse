@@ -220,7 +220,7 @@ void addSubcolumnsFromSortingKeyAndSkipIndicesExpression(const ExpressionActions
 
 }
 
-void MergeTreeDataWriter::TemporaryPart::cancel()
+void MergeTreeTemporaryPart::cancel()
 {
     for (auto & stream : streams)
     {
@@ -232,7 +232,7 @@ void MergeTreeDataWriter::TemporaryPart::cancel()
     part.reset();
 }
 
-void MergeTreeDataWriter::TemporaryPart::finalize()
+void MergeTreeTemporaryPart::finalize()
 {
     for (auto & stream : streams)
         stream.finalizer.finish();
@@ -244,7 +244,7 @@ void MergeTreeDataWriter::TemporaryPart::finalize()
 
 /// This method must be called after rename and commit of part
 /// because a correct path is required for the keys of caches.
-void MergeTreeDataWriter::TemporaryPart::prewarmCaches()
+void MergeTreeTemporaryPart::prewarmCaches()
 {
     size_t bytes_uncompressed = part->getBytesUncompressedOnDisk();
 
@@ -321,7 +321,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
 
     if (!metadata_snapshot->hasPartitionKey()) /// Table is not partitioned.
     {
-        result.emplace_back(Block(block), Row{});
+        result.emplace_back(block, Row{});
         if (async_insert_info != nullptr)
         {
             result[0].offsets = std::move(async_insert_info->offsets);
@@ -391,7 +391,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
         /// A typical case is when there is one partition (you do not need to split anything).
         /// NOTE: returning a copy of the original block so that calculated partition key columns
         /// do not interfere with possible calculated primary key columns of the same name.
-        result.emplace_back(Block(block), get_partition(0));
+        result.emplace_back(block, get_partition(0));
         if (async_insert_info != nullptr)
         {
             result[0].offsets = std::move(async_insert_info->offsets);
@@ -483,25 +483,22 @@ Block MergeTreeDataWriter::mergeBlock(
 }
 
 
-MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block, StorageMetadataPtr metadata_snapshot, ContextPtr context)
 {
-    return writeTempPartImpl(block, metadata_snapshot, context, data.insert_increment.get(), /*need_tmp_prefix = */true);
+    auto partition_id = block.partition.getID(metadata_snapshot->getPartitionKey().sample_block);
+    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), std::move(context), data.insert_increment.get());
 }
 
-MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartWithoutPrefix(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, int64_t block_number, ContextPtr context)
-{
-    return writeTempPartImpl(block, metadata_snapshot, context, block_number, /*need_tmp_prefix = */false);
-}
-
-MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
+MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     BlockWithPartition & block_with_partition,
-    const StorageMetadataPtr & metadata_snapshot,
+    StorageMetadataPtr metadata_snapshot,
+    String partition_id,
     ContextPtr context,
-    int64_t block_number,
-    bool need_tmp_prefix)
+    UInt64 block_number)
 {
-    TemporaryPart temp_part;
+    auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     Block & block = block_with_partition.block;
+    MergeTreePartition & partition = block_with_partition.partition;
 
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
 
@@ -512,12 +509,10 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
     minmax_idx->update(block, MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
 
-    MergeTreePartition partition(block_with_partition.partition);
-
     bool optimize_on_insert = context->getSettingsRef()[Setting::optimize_on_insert] && data.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
     UInt32 new_part_level = optimize_on_insert ? 1 : 0;
 
-    MergeTreePartInfo new_part_info(partition.getID(metadata_snapshot->getPartitionKey().sample_block), block_number, block_number, new_part_level);
+    MergeTreePartInfo new_part_info(std::move(partition_id), block_number, block_number, new_part_level);
 
     String part_name;
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
@@ -538,21 +533,13 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     else
         part_name = new_part_info.getPartNameV1();
 
-    std::string part_dir;
-    if (need_tmp_prefix)
-    {
-        std::string temp_prefix = "tmp_insert_";
-        const auto & temp_postfix = data.getPostfixForTempInsertName();
-        if (!temp_postfix.empty())
-            temp_prefix += temp_postfix + "_";
-        part_dir = temp_prefix + part_name;
-    }
-    else
-    {
-        part_dir = part_name;
-    }
+    std::string temp_prefix = "tmp_insert_";
+    const auto & temp_postfix = data.getPostfixForTempInsertName();
+    if (!temp_postfix.empty())
+        temp_prefix += temp_postfix + "_";
 
-    temp_part.temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
+    std::string part_dir = temp_prefix + part_name;
+    temp_part->temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
 
     MergeTreeIndices indices;
     if (context->getSettingsRef()[Setting::materialize_skip_indexes_on_insert])
@@ -777,9 +764,9 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         if (projection_block.rows())
         {
             auto proj_temp_part = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false);
-            new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part.part));
-            for (auto & stream : proj_temp_part.streams)
-                temp_part.streams.emplace_back(std::move(stream));
+            new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part->part));
+            for (auto & stream : proj_temp_part->streams)
+                temp_part->streams.emplace_back(std::move(stream));
         }
     }
 
@@ -788,8 +775,8 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         (*data_settings)[MergeTreeSetting::fsync_after_insert],
         nullptr, nullptr);
 
-    temp_part.part = new_data_part;
-    temp_part.streams.emplace_back(TemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
+    temp_part->part = new_data_part;
+    temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());
@@ -798,7 +785,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     return temp_part;
 }
 
-MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
+MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     const String & part_name,
     bool is_temp,
     IMergeTreeDataPart * parent_part,
@@ -808,7 +795,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     const ProjectionDescription & projection,
     bool merge_is_needed)
 {
-    TemporaryPart temp_part;
+    auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     const auto & metadata_snapshot = projection.metadata;
 
     MergeTreeDataPartType part_type;
@@ -922,8 +909,8 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
 
     out->writeWithPermutation(block, perm_ptr);
     auto finalizer = out->finalizePartAsync(new_data_part, false);
-    temp_part.part = new_data_part;
-    temp_part.streams.emplace_back(TemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
+    temp_part->part = new_data_part;
+    temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterRows, block.rows());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterUncompressedBytes, block.bytes());
@@ -932,7 +919,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     return temp_part;
 }
 
-MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPart(
+MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
     const MergeTreeData & data,
     LoggerPtr log,
     Block block,
@@ -946,7 +933,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPart(
 
 /// This is used for projection materialization process which may contain multiple stages of
 /// projection part merges.
-MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempProjectionPart(
+MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
     const MergeTreeData & data,
     LoggerPtr log,
     Block block,
@@ -958,7 +945,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempProjectionPart(
     auto new_part = writeProjectionPartImpl(
         part_name, /*is_temp=*/ true, parent_part, data, log, std::move(block), projection, /*merge_is_needed=*/true);
 
-    new_part.part->temp_projection_block_number = block_num;
+    new_part->part->temp_projection_block_number = block_num;
     return new_part;
 }
 
