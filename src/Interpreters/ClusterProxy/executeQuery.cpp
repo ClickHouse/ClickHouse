@@ -947,6 +947,8 @@ bool isSuitableForParallelReplicas(const ASTPtr & select, const ContextPtr & con
     return is_reading_with_parallel_replicas(plan.getRootNode());
 }
 
+/// find and remove ReadFromParallelRemoteReplicasStep in query plan,
+/// also returns parallel replicas coordinator stored in ReadFromParallelRemoteReplicasStep
 ParallelReplicasReadingCoordinatorPtr dropReadFromRemoteInPlan(QueryPlan & query_plan)
 {
     struct Frame
@@ -1071,12 +1073,14 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
             /// we should use this number specifically because efficiency of data distribution by consistent hash depends on it.
             .number_of_current_replica = i,
         };
+
+        const ThrottlerPtr null_throttler; /// so no need for throttler since no table data will transfered between replicas
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             connection_pools[i],
             formatted_query,
             Block{},
             new_context,
-            /*throttler=*/nullptr,
+            null_throttler,
             Scalars{},
             Tables{},
             QueryProcessingStage::Complete,

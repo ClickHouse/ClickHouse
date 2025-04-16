@@ -521,14 +521,18 @@ std::pair<std::vector<Chain>, std::vector<Chain>> InterpreterInsertQuery::buildP
     return {std::move(presink_chains), std::move(sink_chains)};
 }
 
-std::pair<QueryPipelineBuilder, ParallelReplicasReadingCoordinatorPtr> getSelectPipelineForInserSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context)
+static std::pair<QueryPipelineBuilder, ParallelReplicasReadingCoordinatorPtr>
+getLocalSelectPipelineForInserSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context)
 {
     auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, /*subquery_depth_=*/1);
 
     InterpreterSelectQueryAnalyzer interpreter(select, context, select_query_options);
     auto & plan = interpreter.getQueryPlan();
 
-    /// find reading steps for remote replicas and remove them
+    /// Find reading steps for remote replicas and remove them,
+    /// When building local pipeline, the local replica will be registed in the returned coordinator,
+    /// and announce its snapshot. The snapshot will be used to assing read tasks to involved replicas
+    /// So, the remote pipelines, which will be created later, should use the same coordinator
     auto parallel_replicas_coordinator = ClusterProxy::dropReadFromRemoteInPlan(plan);
     return  {interpreter.buildQueryPipeline(), parallel_replicas_coordinator};
 }
@@ -771,12 +775,12 @@ InterpreterInsertQuery::buildLocalInsertSelectPipelineForParallelReplicas(ASTIns
     ContextPtr context_ptr = getContext();
 
     const Settings & settings = context_ptr->getSettingsRef();
-    chassert(isTrivialSelect(query.select));
+
     /** When doing trivial INSERT INTO ... SELECT ... FROM table,
-            * don't need to process SELECT with more than max_insert_threads
-            * and it's reasonable to set block size for SELECT to the desired block size for INSERT
-            * to avoid unnecessary squashing.
-            */
+     * don't need to process SELECT with more than max_insert_threads
+     * and it's reasonable to set block size for SELECT to the desired block size for INSERT
+     * to avoid unnecessary squashing.
+     */
 
     Settings new_settings = context_ptr->getSettingsCopy();
 
@@ -794,7 +798,7 @@ InterpreterInsertQuery::buildLocalInsertSelectPipelineForParallelReplicas(ASTIns
     context_for_trivial_select->setSettings(new_settings);
     context_for_trivial_select->setInsertionTable(context_ptr->getInsertionTable(), context_ptr->getInsertionTableColumnNames());
 
-    auto [pipeline_builder, coordinator] = getSelectPipelineForInserSelectWithParallelReplicas(query.select, context_ptr);
+    auto [pipeline_builder, coordinator] = getLocalSelectPipelineForInserSelectWithParallelReplicas(query.select, context_ptr);
     auto local_pipeline = addInsertToSelectPipeline(query, table, pipeline_builder);
     return {std::move(local_pipeline), coordinator};
 }
