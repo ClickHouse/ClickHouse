@@ -42,6 +42,10 @@
         "CC": "clang-19",
         "CXX": "clang++-19"
     },
+    "mounts": [
+        "source=${env:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached",
+        "source=${env:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,consistency=cached"
+    ],
     "remoteUser": "vscode",
     "forwardPorts": [9000, 9440],
     "portsAttributes": {"9000": {"label": "Clickhouse"}, "9440": {"label": "Clickhouse"}},
