@@ -1,0 +1,52 @@
+final String WORKSPACE_PATH = '/home/jenkins/agent/workspace'
+
+pipeline {
+  agent {
+    kubernetes {
+      cloud 'k8s-devops'
+      yamlFile 'ci/cribl/jenkins/podspec.yml'
+      defaultContainer 'builder'
+      customWorkspace WORKSPACE_PATH
+      workingDir WORKSPACE_PATH
+    }
+  }
+
+  environment {
+    BUILD_DIR = "${WORKSPACE_PATH}/build"
+  }
+
+  options {
+    ansiColor('xterm')
+    copyArtifactPermission("*")
+    disableRestartFromStage()
+  }
+
+  stages {
+
+    stage('Setup') {
+      steps {
+        script {
+          sh 'ci/cribl/scripts/setup.sh'
+        }
+      }
+    }
+
+    stage('Build ClickHouse') {
+      steps {
+        script {
+          sh "ci/cribl/scripts/build.sh"
+        }
+      }
+    }
+
+    stage('Deploy') {
+      steps {
+        script {
+          withCredentials([string(credentialsId: 'STAGING_BUCKET', variable: 'S3_BUCKET')]) {
+            sh "ci/cribl/scripts/deploy.sh"
+          }
+        }
+      }
+    }
+  }
+}
