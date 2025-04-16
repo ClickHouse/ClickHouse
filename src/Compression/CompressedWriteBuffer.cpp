@@ -89,4 +89,14 @@ void CompressedWriteBuffer::cancelImpl() noexcept
     out.cancel();
 }
 
+void CompressedWriteBuffer::setCodec(CompressionCodecPtr codec_)
+{
+    // Flush all the pending data that was supposed to be compressed with the old codec.
+    next();
+    if (offset() != 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressedWriteBuffer: offset() is not zero");
+
+    chassert(codec_);
+    codec = std::move(codec_);
+}
 }

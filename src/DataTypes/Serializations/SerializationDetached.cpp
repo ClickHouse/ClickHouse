@@ -3,10 +3,37 @@
 #include <Columns/ColumnBlob.h>
 #include <Columns/IColumn.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <IO/VarInt.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
+
+namespace
+{
+
+struct DisableCompressionInScope
+{
+    explicit DisableCompressionInScope(DB::WriteBuffer & buffer_)
+        : buffer(buffer_)
+    {
+        if (auto * compressed_buf = typeid_cast<DB::CompressedWriteBuffer *>(&buffer))
+        {
+            original_codec = compressed_buf->getCodec();
+            compressed_buf->setCodec(DB::CompressionCodecFactory::instance().get("NONE"));
+        }
+    }
+
+    ~DisableCompressionInScope()
+    {
+        if (auto * compressed_buf = typeid_cast<DB::CompressedWriteBuffer *>(&buffer))
+            compressed_buf->setCodec(original_codec);
+    }
+
+    DB::WriteBuffer & buffer;
+    DB::CompressionCodecPtr original_codec;
+};
+}
 
 namespace DB
 {
@@ -22,20 +49,11 @@ SerializationDetached::SerializationDetached(const SerializationPtr & nested_) :
 void SerializationDetached::serializeBinaryBulk(
     const IColumn & column, WriteBuffer & ostr, [[maybe_unused]] size_t offset, [[maybe_unused]] size_t limit) const
 {
-    // We will write directly into the uncompressed buffer. It also means we don't need to flush the data written by us here.
-    WriteBuffer * uncompressed_buf = &ostr;
-    if (auto * compressed_buf = typeid_cast<CompressedWriteBuffer *>(&ostr))
-    {
-        // Flush all pending data
-        ostr.next();
-        if (ostr.offset() != 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "SerializationDetached: ostr.offset() is not zero");
-        uncompressed_buf = &compressed_buf->getImplBuffer();
-    }
+    DisableCompressionInScope codec_switcher(ostr);
 
     const auto & blob = typeid_cast<const ColumnBlob &>(column).getBlob();
-    writeVarUInt(blob.size(), *uncompressed_buf);
-    (*uncompressed_buf).write(blob.data(), blob.size());
+    writeVarUInt(blob.size(), ostr);
+    ostr.write(blob.data(), blob.size());
 }
 
 void SerializationDetached::deserializeBinaryBulk(
@@ -45,21 +63,11 @@ void SerializationDetached::deserializeBinaryBulk(
     [[maybe_unused]] size_t limit,
     [[maybe_unused]] double avg_value_size_hint) const
 {
-    // We will read directly from the uncompressed buffer.
-    ReadBuffer * uncompressed_buf = &istr;
-    if (auto * compressed_buf = typeid_cast<CompressedReadBuffer *>(&istr))
-    {
-        // Each compressed block is prefixed with the its size, so we know that the compressed buffer should be drained at this point.
-        if (istr.available() != 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "SerializationDetached: istr.available() is not zero");
-        uncompressed_buf = &compressed_buf->getImplBuffer();
-    }
-
     auto & blob = typeid_cast<ColumnBlob &>(column).getBlob();
     size_t bytes = 0;
-    readVarUInt(bytes, *uncompressed_buf);
+    readVarUInt(bytes, istr);
     blob.resize(bytes);
-    (*uncompressed_buf).readStrict(blob.data(), blob.size());
+    istr.readStrict(blob.data(), blob.size());
 }
 
 void SerializationDetached::deserializeBinaryBulkWithMultipleStreams(

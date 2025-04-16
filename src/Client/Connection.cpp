@@ -1418,7 +1418,7 @@ void Connection::initBlockInput()
         if (!maybe_compressed_in)
         {
             if (compression == Protocol::Compression::Enable)
-                maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
+                maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in, /*allow_different_codec=*/true);
             else
                 maybe_compressed_in = in;
         }

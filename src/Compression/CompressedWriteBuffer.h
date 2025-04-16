@@ -40,7 +40,9 @@ public:
         return offset();
     }
 
-    WriteBuffer & getImplBuffer() { return out; }
+    CompressionCodecPtr getCodec() const { return codec; }
+
+    void setCodec(CompressionCodecPtr codec_);
 
 private:
     void nextImpl() override;

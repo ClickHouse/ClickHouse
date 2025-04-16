@@ -1,7 +1,6 @@
 #pragma once
 
 #include "CompressedReadBufferBase.h"
-
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
 
@@ -21,8 +20,6 @@ public:
         : CompressedReadBufferBase(&in_, allow_different_codecs_, external_data_), BufferWithOwnMemory<ReadBuffer>(0)
     {
     }
-
-    ReadBuffer & getImplBuffer() { return *compressed_in; }
 
     [[nodiscard]] size_t readBig(char * to, size_t n) override;
 
