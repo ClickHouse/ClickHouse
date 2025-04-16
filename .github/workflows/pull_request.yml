@@ -930,7 +930,7 @@ jobs:
           fi
 
   build_amd_compat:
-    runs-on: [self-hosted, builder-aarch64]
+    runs-on: [self-hosted, builder]
     needs: [config_workflow, dockers_build_amd_and_merge, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9jb21wYXQp') }}
     name: "Build (amd_compat)"
