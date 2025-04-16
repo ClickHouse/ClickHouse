@@ -30,11 +30,13 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/Distributed/DistributedSettings.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/getStructureOfRemoteTable.h>
+#include "base/defines.h"
 
 
 namespace DB
@@ -1114,6 +1116,24 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         local_replica_index = max_replicas_to_use - 1;
     }
     pools_to_use.resize(max_replicas_to_use);
+
+    if (coordinator)
+    {
+        chassert(local_pipeline);
+        chassert(pools_to_use.size() < shard.getAllNodeCount());
+
+        /// with local pipeline the snapshot replica is local one
+        /// and replica number was already assigned to it
+        /// so, we need to reuse it here
+        auto snapshot_replica_num = (*coordinator)->getSnapshotReplicaNum();
+        chassert(snapshot_replica_num.has_value());
+
+        if (local_replica_index.value() != snapshot_replica_num.value())
+        {
+            std::swap(pools_to_use[local_replica_index.value()], pools_to_use[snapshot_replica_num.value()]);
+            local_replica_index = snapshot_replica_num;
+        }
+    }
 
     LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index.value());
 

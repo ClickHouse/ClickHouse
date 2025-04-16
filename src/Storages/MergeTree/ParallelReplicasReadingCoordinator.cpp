@@ -1064,6 +1064,13 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
     if (!pimpl)
         initialize(announcement.mode);
 
+    if (!snapshot_replica_num)
+    {
+        snapshot_replica_num = announcement.replica_num;
+
+        LOG_DEBUG(getLogger("ParallelReplicasReadingCoordinator"), "Using snapshot from replica num {}", snapshot_replica_num.value());
+    }
+
     pimpl->handleInitialAllRangesAnnouncement(std::move(announcement));
 }
 
