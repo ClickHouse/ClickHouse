@@ -38,8 +38,8 @@ public:
         , no_sign(no_sign_)
         , table_location(getTableLocation(url_))
     {
-        /// Check if user didn't mention any region
-        /// Same as in S3/Client.cpp
+        /// Check if user didn't mention any region.
+        /// Same as in S3/Client.cpp (stripping len("https://s3.")).
         if (url.endpoint.substr(11) == "amazonaws.com")
             url.addRegionToURI(region);
     }
