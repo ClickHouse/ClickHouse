@@ -947,10 +947,10 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
         return skip_and_return_all_part_ranges();
     }
 
+    std::vector<std::unordered_set<size_t>> part_ranges_selected(ranges_in_data_parts.size(), std::unordered_set<size_t>());
     for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
     {
         const auto & index_granularity = ranges_in_data_parts[part_index].data_part->index_granularity;
-        std::vector<bool> is_selected_range(index_granularity->getMarksCountWithoutFinal(), false);
         for (const auto & range : ranges_in_data_parts[part_index].ranges)
         {
             const bool value_is_defined_at_end_mark = range.end < index_granularity->getMarksCount();
@@ -962,26 +962,46 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
             selected_ranges.push_back(
                 {index_access.getValue(part_index, range.begin), false, range, part_index, PartsRangesIterator::EventType::RangeStart, true});
             for (auto i = range.begin; i < range.end;i++)
-               is_selected_range[i] = true;
+                part_ranges_selected[part_index].insert(i);
+        }
+    }
+
+    if (selected_ranges.empty())
+        return result.getCurrentRangesInDataParts();
+
+    ::sort(selected_ranges.begin(), selected_ranges.end());
+
+    auto selected_lowest_key_value = selected_ranges[0].value;
+    auto selected_highest_key_value = selected_ranges[selected_ranges.size() - 1].value;
+
+    for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
+    {
+        const auto & index_granularity = ranges_in_data_parts[part_index].data_part->index_granularity;
+
+        auto part_begin_key_value = index_access.getValue(part_index, 0);
+        auto part_end_key_value = index_access.getValue(part_index, index_granularity->getMarksCountWithoutFinal());
+
+        if ((compareValues(selected_highest_key_value, part_begin_key_value, false) < 0) ||
+            (compareValues(selected_lowest_key_value, part_end_key_value, false) > 0))
+        {
+            continue; /// infeasible to intersect this part
         }
 
-        for (size_t range_begin = 0; range_begin < is_selected_range.size(); range_begin++)
+        for (size_t range_begin = 0; range_begin < index_granularity->getMarksCountWithoutFinal(); range_begin++)
         {
             const bool value_is_defined_at_end_mark = ((range_begin + 1) < index_granularity->getMarksCount());
             if (!value_is_defined_at_end_mark)
             {
                 return skip_and_return_all_part_ranges();
             }
-
-            if (is_selected_range[range_begin])
+            if (part_ranges_selected[part_index].find(range_begin) != part_ranges_selected[part_index].end())
                 continue;
+
             MarkRange rejected_range(range_begin, range_begin + 1);
             rejected_ranges.push_back(
                 {index_access.getValue(part_index, rejected_range.begin), false, rejected_range, part_index, PartsRangesIterator::EventType::RangeStart, false});
         }
     }
-
-    ::sort(selected_ranges.begin(), selected_ranges.end());
 
     ::sort(rejected_ranges.begin(), rejected_ranges.end());
 
