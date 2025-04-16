@@ -2974,8 +2974,7 @@ enum IndexType {
     IDX_vector_similarity = 5;
     IDX_ngrambf_v1 = 6;
     IDX_tokenbf_v1 = 7;
-    IDX_full_text = 8;
-    IDX_inverted = 9;
+    IDX_gin = 8;
 }
 
 message IndexParam {

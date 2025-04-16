@@ -1342,7 +1342,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
     const uint32_t iname = t.idx_counter++;
     Expr * expr = idef->mutable_expr();
     /// Inverted index is deprecated
-    const IndexType itpe = static_cast<IndexType>((rg.nextRandomUInt32() % static_cast<uint32_t>(IDX_full_text)) + 1);
+    const IndexType itpe = static_cast<IndexType>((rg.nextRandomUInt32() % static_cast<uint32_t>(IndexType_MAX)) + 1);
     auto & to_add = staged ? t.staged_idxs : t.idxs;
 
     idx.iname = iname;
@@ -1434,7 +1434,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             idef->add_params()->set_ival(next_dist1(rg.generator));
         }
         break;
-        case IndexType::IDX_full_text:
+        case IndexType::IDX_gin:
             if (rg.nextBool())
             {
                 std::uniform_int_distribution<uint32_t> next_dist(0, 10);
@@ -1462,9 +1462,6 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             break;
         case IndexType::IDX_minmax:
         case IndexType::IDX_hypothesis:
-            break;
-        case IndexType::IDX_inverted:
-            chassert(0);
             break;
     }
     if (rg.nextSmallNumber() < 7)
