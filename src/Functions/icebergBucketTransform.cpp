@@ -213,7 +213,7 @@ private:
         {
             taken = 16;
         }
-        for (size_t i = 0; i < (taken >> 1); ++i) 
+        for (size_t i = 0; i < (taken >> 1); ++i)
         {
             std::swap(big_endian_representation[i], big_endian_representation[taken - i - 1]);
         }
