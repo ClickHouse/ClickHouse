@@ -31,7 +31,7 @@
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
-#include <Storages/MergeTree/MergeTreeIndexFullText.h>
+#include <Storages/MergeTree/MergeTreeIndexGin.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -721,7 +721,7 @@ static NameSet collectFilesToSkip(
         files_to_skip.insert(index->getFileName() + mrk_extension);
 
         // Skip all full-text index files, for they will be rebuilt
-        if (dynamic_cast<const MergeTreeIndexFullText *>(index.get()))
+        if (dynamic_cast<const MergeTreeIndexGin *>(index.get()))
         {
             auto index_filename = index->getFileName();
             files_to_skip.insert(index_filename + ".gin_dict");
@@ -1301,9 +1301,9 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
         ctx->new_data_part.get(),
         ++block_num);
 
-    tmp_part.finalize();
-    tmp_part.part->getDataPartStorage().commitTransaction();
-    projection_parts[projection.name].emplace_back(std::move(tmp_part.part));
+    tmp_part->finalize();
+    tmp_part->part->getDataPartStorage().commitTransaction();
+    projection_parts[projection.name].emplace_back(std::move(tmp_part->part));
 }
 
 void PartMergerWriter::finalizeTempProjections()
@@ -2286,6 +2286,7 @@ bool MutateTask::prepare()
             .files_to_copy_instead_of_hardlinks = std::move(files_to_copy_instead_of_hardlinks),
             .keep_metadata_version = true,
         };
+
         MergeTreeData::MutableDataPartPtr part;
         scope_guard lock;
 
@@ -2302,7 +2303,6 @@ bool MutateTask::prepare()
     }
 
     LOG_TRACE(ctx->log, "Mutating part {} to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
-
 
     /// We must read with one thread because it guarantees that output stream will be sorted.
     /// Disable all settings that can enable reading with several streams.

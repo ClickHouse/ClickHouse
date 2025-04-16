@@ -625,11 +625,11 @@ jobs:
             python3 -m praktika run 'Compatibility check (aarch64)' --workflow "BackportPR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_asan_1_2:
+  stateless_tests_asan_distributed_plan_1_2:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd_and_merge, build_amd_asan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhc2FuLCAxLzIp') }}
-    name: "Stateless tests (asan, 1/2)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhc2FuLCBkaXN0cmlidXRlZCBwbGFuLCAxLzIp') }}
+    name: "Stateless tests (asan, distributed plan, 1/2)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -658,16 +658,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (asan, 1/2)' --workflow "BackportPR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (asan, distributed plan, 1/2)' --workflow "BackportPR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (asan, 1/2)' --workflow "BackportPR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (asan, distributed plan, 1/2)' --workflow "BackportPR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_asan_2_2:
+  stateless_tests_asan_distributed_plan_2_2:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd_and_merge, build_amd_asan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhc2FuLCAyLzIp') }}
-    name: "Stateless tests (asan, 2/2)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhc2FuLCBkaXN0cmlidXRlZCBwbGFuLCAyLzIp') }}
+    name: "Stateless tests (asan, distributed plan, 2/2)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -696,9 +696,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (asan, 2/2)' --workflow "BackportPR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (asan, distributed plan, 2/2)' --workflow "BackportPR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (asan, 2/2)' --workflow "BackportPR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (asan, distributed plan, 2/2)' --workflow "BackportPR" --ci |& tee ./ci/tmp/job.log
           fi
 
   stress_test_amd_tsan:

@@ -117,18 +117,23 @@ def test_replicated(started_cluster):
         f"CREATE DATABASE {db_name} ENGINE=Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node2')"
     )
 
-    create_table(
-        started_cluster,
-        node1,
-        table_name,
-        "ordered",
-        files_path,
-        additional_settings={
-            "processing_threads_num": 16,
-            "keeper_path": keeper_path,
-        },
-        database_name="r",
-    )
+    def do_create_table():
+        create_table(
+            started_cluster,
+            node1,
+            table_name,
+            "ordered",
+            files_path,
+            additional_settings={
+                "processing_threads_num": 16,
+                "keeper_path": keeper_path,
+            },
+            database_name="r",
+        )
+
+    do_create_table()
+    node1.query(f"DROP TABLE r.{table_name} SYNC")
+    do_create_table()
 
     assert '"processing_threads_num":16' in node1.query(
         f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
@@ -158,6 +163,8 @@ def test_replicated(started_cluster):
             break
         time.sleep(1)
     assert expected_rows == get_count()
+
+    node1.query(f"DROP TABLE {db_name}.{table_name} SYNC")
 
 
 def test_bad_settings(started_cluster):
@@ -575,7 +582,10 @@ def test_registry(started_cluster):
     ).strip()
     assert uuid1 in str(registry)
 
-    expected = [f"0\\ninstance\\n{uuid1}\\n", f"0\\ninstance2\\n{uuid1}\\n"]
+    server_uuid_1 = node1.query("SELECT serverUUID()").strip()
+    server_uuid_2 = node2.query("SELECT serverUUID()").strip()
+
+    expected = [f"1\\ninstance\\n{uuid1}\\n{server_uuid_1}\\n", f"1\\ninstance2\\n{uuid1}\\n{server_uuid_2}\\n"]
 
     for elem in expected:
         assert elem in str(registry)
@@ -630,10 +640,10 @@ def test_registry(started_cluster):
     assert uuid2 in str(registry)
 
     expected = [
-        f"0\\ninstance\\n{uuid1}\\n",
-        f"0\\ninstance2\\n{uuid1}\\n",
-        f"0\\ninstance\\n{uuid2}\\n",
-        f"0\\ninstance2\\n{uuid2}\\n",
+        f"1\\ninstance\\n{uuid1}\\n{server_uuid_1}\\n",
+        f"1\\ninstance2\\n{uuid1}\\n{server_uuid_2}\\n",
+        f"1\\ninstance\\n{uuid2}\\n{server_uuid_1}\\n",
+        f"1\\ninstance2\\n{uuid2}\\n{server_uuid_2}\\n",
     ]
 
     for elem in expected:
@@ -656,8 +666,8 @@ def test_registry(started_cluster):
     assert uuid2 not in str(registry)
 
     expected = [
-        f"0\\ninstance\\n{uuid1}\\n",
-        f"0\\ninstance2\\n{uuid1}\\n",
+        f"1\\ninstance\\n{uuid1}\\n{server_uuid_1}\\n",
+        f"1\\ninstance2\\n{uuid1}\\n{server_uuid_2}\\n",
     ]
 
     for elem in expected:

@@ -1630,8 +1630,11 @@ def test_parallel_reading_with_memory_limit(started_cluster):
         f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_memory_limit.native') select * from numbers(1000000) SETTINGS s3_truncate_on_insert=1"
     )
 
+    # max_download_buffer_size=1048576 -> Trigger parallel http reads
+    # max_memory_usage=1000 -> Cause an exception in parallel read and server should not crash
+    # max_block_size=65409/max_untracked_memory=2097152 -> Ensure that query does not succeed
     result = instance.query_and_get_error(
-        f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_memory_limit.native') settings max_memory_usage=1000"
+        f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_memory_limit.native') settings max_memory_usage=1000,max_untracked_memory=2097152,max_block_size=65409,max_download_buffer_size=1048576"
     )
 
     assert "Query memory limit exceeded" in result
