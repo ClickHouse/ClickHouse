@@ -49,10 +49,12 @@ private:
     ColumnFixedString(const ColumnFixedString & src) : chars(src.chars.begin(), src.chars.end()), n(src.n) {} /// NOLINT
 
 public:
-    void * doGetContainer() override {
+    void * doGetContainer() override
+    {
         return static_cast<void*>(&chars);
     }
-    const void * doGetContainer() const override {
+    const void * doGetContainer() const override
+    {
         return static_cast<const void*>(&chars);
     }
     std::string getName() const override { return "FixedString(" + std::to_string(n) + ")"; }

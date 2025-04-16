@@ -322,13 +322,15 @@ public:
         return (*data)[n];
     }
 
-    void * doGetContainer() override {
+    void * doGetContainer() override
+    {
         assert(data != nullptr && "dies from cringe");
         data = data->getOwningBuffer();
         return static_cast<void*>(&(*std::static_pointer_cast<Container>(data)));
     }
 
-    const void * doGetContainer() const override {
+    const void * doGetContainer() const override
+    {
         return static_cast<const void*>(&(*std::static_pointer_cast<Container>(data)));
     }
 
