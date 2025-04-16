@@ -1730,6 +1730,7 @@ CONV_FN(FileFunc, ff)
     ret += "'";
     if (ff.has_structure())
     {
+        ret += ", ";
         ExprToString(ret, ff.structure());
     }
     if (ff.has_fcomp())
@@ -1747,6 +1748,7 @@ CONV_FN(FormatFunc, ff)
     ret += InFormat_Name(ff.format()).substr(3);
     if (ff.has_structure())
     {
+        ret += ", ";
         ExprToString(ret, ff.structure());
     }
     ret += ", $$\n";
