@@ -28,7 +28,7 @@ enum class RPNEvaluationIndexUsefulnessState : uint8_t
 };
 
 [[nodiscard]] inline RPNEvaluationIndexUsefulnessState
-evalAndRpnIndexStates(const RPNEvaluationIndexUsefulnessState & lhs, const RPNEvaluationIndexUsefulnessState & rhs)
+evalAndRpnIndexStates(RPNEvaluationIndexUsefulnessState lhs, RPNEvaluationIndexUsefulnessState rhs)
 {
     if (lhs == RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE || rhs == RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE)
     {
@@ -48,7 +48,7 @@ evalAndRpnIndexStates(const RPNEvaluationIndexUsefulnessState & lhs, const RPNEv
 }
 
 [[nodiscard]] inline RPNEvaluationIndexUsefulnessState
-evalOrRpnIndexStates(const RPNEvaluationIndexUsefulnessState & lhs, const RPNEvaluationIndexUsefulnessState & rhs)
+evalOrRpnIndexStates(RPNEvaluationIndexUsefulnessState lhs, RPNEvaluationIndexUsefulnessState rhs)
 {
     if (lhs == RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE || rhs == RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE)
     {
@@ -175,7 +175,7 @@ public:
 
     template <typename RPNElement>
     bool rpnEvaluatesAlwaysUnknownOrTrue(
-        const std::vector<RPNElement> & rpn, std::function<bool(typename RPNElement::Function)> isMatchingRPNFunction) const
+        const std::vector<RPNElement> & rpn, const std::unordered_set<typename RPNElement::Function> & matchingFunctions) const
     {
         std::vector<Internal::RPNEvaluationIndexUsefulnessState> rpn_stack;
         rpn_stack.reserve(rpn.size() - 1);
@@ -194,7 +194,7 @@ public:
             {
                 rpn_stack.emplace_back(Internal::RPNEvaluationIndexUsefulnessState::FALSE);
             }
-            else if (isMatchingRPNFunction(element.function))
+            else if (matchingFunctions.contains(element.function))
             {
                 rpn_stack.push_back(Internal::RPNEvaluationIndexUsefulnessState::TRUE);
             }
@@ -221,6 +221,10 @@ public:
         }
 
         chassert(rpn_stack.size() == 1);
+        /*
+         * In case the result is `ALWAYS_TRUE`, it means we don't need any indices at all, it might be a constant result.
+         * Thus, we only check against the `TRUE` to determine the usefulness of the index condition.
+         */
         return rpn_stack.front() != Internal::RPNEvaluationIndexUsefulnessState::TRUE;
     }
 };
