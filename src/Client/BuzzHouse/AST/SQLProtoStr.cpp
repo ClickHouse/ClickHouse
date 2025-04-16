@@ -4407,8 +4407,8 @@ CONV_FN(SystemCommand, cmd)
             ret += "SYNC FILESYSTEM CACHE";
             can_set_cluster = true;
             break;
-        case CmdType::kDropSkipIndexCache:
-            ret += "DROP SKIPPING INDEX CACHE";
+        case CmdType::kDropVectorSimilarityIndexCache:
+            ret += "DROP VECTOR SIMILARITY INDEX CACHE";
             can_set_cluster = true;
             break;
         case CmdType::kReloadDictionary:
