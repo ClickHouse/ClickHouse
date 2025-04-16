@@ -104,11 +104,7 @@ private:
 
 
 AzureObjectStorage::AzureObjectStorage(
-    const String & name_,
-    ClientPtr && client_,
-    SettingsPtr && settings_,
-    const String & object_namespace_,
-    const String & description_)
+    const String & name_, ClientPtr && client_, SettingsPtr && settings_, const String & object_namespace_, const String & description_)
     : name(name_)
     , client(std::move(client_))
     , settings(std::move(settings_))
