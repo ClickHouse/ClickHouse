@@ -517,7 +517,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         /// Add tag to find query later on
         if (!sel->has_setting_values())
         {
-            auto * news = sel->mutable_setting_values();
+            const auto * news = sel->mutable_setting_values();
             UNUSED(news);
         }
         SettingValues & svs = const_cast<SettingValues &>(sel->setting_values());
