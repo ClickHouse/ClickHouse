@@ -5656,6 +5656,9 @@ void StorageReplicatedMergeTree::shutdown(bool)
 
     LOG_TRACE(log, "Shutdown started");
 
+    if (refresh_parts_task)
+        refresh_parts_task->deactivate();
+
     flushAndPrepareForShutdown();
 
     if (!shutdown_deadline.has_value())
@@ -6647,7 +6650,7 @@ void StorageReplicatedMergeTree::alter(
         if (auto txn = query_context->getZooKeeperMetadataTransaction())
         {
             /// It would be better to clone ops instead of moving, so we could retry on ZBADVERSION,
-            /// but clone() is not implemented for Coordination::Request.
+            /// but clone is not implemented for Coordination::Request.
             txn->moveOpsTo(ops);
             /// NOTE: IDatabase::alterTable(...) is called when executing ALTER_METADATA queue entry without query context,
             /// so we have to update metadata of DatabaseReplicated here.

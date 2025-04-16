@@ -904,6 +904,7 @@ class FailureReason(enum.Enum):
     REPLICATED_DB = "replicated-database"
     NON_ATOMIC_DB = "database engine not Atomic"
     OBJECT_STORAGE = "object-storage"
+    COVERAGE = "coverage"
     S3_STORAGE = "s3-storage"
     AZURE_BLOB_STORAGE = "azure-blob-storage"
     BUILD = "not running for current build"
@@ -1087,7 +1088,13 @@ class SettingsRandomizer:
         "enable_vertical_final": lambda: random.randint(0, 1),
         "optimize_extract_common_expressions": lambda: random.randint(0, 1),
         "use_query_condition_cache": lambda: random.randint(0, 1),
+        "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
+        "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         **randomize_external_sort_group_by(),
+    }
+
+    dependent_settings = {
+        "use_skip_indexes_if_final_exact_mode": "use_skip_indexes_if_final",
     }
 
     @staticmethod
@@ -1102,6 +1109,8 @@ class SettingsRandomizer:
                 random_settings[setting] = 0
             else:
                 random_settings[setting] = generator()
+        for setting, other_setting in SettingsRandomizer.dependent_settings.items():
+            random_settings[setting] = random_settings[other_setting]
         return random_settings
 
 
@@ -1308,10 +1317,11 @@ class TestCase:
 
         if new_options != "":
             new_options += " --allow_repeated_settings"
-
             os.environ["CLICKHOUSE_CLIENT_OPT"] = (
                 self.base_client_options + new_options + " "
             )
+        elif client_options:
+            client_options += " --allow_repeated_settings"
 
         return client_options + new_options
 
@@ -1505,6 +1515,12 @@ class TestCase:
             and BuildFlags.RELEASE not in args.build_flags
         ):
             return FailureReason.OBJECT_STORAGE
+        if (
+            tags
+            and ("no-coverage" in tags)
+            and (args.collect_per_test_coverage)
+        ):
+            return FailureReason.COVERAGE
 
         if "no-batch" in tags and (
             args.run_by_hash_num is not None or args.run_by_hash_total is not None
@@ -1870,6 +1886,9 @@ class TestCase:
         # because there are also output of per test database creation
         pattern = "{test} > {stdout} 2> {stderr}"
 
+        tests_env = os.environ.copy()
+        tests_env["CLICKHOUSE_BASH_TRACING_FILE"] = args.debug_log_file
+
         if self.ext == ".sql" and args.cloud:
             # Get at least some logs, because we don't have access to system.text_log and pods...
             pattern = (
@@ -1881,6 +1900,8 @@ class TestCase:
                 "{client} --send_logs_level={logs_level} {secure} --multiquery {options} < "
                 + pattern
             )
+
+        command = pattern.format(**params)
 
         # We want to calculate per-test code coverage. That's why we reset it before each test.
         if (
@@ -1894,10 +1915,8 @@ class TestCase:
                 retry_error_codes=True,
             )
 
-        command = pattern.format(**params)
-
         # pylint:disable-next=consider-using-with; TODO: fix
-        proc = Popen(command, shell=True, env=os.environ, start_new_session=True)
+        proc = Popen(command, shell=True, env=tests_env, start_new_session=True)
 
         try:
             proc.wait(args.timeout)
