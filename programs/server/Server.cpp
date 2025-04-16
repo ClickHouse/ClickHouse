@@ -828,6 +828,8 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
         config.keys("startup_scripts", keys);
 
         SetResultDetailsFunc callback;
+        std::vector<String> skipped_startup_scripts;
+
         for (const auto & key : keys)
         {
             std::string full_prefix = "startup_scripts." + key;
@@ -854,17 +856,17 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
                 executeQuery(condition_read_buffer, condition_write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
 
                 auto result = condition_write_buffer.str();
-
                 if (result != "1\n" && result != "true\n")
                 {
                     if (result != "0\n" && result != "false\n")
-                        context->addOrUpdateWarningMessage(
-                            Context::WarningType::SKIPPING_CONDITION_QUERY,
-                            PreformattedMessage::create(
-                                "The condition query returned `{}`, which can't be interpreted as a boolean (`0`, "
-                                "`false`, `1`, `true`). Will skip this query.",
-                                result));
-
+                    {
+                        LOG_DEBUG(
+                            log,
+                            "Skipping startup script as condition query returned value `{}` "
+                            "which can't be interpreted as a boolean (`0`, `false`, `1`, `true`).",
+                            result);
+                        skipped_startup_scripts.emplace_back(full_prefix);
+                    }
                     continue;
                 }
 
@@ -878,6 +880,16 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
             LOG_DEBUG(log, "Executing query `{}`", query);
             startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
             executeQuery(read_buffer, write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
+        }
+
+        if (!skipped_startup_scripts.empty())
+        {
+            context->addOrUpdateWarningMessage(
+                Context::WarningType::SKIPPING_CONDITION_QUERY,
+                PreformattedMessage::create(
+                    "Skipped the following startup script(s): {} as the condition query for those returned values, "
+                    "which can't be interpreted as a boolean (`0`, `false`, `1`, `true`).",
+                    fmt::join(skipped_startup_scripts, ", ")));
         }
 
         CurrentMetrics::set(CurrentMetrics::StartupScriptsExecutionState, StartupScriptsExecutionState::Success);
