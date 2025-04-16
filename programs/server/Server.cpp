@@ -860,11 +860,14 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
                 {
                     if (result != "0\n" && result != "false\n")
                     {
-                        LOG_DEBUG(
-                            log,
-                            "Skipping startup script as condition query returned value `{}` "
-                            "which can't be interpreted as a boolean (`0`, `false`, `1`, `true`).",
-                            result);
+                        if (result.empty())
+                            LOG_DEBUG(log, "Skipping startup script as condition query returned empty value.");
+                        else
+                            LOG_DEBUG(
+                                log,
+                                "Skipping startup script as condition query returned value `{}` "
+                                "which can't be interpreted as a boolean (`0`, `false`, `1`, `true`).",
+                                result);
                         skipped_startup_scripts.emplace_back(full_prefix);
                     }
                     continue;
