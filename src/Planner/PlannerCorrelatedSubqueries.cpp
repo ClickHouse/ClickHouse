@@ -344,7 +344,7 @@ QueryPlan buildLogicalJoin(
                 .disjunctive_conditions = {}
             },
             .kind = JoinKind::Left,
-            .strictness = JoinStrictness::All,
+            .strictness = JoinStrictness::Any,
             .locality = JoinLocality::Local
         },
         std::move(join_expression_actions),
