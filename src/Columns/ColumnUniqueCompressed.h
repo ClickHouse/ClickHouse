@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Columns/IColumnUnique.h>
 #include <Columns/ColumnString.h>
-#include <Common/PODArray_fwd.h>
+#include <Columns/IColumnUnique.h>
 #include <Core/Field.h>
+#include <Common/PODArray_fwd.h>
 
 #include <cstring>
 
@@ -16,7 +16,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-/// String compressed dictionary. 
+/// String compressed dictionary.
 /// Compression is done with Front Coding Block Difference to First algorithm.
 /// The data is treated as strings. It is sorted and divided into blocks.
 /// The first string in a block is stored explicitly, other strings are stored as pairs (common_prefix_length, remaining_suffix)
@@ -44,15 +44,15 @@ public:
     const ColumnPtr & getNestedColumn() const override { return data_column; }
     const ColumnPtr & getNestedNotNullableColumn() const override { return data_column; }
     bool nestedColumnIsNullable() const override { return false; }
-    void nestedToNullable() override {}
-    void nestedRemoveNullable() override {}
+    void nestedToNullable() override { }
+    void nestedRemoveNullable() override { }
 
     size_t uniqueInsert(const Field & x) override;
     bool tryUniqueInsert(const Field & x, size_t & index) override;
     size_t uniqueInsertFrom(const IColumn & src, size_t n) override;
     MutableColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
-    IColumnUnique::IndexesWithOverflow uniqueInsertRangeWithOverflow(const IColumn & src, size_t start, size_t length,
-                                                                     size_t max_dictionary_size) override;
+    IColumnUnique::IndexesWithOverflow
+    uniqueInsertRangeWithOverflow(const IColumn & src, size_t start, size_t length, size_t max_dictionary_size) override;
     size_t uniqueInsertData(const char * pos, size_t length) override;
     size_t uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos) override;
 
@@ -71,7 +71,7 @@ public:
         return false;
     }
 
-    /* This methos is not implemented as there is no contigous memory chunk containing the value */
+    /// This methos is not implemented as there is no contigous memory chunk containing the value
     StringRef getDataAt(size_t) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getDataAt' not implemented for ColumnUniqueFCBlockDF");
@@ -101,10 +101,7 @@ public:
     void protect() override;
     size_t allocatedBytes() const override;
 
-    void forEachSubcolumn(IColumn::ColumnCallback callback) const override
-    {
-        callback(data_column);
-    }
+    void forEachSubcolumn(IColumn::ColumnCallback callback) const override { callback(data_column); }
 
     void forEachMutableSubcolumn(IColumn::MutableColumnCallback callback) override;
 
@@ -153,7 +150,7 @@ private:
     /// Value will be at this pos if inserted alone
     size_t getPosToInsert(StringRef value) const;
 
-    /// Returns a string column containing all the decompressed values 
+    /// Returns a string column containing all the decompressed values
     ColumnPtr getDecompressedColumn() const;
 
     IColumn::WrappedPtr data_column;
@@ -168,7 +165,8 @@ String ColumnUniqueFCBlockDF<ColumnType>::getDecompressedAt(size_t pos) const
     chassert(pos < data_column->size());
 
     const size_t pos_in_block = pos % block_size;
-    if (pos_in_block == 0) {
+    if (pos_in_block == 0)
+    {
         return data_column->getDataAt(pos).toString();
     }
 
@@ -198,8 +196,8 @@ ColumnPtr ColumnUniqueFCBlockDF<ColumnType>::getDecompressedColumn() const
 
 template <typename ColumnType>
 ColumnUniqueFCBlockDF<ColumnType>::ColumnUniqueFCBlockDF(const ColumnPtr & string_column, size_t block_size_)
-    : data_column(ColumnString::create()),
-      block_size(block_size_)
+    : data_column(ColumnString::create())
+    , block_size(block_size_)
 {
     if (!typeid_cast<const ColumnString *>(&string_column))
     {
@@ -207,30 +205,31 @@ ColumnUniqueFCBlockDF<ColumnType>::ColumnUniqueFCBlockDF(const ColumnPtr & strin
     }
 
     IColumn::Permutation sorted_permutation;
-    string_column->getPermutation(IColumn::PermutationSortDirection::Ascending,
-                                 IColumn::PermutationSortStability::Unstable,
-                                     0, /* limit */
-                        1, /* nan_direction_hint */
-                                      sorted_permutation);
+    string_column->getPermutation(
+        IColumn::PermutationSortDirection::Ascending,
+        IColumn::PermutationSortStability::Unstable,
+        0, /* limit */
+        1, /* nan_direction_hint */
+        sorted_permutation);
     auto sorted_column = string_column->permute(sorted_permutation, 0);
 
     StringRef current_header = "";
     StringRef prev_data = ""; // to skip duplicates
     size_t pos_in_block = 0;
-    for (size_t i = 0; i < sorted_column->size(); ++i) 
+    for (size_t i = 0; i < sorted_column->size(); ++i)
     {
         const StringRef data = sorted_column->getDataAt(i);
-        if (prev_data == data) 
+        if (prev_data == data)
         {
             continue;
         }
-        if (pos_in_block == 0) 
+        if (pos_in_block == 0)
         {
             current_header = data;
             data_column->insertData(current_header.data, current_header.size);
             common_prefix_lengths.push_back(current_header.size);
-        } 
-        else 
+        }
+        else
         {
             size_t same_prefix_length = 0;
             while (same_prefix_length < current_header.size && same_prefix_length < data.size
@@ -243,7 +242,7 @@ ColumnUniqueFCBlockDF<ColumnType>::ColumnUniqueFCBlockDF(const ColumnPtr & strin
         }
         prev_data = data;
         ++pos_in_block;
-        if (pos_in_block == block_size) 
+        if (pos_in_block == block_size)
         {
             pos_in_block = 0;
         }
@@ -257,20 +256,20 @@ size_t ColumnUniqueFCBlockDF<ColumnType>::getPosOfClosestHeader(StringRef value)
     size_t left = 0;
     size_t right = (data_column->size() - 1) / block_size;
     size_t output = 0;
-    while (left <= right) 
+    while (left <= right)
     {
         size_t mid = (left + right) / 2;
         size_t header_index = mid * block_size;
 
         const StringRef header = data_column->getDataAt(header_index);
-        if (header < value || header == value) 
+        if (header < value || header == value)
         {
             output = header_index;
             left = mid + 1;
         }
-        else 
+        else
         {
-            if (mid == 0) 
+            if (mid == 0)
             {
                 break;
             }
