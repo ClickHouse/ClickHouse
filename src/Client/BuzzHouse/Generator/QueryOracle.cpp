@@ -226,11 +226,10 @@ void QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & ge
 void QueryOracle::generateExportQuery(
     RandomGenerator & rg, StatementGenerator & gen, const bool test_content, const SQLTable & t, SQLQuery & sq2)
 {
-    String buf;
-    bool first = true;
     std::error_code ec;
     Insert * ins = sq2.mutable_explain()->mutable_inner_query()->mutable_insert();
     FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
+    Expr * expr = ff->mutable_structure();
     SelectStatementCore * sel = ins->mutable_select()->mutable_select_core();
     const std::filesystem::path & nfile = fc.db_file_path / "table.data";
     OutFormat outf = rg.pickRandomly(outIn);
@@ -244,29 +243,40 @@ void QueryOracle::generateExportQuery(
     ff->set_path(nfile.generic_string());
 
     gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
-    for (const auto & entry : gen.entries)
+    if (!can_test_query_success && rg.nextSmallNumber() < 3)
     {
-        SQLType * tp = entry.getBottomType();
+        /// Sometimes generate a not matching structure
+        gen.addRandomRelation(rg, std::nullopt, gen.entries.size(), expr);
+    }
+    else
+    {
+        String buf;
+        bool first = true;
 
-        buf += fmt::format(
-            "{}{} {}{}{}{}",
-            first ? "" : ", ",
-            entry.getBottomName(),
-            entry.path.size() > 1 ? "Array(" : "",
-            tp->typeName(true),
-            entry.path.size() > 1 ? ")" : "",
-            (entry.path.size() == 1 && entry.nullable.has_value()) ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
-        gen.columnPathRef(entry, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
-        /// ArrowStream doesn't support UUID
-        if (outf == OutFormat::OUT_ArrowStream && tp->getTypeClass() == SQLTypeClass::UUID)
+        for (const auto & entry : gen.entries)
         {
-            outf = OutFormat::OUT_CSV;
+            SQLType * tp = entry.getBottomType();
+
+            buf += fmt::format(
+                "{}{} {}{}{}{}",
+                first ? "" : ", ",
+                entry.getBottomName(),
+                entry.path.size() > 1 ? "Array(" : "",
+                tp->typeName(true),
+                entry.path.size() > 1 ? ")" : "",
+                (entry.path.size() == 1 && entry.nullable.has_value()) ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
+            gen.columnPathRef(entry, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
+            /// ArrowStream doesn't support UUID
+            if (outf == OutFormat::OUT_ArrowStream && tp->getTypeClass() == SQLTypeClass::UUID)
+            {
+                outf = OutFormat::OUT_CSV;
+            }
+            first = false;
         }
-        first = false;
+        expr->mutable_lit_val()->set_string_lit(std::move(buf));
     }
     gen.entries.clear();
     ff->set_outformat(outf);
-    ff->set_structure(buf);
     if (rg.nextSmallNumber() < 4)
     {
         ff->set_fcomp(static_cast<FileCompression>((rg.nextRandomUInt32() % static_cast<uint32_t>(FileCompression_MAX)) + 1));

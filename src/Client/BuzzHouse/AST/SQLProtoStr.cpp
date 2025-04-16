@@ -1730,9 +1730,7 @@ CONV_FN(FileFunc, ff)
     ret += "'";
     if (ff.has_structure())
     {
-        ret += ", '";
-        ret += ff.structure();
-        ret += "'";
+        ExprToString(ret, ff.structure());
     }
     if (ff.has_fcomp())
     {
@@ -1749,9 +1747,7 @@ CONV_FN(FormatFunc, ff)
     ret += InFormat_Name(ff.format()).substr(3);
     if (ff.has_structure())
     {
-        ret += "', '";
-        ret += ff.structure();
-        ret += "'";
+        ExprToString(ret, ff.structure());
     }
     ret += ", $$\n";
     ret += ff.data();
@@ -1906,9 +1902,8 @@ CONV_FN(S3Func, sfunc)
     ret += sfunc.password();
     ret += "', '";
     ret += InOutFormat_Name(sfunc.format()).substr(6);
-    ret += "', '";
-    ret += sfunc.structure();
-    ret += "'";
+    ret += "', ";
+    ExprToString(ret, sfunc.structure());
     if (sfunc.has_fcomp())
     {
         ret += ", '";

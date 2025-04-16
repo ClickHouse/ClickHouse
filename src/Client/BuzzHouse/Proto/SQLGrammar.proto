@@ -2421,13 +2421,13 @@ message FileFunc {
         InFormat informat = 2;
         OutFormat outformat = 3;
     }
-    optional string structure = 4;
+    optional Expr structure = 4;
     optional FileCompression fcomp = 5;
 }
 
 message FormatFunc {
     required InFormat format = 1;
-    optional string structure = 2;
+    optional Expr structure = 2;
     required string data = 3;
 }
 
@@ -2490,7 +2490,7 @@ message S3Func {
     required string user = 2;
     required string password = 3;
     required InOutFormat format = 4;
-    required string structure = 5;
+    required Expr structure = 5;
     optional string fcomp = 6;
 }
 
