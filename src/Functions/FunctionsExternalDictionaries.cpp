@@ -5,6 +5,11 @@
 namespace DB
 {
 
+    namespace ErrorCodes
+    {
+        extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    }
+
     /// dictGet<T> FunctionDocumentation parameters
     constexpr auto dict_get_description { R"(
 Retrieves values from a dictionary.
@@ -106,7 +111,7 @@ Throws an exception if unable to parse the value of the attribute, the value doe
         }
         else
         {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "unknown dictGetType");
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unknown dictGetType");
         }
     }
 
