@@ -77,4 +77,13 @@ ALTER TABLE test_wide MODIFY SETTING secondary_indices_on_columns_alter = 'throw
 
 ALTER TABLE test_wide MODIFY COLUMN b String; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
+-- drop
+ALTER TABLE test_wide MODIFY SETTING secondary_indices_on_columns_alter = 'drop';
+
+ALTER TABLE test_wide MODIFY COLUMN b String;
+
+SELECT secondary_indices_marks_bytes
+FROM system.parts
+WHERE (`table` = 'test_wide') AND (active = 1) AND (database = currentDatabase());
+
 DROP TABLE test_wide;
