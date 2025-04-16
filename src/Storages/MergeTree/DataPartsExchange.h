@@ -43,7 +43,16 @@ protected:
 
     virtual MergeTreeData::DataPartPtr findPart(const String & name);
 
-    virtual MergeTreeData::DataPart::Checksums sendPartFromDisk(
+    virtual void writeUniqueIdIfNeed(
+        const MergeTreeData::DataPartPtr & /* part */,
+        const IDataPartStorage::ReplicatedFilesDescription & /* replicated_description */,
+        WriteBuffer & /* out */) {}
+
+    virtual void compareChecksumsIfNeed(
+        const MergeTreeData::DataPartPtr & /* part */,
+        const MergeTreeData::DataPart::Checksums & /* data_checksums */);
+
+    MergeTreeData::DataPart::Checksums sendPartFromDisk(
         const MergeTreeData::DataPartPtr & part,
         WriteBuffer & out,
         int client_protocol_version,
@@ -58,6 +67,14 @@ protected:
 
     NameSet getFilesToReplicate(const MergeTreeData::DataPartPtr & part, int client_protocol_version);
 
+    virtual bool processRemoteFsMetadataCookie(
+        const MergeTreeData::DataPartPtr & /* part */,
+        const HTMLForm & /* params */,
+        WriteBuffer & /* out */,
+        HTTPServerResponse & /* response */,
+        int /* client_protocol_version */,
+        bool /* send_projections */) { return false; }
+
     void report_broken_part(MergeTreeData::DataPartPtr part);
 
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
@@ -71,14 +88,23 @@ class ServiceZeroCopy : public Service
 public:
     explicit ServiceZeroCopy(StorageReplicatedMergeTree & data_);
 
-    void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) override;
-
 protected:
     MergeTreeData::DataPartPtr findPart(const String & name) override;
 
-    MergeTreeData::DataPart::Checksums sendPartFromDisk(
+    void writeUniqueIdIfNeed(
         const MergeTreeData::DataPartPtr & part,
+        const IDataPartStorage::ReplicatedFilesDescription & replicated_description,
+        WriteBuffer & out) override;
+
+    void compareChecksumsIfNeed(
+        const MergeTreeData::DataPartPtr & /* part */,
+        const MergeTreeData::DataPart::Checksums & /* data_checksums */) override {}
+
+    bool processRemoteFsMetadataCookie(
+        const MergeTreeData::DataPartPtr & part,
+        const HTMLForm & params,
         WriteBuffer & out,
+        HTTPServerResponse & response,
         int client_protocol_version,
         bool send_projections) override;
 };
@@ -126,7 +152,7 @@ protected:
         ThrottlerPtr throttler,
         bool sync) const;
 
-    MergeTreeData::MutableDataPartPtr downloadPartToDisk(
+    virtual MergeTreeData::MutableDataPartPtr downloadPartToDisk(
         const String & part_name,
         const String & replica_path,
         bool to_detached,
@@ -175,6 +201,22 @@ protected:
         size_t & sum_files_size,
         DiskPtr & disk) const;
 
+    virtual void addRemoteFsMetadataIfNeed(
+        const String & /* part_name */,
+        const DiskPtr & /* disk */,
+        Poco::URI & /* uri */) const {}
+
+    virtual void processRemoteFsMetadataCookie(const String & remote_fs_metadata, int server_protocol_version);
+    virtual void setReplicatedFetchReadCallback(
+        const String & part_name,
+        const String & replica_path,
+        const MergeTreePartInfo & part_info,
+        const DiskPtr & disk,
+        const Poco::URI & uri,
+        bool to_detached,
+        size_t sum_files_size,
+        ReadWriteBufferFromHTTP & in);
+
     StorageReplicatedMergeTree & data;
     LoggerPtr log;
 
@@ -185,25 +227,19 @@ class FetcherZeroCopy : public Fetcher
 public:
     explicit FetcherZeroCopy(StorageReplicatedMergeTree & data_);
 
-    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> fetchSelectedPart(
-        const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr context,
+protected:
+    MergeTreeData::MutableDataPartPtr downloadPartToDisk(
         const String & part_name,
-        const String & zookeeper_name,
         const String & replica_path,
-        const String & host,
-        int port,
-        const ConnectionTimeouts & timeouts,
-        const String & user,
-        const String & password,
-        const String & interserver_scheme,
-        ThrottlerPtr throttler,
         bool to_detached,
         const String & tmp_prefix_,
-        std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr,
-        DiskPtr dest_disk) override;
+        DiskPtr disk,
+        ReadWriteBufferFromHTTP & in,
+        OutputBufferGetter output_buffer_getter,
+        size_t projections,
+        ThrottlerPtr throttler,
+        bool sync) override;
 
-protected:
     MergeTreeData::MutableDataPartPtr downloadPartToRemoteDisk(
         const String & part_name,
         const String & replica_path,
@@ -216,6 +252,22 @@ protected:
         ThrottlerPtr throttler,
         bool sync);
 
+    void addRemoteFsMetadataIfNeed(
+        const String & part_name,
+        const DiskPtr & disk,
+        Poco::URI & uri) const override;
+
+    void processRemoteFsMetadataCookie(const String & remote_fs_metadata, int server_protocol_version) override;
+
+    void setReplicatedFetchReadCallback(
+        const String & /* part_name */,
+        const String & /* replica_path */,
+        const MergeTreePartInfo & /* part_info */,
+        const DiskPtr & /* disk */,
+        const Poco::URI & /* uri */,
+        bool /* to_detached */,
+        size_t /* sum_files_size */,
+        ReadWriteBufferFromHTTP & /* in */) override {}
 };
 
 using ServicePtr = std::shared_ptr<DB::DataPartsExchange::Service>;
