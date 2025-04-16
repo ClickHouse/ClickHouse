@@ -907,6 +907,8 @@ KeyCondition::KeyCondition(
     if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
         getAllSpaceFillingCurves();
 
+    column_filter_helper = std::make_shared<ColumnFilterHelper>(filter_dag.dag.has_value() ? filter_dag.dag->clone() : ActionsDAG());
+
     if (!filter_dag.predicate)
     {
         has_filter = false;
@@ -916,8 +918,6 @@ KeyCondition::KeyCondition(
     }
 
     has_filter = true;
-
-    column_filter_helper = std::make_shared<ColumnFilterHelper>(*filter_dag);
 
     RPNBuilder<RPNElement> builder(filter_dag.predicate, context, [&](const RPNBuilderTreeNode & node, RPNElement & out)
     {
