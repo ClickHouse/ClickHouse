@@ -108,6 +108,8 @@ public:
             && current_metadata->supportsSchemaEvolution();
     }
 
+    IDataLakeMetadata * getExternalMetadata() const override { return current_metadata.get(); }
+
     ColumnsDescription updateAndGetCurrentSchema(
         ObjectStoragePtr object_storage,
         ContextPtr context) override

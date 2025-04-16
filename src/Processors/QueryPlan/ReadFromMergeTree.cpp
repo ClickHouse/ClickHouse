@@ -186,6 +186,7 @@ namespace Setting
     extern const SettingsBool query_plan_merge_filters;
     extern const SettingsUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool read_in_order_use_virtual_row;
+    extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool query_condition_cache_store_conditions_as_plaintext;
     extern const SettingsBool allow_experimental_analyzer;
@@ -1668,8 +1669,10 @@ static void buildIndexes(
 
     const auto & settings = context->getSettingsRef();
 
+    ActionsDAGWithInversionPushDown filter_dag((filter_actions_dag ? filter_actions_dag->getOutputs().front() : nullptr), context);
+
     indexes.emplace(
-        ReadFromMergeTree::Indexes{KeyCondition{filter_actions_dag, context, primary_key_column_names, primary_key.expression}});
+        ReadFromMergeTree::Indexes{KeyCondition{filter_dag, context, primary_key_column_names, primary_key.expression}});
 
     if (metadata_snapshot->hasPartitionKey())
     {
@@ -1677,12 +1680,12 @@ static void buildIndexes(
         auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
         auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings(context));
 
-        indexes->minmax_idx_condition.emplace(filter_actions_dag, context, minmax_columns_names, minmax_expression_actions);
-        indexes->partition_pruner.emplace(metadata_snapshot, filter_actions_dag, context, false /* strict */);
+        indexes->minmax_idx_condition.emplace(filter_dag, context, minmax_columns_names, minmax_expression_actions);
+        indexes->partition_pruner.emplace(metadata_snapshot, filter_dag, context, false /* strict */);
     }
 
-    indexes->part_values = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(metadata_snapshot, data, parts, filter_actions_dag, context);
-    MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(indexes->part_offset_condition, filter_actions_dag, context);
+    indexes->part_values = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(metadata_snapshot, data, parts, filter_dag.predicate, context);
+    MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(indexes->part_offset_condition, filter_dag.predicate, context);
 
     indexes->use_skip_indexes = settings[Setting::use_skip_indexes];
     if (query_info.isFinal() && !settings[Setting::use_skip_indexes_if_final])
@@ -1766,17 +1769,20 @@ static void buildIndexes(
         {
 #if USE_USEARCH
             if (const auto * vector_similarity_index = typeid_cast<const MergeTreeIndexVectorSimilarity *>(index_helper.get()))
-                condition = vector_similarity_index->createIndexCondition(filter_actions_dag, context, vector_search_parameters);
+                condition = vector_similarity_index->createIndexCondition(filter_dag.predicate, context, vector_search_parameters);
 #endif
             if (const auto * legacy_vector_similarity_index = typeid_cast<const MergeTreeIndexLegacyVectorSimilarity *>(index_helper.get()))
-                condition = legacy_vector_similarity_index->createIndexCondition(filter_actions_dag, context);
+                condition = legacy_vector_similarity_index->createIndexCondition(filter_dag.predicate, context);
 
             if (!condition)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown vector search index {}", index_helper->index.name);
         }
         else
         {
-            condition = index_helper->createIndexCondition(filter_actions_dag, context);
+            if (!filter_dag.predicate)
+                continue;
+
+            condition = index_helper->createIndexCondition(filter_dag.predicate, context);
         }
 
         if (!condition->alwaysUnknownOrTrue())
@@ -1889,6 +1895,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
     size_t total_marks_pk = 0;
     size_t parts_before_pk = 0;
+    bool add_index_stat_row_for_pk_expand = false;
 
     {
         MergeTreeDataSelectExecutor::filterPartsByPartition(
@@ -1933,9 +1940,19 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             num_streams,
             result.index_stats,
             indexes->use_skip_indexes,
-            find_exact_ranges);
+            find_exact_ranges,
+            query_info_.isFinal());
 
         MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(result.parts_with_ranges, query_info_, context_, log);
+
+        if (indexes->use_skip_indexes && !indexes->skip_indexes.useful_indices.empty()  && query_info_.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode])
+        {
+            result.parts_with_ranges = findPKRangesForFinalAfterSkipIndex(primary_key,
+                                                                          metadata_snapshot->getSortingKey(),
+                                                                          result.parts_with_ranges,
+                                                                          log);
+            add_index_stat_row_for_pk_expand = true;
+        }
     }
 
     size_t sum_marks_pk = total_marks_pk;
@@ -1952,6 +1969,15 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         sum_ranges += part.ranges.size();
         sum_marks += part.getMarksCount();
         sum_rows += part.getRowsCount();
+    }
+
+    if (add_index_stat_row_for_pk_expand)
+    {
+        result.index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::PrimaryKeyExpand,
+            .description = "Selects all granules that intersect by PK values with the previous skip indexes selection",
+            .num_parts_after = result.parts_with_ranges.size(),
+            .num_granules_after = sum_marks});
     }
 
     result.total_parts = total_parts;
@@ -2422,6 +2448,8 @@ static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
             return "PrimaryKey";
         case ReadFromMergeTree::IndexType::Skip:
             return "Skip";
+        case ReadFromMergeTree::IndexType::PrimaryKeyExpand:
+            return "PrimaryKeyExpand";
     }
 }
 
