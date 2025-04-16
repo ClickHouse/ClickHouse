@@ -1,8 +1,10 @@
 #pragma once
 
-#include <memory>
-#include <Access/Common/SSLCertificateSubjects.h>
 #include <Common/SSHWrapper.h>
+
+#if USE_SSL
+#    include <Common/Crypto/X509Certificate.h>
+#endif
 
 #include <base/types.h>
 
@@ -51,16 +53,18 @@ public:
     void setUserName(const String & user_name_);
 };
 
+#if USE_SSL
 class SSLCertificateCredentials
     : public Credentials
 {
 public:
-    explicit SSLCertificateCredentials(const String & user_name_, SSLCertificateSubjects && subjects_);
-    const SSLCertificateSubjects & getSSLCertificateSubjects() const;
+    explicit SSLCertificateCredentials(const String & user_name_, X509Certificate::Subjects && subjects_);
+    const X509Certificate::Subjects & getSSLCertificateSubjects() const;
 
 private:
-    SSLCertificateSubjects certificate_subjects;
+    X509Certificate::Subjects certificate_subjects;
 };
+#endif
 
 class BasicCredentials
     : public Credentials

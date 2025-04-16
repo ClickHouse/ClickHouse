@@ -18,13 +18,16 @@
             <!-- One NUMA node w/o hyperthreading -->
             <max_threads>12</max_threads>
 
-            <!-- disable JIT for perf tests -->
+            <!-- Disable JIT for perf tests -->
             <compile_expressions>0</compile_expressions>
             <compile_aggregate_expressions>0</compile_aggregate_expressions>
             <compile_sort_description>0</compile_sort_description>
 
             <!-- Don't fail some prewarm queries too early -->
             <timeout_before_checking_execution_speed>60</timeout_before_checking_execution_speed>
+
+            <!-- Disable the query condition cache -->
+            <use_query_condition_cache>0</use_query_condition_cache>
 
             <!-- Query profiler enabled only for prewarm queries explicitly (see perf.py)
                  This is needed for flamegraphs.  -->

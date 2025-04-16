@@ -37,7 +37,6 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsBool use_hive_partitioning;
-    extern const SettingsBool use_iceberg_partition_pruning;
 }
 
 namespace ErrorCodes
@@ -65,6 +64,7 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
         local_distributed_processing,
         context,
         {}, // predicate
+        {},
         {}, // virtual_columns
         nullptr, // read_keys
         {} // file_progress_callback
@@ -197,6 +197,11 @@ bool StorageObjectStorage::hasExternalDynamicMetadata() const
     return configuration->hasExternalDynamicMetadata();
 }
 
+IDataLakeMetadata * StorageObjectStorage::getExternalMetadata() const
+{
+    return configuration->getExternalMetadata();
+}
+
 void StorageObjectStorage::updateExternalDynamicMetadata(ContextPtr context_ptr)
 {
     StorageInMemoryMetadata metadata;
@@ -257,21 +262,12 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override
     {
         SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-        const ActionsDAG::Node * predicate = nullptr;
-        if (filter_actions_dag.has_value())
-        {
-            predicate = filter_actions_dag->getOutputs().at(0);
-            if (getContext()->getSettingsRef()[Setting::use_iceberg_partition_pruning])
-            {
-                configuration->implementPartitionPruning(*filter_actions_dag);
-            }
-        }
-        createIterator(predicate);
+        createIterator();
     }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
-        createIterator(nullptr);
+        createIterator();
 
         Pipes pipes;
         auto context = getContext();
@@ -323,14 +319,19 @@ private:
     size_t num_streams;
     const bool distributed_processing;
 
-    void createIterator(const ActionsDAG::Node * predicate)
+    void createIterator()
     {
         if (iterator_wrapper)
             return;
+
+        const ActionsDAG::Node * predicate = nullptr;
+        if (filter_actions_dag.has_value())
+            predicate = filter_actions_dag->getOutputs().at(0);
+
         auto context = getContext();
         iterator_wrapper = StorageObjectStorageSource::createFileIterator(
             configuration, configuration->getQuerySettings(context), object_storage, distributed_processing,
-            context, predicate, virtual_columns, nullptr, context->getFileProgressCallback());
+            context, predicate, filter_actions_dag, virtual_columns, nullptr, context->getFileProgressCallback());
     }
 };
 }
@@ -420,6 +421,9 @@ SinkToStoragePtr StorageObjectStorage::write(
                         configuration->getPath());
     }
 
+    if (!configuration->supportsWrites())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
+
     if (configuration->withPartitionWildcard())
     {
         ASTPtr partition_by_ast = nullptr;
@@ -495,6 +499,7 @@ std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterat
         false/* distributed_processing */,
         context,
         {}/* predicate */,
+        {},
         {}/* virtual_columns */,
         &read_keys);
 
