@@ -18,7 +18,7 @@ When using multiple `quantile*` functions with different levels in a query, the 
 
 **Syntax**
 
-``` sql
+```sql
 quantileExact(level)(expr)
 ```
 
@@ -62,13 +62,13 @@ FROM numbers(1)
 
 Query:
 
-``` sql
+```sql
 SELECT quantileExact(number) FROM numbers(10)
 ```
 
 Result:
 
-``` text
+```text
 ┌─quantileExact(number)─┐
 │                     5 │
 └───────────────────────┘
@@ -84,7 +84,7 @@ The return value depends on the quantile level and the number of elements in the
 
 For all other levels, the element at the index corresponding to the value of `level * size_of_array` is returned. For example:
 
-``` sql
+```sql
 SELECT quantileExactLow(0.1)(number) FROM numbers(10)
 
 ┌─quantileExactLow(0.1)(number)─┐
@@ -96,7 +96,7 @@ When using multiple `quantile*` functions with different levels in a query, the 
 
 **Syntax**
 
-``` sql
+```sql
 quantileExactLow(level)(expr)
 ```
 
@@ -121,13 +121,13 @@ Type:
 
 Query:
 
-``` sql
+```sql
 SELECT quantileExactLow(number) FROM numbers(10)
 ```
 
 Result:
 
-``` text
+```text
 ┌─quantileExactLow(number)─┐
 │                        4 │
 └──────────────────────────┘
@@ -146,7 +146,7 @@ When using multiple `quantile*` functions with different levels in a query, the 
 
 **Syntax**
 
-``` sql
+```sql
 quantileExactHigh(level)(expr)
 ```
 
@@ -171,13 +171,13 @@ Type:
 
 Query:
 
-``` sql
+```sql
 SELECT quantileExactHigh(number) FROM numbers(10)
 ```
 
 Result:
 
-``` text
+```text
 ┌─quantileExactHigh(number)─┐
 │                         5 │
 └───────────────────────────┘
@@ -195,7 +195,7 @@ When using multiple `quantileExactExclusive` functions with different levels in 
 
 **Syntax**
 
-``` sql
+```sql
 quantileExactExclusive(level)(expr)
 ```
 
@@ -221,7 +221,7 @@ Type:
 
 Query:
 
-``` sql
+```sql
 CREATE TABLE num AS numbers(1000);
 
 SELECT quantileExactExclusive(0.6)(x) FROM (SELECT number AS x FROM num);
@@ -229,7 +229,7 @@ SELECT quantileExactExclusive(0.6)(x) FROM (SELECT number AS x FROM num);
 
 Result:
 
-``` text
+```text
 ┌─quantileExactExclusive(0.6)(x)─┐
 │                          599.6 │
 └────────────────────────────────┘
@@ -247,7 +247,7 @@ When using multiple `quantileExactInclusive` functions with different levels in 
 
 **Syntax**
 
-``` sql
+```sql
 quantileExactInclusive(level)(expr)
 ```
 
@@ -273,7 +273,7 @@ Type:
 
 Query:
 
-``` sql
+```sql
 CREATE TABLE num AS numbers(1000);
 
 SELECT quantileExactInclusive(0.6)(x) FROM (SELECT number AS x FROM num);
@@ -281,7 +281,7 @@ SELECT quantileExactInclusive(0.6)(x) FROM (SELECT number AS x FROM num);
 
 Result:
 
-``` text
+```text
 ┌─quantileExactInclusive(0.6)(x)─┐
 │                          599.4 │
 └────────────────────────────────┘

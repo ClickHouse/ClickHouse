@@ -25,11 +25,11 @@ You can find all supported metrics in source file [src/Common/CurrentMetrics.cpp
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.metrics LIMIT 10
 ```
 
-``` text
+```text
 ┌─metric───────────────────────────────┬─value─┬─description────────────────────────────────────────────────────────────┐
 │ Query                                │     1 │ Number of executing queries                                            │
 │ Merge                                │     0 │ Number of executing background merges                                  │
