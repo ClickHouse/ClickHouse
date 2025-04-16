@@ -31,6 +31,7 @@ SELECT icebergHash('iceberg' :: FixedString(7));
 SELECT icebergHash('\x00\x01\x02\x03' :: FixedString(4));
 SELECT icebergHash('\x00\x01\x02\x03' :: String);
 SELECT icebergHash('f79c3e09-677c-4bbd-a479-3f349cb785e7' :: UUID);
+
 SELECT 'icebergBucket, modulo 5';
 SELECT icebergBucket(5, true);
 SELECT icebergBucket(5, 1);
@@ -63,6 +64,7 @@ SELECT icebergBucket(5, 'iceberg' :: FixedString(7));
 SELECT icebergBucket(5, '\x00\x01\x02\x03' :: FixedString(4));
 SELECT icebergBucket(5, '\x00\x01\x02\x03' :: String);
 SELECT icebergBucket(5, 'f79c3e09-677c-4bbd-a479-3f349cb785e7' :: UUID);
+
 SELECT 'icebergBucket, modulo 13';
 SELECT icebergBucket(13, true);
 SELECT icebergBucket(13, 1);

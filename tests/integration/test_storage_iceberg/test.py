@@ -3065,6 +3065,5 @@ def test_bucket_partition_pruning(started_cluster, storage_type):
         f"SELECT * FROM {creation_expression} WHERE (event_time == TIMESTAMP '2024-01-21 11:00:00' AND name == 'Bob') OR (name == 'Eve' AND id == 5) ORDER BY ALL",
     ]
 
-
     for query in queries:
         assert check_validity_and_get_prunned_files(query) > 0

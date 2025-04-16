@@ -20,10 +20,6 @@
 #include "base/Decimal.h"
 #include "base/types.h"
 
-#include "Common/logger_useful.h"
-
-#include "base/wide_integer_to_string.h"
-
 namespace DB
 {
 
@@ -41,11 +37,6 @@ class FunctionIcebergHash : public IFunction
 
 public:
     static inline const char * name = "icebergHash";
-
-
-    using U = NearestFieldType<std::decay_t<DecimalField<Decimal64>>>;
-
-    static_assert(std::is_same<U, DecimalField<Decimal64>>());
 
     explicit FunctionIcebergHash(ContextPtr)
     {
@@ -112,7 +103,7 @@ public:
         }
         else if (which.isUUID())
         {
-            // Handle UUID types
+            // Function toUnderType: UUID => toUInt128 doesn't work for some reason so we need to use toUInt128 clickhouse implementation
             ColumnPtr intermediate_representation = FunctionFactory::instance()
                                                         .get("toUInt128", context)
                                                         ->build(arguments)
@@ -126,9 +117,8 @@ public:
                 result_data[i] = hashUnderlyingIntBigEndian(value, /*reduce_two_complement*/ false);
             }
         }
-        else if (which.isDate()) 
+        else if (which.isDate())
         {
-            // Handle date types
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 auto value = column->getInt(i);
@@ -137,7 +127,6 @@ public:
         }
         else if (which.isDateTime64())
         {
-            // Handle datetime64 types
             const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
             const IColumn & wrapper_column = const_column ? const_column->getDataColumn() : *arguments[0].column.get();
             const auto & source_col = checkAndGetColumn<DataTypeDateTime64::ColumnType>(wrapper_column);
@@ -152,9 +141,7 @@ public:
                 if (scale == 9) {
                     value_int = value_int / 1000;
                 }
-                LOG_DEBUG(&Poco::Logger::get("FunctionIcebergHash"), "value_int: {}", value_int);
                 result_data[i] = hashLong(value_int);
-                LOG_DEBUG(&Poco::Logger::get("FunctionIcebergHash"), "hash long: {}", result_data[i]);
             }
         }
         else if (which.isDecimal())
@@ -249,9 +236,10 @@ REGISTER_FUNCTION(IcebergHash)
 {
     FunctionDocumentation::Description description = R"(Implements logic of iceberg hashing transform: https://iceberg.apache.org/spec/#appendix-b-32-bit-hash-requirements.)";
     FunctionDocumentation::Syntax syntax = "icebergHash(N, value)";
-    FunctionDocumentation::Arguments arguments = {{"value", "String, integer or Decimal value."}};
+    FunctionDocumentation::Arguments arguments
+        = {{"value", "Integer, bool, decimal, float, string, fixed_string, uuid, date, time, datetime."}};
     FunctionDocumentation::ReturnedValue returned_value = "Int32";
-    FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergHash(3, 'iceberg')", "ice"}};
+    FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergHash(1.0 :: Float32)", "-142385009"}};
     FunctionDocumentation::Category category = {"Other"};
 
     factory.registerFunction<FunctionIcebergHash>({description, syntax, arguments, returned_value, examples, category});
@@ -322,8 +310,6 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeString>(); }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 };
 
@@ -332,9 +318,11 @@ REGISTER_FUNCTION(IcebergBucket)
     FunctionDocumentation::Description description
         = R"(Implements logic of iceberg truncate transform: https://iceberg.apache.org/spec/#truncate-transform-details.)";
     FunctionDocumentation::Syntax syntax = "icebergBucket(N, value)";
-    FunctionDocumentation::Arguments arguments = {{"value", "String, integer or Decimal value."}};
+    FunctionDocumentation::Arguments arguments
+        = {{"N", "modulo, positive integer, always constant."},
+           {"value", "Integer, bool, decimal, float, string, fixed_string, uuid, date, time or datetime value."}};
     FunctionDocumentation::ReturnedValue returned_value = "The same type as argument";
-    FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergBucket(3, 'iceberg')", "ice"}};
+    FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergBucket(5, 1.0 :: Float32)", "4"}};
     FunctionDocumentation::Category category = {"Other"};
 
     factory.registerFunction<FunctionIcebergBucket>({description, syntax, arguments, returned_value, examples, category});
