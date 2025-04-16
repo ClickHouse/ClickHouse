@@ -1,8 +1,6 @@
 ---
-description: 'Documentation for LIMIT Clause'
-sidebar_label: 'LIMIT'
 slug: /sql-reference/statements/select/limit
-title: 'LIMIT Clause'
+sidebar_label: LIMIT
 ---
 
 # LIMIT Clause
@@ -19,15 +17,15 @@ If there is no [ORDER BY](../../../sql-reference/statements/select/order-by.md) 
 The number of rows in the result set can also depend on the [limit](../../../operations/settings/settings.md#limit) setting.
 :::
 
-## LIMIT ... WITH TIES Modifier {#limit--with-ties-modifier}
+## LIMIT ... WITH TIES Modifier
 
 When you set `WITH TIES` modifier for `LIMIT n[,m]` and specify `ORDER BY expr_list`, you will get in result first `n` or `n,m` rows and all rows with same `ORDER BY` fields values equal to row at position `n` for `LIMIT n` and `m` for `LIMIT n,m`.
 
-This modifier also can be combined with [ORDER BY ... WITH FILL modifier](/sql-reference/statements/select/order-by#order-by-expr-with-fill-modifier).
+This modifier also can be combined with [ORDER BY ... WITH FILL modifier](../../../sql-reference/statements/select/order-by.md#orderby-with-fill).
 
 For example, the following query
 
-```sql
+``` sql
 SELECT * FROM (
     SELECT number%50 AS n FROM numbers(100)
 ) ORDER BY n LIMIT 0,5
@@ -35,7 +33,7 @@ SELECT * FROM (
 
 returns
 
-```text
+``` text
 ┌─n─┐
 │ 0 │
 │ 0 │
@@ -47,7 +45,7 @@ returns
 
 but after apply `WITH TIES` modifier
 
-```sql
+``` sql
 SELECT * FROM (
     SELECT number%50 AS n FROM numbers(100)
 ) ORDER BY n LIMIT 0,5 WITH TIES
@@ -55,7 +53,7 @@ SELECT * FROM (
 
 it returns another rows set
 
-```text
+``` text
 ┌─n─┐
 │ 0 │
 │ 0 │

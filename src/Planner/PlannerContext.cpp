@@ -4,7 +4,6 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Interpreters/Context.h>
-#include <IO/WriteHelpers.h>
 
 namespace DB
 {

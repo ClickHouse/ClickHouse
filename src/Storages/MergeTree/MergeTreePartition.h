@@ -1,7 +1,8 @@
 #pragma once
 
 #include <base/types.h>
-#include <IO/WriteBufferFromFileBase.h>
+#include <Disks/IDisk.h>
+#include <IO/WriteBuffer.h>
 #include <Storages/KeyDescription.h>
 #include <Core/Field.h>
 
@@ -15,7 +16,6 @@ struct MergeTreeDataPartChecksums;
 struct StorageInMemoryMetadata;
 class IDataPartStorage;
 class IMergeTreeDataPart;
-struct WriteSettings;
 
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 using MutableDataPartStoragePtr = std::shared_ptr<IDataPartStorage>;

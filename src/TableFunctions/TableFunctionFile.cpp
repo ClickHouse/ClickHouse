@@ -74,8 +74,7 @@ StoragePtr TableFunctionFile::getStorage(
     const ColumnsDescription & columns,
     ContextPtr global_context,
     const std::string & table_name,
-    const std::string & compression_method_,
-    bool /*is_insert_query*/) const
+    const std::string & compression_method_) const
 {
     // For `file` table function, we are going to use format settings from the
     // query context.

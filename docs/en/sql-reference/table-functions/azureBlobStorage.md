@@ -1,11 +1,8 @@
 ---
-description: 'Provides a table-like interface to select/insert files in Azure Blob
-  Storage. Similar to the s3 function.'
-keywords: ['azure blob storage']
-sidebar_label: 'azureBlobStorage'
-sidebar_position: 10
 slug: /sql-reference/table-functions/azureBlobStorage
-title: 'azureBlobStorage'
+sidebar_position: 10
+sidebar_label: azureBlobStorage
+keywords: [azure blob storage]
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -17,7 +14,7 @@ Provides a table-like interface to select/insert files in [Azure Blob Storage](h
 
 **Syntax**
 
-```sql
+``` sql
 azureBlobStorage(- connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
 ```
 
@@ -28,7 +25,7 @@ azureBlobStorage(- connection_string|storage_account_url, container_name, blobpa
 - `blobpath` - file path. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.
 - `account_name` - if storage_account_url is used, then account name can be specified here
 - `account_key` - if storage_account_url is used, then account key can be specified here
-- `format` — The [format](/sql-reference/formats) of the file.
+- `format` — The [format](../../interfaces/formats.md#formats) of the file.
 - `compression` — Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension. (same as setting to `auto`).
 - `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
 
@@ -38,7 +35,7 @@ A table with the specified structure for reading or writing data in the specifie
 
 **Examples**
 
-Similar to the [AzureBlobStorage](/engines/table-engines/integrations/azureBlobStorage) table engine, users can use Azurite emulator for local Azure Storage development. Further details [here](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage). Below we assume Azurite is available at the hostname `azurite1`.
+Similar to the [AzureBlobStorage](/docs/engines/table-engines/integrations/azureBlobStorage) table engine, users can use Azurite emulator for local Azure Storage development. Further details [here](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage). Below we assume Azurite is available at the hostname `azurite1`.
 
 Write data into azure blob storage using the following :
 
@@ -69,7 +66,7 @@ SELECT count(*) FROM azureBlobStorage('DefaultEndpointsProtocol=https;AccountNam
     'testcontainer', 'test_3.csv', 'CSV', 'auto' , 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-```text
+``` text
 ┌─count()─┐
 │      2  │
 └─────────┘
@@ -84,7 +81,7 @@ SELECT count(*) FROM azureBlobStorage('DefaultEndpointsProtocol=https;AccountNam
 
 **See Also**
 
-- [AzureBlobStorage Table Engine](engines/table-engines/integrations/azureBlobStorage.md)
+- [AzureBlobStorage Table Engine](/docs/engines/table-engines/integrations/azureBlobStorage.md)
 
 ## Hive-style partitioning {#hive-style-partitioning}
 
@@ -94,7 +91,7 @@ When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-st
 
 Use virtual column, created with Hive-style partitioning
 
-```sql
+``` sql
 SELECT * from azureBlobStorage(config, storage_account_url='...', container='...', blob_path='http://data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
 ```
 

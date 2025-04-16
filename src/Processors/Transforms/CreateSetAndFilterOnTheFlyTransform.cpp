@@ -14,8 +14,6 @@
 
 #include <Poco/String.h>
 
-#include <fmt/ranges.h>
-
 namespace DB
 {
 

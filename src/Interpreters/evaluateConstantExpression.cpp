@@ -47,7 +47,6 @@
 #include <optional>
 #include <unordered_map>
 
-#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -747,13 +746,10 @@ std::optional<ConstantVariants> evaluateExpressionOverConstantCondition(
     const ContextPtr & context,
     size_t max_elements)
 {
-    if (!predicate)
-        return {};
+    auto inverted_dag = KeyCondition::cloneASTWithInversionPushDown({predicate}, context);
+    auto matches = matchTrees(expr, inverted_dag, false);
 
-    ActionsDAGWithInversionPushDown filter_dag(predicate, context);
-    auto matches = matchTrees(expr, *filter_dag.dag, false);
-
-    auto predicates = analyze(filter_dag.predicate, matches, context, max_elements);
+    auto predicates = analyze(inverted_dag.getOutputs().at(0), matches, context, max_elements);
 
     if (!predicates)
         return {};
