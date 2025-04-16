@@ -19,10 +19,10 @@ namespace ErrorCodes
     extern const int INVALID_STATE;
 }
 
-INATSProducer::INATSProducer(NATSConnectionPtr connection_, const String & subject_, std::atomic<bool> & shutdown_called_, LoggerPtr log_)
+INATSProducer::INATSProducer(NATSConnectionPtr connection_, String subject_, std::atomic<bool> & shutdown_called_, LoggerPtr log_)
     : AsynchronousMessageProducer(log_)
     , connection(std::move(connection_))
-    , subject(subject_)
+    , subject(std::move(subject_))
     , shutdown_called(shutdown_called_)
     , payloads(BATCH)
 {

@@ -13,12 +13,13 @@ namespace DB
 class INATSProducer : public AsynchronousMessageProducer
 {
 public:
-    INATSProducer(NATSConnectionPtr connection_, const String & subject_, std::atomic<bool> & shutdown_called_, LoggerPtr log_);
+    INATSProducer(NATSConnectionPtr connection_, String subject_, std::atomic<bool> & shutdown_called_, LoggerPtr log_);
 
     void produce(const String & message, size_t rows_in_message, const Columns & columns, size_t last_row) override;
     void cancel() noexcept override;
 
 protected:
+    NATSConnectionPtr & getConnection(){return connection;}
     natsConnection * getNativeConnection(){return connection->getConnection();}
 
     const String & getSubject() const{return subject;}

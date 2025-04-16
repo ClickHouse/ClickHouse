@@ -91,6 +91,35 @@ async def produce_messages(cluster_inst, subject, messages=(), bytes=None):
     await nc.close()
     return messages
 
+async def receive_messages_from_stream(cluster_inst, stream_name, consumer_name, subject, decode_data=True):
+    nc = await nats_connect_ssl(
+        cluster_inst.nats_port,
+        user="click",
+        password="house",
+        ssl_ctx=cluster_inst.nats_ssl_context,
+    )
+    js = nc.jetstream()
+
+    result = []
+
+    sub = await js.pull_subscribe(stream=stream_name, durable=consumer_name, subject=subject)
+
+    try:
+        while True:
+            msgs = await sub.fetch(1)
+            for msg in msgs:
+                result.append(msg.data.decode() if decode_data else msg.data)
+                await msg.ack()
+    except nats.errors.TimeoutError:
+        pass
+   
+    await sub.unsubscribe()
+
+    await nc.drain()
+    await nc.close()
+
+    return result
+
 
 async def add_stream(cluster_inst, stream_name, stream_subjects):
     nc = await nats_connect_ssl(
@@ -104,7 +133,7 @@ async def add_stream(cluster_inst, stream_name, stream_subjects):
     # Create JetStream context.
     js = nc.jetstream()
         
-    stream_info = await js.add_stream(name=stream_name, subjects=[stream_subjects])
+    stream_info = await js.add_stream(name=stream_name, subjects=stream_subjects)
     logging.debug("added NATS jet stream: " + str(stream_info))
     
     await nc.close()
@@ -127,7 +156,6 @@ async def delete_stream(cluster_inst, stream_name):
     await nc.close()
 
 
-# consumer_type: "push" or empty for pull consumers
 async def add_durable_consumer(cluster_inst, stream_name, consumer_name):
     nc = await nats_connect_ssl(
         cluster_inst.nats_port,
@@ -140,7 +168,7 @@ async def add_durable_consumer(cluster_inst, stream_name, consumer_name):
     # Create JetStream context.
     js = nc.jetstream()
     
-    consumer_config = api.ConsumerConfig(name=consumer_name)
+    consumer_config = api.ConsumerConfig(name=consumer_name, durable_name=consumer_name)
 
     # Persist messages on 'foo's subject.
     consumer_info = await js.add_consumer(stream=stream_name, config=consumer_config)

@@ -31,6 +31,9 @@ NATSJetStreamAsyncConsumer::NATSJetStreamAsyncConsumer(
 
 NATSSubscriptionPtr NATSJetStreamAsyncConsumer::subscribeToSubject(const String & subject)
 {
+    if (consumer_name.empty())
+        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "To use NATS jet stream consumers, you must specify `nats_consumer_name` setting");
+
     natsSubscription * subscription;
     auto status = js_PullSubscribeAsync(
         &subscription, 

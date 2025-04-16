@@ -18,6 +18,10 @@ namespace DB
 
 class INATSConsumer;
 using INATSConsumerPtr = std::shared_ptr<INATSConsumer>;
+
+class INATSProducer;
+using INATSProducerPtr = std::unique_ptr<INATSProducer>;
+
 struct NATSSettings;
 
 class StorageNATS final : public IStorage, WithContext
@@ -70,6 +74,9 @@ public:
     const String & getFormatName() const { return format_name; }
 
 private:
+    String getStreamName() const;
+    String getConsumerName() const;
+
     ContextMutablePtr nats_context;
     std::unique_ptr<NATSSettings> nats_settings;
     std::vector<String> subjects;
@@ -111,6 +118,7 @@ private:
     bool throw_on_startup_failure;
 
     INATSConsumerPtr createConsumer();
+    INATSProducerPtr createProducer(String subject);
 
     bool isSubjectInSubscriptions(const std::string & subject);
 

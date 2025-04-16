@@ -54,7 +54,7 @@ def nats_setup_teardown():
     instance.query("DROP DATABASE IF EXISTS test SYNC")
     instance.query("CREATE DATABASE test")
 
-    asyncio.run(nats_helpers.add_stream(cluster, "test_stream", "test_subject"))
+    asyncio.run(nats_helpers.add_stream(cluster, "test_stream", ["test_subject", "right_insert1" ,"right_insert2"]))
     
     yield  # run test
 
@@ -564,14 +564,19 @@ def test_nats_mv_combo(nats_cluster, consumer_mode):
     ), "ClickHouse lost some messages: {}".format(result)
 
 
-@pytest.mark.skip("producer test")
-def test_nats_insert(nats_cluster):
+@pytest.mark.parametrize("consumer_mode", consumer_modes)
+def test_nats_insert(nats_cluster, consumer_mode):
+
+    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+
     instance.query(
-        """
+        f"""
         CREATE TABLE test.nats (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
-                     nats_subjects = 'insert',
+                     nats_stream = 'test_stream',
+                     nats_consumer_mode = '{consumer_mode}',
+                     nats_subjects = 'test_subject',
                      nats_format = 'TSV',
                      nats_row_delimiter = '\\n';
         """
@@ -582,30 +587,6 @@ def test_nats_insert(nats_cluster):
         values.append("({i}, {i})".format(i=i))
     values = ",".join(values)
 
-    insert_messages = []
-
-    async def sub_to_nats():
-        nc = await nats_connect_ssl(
-            nats_cluster.nats_port,
-            user="click",
-            password="house",
-            ssl_ctx=nats_cluster.nats_ssl_context,
-        )
-        sub = await nc.subscribe("insert")
-        await sub.unsubscribe(50)
-        async for msg in sub.messages:
-            insert_messages.append(msg.data.decode())
-
-        await sub.drain()
-        await nc.drain()
-
-    def run_sub():
-        asyncio.run(sub_to_nats())
-
-    thread = threading.Thread(target=run_sub)
-    thread.start()
-    time.sleep(1)
-
     while True:
         try:
             instance.query("INSERT INTO test.nats VALUES {}".format(values))
@@ -615,60 +596,35 @@ def test_nats_insert(nats_cluster):
                 continue
             else:
                 raise
-    thread.join()
+    insert_messages = asyncio.run(nats_helpers.receive_messages_from_stream(nats_cluster, "test_stream", "test_consumer", "test_subject"))
 
     result = "\n".join(insert_messages)
     nats_helpers.check_result(result, True)
 
 
-@pytest.mark.skip("producer test")
-def test_fetching_messages_without_mv(nats_cluster):
+@pytest.mark.parametrize("consumer_mode", consumer_modes)
+def test_fetching_messages_without_mv(nats_cluster, consumer_mode):
+
+    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+
     instance.query(
-        """
+        f"""
         CREATE TABLE test.nats (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
-                     nats_subjects = 'insert',
-                     nats_queue_group = 'consumers_group',
+                     nats_stream = 'test_stream',
+                     nats_consumer_mode = '{consumer_mode}',
+                     nats_subjects = 'test_subject',
                      nats_format = 'TSV',
                      nats_row_delimiter = '\\n';
-    """
+        """
     )
-    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
 
     values = []
     for i in range(50):
         values.append("({i}, {i})".format(i=i))
     values = ",".join(values)
 
-    insert_messages = []
-
-    async def sub_to_nats():
-        nc = await nats_connect_ssl(
-            nats_cluster.nats_port,
-            user="click",
-            password="house",
-            ssl_ctx=nats_cluster.nats_ssl_context,
-        )
-        sub = await nc.subscribe("insert", "consumers_group")
-        
-        try:
-            for i in range(50):
-                msg = await sub.next_msg(120)
-                insert_messages.append(msg.data.decode())
-        except asyncio.exceptions.TimeoutError as ex:
-            logging.debug("recieve message timeout: " + str(ex))
-
-        await sub.drain()
-        await nc.drain()
-
-    def run_sub():
-        asyncio.run(sub_to_nats())
-
-    thread = threading.Thread(target=run_sub)
-    thread.start()
-    time.sleep(1)
-
     while True:
         try:
             instance.query("INSERT INTO test.nats VALUES {}".format(values))
@@ -678,24 +634,26 @@ def test_fetching_messages_without_mv(nats_cluster):
                 continue
             else:
                 raise
-    thread.join()
-
+    
+    insert_messages = asyncio.run(nats_helpers.receive_messages_from_stream(nats_cluster, "test_stream", "test_consumer", "test_subject"))
     result = "\n".join(insert_messages)
     nats_helpers.check_result(result, True)
 
-@pytest.mark.skip("producer test")
-def test_nats_many_subjects_insert_wrong(nats_cluster):
+@pytest.mark.parametrize("consumer_mode", consumer_modes)
+def test_nats_many_subjects_insert_wrong(nats_cluster, consumer_mode):
+
     instance.query(
-        """
+        f"""
         CREATE TABLE test.nats (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'insert1,insert2.>,insert3.*.foo',
                      nats_format = 'TSV',
                      nats_row_delimiter = '\\n';
-    """
+        """
     )
-    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
 
     values = []
     for i in range(50):
@@ -735,48 +693,28 @@ def test_nats_many_subjects_insert_wrong(nats_cluster):
     )
 
 
-@pytest.mark.skip("producer test")
-def test_nats_many_subjects_insert_right(nats_cluster):
+@pytest.mark.parametrize("consumer_mode", consumer_modes)
+def test_nats_many_subjects_insert_right(nats_cluster, consumer_mode):
+
+    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+
     instance.query(
-        """
+        f"""
         CREATE TABLE test.nats (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_consumer_mode = '{consumer_mode}',
                      nats_subjects = 'right_insert1,right_insert2',
                      nats_format = 'TSV',
                      nats_row_delimiter = '\\n';
-    """
+        """
     )
-    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
 
     values = []
     for i in range(50):
         values.append("({i}, {i})".format(i=i))
     values = ",".join(values)
-
-    insert_messages = []
-
-    async def sub_to_nats():
-        nc = await nats_connect_ssl(
-            nats_cluster.nats_port,
-            user="click",
-            password="house",
-            ssl_ctx=nats_cluster.nats_ssl_context,
-        )
-        sub = await nc.subscribe("right_insert1")
-        await sub.unsubscribe(50)
-        async for msg in sub.messages:
-            insert_messages.append(msg.data.decode())
-
-        await sub.drain()
-        await nc.drain()
-
-    def run_sub():
-        asyncio.run(sub_to_nats())
-
-    thread = threading.Thread(target=run_sub)
-    thread.start()
-    time.sleep(1)
 
     while True:
         try:
@@ -791,43 +729,43 @@ def test_nats_many_subjects_insert_right(nats_cluster):
                 continue
             else:
                 raise
-    thread.join()
 
+    insert_messages = asyncio.run(nats_helpers.receive_messages_from_stream(nats_cluster, "test_stream", "test_consumer", "right_insert1"))
     result = "\n".join(insert_messages)
     nats_helpers.check_result(result, True)
 
 
-@pytest.mark.skip("producer test")
-def test_nats_many_inserts(nats_cluster):
+@pytest.mark.parametrize("consumer_mode", consumer_modes)
+def test_nats_many_inserts(nats_cluster, consumer_mode):
+
+    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+
     instance.query(
-        """
+        f"""
         CREATE TABLE test.nats_many (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
-                     nats_subjects = 'many_inserts',
+                     nats_stream = 'test_stream',
+                     nats_consumer_mode = '{consumer_mode}',
+                     nats_subjects = 'test_subject',
                      nats_format = 'TSV',
                      nats_row_delimiter = '\\n';
         CREATE TABLE test.nats_consume (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
-                     nats_subjects = 'many_inserts',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer',
+                     nats_consumer_mode = '{consumer_mode}',
+                     nats_subjects = 'test_subject',
                      nats_format = 'TSV',
                      nats_row_delimiter = '\\n';
         CREATE TABLE test.view_many (key UInt64, value UInt64)
             ENGINE = MergeTree
             ORDER BY key;
-        """
-    )
-    nats_helpers.wait_for_table_is_ready(instance, "test.nats_consume")
-    nats_helpers.wait_for_table_is_ready(instance, "test.nats_many")
-
-    instance.query(
-        """
         CREATE MATERIALIZED VIEW test.consumer_many TO test.view_many AS
             SELECT * FROM test.nats_consume;
         """
     )
-    nats_helpers.wait_for_mv_attached_to_table(instance, "test.nats_consume")
 
     messages_num = 10000
     values = []
@@ -874,14 +812,20 @@ def test_nats_many_inserts(nats_cluster):
     )
 
 
-@pytest.mark.skip("producer test")
-def test_nats_overloaded_insert(nats_cluster):
+@pytest.mark.parametrize("consumer_mode", consumer_modes)
+def test_nats_overloaded_insert(nats_cluster, consumer_mode):
+
+    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+
     instance.query(
-        """
+        f"""
         CREATE TABLE test.nats_consume (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
-                     nats_subjects = 'over',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer',
+                     nats_consumer_mode = '{consumer_mode}',
+                     nats_subjects = 'test_subject',
                      nats_num_consumers = 5,
                      nats_max_block_size = 10000,
                      nats_format = 'TSV',
@@ -889,7 +833,9 @@ def test_nats_overloaded_insert(nats_cluster):
         CREATE TABLE test.nats_overload (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
-                     nats_subjects = 'over',
+                     nats_stream = 'test_stream',
+                     nats_consumer_mode = '{consumer_mode}',
+                     nats_subjects = 'test_subject',
                      nats_format = 'TSV',
                      nats_row_delimiter = '\\n';
         CREATE TABLE test.view_overload (key UInt64, value UInt64)
@@ -897,18 +843,10 @@ def test_nats_overloaded_insert(nats_cluster):
             ORDER BY key
             SETTINGS old_parts_lifetime=5, cleanup_delay_period=2, cleanup_delay_period_random_add=3,
             cleanup_thread_preferred_points_per_iteration=0;
-        """
-    )
-    nats_helpers.wait_for_table_is_ready(instance, "test.nats_consume")
-    nats_helpers.wait_for_table_is_ready(instance, "test.nats_overload")
-
-    instance.query(
-        """
         CREATE MATERIALIZED VIEW test.consumer_overload TO test.view_overload AS
             SELECT * FROM test.nats_consume;
         """
     )
-    nats_helpers.wait_for_mv_attached_to_table(instance, "test.nats_consume")
 
     messages_num = 100000
 
@@ -1135,31 +1073,38 @@ def test_nats_many_consumers_to_each_queue(nats_cluster, consumer_mode):
     )
 
 
-@pytest.mark.skip("producer test")
+@pytest.mark.parametrize("consumer_mode", consumer_modes)
 def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster, consumer_mode):
+    
+    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+    
     instance.query(
-        """
+        f"""
         CREATE TABLE test.view (key UInt64, value UInt64)
             ENGINE = MergeTree
             ORDER BY key;
         CREATE TABLE test.consume (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
-                     nats_subjects = 'producer_reconnect',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer',
+                     nats_consumer_mode = '{consumer_mode}',
+                     nats_subjects = 'test_subject',
                      nats_format = 'JSONEachRow',
                      nats_num_consumers = 2,
                      nats_row_delimiter = '\\n';
         CREATE TABLE test.producer_reconnect (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
-                     nats_subjects = 'producer_reconnect',
+                     nats_stream = 'test_stream',
+                     nats_consumer_mode = '{consumer_mode}',
+                     nats_subjects = 'test_subject',
                      nats_format = 'JSONEachRow',
                      nats_row_delimiter = '\\n';
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
             SELECT * FROM test.consume;
         """
     )
-    nats_helpers.wait_for_mv_attached_to_table(instance, "test.consume")
 
     messages_num = 100000
     values = []
@@ -1186,7 +1131,10 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster, co
     time.sleep(4)
     nats_helpers.revive_nats(nats_cluster.nats_docker_id, nats_cluster.nats_port)
 
-    while True:
+    time_limit_sec = 300
+    deadline = time.monotonic() + time_limit_sec
+
+    while time.monotonic() < deadline:
         result = instance.query("SELECT count(DISTINCT key) FROM test.view")
         time.sleep(1)
         if int(result) == messages_num:
@@ -1224,13 +1172,20 @@ def test_nats_no_connection_at_startup_1(nats_cluster, consumer_mode):
         )
 
 
-def test_nats_no_connection_at_startup_2(nats_cluster):
+@pytest.mark.parametrize("consumer_mode", consumer_modes)
+def test_nats_no_connection_at_startup_2(nats_cluster, consumer_mode):
+
+    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+
     instance.query(
-        """
+        f"""
         CREATE TABLE test.cs (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
-                     nats_subjects = 'cs',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer',
+                     nats_consumer_mode = '{consumer_mode}',
+                     nats_subjects = 'test_subject',
                      nats_format = 'JSONEachRow',
                      nats_num_consumers = '5',
                      nats_row_delimiter = '\\n';
@@ -1251,7 +1206,7 @@ def test_nats_no_connection_at_startup_2(nats_cluster):
     with nats_cluster.pause_container("nats1"):
         instance.query("ATTACH TABLE test.cs")
 
-    nats_helpers.wait_for_table_is_ready(instance, "test.cs")
+    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
         """
@@ -1259,19 +1214,18 @@ def test_nats_no_connection_at_startup_2(nats_cluster):
             SELECT * FROM test.cs;
         """
     )
-    nats_helpers.wait_for_mv_attached_to_table(instance, "test.cs")
 
     messages_num = 1000
     messages = []
     for i in range(messages_num):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(nats_helpers.produce_messages(nats_cluster, "cs", messages))
+    asyncio.run(nats_helpers.produce_messages(nats_cluster, "test_subject", messages))
 
     for _ in range(20):
         result = instance.query("SELECT count() FROM test.view")
-        time.sleep(1)
         if int(result) == messages_num:
             break
+        time.sleep(1)
 
     assert int(result) == messages_num, "ClickHouse lost some messages: {}".format(
         result
@@ -1318,9 +1272,11 @@ def test_nats_format_factory_settings(nats_cluster, consumer_mode):
 
 @pytest.mark.parametrize("consumer_mode", consumer_modes)
 def test_nats_bad_args(nats_cluster, consumer_mode):
-    instance.query_and_get_error(
-        """
-        CREATE TABLE test.drop (key UInt64, value UInt64)
+    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+
+    instance.query(
+        f"""
+        CREATE TABLE test.producer_table (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
@@ -1329,8 +1285,10 @@ def test_nats_bad_args(nats_cluster, consumer_mode):
                      nats_format = 'JSONEachRow';
         """
     )
+    instance.query_and_get_error("SELECT * FROM test.producer_table")
+
     instance.query_and_get_error(
-        """
+        f"""
         CREATE TABLE test.drop (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
@@ -1437,7 +1395,6 @@ def test_nats_predefined_configuration(nats_cluster, consumer_mode):
     assert result == "1\t2\n"
         
 
-@pytest.mark.skip("producer test")
 @pytest.mark.parametrize("consumer_mode", consumer_modes)
 def test_format_with_prefix_and_suffix(nats_cluster, consumer_mode):
 
@@ -1455,100 +1412,48 @@ def test_format_with_prefix_and_suffix(nats_cluster, consumer_mode):
                      nats_format = 'CustomSeparated';
         """
     )
-    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
-
-    insert_messages = []
-
-    async def sub_to_nats():
-        nc = await nats_connect_ssl(
-            nats_cluster.nats_port,
-            user="click",
-            password="house",
-            ssl_ctx=nats_cluster.nats_ssl_context,
-        )
-        sub = await nc.subscribe("custom")
-        await sub.unsubscribe(2)
-        async for msg in sub.messages:
-            insert_messages.append(msg.data.decode())
-
-        await sub.drain()
-        await nc.drain()
-
-    def run_sub():
-        asyncio.run(sub_to_nats())
-
-    thread = threading.Thread(target=run_sub)
-    thread.start()
-    time.sleep(1)
 
     instance.query(
         "INSERT INTO test.nats select number*10 as key, number*100 as value from numbers(2) settings format_custom_result_before_delimiter='<prefix>\n', format_custom_result_after_delimiter='<suffix>\n'"
     )
 
-    thread.join()
-
+    insert_messages = asyncio.run(nats_helpers.receive_messages_from_stream(nats_cluster, "test_stream", "test_consumer", "test_subject"))
     assert (
         "".join(insert_messages)
         == "<prefix>\n0\t0\n<suffix>\n<prefix>\n10\t100\n<suffix>\n"
     )
 
 
-@pytest.mark.skip("producer test")
-def test_max_rows_per_message(nats_cluster):
+@pytest.mark.parametrize("consumer_mode", consumer_modes)
+def test_max_rows_per_message(nats_cluster, consumer_mode):
+
+    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "table_consumer"))
+    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "external_consumer"))
+
     instance.query(
-        """
+        f"""
         CREATE TABLE test.nats (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
-                     nats_subjects = 'custom1',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'table_consumer',
+                     nats_consumer_mode = '{consumer_mode}',
+                     nats_subjects = 'test_subject',
                      nats_format = 'CustomSeparated',
                      nats_max_rows_per_message = 3,
                      format_custom_result_before_delimiter = '<prefix>\n',
                      format_custom_result_after_delimiter = '<suffix>\n';
-        """
-    )
-    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
-
-    instance.query(
-        """
         CREATE MATERIALIZED VIEW test.view Engine=Log AS
-        SELECT key, value FROM test.nats;
+            SELECT key, value FROM test.nats;
         """
     )
-    nats_helpers.wait_for_mv_attached_to_table(instance, "test.nats")
 
     num_rows = 5
-
-    insert_messages = []
-
-    async def sub_to_nats():
-        nc = await nats_connect_ssl(
-            nats_cluster.nats_port,
-            user="click",
-            password="house",
-            ssl_ctx=nats_cluster.nats_ssl_context,
-        )
-        sub = await nc.subscribe("custom1")
-        await sub.unsubscribe(2)
-        async for msg in sub.messages:
-            insert_messages.append(msg.data.decode())
-
-        await sub.drain()
-        await nc.drain()
-
-    def run_sub():
-        asyncio.run(sub_to_nats())
-
-    thread = threading.Thread(target=run_sub)
-    thread.start()
-    time.sleep(1)
-
     instance.query(
         f"INSERT INTO test.nats select number*10 as key, number*100 as value from numbers({num_rows}) settings format_custom_result_before_delimiter='<prefix>\n', format_custom_result_after_delimiter='<suffix>\n'"
     )
 
-    thread.join()
-
+    insert_messages = asyncio.run(nats_helpers.receive_messages_from_stream(nats_cluster, "test_stream", "external_consumer", "test_subject"))
     assert (
         "".join(insert_messages)
         == "<prefix>\n0\t0\n10\t100\n20\t200\n<suffix>\n<prefix>\n30\t300\n40\t400\n<suffix>\n"
@@ -1568,8 +1473,12 @@ def test_max_rows_per_message(nats_cluster):
     assert result == "0\t0\n10\t100\n20\t200\n30\t300\n40\t400\n"
 
 
-@pytest.mark.skip("producer test")
-def test_row_based_formats(nats_cluster):
+@pytest.mark.parametrize("consumer_mode", consumer_modes)
+def test_row_based_formats(nats_cluster, consumer_mode):
+    
+    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "table_consumer"))
+    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "external_consumer"))
+
     num_rows = 10
 
     for format_name in [
@@ -1600,52 +1509,22 @@ def test_row_based_formats(nats_cluster):
             CREATE TABLE test.nats (key UInt64, value UInt64)
                 ENGINE = NATS
                 SETTINGS nats_url = 'nats1:4444',
-                         nats_subjects = '{format_name}',
+                         nats_stream = 'test_stream',
+                         nats_consumer_name = 'table_consumer',
+                         nats_consumer_mode = '{consumer_mode}',
+                         nats_subjects = 'test_subject',
                          nats_format = '{format_name}';      
-            """
-        )
-        nats_helpers.wait_for_table_is_ready(instance, "test.nats")
-
-        instance.query(
-            """
             CREATE MATERIALIZED VIEW test.view Engine=Log AS
-            SELECT key, value FROM test.nats;
+                SELECT key, value FROM test.nats;
             """
         )
-        nats_helpers.wait_for_mv_attached_to_table(instance, "test.nats")
-
-        insert_messages = 0
-
-        async def sub_to_nats():
-            nc = await nats_connect_ssl(
-                nats_cluster.nats_port,
-                user="click",
-                password="house",
-                ssl_ctx=nats_cluster.nats_ssl_context,
-            )
-            sub = await nc.subscribe(format_name)
-            await sub.unsubscribe(2)
-            async for msg in sub.messages:
-                nonlocal insert_messages
-                insert_messages += 1
-
-            await sub.drain()
-            await nc.drain()
-
-        def run_sub():
-            asyncio.run(sub_to_nats())
-
-        thread = threading.Thread(target=run_sub)
-        thread.start()
-        time.sleep(1)
 
         instance.query(
             f"INSERT INTO test.nats select number*10 as key, number*100 as value from numbers({num_rows})"
         )
-
-        thread.join()
-
-        assert insert_messages == 2
+        
+        insert_messages = asyncio.run(nats_helpers.receive_messages_from_stream(nats_cluster, "test_stream", "external_consumer", 'test_subject', decode_data=False))
+        assert len(insert_messages) == num_rows
 
         attempt = 0
         rows = 0
@@ -1665,41 +1544,23 @@ def test_row_based_formats(nats_cluster):
         assert result == expected
 
 
-@pytest.mark.skip("producer test")
-def test_block_based_formats_1(nats_cluster):
+@pytest.mark.parametrize("consumer_mode", consumer_modes)
+def test_block_based_formats_1(nats_cluster, consumer_mode):
+
+    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "test_consumer"))
+
     instance.query(
-        """
+        f"""
         CREATE TABLE test.nats (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
-                     nats_subjects = 'PrettySpace',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer',
+                     nats_consumer_mode = '{consumer_mode}',
+                     nats_subjects = 'test_subject',
                      nats_format = 'PrettySpace';
-    """
+        """
     )
-
-    insert_messages = []
-
-    async def sub_to_nats():
-        nc = await nats_connect_ssl(
-            nats_cluster.nats_port,
-            user="click",
-            password="house",
-            ssl_ctx=nats_cluster.nats_ssl_context,
-        )
-        sub = await nc.subscribe("PrettySpace")
-        await sub.unsubscribe(3)
-        async for msg in sub.messages:
-            insert_messages.append(msg.data.decode())
-
-        await sub.drain()
-        await nc.drain()
-
-    def run_sub():
-        asyncio.run(sub_to_nats())
-
-    thread = threading.Thread(target=run_sub)
-    thread.start()
-    time.sleep(1)
 
     attempt = 0
     while attempt < 100:
@@ -1712,10 +1573,9 @@ def test_block_based_formats_1(nats_cluster):
             logging.debug("Table test.nats is not yet ready")
             time.sleep(0.5)
             attempt += 1
-    thread.join()
-
+    
     data = []
-    for message in insert_messages:
+    for message in asyncio.run(nats_helpers.receive_messages_from_stream(nats_cluster, "test_stream", "test_consumer", "test_subject")):
         splitted = message.split("\n")
 
         assert len(splitted) >= 3
@@ -1737,8 +1597,12 @@ def test_block_based_formats_1(nats_cluster):
     ]
 
 
-@pytest.mark.skip("producer test")
-def test_block_based_formats_2(nats_cluster):
+@pytest.mark.parametrize("consumer_mode", consumer_modes)
+def test_block_based_formats_2(nats_cluster, consumer_mode):
+
+    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "table_consumer"))
+    asyncio.run(nats_helpers.add_durable_consumer(cluster, "test_stream", "external_consumer"))
+
     num_rows = 100
 
     for format_name in [
@@ -1759,52 +1623,22 @@ def test_block_based_formats_2(nats_cluster):
             CREATE TABLE test.nats (key UInt64, value UInt64)
                 ENGINE = NATS
                 SETTINGS nats_url = 'nats1:4444',
-                         nats_subjects = '{format_name}',
+                         nats_stream = 'test_stream',
+                         nats_consumer_name = 'table_consumer',
+                         nats_consumer_mode = '{consumer_mode}',
+                         nats_subjects = 'test_subject',
                          nats_format = '{format_name}';      
-            """
-        )
-        nats_helpers.wait_for_table_is_ready(instance, "test.nats")
-
-        instance.query(
-            """
             CREATE MATERIALIZED VIEW test.view Engine=Log AS
-            SELECT key, value FROM test.nats;
+                SELECT key, value FROM test.nats;
             """
         )
-        nats_helpers.wait_for_mv_attached_to_table(instance, "test.nats")
-
-        insert_messages = 0
-
-        async def sub_to_nats():
-            nc = await nats_connect_ssl(
-                nats_cluster.nats_port,
-                user="click",
-                password="house",
-                ssl_ctx=nats_cluster.nats_ssl_context,
-            )
-            sub = await nc.subscribe(format_name)
-            await sub.unsubscribe(9)
-            async for msg in sub.messages:
-                nonlocal insert_messages
-                insert_messages += 1
-
-            await sub.drain()
-            await nc.drain()
-
-        def run_sub():
-            asyncio.run(sub_to_nats())
-
-        thread = threading.Thread(target=run_sub)
-        thread.start()
-        time.sleep(1)
 
         instance.query(
             f"INSERT INTO test.nats SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows}) settings max_block_size=12, optimize_trivial_insert_select=0;"
         )
 
-        thread.join()
-
-        assert insert_messages == 9
+        insert_messages = asyncio.run(nats_helpers.receive_messages_from_stream(nats_cluster, "test_stream", "external_consumer", "test_subject", decode_data=False))
+        assert len(insert_messages) == 9
 
         attempt = 0
         rows = 0

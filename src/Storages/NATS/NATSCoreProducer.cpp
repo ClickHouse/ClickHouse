@@ -3,8 +3,8 @@
 namespace DB
 {
 
-NATSCoreProducer::NATSCoreProducer(NATSConnectionPtr connection_, const String & subject_, std::atomic<bool> & shutdown_called_, LoggerPtr log_)
-    : INATSProducer(std::move(connection_), subject_, shutdown_called_, log_)
+NATSCoreProducer::NATSCoreProducer(NATSConnectionPtr connection_, String subject_, std::atomic<bool> & shutdown_called_, LoggerPtr log_)
+    : INATSProducer(std::move(connection_), std::move(subject_), shutdown_called_, log_)
 {
 }
 
