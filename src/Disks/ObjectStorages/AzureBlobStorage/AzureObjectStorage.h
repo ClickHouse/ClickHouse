@@ -40,7 +40,9 @@ public:
 
     ObjectStorageType getType() const override { return ObjectStorageType::Azure; }
 
-    std::string getCommonKeyPrefix() const override { return ""; }
+    std::string getCommonKeyPrefix() const override {
+        return common_key_prefix;
+    }
 
     std::string getDescription() const override { return description; }
 
@@ -113,6 +115,7 @@ private:
     MultiVersion<AzureBlobStorage::ContainerClient> client;
     MultiVersion<AzureBlobStorage::RequestSettings> settings;
     const String object_namespace; /// container + prefix
+    const String common_key_prefix; /// object_namespace with a trailing slash
 
     /// We use source url without container and prefix as description, because in Azure there are no limitations for operations between different containers.
     const String description;
