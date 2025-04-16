@@ -702,9 +702,13 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "25.5",
+        {
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",
         {
             /// Release closed. Please use 25.5
+            {"default_compression_codec", "", "", "New setting"},
             {"refresh_parts_interval", 0, 0, "A new setting"},
             {"max_merge_delayed_streams_for_parallel_write", 1000, 40, "New setting"},
             {"max_postpone_time_for_failed_replicated_fetches_ms", 1ULL * 60 * 1000, 1ULL * 60 * 1000, "Added new setting to enable postponing fetch tasks in the replication queue."},
