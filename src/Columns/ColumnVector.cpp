@@ -104,7 +104,7 @@ WeakHash32 ColumnVector<T>::getWeakHash32() const
 template <typename T>
 void ColumnVector<T>::updateHashFast(SipHash & hash) const
 {
-    hash.update(reinterpret_cast<const char *>(data->data()), size() * sizeof(data[0]));
+    hash.update(reinterpret_cast<const char *>(data->data()), size() * sizeof((*data)[0]));
 }
 
 template <typename T>
