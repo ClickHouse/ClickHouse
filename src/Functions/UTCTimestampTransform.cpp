@@ -4,6 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/LocalDateTime.h>
 #include <Common/logger_useful.h>
 #include <Core/DecimalFunctions.h>
@@ -120,7 +121,7 @@ namespace
                 }
                 return result_column;
             }
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {}'s 1st argument can only be datetime/datatime64. ", name);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {}'s 1st argument can only be DateTime/DateTime64. ", name);
         }
 
     };

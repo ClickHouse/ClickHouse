@@ -168,7 +168,7 @@ NamesAndTypesList ORCSchemaReader::readSchema()
         format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference,
         format_settings.schema_inference_make_columns_nullable != 0);
     if (format_settings.schema_inference_make_columns_nullable == 1)
-        return getNamesAndRecursivelyNullableTypes(header);
+        return getNamesAndRecursivelyNullableTypes(header, format_settings);
     return header.getNamesAndTypesList();
 }
 
@@ -180,13 +180,26 @@ std::optional<size_t> ORCSchemaReader::readNumberOrRows()
 
 void registerInputFormatORC(FormatFactory & factory)
 {
-    factory.registerInputFormat(
+    factory.registerRandomAccessInputFormat(
         "ORC",
-        [](ReadBuffer & buf, const Block & sample, const RowInputFormatParams &, const FormatSettings & settings)
+        [](ReadBuffer & buf,
+           const Block & sample,
+           const FormatSettings & settings,
+           const ReadSettings & read_settings,
+           bool is_remote_fs,
+           size_t /* max_download_threads */,
+           size_t /* max_parsing_threads */)
         {
             InputFormatPtr res;
             if (settings.orc.use_fast_decoder)
-                res = std::make_shared<NativeORCBlockInputFormat>(buf, sample, settings);
+            {
+                const bool has_file_size = isBufferWithFileSize(buf);
+                auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(&buf);
+                const bool use_prefetch = is_remote_fs && read_settings.remote_fs_prefetch && has_file_size && seekable_in
+                    && seekable_in->checkIfActuallySeekable() && seekable_in->supportsReadAt() && settings.seekable_read;
+                const size_t min_bytes_for_seek = use_prefetch ? read_settings.remote_read_min_bytes_for_seek : 0;
+                res = std::make_shared<NativeORCBlockInputFormat>(buf, sample, settings, use_prefetch, min_bytes_for_seek);
+            }
             else
                 res = std::make_shared<ORCBlockInputFormat>(buf, sample, settings);
 

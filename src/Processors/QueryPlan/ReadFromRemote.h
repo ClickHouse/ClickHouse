@@ -1,4 +1,6 @@
 #pragma once
+
+#include <stack>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Core/QueryProcessingStage.h>
 #include <Client/IConnections.h>
@@ -43,7 +45,9 @@ public:
     void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
 
     void enableMemoryBoundMerging();
-    void enforceAggregationInOrder();
+    void enforceAggregationInOrder(const SortDescription & sort_description);
+
+    bool hasSerializedPlan() const;
 
 private:
     ClusterProxy::SelectStreamFactory::Shards shards;
@@ -93,7 +97,9 @@ public:
     void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
 
     void enableMemoryBoundMerging();
-    void enforceAggregationInOrder();
+    void enforceAggregationInOrder(const SortDescription & sort_description);
+
+    StorageID getStorageID() const { return storage_id; }
 
 private:
     Pipes addPipes(ASTPtr ast, const Header & out_header);

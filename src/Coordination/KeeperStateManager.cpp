@@ -7,6 +7,7 @@
 #include <Common/SipHash.h>
 #include <Common/isLocalAddress.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Disks/DiskLocal.h>

@@ -8,12 +8,11 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
-#include <Analyzer/JoinNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/FunctionNode.h>
 
-#include <Planner/PlannerContext.h>
 #include <Planner/PlannerActionsVisitor.h>
+
 
 namespace DB
 {
@@ -109,9 +108,12 @@ public:
                 if (outputs.size() != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Expected single output in actions dag for alias column {}. Actual {}", column_node->dumpTree(), outputs.size());
+
+                auto & alias_node = outputs[0];
                 const auto & column_name = column_node->getColumnName();
-                const auto & alias_node = alias_column_actions_dag.addAlias(*outputs[0], column_name);
-                alias_column_actions_dag.addOrReplaceInOutputs(alias_node);
+                alias_node = &alias_column_actions_dag.addAlias(*alias_node, column_name);
+
+                alias_column_actions_dag.getOutputs() = std::move(outputs);
                 table_expression_data.addAliasColumn(column_node->getColumn(), column_identifier, std::move(alias_column_actions_dag), select_added_columns);
             }
             else

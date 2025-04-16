@@ -26,7 +26,7 @@ public:
 
     String enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &) override;
 
-    String tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context);
+    String tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context, bool internal_query);
 
     void shutdown() override;
 

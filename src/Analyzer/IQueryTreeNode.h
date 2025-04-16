@@ -3,14 +3,11 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <deque>
 
 #include <Common/TypePromotion.h>
 
-#include <DataTypes/IDataType.h>
-
-#include <Parsers/IAST_fwd.h>
-
-#include <Analyzer/Identifier.h>
+#include <city.h>
 
 class SipHash;
 
@@ -19,8 +16,14 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNSUPPORTED_METHOD;
+extern const int UNSUPPORTED_METHOD;
 }
+
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
+
+class IDataType;
+using DataTypePtr = std::shared_ptr<const IDataType>;
 
 class WriteBuffer;
 
@@ -64,6 +67,7 @@ const char * toString(QueryTreeNodeType type);
 class IQueryTreeNode;
 using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 using QueryTreeNodes = std::vector<QueryTreeNodePtr>;
+using QueryTreeNodesDeque = std::deque<QueryTreeNodePtr>;
 using QueryTreeNodeWeakPtr = std::weak_ptr<IQueryTreeNode>;
 using QueryTreeWeakNodes = std::vector<QueryTreeNodeWeakPtr>;
 

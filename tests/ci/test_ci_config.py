@@ -109,7 +109,7 @@ class TestCIConfig(unittest.TestCase):
                 elif "debug" in job:
                     expected_builds = [CI.BuildNames.PACKAGE_DEBUG]
                 elif job in (
-                    "Unit tests (release)",
+                    "Unit tests (binary)",
                     "ClickHouse Keeper Jepsen",
                     "ClickHouse Server Jepsen",
                 ):
@@ -420,7 +420,7 @@ class TestCIConfig(unittest.TestCase):
             "Style check",
             "Fast test",
             "binary_release",
-            "Unit tests (release)",
+            "Unit tests (binary)",
         ]
         self.assertCountEqual(expected_jobs_to_do, actual_jobs_to_do)
 
@@ -610,7 +610,7 @@ class TestCIConfig(unittest.TestCase):
         assert not ci_cache.jobs_to_skip
 
         MOCK_AFFECTED_JOBS = [
-            CI.JobNames.STATELESS_TEST_S3_DEBUG,
+            CI.JobNames.STATELESS_TEST_S3_DEBUG_DISTRIBUTED_PLAN,
             CI.JobNames.STRESS_TEST_TSAN,
         ]
         MOCK_REQUIRED_BUILDS = []

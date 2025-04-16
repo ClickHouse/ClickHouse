@@ -18,7 +18,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 

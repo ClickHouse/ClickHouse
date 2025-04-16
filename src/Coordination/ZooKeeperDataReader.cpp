@@ -9,6 +9,8 @@
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Coordination/KeeperCommon.h>
+#include <Coordination/KeeperStorage_fwd.h>
+#include <Coordination/KeeperStorage.h>
 
 
 namespace DB
@@ -135,7 +137,10 @@ int64_t deserializeStorageData(Storage & storage, ReadBuffer & in, LoggerPtr log
             storage.container.insertOrReplace(path, node);
 
             if (ephemeral_owner != 0)
+            {
                 storage.committed_ephemerals[ephemeral_owner].insert(path);
+                ++storage.committed_ephemeral_nodes;
+            }
 
             storage.acl_map.addUsage(node.acl_id);
         }

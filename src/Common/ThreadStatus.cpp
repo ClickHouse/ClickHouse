@@ -4,6 +4,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
+#include <Common/memory.h>
 #include <base/getPageSize.h>
 #include <base/errnoToString.h>
 #include <Interpreters/Context.h>
@@ -16,8 +17,12 @@
 
 namespace DB
 {
-
 thread_local ThreadStatus constinit * current_thread = nullptr;
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_ALLOCATE_MEMORY;
+}
 
 #if !defined(SANITIZER)
 namespace
@@ -41,15 +46,25 @@ constexpr size_t UNWIND_MINSIGSTKSZ = 32 << 10;
 struct ThreadStack
 {
     ThreadStack()
-        : data(aligned_alloc(getPageSize(), getSize()))
     {
-        /// Add a guard page
-        /// (and since the stack grows downward, we need to protect the first page).
-        mprotect(data, getPageSize(), PROT_NONE);
+        data = aligned_alloc(getPageSize(), getSize());
+        if (!data)
+            throw ErrnoException(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate ThreadStack");
+
+        try
+        {
+            /// Since the stack grows downward, we need to protect the first page
+            memoryGuardInstall(data, getPageSize());
+        }
+        catch (...)
+        {
+            free(data);
+            throw;
+        }
     }
     ~ThreadStack()
     {
-        mprotect(data, getPageSize(), PROT_WRITE|PROT_READ);
+        memoryGuardRemove(data, getPageSize());
         free(data);
     }
 
@@ -58,7 +73,7 @@ struct ThreadStack
 
 private:
     /// 16 KiB - not too big but enough to handle error.
-    void * data;
+    void * data = nullptr;
 };
 
 }
@@ -69,6 +84,7 @@ static thread_local bool has_alt_stack = false;
 
 ThreadGroup::ThreadGroup()
     : master_thread_id(CurrentThread::get().thread_id)
+    , memory_spill_scheduler(false)
 {}
 
 ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)

@@ -17,6 +17,24 @@ namespace DB
     DECLARE(Bool, allow_dynamic_metadata_for_data_lakes, false, R"(
 If enabled, indicates that metadata is taken from iceberg specification that is pulled from cloud before each query.
 )", 0) \
+    DECLARE(Bool, allow_experimental_delta_kernel_rs, false, R"(
+If enabled, the engine would use delta-kernel-rs for DeltaLake metadata parsing
+)", 0) \
+    DECLARE(Bool, delta_lake_read_schema_same_as_table_schema, false, R"(
+Whether delta-lake read schema is the same as table schema.
+)", 0) \
+    DECLARE(String, iceberg_metadata_file_path, "", R"(
+Explicit path to desired Iceberg metadata file, should be relative to path in object storage. Make sense for table function use case only.
+)", 0) \
+    DECLARE(String, iceberg_metadata_table_uuid, "", R"(
+Explicit table UUID to read metadata for. Ignored if iceberg_metadata_file_path is set.
+)", 0) \
+    DECLARE(Bool, iceberg_recent_metadata_file_by_last_updated_ms_field, false, R"(
+If enabled, the engine would use the metadata file with the most recent last_updated_ms json field. Does not make sense to use with iceberg_metadata_file_path.
+)", 0) \
+    DECLARE(Bool, iceberg_use_version_hint, false, R"(
+Get latest metadata path from version-hint.text file.
+)", 0) \
 
 // clang-format on
 
@@ -61,12 +79,9 @@ StorageObjectStorageSettings::~StorageObjectStorageSettings() = default;
 STORAGE_OBJECT_STORAGE_SETTINGS_SUPPORTED_TYPES(StorageObjectStorageSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 
 
-void StorageObjectStorageSettings::loadFromQuery(ASTStorage & storage_def)
+void StorageObjectStorageSettings::loadFromQuery(ASTSetQuery & settings_ast)
 {
-    if (storage_def.settings)
-    {
-        impl->applyChanges(storage_def.settings->changes);
-    }
+    impl->applyChanges(settings_ast.changes);
 }
 
 Field StorageObjectStorageSettings::get(const std::string & name)

@@ -2,7 +2,7 @@
 
 #include <Core/Types.h>
 #include <Interpreters/Cluster.h>
-#include <Common/OpenTelemetryTraceContext.h>
+#include <Common/OpenTelemetryTracingContext.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ZooKeeper/Types.h>
 #include <filesystem>
@@ -205,6 +205,9 @@ class ZooKeeperMetadataTransaction
     String task_path;
     Coordination::Requests ops;
 
+    using FinalizerCallback = std::function<void()>;
+    FinalizerCallback finalizer;
+
     /// CREATE OR REPLACE is special query that consists of 3 separate DDL queries (CREATE, RENAME, DROP)
     /// and not all changes should be applied to metadata in ZooKeeper
     /// (otherwise we may get partially applied changes on connection loss).
@@ -241,10 +244,22 @@ public:
         ops.emplace_back(op);
     }
 
+    /// Allow to run arbitrary code after executing transaction
+    void addFinalizer(FinalizerCallback && callback)
+    {
+        if (isExecuted())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add finalizer because transaction had been already executed. It's a bug.");
+        if (finalizer)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Finalizer already set. It's a bug.");
+        finalizer = std::move(callback);
+    }
+
     void moveOpsTo(Coordination::Requests & other_ops)
     {
         if (isExecuted())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add ZooKeeper operation because query is executed. It's a bug.");
+        if (finalizer)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot move ZooKeeper operations out from transaction with finalizer. It's a bug.");
         std::move(ops.begin(), ops.end(), std::back_inserter(other_ops));
         ops.clear();
         state = COMMITTED;
@@ -252,7 +267,21 @@ public:
 
     void commit();
 
-    ~ZooKeeperMetadataTransaction() { assert(isExecuted() || std::uncaught_exceptions() || ops.empty()); }
+    /// (It would be nice to assert something like the following:
+    ///    assert(isExecuted() || std::uncaught_exceptions() || ops.empty());
+    ///  But we can't do it because it would cause rare false positives because
+    ///  ZooKeeperMetadataTransaction can be inside a weak_ptr
+    ///  (in QueryStatus -> WithContext -> Context -> ContextData), enabling the following
+    ///  scenario:
+    ///   0. There's a query whose Context has a ZooKeeperMetadataTransactionPtr.
+    ///   1. A `select * from system.process_list` looks at this query's QueryStatus and does
+    ///      weak_ptr::lock() on the query's Context.
+    ///   2. The query fails with any exception and destroys its ContextPtr. But the Context
+    ///      and its ZooKeeperMetadataTransaction are still held alive by the temporary
+    ///      shared_ptr from the previous step.
+    ///   3. The temporary shared_ptr<Context> gets destroyed, and ~ZooKeeperMetadataTransaction
+    ///      is called with std::uncaught_exceptions() == 0.)
+    ~ZooKeeperMetadataTransaction() = default;
 };
 
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name);

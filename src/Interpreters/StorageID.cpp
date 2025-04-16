@@ -1,6 +1,7 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Common/SipHash.h>
 #include <IO/WriteHelpers.h>
@@ -13,8 +14,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_DATABASE;
+extern const int LOGICAL_ERROR;
+extern const int UNKNOWN_DATABASE;
+extern const int UNKNOWN_TABLE;
 }
 
 StorageID::StorageID(const ASTQueryWithTableAndOutput & query)
@@ -73,6 +75,15 @@ bool StorageID::operator==(const StorageID & rhs) const
     if (hasUUID() && rhs.hasUUID())
         return uuid == rhs.uuid;
     return std::tie(database_name, table_name) == std::tie(rhs.database_name, rhs.table_name);
+}
+
+void StorageID::assertNotEmpty() const
+{
+    // Can be triggered by user input, e.g. SELECT joinGetOrNull('', 'num', 500)
+    if (empty())
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Both table name and UUID are empty");
+    if (table_name.empty() && !database_name.empty())
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table name is empty, but database name is not");
 }
 
 String StorageID::getFullTableName() const
