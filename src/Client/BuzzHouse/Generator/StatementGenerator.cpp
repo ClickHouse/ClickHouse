@@ -4124,45 +4124,18 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
             }
         }
     }
-    else if (sq.has_explain() && !sq.explain().is_explain() && query.has_attach() && success)
+    else if (sq.has_explain() && !sq.explain().is_explain() && (query.has_attach() || query.has_detach()) && success)
     {
-        const Attach & att = query.attach();
-        const SQLObjectName & oobj = att.object();
+        const SQLObjectName & oobj = query.has_attach() ? query.attach().object() : query.detach().object();
         const bool istable = oobj.has_est() && oobj.est().table().table()[0] == 't';
         const bool isview = oobj.has_est() && oobj.est().table().table()[0] == 'v';
         const bool isdictionary = oobj.has_est() && oobj.est().table().table()[0] == 'd';
         const bool isdatabase = oobj.has_database();
         const uint32_t tname
             = static_cast<uint32_t>(std::stoul(isdatabase ? oobj.database().database().substr(1) : oobj.est().table().table().substr(1)));
-
-        if (istable)
-        {
-            this->attachOrDetachObject<SQLTable>(tname, DetachStatus::ATTACHED);
-        }
-        else if (isview)
-        {
-            this->attachOrDetachObject<SQLView>(tname, DetachStatus::ATTACHED);
-        }
-        else if (isdictionary)
-        {
-            this->attachOrDetachObject<SQLDictionary>(tname, DetachStatus::ATTACHED);
-        }
-        else if (isdatabase)
-        {
-            this->attachOrDetachObject<std::shared_ptr<SQLDatabase>>(tname, DetachStatus::ATTACHED);
-        }
-    }
-    else if (sq.has_explain() && !sq.explain().is_explain() && query.has_detach() && success)
-    {
-        const Detach & det = query.detach();
-        const SQLObjectName & oobj = det.object();
-        const bool istable = oobj.has_est() && oobj.est().table().table()[0] == 't';
-        const bool isview = oobj.has_est() && oobj.est().table().table()[0] == 'v';
-        const bool isdictionary = oobj.has_est() && oobj.est().table().table()[0] == 'd';
-        const bool isdatabase = oobj.has_database();
-        const uint32_t tname
-            = static_cast<uint32_t>(std::stoul(isdatabase ? oobj.database().database().substr(1) : oobj.est().table().table().substr(1)));
-        const DetachStatus status = det.permanently() ? DetachStatus::PERM_DETACHED : DetachStatus::DETACHED;
+        const DetachStatus status = query.has_attach()
+            ? DetachStatus::ATTACHED
+            : (query.detach().permanently() ? DetachStatus::PERM_DETACHED : DetachStatus::DETACHED);
 
         if (istable)
         {
