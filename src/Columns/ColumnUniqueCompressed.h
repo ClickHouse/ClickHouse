@@ -40,6 +40,7 @@ public:
 
     MutableColumnPtr cloneEmpty() const override;
 
+    /// Nested column is compressed
     const ColumnPtr & getNestedColumn() const override { return data_column; }
     const ColumnPtr & getNestedNotNullableColumn() const override { return data_column; }
     bool nestedColumnIsNullable() const override { return false; }
@@ -164,6 +165,8 @@ private:
 template <typename ColumnType>
 String ColumnUniqueFCBlockDF<ColumnType>::getDecompressedAt(size_t pos) const
 {
+    chassert(pos < data_column->size());
+
     const size_t pos_in_block = pos % block_size;
     if (pos_in_block == 0) {
         return data_column->getDataAt(pos).toString();
@@ -216,7 +219,7 @@ ColumnUniqueFCBlockDF<ColumnType>::ColumnUniqueFCBlockDF(const ColumnPtr & strin
     size_t pos_in_block = 0;
     for (size_t i = 0; i < sorted_column->size(); ++i) 
     {
-        StringRef data = sorted_column->getDataAt(i);
+        const StringRef data = sorted_column->getDataAt(i);
         if (prev_data == data) 
         {
             continue;
@@ -259,12 +262,12 @@ size_t ColumnUniqueFCBlockDF<ColumnType>::getPosOfClosestHeader(StringRef value)
         size_t mid = (left + right) / 2;
         size_t header_index = mid * block_size;
 
-        StringRef header = data_column->getDataAt(header_index);
+        const StringRef header = data_column->getDataAt(header_index);
         if (header < value || header == value) 
         {
             output = header_index;
             left = mid + 1;
-        } 
+        }
         else 
         {
             if (mid == 0) 
@@ -274,34 +277,52 @@ size_t ColumnUniqueFCBlockDF<ColumnType>::getPosOfClosestHeader(StringRef value)
             right = mid - 1;
         }
     }
-
     return output;
+}
+
+template <typename ColumnType>
+size_t ColumnUniqueFCBlockDF<ColumnType>::getPosToInsert(StringRef value) const
+{
+    size_t pos = getPosOfClosestHeader(value);
+    StringRef data = getDecompressedAt(pos);
+    while (data < value && pos < data_column->size())
+    {
+        ++pos;
+        data = getDecompressedAt(pos);
+    }
+    return pos;
 }
 
 template <typename ColumnType>
 std::optional<UInt64> ColumnUniqueFCBlockDF<ColumnType>::getOrFindValueIndex(StringRef value) const
 {
-    const size_t closest_header_pos = getPosOfClosestHeader(value);
-    if (data_column->getDataAt(closest_header_pos) == value) 
+    const size_t expected_pos = getPosToInsert(value);
+    if (expected_pos == data_column->size() || data_column->getDataAt(expected_pos) != value)
     {
-        return closest_header_pos;
+        return {};
     }
-
-
+    return expected_pos;
 }
 
 template <typename ColumnType>
 MutableColumnPtr ColumnUniqueFCBlockDF<ColumnType>::cloneEmpty() const
 {
-    return ColumnUniqueFCBlockDF<ColumnType>::create(block_size);
+    return ColumnUniqueFCBlockDF<ColumnType>::create(ColumnString::create(), block_size);
 }
 
 template <typename ColumnType>
 size_t ColumnUniqueFCBlockDF<ColumnType>::uniqueInsert(const Field & x)
 {
+    const size_t output = getPosToInsert(x.safeGet<String>());
+
     auto single_value_column = ColumnString::create();
     single_value_column->insert(x);
 
+    auto temp_column = getDecompressedColumn();
+    temp_column->insertRangeFrom(single_value_column, 0, single_value_column->size());
+
+    *this = ColumnUniqueFCBlockDF(temp_column, block_size);
+    return output;
 }
 
 template <typename ColumnType>
