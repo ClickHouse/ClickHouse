@@ -1,4 +1,9 @@
 <clickhouse>
+    <logger>
+        <level>trace</level>
+        <console>true</console>
+    </logger>
+
     <tcp_port>0</tcp_port>
     <path>.</path>
     <listen_host>127.0.0.1</listen_host>

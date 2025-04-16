@@ -9,7 +9,8 @@ server_opts=(
     "--config-file=$CURDIR/$(basename "${BASH_SOURCE[0]}" .sh).config.xml"
 )
 
-CLICKHOUSE_WATCHDOG_ENABLE=0 $CLICKHOUSE_SERVER_BINARY --config-file="$CURDIR/$(basename "${BASH_SOURCE[0]}" .sh).config.xml" &> clickhouse-server.stderr &
+CLICKHOUSE_BASH_TRACING_FILE=${CLICKHOUSE_BASH_TRACING_FILE:="$(basename "${BASH_SOURCE[0]}" .sh).debug"}
+CLICKHOUSE_WATCHDOG_ENABLE=0 $CLICKHOUSE_SERVER_BINARY --config-file="$CURDIR/$(basename "${BASH_SOURCE[0]}" .sh).config.xml" &>> "$CLICKHOUSE_BASH_TRACING_FILE" &
 server_pid=$!
 
 server_port=
@@ -54,8 +55,5 @@ SYSTEM FLUSH LOGS;
 kill $server_pid
 wait $server_pid
 return_code=$?
-
-rm -f clickhouse-server.stderr
-rm -f "$CURDIR"/users.xml
 
 ${CLICKHOUSE_LOCAL} --path "$CURDIR" --query "SELECT query FROM system.query_log WHERE query LIKE '%Hello%' /* ignore current_database */ LIMIT 1" --output-format LineAsString
