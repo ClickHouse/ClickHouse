@@ -337,7 +337,6 @@ void TransposedMetricLog::stepFunction(TimePoint current_time)
     static std::vector<ProfileEvents::Count> prev_profile_events(ProfileEvents::end());
 
     TransposedMetricLogElement elem;
-    elem.event_date = DateLUT::instance().toDayNum(elem.event_time);
     elem.event_time = std::chrono::system_clock::to_time_t(current_time);
     elem.event_time_microseconds = timeInMicroseconds(current_time);
 
