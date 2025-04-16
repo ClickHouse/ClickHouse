@@ -18,6 +18,17 @@
 #define MAP_ANONYMOUS MAP_ANON
 #endif
 
+namespace
+{
+constexpr bool guardPagesEnabled()
+{
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    return true;
+#else
+    return false;
+#endif
+}
+}
 
 namespace DB::ErrorCodes
 {
@@ -34,20 +45,25 @@ FiberStack::FiberStack(size_t stack_size_)
 boost::context::stack_context FiberStack::allocate() const
 {
     size_t num_pages = 1 + (stack_size - 1) / page_size;
-    size_t num_bytes = (num_pages + guarded_pages) * page_size; /// Add one page at bottom that will be used as guard-page
+
+    if (guardPagesEnabled())
+        /// Add one page at bottom that will be used as guard-page
+        num_pages += 1;
+
+    size_t num_bytes = num_pages * page_size;
 
     void * data = aligned_alloc(page_size, num_bytes);
 
     if (!data)
         throw DB::ErrnoException(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate FiberStack");
 
-    if (guarded_pages)
+    if (guardPagesEnabled())
     {
         /// TODO: make reports on illegal guard page access more clear.
         /// Currently we will see segfault and almost random stacktrace.
         try
         {
-            memoryGuardInstall(data, guarded_pages * page_size);
+            memoryGuardInstall(data, page_size);
         }
         catch (...)
         {
@@ -56,9 +72,8 @@ boost::context::stack_context FiberStack::allocate() const
         }
     }
 
-    /// Do not count guard page in memory usage.
-    auto trace = CurrentMemoryTracker::alloc(num_bytes - guarded_pages * page_size);
-    trace.onAlloc(data, num_pages * page_size);
+    auto trace = CurrentMemoryTracker::alloc(num_bytes);
+    trace.onAlloc(data, num_bytes);
 
     boost::context::stack_context sctx;
     sctx.size = num_bytes;
@@ -76,12 +91,12 @@ void FiberStack::deallocate(boost::context::stack_context & sctx) const
 #endif
     void * data = static_cast< char * >(sctx.sp) - sctx.size;
 
-    if (guarded_pages)
-        memoryGuardRemove(data, guarded_pages * page_size);
+    if (guardPagesEnabled())
+        memoryGuardRemove(data, page_size);
 
     free(data);
 
     /// Do not count guard page in memory usage.
-    auto trace = CurrentMemoryTracker::free(sctx.size - guarded_pages * page_size);
+    auto trace = CurrentMemoryTracker::free(sctx.size);
     trace.onFree(data, sctx.size - page_size);
 }

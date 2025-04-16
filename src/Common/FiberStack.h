@@ -14,12 +14,6 @@ public:
     /// way. We will have 80 pages with 4KB page size.
     static constexpr size_t default_stack_size = 320 * 1024; /// 64KB was not enough for tests
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    static constexpr size_t guarded_pages = 1;
-#else
-    static constexpr size_t guarded_pages = 0;
-#endif
-
     explicit FiberStack(size_t stack_size_ = default_stack_size);
 
     boost::context::stack_context allocate() const;
