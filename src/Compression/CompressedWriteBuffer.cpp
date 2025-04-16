@@ -13,6 +13,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 void CompressedWriteBuffer::nextImpl()
 {
     if (!offset())
