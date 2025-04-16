@@ -184,26 +184,27 @@ public:
 private:
     static Int32 hashLong(Int64 value)
     {
-        char little_endian_representation[8];
+        std::array<char, 8> little_endian_representation;
         for (char & i : little_endian_representation)
         {
-            i = static_cast<char>(value & 0xFF);
+            i = static_cast<unsigned char>(value & 0xFF);
             value >>= 8;
         }
-        return MurmurHash3Impl32::apply(little_endian_representation, 8);
+        return MurmurHash3Impl32::apply(little_endian_representation.data(), 8);
     }
 
     static Int32 hashUnderlyingIntBigEndian(UInt128 value, bool reduce_two_complement)
     {
-        char big_endian_representation[16];
-        UInt32 taken = 1;
+        std::array<char, 16> big_endian_representation;
+        size_t taken = 1;
         char prev = 0;
-        for (int i = 0; i < 16; ++i)
+        for (size_t i = 0; i < 16; ++i)
         {
             char c = static_cast<unsigned char>(value & 0xFF);
             big_endian_representation[i] = c;
             value >>= 8;
-            if ((i == 0) || ((c != 0) && (c != -1)) || ((c & 0x80) != (prev & 0x80)))
+            if ((i == 0) || ((c != static_cast<char>(0)) && (c != static_cast<char>(-1)))
+                || ((c & static_cast<char>(0x80)) != (prev & static_cast<char>(0x80))))
             {
                 taken = i + 1;
             }
@@ -213,11 +214,8 @@ private:
         {
             taken = 16;
         }
-        for (size_t i = 0; i < (taken >> 1); ++i)
-        {
-            std::swap(big_endian_representation[i], big_endian_representation[taken - i - 1]);
-        }
-        return MurmurHash3Impl32::apply(big_endian_representation, taken);
+        std::reverse(big_endian_representation.begin(), big_endian_representation.begin() + taken);
+        return MurmurHash3Impl32::apply(big_endian_representation.data(), taken);
     }
 
     static UInt64 doubleToLongBits(Float64 value)
