@@ -56,7 +56,7 @@ def started_cluster():
 def cleanup():
     yield
 
-    for node in nodes:
+    for node in nodes + [reading_node]:
         node.query(
             "drop database if exists re sync;"
             "drop table if exists system.a;")
