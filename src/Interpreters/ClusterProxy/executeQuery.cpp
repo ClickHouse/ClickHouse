@@ -1117,10 +1117,9 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     }
     pools_to_use.resize(max_replicas_to_use);
 
-    if (coordinator)
+    if (coordinator && pools_to_use.size() < shard.getAllNodeCount())
     {
         chassert(local_pipeline);
-        chassert(pools_to_use.size() < shard.getAllNodeCount());
 
         /// with local pipeline the snapshot replica is local one
         /// and replica number was already assigned to it
