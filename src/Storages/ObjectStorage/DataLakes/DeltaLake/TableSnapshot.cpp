@@ -239,7 +239,7 @@ public:
             }
             else
             {
-                /// DeltaKernel has inconsistency, getPartitionColumns returns logical column names, 
+                /// DeltaKernel has inconsistency, getPartitionColumns returns logical column names,
                 /// while here in partition_map we would have physical columns as map keys.
                 /// This will be fixed after switching to "transform"'s.
                 auto it = context->physical_names_map.find(partition_column);
