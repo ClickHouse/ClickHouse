@@ -15,6 +15,7 @@
 #include <Interpreters/misc.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndexUtils.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
 #include <Poco/Logger.h>
@@ -145,7 +146,7 @@ void MergeTreeIndexAggregatorBloomFilterText::update(const Block & block, size_t
 }
 
 MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
-    const ActionsDAG::Node * predicate,
+    const ActionsDAG * filter_actions_dag,
     ContextPtr context,
     const Block & index_sample_block,
     const BloomFilterParameters & params_,
@@ -155,14 +156,18 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     , params(params_)
     , token_extractor(token_extactor_)
 {
-    if (!predicate)
+    if (!filter_actions_dag)
     {
         rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
         return;
     }
 
+    /// Clone ActionsDAG with re-generated column name for constants.
+    /// DAG from the query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
+    /// DAG from the skip indexes does not use it. This breaks matching by column name sometimes.
+    auto cloned_filter_actions_dag = cloneFilterDAGForIndexesAnalysis(*filter_actions_dag);
     RPNBuilder<RPNElement> builder(
-        predicate,
+        cloned_filter_actions_dag.getOutputs().at(0),
         context,
         [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
     rpn = std::move(builder).extractRPN();
@@ -751,9 +756,9 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilterText::createIndexAggregator
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
-        const ActionsDAG::Node * predicate, ContextPtr context) const
+        const ActionsDAG * filter_dag, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeConditionBloomFilterText>(predicate, context, index.sample_block, params, token_extractor.get());
+    return std::make_shared<MergeTreeConditionBloomFilterText>(filter_dag, context, index.sample_block, params, token_extractor.get());
 }
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(
