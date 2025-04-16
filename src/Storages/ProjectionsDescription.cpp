@@ -24,6 +24,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <base/range.h>
+#include "Processors/Transforms/FilterTransform.h"
 
 
 namespace DB
@@ -297,24 +298,20 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
     mut_context->setSetting("aggregate_functions_null_for_empty", Field(0));
     mut_context->setSetting("transform_null_in", Field(0));
 
-    ASTPtr query_ast_copy = nullptr;
-    /// Respect the _row_exists column.
-    if (block.has(RowExistsColumn::name))
+    Block block_copy = block;
+    if (block_copy.has(RowExistsColumn::name))
     {
-        query_ast_copy = query_ast->clone();
-        auto * select_row_exists = query_ast_copy->as<ASTSelectQuery>();
-        if (!select_row_exists)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get ASTSelectQuery when adding _row_exists = 1. It's a bug");
+        const auto & row_exists_column = block_copy.getByName(RowExistsColumn::name);
+        const auto & filter = assert_cast<const ColumnUInt8 &>(*row_exists_column.column).getData();
 
-        select_row_exists->setExpression(
-            ASTSelectQuery::Expression::WHERE,
-            makeASTFunction("equals", std::make_shared<ASTIdentifier>(RowExistsColumn::name), std::make_shared<ASTLiteral>(1)));
+        for (auto & column : block_copy)
+            column.column = column.column->filter(filter, -1);
     }
 
     auto builder = InterpreterSelectQuery(
-                       query_ast_copy ? query_ast_copy : query_ast,
+                       query_ast,
                        mut_context,
-                       Pipe(std::make_shared<SourceFromSingleChunk>(block)),
+                       Pipe(std::make_shared<SourceFromSingleChunk>(block_copy)),
                        SelectQueryOptions{
                            type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
                                                                        : QueryProcessingStage::WithMergeableState}

@@ -41,6 +41,7 @@
 #include <Analyzer/TableNode.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/makeASTForLogicalFunction.h>
+#include "Common/Logger.h"
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
@@ -712,6 +713,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 {
                     type = RowExistsColumn::type;
                     deleted_mask_updated = true;
+                    need_rebuild_projections = true;
                 }
                 else
                 {
@@ -1540,6 +1542,7 @@ ASTPtr MutationsInterpreter::getPartitionAndPredicateExpressionForMutationComman
 
 bool MutationsInterpreter::Stage::isAffectingAllColumns(const Names & storage_columns) const
 {
+    LOG_DEBUG(getLogger("KEK"), "output_columns: {}", toString(Names(output_columns.begin(), output_columns.end())));
     /// is subset
     for (const auto & storage_column : storage_columns)
         if (!output_columns.contains(storage_column))
