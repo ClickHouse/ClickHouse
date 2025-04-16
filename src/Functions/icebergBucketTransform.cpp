@@ -27,7 +27,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
     }
 
 /// This function specification https://iceberg.apache.org/spec/#truncate-transform-details
@@ -63,6 +62,10 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
+        if (arguments.size() != 1)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Incorrect number of arguments for function icebergHash: expected 1 argument");
         auto context = Context::getGlobalContextInstance();
 
         const auto & column = arguments[0].column;
@@ -137,7 +140,8 @@ public:
                 UInt32 scale = decimal_column->getScale();
                 assert(scale == 6 || scale == 9);
                 Int64 value_int = value.convertTo<Int64>();
-                if (scale == 9) {
+                if (scale == 9)
+                {
                     value_int = value_int / 1000;
                 }
                 result_data[i] = hashLong(value_int);
@@ -150,13 +154,18 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 UInt128 value;
-                if (which.isDecimal32()) {
+                if (which.isDecimal32())
+                {
                     const ColumnDecimal<Decimal32> * decimal_column = typeid_cast<const ColumnDecimal<Decimal32> *>(&wrapper_column);
                     value = decimal_column->getElement(i).value;
-                } else if (which.isDecimal64()) {
+                }
+                else if (which.isDecimal64())
+                {
                     const ColumnDecimal<Decimal64> * decimal_column = typeid_cast<const ColumnDecimal<Decimal64> *>(&wrapper_column);
                     value = decimal_column->getElement(i).value;
-                } else if (which.isDecimal128()) {
+                }
+                else if (which.isDecimal128())
+                {
                     const ColumnDecimal<Decimal128> * decimal_column = typeid_cast<const ColumnDecimal<Decimal128> *>(&wrapper_column);
                     value = decimal_column->getElement(i).value;
                 }
@@ -173,8 +182,8 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
 private:
-
-    static Int32 hashLong(Int64 value) {
+    static Int32 hashLong(Int64 value)
+    {
         char little_endian_representation[8];
         for (char & i : little_endian_representation)
         {
@@ -210,20 +219,24 @@ private:
         return MurmurHash3Impl32::apply(big_endian_representation, taken);
     }
 
-    static UInt64 doubleToLongBits(Float64 value) {
-        if (std::isnan(value)) {
+    static UInt64 doubleToLongBits(Float64 value)
+    {
+        if (std::isnan(value))
+        {
             // Return a canonical NaN representation
             return 0x7ff8000000000000ULL;
         }
-        
+
         // For other values, use a union to perform the bit-level conversion
-        union {
+        union
+        {
             Float64 d;
             UInt64 bits;
         } converter;
-        
+
         converter.d = value;
-        if (converter.bits == 0x8000000000000000ULL) {
+        if (converter.bits == 0x8000000000000000ULL)
+        {
             // Handle -0.0 case
             return 0x0000000000000000ULL;
         }
@@ -278,6 +291,10 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
+        if (arguments.size() != 2)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Incorrect number of arguments for function icebergBucket: expected 2 arguments");
         auto value = (*arguments[0].column)[0].safeGet<Int64>();
         if (value <= 0 || value > std::numeric_limits<UInt32>::max())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function IcebergBucket accepts only positive width which is suitable to UInt32");
@@ -327,4 +344,4 @@ REGISTER_FUNCTION(IcebergBucket)
     factory.registerFunction<FunctionIcebergBucket>({description, syntax, arguments, returned_value, examples, category});
 }
 
-} // namespace DB
+}
