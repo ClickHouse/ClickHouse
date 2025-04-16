@@ -182,14 +182,22 @@ private:
         }
         else if (isCompactPart(part))
         {
-            auto unescaped_name = unescapeForFileName(column_name);
-            if (auto col_idx_opt = part->getColumnPosition(unescaped_name))
+            if (part->index_granularity_info.mark_type.with_substreams)
             {
-                if (part->index_granularity_info.mark_type.with_substreams)
-                    col_idx = part->getColumnsSubstreams().getFirstSubstreamPosition(*col_idx_opt);
-                else
+                if (auto col_idx_opt = part->getColumnsSubstreams().tryGetSubstreamPosition(column_name))
+                {
                     col_idx = *col_idx_opt;
-                has_marks_in_part = true;
+                    has_marks_in_part = true;
+                }
+            }
+            else
+            {
+                auto unescaped_name = unescapeForFileName(column_name);
+                if (auto col_idx_opt = part->getColumnPosition(unescaped_name))
+                {
+                    col_idx = *col_idx_opt;
+                    has_marks_in_part = true;
+                }
             }
         }
         else

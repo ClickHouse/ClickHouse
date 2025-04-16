@@ -26,6 +26,7 @@ public:
     void addSubstreamToLastColumn(const String & substream);
 
     size_t getSubstreamPosition(size_t column_position, const String & substream) const;
+    std::optional<size_t> tryGetSubstreamPosition(const String & substream) const;
     size_t getFirstSubstreamPosition(size_t column_position) const;
     size_t getLastSubstreamPosition(size_t column_position) const;
 

@@ -41,6 +41,18 @@ size_t ColumnsSubstreams::getSubstreamPosition(size_t column_position, const Str
     return it->second;
 }
 
+std::optional<size_t> ColumnsSubstreams::tryGetSubstreamPosition(const String & substream) const
+{
+    for (const auto & substream_to_position : column_position_to_substream_positions)
+    {
+        auto it = substream_to_position.find(substream);
+        if (it != substream_to_position.end())
+            return it->second;
+    }
+
+    return std::nullopt;
+}
+
 size_t ColumnsSubstreams::getFirstSubstreamPosition(size_t column_position) const
 {
     if (column_position >= columns_substreams.size())

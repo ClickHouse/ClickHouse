@@ -369,7 +369,6 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
             columns_substreams.writeText(buffer);
         });
 
-        LOG_DEBUG(getLogger("MergedBlockOutputStream"), "Set columns substreams to par {}/{}", new_part->getNameWithState(), UInt64(new_part.get()));
         new_part->setColumnsSubstreams(columns_substreams);
     }
 

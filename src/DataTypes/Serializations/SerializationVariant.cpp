@@ -253,7 +253,10 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
 
     auto * variant_state = checkAndGetState<SerializeBinaryBulkStateVariant>(state);
 
-    /// Don't write anything if column is empty.
+    /// Even if there is no data to write, we still have to call nested serialization,
+    /// because we might need to call the stream getter for all existing substreams even
+    /// if nothing is written there. It's needed in Compact parts when we write
+    /// marks per substreams inside the stream getter.
     if (limit == 0)
     {
         settings.path.push_back(Substream::VariantElements);
