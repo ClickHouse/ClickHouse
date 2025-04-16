@@ -2417,7 +2417,7 @@ class ClickHouseCluster:
                     return True
             except Exception as ex:
                 logging.debug("RabbitMQ await_startup failed, %s:", ex)
-                time.sleep(0.5)
+                time.sleep(0.1)
 
         start = time.time()
         while time.time() - start < timeout:
@@ -2444,6 +2444,9 @@ class ClickHouseCluster:
         self.stop_rabbitmq_app()
         run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "reset", timeout)
         self.start_rabbitmq_app()
+
+    def run_rabbitmqctl(self, command):
+        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, command)
 
     def wait_nats_is_available(self, max_retries=5):
         retries = 0

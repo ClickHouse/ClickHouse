@@ -340,6 +340,27 @@ def test_refresh_vs_shutdown_smoke(started_cluster, cleanup):
 
     node1.start_clickhouse()
 
+def test_adding_replica(started_cluster, cleanup):
+    node1.query(
+        "create database re engine = Replicated('/test/re', 'shard1', 'r1');"
+        "create materialized view re.a refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x as select number*10 as x from numbers(2);"
+        "system wait view re.a")
+    assert node1.query("select * from re.a order by all") == "0\n10\n"
+    assert node1.query("select last_refresh_replica from system.view_refreshes") == "1\n"
+
+    r = node2.query(
+        "create database re engine = Replicated('/test/re', 'shard1', 'r2');"
+        "system sync database replica re")
+    assert node2.query("select * from re.a order by all") == "0\n10\n"
+
+    node1.query("system stop view re.a")
+    r = node2.query(
+        "system wait view re.a;"
+        "system refresh view re.a;"
+        "system wait view re.a;"
+        "select last_refresh_replica from system.view_refreshes")
+    assert r == "2\n"
+
 def test_replicated_db_startup_race(started_cluster, cleanup):
     for node in nodes:
         node.query(
