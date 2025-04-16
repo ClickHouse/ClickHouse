@@ -530,7 +530,7 @@ getLocalSelectPipelineForInserSelectWithParallelReplicas(const ASTPtr & select, 
     auto & plan = interpreter.getQueryPlan();
 
     /// Find reading steps for remote replicas and remove them,
-    /// When building local pipeline, the local replica will be registred in the returned coordinator,
+    /// When building local pipeline, the local replica will be registered in the returned coordinator,
     /// and announce its snapshot. The snapshot will be used to assign read tasks to involved replicas
     /// So, the remote pipelines, which will be created later, should use the same coordinator
     auto parallel_replicas_coordinator = ClusterProxy::dropReadFromRemoteInPlan(plan);
