@@ -255,25 +255,21 @@ void QueryOracle::generateExportQuery(
 
         for (const auto & entry : gen.entries)
         {
-            SQLType * tp = entry.getBottomType();
-
             buf += fmt::format(
                 "{}{} {}{}{}{}",
                 first ? "" : ", ",
                 entry.getBottomName(),
                 entry.path.size() > 1 ? "Array(" : "",
-                tp->typeName(true),
+                entry.getBottomType()->typeName(true),
                 entry.path.size() > 1 ? ")" : "",
                 (entry.path.size() == 1 && entry.nullable.has_value()) ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
-            gen.columnPathRef(entry, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
-            /// ArrowStream doesn't support UUID
-            if (outf == OutFormat::OUT_ArrowStream && tp->getTypeClass() == SQLTypeClass::UUID)
-            {
-                outf = OutFormat::OUT_CSV;
-            }
             first = false;
         }
         expr->mutable_lit_val()->set_string_lit(std::move(buf));
+    }
+    for (const auto & entry : gen.entries)
+    {
+        gen.columnPathRef(entry, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
     }
     gen.entries.clear();
     ff->set_outformat(outf);

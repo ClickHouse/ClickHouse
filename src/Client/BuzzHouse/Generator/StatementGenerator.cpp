@@ -710,7 +710,6 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
 
             for (const auto & entry : this->entries)
             {
-                SQLType * tp = entry.getBottomType();
                 const String & bottomName = entry.getBottomName();
 
                 buf += fmt::format(
@@ -718,7 +717,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
                     first ? "" : ", ",
                     bottomName,
                     entry.path.size() > 1 ? "Array(" : "",
-                    tp->typeName(false),
+                    entry.getBottomType()->typeName(false),
                     entry.path.size() > 1 ? ")" : "");
                 ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path()->mutable_col()->set_column(bottomName);
                 first = false;

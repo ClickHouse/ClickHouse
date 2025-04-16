@@ -243,13 +243,11 @@ void StatementGenerator::setTableRemote(
         flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
         for (const auto & entry : this->remote_entries)
         {
-            SQLType * tp = entry.getBottomType();
-
             buf += fmt::format(
                 "{}{} {}{}",
                 first ? "" : ", ",
                 entry.getBottomName(),
-                tp->typeName(true),
+                entry.getBottomType()->typeName(true),
                 entry.nullable.has_value() ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
             first = false;
         }
