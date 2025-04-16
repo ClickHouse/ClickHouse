@@ -412,6 +412,8 @@ private:
     void exchangeObjects(uint32_t tname1, uint32_t tname2);
     template <typename T>
     void renameObjects(uint32_t old_tname, uint32_t new_tname, const std::optional<uint32_t> & new_db);
+    template <typename T>
+    void attachOrDetachObject(uint32_t tname, DetachStatus status);
 
     static const constexpr auto funcDeterministicLambda = [](const SQLFunction & f) { return f.is_deterministic; };
 

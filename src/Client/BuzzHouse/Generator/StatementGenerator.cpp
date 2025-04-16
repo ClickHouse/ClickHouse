@@ -3719,36 +3719,73 @@ template <typename T>
 void StatementGenerator::exchangeObjects(const uint32_t tname1, const uint32_t tname2)
 {
     auto & container = const_cast<std::unordered_map<uint32_t, T> &>(getNextCollection<T>());
-    T tx = std::move(container.at(tname1));
-    T ty = std::move(container.at(tname2));
-    auto db_tmp = tx.db;
+    T obj1 = std::move(container.at(tname1));
+    T obj2 = std::move(container.at(tname2));
+    auto db_tmp = obj1.db;
 
-    tx.tname = tname2;
-    tx.db = ty.db;
-    ty.tname = tname1;
-    ty.db = db_tmp;
-    container[tname2] = std::move(tx);
-    container[tname1] = std::move(ty);
+    obj1.tname = tname2;
+    obj1.db = obj2.db;
+    obj2.tname = tname1;
+    obj2.db = db_tmp;
+    container[tname2] = std::move(obj1);
+    container[tname1] = std::move(obj2);
 }
 
 template <typename T>
 void StatementGenerator::renameObjects(const uint32_t old_tname, const uint32_t new_tname, const std::optional<uint32_t> & new_db)
 {
     auto & container = const_cast<std::unordered_map<uint32_t, T> &>(getNextCollection<T>());
-    T tx = std::move(container.at(old_tname));
+    T obj = std::move(container.at(old_tname));
 
     if constexpr (std::is_same_v<T, std::shared_ptr<SQLDatabase>>)
     {
-        tx->dname = new_tname;
+        obj->dname = new_tname;
         UNUSED(new_db);
     }
     else
     {
-        tx.tname = new_tname;
-        tx.db = new_db.has_value() ? this->databases.at(new_db.value()) : nullptr;
+        obj.tname = new_tname;
+        obj.db = new_db.has_value() ? this->databases.at(new_db.value()) : nullptr;
     }
-    container[new_tname] = std::move(tx);
+    container[new_tname] = std::move(obj);
     container.erase(old_tname);
+}
+
+template <typename T>
+void StatementGenerator::attachOrDetachObject(const uint32_t tname, const DetachStatus status)
+{
+    auto & container = const_cast<std::unordered_map<uint32_t, T> &>(getNextCollection<T>());
+    T & obj = container.at(tname);
+
+    if constexpr (std::is_same_v<T, std::shared_ptr<SQLDatabase>>)
+    {
+        obj->attached = status;
+        for (auto & [_, table] : this->tables)
+        {
+            if (table.db && table.db->dname == tname)
+            {
+                table.attached = std::max(table.attached, status);
+            }
+        }
+        for (auto & [_, view] : this->views)
+        {
+            if (view.db && view.db->dname == tname)
+            {
+                view.attached = std::max(view.attached, status);
+            }
+        }
+        for (auto & [_, dictionary] : this->dictionaries)
+        {
+            if (dictionary.db && dictionary.db->dname == tname)
+            {
+                dictionary.attached = std::max(dictionary.attached, status);
+            }
+        }
+    }
+    else
+    {
+        obj.attached = status;
+    }
 }
 
 void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegrations & ei, bool success)
@@ -4089,74 +4126,58 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
     else if (sq.has_explain() && !sq.explain().is_explain() && query.has_attach() && success)
     {
         const Attach & att = query.attach();
-        const bool istable = att.object().has_est() && att.object().est().table().table()[0] == 't';
-        const bool isview = att.object().has_est() && att.object().est().table().table()[0] == 'v';
-        const bool isdictionary = att.object().has_est() && att.object().est().table().table()[0] == 'd';
-        const bool isdatabase = att.object().has_database();
+        const SQLObjectName & oobj = att.object();
+        const bool istable = oobj.has_est() && oobj.est().table().table()[0] == 't';
+        const bool isview = oobj.has_est() && oobj.est().table().table()[0] == 'v';
+        const bool isdictionary = oobj.has_est() && oobj.est().table().table()[0] == 'd';
+        const bool isdatabase = oobj.has_database();
+        const uint32_t tname
+            = static_cast<uint32_t>(std::stoul(isdatabase ? oobj.database().database().substr(1) : oobj.est().table().table().substr(1)));
 
         if (istable)
         {
-            this->tables[static_cast<uint32_t>(std::stoul(att.object().est().table().table().substr(1)))].attached = DetachStatus::ATTACHED;
+            this->attachOrDetachObject<SQLTable>(tname, DetachStatus::ATTACHED);
         }
         else if (isview)
         {
-            this->views[static_cast<uint32_t>(std::stoul(att.object().est().table().table().substr(1)))].attached = DetachStatus::ATTACHED;
+            this->attachOrDetachObject<SQLView>(tname, DetachStatus::ATTACHED);
         }
         else if (isdictionary)
         {
-            this->dictionaries[static_cast<uint32_t>(std::stoul(att.object().est().table().table().substr(1)))].attached
-                = DetachStatus::ATTACHED;
+            this->attachOrDetachObject<SQLDictionary>(tname, DetachStatus::ATTACHED);
         }
         else if (isdatabase)
         {
-            const uint32_t dname = static_cast<uint32_t>(std::stoul(att.object().database().database().substr(1)));
-
-            this->databases[dname]->attached = DetachStatus::ATTACHED;
-            for (auto & [_, table] : this->tables)
-            {
-                if (table.db && table.db->dname == dname)
-                {
-                    table.attached = std::max(table.attached, DetachStatus::DETACHED);
-                }
-            }
+            this->attachOrDetachObject<std::shared_ptr<SQLDatabase>>(tname, DetachStatus::ATTACHED);
         }
     }
     else if (sq.has_explain() && !sq.explain().is_explain() && query.has_detach() && success)
     {
         const Detach & det = query.detach();
-        const bool istable = det.object().has_est() && det.object().est().table().table()[0] == 't';
-        const bool isview = det.object().has_est() && det.object().est().table().table()[0] == 'v';
-        const bool isdictionary = det.object().has_est() && det.object().est().table().table()[0] == 'd';
-        const bool isdatabase = det.object().has_database();
-        const bool is_permanent = det.permanently();
+        const SQLObjectName & oobj = det.object();
+        const bool istable = oobj.has_est() && oobj.est().table().table()[0] == 't';
+        const bool isview = oobj.has_est() && oobj.est().table().table()[0] == 'v';
+        const bool isdictionary = oobj.has_est() && oobj.est().table().table()[0] == 'd';
+        const bool isdatabase = oobj.has_database();
+        const uint32_t tname
+            = static_cast<uint32_t>(std::stoul(isdatabase ? oobj.database().database().substr(1) : oobj.est().table().table().substr(1)));
+        const DetachStatus status = det.permanently() ? DetachStatus::PERM_DETACHED : DetachStatus::DETACHED;
 
         if (istable)
         {
-            this->tables[static_cast<uint32_t>(std::stoul(det.object().est().table().table().substr(1)))].attached
-                = is_permanent ? DetachStatus::PERM_DETACHED : DetachStatus::DETACHED;
+            this->attachOrDetachObject<SQLTable>(tname, status);
         }
         else if (isview)
         {
-            this->views[static_cast<uint32_t>(std::stoul(det.object().est().table().table().substr(1)))].attached
-                = is_permanent ? DetachStatus::PERM_DETACHED : DetachStatus::DETACHED;
+            this->attachOrDetachObject<SQLView>(tname, status);
         }
         else if (isdictionary)
         {
-            this->dictionaries[static_cast<uint32_t>(std::stoul(det.object().est().table().table().substr(1)))].attached
-                = is_permanent ? DetachStatus::PERM_DETACHED : DetachStatus::DETACHED;
+            this->attachOrDetachObject<SQLDictionary>(tname, status);
         }
         else if (isdatabase)
         {
-            const uint32_t dname = static_cast<uint32_t>(std::stoul(det.object().database().database().substr(1)));
-
-            this->databases[dname]->attached = DetachStatus::DETACHED;
-            for (auto & [_, table] : this->tables)
-            {
-                if (table.db && table.db->dname == dname)
-                {
-                    table.attached = std::max(table.attached, DetachStatus::DETACHED);
-                }
-            }
+            this->attachOrDetachObject<std::shared_ptr<SQLDatabase>>(tname, status);
         }
     }
     else if (sq.has_explain() && query.has_create_database())
