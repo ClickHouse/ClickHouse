@@ -278,7 +278,7 @@ void TransposedMetricLogElement::appendToBlock(MutableColumns & columns) const
     size_t column_idx = 0;
 
     columns[column_idx++]->insert(getFQDNOrHostName());
-    columns[column_idx++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
+    columns[column_idx++]->insert(event_date);
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(event_time_microseconds);
     columns[column_idx++]->insert(metric_name);
@@ -338,6 +338,7 @@ void TransposedMetricLog::stepFunction(TimePoint current_time)
 
     TransposedMetricLogElement elem;
     elem.event_time = std::chrono::system_clock::to_time_t(current_time);
+    elem.event_date = DateLUT::instance().toDayNum(elem.event_time);
     elem.event_time_microseconds = timeInMicroseconds(current_time);
 
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
