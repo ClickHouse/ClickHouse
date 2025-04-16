@@ -1,7 +1,7 @@
-from praktika.result import Result
-from praktika.utils import Shell, Utils
-
 from ci.jobs.scripts.clickhouse_proc import ClickHouseLight
+from ci.praktika.info import Info
+from ci.praktika.result import Result
+from ci.praktika.utils import Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
@@ -31,14 +31,14 @@ def main():
         print("Start ClickHouse")
 
         def start():
-            return ch.start()
-
-        setup_logs_replication = f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --setup-logs-replication"
+            return ch.start() and (
+                ch.start_log_exports() if not Info().is_local_run else True
+            )
 
         results.append(
             Result.from_commands_run(
                 name="Start ClickHouse",
-                command=[start, setup_logs_replication],
+                command=start,
             )
         )
         res = results[-1].is_ok()

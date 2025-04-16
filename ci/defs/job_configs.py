@@ -867,9 +867,13 @@ class JobConfigs:
         runs_on=RunnerLabels.FUNC_TESTER_AMD,
         command="python3 ./ci/jobs/clickbench.py",
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/clickbench.py", "./ci/jobs/scripts/clickbench/"],
+            include_paths=[
+                "./ci/jobs/clickbench.py",
+                "./ci/jobs/scripts/clickbench/",
+                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+            ],
         ),
-        run_in_docker="clickhouse/stateless-test+--shm-size=16g",
+        run_in_docker="clickhouse/stateless-test+--shm-size=16g+--network=host",
     ).parametrize(
         parameter=[
             BuildTypes.AMD_RELEASE,

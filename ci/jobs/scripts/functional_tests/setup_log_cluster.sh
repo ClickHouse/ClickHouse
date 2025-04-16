@@ -9,9 +9,7 @@ set -e
 # Config file contains KEY=VALUE pairs with any necessary parameters like:
 # CLICKHOUSE_CI_LOGS_HOST - remote host
 # CLICKHOUSE_CI_LOGS_USER - password for user
-# CLICKHOUSE_CI_LOGS_PASSWORD - password for user
-
-CLICKHOUSE_CI_LOGS_USER=${CLICKHOUSE_CI_LOGS_USER:-ci}
+# CLICKHOUSE_CI_LOGS_PACreate all configured system logsSSWORD - password for user
 
 # Pre-configured destination cluster, where to export the data
 CLICKHOUSE_CI_LOGS_CLUSTER=${CLICKHOUSE_CI_LOGS_CLUSTER:-system_logs_export}
@@ -57,6 +55,7 @@ function check_logs_credentials
 
     # First check, if all necessary parameters are set
     set +x
+    echo "Check CI Log cluster..."
     for parameter in CLICKHOUSE_CI_LOGS_HOST CLICKHOUSE_CI_LOGS_USER CLICKHOUSE_CI_LOGS_PASSWORD; do
       export -p | grep -q "$parameter" || {
         echo "Credentials parameter $parameter is unset"

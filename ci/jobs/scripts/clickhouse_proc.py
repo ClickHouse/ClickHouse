@@ -249,25 +249,42 @@ profiles:
         return res
 
     def create_log_export_config(self):
+        print("Create log export config")
         config_file = Path(self.config_path) / "config.d" / "system_logs_export.yaml"
 
-        log_export_host = Secret.Config(
-            name="clickhouse_ci_logs_host", type=Secret.Type.AWS_SSM_SECRET
+        self.log_export_host = Secret.Config(
+            name="clickhouse_ci_logs_host",
+            type=Secret.Type.AWS_SSM_VAR,
+            region="us-east-1",
         ).get_value()
 
-        log_export_password = Secret.Config(
-            name="clickhouse_ci_logs_password", type=Secret.Type.AWS_SSM_SECRET
+        self.log_export_password = Secret.Config(
+            name="clickhouse_ci_logs_password",
+            type=Secret.Type.AWS_SSM_VAR,
+            region="us-east-1",
         ).get_value()
 
         config_content = LOG_EXPORT_CONFIG_TEMPLATE.format(
             CLICKHOUSE_CI_LOGS_CLUSTER=CLICKHOUSE_CI_LOGS_CLUSTER,
-            CLICKHOUSE_CI_LOGS_HOST=log_export_host,
+            CLICKHOUSE_CI_LOGS_HOST=self.log_export_host,
             CLICKHOUSE_CI_LOGS_USER=CLICKHOUSE_CI_LOGS_USER,
-            CLICKHOUSE_CI_LOGS_PASSWORD=log_export_password,
+            CLICKHOUSE_CI_LOGS_PASSWORD=self.log_export_password,
         )
 
         with open(config_file, "w") as f:
             f.write(config_content)
+
+    def start_log_exports(self):
+        print("Start log export")
+        os.environ["CLICKHOUSE_CI_LOGS_CLUSTER"] = CLICKHOUSE_CI_LOGS_CLUSTER
+        os.environ["CLICKHOUSE_CI_LOGS_HOST"] = self.log_export_host
+        os.environ["CLICKHOUSE_CI_LOGS_USER"] = CLICKHOUSE_CI_LOGS_USER
+        os.environ["CLICKHOUSE_CI_LOGS_PASSWORD"] = self.log_export_password
+        Shell.check(
+            "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --setup-logs-replication",
+            verbose=True,
+            strict=True,
+        )
 
     def start(self):
         print(f"Starting ClickHouse server")
