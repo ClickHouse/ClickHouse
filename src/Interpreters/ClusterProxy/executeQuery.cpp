@@ -1074,7 +1074,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
             .number_of_current_replica = i,
         };
 
-        const ThrottlerPtr null_throttler; /// so no need for throttler since no table data will transfered between replicas
+        const ThrottlerPtr null_throttler; /// so no need for throttler since no table data will transferred between replicas
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             connection_pools[i],
             formatted_query,
