@@ -4333,7 +4333,7 @@ CONV_FN(SystemCommand, cmd)
             SystemCommandOnCluster(ret, "UNLOAD PRIMARY KEY", cmd, cmd.unload_pk());
             break;
         case CmdType::kRefreshViews:
-            ret += "REFRESH VIEW";
+            ret += "REFRESH VIEWS";
             break;
         case CmdType::kRefreshView:
             ret += "REFRESH VIEW ";
