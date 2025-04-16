@@ -911,7 +911,7 @@ SELECT * FROM test;
     assert elements == get_downloaded_elements()
 
     assert node.contains_in_log(
-        f"FileCache({cache_name}): To enable dynamic cache resize, add `allow_dynamic_cache_resize` to cache configuration"
+        f"FileCache({cache_name}): Filesystem cache size was modified, but dynamic cache resize is disabled"
     )
     # Return config back to initial state.
     node.replace_config(
