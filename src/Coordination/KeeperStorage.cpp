@@ -2655,7 +2655,7 @@ KeeperStorageBase::ResponsesForSessions processWatches(
 {
     KeeperStorageBase::ResponsesForSessions result;
 
-    if (deltas.empty() || std::get_if<FailedMultiDelta>(&deltas.front().operation))
+    if (deltas.empty() || std::get_if<KeeperStorageBase::FailedMultiDelta>(&deltas.front().operation))
         return result;
 
     const auto & subrequests = zk_request.requests;
