@@ -72,6 +72,10 @@ struct ProjectionDescription
     static ProjectionDescription
     getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context);
 
+    /// It's possible to override virtual columns in storage.
+    /// In this case, we will not store _part_offset of the parent part in the projection.
+    static bool canUsePartOffsetFromStorageColumns(const ColumnsDescription & columns);
+
     static ProjectionDescription getMinMaxCountProjection(
         const ColumnsDescription & columns,
         ASTPtr partition_columns,
