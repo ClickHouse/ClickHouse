@@ -178,15 +178,16 @@ bool MergeTreeConditionBloomFilterText::alwaysUnknownOrTrue() const
 {
     return rpnEvaluatesAlwaysUnknownOrTrue(
         rpn,
-        [](RPNElement::Function function)
-        {
-            return (
-                function == RPNElement::FUNCTION_EQUALS || function == RPNElement::FUNCTION_NOT_EQUALS
-                || function == RPNElement::FUNCTION_HAS || function == RPNElement::FUNCTION_IN || function == RPNElement::FUNCTION_NOT_IN
-                || function == RPNElement::FUNCTION_MULTI_SEARCH || function == RPNElement::FUNCTION_MATCH
-                || function == RPNElement::FUNCTION_HAS_ANY || function == RPNElement::FUNCTION_HAS_ALL
-                || function == RPNElement::ALWAYS_FALSE);
-        });
+        {RPNElement::FUNCTION_EQUALS,
+         RPNElement::FUNCTION_NOT_EQUALS,
+         RPNElement::FUNCTION_HAS,
+         RPNElement::FUNCTION_IN,
+         RPNElement::FUNCTION_NOT_IN,
+         RPNElement::FUNCTION_MULTI_SEARCH,
+         RPNElement::FUNCTION_MATCH,
+         RPNElement::FUNCTION_HAS_ANY,
+         RPNElement::FUNCTION_HAS_ALL,
+         RPNElement::ALWAYS_FALSE});
 }
 
 /// Keep in-sync with MergeTreeIndexConditionGin::mayBeTrueOnTranuleInPart

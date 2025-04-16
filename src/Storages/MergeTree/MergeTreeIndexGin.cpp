@@ -223,13 +223,13 @@ bool MergeTreeIndexConditionGin::alwaysUnknownOrTrue() const
 {
     return rpnEvaluatesAlwaysUnknownOrTrue(
         rpn,
-        [](RPNElement::Function function)
-        {
-            return (
-                function == RPNElement::FUNCTION_EQUALS || function == RPNElement::FUNCTION_NOT_EQUALS
-                || function == RPNElement::FUNCTION_HAS || function == RPNElement::FUNCTION_IN || function == RPNElement::FUNCTION_NOT_IN
-                || function == RPNElement::FUNCTION_MULTI_SEARCH || function == RPNElement::FUNCTION_MATCH);
-        });
+        {RPNElement::FUNCTION_EQUALS,
+         RPNElement::FUNCTION_NOT_EQUALS,
+         RPNElement::FUNCTION_HAS,
+         RPNElement::FUNCTION_IN,
+         RPNElement::FUNCTION_NOT_IN,
+         RPNElement::FUNCTION_MULTI_SEARCH,
+         RPNElement::FUNCTION_MATCH});
 }
 
 bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranulePtr idx_granule,[[maybe_unused]] PostingsCacheForStore & cache_store) const

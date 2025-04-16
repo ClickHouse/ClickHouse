@@ -212,14 +212,13 @@ bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const
 {
     return rpnEvaluatesAlwaysUnknownOrTrue(
         rpn,
-        [](RPNElement::Function function)
-        {
-            return (
-                function == RPNElement::FUNCTION_EQUALS || function == RPNElement::FUNCTION_NOT_EQUALS
-                || function == RPNElement::FUNCTION_HAS || function == RPNElement::FUNCTION_HAS_ANY
-                || function == RPNElement::FUNCTION_HAS_ALL || function == RPNElement::FUNCTION_IN
-                || function == RPNElement::FUNCTION_NOT_IN);
-        });
+        {RPNElement::FUNCTION_EQUALS,
+         RPNElement::FUNCTION_NOT_EQUALS,
+         RPNElement::FUNCTION_HAS,
+         RPNElement::FUNCTION_HAS_ANY,
+         RPNElement::FUNCTION_HAS_ALL,
+         RPNElement::FUNCTION_IN,
+         RPNElement::FUNCTION_NOT_IN});
 }
 
 bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule) const
