@@ -111,6 +111,9 @@ public:
 
     void subscribeIfNotSubscribedYet();
 
+    void updateAssigmentAfterRebalance(const TopicPartitions& new_assigment);
+    TopicPartitions getAllTopicPartitions() const;
+
 private:
     using Messages = std::vector<cppkafka::Message>;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaConsumers};

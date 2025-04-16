@@ -753,12 +753,12 @@ void StorageKafka2::dropReplica()
 // достать все данные по активным репликам (например, уже залоченные партиции)
 // мне нужно какое-то множество пар <топик, партиция> -> возвращаю сет
 std::set<std::pair<String, int32_t>> StorageKafka2::lookupReplicaState(zkutil::ZooKeeper & keeper_to_use) {
+    LOG_TRACE(log, "Starting to lookup replica's state");
     Strings replicas;
-    if (Coordination::Error::ZOK != keeper_to_use.tryGetChildren(keeper_path + "/replicas", replicas))
+    if (Coordination::Error::ZOK != keeper_to_use.tryGetChildren(keeper_path + "/replicas", replicas)) {
         return {};
+    }
 
-    // std::vector<StorageKafka2::ReplicaState> replica_states;
-    // replica_states.reserve(replicas.size());
     ActiveReplicaCount = 1;
     std::set<std::pair<String, int32_t>> locked_partitions;
     for (const auto& replica : replicas) {
@@ -770,20 +770,15 @@ std::set<std::pair<String, int32_t>> StorageKafka2::lookupReplicaState(zkutil::Z
             ++ActiveReplicaCount;
             String node_data;
             if (!keeper_to_use.tryGet(current_replica_path + "/topics_assigned", node_data)) {
-                // replica_states.push_back({});
                 continue;
             }
-            Poco::JSON::Parser parser;
-            Poco::Dynamic::Var result = parser.parse(node_data);
-            const Poco::JSON::Object::Ptr& object = result.extract<Poco::JSON::Object::Ptr>();
-            Poco::JSON::Array::Ptr current_topics = object->getArray("topics");
-            Poco::JSON::Array::Ptr current_partitions = object->getArray("partitions");
-            for (size_t i = 0; i < current_topics->size(); ++i) {
-                locked_partitions.emplace(std::make_pair(current_topics->getElement<String>(i), current_partitions->getElement<int32_t>(i)));
-            }
+            LOG_INFO(log, "Topic assigned data {}", node_data);
+
+            ReplicaStatePtr replica_state = ReplicaState::parse(node_data);
+            locked_partitions.insert(replica_state->topics_assigned.begin(), replica_state->topics_assigned.end());
         }
     }
-    
+
     return locked_partitions;
 }
 
@@ -794,6 +789,7 @@ StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const Topi
     size_t can_lock_partitions = static_cast<size_t>(std::ceil(static_cast<double>(topic_partitions.size()) / ActiveReplicaCount));
     TopicPartitions aviable_topic_partitions;
     aviable_topic_partitions.reserve(topic_partitions.size());
+
     for (const auto & partition : topic_partitions) {
         if (!replica_states.contains(std::make_pair(partition.topic, partition.partition_id))) {
             aviable_topic_partitions.push_back(partition);
@@ -835,18 +831,15 @@ StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const Topi
         return std::nullopt;
     }
 
-    // обновить состояние текущей реплики (в вектор запихиваем партиции, которые мы залочили и обновляем ts)
-
-    std::vector<String> locked_topics;
-    locked_topics.reserve(can_lock_partitions);
-    std::vector<int32_t> locked_partitions;
-    locked_partitions.reserve(can_lock_partitions);
     // We have the locks, let's gather the information we needed
+
+    ReplicaState::ReplicaStateData replica_state;
+    replica_state.topics_assigned.reserve(can_lock_partitions);
     TopicPartitionLocks locks;
     {
-        auto tp_it = topic_partitions.begin();
+        auto tp_it = aviable_topic_partitions.begin();
         auto path_it = topic_partition_paths.begin();
-        for (; tp_it != topic_partitions.end(); ++tp_it, ++path_it)
+        for (; tp_it != aviable_topic_partitions.end(); ++tp_it, ++path_it)
         {
             using zkutil::EphemeralNodeHolder;
             LockedTopicPartitionInfo lock_info{
@@ -863,17 +856,12 @@ StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const Topi
                 lock_info.intent_size.value_or(0));
             locks.emplace(TopicPartition(*tp_it), std::move(lock_info));
 
-            locked_topics.emplace_back(tp_it->topic);
-            locked_partitions.emplace_back(tp_it->partition_id);
+            replica_state.topics_assigned.emplace_back(std::make_pair(tp_it->topic, tp_it->partition_id));
         }
     }
 
-    Poco::JSON::Object topics_assigned_json;
-    topics_assigned_json.set("topics", locked_topics);
-    topics_assigned_json.set("partitions", locked_partitions);
-    std::stringstream topics_assigned_str;
-    Poco::JSON::Stringifier::stringify(topics_assigned_json, topics_assigned_str);
-    keeper_to_use.createOrUpdate(replica_path + "/topics_assigned", topics_assigned_str.str(), zkutil::CreateMode::Persistent);
+    replica_state.topic_partitions = replica_state.topics_assigned.size();
+    keeper_to_use.createOrUpdate(replica_path + "/topics_assigned", replica_state.toString(), zkutil::CreateMode::Persistent);
 
     return locks;
 }
@@ -1157,6 +1145,7 @@ void StorageKafka2::threadFunc(size_t idx)
     }
 }
 
+// Вот здесь нужно переписать логику с current_assignment на Keeper
 std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t idx)
 {
     // This function is written assuming that each consumer has their own thread. This means once this is changed, this function should be revisited.
@@ -1212,7 +1201,13 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
                 LOG_TEST(log, "Got new zookeeper");
             }
 
-            auto maybe_locks = lockTopicPartitions(*consumer_info.keeper, *current_assignment);
+            const auto & maybe_all_partitions = consumer->getAllTopicPartitions();
+            std::optional<StorageKafka2::TopicPartitionLocks> maybe_locks;
+            if (maybe_all_partitions.empty()) {
+                maybe_locks = lockTopicPartitions(*consumer_info.keeper, *current_assignment);
+            } else {
+                maybe_locks = lockTopicPartitions(*consumer_info.keeper, maybe_all_partitions);
+            }
 
             if (!maybe_locks.has_value())
             {
@@ -1223,7 +1218,18 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
 
             consumer_info.locks = std::move(*maybe_locks);
 
+            // здесь нужно пройтись по локам и обновить current_assignment
+            TopicPartitions new_assigment(consumer_info.locks.size());
+            auto locks_it = consumer_info.locks.begin();
+            for (size_t i = 0; locks_it != consumer_info.locks.end(); ++i, ++locks_it) {
+                new_assigment[i] = locks_it->first;
+            }
+
+            consumer->updateAssigmentAfterRebalance(new_assigment);
+            current_assignment = consumer->getKafkaAssignment();
+
             consumer_info.topic_partitions.reserve(current_assignment->size());
+
             for (const auto & topic_partition : *current_assignment)
             {
                 TopicPartition topic_partition_copy{topic_partition};

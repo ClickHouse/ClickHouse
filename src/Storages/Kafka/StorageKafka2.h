@@ -7,6 +7,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer2.h>
 #include <Storages/Kafka/Kafka_fwd.h>
+#include <Storages/Kafka/ReplicaState.h>
 #include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ThreadStatus.h>
@@ -104,6 +105,8 @@ private:
     using TopicPartition = KafkaConsumer2::TopicPartition;
     using TopicPartitions = KafkaConsumer2::TopicPartitions;
 
+    using ReplicaStatePtr = ReplicaState::Ptr;
+
     struct LockedTopicPartitionInfo
     {
         zkutil::EphemeralNodeHolderPtr lock;
@@ -146,12 +149,6 @@ private:
         NotChanged,
         Updated,
         Lost
-    };
-
-    struct ReplicaState
-    {
-        String replica_name;
-        std::vector<std::pair<String, int32_t>> topics_assigned;
     };
 
     // Configuration and state

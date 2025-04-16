@@ -322,6 +322,32 @@ void KafkaConsumer2::subscribeIfNotSubscribedYet()
     LOG_DEBUG(log, "Subscribed.");
 }
 
+void KafkaConsumer2::updateAssigmentAfterRebalance(const TopicPartitions& new_assigment)
+{
+    assignment = new_assigment;
+}
+
+KafkaConsumer2::TopicPartitions KafkaConsumer2::getAllTopicPartitions() const
+{
+    auto metadata = consumer->get_metadata(true, std::chrono::milliseconds(1000));
+    TopicPartitions topic_partitions;
+    for (const auto & topic_metadata : metadata.get_topics()) {
+        if (std::find(topics.begin(), topics.end(), topic_metadata.get_name()) == topics.end()) {
+            continue;
+        }
+        for (const auto & partition_metadata : topic_metadata.get_partitions()) {
+            topic_partitions.emplace_back(
+                KafkaConsumer2::TopicPartition{
+                    .topic = topic_metadata.get_name(),
+                    .partition_id = static_cast<int32_t>(partition_metadata.get_id()),
+                    .offset =  INVALID_OFFSET
+                }
+            );
+        }
+    }
+
+    return topic_partitions;
+}
 ReadBufferPtr KafkaConsumer2::getNextMessage()
 {
     while (current != messages.end())
