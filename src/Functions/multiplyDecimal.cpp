@@ -75,6 +75,7 @@ In case you don't really need controlled precision and/or need fast computation,
             {"b", "Second value: [Decimal](../../sql-reference/data-types/decimal.md)."},
             {"result_scale", "Scale of result: [Int/UInt](../../sql-reference/data-types/int-uint.md)."}
         },
+        .returned_value="The result of multiplication with given scale. [Decimal256](../../sql-reference/data-types/decimal.md).",
         .examples={
             {
                 "Usage example",
@@ -121,7 +122,6 @@ Code: 407. DB::Exception: Received from localhost:9000. DB::Exception: Decimal m
                 )"
             }
         },
-        .returned_value="The result of multiplication with given scale. [Decimal256](../../sql-reference/data-types/decimal.md).",
         .category=FunctionDocumentation::Category::Arithmetic
 });
 

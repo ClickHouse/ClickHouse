@@ -104,6 +104,10 @@ Throws an exception if unable to parse the value of the attribute, the value doe
                 .category = FunctionDocumentation::Category::Dictionary
             };
         }
+        else
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "unknown dictGetType");
+        }
     }
 
 REGISTER_FUNCTION(ExternalDictionaries)
