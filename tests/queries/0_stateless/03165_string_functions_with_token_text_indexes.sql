@@ -128,8 +128,7 @@ CREATE TABLE 03165_token_ft
 )
 ENGINE = MergeTree
 ORDER BY id
--- Full text index works only with full parts.
-SETTINGS min_bytes_for_full_part_storage=0;
+SETTINGS min_bytes_for_full_part_storage = 0; -- GIN indexes currently don't work with packed parts
 
 INSERT INTO 03165_token_ft VALUES(1, 'Service is not ready');
 

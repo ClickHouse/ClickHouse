@@ -1109,7 +1109,10 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
         {
             if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
-                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
+                /// We should treat SELECT as an initial query in order to properly analyze it.
+                auto context = Context::createCopy(getContext());
+                context->setQueryKindInitial();
+                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), context, SelectQueryOptions{}.createView());
             }
             else
             {
