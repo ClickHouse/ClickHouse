@@ -48,6 +48,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
+    extern const SettingsBool rescore_in_ann_queries;
 }
 
 namespace ServerSetting
@@ -101,6 +102,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     max_limit_for_lazy_materialization = from[Setting::query_plan_max_limit_for_lazy_materialization];
 
     max_limit_for_ann_queries = from[Setting::max_limit_for_ann_queries].value;
+    rescore_in_ann_queries = from[Setting::rescore_in_ann_queries];
     query_plan_join_shard_by_pk_ranges = from[Setting::query_plan_join_shard_by_pk_ranges].value;
 
     network_transfer_limits = SizeLimits(from[Setting::max_rows_to_transfer], from[Setting::max_bytes_to_transfer], from[Setting::transfer_overflow_mode]);

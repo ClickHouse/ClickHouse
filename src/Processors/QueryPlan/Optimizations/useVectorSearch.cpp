@@ -13,13 +13,6 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Core/Settings.h>
 
-namespace DB
-{
-namespace Setting
-{
-extern const SettingsBool use_vector_index_only_ann;
-}
-}
 
 namespace DB::QueryPlanOptimizations
 {
@@ -173,28 +166,40 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     if (search_column.empty() || reference_vector.empty())
         return updated_layers;
 
-    auto context = read_from_mergetree_step->getContext();
-    const auto & settings_ref = context->getSettingsRef();
     bool return_distances = false;
-    if (settings_ref[Setting::use_vector_index_only_ann])
+    bool skip_optimization = false;
+    if (settings.rescore_in_ann_queries)
     {
         /// 2 rewrites in the plan :-
         /// 1. Remove the vector physical column from the ReadFromMergeTreeStep and add _distance virtual column
         /// 2. Replace the "cosineDistance(vector_column,[1.0, 2.0...])" node in the DAG with "_distance" node
-        /// LOG_DEBUG(getLogger("optimizUseProjections"), "DAG before {}", expression.dumpDAG());
-        /// LOG_DEBUG(getLogger("optimizUseProjections"), "DAG names before {}", expression.dumpNames());
-        read_from_mergetree_step->replaceVectorColumnWithDistance(search_column);
+        LOG_DEBUG(getLogger("optimizUseProjections"), "DAG before {}", expression.dumpDAG());
+        LOG_DEBUG(getLogger("optimizUseProjections"), "DAG names before {}", expression.dumpNames());
+        for (const auto & output : expression.getOutputs())
+        {
+            LOG_TRACE(getLogger("optimizeUseProjections"), "Checking output node {}", output->result_name);
+            if (output->result_name == search_column ||
+                (output->type == ActionsDAG::ActionType::ALIAS && output->children[0]->result_name == search_column))
+	    {
+                skip_optimization = true;
+	    }
+	}
+        if (!skip_optimization)
+        {
+            read_from_mergetree_step->replaceVectorColumnWithDistance(search_column);
 
-        expression.removeUnusedResult(sort_column); /// Remove the OUPUT cosineDistance(...) FUNCTION Node
-        expression.removeUnusedActions(); /// Remove the vector column INPUT node because it is no longer needed
-        auto distance_node = &expression.addInput("_distance",std::make_shared<DataTypeFloat32>());
-        auto new_output = &expression.addAlias(*distance_node, sort_column);
-        expression.getOutputs().push_back(new_output);
+            expression.removeUnusedResult(sort_column); /// Remove the OUPUT cosineDistance(...) FUNCTION Node
+            expression.removeUnusedActions(); /// Remove the vector column INPUT node because it is no longer needed
 
-        /// LOG_DEBUG(getLogger("optimizUseProjections"), "DAG after {}", expression.dumpDAG());
-        /// LOG_DEBUG(getLogger("optimizUseProjections"), "DAG names after{}", expression.dumpNames());
-        return_distances = true;
-        updated_layers = 2;
+	    auto distance_node = &expression.addInput("_distance",std::make_shared<DataTypeFloat32>());
+            auto new_output = &expression.addAlias(*distance_node, sort_column);
+            expression.getOutputs().push_back(new_output);
+            return_distances = true;
+            updated_layers = 2;
+	}
+
+        LOG_DEBUG(getLogger("optimizUseProjections"), "DAG after {}", expression.dumpDAG());
+        LOG_DEBUG(getLogger("optimizUseProjections"), "DAG names after{}", expression.dumpNames());
     }
 
     auto vector_search_parameters = std::make_optional<VectorSearchParameters>(search_column, distance_function, n, reference_vector, return_distances);

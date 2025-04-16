@@ -87,6 +87,8 @@ struct QueryPlanOptimizationSettings
 
     size_t max_limit_for_ann_queries;
 
+    bool rescore_in_ann_queries;
+
     /// Setting needed for Sets (JOIN -> IN optimization)
 
     SizeLimits network_transfer_limits;

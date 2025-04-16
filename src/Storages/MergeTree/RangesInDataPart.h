@@ -40,11 +40,14 @@ struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescripti
     void merge(const RangesInDataPartsDescription & other);
 };
 
-using VectorIndexSearchResults = std::pair<std::vector<UInt64>, std::vector<float>>;
 
-/// RangesInDataPartFastPath can be used for read time optimizations e.g row offsets positioning
-struct RangesInDataPartFastPath
+/// RangesInDataPartReadHints can be used for read time optimizations e.g row positioning
+struct RangesInDataPartReadHints
 {
+    /// VectorIndexSearchResults - 1) Exact part offsets positioning
+    ///                            2) A pre-computed "_distance" virtual column
+    using VectorIndexSearchResults = std::pair<std::vector<UInt64>, std::vector<float>>;
+
     std::optional<VectorIndexSearchResults> ann_search_results;
 
     bool isFilled() const { return ann_search_results.has_value(); }
@@ -58,7 +61,7 @@ struct RangesInDataPart
     size_t part_index_in_query;
     MarkRanges ranges;
     MarkRanges exact_ranges;
-    RangesInDataPartFastPath fastpath_info;
+    RangesInDataPartReadHints read_hints;
 
     RangesInDataPart() = default;
 
@@ -69,6 +72,7 @@ struct RangesInDataPart
         : data_part{data_part_}
         , part_index_in_query{part_index_in_query_}
         , ranges{ranges_}
+        , read_hints{}
     {
     }
 

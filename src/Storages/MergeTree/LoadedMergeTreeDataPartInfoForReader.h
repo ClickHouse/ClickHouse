@@ -61,14 +61,14 @@ public:
 
     MergeTreeData::DataPartPtr getDataPart() const { return data_part; }
 
-    void setFastPathInfo(const RangesInDataPartFastPath & fastpath_info_) override { fastpath_info = fastpath_info_; }
+    void setReadHints(const RangesInDataPartReadHints & read_hints_) override { read_hints = read_hints_; }
 
-    const RangesInDataPartFastPath & getFastPathInfo() const override { return fastpath_info; }
+    const RangesInDataPartReadHints & getReadHints() const override { return read_hints; }
 
 private:
     MergeTreeData::DataPartPtr data_part;
     AlterConversionsPtr alter_conversions;
-    RangesInDataPartFastPath fastpath_info;
+    RangesInDataPartReadHints read_hints;
 };
 
 }

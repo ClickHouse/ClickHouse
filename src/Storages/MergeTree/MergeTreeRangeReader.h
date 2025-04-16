@@ -349,7 +349,7 @@ private:
     void updatePerformanceCounters(size_t num_rows_read);
 
     /// actions before prewhere - like row positioning, filling calculated virtual columns etc
-    void executeFastPathFilterActions(ReadResult & result) const;
+    void executeActionsForReadHints(ReadResult & result) const;
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;

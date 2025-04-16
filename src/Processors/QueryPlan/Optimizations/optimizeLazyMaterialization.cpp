@@ -28,6 +28,9 @@ static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
     if (reading->isParallelReadingEnabled())
         return false;
 
+    if (reading->isVectorColumnReplaced())
+        return false;
+
     return true;
 }
 

@@ -2043,6 +2043,12 @@ void ReadFromMergeTree::replaceVectorColumnWithDistance(const std::string & colu
                     query_info.prewhere_info);
 }
 
+bool ReadFromMergeTree::isVectorColumnReplaced() const
+{
+    return (std::find_if(all_column_names.begin(), all_column_names.end(), [] (const String & column_name)
+        { return column_name == "_distance"; }) != all_column_names.end());
+}
+
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
 {
     if (isQueryWithFinal())

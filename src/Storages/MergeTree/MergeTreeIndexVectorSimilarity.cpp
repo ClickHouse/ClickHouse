@@ -461,8 +461,16 @@ std::pair<std::vector<UInt64>, std::vector<float>> MergeTreeIndexConditionVector
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not search in vector similarity index. Error: {}", search_result.error.release());
 
     std::vector<USearchIndex::vector_key_t> neighbors(search_result.size()); /// indexes of vectors which were closest to the reference vector
-    std::vector<USearchIndex::distance_t> distances(search_result.size()); /// indexes of vectors which were closest to the reference vector
-    search_result.dump_to(neighbors.data(), distances.data());
+    std::vector<USearchIndex::distance_t> distances; /// distances of vectors which were closest to the reference vector
+    if (parameters->return_distances)
+    {
+        distances.resize(search_result.size());
+	search_result.dump_to(neighbors.data(), distances.data());
+    }
+    else
+    {
+        search_result.dump_to(neighbors.data());
+    }
 
 #if 0
     std::sort(neighbors.begin(), neighbors.end());

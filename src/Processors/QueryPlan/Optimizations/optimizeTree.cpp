@@ -50,6 +50,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.max_limit_for_ann_queries,
         optimization_settings.use_index_for_in_with_subqueries_max_values,
         optimization_settings.network_transfer_limits,
+        optimization_settings.rescore_in_ann_queries,
     };
 
     while (!stack.empty())

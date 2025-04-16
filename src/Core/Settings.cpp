@@ -6415,9 +6415,6 @@ Note that initially (24.12) there was a server setting (`send_settings_to_client
     DECLARE(Milliseconds, low_priority_query_wait_time_ms, 1000, R"(
 Wait time in milliseconds when lower priority query meets higher priority query.
 )", BETA) \
-    DECLARE(Bool, use_vector_index_only_ann, true, R"(
-Return vector search results directly from the vector similarity index.
-)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
@@ -6462,6 +6459,9 @@ SELECT queries with LIMIT bigger than this setting cannot use vector similarity 
     DECLARE(UInt64, hnsw_candidate_list_size_for_search, 256, R"(
 The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, rescore_in_ann_queries, true, R"(
+Return vector search results from only the vector similarity index or perform additional rescoring using vectors in the base table.
+)", 0) \
     DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction
 )", EXPERIMENTAL) \

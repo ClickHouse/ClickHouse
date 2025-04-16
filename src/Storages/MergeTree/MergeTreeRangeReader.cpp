@@ -1037,8 +1037,9 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
     if (read_sample_block.has(BlockOffsetColumn::name))
         add_offset_column(BlockOffsetColumn::name);
 
-    if (merge_tree_reader->data_part_info_for_read->getFastPathInfo().isFilled())
+    if (merge_tree_reader->data_part_info_for_read->getReadHints().isFilled())
     {
+        /// right now read hints used only by vector search indexes!
         part_offsets_auto_column = createPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
         auto distance_pos = read_sample_block.getPositionByName("_distance");
         columns[distance_pos] = ColumnFloat32::create(result.numReadRows(), float(99999.99));
@@ -1321,7 +1322,7 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     return mut_first;
 }
 
-void MergeTreeRangeReader::executeFastPathFilterActions(ReadResult & result) const
+void MergeTreeRangeReader::executeActionsForReadHints(ReadResult & result) const
 {
     auto before_rows = result.num_rows;
 
@@ -1332,8 +1333,8 @@ void MergeTreeRangeReader::executeFastPathFilterActions(ReadResult & result) con
     auto distance_column = IColumn::mutate(std::move(result.columns[distance_pos]));
     auto & distances = typeid_cast<ColumnFloat32 *>(distance_column.get())->getData();
 
-    const auto & fastpath_info = merge_tree_reader->data_part_info_for_read->getFastPathInfo();
-    const auto & offsets_and_distances = fastpath_info.getVectorIndexSearchResults();
+    const auto & read_hints = merge_tree_reader->data_part_info_for_read->getReadHints();
+    const auto & offsets_and_distances = read_hints.getVectorIndexSearchResults();
     auto exact_part_offsets = offsets_and_distances.first;
     const auto exact_distances = offsets_and_distances.second;
     chassert (exact_part_offsets.size() == exact_distances.size());
@@ -1411,9 +1412,9 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 {
     result.checkInternalConsistency();
 
-    if (merge_tree_reader->data_part_info_for_read->getFastPathInfo().isFilled())
+    if (merge_tree_reader->data_part_info_for_read->getReadHints().isFilled())
     {
-        executeFastPathFilterActions(result);
+        executeActionsForReadHints(result);
     }
 
     if (!prewhere_info)

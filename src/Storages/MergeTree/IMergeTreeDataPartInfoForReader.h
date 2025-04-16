@@ -70,9 +70,9 @@ public:
 
     virtual void reportBroken() = 0;
 
-    virtual void setFastPathInfo(const RangesInDataPartFastPath & fastpath_info) = 0;
+    virtual void setReadHints(const RangesInDataPartReadHints & read_hints_) = 0;
 
-    virtual const RangesInDataPartFastPath & getFastPathInfo() const = 0;
+    virtual const RangesInDataPartReadHints & getReadHints() const = 0;
 };
 
 using MergeTreeDataPartInfoForReaderPtr = std::shared_ptr<IMergeTreeDataPartInfoForReader>;
