@@ -44,7 +44,7 @@ using FunctionBitNot = FunctionUnaryArithmetic<BitNotImpl, NameBitNot, true>;
 template <> struct FunctionUnaryArithmeticMonotonicity<NameBitNot>
 {
     static bool has() { return false; }
-    static IFunction::Monotonicity get(const Field &, const Field &)
+    static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
     {
         return {};
     }

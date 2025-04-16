@@ -10,6 +10,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <memory>
+#include <variant>
 
 namespace rocksdb
 {

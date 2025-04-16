@@ -1,13 +1,12 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Interpreters/ExpressionActions.h>
-#include <IO/WriteHelpers.h>
+
+#include <Columns/IColumn.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Storages/MergeTree/IDataPartStorage.h>
+
 #include <numeric>
-
-#include <boost/algorithm/string.hpp>
-
 
 namespace DB
 {
@@ -21,6 +20,14 @@ namespace ErrorCodes
 Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
 {
     return index.expression->getRequiredColumns();
+}
+
+MergeTreeIndexFormat
+IMergeTreeIndex::getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
+{
+    if (data_part_storage.existsFile(relative_path_prefix + ".idx"))
+        return {1, ".idx"};
+    return {0 /*unknown*/, ""};
 }
 
 void MergeTreeIndexFactory::registerCreator(const std::string & index_type, Creator creator)
@@ -147,15 +154,20 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerValidator("usearch", legacyVectorSimilarityIndexValidator);
     /// ------
 
-    registerCreator("inverted", fullTextIndexCreator);
-    registerValidator("inverted", fullTextIndexValidator);
+    registerCreator("gin", ginIndexCreator);
+    registerValidator("gin", ginIndexValidator);
 
     /// ------
-    /// TODO: remove this block at the end of 2024.
     /// Index type 'inverted' was renamed to 'full_text' in May 2024.
-    /// To support loading tables with old indexes during a transition period, register full-text indexes under their old name.
-    registerCreator("full_text", fullTextIndexCreator);
-    registerValidator("full_text", fullTextIndexValidator);
+    /// Index type 'full_text' was renamed to 'gin' in April 2025.
+    ///
+    /// To support loading tables with old indexes during a transition period, register GIN indexes under their old names.
+    ///
+    /// TODO: remove this block one year after GIN indexes became GA.
+    registerCreator("full_text", ginIndexCreator);
+    registerValidator("full_text", ginIndexValidator);
+    registerCreator("inverted", ginIndexCreator);
+    registerValidator("inverted", ginIndexValidator);
     /// ------
 }
 

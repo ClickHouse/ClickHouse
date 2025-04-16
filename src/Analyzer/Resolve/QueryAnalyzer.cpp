@@ -66,6 +66,7 @@
 #include <Analyzer/Resolve/QueryExpressionsAliasVisitor.h>
 #include <Analyzer/Resolve/ReplaceColumnsVisitor.h>
 #include <Analyzer/Resolve/TableExpressionsAliasVisitor.h>
+#include <Analyzer/Resolve/TableFunctionsWithClusterAlternativesVisitor.h>
 #include <Analyzer/Resolve/TypoCorrection.h>
 
 #include <Planner/PlannerActionsVisitor.h>
@@ -112,6 +113,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsBool allow_not_comparable_types_in_order_by;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsString implicit_table_at_top_level;
 }
 
 
@@ -580,6 +582,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         Settings subquery_settings = context->getSettingsCopy();
         subquery_settings[Setting::max_result_rows] = 1;
         subquery_settings[Setting::extremes] = false;
+        subquery_settings[Setting::implicit_table_at_top_level] = "";
         /// When execute `INSERT INTO t WITH ... SELECT ...`, it may lead to `Unknown columns`
         /// exception with this settings enabled(https://github.com/ClickHouse/ClickHouse/issues/52494).
         subquery_settings[Setting::use_structure_from_insertion_table_in_table_functions] = false;
@@ -3921,7 +3924,13 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
     /// Most likely only the root scope can have an aggregate function, but let's check all just in case.
     bool in_aggregate_function_scope = false;
     for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
+    {
         in_aggregate_function_scope = in_aggregate_function_scope || scope_ptr->expressions_in_resolve_process_stack.hasAggregateFunction();
+
+        /// Check parent scopes until find current query scope.
+        if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY)
+            break;
+    }
 
     if (!in_aggregate_function_scope)
     {
@@ -4674,7 +4683,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             table_name = table_identifier[1];
         }
 
-        /// Collect parametrized view arguments
+        /// Collect parameterized view arguments
         NameToNameMap view_params;
         for (const auto & argument : table_function_node_typed.getArguments())
         {
@@ -4707,18 +4716,18 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         }
 
         auto context = scope_context->getQueryContext();
-        auto parametrized_view_storage = context->buildParametrizedViewStorage(
+        auto parameterized_view_storage = context->buildParameterizedViewStorage(
             database_name,
             table_name,
             view_params);
 
-        if (parametrized_view_storage)
+        if (parameterized_view_storage)
         {
             /// Remove initial TableFunctionNode from the set. Otherwise it may lead to segfault
             /// when IdentifierResolveScope::dump() is used.
             scope.table_expressions_in_resolve_process.erase(table_function_node.get());
 
-            auto fake_table_node = std::make_shared<TableNode>(parametrized_view_storage, scope_context);
+            auto fake_table_node = std::make_shared<TableNode>(parameterized_view_storage, scope_context);
             fake_table_node->setAlias(table_function_node->getAlias());
             table_function_node = fake_table_node;
             return;
@@ -5563,6 +5572,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     TableExpressionsAliasVisitor table_expressions_visitor(scope);
     table_expressions_visitor.visit(query_node_typed.getJoinTree());
+
+    TableFunctionsWithClusterAlternativesVisitor table_function_visitor;
+    table_function_visitor.visit(query_node);
+    if (!table_function_visitor.shouldReplaceWithClusterAlternatives() && scope.context->hasQueryContext())
+        scope.context->getQueryContext()->setSetting("parallel_replicas_for_cluster_engines", false);
 
     initializeQueryJoinTreeNode(query_node_typed.getJoinTree(), scope);
     scope.aliases.alias_name_to_table_expression_node = std::move(transitive_aliases);

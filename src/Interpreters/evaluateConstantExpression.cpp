@@ -47,6 +47,7 @@
 #include <optional>
 #include <unordered_map>
 
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -362,7 +363,7 @@ namespace
             {
                 if (tuple_literal->value.getType() == Field::Types::Tuple)
                 {
-                    const auto & tuple = tuple_literal->value.safeGet<const Tuple &>();
+                    const auto & tuple = tuple_literal->value.safeGet<Tuple>();
                     for (const auto & child : tuple)
                     {
                         const auto dnf = analyzeEquals(identifier, child, expr);
@@ -746,10 +747,13 @@ std::optional<ConstantVariants> evaluateExpressionOverConstantCondition(
     const ContextPtr & context,
     size_t max_elements)
 {
-    auto inverted_dag = KeyCondition::cloneASTWithInversionPushDown({predicate}, context);
-    auto matches = matchTrees(expr, inverted_dag, false);
+    if (!predicate)
+        return {};
 
-    auto predicates = analyze(inverted_dag.getOutputs().at(0), matches, context, max_elements);
+    ActionsDAGWithInversionPushDown filter_dag(predicate, context);
+    auto matches = matchTrees(expr, *filter_dag.dag, false);
+
+    auto predicates = analyze(filter_dag.predicate, matches, context, max_elements);
 
     if (!predicates)
         return {};

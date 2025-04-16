@@ -9,8 +9,9 @@
 #endif
 #if USE_RAPIDJSON
 #include <Common/JSONParsers/RapidJSONParser.h>
-#endif
+#else
 #include <Common/JSONParsers/DummyJSONParser.h>
+#endif
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDynamic.h>
@@ -58,7 +59,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int INCORRECT_DATA;
 }
 
 template <typename JSONParser>
@@ -1466,11 +1466,11 @@ public:
         auto element_type = removeNullable(elementToDataType(element, format_settings));
         if (!checkIfTypeIsComplete(element_type))
         {
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
+            error = fmt::format(
                 "Cannot infer the type of JSON element {}, because it contains only nulls. To use String type for elements with incomplete "
                 "type, enable setting input_format_json_infer_incomplete_types_as_strings",
                 jsonElementToString<JSONParser>(element, format_settings));
+            return false;
         }
 
         auto element_type_name = element_type->getName();
@@ -2003,6 +2003,9 @@ template bool tryGetNumericValueFromJSONElement<RapidJSONParser, Float64>(Float6
 #else
 template void jsonElementToString<DummyJSONParser>(const DummyJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
 template std::unique_ptr<JSONExtractTreeNode<DummyJSONParser>> buildJSONExtractTree<DummyJSONParser>(const DataTypePtr & type, const char * source_for_exception_message);
+template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Float64>(Float64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_integer, bool allow_type_conversion, String & error);
+template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Int64>(Int64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_integer, bool allow_type_conversion, String & error);
+template bool tryGetNumericValueFromJSONElement<DummyJSONParser, UInt64>(UInt64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_integer, bool allow_type_conversion, String & error);
 #endif
 
 }

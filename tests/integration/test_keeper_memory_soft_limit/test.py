@@ -3,10 +3,9 @@ import random
 import string
 
 import pytest
-from kazoo.client import KazooClient, KazooState
+from kazoo.client import KazooClient
 from kazoo.exceptions import ConnectionLoss
 
-from helpers import keeper_utils
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__, keeper_config_dir="configs/")
@@ -16,6 +15,7 @@ node = cluster.add_instance(
     "node",
     stay_alive=True,
     with_zookeeper=True,
+    with_remote_database_disk=False,  # Disable `with_remote_database_disk` as the test does not use the default Keeper.
 )
 
 
@@ -24,6 +24,7 @@ def random_string(length):
 
 
 def get_connection_zk(nodename, timeout=30.0):
+    # NOTE: here we need KazooClient without implicit retries! (KazooClientWithImplicitRetries)
     _fake_zk_instance = KazooClient(
         hosts=cluster.get_instance_ip(nodename) + ":2181", timeout=timeout
     )

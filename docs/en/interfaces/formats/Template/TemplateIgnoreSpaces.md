@@ -1,17 +1,18 @@
 ---
-title : TemplateIgnoreSpaces
-slug : /en/interfaces/formats/TemplateIgnoreSpaces
-keywords : [TemplateIgnoreSpaces]
-input_format: true
-output_format: false
 alias: []
+description: 'Documentation for the TemplateIgnoreSpaces format'
+input_format: true
+keywords: ['TemplateIgnoreSpaces']
+output_format: false
+slug: /interfaces/formats/TemplateIgnoreSpaces
+title: 'TemplateIgnoreSpaces'
 ---
 
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✗      |       |
 
-## Description
+## Description {#description}
 
 Similar to [`Template`], but skips whitespace characters between delimiters and values in the input stream. 
 However, if format strings contain whitespace characters, these characters will be expected in the input stream. 
@@ -23,9 +24,9 @@ It's possible to read `JSON` using this format if the values of columns have the
 This format is suitable only for input.
 :::
 
-## Example Usage
+## Example Usage {#example-usage}
 
-The following request can be used for inserting data from its output example of format [JSON](/docs/en/interfaces/formats/JSON):
+The following request can be used for inserting data from its output example of format [JSON](/interfaces/formats/JSON):
 
 ```sql
 INSERT INTO table_name 
@@ -44,4 +45,4 @@ FORMAT TemplateIgnoreSpaces
 {${}"SearchPhrase"${}:${}${phrase:JSON}${},${}"c"${}:${}${cnt:JSON}${}}
 ```
 
-## Format Settings
+## Format Settings {#format-settings}

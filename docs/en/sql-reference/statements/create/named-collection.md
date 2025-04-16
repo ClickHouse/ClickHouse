@@ -1,6 +1,8 @@
 ---
-slug: /en/sql-reference/statements/create/named-collection
-sidebar_label: NAMED COLLECTION
+description: 'Documentation for CREATE NAMED COLLECTION'
+sidebar_label: 'NAMED COLLECTION'
+slug: /sql-reference/statements/create/named-collection
+title: 'CREATE NAMED COLLECTION'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -29,10 +31,10 @@ CREATE NAMED COLLECTION foobar AS a = '1', b = '2' OVERRIDABLE;
 
 **Related statements**
 
-- [CREATE NAMED COLLECTION](/docs/en/sql-reference/statements/alter/named-collection)
-- [DROP NAMED COLLECTION](/docs/en/sql-reference/statements/drop#drop-function)
+- [CREATE NAMED COLLECTION](/sql-reference/statements/alter/named-collection)
+- [DROP NAMED COLLECTION](/sql-reference/statements/drop#drop-function)
 
 
 **See Also**
 
-- [Named collections guide](/docs/en/operations/named-collections.md)
+- [Named collections guide](/operations/named-collections.md)

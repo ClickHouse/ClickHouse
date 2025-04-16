@@ -510,7 +510,7 @@ std::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutato
     }
 
     LOG_INFO(log, "Selected {} parts from {} to {}", parts.size(), parts.front().name, parts.back().name);
-    return MergeSelectorChoice{std::move(parts), MergeType::Regular};
+    return MergeSelectorChoice{std::move(parts), MergeType::Regular, final};
 }
 
 /// parts should be sorted.

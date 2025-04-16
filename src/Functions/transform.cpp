@@ -19,7 +19,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 
 
 namespace DB
@@ -89,7 +89,7 @@ namespace
             if (!type_arr_from)
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Second argument of function {}, must be array of source values to transform from.",
+                    "Second argument of function {}, must be array of source values to transform from",
                     getName());
 
             const auto type_arr_from_nested = type_arr_from->getNestedType();
@@ -99,7 +99,7 @@ namespace
             if (!type_arr_to)
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Third argument of function {}, must be array of destination values to transform to.",
+                    "Third argument of function {}, must be array of destination values to transform to",
                     getName());
 
             const DataTypePtr & type_arr_to_nested = type_arr_to->getNestedType();
@@ -112,7 +112,7 @@ namespace
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Function {} has signature: "
                         "transform(T, Array(T), Array(U), U) -> U; "
-                        "or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
+                        "or transform(T, Array(T), Array(T)) -> T; where T and U are types",
                         getName());
 
                 auto ret = tryGetLeastSupertype(DataTypes{type_arr_to_nested, type_x});
@@ -121,7 +121,7 @@ namespace
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Function {} has signature: "
                         "transform(T, Array(T), Array(U), U) -> U; "
-                        "or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
+                        "or transform(T, Array(T), Array(T)) -> T; where T and U are types",
                         getName());
                 checkAllowedType(ret);
                 return ret;
@@ -133,7 +133,7 @@ namespace
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Function {} have signature: "
                     "transform(T, Array(T), Array(U), U) -> U; "
-                    "or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
+                    "or transform(T, Array(T), Array(T)) -> T; where T and U are types",
                     getName());
             checkAllowedType(ret);
             return ret;
@@ -700,7 +700,7 @@ namespace
 
             if (!array_from || !array_to)
                 throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN, "Second and third arguments of function {} must be constant arrays.", getName());
+                    ErrorCodes::ILLEGAL_COLUMN, "Second and third arguments of function {} must be constant arrays", getName());
 
             const ColumnPtr & from_column_uncast = array_from->getDataPtr();
 
@@ -759,7 +759,7 @@ namespace
                 for (size_t i = 0; i < size; ++i)
                 {
                     if (which.isEnum() /// The correctness of strings are already checked by casting them to the Enum type.
-                        || applyVisitor(FieldVisitorAccurateEquals(), (*cache.from_column)[i], (*from_column_uncast)[i]))
+                        || accurateEquals((*cache.from_column)[i], (*from_column_uncast)[i]))
                     {
                         UInt64 key = 0;
                         auto * dst = reinterpret_cast<char *>(&key);
@@ -782,7 +782,7 @@ namespace
                 auto & table = *cache.table_string_to_idx;
                 for (size_t i = 0; i < size; ++i)
                 {
-                    if (applyVisitor(FieldVisitorAccurateEquals(), (*cache.from_column)[i], (*from_column_uncast)[i]))
+                    if (accurateEquals((*cache.from_column)[i], (*from_column_uncast)[i]))
                     {
                         StringRef ref = cache.from_column->getDataAt(i);
                         table.insertIfNotPresent(ref, i);
@@ -795,7 +795,7 @@ namespace
                 auto & table = *cache.table_anything_to_idx;
                 for (size_t i = 0; i < size; ++i)
                 {
-                    if (applyVisitor(FieldVisitorAccurateEquals(), (*cache.from_column)[i], (*from_column_uncast)[i]))
+                    if (accurateEquals((*cache.from_column)[i], (*from_column_uncast)[i]))
                     {
                         SipHash hash;
                         cache.from_column->updateHashWithValue(i, hash);
