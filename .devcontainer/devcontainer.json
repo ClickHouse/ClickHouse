@@ -1,0 +1,49 @@
+{
+    "name": "Cribl Clickhouse",
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+    "features": {
+        "ghcr.io/devcontainers/features/common-utils:2": {
+            "installZsh": true,
+            "configureZshAsDefaultShell": true,
+            "installOhMyZsh": true,
+            "installOhMyZshConfig": true,
+            "upgradePackages": true
+        },
+        "ghcr.io/devcontainers/features/aws-cli:1": {},
+        "ghcr.io/devcontainers/features/azure-cli:1": {},
+        "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
+        "ghcr.io/devcontainers/features/rust:1": {},
+        "ghcr.io/devcontainers/features/git:1": {},
+        "ghcr.io/devcontainers/features/python:1": {},
+        "ghcr.io/devcontainers-extra/features/wget-apt-get:1": {},
+        "ghcr.io/devcontainers-community/features/llvm": {}
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [ 
+                "ms-vscode.remote-repositories",
+                "ms-vscode.cpptools",
+                "ms-vscode.cpptools-extension-pack",
+                "ms-vscode.cmake-tools",
+                "rust-lang.rust-analyzer",  
+                "tamasfe.even-better-toml",
+                "vadimcn.vscode-lldb"
+            ],
+            "settings": {
+                "cmake.configureArgs": [
+                    "-DNO_ARMV81_OR_HIGHER=1"
+                ],
+                "cmake.buildDirectory": "${workspaceFolder}/build/${buildType}",
+                "aws.telemetry": false
+            }
+        }
+    },
+    "containerEnv": {
+        "CC": "clang-19",
+        "CXX": "clang++-19"
+    },
+    "remoteUser": "vscode",
+    "forwardPorts": [9000, 9440],
+    "portsAttributes": {"9000": {"label": "Clickhouse"}, "9440": {"label": "Clickhouse"}},
+    "postCreateCommand": "sudo apt-get update && sudo apt-get install -y cmake ccache ninja-build nasm yasm gawk lsb-release software-properties-common gnupg"
+}
