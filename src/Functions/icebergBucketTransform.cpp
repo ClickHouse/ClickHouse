@@ -213,7 +213,8 @@ private:
         {
             taken = 16;
         }
-        for (size_t i = 0; i < (taken >> 1); ++i) {
+        for (size_t i = 0; i < (taken >> 1); ++i) 
+        {
             std::swap(big_endian_representation[i], big_endian_representation[taken - i - 1]);
         }
         return MurmurHash3Impl32::apply(big_endian_representation, taken);
@@ -305,7 +306,7 @@ public:
         auto iceberg_hash_func = FunctionFactory::instance().get("icebergHash", context)->build(iceberg_hash_arguments);
         auto iceberg_hash_result_type = iceberg_hash_func->getResultType();
         auto iceberg_hash_result = iceberg_hash_func->execute(iceberg_hash_arguments, iceberg_hash_result_type, input_rows_count, false);
-        
+
         auto iceberg_hash_result_with_type = ColumnWithTypeAndName(iceberg_hash_result, std::make_shared<DataTypeInt32>(), "");
         auto max_int_with_type = ColumnWithTypeAndName(
             std::make_shared<DataTypeInt32>()->createColumnConst(input_rows_count, std::numeric_limits<Int32>::max()),
