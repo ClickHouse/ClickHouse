@@ -441,10 +441,9 @@ class Result(MetaClasses.Serializable):
                     if isinstance(result, bool):
                         res = result
                     elif result:
-                        error_infos.append(str(result))
                         res = False
                     if with_info or (with_info_on_failure and not res):
-                        error_infos = buffer.getvalue()
+                        error_infos.append(result)
                 else:
                     # Run shell command in a specified directory with logging and verbosity
                     exit_code = Shell.run(command_, verbose=True, log_file=log_file)
