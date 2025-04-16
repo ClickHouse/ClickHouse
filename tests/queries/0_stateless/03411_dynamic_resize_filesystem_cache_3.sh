@@ -32,7 +32,7 @@ $CLICKHOUSE_CLIENT -m --query "
 set send_logs_level='fatal';
 SYSTEM RELOAD CONFIG"
 
-$CLICKHOUSE_CLIENT --query "SELECT sleep(5)"
+$CLICKHOUSE_CLIENT --query "SELECT sleep(3)"
 
 new_max_size=$($CLICKHOUSE_CLIENT --query "SELECT divide(max_size, 2) FROM system.filesystem_cache_settings WHERE cache_name = '$disk_name'")
 sed -i "s|<max_size>$prev_max_size<\/max_size>|<max_size>$new_max_size<\/max_size>|"  $config_path
