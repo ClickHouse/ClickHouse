@@ -121,7 +121,7 @@ public:
 
     void clear() { PODBase::clear(); }
 
-    virtual std::shared_ptr<PODArrayOwning<T, initial_bytes, TAllocator, pad_right_, pad_left_>> getOwningBuffer();
+    virtual std::shared_ptr<PODArrayOwning<T, initial_bytes, TAllocator, pad_right_, pad_left_>> getOwningBuffer() = 0;
 
     void resize_assume_reserved(const size_t n) /// NOLINT
     {

@@ -1,3 +1,5 @@
+#pragma once
+
 #include <memory>
 #include "IBuffer.h"
 #include "IO/BufferBase.h"

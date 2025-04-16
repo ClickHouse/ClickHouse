@@ -22,19 +22,20 @@ namespace DB
   * To allow functional tests to work under UBSan we have to separate some base class that will present the memory layout in explicit way,
   *  and we will do static_cast to this class.
   */
-  class ColumnFixedSizeHelper : public IColumn
-  {
-  public:
-      template <size_t ELEMENT_SIZE> // NOLINT
-      const char * getRawDataBegin() const
-      {
-          return IColumn::getContainer<ELEMENT_SIZE>()->raw_data();
-      }
+class ColumnFixedSizeHelper : public IColumn
+{
+public:
+    template <size_t ELEMENT_SIZE> // NOLINT
+    const char * getRawDataBegin() const
+    {
+        return IColumn::getContainer<ELEMENT_SIZE>()->raw_data();
+    }
 
-      template <size_t ELEMENT_SIZE> // NOLINT
-      void insertRawData(const char * ptr)
-      {
-          return IColumn::getContainer<ELEMENT_SIZE>()->push_back_raw(ptr);
-      }
-  };
+    template <size_t ELEMENT_SIZE> // NOLINT
+    void insertRawData(const char * ptr)
+    {
+        return IColumn::getContainer<ELEMENT_SIZE>()->push_back_raw(ptr);
+    }
+};
+
 }

@@ -30,6 +30,7 @@
 #include "Columns/BufferFWD.h"
 
 #include <bit>
+#include <cstdio>
 #include <cstring>
 
 #if defined(__SSE2__)
@@ -538,6 +539,7 @@ void ColumnVector<T>::doInsertRangeFrom(const IColumn & src, size_t start, size_
     // TODO: make method for getting owner reallocated buffer and fix this
 
     size_t old_size = data->size();
+    (void)fprintf(stderr, "SOBAKA %zu", old_size);
     auto mutable_data = std::static_pointer_cast<PaddedBuffer<T>>(data)->getOwningBuffer();
     mutable_data->resize(old_size + length);
     memcpy(mutable_data->data() + old_size, &(*src_vec.data)[start], length * sizeof((*data)[0]));
