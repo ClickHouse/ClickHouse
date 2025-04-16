@@ -56,4 +56,4 @@ kill $server_pid
 wait $server_pid
 return_code=$?
 
-${CLICKHOUSE_LOCAL} --path "$CURDIR" --query "SELECT query FROM system.query_log WHERE query LIKE '%Hello%' /* ignore current_database */ LIMIT 1" --output-format LineAsString
+${CLICKHOUSE_LOCAL} --path "$CURDIR" --query "SELECT query FROM system.query_log WHERE query LIKE '%Hello%' /* ignore current_database = currentDatabase() */ LIMIT 1" --output-format LineAsString
