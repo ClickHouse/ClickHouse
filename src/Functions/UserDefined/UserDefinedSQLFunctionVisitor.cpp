@@ -16,7 +16,6 @@
 #include <Interpreters/QueryNormalizer.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnsMatcher.h>
-#include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>

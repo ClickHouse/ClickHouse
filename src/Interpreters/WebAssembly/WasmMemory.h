@@ -3,6 +3,14 @@
 #include <span>
 
 #include <Interpreters/WebAssembly/WasmTypes.h>
+#include <Common/Exception.h>
+
+
+namespace DB::ErrorCodes
+{
+    extern const int TOO_LARGE_STRING_SIZE;
+    extern const int WASM_ERROR;
+}
 
 namespace DB::WebAssembly
 {
@@ -62,6 +70,15 @@ public:
 };
 
 template <typename T>
-WasmTypedMemoryHolder<T> allocateInWasmMemory(const WasmMemoryManager * wmm, size_t size);
+WasmTypedMemoryHolder<T> allocateInWasmMemory(const WasmMemoryManager * wmm, size_t size)
+{
+    if (size > std::numeric_limits<WasmSizeT>::max())
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Data is too large for wasm, size: {}", size);
+
+    auto buf = wmm->createBuffer(static_cast<WasmSizeT>(size));
+    if (buf == 0)
+        throw Exception(ErrorCodes::WASM_ERROR, "Cannot allocate buffer of size {}", size);
+    return WasmTypedMemoryHolder<T>(wmm, buf);
+}
 
 }

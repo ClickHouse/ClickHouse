@@ -33,6 +33,7 @@
 #include <Interpreters/WasmModuleManager.h>
 #include <Interpreters/WebAssembly/HostApi.h>
 #include <Interpreters/WebAssembly/WasmEdgeRuntime.h>
+#include <Interpreters/WebAssembly/WasmTimeRuntime.h>
 #include <Interpreters/WebAssembly/WasmEngine.h>
 
 using namespace DB;
@@ -172,7 +173,9 @@ try
 
     printMemoryUsage(__FILE__, __LINE__);
 
-    WasmEdgeRuntime wasm_engine;
+    // std::unique_ptr<IWasmEngine> wasm_engine = std::make_unique<WasmEdgeRuntime>();
+    std::unique_ptr<IWasmEngine> wasm_engine = std::make_unique<WasmTimeRuntime>();
+
 
 
     std::shared_ptr<WasmModule> wasm_module;
@@ -181,7 +184,7 @@ try
         WriteBufferFromOwnString wasm_code_buffer;
         copyData(file, wasm_code_buffer);
         wasm_code_buffer.finalize();
-        wasm_module = wasm_engine.createModule(wasm_code_buffer.stringView());
+        wasm_module = wasm_engine->createModule(wasm_code_buffer.stringView());
         WasmModuleManager::addImportsTo(*wasm_module);
     }
 

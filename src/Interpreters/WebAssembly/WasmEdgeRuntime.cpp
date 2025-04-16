@@ -21,6 +21,7 @@
 #include <filesystem>
 #include <list>
 #include <ranges>
+#include <fmt/ranges.h>
 
 namespace ProfileEvents
 {

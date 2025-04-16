@@ -29,6 +29,10 @@
 
 #include <Common/NamePrompter.h>
 #include <Common/PoolBase.h>
+#include <fmt/ranges.h>
+#include <Poco/String.h>
+#include <Common/transformEndianness.h>
+
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -77,6 +81,7 @@ extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int RESOURCE_NOT_FOUND;
+extern const int TOO_LARGE_STRING_SIZE;
 extern const int WASM_ERROR;
 }
 

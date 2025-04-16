@@ -14,7 +14,7 @@ add_subdirectory(
     "${WASMTIME_SOURCE_DIR}/crates/c-api"
     "${WASMTIME_BINARY_DIR}"
 )
-target_link_libraries(_wasmtime_cpp INTERFACE wasmtime stdc++ pthread)
+target_link_libraries(_wasmtime_cpp INTERFACE wasmtime)
 target_include_directories(
     _wasmtime_cpp
     SYSTEM INTERFACE

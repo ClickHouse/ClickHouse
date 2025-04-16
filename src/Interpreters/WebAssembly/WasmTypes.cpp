@@ -1,6 +1,7 @@
 #include <Interpreters/WebAssembly/WasmTypes.h>
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 #include <Common/Exception.h>
 
 

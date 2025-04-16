@@ -4,6 +4,7 @@
 #include <variant>
 #include <Interpreters/WebAssembly/WasmTimeRuntime.h>
 #include <fmt/core.h>
+#include <fmt/ranges.h>
 #include <wasmtime.hh>
 #include "Common/ElapsedTimeProfileEventIncrement.h"
 #include <Common/Exception.h>
@@ -133,6 +134,12 @@ WasmTimeRuntime::WasmTimeRuntime()
 {
     setLogLevel(LogsLevel::warning);
 }
+
+void WasmTimeRuntime::setLogLevel(LogsLevel)
+{
+    // hello123
+}
+
 class WasmTimeCompartment : public WasmCompartment
 {
 public:

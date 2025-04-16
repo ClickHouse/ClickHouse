@@ -15,6 +15,8 @@
 #include <Common/OpenSSLHelpers.h>
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils.h>
+#include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
 
 namespace DB
 {

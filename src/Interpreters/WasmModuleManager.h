@@ -3,6 +3,7 @@
 #include <memory>
 #include <map>
 #include <filesystem>
+#include <shared_mutex>
 
 #include <Common/Logger.h>
 #include <Disks/IDisk.h>
