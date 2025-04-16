@@ -33,6 +33,7 @@ enum class OpNum : int32_t
     Check = 13,
     Multi = 14,
     Reconfig = 16,
+    CreateTTL = 21,
     MultiRead = 22,
     Auth = 100,
 

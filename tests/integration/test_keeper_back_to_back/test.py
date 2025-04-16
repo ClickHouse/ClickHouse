@@ -17,6 +17,7 @@ node = cluster.add_instance(
     main_configs=["configs/enable_keeper.xml"],
     with_zookeeper=True,
     use_keeper=False,
+    with_keeper_ttl_node=True,
 )
 
 
@@ -808,3 +809,26 @@ def test_concurrent_watches(started_cluster, request):
         assert dumb_watch_triggered_counter == watches_must_be_triggered
     finally:
         stop_zk(fake_zk)
+
+
+def test_node_with_ttl(started_cluster, request):
+    node = cluster.instances["node"]
+
+    reference = [
+        "Connected!",
+        "Existance before creating: false",
+        "TTL node created: /my_ttl_node",
+        "Node exists immediately after create: true",
+        "Waiting for TTL to expire...",
+        "Node exists after TTL: false"
+    ]
+
+    res = started_cluster.exec_in_container(
+        started_cluster.keeper_ttl_node_docker_id,
+        [
+            "bash",
+            "-c",
+            f"java ZooKeeperTTLNode --host {node.hostname} --port 9181",
+        ],
+    )
+    assert res == reference

@@ -209,6 +209,9 @@ struct CreateRequest : virtual Request
     /// should it succeed if node already exists
     bool not_exists = false;
 
+    bool contains_ttl = false;
+    int64_t ttl;
+
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 
@@ -219,6 +222,16 @@ struct CreateRequest : virtual Request
 struct CreateResponse : virtual Response
 {
     String path_created;
+
+    void removeRootPath(const String & root_path) override;
+
+    size_t bytesSize() const override { return path_created.size(); }
+};
+
+struct Create2Response : virtual Response
+{
+    String path_created;
+    Stat zstat;
 
     void removeRootPath(const String & root_path) override;
 

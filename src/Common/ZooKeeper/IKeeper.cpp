@@ -132,6 +132,7 @@ void GetACLRequest::addRootPath(const String & root_path) { Coordination::addRoo
 void SyncRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 
 void CreateResponse::removeRootPath(const String & root_path) { Coordination::removeRootPath(path_created, root_path); }
+void Create2Response::removeRootPath(const String & root_path) { Coordination::removeRootPath(path_created, root_path); }
 void WatchResponse::removeRootPath(const String & root_path) { Coordination::removeRootPath(path, root_path); }
 
 void MultiResponse::removeRootPath(const String & root_path)

@@ -224,12 +224,18 @@ void ZooKeeperCreateRequest::writeImpl(WriteBuffer & out) const
         flags |= 2;
 
     Coordination::write(flags, out);
+
+    if (contains_ttl)
+        Coordination::write(ttl, out);
 }
 
 size_t ZooKeeperCreateRequest::sizeImpl() const
 {
     int32_t flags = 0;
-    return Coordination::size(path) + Coordination::size(data) + Coordination::size(acls) + Coordination::size(flags);
+    auto size = Coordination::size(path) + Coordination::size(data) + Coordination::size(acls) + Coordination::size(flags);
+    if (contains_ttl)
+        size += sizeof(int64_t);
+    return size;
 }
 
 void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
@@ -245,6 +251,9 @@ void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
         is_ephemeral = true;
     if (flags & 2)
         is_sequential = true;
+
+    if (contains_ttl)
+        Coordination::read(ttl, in);
 }
 
 std::string ZooKeeperCreateRequest::toStringImpl(bool /*short_format*/) const
@@ -271,6 +280,23 @@ void ZooKeeperCreateResponse::writeImpl(WriteBuffer & out) const
 size_t ZooKeeperCreateResponse::sizeImpl() const
 {
     return Coordination::size(path_created);
+}
+
+void ZooKeeperCreateTTLResponse::readImpl(ReadBuffer & in)
+{
+    Coordination::read(path_created, in);
+    Coordination::read(zstat, in);
+}
+
+void ZooKeeperCreateTTLResponse::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(path_created, out);
+    Coordination::write(zstat, out);
+}
+
+size_t ZooKeeperCreateTTLResponse::sizeImpl() const
+{
+    return Coordination::size(path_created) + Coordination::size(zstat);
 }
 
 void ZooKeeperRemoveRequest::writeImpl(WriteBuffer & out) const
@@ -957,6 +983,8 @@ ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const
 {
     if (not_exists)
         return std::make_shared<ZooKeeperCreateIfNotExistsResponse>();
+    if (contains_ttl)
+        return std::make_shared<ZooKeeperCreateTTLResponse>();
     return std::make_shared<ZooKeeperCreateResponse>();
 }
 
@@ -1115,6 +1143,14 @@ void ZooKeeperCreateResponse::fillLogElements(LogElements & elems, size_t idx) c
     elem.path_created = path_created;
 }
 
+void ZooKeeperCreateTTLResponse::fillLogElements(LogElements & elems, size_t idx) const
+{
+    ZooKeeperResponse::fillLogElements(elems, idx);
+    auto & elem =  elems[idx];
+    elem.path_created = path_created;
+    elem.stat = zstat;
+}
+
 void ZooKeeperExistsResponse::fillLogElements(LogElements & elems, size_t idx) const
 {
     ZooKeeperResponse::fillLogElements(elems, idx);
@@ -1211,6 +1247,8 @@ void registerZooKeeperRequest(ZooKeeperRequestFactory & factory)
             res->operation_type = ZooKeeperMultiRequest::OperationType::Write;
         else if constexpr (num == OpNum::CheckNotExists || num == OpNum::CreateIfNotExists)
             res->not_exists = true;
+        else if constexpr (num == OpNum::CreateTTL)
+            res->contains_ttl = true;
 
         return res;
     });
@@ -1240,6 +1278,7 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::FilteredList, ZooKeeperFilteredListRequest>(*this);
     registerZooKeeperRequest<OpNum::CheckNotExists, ZooKeeperCheckRequest>(*this);
     registerZooKeeperRequest<OpNum::RemoveRecursive, ZooKeeperRemoveRecursiveRequest>(*this);
+    registerZooKeeperRequest<OpNum::CreateTTL, ZooKeeperCreateRequest>(*this);
 }
 
 PathMatchResult matchPath(std::string_view path, std::string_view match_to)

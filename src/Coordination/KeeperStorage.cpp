@@ -19,6 +19,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
+#include <Coordination/GarbageCollector.h>
 
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperCommon.h>
@@ -27,6 +28,7 @@
 #include <Coordination/KeeperReconfiguration.h>
 #include <Coordination/KeeperStorage.h>
 
+#include <chrono>
 #include <shared_mutex>
 #include <base/defines.h>
 
@@ -51,6 +53,8 @@ namespace DB
 namespace CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 log_slow_cpu_threshold_ms;
+    extern const CoordinationSettingsBool use_garbage_collector;
+    extern const CoordinationSettingsUInt64 garbage_collector_limit;
 }
 
 namespace ErrorCodes
@@ -291,6 +295,15 @@ String KeeperRocksNode::getEncodedString()
     const KeeperRocksNodeInfo & node_info = *this;
     writePODBinary(node_info, buffer);
     writeBinary(getData(), buffer);
+    if (destroy_time != -1)
+    {
+        writeBinary(destroy_time, buffer);
+        writeBinary(ttl, buffer);
+    }
+    else
+    {
+        writeBinary(destroy_time, buffer);
+    }
     return buffer.str();
 }
 
@@ -305,6 +318,11 @@ void KeeperRocksNode::decodeFromString(const String &buffer_str)
         data = std::unique_ptr<char[]>(new char[stats.data_size]);
         buffer.readStrict(data.get(), stats.data_size);
     }
+    readBinary(destroy_time, buffer);
+    if (destroy_time != -1)
+        readBinary(ttl, buffer);
+    else
+        ttl = -1;
 }
 
 void KeeperRocksNode::setResponseStat(Coordination::Stat & response_stat) const
@@ -337,7 +355,8 @@ KeeperMemNode & KeeperMemNode::operator=(const KeeperMemNode & other)
     }
 
     children = other.children;
-
+    destroy_time = other.destroy_time;
+    ttl = other.ttl;
     return *this;
 }
 
@@ -360,6 +379,8 @@ KeeperMemNode & KeeperMemNode::operator=(KeeperMemNode && other) noexcept
 
     static_assert(std::is_nothrow_move_assignable_v<ChildrenSet>);
     children = std::move(other.children);
+    destroy_time = other.destroy_time;
+    ttl = other.ttl;
 
     return *this;
 }
@@ -443,6 +464,8 @@ void KeeperMemNode::shallowCopy(const KeeperMemNode & other)
     }
 
     cached_digest = other.cached_digest;
+    destroy_time = other.destroy_time;
+    ttl = other.ttl;
 }
 
 struct CreateNodeDelta
@@ -450,6 +473,8 @@ struct CreateNodeDelta
     Coordination::Stat stat;
     Coordination::ACLs acls;
     String data;
+    int64_t destroy_time;
+    int64_t ttl;
 };
 
 struct RemoveNodeDelta
@@ -568,6 +593,7 @@ template <typename Container>
 KeeperStorage<Container>::KeeperStorage(
     int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, const bool initialize_system_nodes)
     : KeeperStorageBase(tick_time_ms, keeper_context_, superdigest_)
+    , garbage_collector(keeper_context_->getCoordinationSettings()[CoordinationSetting::use_garbage_collector], keeper_context_->getCoordinationSettings()[CoordinationSetting::garbage_collector_limit])
 {
     if constexpr (use_rocksdb)
         container.initialize(keeper_context);
@@ -725,6 +751,8 @@ void KeeperStorage<Container>::UncommittedState::applyDelta(const Delta & delta,
                 node = std::make_shared<Node>();
                 node->copyStats(operation.stat);
                 node->setData(operation.data);
+                node->destroy_time = operation.destroy_time;
+                node->ttl = operation.ttl;
                 acls = operation.acls;
             }
             else if constexpr (std::same_as<DeltaType, RemoveNodeDelta>)
@@ -1167,7 +1195,7 @@ Coordination::Error KeeperStorage<Container>::commit(KeeperStorageBase::DeltaRan
             {
                 if constexpr (std::same_as<DeltaType, CreateNodeDelta>)
                 {
-                    if (!createNode(path, operation.data, operation.stat, operation.acls, digest_on_commit))
+                    if (!createNode(path, operation.data, operation.stat, operation.acls, digest_on_commit, operation.destroy_time, operation.ttl))
                         onStorageInconsistency("Failed to create a node");
 
                     return Coordination::Error::ZOK;
@@ -1264,7 +1292,7 @@ Coordination::Error KeeperStorage<Container>::commit(KeeperStorageBase::DeltaRan
 
 template <typename Container>
 bool KeeperStorage<Container>::createNode(
-    const std::string & path, String data, const Coordination::Stat & stat, Coordination::ACLs node_acls, bool update_digest)
+    const std::string & path, String data, const Coordination::Stat & stat, Coordination::ACLs node_acls, bool update_digest, int64_t destroy_time, int64_t ttl)
 {
     auto parent_path = parentNodePath(path);
     auto node_it = container.find(parent_path);
@@ -1286,6 +1314,8 @@ bool KeeperStorage<Container>::createNode(
     created_node.acl_id = acl_id;
     created_node.copyStats(stat);
     created_node.setData(data);
+    created_node.destroy_time = destroy_time;
+    created_node.ttl = ttl;
 
     if constexpr (use_rocksdb)
     {
@@ -1375,6 +1405,7 @@ auto callOnConcreteRequestType(const Coordination::ZooKeeperRequest & zk_request
             return function(dynamic_cast<const Coordination::ZooKeeperGetRequest &>(zk_request));
         case Coordination::OpNum::Create:
         case Coordination::OpNum::CreateIfNotExists:
+        case Coordination::OpNum::CreateTTL:
             return function(dynamic_cast<const Coordination::ZooKeeperCreateRequest &>(zk_request));
         case Coordination::OpNum::Remove:
             return function(dynamic_cast<const Coordination::ZooKeeperRemoveRequest &>(zk_request));
@@ -1641,27 +1672,64 @@ std::list<KeeperStorageBase::Delta> preprocess(
     stat.cversion = 0;
     stat.ephemeralOwner = zk_request.is_ephemeral ? session_id : 0;
 
+    zk_request.zstat = stat;
+    int64_t destroy_time = -1;
+    if (zk_request.contains_ttl)
+    {
+        auto now = std::chrono::system_clock::now();
+        auto desctroy_point = now + std::chrono::milliseconds(zk_request.ttl);
+        auto duration = desctroy_point.time_since_epoch();
+        auto count_ms = std::chrono::duration_cast<std::chrono::milliseconds>(duration);
+        destroy_time = count_ms.count();
+    }
+
     new_deltas.emplace_back(
         std::move(path_created),
         zxid,
-        CreateNodeDelta{stat, std::move(node_acls), zk_request.data});
+        CreateNodeDelta{stat, std::move(node_acls), zk_request.data, destroy_time, zk_request.contains_ttl ? zk_request.ttl : -1});
 
+    auto path_request = zk_request.path;
+    if (zk_request.contains_ttl)
+    {
+        storage.garbage_collector.addNode(path_request, std::chrono::milliseconds(zk_request.ttl), [&storage, path = path_request, version = -1, update_digest = false] {
+            storage.removeNode(path, version, update_digest);
+        });
+    }
+    
     return new_deltas;
 }
 
 template <typename Storage>
 Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
-    std::shared_ptr<Coordination::ZooKeeperCreateResponse> response = zk_request.not_exists
-        ? std::make_shared<Coordination::ZooKeeperCreateIfNotExistsResponse>()
-        : std::make_shared<Coordination::ZooKeeperCreateResponse>();
-
+    auto make_response = [&zk_request] (const String& path, Coordination::Error error) -> Coordination::ZooKeeperResponsePtr {
+        if (zk_request.not_exists)
+        {    
+            auto response = std::make_shared<Coordination::ZooKeeperCreateIfNotExistsResponse>();
+            response->path_created = path;
+            response->error = error;
+            return response;
+        }
+        else if (zk_request.contains_ttl)
+        {
+            auto response = std::make_shared<Coordination::ZooKeeperCreateTTLResponse>();
+            response->path_created = path;
+            response->error = error;
+            response->zstat = zk_request.zstat;
+            return response;
+        }
+        else
+        {
+            auto response = std::make_shared<Coordination::ZooKeeperCreateResponse>();
+            response->path_created = path;
+            response->error = error;
+            return response;
+        }
+    };
     if (deltas.empty())
     {
         chassert(zk_request.not_exists);
-        response->path_created = zk_request.getPath();
-        response->error = Coordination::Error::ZOK;
-        return response;
+        return make_response(zk_request.getPath(), Coordination::Error::ZOK);
     }
 
     std::string created_path;
@@ -1676,13 +1744,10 @@ Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRe
 
     if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
     {
-        response->error = result;
-        return response;
+        return make_response("", result);
     }
 
-    response->path_created = std::move(created_path);
-    response->error = Coordination::Error::ZOK;
-    return response;
+    return make_response(created_path, Coordination::Error::ZOK);
 }
 /// CREATE Request ///
 
@@ -2356,6 +2421,20 @@ Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperSetReque
 
     node_it->value.setResponseStat(response->stat);
     response->error = Coordination::Error::ZOK;
+
+    if (node_it->value.ttl != -1)
+    {
+        auto now = std::chrono::system_clock::now();
+        auto desctroy_point = now + std::chrono::milliseconds(node_it->value.ttl);
+        auto duration = desctroy_point.time_since_epoch();
+        auto count_ms = std::chrono::duration_cast<std::chrono::milliseconds>(duration);
+        int64_t destroy_time = count_ms.count();
+        node_it->value.destroy_time = destroy_time;
+    
+        storage.garbage_collector.addNode(zk_request.path, std::chrono::milliseconds(node_it->value.ttl), [&storage, path = zk_request.path, version = -1, update_digest = false] {
+            storage.removeNode(path, version, update_digest);
+        });
+    }
 
     return response;
 }
