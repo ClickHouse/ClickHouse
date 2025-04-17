@@ -438,12 +438,12 @@ class Result(MetaClasses.Serializable):
                             result = command_(*command_args, **command_kwargs)
                     else:
                         result = command_(*command_args, **command_kwargs)
-                    if isinstance(result, bool):
-                        error_infos = buffer.getvalue()
-                        res = result
-                    else:
-                        res=False
-                        error_infos = str(result).splitlines()
+                    res = bool(result)
+                    if (with_info_on_failure and not res) or with_info:
+                        if isinstance(result, bool):
+                            error_infos = buffer.getvalue()
+                        else:
+                            error_infos = str(result).splitlines()
                 else:
                     # Run shell command in a specified directory with logging and verbosity
                     exit_code = Shell.run(command_, verbose=True, log_file=log_file)
