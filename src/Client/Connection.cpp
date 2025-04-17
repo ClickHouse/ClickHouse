@@ -1418,7 +1418,7 @@ void Connection::initBlockInput()
         if (!maybe_compressed_in)
         {
             if (compression == Protocol::Compression::Enable)
-                // Different codecs in this case are the default (e.g. LZ4) and codec NONE to skip compression in case of ColumnBlob.
+                // Different codecs in this case are the default (e.g. LZ4) and codec NONE to skip compression in case of ColumnBLOB.
                 maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in, /*allow_different_codec=*/true);
             else
                 maybe_compressed_in = in;

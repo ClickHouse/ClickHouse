@@ -25,6 +25,7 @@ extern const int LOGICAL_ERROR;
 
 void AddSequenceNumber::transform(Chunk & chunk)
 {
+    // We should extract it first (if present) to support the case of distributed table over another distributed table.
     chunk.getChunkInfos().extract<ChunkSequenceNumber>();
     chunk.getChunkInfos().add(std::make_shared<ChunkSequenceNumber>(++chunk_sequence_number));
 }

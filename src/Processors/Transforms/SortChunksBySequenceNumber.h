@@ -5,7 +5,6 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Port.h>
 
-
 namespace DB
 {
 

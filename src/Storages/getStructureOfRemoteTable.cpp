@@ -1,6 +1,6 @@
 #include "getStructureOfRemoteTable.h"
 
-#include <Columns/ColumnBlob.h>
+#include <Columns/ColumnBLOB.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>

@@ -5,9 +5,6 @@
 #include <Processors/Transforms/SortChunksBySequenceNumber.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
-
 namespace DB
 {
 
@@ -17,7 +14,7 @@ static ITransformingStep::Traits getTraits()
     {
         {
             .returns_single_stream = true,
-            .preserves_number_of_streams = true,
+            .preserves_number_of_streams = false,
             .preserves_sorting = true,
         },
         {
@@ -56,24 +53,21 @@ BlocksMarshallingStep::BlocksMarshallingStep(const Header & input_header_)
 
 void BlocksMarshallingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    if (pipeline.getNumStreams() > 1)
-    {
-        pipeline.addSimpleTransform([&](const Block & header)
-                                    { return std::make_shared<MarshallBlocks>(header, settings.block_marshalling_callback); });
-    }
-    else
-    {
-        const auto num_threads = pipeline.getNumThreads();
+    // The getNumStreams() == 1 is special, because it may indicate that pipeline ended with a sorting or aggregation, i.e. we should preserve chunks order.
+    const bool single_stream = pipeline.getNumStreams() == 1;
+    if (single_stream)
         pipeline.addTransform(std::make_shared<AddSequenceNumber>(pipeline.getHeader()));
-        pipeline.resize(num_threads);
-        pipeline.addSimpleTransform([&](const Block & header)
-                                    { return std::make_shared<MarshallBlocks>(header, settings.block_marshalling_callback); });
+    const size_t num_threads = pipeline.getNumThreads();
+    pipeline.resize(num_threads);
+    pipeline.addSimpleTransform([&](const Block & header)
+                                { return std::make_shared<MarshallBlocks>(header, settings.block_marshalling_callback); });
+    if (single_stream)
         pipeline.addTransform(std::make_shared<SortChunksBySequenceNumber>(pipeline.getHeader(), num_threads));
-    }
 }
 
 std::unique_ptr<IQueryPlanStep> BlocksMarshallingStep::deserialize(Deserialization & ctx)
 {
+    chassert(ctx.input_headers.size() == 1);
     return std::make_unique<BlocksMarshallingStep>(ctx.input_headers.front());
 }
 

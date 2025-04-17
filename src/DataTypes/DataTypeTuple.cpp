@@ -1,4 +1,4 @@
-#include <Columns/ColumnBlob.h>
+#include <Columns/ColumnBLOB.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Field.h>
@@ -391,7 +391,7 @@ SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column)
     if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
         return getSerializationInfo(column_const->getDataColumn());
 
-    if (const auto * column_blob = checkAndGetColumn<ColumnBlob>(&column))
+    if (const auto * column_blob = checkAndGetColumn<ColumnBLOB>(&column))
         return getSerializationInfo(*column_blob->getWrappedColumn());
 
     MutableSerializationInfos infos;

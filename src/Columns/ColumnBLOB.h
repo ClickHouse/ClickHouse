@@ -29,20 +29,20 @@ extern const int LOGICAL_ERROR;
 }
 
 
-class ColumnBlob : public COWHelper<IColumnHelper<ColumnBlob>, ColumnBlob>
+class ColumnBLOB : public COWHelper<IColumnHelper<ColumnBLOB>, ColumnBLOB>
 {
 public:
     using Blob = std::vector<char>;
 
-    // The argument is supposed to be a some ColumnBlob's internal blob.
+    // The argument is supposed to be a some ColumnBLOB's internal blob.
     using ToBlob = std::function<void(Blob &)>;
 
-    // The argument is supposed to be a some ColumnBlob's internal blob,
+    // The argument is supposed to be a some ColumnBLOB's internal blob,
     // the return value is the reconstructed column.
     // TODO(nickitat): fix signature
     using FromBlob = std::function<ColumnPtr(const Blob &, int)>;
 
-    ColumnBlob(
+    ColumnBLOB(
         ColumnWithTypeAndName concrete_column_, CompressionCodecPtr codec, UInt64 client_revision, const FormatSettings & format_settings)
         : rows(concrete_column_.column->size())
         , concrete_column(concrete_column_.column)
@@ -51,14 +51,14 @@ public:
     }
 
     // TODO: remove me
-    ColumnBlob(ToBlob task, ColumnPtr concrete_column_)
+    ColumnBLOB(ToBlob task, ColumnPtr concrete_column_)
         : rows(concrete_column_->size())
         , concrete_column(std::move(concrete_column_))
         , to_blob_task(std::move(task))
     {
     }
 
-    ColumnBlob(FromBlob task, ColumnPtr concrete_column_, size_t rows_)
+    ColumnBLOB(FromBlob task, ColumnPtr concrete_column_, size_t rows_)
         : rows(rows_)
         , concrete_column(std::move(concrete_column_))
         , from_blob_task(std::move(task))
@@ -219,7 +219,7 @@ private:
 
     [[noreturn]] void throwInapplicable() const
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnBlob should be converted to a regular column before usage");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnBLOB should be converted to a regular column before usage");
     }
 };
 
@@ -230,7 +230,7 @@ private:
     for (const auto & elem : block)
     {
         ColumnWithTypeAndName column = elem;
-        if (const auto * col = typeid_cast<const ColumnBlob *>(column.column.get()))
+        if (const auto * col = typeid_cast<const ColumnBLOB *>(column.column.get()))
             column.column = col->convertFrom();
         res.insert(std::move(column));
     }

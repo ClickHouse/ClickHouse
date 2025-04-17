@@ -1,4 +1,4 @@
-#include <Columns/ColumnBlob.h>
+#include <Columns/ColumnBLOB.h>
 #include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
 #include <DataTypes/NestedUtils.h>
@@ -25,7 +25,7 @@ ISerialization::Kind ISerialization::getKind(const IColumn & column)
     if (column.isSparse())
         return Kind::SPARSE;
 
-    if (const auto * column_blob = typeid_cast<const ColumnBlob *>(&column))
+    if (const auto * column_blob = typeid_cast<const ColumnBLOB *>(&column))
         return column_blob->wrappedColumnIsSparse() ? Kind::DETACHED_OVER_SPARSE : Kind::DETACHED;
 
     return Kind::DEFAULT;

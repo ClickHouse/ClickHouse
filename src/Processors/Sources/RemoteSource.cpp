@@ -1,4 +1,4 @@
-#include <Columns/ColumnBlob.h>
+#include <Columns/ColumnBLOB.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Sources/RemoteSource.h>
@@ -307,7 +307,7 @@ public:
         auto columns = chunk.detachColumns();
         for (auto & column : columns)
         {
-            if (const auto * col = typeid_cast<const ColumnBlob *>(column.get()))
+            if (const auto * col = typeid_cast<const ColumnBLOB *>(column.get()))
                 column = col->convertFrom();
         }
         chunk.setColumns(std::move(columns), rows);

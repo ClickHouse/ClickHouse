@@ -26,7 +26,7 @@
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/StorageMemory.h>
 
-#include <Columns/ColumnBlob.h>
+#include <Columns/ColumnBLOB.h>
 
 #include <Access/AccessControl.h>
 #include <Access/User.h>
@@ -347,7 +347,7 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
                 /// TODO: check that column contains the same value.
                 /// TODO: serialize const columns.
                 auto col = block.getByName(elem.name);
-                if (const auto * blob = typeid_cast<const ColumnBlob *>(col.column.get()))
+                if (const auto * blob = typeid_cast<const ColumnBLOB *>(col.column.get()))
                     col.column = blob->convertFrom();
                 col.column = col.column->cut(0, 1);
 
@@ -365,7 +365,7 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
         else
         {
             const auto & col = block.getByName(elem.name);
-            if (const auto * blob = typeid_cast<const ColumnBlob *>(col.column.get()))
+            if (const auto * blob = typeid_cast<const ColumnBLOB *>(col.column.get()))
             {
                 blob->addCast(col.type, elem.type);
                 column = col.column;

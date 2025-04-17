@@ -7,7 +7,7 @@
 #include <vector>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
-#include <Columns/ColumnBlob.h>
+#include <Columns/ColumnBLOB.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
@@ -272,7 +272,7 @@ Block convertColumnsToBLOBs(const Block & block, CompressionCodecPtr codec, UInt
     {
         ColumnWithTypeAndName column = elem;
         if (!elem.column->isConst())
-            column.column = ColumnBlob::create(column, codec, client_revision, format_settings);
+            column.column = ColumnBLOB::create(column, codec, client_revision, format_settings);
         res.insert(std::move(column));
     }
     return res;
