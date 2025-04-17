@@ -343,7 +343,7 @@ private:
     size_t requires_external_call_check = 0;
     std::vector<bool> next_calls_succeeded;
 
-    std::filesystem::path getDatabaseDataDir(PeerTableDatabase pt) const;
+    std::filesystem::path getDatabaseDataDir(PeerTableDatabase pt, bool server) const;
 
 public:
     bool getRequiresExternalCallCheck() const { return requires_external_call_check > 0; }

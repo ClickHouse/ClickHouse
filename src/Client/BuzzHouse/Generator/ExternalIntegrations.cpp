@@ -383,9 +383,10 @@ void SQLiteIntegration::closeSQLiteConnection(sqlite3 * sqlite)
 std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials & scc)
 {
     sqlite3 * scon = nullptr;
-    const std::filesystem::path spath = fcc.db_file_path / "sqlite.db";
+    const std::filesystem::path client_spath = fcc.client_file_path / "sqlite.db";
+    const std::filesystem::path server_spath = fcc.server_file_path / "sqlite.db";
 
-    if (sqlite3_open(spath.c_str(), &scon) != SQLITE_OK)
+    if (sqlite3_open(client_spath.c_str(), &scon) != SQLITE_OK)
     {
         if (scon)
         {
@@ -401,7 +402,7 @@ std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegratio
     else
     {
         LOG_INFO(fcc.log, "Connected to SQLite");
-        return std::make_unique<SQLiteIntegration>(fcc, scc, SQLiteUniqueKeyPtr(scon, closeSQLiteConnection), spath);
+        return std::make_unique<SQLiteIntegration>(fcc, scc, SQLiteUniqueKeyPtr(scon, closeSQLiteConnection), server_spath);
     }
 }
 
@@ -1324,7 +1325,7 @@ bool ExternalIntegrations::performQuery(const PeerTableDatabase pt, const String
     }
 }
 
-std::filesystem::path ExternalIntegrations::getDatabaseDataDir(const PeerTableDatabase pt) const
+std::filesystem::path ExternalIntegrations::getDatabaseDataDir(const PeerTableDatabase pt, const bool server) const
 {
     switch (pt)
     {
@@ -1337,7 +1338,7 @@ std::filesystem::path ExternalIntegrations::getDatabaseDataDir(const PeerTableDa
         case PeerTableDatabase::SQLite:
             return sqlite->sc.user_files_dir / "fuzz.data";
         case PeerTableDatabase::None:
-            return fc.fuzz_out;
+            return server ? fc.fuzz_server_out : fc.fuzz_client_out;
     }
 }
 
@@ -1345,9 +1346,11 @@ bool ExternalIntegrations::getPerformanceMetricsForLastQuery(const PeerTableData
 {
     String buf;
     std::error_code ec;
-    const std::filesystem::path out_path = this->getDatabaseDataDir(pt);
+    const std::filesystem::path client_out_path = this->getDatabaseDataDir(pt, false);
+    const std::filesystem::path server_out_path = this->getDatabaseDataDir(pt, true);
+
     res.metrics.clear();
-    if (!std::filesystem::remove(out_path, ec) && ec)
+    if (!std::filesystem::remove(client_out_path, ec) && ec)
     {
         LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
         return false;
@@ -1359,9 +1362,9 @@ bool ExternalIntegrations::getPerformanceMetricsForLastQuery(const PeerTableData
                 "INSERT INTO TABLE FUNCTION file('{}', 'TabSeparated', 'c0 UInt64, c1 UInt64, c2 UInt64') SELECT query_duration_ms, "
                 "memory_usage, read_bytes FROM system.query_log WHERE log_comment = 'measure_performance' AND type = 'QueryFinish' ORDER "
                 "BY event_time_microseconds DESC LIMIT 1;",
-                out_path.generic_string())))
+                server_out_path.generic_string())))
     {
-        std::ifstream infile(out_path);
+        std::ifstream infile(client_out_path);
         if (std::getline(infile, buf) && buf.size() > 1)
         {
             if (buf[buf.size() - 1] == '\r')
@@ -1398,16 +1401,16 @@ void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
     String replaced;
     std::error_code ec;
 
-    if (!std::filesystem::remove(fc.fuzz_out, ec) && ec)
+    if (!std::filesystem::remove(fc.fuzz_client_out, ec) && ec)
     {
         LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
         return;
     }
     if (fc.processServerQuery(fmt::format(
             "SELECT `name`, `value` FROM system.settings WHERE changed = 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
-            fc.fuzz_out.generic_string())))
+            fc.fuzz_server_out.generic_string())))
     {
-        std::ifstream infile(fc.fuzz_out);
+        std::ifstream infile(fc.fuzz_client_out);
         while (std::getline(infile, buf) && buf.size() > 1)
         {
             if (buf[buf.size() - 1] == '\r')
