@@ -86,4 +86,18 @@ SELECT secondary_indices_marks_bytes
 FROM system.parts
 WHERE (`table` = 'test_wide') AND (active = 1) AND (database = currentDatabase());
 
+-- rebuild
+ALTER TABLE test_wide MODIFY SETTING secondary_indices_on_columns_alter = 'rebuild';
+
+ALTER TABLE test_wide MODIFY COLUMN b int;
+
+SELECT secondary_indices_marks_bytes
+FROM system.parts
+WHERE (`table` = 'test_wide') AND (active = 1) AND (database = currentDatabase());
+
+-- ignore
+ALTER TABLE test_wide MODIFY SETTING secondary_indices_on_columns_alter = 'ignore';
+
+ALTER TABLE test_wide MODIFY COLUMN b String;
+
 DROP TABLE test_wide;
