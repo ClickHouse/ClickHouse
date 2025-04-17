@@ -197,8 +197,9 @@ def test_remote_query_user_does_not_exist_locally(ldap_cluster):
     instance2.query("INSERT INTO test_table VALUES (123)")
     instance2.query("GRANT SELECT ON default.test_table TO non_local")
 
+    # serialize_query_plan is disabled because analysis requiers that local table exists.
     result = instance1.query(
-        "SELECT * FROM remote('instance2', 'default.test_table', 'non_local')"
+        "SELECT * FROM remote('instance2', 'default.test_table', 'non_local') settings serialize_query_plan = 0"
     )
     assert result.strip() == "123"
 
