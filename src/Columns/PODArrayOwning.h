@@ -14,11 +14,11 @@
 namespace DB
 {
 
-template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right, size_t pad_left>
-class PODArrayOwning : public IBuffer<T, initial_bytes, TAllocator, pad_right, pad_left>, public std::enable_shared_from_this<PODArrayOwning<T, initial_bytes, TAllocator, pad_right, pad_left>>
+template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_> // NOLINT
+class PODArrayOwning : public IBuffer<T, initial_bytes, TAllocator, pad_right_, pad_left_>, public std::enable_shared_from_this<PODArrayOwning<T, initial_bytes, TAllocator, pad_right_, pad_left_>>
 {
 protected:
-    using Base = IBuffer<T, initial_bytes, TAllocator, pad_right, pad_left>;
+    using Base = IBuffer<T, initial_bytes, TAllocator, pad_right_, pad_left_>;
     static constexpr size_t ELEMENT_SIZE = sizeof(T);
 public:
     using value_type = T;
@@ -66,24 +66,24 @@ public:
         return *this;
     }
 
-    std::shared_ptr<PODArrayOwning<T, initial_bytes, TAllocator, pad_right, pad_left>> getOwningBuffer() final {
+    std::shared_ptr<PODArrayOwning<T, initial_bytes, TAllocator, pad_right_, pad_left_>> getOwningBuffer() final {
         return this->shared_from_this();
     }
 
     void alloc_for_num_elements(size_t num_elements) override
     {
-        alloc(PODArrayDetails::minimum_memory_for_elements(num_elements, sizeof(T), pad_left, pad_right));
+        alloc(PODArrayDetails::minimum_memory_for_elements(num_elements, sizeof(T), Base::pad_left, Base::pad_right));
     }
 
     void alloc(size_t bytes) override
     {
         char * allocated = reinterpret_cast<char *>(TAllocator::alloc(bytes));
 
-        this->c_start = allocated + pad_left;
+        this->c_start = allocated + Base::pad_left;
         this->c_end = this->c_start;
-        this->c_end_of_storage = allocated + bytes - pad_right;
+        this->c_end_of_storage = allocated + bytes - Base::pad_right;
 
-        if (pad_left)
+        if (Base::pad_left)
             memset(this->c_start - ELEMENT_SIZE, 0, ELEMENT_SIZE);
     }
 
@@ -94,7 +94,7 @@ public:
 
         // unprotect();
 
-        TAllocator::free(this->c_start - pad_left, this->allocated_bytes());
+        TAllocator::free(this->c_start - Base::pad_left, this->allocated_bytes());
     }
 
     void realloc(size_t bytes) override
@@ -110,11 +110,11 @@ public:
         ptrdiff_t end_diff = this->c_end - this->c_start;
 
         char * allocated = reinterpret_cast<char *>(
-            TAllocator::realloc(this->c_start - pad_left, this->allocated_bytes(), bytes));
+            TAllocator::realloc(this->c_start - Base::pad_left, this->allocated_bytes(), bytes));
 
-        this->c_start = allocated + pad_left;
+        this->c_start = allocated + Base::pad_left;
         this->c_end = this->c_start + end_diff;
-        this->c_end_of_storage = allocated + bytes - pad_right;
+        this->c_end_of_storage = allocated + bytes - Base::pad_right;
     }
 
     template <typename ... TAllocatorParams>
@@ -122,14 +122,14 @@ public:
     void reserve(size_t n, TAllocatorParams &&... allocator_params)
     {
         if (n > Base::capacity())
-            realloc(roundUpToPowerOfTwoOrZero(BufferDetails::minimum_memory_for_elements(n, Base::element_size, pad_left, pad_right)), std::forward<TAllocatorParams>(allocator_params)...);
+            realloc(roundUpToPowerOfTwoOrZero(BufferDetails::minimum_memory_for_elements(n, Base::element_size, Base::pad_left, Base::pad_right)), std::forward<TAllocatorParams>(allocator_params)...);
     }
 
     template <typename ... TAllocatorParams>
     void reserve_exact(size_t n, TAllocatorParams &&... allocator_params) /// NOLINT
     {
         if (n > Base::capacity())
-            realloc(BufferDetails::minimum_memory_for_elements(n, Base::element_size, pad_left, pad_right), std::forward<TAllocatorParams>(allocator_params)...);
+            realloc(BufferDetails::minimum_memory_for_elements(n, Base::element_size, Base::pad_left, Base::pad_right), std::forward<TAllocatorParams>(allocator_params)...);
     }
 
     template <typename ... TAllocatorParams>
@@ -172,7 +172,7 @@ public:
     template <typename ... TAllocatorParams>
     void shrink_to_fit(TAllocatorParams &&... allocator_params) /// NOLINT
     {
-        realloc(BufferDetails::minimum_memory_for_elements(Base::size(), Base::element_size, pad_left, pad_right), std::forward<TAllocatorParams>(allocator_params)...);
+        realloc(BufferDetails::minimum_memory_for_elements(Base::size(), Base::element_size, Base::pad_left, Base::pad_right), std::forward<TAllocatorParams>(allocator_params)...);
     }
 
     template <typename U, typename ... TAllocatorParams>
@@ -256,7 +256,7 @@ public:
     template <typename It1, typename It2, typename ... TAllocatorParams>
     void insertSmallAllowReadWriteOverflow15(It1 from_begin, It2 from_end, TAllocatorParams &&... allocator_params)
     {
-        static_assert(pad_right >= PADDING_FOR_SIMD - 1);
+        static_assert(Base::pad_right >= PADDING_FOR_SIMD - 1);
         static_assert(sizeof(T) == sizeof(*from_begin));
         insertPrepare(from_begin, from_end, std::forward<TAllocatorParams>(allocator_params)...);
         size_t bytes_to_copy = BufferDetails::byte_size(from_end - from_begin, sizeof(T));
