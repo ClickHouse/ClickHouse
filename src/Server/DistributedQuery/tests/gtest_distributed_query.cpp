@@ -444,8 +444,6 @@ private:
 namespace DB
 {
 
-void registerShuffleExchangeStep(QueryPlanStepRegistry & registry);
-void registerGatherExchangeStep(QueryPlanStepRegistry & registry);
 void registerShuffleSendStep(QueryPlanStepRegistry & registry);
 void registerShuffleReceiveStep(QueryPlanStepRegistry & registry);
 void registerGatherSendStep(QueryPlanStepRegistry & registry);
@@ -459,11 +457,9 @@ void registerPlanSteps()
     QueryPlanStepRegistry & registry = QueryPlanStepRegistry::instance();
 
     registerReadFromFileStep(registry);
-    registerShuffleExchangeStep(registry);
     registerShuffleSendStep(registry);
     registerShuffleReceiveStep(registry);
     registerJoinStep(registry);
-    registerGatherExchangeStep(registry);
     registerGatherSendStep(registry);
     registerGatherReceiveStep(registry);
     registerPrintTSVStep(registry);

@@ -36,10 +36,6 @@ public:
 
     std::pair<QueryPlanStepPtr, QueryPlanStepPtr> createSinkAndSourcePair(const String & exchange_id, const Strings & source_shards) const override;
 
-    void serialize(Serialization & ctx) const override;
-
-    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
-
 private:
     void updateOutputHeader() override
     {
