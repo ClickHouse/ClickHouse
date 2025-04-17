@@ -564,27 +564,29 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
     LOG_DEBUG(log, "Refreshing view {}", view_storage_id.getFullTableName());
     execution.progress.reset();
 
-    ContextMutablePtr refresh_context = view->createRefreshContext(log_comment);
-
-    if (!append)
-    {
-        refresh_context->setParentTable(view_storage_id.uuid);
-        refresh_context->setDDLQueryCancellation(execution.cancel_ddl_queries.get_token());
-        if (root_znode_version != -1)
-            refresh_context->setDDLAdditionalChecksOnEnqueue({zkutil::makeCheckRequest(coordination.path, root_znode_version)});
-    }
-
-    std::optional<QueryLogElement> query_log_elem;
-    std::shared_ptr<ASTInsertQuery> refresh_query;
-    String query_for_logging;
-    UInt64 normalized_query_hash = 0;
-    std::shared_ptr<OpenTelemetry::SpanHolder> query_span = std::make_shared<OpenTelemetry::SpanHolder>("query");
-    ProcessList::EntryPtr process_list_entry;
-
+    ContextMutablePtr refresh_context;
     std::optional<StorageID> table_to_drop;
     auto new_table_id = StorageID::createEmpty();
+
     try
     {
+        refresh_context = view->createRefreshContext(log_comment);
+
+        if (!append)
+        {
+            refresh_context->setParentTable(view_storage_id.uuid);
+            refresh_context->setDDLQueryCancellation(execution.cancel_ddl_queries.get_token());
+            if (root_znode_version != -1)
+                refresh_context->setDDLAdditionalChecksOnEnqueue({zkutil::makeCheckRequest(coordination.path, root_znode_version)});
+        }
+
+        std::optional<QueryLogElement> query_log_elem;
+        std::shared_ptr<ASTInsertQuery> refresh_query;
+        String query_for_logging;
+        UInt64 normalized_query_hash = 0;
+        std::shared_ptr<OpenTelemetry::SpanHolder> query_span = std::make_shared<OpenTelemetry::SpanHolder>("query");
+        ProcessList::EntryPtr process_list_entry;
+
         {
             /// Create a table.
             query_for_logging = "(create target table)";
