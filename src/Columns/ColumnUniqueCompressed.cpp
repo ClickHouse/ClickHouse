@@ -1,6 +1,8 @@
 #include <Columns/ColumnUniqueCompressed.h>
 
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/Arena.h>
 
 namespace DB
 {
@@ -9,7 +11,13 @@ String ColumnUniqueFCBlockDF::getDecompressedAt(size_t pos) const
 {
     chassert(pos < data_column->size());
 
-    const size_t pos_in_block = pos % block_size;
+    /// Default / Null value
+    if (!pos)
+    {
+        return "";
+    }
+
+    const size_t pos_in_block = (pos - 1) % block_size;
     if (pos_in_block == 0)
     {
         return data_column->getDataAt(pos).toString();
@@ -26,6 +34,35 @@ String ColumnUniqueFCBlockDF::getDecompressedAt(size_t pos) const
     return output;
 }
 
+ColumnUniqueFCBlockDF::DecompressedValue ColumnUniqueFCBlockDF::getDecompressedRefsAt(size_t pos) const
+{
+    chassert(pos < data_column->size());
+
+    /// Default / Null value
+    if (!pos)
+    {
+        return {{nullptr, 0}, {nullptr, 0}};
+    }
+
+    const size_t pos_in_block = (pos - 1) % block_size;
+    if (pos_in_block == 0)
+    {
+        const StringRef prefix = data_column->getDataAt(pos);
+        const StringRef suffix = {nullptr, 0};
+        return {prefix, suffix};
+    }
+
+    const size_t header_pos = pos - pos_in_block;
+    const StringRef prefix = {data_column->getDataAt(header_pos).data, common_prefix_lengths[pos]};
+    const StringRef suffix = data_column->getDataAt(pos);
+    return {prefix, suffix};
+}
+
+size_t ColumnUniqueFCBlockDF::getSizeAt(size_t pos) const
+{
+    return data_column->getDataAt(pos).size + common_prefix_lengths[pos];
+}
+
 MutableColumnPtr ColumnUniqueFCBlockDF::getDecompressedColumn() const
 {
     auto output_column = ColumnString::create();
@@ -38,9 +75,10 @@ MutableColumnPtr ColumnUniqueFCBlockDF::getDecompressedColumn() const
     return output_column;
 }
 
-ColumnUniqueFCBlockDF::ColumnUniqueFCBlockDF(const ColumnPtr & string_column, size_t block_size_)
+ColumnUniqueFCBlockDF::ColumnUniqueFCBlockDF(const ColumnPtr & string_column, size_t block_size_, bool is_nullable_)
     : data_column(ColumnString::create())
     , block_size(block_size_)
+    , is_nullable(is_nullable_)
 {
     if (!typeid_cast<const ColumnString *>(&string_column))
     {
@@ -55,6 +93,10 @@ ColumnUniqueFCBlockDF::ColumnUniqueFCBlockDF(const ColumnPtr & string_column, si
         1, /* nan_direction_hint */
         sorted_permutation);
     auto sorted_column = string_column->permute(sorted_permutation, 0);
+
+    /// Default / Null value
+    data_column->insert("");
+    common_prefix_lengths.push_back(0);
 
     StringRef current_header = "";
     StringRef prev_data = ""; // to skip duplicates
@@ -93,8 +135,8 @@ ColumnUniqueFCBlockDF::ColumnUniqueFCBlockDF(const ColumnPtr & string_column, si
 }
 
 ColumnUniqueFCBlockDF::ColumnUniqueFCBlockDF(const ColumnUniqueFCBlockDF & other)
-    : data_column(other.data_column),
-      common_prefix_lengths(other.common_prefix_lengths.begin(), other.common_prefix_lengths.end())
+    : data_column(other.data_column)
+    , common_prefix_lengths(other.common_prefix_lengths.begin(), other.common_prefix_lengths.end())
 {
 }
 
@@ -142,7 +184,7 @@ size_t ColumnUniqueFCBlockDF::getPosToInsert(StringRef value) const
 
 void ColumnUniqueFCBlockDF::recalculateForNewData(const ColumnPtr & string_column)
 {
-    ColumnUniqueFCBlockDF temp_column(string_column, block_size);
+    ColumnUniqueFCBlockDF temp_column(string_column, block_size, is_nullable);
     data_column = temp_column.data_column;
     common_prefix_lengths = std::move(temp_column.common_prefix_lengths);
 }
@@ -180,7 +222,8 @@ size_t ColumnUniqueFCBlockDF::uniqueInsert(const Field & x)
 bool ColumnUniqueFCBlockDF::tryUniqueInsert(const Field & x, size_t & index)
 {
     String result;
-    if (!x.tryGet<String>(result)) {
+    if (!x.tryGet<String>(result))
+    {
         return false;
     }
 
@@ -225,7 +268,7 @@ IColumnUnique::IndexesWithOverflow
 ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t start, size_t length, size_t max_dictionary_size)
 {
     const size_t limit = max_dictionary_size >= data_column->size() ? max_dictionary_size - data_column->size() : 0;
-    
+
     auto extracted_values_column = ColumnString::create();
     extracted_values_column->insertRangeFrom(src, start, length);
 
@@ -239,13 +282,96 @@ ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t
     auto sorted_column = extracted_values_column->permute(sorted_permutation, 0);
 
     auto indexes = uniqueInsertRangeFrom(*sorted_column, 0, limit);
-    
+
     auto overflow = ColumnVector<UInt64>::create();
-    for (size_t i = limit; i < sorted_permutation.size(); ++i) {
+    for (size_t i = limit; i < sorted_permutation.size(); ++i)
+    {
         overflow->insert(sorted_permutation[i]);
     }
 
     return IndexesWithOverflow{std::move(indexes), std::move(overflow)};
+}
+
+size_t ColumnUniqueFCBlockDF::getNullValueIndex() const
+{
+    if (!is_nullable)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnUniqueFCBlockDF is not nullable");
+    }
+    return 0;
+}
+
+Field ColumnUniqueFCBlockDF::operator[](size_t n) const
+{
+    return getDecompressedAt(n);
+}
+
+void ColumnUniqueFCBlockDF::get(size_t n, Field & res) const
+{
+    res = getDecompressedAt(n);
+}
+
+std::pair<String, DataTypePtr> ColumnUniqueFCBlockDF::getValueNameAndType(size_t n) const
+{
+    return data_column->getValueNameAndType(n); /// it's always String
+}
+
+void ColumnUniqueFCBlockDF::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const
+{
+    if (empty())
+    {
+        return;
+    }
+
+    const size_t rows_count = size();
+    if (sizes.empty())
+    {
+        sizes.resize_fill(rows_count);
+    }
+    else if (sizes.size() != rows_count)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of sizes: {} doesn't match rows_num: {}. It is a bug", sizes.size(), rows_count);
+    }
+
+    if (is_null)
+    {
+        for (size_t i = 0; i < rows_count; ++i)
+        {
+            if (is_null[i])
+            {
+                ++sizes[i];
+            }
+            else
+            {
+                const size_t string_size = getSizeAt(i);
+                sizes[i] += sizeof(string_size) + string_size + 2 /* null byte and null terminator */;
+            }
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < rows_count; ++i)
+        {
+            size_t string_size = getSizeAt(i);
+            sizes[i] += sizeof(string_size) + string_size + 1 /* null terminator */;
+        }
+    }
+}
+
+StringRef ColumnUniqueFCBlockDF::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+{
+    const DecompressedValue value = getDecompressedRefsAt(n);
+
+    StringRef res;
+    const size_t value_size = value.prefix.size + value.suffix.size + 1; /* Null terminator */
+    res.size = sizeof(value_size) + value_size;
+    char * pos = arena.allocContinue(res.size, begin);
+    memcpy(pos, &value_size, sizeof(value_size));
+    memcpy(pos + sizeof(value_size), value.prefix.data, value.prefix.size);
+    memcpy(pos + sizeof(value_size) + value.prefix.size, value.suffix.data, value.suffix.size);
+    res.data = pos;
+
+    return res;
 }
 
 }

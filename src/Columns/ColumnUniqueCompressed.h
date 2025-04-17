@@ -12,13 +12,14 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
-    extern const int ILLEGAL_COLUMN;
+extern const int NOT_IMPLEMENTED;
+extern const int ILLEGAL_COLUMN;
+extern const int LOGICAL_ERROR;
 }
 
 /// String compressed dictionary.
 /// Compression is done with Front Coding Block Difference to First algorithm.
-/// The data is treated as strings. It is sorted and divided into blocks.
+/// The strings are sorted and divided into blocks.
 /// The first string in a block is stored explicitly, other strings are stored as pairs (common_prefix_length, remaining_suffix)
 /// with respect to the first string in their block.
 /// This column is not used on its own but only as implementation detail of ColumnLowCardinality.
@@ -27,7 +28,7 @@ class ColumnUniqueFCBlockDF final : public COWHelper<IColumnUnique, ColumnUnique
     friend class COWHelper<IColumnUnique, ColumnUniqueFCBlockDF>;
 
 private:
-    ColumnUniqueFCBlockDF(const ColumnPtr & string_column, size_t block_size);
+    ColumnUniqueFCBlockDF(const ColumnPtr & string_column, size_t block_size, bool is_nullable);
     explicit ColumnUniqueFCBlockDF(const IDataType & data_type);
     ColumnUniqueFCBlockDF(const ColumnUniqueFCBlockDF & other);
 
@@ -42,9 +43,9 @@ public:
     /// Nested column is compressed
     const ColumnPtr & getNestedColumn() const override { return data_column; }
     const ColumnPtr & getNestedNotNullableColumn() const override { return data_column; }
-    bool nestedColumnIsNullable() const override { return false; }
-    void nestedToNullable() override { }
-    void nestedRemoveNullable() override { }
+    bool nestedColumnIsNullable() const override { return is_nullable; }
+    void nestedToNullable() override { is_nullable = true; }
+    void nestedRemoveNullable() override { is_nullable = false; }
 
     size_t uniqueInsert(const Field & x) override;
     bool tryUniqueInsert(const Field & x, size_t & index) override;
@@ -55,32 +56,29 @@ public:
     size_t uniqueInsertData(const char * pos, size_t length) override;
     size_t uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos) override;
 
-    size_t getDefaultValueIndex() const override;
+    size_t getDefaultValueIndex() const override { return 0; }
     size_t getNullValueIndex() const override;
-    size_t getNestedTypeDefaultValueIndex() const override;
-    bool canContainNulls() const override;
+    size_t getNestedTypeDefaultValueIndex() const override { return 0; }
+    bool canContainNulls() const override { return is_nullable; }
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
     std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
-    bool isDefaultAt(size_t n) const override
-    {
-        (void)n;
-        return false;
-    }
+    bool isDefaultAt(size_t n) const override { return n == getDefaultValueIndex(); }
+    bool isNullAt(size_t n) const override { return n == getNullValueIndex(); }
 
-    /// This methos is not implemented as there is no contigous memory chunk containing the value
+    /// This methos is not implemented as there is no contiguous memory chunk containing the value
     StringRef getDataAt(size_t) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getDataAt' not implemented for ColumnUniqueFCBlockDF");
     }
 
-    bool isNullAt(size_t n) const override;
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
     const char * skipSerializedInArena(const char * pos) const override;
+
     void updateHashWithValue(size_t n, SipHash & hash_func) const override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -143,6 +141,17 @@ public:
 private:
     String getDecompressedAt(size_t pos) const;
 
+    struct DecompressedValue
+    {
+        StringRef prefix;
+        StringRef suffix;
+    };
+
+    DecompressedValue getDecompressedRefsAt(size_t pos) const;
+
+    /// Calculates size without decompressing, excluding null terminator
+    size_t getSizeAt(size_t pos) const;
+
     /// The header at this pos is always less or equal to the value
     size_t getPosOfClosestHeader(StringRef value) const;
 
@@ -157,8 +166,9 @@ private:
 
     IColumn::WrappedPtr data_column;
     Lengths common_prefix_lengths;
-
     size_t block_size;
+
+    bool is_nullable;
 };
 
 }
