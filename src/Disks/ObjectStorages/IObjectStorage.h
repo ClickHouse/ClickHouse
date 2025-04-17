@@ -122,6 +122,8 @@ public:
 
     virtual std::string getCommonKeyPrefix() const = 0;
 
+    virtual std::string getPath() const;
+
     virtual std::string getDescription() const = 0;
 
     virtual const MetadataStorageMetrics & getMetadataStorageMetrics() const;

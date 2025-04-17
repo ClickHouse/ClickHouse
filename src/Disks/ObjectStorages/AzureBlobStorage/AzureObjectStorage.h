@@ -40,7 +40,9 @@ public:
 
     ObjectStorageType getType() const override { return ObjectStorageType::Azure; }
 
-    std::string getCommonKeyPrefix() const override { return common_key_prefix; }
+    std::string getCommonKeyPrefix() const override { return ""; }
+
+    std::string getPath() const override { return common_key_prefix; }
 
     std::string getDescription() const override { return description; }
 

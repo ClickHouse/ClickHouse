@@ -18,6 +18,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+std::string IObjectStorage::getPath() const
+{
+    return getCommonKeyPrefix();
+}
+
 const MetadataStorageMetrics & IObjectStorage::getMetadataStorageMetrics() const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getMetadataStorageMetrics' is not implemented");
