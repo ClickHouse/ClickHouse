@@ -438,7 +438,7 @@ class Result(MetaClasses.Serializable):
                             result = command_(*command_args, **command_kwargs)
                     else:
                         result = command_(*command_args, **command_kwargs)
-                    res = bool(result)
+                    res = result if isinstance(result, bool) else not bool(result)
                     if (with_info_on_failure and not res) or with_info:
                         if isinstance(result, bool):
                             error_infos = buffer.getvalue()
