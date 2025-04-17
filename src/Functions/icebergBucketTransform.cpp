@@ -134,20 +134,20 @@ public:
             const auto & source_col = checkAndGetColumn<DataTypeDateTime64::ColumnType>(wrapper_column);
             const ColumnDateTime64 * decimal_column = &source_col;
             assert(decimal_column != nullptr);
-            DateTime64 value = decimal_column->getElement(i);
             UInt32 scale = decimal_column->getScale();
             if ((scale != 6) && (scale != 9))
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Unsupported scale for DateTime64 in IcebergHash function. Supports only microseconds and nanoseconds");
+                    "Unsupported scale for DateTime64 in IcebergHash function. Supports only microseconds and nanoseconds.");
             }
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                Int64 value_int = value.convertTo<Int64>();
-                if (scale == 9)
-                {
-                    value_int = value_int / 1000;
+                    DateTime64 value = decimal_column->getElement(i);
+                    Int64 value_int = value.convertTo<Int64>();
+                    if (scale == 9)
+                    {
+                        value_int = value_int / 1000;
                 }
                 result_data[i] = hashLong(value_int);
             }
