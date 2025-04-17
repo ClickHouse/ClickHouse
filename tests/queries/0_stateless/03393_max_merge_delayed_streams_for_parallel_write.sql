@@ -24,6 +24,7 @@ settings
     merge_selector_base = 1000
 ;
 
+SET max_execution_time = 300;
 insert into metric_log select * from generateRandom() limit 10;
 
 optimize table metric_log final;

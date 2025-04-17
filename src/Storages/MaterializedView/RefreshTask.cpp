@@ -63,7 +63,7 @@ namespace ErrorCodes
 }
 
 RefreshTask::RefreshTask(
-    StorageMaterializedView * view_, ContextPtr context, const DB::ASTRefreshStrategy & strategy, bool attach, bool coordinated, bool empty)
+    StorageMaterializedView * view_, ContextPtr context, const DB::ASTRefreshStrategy & strategy, bool /* attach */, bool coordinated, bool empty)
     : log(getLogger("RefreshTask"))
     , view(view_)
     , refresh_schedule(strategy)
@@ -88,29 +88,22 @@ RefreshTask::RefreshTask(
 
         auto zookeeper = context->getZooKeeper();
         String replica_path = coordination.path + "/replicas/" + coordination.replica_name;
+        bool replica_path_existed = zookeeper->exists(replica_path);
 
-        if (server_settings[ServerSetting::disable_insertion_and_mutation])
-            coordination.read_only = true;
-
-        if (attach)
-        {
-            /// Check that this replica is registered in keeper.
-            if (!zookeeper->exists(replica_path))
-            {
-                LOG_ERROR(log, "Attaching refreshable materialized view {} as read-only because znode {} is missing", view->getStorageID().getFullTableName(), replica_path);
-                coordination.read_only = true;
-            }
-        }
-        else
+        /// Create znodes even if it's ATTACH query. This seems weird, possibly incorrect, but
+        /// currently both DatabaseReplicated and DatabaseShared seem to require this behavior.
+        if (!replica_path_existed)
         {
             zookeeper->createAncestors(coordination.path);
-            /// Create coordination znodes if they don't exist. Register this replica, throwing if already exists.
             Coordination::Requests ops;
             ops.emplace_back(zkutil::makeCreateRequest(coordination.path, coordination.root_znode.toString(), zkutil::CreateMode::Persistent, true));
             ops.emplace_back(zkutil::makeCreateRequest(coordination.path + "/replicas", "", zkutil::CreateMode::Persistent, true));
             ops.emplace_back(zkutil::makeCreateRequest(replica_path, "", zkutil::CreateMode::Persistent));
             zookeeper->multi(ops);
         }
+
+        if (server_settings[ServerSetting::disable_insertion_and_mutation])
+            coordination.read_only = true;
     }
 }
 
@@ -662,7 +655,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
             if (execution.interrupt_execution.load())
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
 
-            logQueryFinish(*query_log_elem, refresh_context, refresh_query, pipeline, /*pulling_pipeline*/ false, query_span, QueryResultCacheUsage::None, /*internal*/ false);
+            logQueryFinish(*query_log_elem, refresh_context, refresh_query, pipeline, /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, /*internal=*/false);
             query_log_elem = std::nullopt;
             query_span = nullptr;
             process_list_entry.reset(); // otherwise it needs to be alive for logQueryException
