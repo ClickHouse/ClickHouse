@@ -61,7 +61,7 @@ struct ThreadStack
         if (!data)
             throw ErrnoException(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate ThreadStack");
 
-        if (guardPagesEnabled())
+        if constexpr (guardPagesEnabled())
         {
             try
             {
