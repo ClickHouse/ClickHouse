@@ -1302,18 +1302,19 @@ public:
                         break;
                     }
 
-                    // Day of month, space-padded ( 1-31)  23
                     case 'e':
                     {
                         Instruction<T> instruction;
                         if (mysql_e_prints_space_padding)
                         {
+                            // Day of month, space-padded ( 1-31)
                             instruction.setMysqlFunc(&Instruction<T>::mysqlDayOfMonthSpacePadded);
                             instructions.push_back(std::move(std::move(instruction)));
                             out_template += " 0";
                         }
                         else
                         {
+                            // Day of month, no padding (1-31)
                             instruction.setMysqlFunc(&Instruction<T>::mysqlDayOfMonthNoSpacePadding);
                             instructions.push_back(std::move(std::move(instruction)));
                             out_template += "00";
