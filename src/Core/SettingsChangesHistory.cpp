@@ -81,6 +81,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_special_bool_values_inside_variant", true, false, "Don't allow special bool values during Variant type parsing"},
             {"cast_string_to_variant_use_inference", true, true, "New setting to enable/disable types inference during CAST from String to Variant"},
             {"distributed_cache_read_request_max_tries", 20, 20, "New setting"},
+            {"query_condition_cache_store_conditions_as_plaintext", false, false, "New setting"},
             {"min_os_cpu_wait_time_ratio_to_throw", 0, 2, "New setting"},
             {"max_os_cpu_wait_time_ratio_to_throw", 0, 6, "New setting"},
             {"query_plan_merge_filter_into_join_condition", false, true, "Added new setting to merge filter into join condition"},
