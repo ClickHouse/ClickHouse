@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
+#include <Processors/QueryPlan/ScatterExchangeStep.h>
 #include <Processors/QueryPlan/ShuffleExchangeStep.h>
 #include <Processors/QueryPlan/GatherExchangeStep.h>
 #include <Core/Settings.h>
@@ -28,10 +29,10 @@ namespace QueryPlanOptimizations
 ///
 ///   GatherExchange
 ///     LogicalJoin
-///       ShuffleExchange by hash(join_key)
+///       ScatterExchange by hash(join_key)
 ///         Expression: compute join key for right source
 ///         ...
-///       ShuffleExchange by hash(join_key)
+///       ScatterExchange by hash(join_key)
 ///         Expression: compute join key for left source
 ///         ...
 void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
@@ -104,22 +105,22 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 
     const size_t bucket_count = optimization_settings.default_shuffle_join_bucket_count;    /// TODO: estimate number of buckets based on statistics and available nodes and memory
 
-    /// Add shuffle exchange step above read from right source
-    auto & exchange_shuffle_a_node = nodes.emplace_back();
-    exchange_shuffle_a_node.step = std::make_unique<ShuffleExchangeStep>(source_a->step->getOutputHeader(), join_keys_a, bucket_count);
-    exchange_shuffle_a_node.step->setStepDescription(fmt::format("by hash([{}])", fmt::join(join_keys_a, ", ")));
-    exchange_shuffle_a_node.children = {source_a};
+    /// Add scatter exchange step above read from right source
+    auto & exchange_scatter_a_node = nodes.emplace_back();
+    exchange_scatter_a_node.step = std::make_unique<ScatterExchangeStep>(source_a->step->getOutputHeader(), join_keys_a, bucket_count);
+    exchange_scatter_a_node.step->setStepDescription(fmt::format("by hash([{}])", fmt::join(join_keys_a, ", ")));
+    exchange_scatter_a_node.children = {source_a};
 
-    /// Add shuffle exchange step above read from left source
-    auto & exchange_shuffle_b_node = nodes.emplace_back();
-    exchange_shuffle_b_node.step = std::make_unique<ShuffleExchangeStep>(source_b->step->getOutputHeader(), join_keys_b, bucket_count);
-    exchange_shuffle_b_node.step->setStepDescription(fmt::format("by hash([{}])", fmt::join(join_keys_b, ", ")));
-    exchange_shuffle_b_node.children = {source_b};
+    /// Add scatter exchange step above read from left source
+    auto & exchange_scatter_b_node = nodes.emplace_back();
+    exchange_scatter_b_node.step = std::make_unique<ScatterExchangeStep>(source_b->step->getOutputHeader(), join_keys_b, bucket_count);
+    exchange_scatter_b_node.step->setStepDescription(fmt::format("by hash([{}])", fmt::join(join_keys_b, ", ")));
+    exchange_scatter_b_node.children = {source_b};
 
     /// Move join step to a new node
     auto & new_join_node = nodes.emplace_back();
     new_join_node.step = std::move(node.step);
-    new_join_node.children = {&exchange_shuffle_a_node, &exchange_shuffle_b_node};
+    new_join_node.children = {&exchange_scatter_a_node, &exchange_scatter_b_node};
 
     /// Add gather exchange step above join
     QueryPlan::Node gather_node;
@@ -141,7 +142,7 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 ///
 ///   GatherExchange
 ///     AggregatingStep
-///       ShuffleExchange by hash(aggregation_keys)
+///       ScatterExchange by hash(aggregation_keys)
 void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Is this a aggregating step?
@@ -161,16 +162,16 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
 
     const size_t bucket_count = optimization_settings.default_shuffle_join_bucket_count;    /// TODO: estimate number of buckets based on statistics and available nodes and memory
 
-    /// Add shuffle exchange step above source
-    auto & exchange_shuffle_node = nodes.emplace_back();
-    exchange_shuffle_node.step = std::make_unique<ShuffleExchangeStep>(source->step->getOutputHeader(), aggregation_keys, bucket_count);
-    exchange_shuffle_node.step->setStepDescription(fmt::format("by hash([{}])", fmt::join(aggregation_keys, ", ")));
-    exchange_shuffle_node.children = {source};
+    /// Add scatter exchange step above source
+    auto & exchange_scatter_node = nodes.emplace_back();
+    exchange_scatter_node.step = std::make_unique<ScatterExchangeStep>(source->step->getOutputHeader(), aggregation_keys, bucket_count);
+    exchange_scatter_node.step->setStepDescription(fmt::format("by hash([{}])", fmt::join(aggregation_keys, ", ")));
+    exchange_scatter_node.children = {source};
 
     /// Move aggregation step to a new node
     auto & new_aggregation_node = nodes.emplace_back();
     new_aggregation_node.step = std::move(node.step);
-    new_aggregation_node.children = {&exchange_shuffle_node};
+    new_aggregation_node.children = {&exchange_scatter_node};
 
     /// Add gather exchange step above aggregation
     QueryPlan::Node gather_node;
@@ -251,6 +252,27 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 }
 
 
+/// If there is a Scatter step on top of Gather step then they can be replaced with Shuffle step that just
+/// repartitions data from the source set of buckets to the destination set of buckets.
+void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node)
+{
+    if (node->children.size() != 1)
+        return;
+
+    auto * scatter_step = typeid_cast<ScatterExchangeStep *>(node->step.get());
+    if (!scatter_step)
+        return;
+
+    auto * gather_step = typeid_cast<GatherExchangeStep *>(node->children[0]->step.get());
+    if (!gather_step)
+        return;
+
+    auto shuffle_step = std::make_unique<ShuffleExchangeStep>(node->children[0]->step->getOutputHeader(), scatter_step->getKeys(), scatter_step->getResultBucketCount());
+    shuffle_step->setStepDescription(scatter_step->getStepDescription());
+    node->step = std::move(shuffle_step);
+    node->children = std::move(node->children[0]->children);
+}
+
 /// 1. Moves exchanges where possible to parallelize more work. Example: if there is a Filter step on top of an GatherExchange step
 /// then filter step can be moved below the exchange step to allow parallel processing.
 /// 2. Removes unnecessary exchanges. Example: if there is a ShuffleExchange step on top of another exchange step then child
@@ -304,15 +326,7 @@ void optimizeExchanges(QueryPlan::Node & root)
                 }
             }
 
-            /// If there is a Exchange step on top of another Exchange step then child Exchange step can be removed
-            auto is_exchange_step = [](const IQueryPlanStep * step)
-            {
-                return dynamic_cast<const LogicalExchangeStep *>(step) != nullptr;
-            };
-            if (frame.node->children.size() == 1 && is_exchange_step(frame.node->step.get()) && is_exchange_step(frame.node->children[0]->step.get()))
-            {
-                frame.node->children = std::move(frame.node->children[0]->children);
-            }
+            tryReplaceScatterGatherWithShuffle(frame.node);
         }
 
         stack.pop_back();
@@ -331,7 +345,7 @@ Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step, const Quer
 }
 
 /// Builds distributed plan by splitting the query plan into multiple stages connected by exchanges.
-/// Exchange step are split into ExchangeSink and ExchangeSource.
+/// Exchange steps are split into ExchangeSink and ExchangeSource.
 /// This allows to build a separate plan fragment (a part of the original full plan) for each stage.
 DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings)
 {
