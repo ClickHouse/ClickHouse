@@ -20,6 +20,7 @@ namespace DB
 
 void AddSequenceNumber::transform(Chunk & chunk)
 {
+    chunk.getChunkInfos().extract<ChunkSequenceNumber>();
     chunk.getChunkInfos().add(std::make_shared<ChunkSequenceNumber>(++chunk_sequence_number));
 }
 
