@@ -45,6 +45,7 @@ struct SelectQueryOptions
     bool is_create_parameterized_view = false;
     /// Bypass setting constraints for some internal queries such as projection ASTs.
     bool ignore_setting_constraints = false;
+    bool is_create_view = false; /// this select is a part of CREATE [MATERIALIZED] VIEW query
 
     /// Bypass access check for select query.
     /// This allows to skip double access check in some specific cases (e.g. insert into table with materialized view)
@@ -85,6 +86,12 @@ struct SelectQueryOptions
         ++out.subquery_depth;
         out.is_subquery = true;
         return out;
+    }
+
+    SelectQueryOptions & createView(bool value = true)
+    {
+        is_create_view = value;
+        return *this;
     }
 
     SelectQueryOptions createParameterizedView() const
