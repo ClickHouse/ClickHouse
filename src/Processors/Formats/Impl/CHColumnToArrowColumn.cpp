@@ -439,6 +439,7 @@ namespace DB
         /// AppendIndices in DictionaryBuilder works only with int64_t data, so we cannot use
         /// fillArrowArray here and should copy all indexes to int64_t container.
         PaddedPODArray<Int64> indexes;
+        indexes.reserve(end - start);
         if (mapping)
             indexes = extractIndexesWithRemapping(column_lc->getIndexesPtr(), mapping, start, end, is_nullable);
         else
@@ -499,18 +500,30 @@ namespace DB
         ArrowBuilder & builder = assert_cast<ArrowBuilder &>(*array_builder);
         arrow::Status status;
 
-        for (size_t string_i = start; string_i < end; ++string_i)
+        if (null_bytemap)
         {
-            if (null_bytemap && (*null_bytemap)[string_i])
+            for (size_t string_i = start; string_i < end; ++string_i)
             {
-                status = builder.AppendNull();
+                if ((*null_bytemap)[string_i])
+                {
+                    status = builder.AppendNull();
+                }
+                else
+                {
+                    std::string_view string_ref = internal_column.getDataAt(string_i).toView();
+                    status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
+                }
+                checkStatus(status, write_column->getName(), format_name);
             }
-            else
+        }
+        else
+        {
+            for (size_t string_i = start; string_i < end; ++string_i)
             {
                 std::string_view string_ref = internal_column.getDataAt(string_i).toView();
                 status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
+                checkStatus(status, write_column->getName(), format_name);
             }
-            checkStatus(status, write_column->getName(), format_name);
         }
     }
 
