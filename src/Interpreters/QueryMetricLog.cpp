@@ -223,6 +223,9 @@ void QueryMetricLogStatus::scheduleNext(String query_id)
     {
         LOG_TEST(logger, "The next collecting task for query {} should have already run at {}. Scheduling it right now",
             query_id, timePointToString(info.next_collect_time));
+
+        /// Skipping lost runs
+        info.next_collect_time = now;
         info.task->schedule();
     }
 }
