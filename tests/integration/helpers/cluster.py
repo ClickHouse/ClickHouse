@@ -51,13 +51,13 @@ except Exception as e:
 import docker
 from dict2xml import dict2xml
 from docker.models.containers import Container
-from helpers.kazoo_client import KazooClientWithImplicitRetries
+from .kazoo_client import KazooClientWithImplicitRetries
 from kazoo.exceptions import KazooException
 from minio import Minio
 
-from helpers import pytest_xdist_logging_to_separate_files
-from helpers.client import QueryRuntimeException
-from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
+from . import pytest_xdist_logging_to_separate_files
+from .client import QueryRuntimeException
+from .test_tools import assert_eq_with_retry, exec_query_with_retry
 
 from .client import Client
 from .config_cluster import *
@@ -180,11 +180,11 @@ class PortPoolManager:
 
         if self.all_ports is None:
             worker_ports = os.getenv("WORKER_FREE_PORTS")
-            ports = [int(p) for p in worker_ports.split(" ")]
-
-            # Static vars
-            PortPoolManager.all_ports = ports
-            PortPoolManager.free_ports = ports
+            if worker_ports is not None:
+                ports = [int(p) for p in worker_ports.split(" ")]
+                # Static vars
+                PortPoolManager.all_ports = ports
+                PortPoolManager.free_ports = ports
 
     def get_port(self):
         for port in self.free_ports:

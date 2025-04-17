@@ -467,6 +467,7 @@ public:
     void generateNextStatement(RandomGenerator & rg, SQLQuery & sq);
 
     void updateGenerator(const SQLQuery & sq, ExternalIntegrations & ei, bool success);
+    void setInTransaction(const bool value) { in_transaction = value; }
 
     friend class QueryOracle;
 };

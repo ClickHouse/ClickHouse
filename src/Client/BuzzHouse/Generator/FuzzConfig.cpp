@@ -103,11 +103,17 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
     }
 
     static const SettingEntries configEntries = {
-        {"db_file_path",
+        {"client_file_path",
          [&](const JSONObjectType & value)
          {
-             db_file_path = std::filesystem::path(String(value.getString()));
-             fuzz_out = db_file_path / "fuzz.data";
+             client_file_path = std::filesystem::path(String(value.getString()));
+             fuzz_client_out = client_file_path / "fuzz.data";
+         }},
+        {"server_file_path",
+         [&](const JSONObjectType & value)
+         {
+             server_file_path = std::filesystem::path(String(value.getString()));
+             fuzz_server_out = client_file_path / "fuzz.data";
          }},
         {"log_path", [&](const JSONObjectType & value) { log_path = std::filesystem::path(String(value.getString())); }},
         {"read_log", [&](const JSONObjectType & value) { read_log = value.getBool(); }},
@@ -140,6 +146,14 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"allow_infinite_tables", [&](const JSONObjectType & value) { allow_infinite_tables = value.getBool(); }},
         {"compare_explains", [&](const JSONObjectType & value) { compare_explains = value.getBool(); }},
         {"fail_on_timeout", [&](const JSONObjectType & value) { fail_on_timeout = value.getBool(); }},
+        {"allow_memory_tables", [&](const JSONObjectType & value) { allow_memory_tables = value.getBool(); }},
+        {"allow_client_restarts", [&](const JSONObjectType & value) { allow_client_restarts = value.getBool(); }},
+        {"max_reconnection_attempts",
+         [&](const JSONObjectType & value)
+         { max_reconnection_attempts = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
+        {"time_to_sleep_between_reconnects",
+         [&](const JSONObjectType & value)
+         { time_to_sleep_between_reconnects = std::max(UINT32_C(1000), static_cast<uint32_t>(value.getUInt64())); }},
         {"clickhouse", [&](const JSONObjectType & value) { clickhouse_server = loadServerCredentials(value, "clickhouse", 9004, 9005); }},
         {"mysql", [&](const JSONObjectType & value) { mysql_server = loadServerCredentials(value, "mysql", 3306, 3306); }},
         {"postgresql", [&](const JSONObjectType & value) { postgresql_server = loadServerCredentials(value, "postgresql", 5432); }},
@@ -232,16 +246,24 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
     }
 }
 
-bool FuzzConfig::processServerQuery(const String & input) const
+bool FuzzConfig::processServerQuery(const String & query) const
 {
     try
     {
-        return this->cb->processTextAsSingleQuery(input);
+        if (this->cb->processTextAsSingleQuery(query))
+        {
+            return true;
+        }
     }
     catch (...)
     {
-        return false;
     }
+    fmt::print(stderr, "Error on processing query '{}'\n", query);
+    if (!this->cb->tryToReconnect(max_reconnection_attempts, time_to_sleep_between_reconnects))
+    {
+        throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Couldn't not reconnect to the server");
+    }
+    return false;
 }
 
 void FuzzConfig::loadServerSettings(DB::Strings & out, const bool distinct, const String & table, const String & col) const
@@ -254,9 +276,9 @@ void FuzzConfig::loadServerSettings(DB::Strings & out, const bool distinct, cons
             distinct ? "DISTINCT " : "",
             col,
             table,
-            fuzz_out.generic_string())))
+            fuzz_server_out.generic_string())))
     {
-        std::ifstream infile(fuzz_out);
+        std::ifstream infile(fuzz_client_out);
         out.clear();
         while (std::getline(infile, buf))
         {
@@ -292,9 +314,9 @@ void FuzzConfig::loadSystemTables(std::unordered_map<String, DB::Strings> & tabl
             "SELECT t.name, c.name from system.tables t JOIN system.columns c ON t.name = c.table WHERE t.database = 'system' AND "
             "c.database = 'system' INTO OUTFILE "
             "'{}' TRUNCATE FORMAT TabSeparated;",
-            fuzz_out.generic_string())))
+            fuzz_server_out.generic_string())))
     {
-        std::ifstream infile(fuzz_out);
+        std::ifstream infile(fuzz_client_out);
         while (std::getline(infile, buf) && buf.size() > 1)
         {
             if (buf[buf.size() - 1] == '\r')
@@ -332,9 +354,9 @@ bool FuzzConfig::tableHasPartitions(const bool detached, const String & database
             detached_tbl,
             db_clause,
             table,
-            fuzz_out.generic_string())))
+            fuzz_server_out.generic_string())))
     {
-        std::ifstream infile(fuzz_out);
+        std::ifstream infile(fuzz_client_out);
         if (std::getline(infile, buf))
         {
             return !buf.empty() && buf[0] != '0';
@@ -363,9 +385,9 @@ FuzzConfig::tableGetRandomPartitionOrPart(const bool detached, const bool partit
             detached_tbl,
             db_clause,
             table,
-            fuzz_out.generic_string())))
+            fuzz_server_out.generic_string())))
     {
-        std::ifstream infile(fuzz_out, std::ios::in);
+        std::ifstream infile(fuzz_client_out, std::ios::in);
         std::getline(infile, res);
     }
     return res;
