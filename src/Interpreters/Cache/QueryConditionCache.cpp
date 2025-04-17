@@ -40,7 +40,7 @@ void QueryConditionCache::write(
 
     LOG_TRACE(
         logger,
-        "{} entry for table_id: {}, part_name: {}, condition_hash: {}, marks_count: {}, has_final_mark: {}",
+        "{} entry for table_id: {}, part_name: {}, condition_hash: {}, condition: {}, marks_count: {}, has_final_mark: {}",
         inserted ? "Inserted" : "Updated",
         table_id,
         part_name,
