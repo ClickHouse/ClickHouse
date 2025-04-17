@@ -2947,6 +2947,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
         else
         {
+            /// Subquery is correlated and EXISTS can not be replaced by IN function.
+            /// EXISTS function will be replated by JOIN during query planning.
             auto function_exists = std::make_shared<FunctionExists>();
             function_node_ptr->resolveAsFunction(
                 std::make_shared<FunctionToFunctionBaseAdaptor>(

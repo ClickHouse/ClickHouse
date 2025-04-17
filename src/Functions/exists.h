@@ -14,6 +14,10 @@ extern const int LOGICAL_ERROR;
 
 }
 
+/// This is a helper function for EXISTS expression.
+/// It's not supposed to be ever executed, because it's argument is a subquery
+/// and the whole EXISTS expression is either rewritten to '1 IN (SELECT 1 FROM <subquery>)'
+/// if subquery is not correlated or it's replaced with JOINs during decorrelation.
 class FunctionExists : public IFunction
 {
 public:

@@ -1013,7 +1013,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     auto function_node_name = action_node_name_helper.calculateActionNodeName(node);
 
     size_t exists_function_level = actions_stack.size() - 1;
-    actions_stack[exists_function_level].addInputColumnIfNecessary(function_node_name, function_node.getResultType());
+    for (auto it = actions_stack.rbegin(); it != actions_stack.rend(); ++it)
+        it->addInputColumnIfNecessary(function_node_name, function_node.getResultType());
 
     auto subquery_argument = function_node.getArguments().getNodes().front();
     auto * query_node = subquery_argument->as<QueryNode>();
