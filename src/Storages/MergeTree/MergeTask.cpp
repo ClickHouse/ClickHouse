@@ -234,7 +234,7 @@ static void addMissedColumnsToSerializationInfos(
 
 bool MergeTask::GlobalRuntimeContext::isCancelled() const
 {
-    return (future_part ? merges_blocker->isCancelledForPartition(future_part->part_info.partition_id) : merges_blocker->isCancelled())
+    return (future_part ? merges_blocker->isCancelledForPartition(future_part->part_info.getPartitionId()) : merges_blocker->isCancelled())
         || merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed);
 }
 
@@ -633,7 +633,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         ttl_merges_blocker = global_ctx->ttl_merges_blocker,
         need_remove = ctx->need_remove_expired_values,
         merge_list_element = global_ctx->merge_list_element_ptr,
-        partition_id = global_ctx->future_part->part_info.partition_id]() -> bool
+        partition_id = global_ctx->future_part->part_info.getPartitionId()]() -> bool
     {
         return merges_blocker->isCancelledForPartition(partition_id)
             || (need_remove && ttl_merges_blocker->isCancelled())

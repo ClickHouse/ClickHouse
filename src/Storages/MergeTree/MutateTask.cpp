@@ -1103,7 +1103,7 @@ struct MutationContext
 
     bool checkOperationIsNotCanceled() const
     {
-        if (new_data_part ? merges_blocker->isCancelledForPartition(new_data_part->info.partition_id) : merges_blocker->isCancelled()
+        if (new_data_part ? merges_blocker->isCancelledForPartition(new_data_part->info.getPartitionId()) : merges_blocker->isCancelled()
             || (*mutate_entry)->is_cancelled)
         {
             throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
@@ -2204,7 +2204,7 @@ static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, con
     if (command.partition)
     {
         auto command_partition_id = part->storage.getPartitionIDFromQuery(command.partition, context);
-        if (part->info.partition_id != command_partition_id)
+        if (part->info.getPartitionId() != command_partition_id)
             return true;
     }
 

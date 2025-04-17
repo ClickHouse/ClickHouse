@@ -192,8 +192,8 @@ public:
         bool operator()(const DataPartPtr & lhs, const MergeTreePartInfo & rhs) const { return lhs->info < rhs; }
         bool operator()(const MergeTreePartInfo & lhs, const DataPartPtr & rhs) const { return lhs < rhs->info; }
         bool operator()(const DataPartPtr & lhs, const DataPartPtr & rhs) const { return lhs->info < rhs->info; }
-        bool operator()(const MergeTreePartInfo & lhs, const PartitionID & rhs) const { return lhs.partition_id < rhs.toUnderType(); }
-        bool operator()(const PartitionID & lhs, const MergeTreePartInfo & rhs) const { return lhs.toUnderType() < rhs.partition_id; }
+        bool operator()(const MergeTreePartInfo & lhs, const PartitionID & rhs) const { return lhs.getPartitionId() < rhs.toUnderType(); }
+        bool operator()(const PartitionID & lhs, const MergeTreePartInfo & rhs) const { return lhs.toUnderType() < rhs.getPartitionId(); }
     };
 
     struct LessStateDataPart
@@ -218,14 +218,14 @@ public:
 
         bool operator() (const DataPartStateAndInfo & lhs, const DataPartStateAndPartitionID & rhs) const
         {
-            return std::forward_as_tuple(static_cast<UInt8>(lhs.state), lhs.info.partition_id)
+            return std::forward_as_tuple(static_cast<UInt8>(lhs.state), lhs.info.getPartitionId())
                    < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.partition_id);
         }
 
         bool operator() (const DataPartStateAndPartitionID & lhs, const DataPartStateAndInfo & rhs) const
         {
             return std::forward_as_tuple(static_cast<UInt8>(lhs.state), lhs.partition_id)
-                   < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.info.partition_id);
+                   < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.info.getPartitionId());
         }
     };
 
@@ -1316,16 +1316,12 @@ protected:
 
     boost::iterator_range<DataPartIteratorByStateAndInfo> getDataPartsStateRange(DataPartState state) const
     {
-        auto begin = data_parts_by_state_and_info.lower_bound(state, LessStateDataPart());
-        auto end = data_parts_by_state_and_info.upper_bound(state, LessStateDataPart());
-        return {begin, end};
+        return data_parts_by_state_and_info.equal_range(state, LessStateDataPart());
     }
 
     boost::iterator_range<DataPartIteratorByInfo> getDataPartsPartitionRange(const String & partition_id) const
     {
-        auto begin = data_parts_by_info.lower_bound(PartitionID(partition_id), LessDataPart());
-        auto end = data_parts_by_info.upper_bound(PartitionID(partition_id), LessDataPart());
-        return {begin, end};
+        return data_parts_by_info.equal_range(PartitionID(partition_id), LessDataPart());
     }
 
     /// Creates description of columns of data type Object from the range of data parts.
