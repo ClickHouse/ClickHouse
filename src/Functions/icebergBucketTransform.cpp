@@ -174,6 +174,15 @@ public:
                     const ColumnDecimal<Decimal128> * decimal_column = typeid_cast<const ColumnDecimal<Decimal128> *>(&wrapper_column);
                     value = decimal_column->getElement(i).value;
                 }
+                else if (which.isDecimal256())
+                {
+                    const ColumnDecimal<Decimal256> * decimal_column = typeid_cast<const ColumnDecimal<Decimal256> *>(&wrapper_column);
+                    value = decimal_column->getElement(i).value;
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported data type for icebergHash");
+                }
                 result_data[i] = hashUnderlyingIntBigEndian(value, /*reduce_two_complement*/ true);
             }
         }
