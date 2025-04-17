@@ -1033,6 +1033,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
             local_replica_index = snapshot_replica_num;
         }
     }
+    connection_pools.resize(max_replicas_to_use);
 
     LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index.value());
 
