@@ -1,0 +1,104 @@
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression
+        ReadFromMergeTree (default.example)
+        Indexes:
+          PrimaryKey
+            Keys: 
+              id
+            Condition: (id in 5-element set)
+            Parts: 1/1
+            Granules: 5/5
+          Skip
+            Name: colA_idx
+            Description: bloom_filter GRANULARITY 1
+            Parts: 1/1
+            Granules: 1/5
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression
+        ReadFromMergeTree (default.example)
+        Indexes:
+          PrimaryKey
+            Keys: 
+              id
+            Condition: (id in 5-element set)
+            Parts: 1/1
+            Granules: 5/5
+          Skip
+            Name: colB_idx
+            Description: bloom_filter GRANULARITY 1
+            Parts: 1/1
+            Granules: 1/5
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression
+        ReadFromMergeTree (default.example)
+        Indexes:
+          PrimaryKey
+            Keys: 
+              id
+            Condition: (id in 5-element set)
+            Parts: 1/1
+            Granules: 5/5
+          Skip
+            Name: colA_idx
+            Description: bloom_filter GRANULARITY 1
+            Parts: 1/1
+            Granules: 5/5
+          Skip
+            Name: colB_idx
+            Description: bloom_filter GRANULARITY 1
+            Parts: 1/1
+            Granules: 5/5
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression
+        ReadFromMergeTree (default.example)
+        Indexes:
+          PrimaryKey
+            Keys: 
+              id
+            Condition: (id in 5-element set)
+            Parts: 1/1
+            Granules: 5/5
+          Skip
+            Name: colA_idx
+            Description: bloom_filter GRANULARITY 1
+            Parts: 1/1
+            Granules: 5/5
+          Skip
+            Name: colB_idx
+            Description: bloom_filter GRANULARITY 1
+            Parts: 1/1
+            Granules: 5/5
+Expression ((Project names + Projection))
+  MergingAggregated
+    Expression (Change column names)
+      ReadFromPreparedSource (Optimized trivial count)
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.example)
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.example)
+        Indexes:
+          PrimaryKey
+            Keys: 
+              id
+            Condition: (id in 5-element set)
+            Parts: 1/1
+            Granules: 5/5
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.example)
