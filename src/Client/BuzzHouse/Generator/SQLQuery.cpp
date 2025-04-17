@@ -660,6 +660,7 @@ bool StatementGenerator::joinedTableOrFunction(
     {
         TableFunction * tf = tof->mutable_tfunc();
         ClusterFunc * cdf = tf->mutable_cluster();
+        TableOrFunction * ctof = cdf->mutable_tof();
         const uint32_t remote_table = 10 * static_cast<uint32_t>(has_table);
         const uint32_t remote_view = 5 * static_cast<uint32_t>(has_view);
         const uint32_t remote_dictionary = 5 * static_cast<uint32_t>(has_dictionary);
@@ -674,46 +675,32 @@ bool StatementGenerator::joinedTableOrFunction(
         {
             t = &rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda)).get();
 
-            t->setName(cdf->mutable_tof()->mutable_est(), true);
-            if (rg.nextBool())
-            {
-                /// Optional sharding key
-                flatTableColumnPath(to_remote_entries, t->cols, [](const SQLColumn &) { return true; });
-                cdf->set_sharding_key(rg.pickRandomly(this->remote_entries).getBottomName());
-                this->remote_entries.clear();
-            }
+            t->setName(ctof->mutable_est(), true);
             addTableRelation(rg, false, rel_name, *t);
+            /// For optional sharding key
+            flatTableColumnPath(to_remote_entries, t->cols, [](const SQLColumn &) { return true; });
         }
         else if (remote_view && nopt2 < (remote_table + remote_view + 1))
         {
             v = &rg.pickRandomly(filterCollection<SQLView>(has_view_lambda)).get();
 
-            v->setName(cdf->mutable_tof()->mutable_est(), true);
-            if (rg.nextBool())
-            {
-                cdf->set_sharding_key("c" + std::to_string(rg.randomInt<uint32_t>(0, 5)));
-            }
+            v->setName(ctof->mutable_est(), true);
             addViewRelation(rel_name, *v);
         }
         else if (remote_dictionary && nopt2 < (remote_table + remote_view + remote_dictionary + 1))
         {
             const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(has_dictionary_lambda)).get();
 
-            d.setName(cdf->mutable_tof()->mutable_est(), false);
-            if (rg.nextBool())
-            {
-                /// Optional sharding key
-                flatTableColumnPath(to_remote_entries, d.cols, [](const SQLColumn &) { return true; });
-                cdf->set_sharding_key(rg.pickRandomly(this->remote_entries).getBottomName());
-                this->remote_entries.clear();
-            }
+            d.setName(ctof->mutable_est(), false);
             addDictionaryRelation(rel_name, d);
+            /// For optional sharding key
+            flatTableColumnPath(to_remote_entries, d.cols, [](const SQLColumn &) { return true; });
         }
         else if (recurse && nopt2 < (remote_table + remote_view + remote_dictionary + recurse + 1))
         {
             /// Here don't care about the returned result
             this->depth++;
-            const auto u = joinedTableOrFunction(rg, rel_name, allowed_clauses, true, cdf->mutable_tof());
+            const auto u = joinedTableOrFunction(rg, rel_name, allowed_clauses, true, ctof);
             UNUSED(u);
             this->depth--;
         }
@@ -721,6 +708,13 @@ bool StatementGenerator::joinedTableOrFunction(
         {
             chassert(0);
         }
+        if (ctof->has_est() && rg.nextBool())
+        {
+            cdf->set_sharding_key(
+                this->remote_entries.empty() ? ("c" + std::to_string(rg.randomInt<uint32_t>(0, fc.max_columns - 1)))
+                                             : rg.pickRandomly(this->remote_entries).getBottomName());
+        }
+        this->remote_entries.clear();
     }
     else if (
         merge_index_udf

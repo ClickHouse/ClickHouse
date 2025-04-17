@@ -1026,7 +1026,6 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
     }
     else if (te->has_engine() && b.isDistributedEngine())
     {
-        bool has_sharding_key = false;
         const uint32_t dist_table = 15 * static_cast<uint32_t>(has_tables);
         const uint32_t dist_view = 5 * static_cast<uint32_t>(has_views);
         const uint32_t dist_dictionary = 5 * static_cast<uint32_t>(has_dictionaries);
@@ -1040,41 +1039,46 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
             const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(hasTableOrView<SQLTable>(b)));
 
             t.setName(te);
-            if ((has_sharding_key = rg.nextBool()))
-            {
-                /// Optional sharding key
-                flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
-                columnPathRef(rg.pickRandomly(this->remote_entries), te->add_params()->mutable_cols());
-                this->remote_entries.clear();
-            }
+            /// For the sharding key
+            flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
         }
         else if (dist_view && nopt < (dist_table + dist_view + 1))
         {
             const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(hasTableOrView<SQLView>(b)));
 
             v.setName(te);
-            if ((has_sharding_key = rg.nextBool()))
-            {
-                /// Optional sharding key
-                te->add_params()->mutable_cols()->mutable_col()->set_column("c" + std::to_string(rg.randomInt<uint32_t>(0, 5)));
-            }
         }
         else if (dist_dictionary && nopt < (dist_table + dist_view + dist_dictionary + 1))
         {
             const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(hasTableOrView<SQLDictionary>(b)));
 
             d.setName(te);
+            flatTableColumnPath(to_remote_entries, d.cols, [](const SQLColumn &) { return true; });
         }
         else
         {
             chassert(0);
         }
 
-        if (has_sharding_key && !fc.storage_policies.empty() && rg.nextBool())
+        if (rg.nextBool())
         {
-            /// Optional policy name
-            te->add_params()->set_svalue(rg.pickRandomly(fc.storage_policies));
+            /// Optional sharding key
+            if (!this->remote_entries.empty())
+            {
+                columnPathRef(rg.pickRandomly(this->remote_entries), te->add_params()->mutable_cols());
+            }
+            else
+            {
+                te->add_params()->mutable_cols()->mutable_col()->set_column(
+                    "c" + std::to_string(rg.randomInt<uint32_t>(0, (fc.max_columns - 1))));
+            }
+            if (!fc.storage_policies.empty() && rg.nextBool())
+            {
+                /// Optional policy name
+                te->add_params()->set_svalue(rg.pickRandomly(fc.storage_policies));
+            }
         }
+        this->remote_entries.clear();
     }
     if (te->has_engine() && (b.isRocksEngine() || b.isRedisEngine()) && add_pkey && !entries.empty())
     {
