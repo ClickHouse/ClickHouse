@@ -16,13 +16,19 @@
                 <max_size>100000000000</max_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
             </cached_azure>
+            <cached_azure_encrypted>
+                <type>encrypted</type>
+                <disk>cached_azure</disk>
+                <key>1234567812345678</key>
+                <path>cached_azure_encrypted/</path>
+            </cached_azure_encrypted>
         </disks>
         <policies>
-            <azure_cache>
+            <azure>
                 <volumes>
-                    <main><disk>cached_azure</disk></main>
+                    <main><disk>cached_azure_encrypted</disk></main>
                 </volumes>
-            </azure_cache>
+            </azure>
         </policies>
     </storage_configuration>
 </clickhouse>

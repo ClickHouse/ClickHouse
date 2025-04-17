@@ -26,6 +26,11 @@
                     <main><disk>cached_s3_encrypted</disk></main>
                 </volumes>
             </s3>
+            <nonencrypted>
+                <volumes>
+                    <main><disk>cached_s3</disk></main>
+                </volumes>
+            </nonencrypted>
         </policies>
     </storage_configuration>
     <merge_tree>
