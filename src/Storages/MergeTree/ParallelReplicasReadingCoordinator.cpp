@@ -416,6 +416,9 @@ void DefaultCoordinator::markReplicaAsUnavailable(size_t replica_number)
 
     for (const auto & segment : distribution_by_hash_queue[replica_number])
     {
+        if (segment.ranges.empty())
+            continue;
+
         chassert(segment.ranges.size() == 1);
         enqueueToStealerOrStealingQueue(segment.info, segment.ranges.front());
     }
@@ -1116,6 +1119,8 @@ void ParallelReplicasReadingCoordinator::markReplicaAsUnavailable(size_t replica
 
 void ParallelReplicasReadingCoordinator::initialize(CoordinationMode mode)
 {
+    chassert(pimpl);
+
     switch (mode)
     {
         case CoordinationMode::Default:
