@@ -269,7 +269,7 @@ protected:
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
     bool processMultiQueryFromFile(const String & file_name);
 
-    static bool isRegularFile(int fd);
+    static bool isFileDescriptorSuitableForInput(int fd);
 
     /// Adjust some settings after command line options and config had been processed.
     void adjustSettings();

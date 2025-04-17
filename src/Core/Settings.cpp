@@ -1413,6 +1413,16 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
+    DECLARE(Bool, use_skip_indexes_if_final_exact_mode, 0, R"(
+Controls whether granules returned by a skipping index are expanded in newer parts to return correct results when executing a query with the FINAL modifier.
+
+Using skip indexes may exclude rows (granules) containing the latest data which could lead to incorrect results. This setting can ensure that correct results are returned by scanning newer parts that have overlap with the ranges returned by the skip index.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
 If INSERTs build and store skip indexes. If disabled, skip indexes will be build and stored during merges or by explicit MATERIALIZE INDEX
 )", 0) \
@@ -3618,6 +3628,9 @@ If enabled, functions 'least' and 'greatest' return NULL if one of their argumen
     DECLARE(Bool, h3togeo_lon_lat_result_order, false, R"(
 Function 'h3ToGeo' returns (lon, lat) if true, otherwise (lat, lon).
 )", 0) \
+    DECLARE(Bool, geotoh3_lon_lat_input_order, false, R"(
+Function 'geoToH3' accepts (lon, lat) if true, otherwise (lat, lon).
+)", 0) \
     DECLARE(UInt64, max_partitions_per_insert_block, 100, R"(
 Limits the maximum number of partitions in a single inserted block
 and an exception is thrown if the block contains too many partitions.
@@ -4830,7 +4843,7 @@ Possible values:
     DECLARE(Bool, enable_sharing_sets_for_mutations, true, R"(
 Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption
 )", 0) \
-    DECLARE(Bool, use_query_condition_cache, false, R"(
+    DECLARE(Bool, use_query_condition_cache, true, R"(
 Enable the [query condition cache](/operations/query-condition-cache). The cache stores ranges of granules in data parts which do not satisfy the condition in the `WHERE` clause,
 and reuse this information as an ephemeral index for subsequent queries.
 
@@ -5198,6 +5211,9 @@ Possible values:
 )", 0) \
     DECLARE(Bool, query_plan_convert_outer_join_to_inner_join, true, R"(
 Allow to convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values
+)", 0) \
+    DECLARE(Bool, query_plan_merge_filter_into_join_condition, true, R"(
+Allow to merge filter into JOIN condition and convert CROSS JOIN to INNER.
 )", 0) \
     DECLARE(Bool, query_plan_convert_join_to_in, false, R"(
 Allow to convert JOIN to subquery with IN if output columns tied to only left table
@@ -6405,6 +6421,19 @@ Enable pushing user roles from originator to other nodes while performing a quer
     DECLARE(Bool, shared_merge_tree_sync_parts_on_partition_operations, true, R"(
 Automatically synchronize set of data parts after MOVE|REPLACE|ATTACH partition operations in SMT tables. Cloud only
 )", 0) \
+    DECLARE(String, implicit_table_at_top_level, "", R"(
+If not empty, queries without FROM at the top level will read from this table instead of system.one.
+
+This is used in clickhouse-local for input data processing.
+The setting could be set explicitly by a user but is not intended for this type of usage.
+
+Subqueries are not affected by this setting (neither scalar, FROM, or IN subqueries).
+SELECTs at the top level of UNION, INTERSECT, EXCEPT chains are treated uniformly and affected by this setting, regardless of their grouping in parentheses.
+It is unspecified how this setting affects views and distributed queries.
+
+The setting accepts a table name (then the table is resolved from the current database) or a qualified name in the form of 'database.table'.
+Both database and table names have to be unquoted - only simple identifiers are allowed.
+)", 0) \
     \
     DECLARE(Bool, allow_experimental_variant_type, true, R"(
 Allows creation of [Variant](../../sql-reference/data-types/variant.md) data type.
@@ -6444,7 +6473,7 @@ Normally this setting should be set in user profile (users.xml or queries like `
 Note that initially (24.12) there was a server setting (`send_settings_to_client`), but latter it got replaced with this client setting, for better usability.
 )", 0)                                  \
     DECLARE(Milliseconds, low_priority_query_wait_time_ms, 1000, R"(
-Wait time in milliseconds when lower priority query meets higher priority query.
+When the query prioritization mechanism is employed (see setting `priority`), low-priority queries wait for higher-priority queries to finish. This setting specifies the duration of waiting.
 )", BETA) \
     DECLARE(Float, min_os_cpu_wait_time_ratio_to_throw, 2.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
     DECLARE(Float, max_os_cpu_wait_time_ratio_to_throw, 6.0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \

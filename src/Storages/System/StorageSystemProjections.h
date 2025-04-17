@@ -12,7 +12,7 @@ class StorageSystemProjections : public IStorage
 public:
     explicit StorageSystemProjections(const StorageID & table_id_);
 
-    std::string getName() const override { return "StorageSystemProjections"; }
+    std::string getName() const override { return "SystemProjections"; }
 
     void read(
         QueryPlan & query_plan,

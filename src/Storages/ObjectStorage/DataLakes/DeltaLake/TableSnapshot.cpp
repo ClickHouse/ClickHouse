@@ -68,6 +68,7 @@ public:
         const std::string & data_prefix_,
         const DB::NamesAndTypesList & schema_,
         const DB::Names & partition_columns_,
+        const DB::NameToNameMap & physical_names_map_,
         DB::ObjectStoragePtr object_storage_,
         const DB::ActionsDAG * filter_dag_,
         DB::IDataLakeMetadata::FileProgressCallback callback_,
@@ -79,6 +80,7 @@ public:
         , data_prefix(data_prefix_)
         , schema(schema_)
         , partition_columns(partition_columns_)
+        , physical_names_map(physical_names_map_)
         , object_storage(object_storage_)
         , callback(callback_)
         , list_batch_size(list_batch_size_)
@@ -225,10 +227,35 @@ public:
         DB::ObjectInfoWithPartitionColumns::PartitionColumnsInfo partitions_info;
         for (const auto & partition_column : context->partition_columns)
         {
-            std::string * value = static_cast<std::string *>(ffi::get_from_string_map(
-                partition_map,
-                KernelUtils::toDeltaString(partition_column),
-                KernelUtils::allocateString));
+            std::string * value;
+            /// This map is empty if columnMappingMode = ''.
+            /// (E.g. empty string, which is the default mode).
+            if (context->physical_names_map.empty())
+            {
+                value = static_cast<std::string *>(ffi::get_from_string_map(
+                    partition_map,
+                    KernelUtils::toDeltaString(partition_column),
+                    KernelUtils::allocateString));
+            }
+            else
+            {
+                /// DeltaKernel has inconsistency, getPartitionColumns returns logical column names,
+                /// while here in partition_map we would have physical columns as map keys.
+                /// This will be fixed after switching to "transform"'s.
+                auto it = context->physical_names_map.find(partition_column);
+                if (it == context->physical_names_map.end())
+                {
+                    throw DB::Exception(
+                        DB::ErrorCodes::LOGICAL_ERROR,
+                        "Cannot find parititon column {} in physical columns map",
+                        partition_column);
+                }
+
+                value = static_cast<std::string *>(ffi::get_from_string_map(
+                    partition_map,
+                    KernelUtils::toDeltaString(it->second),
+                    KernelUtils::allocateString));
+            }
 
             SCOPE_EXIT({ delete value; });
 
@@ -279,6 +306,7 @@ private:
     const std::string data_prefix;
     const DB::NamesAndTypesList & schema;
     const DB::Names & partition_columns;
+    const DB::NameToNameMap & physical_names_map;
     const DB::ObjectStoragePtr object_storage;
     const DB::IDataLakeMetadata::FileProgressCallback callback;
     const size_t list_batch_size;
@@ -357,10 +385,10 @@ void TableSnapshot::initSnapshotImpl() const
     LOG_TRACE(log, "Initialized scan state");
 
     std::tie(table_schema, physical_names_map) = getTableSchemaFromSnapshot(snapshot.get());
-    LOG_TRACE(log, "Table schema: {}", fmt::join(table_schema.getNames(), ", "));
+    LOG_TRACE(log, "Table logical schema: {}", fmt::join(table_schema.getNames(), ", "));
 
     read_schema = getReadSchemaFromSnapshot(scan_state.get());
-    LOG_TRACE(log, "Read schema: {}", fmt::join(read_schema.getNames(), ", "));
+    LOG_TRACE(log, "Table read schema: {}", fmt::join(read_schema.getNames(), ", "));
 
     partition_columns = getPartitionColumnsFromSnapshot(scan_state.get());
     LOG_TRACE(log, "Partition columns: {}", fmt::join(partition_columns, ", "));
@@ -379,6 +407,7 @@ DB::ObjectIterator TableSnapshot::iterate(
         helper->getDataPath(),
         getTableSchema(),
         getPartitionColumns(),
+        getPhysicalNamesMap(),
         object_storage,
         filter_dag,
         callback,
