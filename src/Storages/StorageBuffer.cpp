@@ -263,9 +263,9 @@ void StorageBuffer::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    bool allow_experimental_analyzer = local_context->getSettingsRef()[Setting::allow_experimental_analyzer];
+    bool enable_analyzer = local_context->getSettingsRef()[Setting::allow_experimental_analyzer];
 
-    if (allow_experimental_analyzer && processed_stage > QueryProcessingStage::FetchColumns)
+    if (enable_analyzer && processed_stage > QueryProcessingStage::FetchColumns)
     {
         /** For query processing stages after FetchColumns, we do not allow using the same table more than once in the query.
           * For example: SELECT * FROM buffer t1 JOIN buffer t2 USING (column)
@@ -446,7 +446,7 @@ void StorageBuffer::read(
     /// TODO: Find a way to support projections for StorageBuffer
     if (processed_stage > QueryProcessingStage::FetchColumns)
     {
-        if (allow_experimental_analyzer)
+        if (enable_analyzer)
         {
             auto storage = std::make_shared<StorageValues>(
                     getStorageID(),
