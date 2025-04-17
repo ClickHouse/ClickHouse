@@ -1119,7 +1119,7 @@ void ParallelReplicasReadingCoordinator::markReplicaAsUnavailable(size_t replica
 
 void ParallelReplicasReadingCoordinator::initialize(CoordinationMode mode)
 {
-    chassert(pimpl);
+    chassert(!pimpl);
 
     switch (mode)
     {
