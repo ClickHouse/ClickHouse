@@ -610,7 +610,7 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
     ContextPtr context,
     const NameSet & materialized_indices,
     std::vector<MergeTreeIndexPtr> & indices_to_skip,
-    const std::unordered_set<String> & alter_column_names,
+    const NameSet & alter_column_names,
     bool secondary_indices_on_columns_alter_drop,
     bool secondary_indices_on_columns_alter_rebuild)
 {
@@ -1051,6 +1051,41 @@ void finalizeMutatedPart(
     new_data_part->default_codec = codec;
 }
 
+void getSecondaryIndicesOnColumnAlterOptions(
+    MutationCommandsConstPtr commands,
+    MergeTreeSettingsPtr settings,
+    NameSet & alter_column_names,
+    bool & secondary_indices_on_columns_alter_drop,
+    bool & secondary_indices_on_columns_alter_rebuild)
+{
+    bool secondary_indices_on_columns_alter = false;
+    if (commands->size() == 1 && commands->front().ast)
+    {
+        if (auto * alter_cmd = commands->front().ast->as<ASTAlterCommand>();
+            alter_cmd && alter_cmd->type==ASTAlterCommand::MODIFY_COLUMN)
+        {
+            if (auto * column_declaration = alter_cmd->col_decl->as<ASTColumnDeclaration>())
+            {
+                alter_column_names.insert(column_declaration->name);
+                secondary_indices_on_columns_alter = true;
+            }
+            else
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Cannot parse column declaration of alter command in mutation. It's a bug");
+            }
+        }
+    }
+
+    secondary_indices_on_columns_alter_drop = secondary_indices_on_columns_alter &&
+        (*settings)[MergeTreeSetting::secondary_indices_on_columns_alter]
+            == SecondaryIndicesOnColumnsAlter::DROP;
+
+    secondary_indices_on_columns_alter_rebuild = secondary_indices_on_columns_alter &&
+        (*settings)[MergeTreeSetting::secondary_indices_on_columns_alter]
+            == SecondaryIndicesOnColumnsAlter::REBUILD;
+}
+
 }
 
 struct MutationContext
@@ -1479,33 +1514,16 @@ private:
         bool is_full_part_storage = isFullPartStorage(ctx->new_data_part->getDataPartStorage());
         const auto & indices = ctx->metadata_snapshot->getSecondaryIndices();
 
-        bool secondary_indices_on_columns_alter = false;
-        std::unordered_set<String> alter_column_names;
-        if (ctx->commands->size() == 1 && ctx->commands->front().ast)
-        {
-            if (auto * alter_cmd = ctx->commands->front().ast->as<ASTAlterCommand>();
-                alter_cmd && alter_cmd->type==ASTAlterCommand::MODIFY_COLUMN)
-            {
-                if (auto * column_declaration = alter_cmd->col_decl->as<ASTColumnDeclaration>())
-                {
-                    alter_column_names.insert(column_declaration->name);
-                    secondary_indices_on_columns_alter = true;
-                }
-                else
-                {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Cannot parse column declaration of alter command in mutation. It's a bug");
-                }
-            }
-        }
-
-        bool secondary_indices_on_columns_alter_drop = secondary_indices_on_columns_alter &&
-                (*ctx->data->getSettings())[MergeTreeSetting::secondary_indices_on_columns_alter]
-                    == SecondaryIndicesOnColumnsAlter::DROP;
-
-        bool secondary_indices_on_columns_alter_rebuild = secondary_indices_on_columns_alter &&
-                (*ctx->data->getSettings())[MergeTreeSetting::secondary_indices_on_columns_alter]
-                    == SecondaryIndicesOnColumnsAlter::REBUILD;
+        bool secondary_indices_on_columns_alter_drop = false;
+        bool secondary_indices_on_columns_alter_rebuild = false;
+        NameSet alter_column_names;
+            
+        MutationHelpers::getSecondaryIndicesOnColumnAlterOptions(
+            ctx->commands,
+            ctx->data->getSettings(),
+            alter_column_names,
+            secondary_indices_on_columns_alter_drop,
+            secondary_indices_on_columns_alter_rebuild);
 
         MergeTreeIndices skip_indices;
         for (const auto & idx : indices)
@@ -2532,33 +2550,16 @@ bool MutateTask::prepare()
     }
     else /// TODO: check that we modify only non-key columns in this case.
     {
-        bool secondary_indices_on_columns_alter = false;
-        std::unordered_set<String> alter_column_names;
-        if (ctx->commands->size() == 1 && ctx->commands->front().ast)
-        {
-            if (auto * alter_cmd = ctx->commands->front().ast->as<ASTAlterCommand>();
-                alter_cmd && alter_cmd->type==ASTAlterCommand::MODIFY_COLUMN)
-            {
-                if (auto * column_declaration = alter_cmd->col_decl->as<ASTColumnDeclaration>())
-                {
-                    alter_column_names.insert(column_declaration->name);
-                    secondary_indices_on_columns_alter = true;
-                }
-                else
-                {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Cannot parse column declaration of alter command in mutation. It's a bug");
-                }
-            }
-        }
+        bool secondary_indices_on_columns_alter_drop = false;
+        bool secondary_indices_on_columns_alter_rebuild = false;
+        NameSet alter_column_names;
 
-        bool secondary_indices_on_columns_alter_drop = secondary_indices_on_columns_alter &&
-                (*ctx->data->getSettings())[MergeTreeSetting::secondary_indices_on_columns_alter]
-                    == SecondaryIndicesOnColumnsAlter::DROP;
-
-        bool secondary_indices_on_columns_alter_rebuild = secondary_indices_on_columns_alter &&
-                (*ctx->data->getSettings())[MergeTreeSetting::secondary_indices_on_columns_alter]
-                    == SecondaryIndicesOnColumnsAlter::REBUILD;
+        MutationHelpers::getSecondaryIndicesOnColumnAlterOptions(
+            ctx->commands,
+            ctx->data->getSettings(),
+            alter_column_names,
+            secondary_indices_on_columns_alter_drop,
+            secondary_indices_on_columns_alter_rebuild);
 
         std::vector<MergeTreeIndexPtr> indices_to_skip;
         ctx->indices_to_recalc = MutationHelpers::getIndicesToRecalculate(

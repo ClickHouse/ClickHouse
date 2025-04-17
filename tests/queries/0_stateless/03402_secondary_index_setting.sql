@@ -47,8 +47,6 @@ ALTER TABLE test_compact MODIFY SETTING secondary_indices_on_columns_alter = 'ig
 
 ALTER TABLE test_compact MODIFY COLUMN b String;
 
--- ALTER TABLE test_compact UPDATE b = 2 WHERE b = 1;
-
 DROP TABLE test_compact;
 
 
