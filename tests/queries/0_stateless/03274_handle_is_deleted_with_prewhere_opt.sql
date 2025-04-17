@@ -3,9 +3,14 @@
 
 drop table if exists 03274_prewhere_is_deleted;
 
+set optimize_on_insert=0;
 set mutations_sync=2;
 
-create table 03274_prewhere_is_deleted (number UInt64, value String, version UInt64, is_deleted UInt8) engine=ReplacingMergeTree(version,is_deleted) ORDER BY number AS SELECT number, toString(number), 1, 1 FROM numbers(1000000);
+create table 03274_prewhere_is_deleted (number UInt64, value String, version UInt64, is_deleted UInt8) engine=ReplacingMergeTree(version,is_deleted) ORDER BY number;
+
+INSERT INTO 03274_prewhere_is_deleted SELECT number, toString(number), 1, 1 FROM numbers(10000);
+
+INSERT INTO 03274_prewhere_is_deleted SELECT number, toString(number), 1, 1 FROM numbers(10000);
 
 optimize table 03274_prewhere_is_deleted final;
 
