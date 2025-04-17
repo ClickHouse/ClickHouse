@@ -1939,6 +1939,29 @@ private:
 
         ctx->new_data_part->checksums = ctx->source_part->checksums;
 
+        /// Remove dropped secondary indices from checksums, to avoid complain of broken parts.
+        if ((*ctx->data->getSettings())[MergeTreeSetting::secondary_indices_on_columns_alter] ==
+            SecondaryIndicesOnColumnsAlter::DROP)
+        {
+            NameSet secondary_indices_rebuild;
+            for (const auto & idx : ctx->indices_to_recalc)
+            {
+                secondary_indices_rebuild.insert(idx->getFileName() + idx->getSerializedFileExtension());
+                secondary_indices_rebuild.insert(idx->getFileName() + ctx->mrk_extension);
+            }
+
+            for (const auto & file : ctx->files_to_skip)
+            {
+                if (!file.starts_with(INDEX_FILE_PREFIX))
+                    continue;
+
+                if (secondary_indices_rebuild.contains(file))
+                    continue;
+
+                ctx->new_data_part->checksums.remove(file);
+            }
+        }
+
         ctx->compression_codec = ctx->source_part->default_codec;
 
         if (ctx->mutating_pipeline_builder.initialized())
