@@ -91,7 +91,7 @@ void FiberStack::deallocate(boost::context::stack_context & sctx) const
 #endif
     void * data = static_cast< char * >(sctx.sp) - sctx.size;
 
-    if (guardPagesEnabled())
+    if constexpr (guardPagesEnabled())
         memoryGuardRemove(data, page_size);
 
     free(data);
