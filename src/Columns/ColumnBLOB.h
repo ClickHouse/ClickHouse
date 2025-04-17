@@ -1,24 +1,22 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/ICompressionCodec.h>
+#include <Core/ColumnWithTypeAndName.h>
 #include <Core/Field.h>
+#include <DataTypes/ObjectUtils.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Interpreters/castColumn.h>
+#include <base/defines.h>
+#include <Common/PODArray.h>
 #include <Common/WeakHash.h>
-#include "Compression/CompressedReadBuffer.h"
-#include "Core/ColumnWithTypeAndName.h"
-#include "DataTypes/ObjectUtils.h"
-#include "DataTypes/Serializations/ISerialization.h"
-#include "Formats/NativeReader.h"
-#include "base/defines.h"
-
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -28,102 +26,98 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-
 class ColumnBLOB : public COWHelper<IColumnHelper<ColumnBLOB>, ColumnBLOB>
 {
 public:
-    using Blob = std::vector<char>;
+    using BLOB = PODArray<char>;
 
-    // The argument is supposed to be a some ColumnBLOB's internal blob.
-    using ToBlob = std::function<void(Blob &)>;
-
-    // The argument is supposed to be a some ColumnBLOB's internal blob,
+    // The argument is supposed to be some ColumnBLOB's internal BLOB,
     // the return value is the reconstructed column.
-    // TODO(nickitat): fix signature
-    using FromBlob = std::function<ColumnPtr(const Blob &, int)>;
+    using FromBLOB = std::function<ColumnPtr(const BLOB &)>;
 
     ColumnBLOB(
-        ColumnWithTypeAndName concrete_column_, CompressionCodecPtr codec, UInt64 client_revision, const FormatSettings & format_settings)
-        : rows(concrete_column_.column->size())
-        , concrete_column(concrete_column_.column)
+        ColumnWithTypeAndName wrapped_column_, CompressionCodecPtr codec, UInt64 client_revision, const FormatSettings & format_settings)
+        : rows(wrapped_column_.column->size())
+        , wrapped_column(wrapped_column_.column)
     {
-        toBlob(blob, concrete_column_, codec, client_revision, format_settings);
+        chassert(wrapped_column);
+        toBLOB(blob, wrapped_column_, codec, client_revision, format_settings);
     }
 
-    // TODO: remove me
-    ColumnBLOB(ToBlob task, ColumnPtr concrete_column_)
-        : rows(concrete_column_->size())
-        , concrete_column(std::move(concrete_column_))
-        , to_blob_task(std::move(task))
-    {
-    }
-
-    ColumnBLOB(FromBlob task, ColumnPtr concrete_column_, size_t rows_)
+    ColumnBLOB(FromBLOB task, ColumnPtr wrapped_column_, size_t rows_)
         : rows(rows_)
-        , concrete_column(std::move(concrete_column_))
+        , wrapped_column(std::move(wrapped_column_))
         , from_blob_task(std::move(task))
     {
+        chassert(wrapped_column);
     }
 
-    const char * getFamilyName() const override { return "Blob"; }
+    ColumnBLOB(const ColumnBLOB & other)
+        : COWHelper(other)
+        , blob(other.blob.begin(), other.blob.end())
+        , rows(other.rows)
+        , wrapped_column(other.wrapped_column)
+        , from_blob_task(other.from_blob_task)
+        , cast_from(other.cast_from)
+        , cast_to(other.cast_to)
+    {
+        chassert(wrapped_column);
+    }
+
+    const char * getFamilyName() const override { return "BLOB"; }
 
     size_t size() const override { return rows; }
 
     bool wrappedColumnIsSparse() const
     {
-        chassert(concrete_column);
-        return concrete_column->isSparse();
+        chassert(wrapped_column);
+        return wrapped_column->isSparse();
     }
 
     ColumnPtr getWrappedColumn() const
     {
-        chassert(concrete_column);
-        return concrete_column;
+        chassert(wrapped_column);
+        return wrapped_column;
     }
 
     MutableColumnPtr cloneEmpty() const override
     {
-        chassert(concrete_column);
-        return concrete_column->cloneEmpty();
+        chassert(wrapped_column);
+        return wrapped_column->cloneEmpty();
     }
 
-    Blob & getBlob() { return blob; }
-    const Blob & getBlob() const { return blob; }
+    BLOB & getBLOB() { return blob; }
 
-    void convertTo()
-    {
-        chassert(to_blob_task);
-        to_blob_task(blob);
-    }
+    const BLOB & getBLOB() const { return blob; }
 
     ColumnPtr convertFrom() const
     {
         chassert(from_blob_task);
         ColumnWithTypeAndName col;
-        col.column = from_blob_task(blob, 0);
+        col.column = from_blob_task(blob);
         col.type = cast_from;
         return cast_to ? DB::castColumn(col, cast_to) : col.column;
     }
 
     /// Creates serialized and compressed blob from the source column.
-    static void toBlob(
-        Blob & blob,
-        ColumnWithTypeAndName concrete_column,
+    static void toBLOB(
+        BLOB & blob,
+        ColumnWithTypeAndName wrapped_column,
         CompressionCodecPtr codec,
         UInt64 client_revision,
         const std::optional<FormatSettings> & format_settings)
     {
-        WriteBufferFromVector<Blob> wbuf(blob);
+        WriteBufferFromVector<BLOB> wbuf(blob);
         CompressedWriteBuffer compressed_buffer(wbuf, codec);
-        auto serialization = NativeWriter::getSerialization(client_revision, concrete_column);
+        auto serialization = NativeWriter::getSerialization(client_revision, wrapped_column);
         NativeWriter::writeData(
-            *serialization, concrete_column.column, compressed_buffer, format_settings, 0, concrete_column.column->size(), client_revision);
+            *serialization, wrapped_column.column, compressed_buffer, format_settings, 0, wrapped_column.column->size(), client_revision);
         compressed_buffer.finalize();
     }
 
     /// Decompresses and deserializes the blob into the source column.
-    static ColumnPtr fromBlob(
-        const Blob & blob,
+    static ColumnPtr fromBLOB(
+        const BLOB & blob,
         ColumnPtr nested,
         SerializationPtr nested_serialization,
         size_t rows,
@@ -143,10 +137,11 @@ public:
         cast_to = to;
     }
 
-    /// All other methods throw the exception.
-
     size_t byteSize() const override { return blob.size(); }
+
     size_t allocatedBytes() const override { return blob.capacity(); }
+
+    /// All other methods throw the exception.
 
     TypeIndex getDataType() const override { throwInapplicable(); }
     Field operator[](size_t) const override { throwInapplicable(); }
@@ -207,12 +202,10 @@ public:
     void takeDynamicStructureFromSourceColumns(const Columns &) override { throwInapplicable(); }
 
 private:
-    Blob blob;
-
+    BLOB blob;
     const size_t rows;
-    ColumnPtr concrete_column;
-    ToBlob to_blob_task;
-    FromBlob from_blob_task;
+    ColumnPtr wrapped_column;
+    FromBLOB from_blob_task;
 
     mutable DataTypePtr cast_from;
     mutable DataTypePtr cast_to;
@@ -223,7 +216,7 @@ private:
     }
 };
 
-[[nodiscard]] inline Block convertBlobColumns(const Block & block)
+[[nodiscard]] inline Block convertBLOBColumns(const Block & block)
 {
     Block res;
     res.info = block.info;

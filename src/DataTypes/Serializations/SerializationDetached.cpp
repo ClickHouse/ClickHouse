@@ -1,7 +1,6 @@
 #include <DataTypes/Serializations/SerializationDetached.h>
 
 #include <Columns/ColumnBLOB.h>
-#include <Columns/IColumn.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
 #include <DataTypes/Serializations/ISerialization.h>
@@ -50,7 +49,7 @@ void SerializationDetached::serializeBinaryBulk(
 {
     DisableCompressionInScope codec_switcher(ostr);
 
-    const auto & blob = typeid_cast<const ColumnBLOB &>(column).getBlob();
+    const auto & blob = typeid_cast<const ColumnBLOB &>(column).getBLOB();
     writeVarUInt(blob.size(), ostr);
     ostr.write(blob.data(), blob.size());
 }
@@ -62,7 +61,7 @@ void SerializationDetached::deserializeBinaryBulk(
     [[maybe_unused]] size_t limit,
     [[maybe_unused]] double avg_value_size_hint) const
 {
-    auto & blob = typeid_cast<ColumnBLOB &>(column).getBlob();
+    auto & blob = typeid_cast<ColumnBLOB &>(column).getBLOB();
     size_t bytes = 0;
     readVarUInt(bytes, istr);
     blob.resize(bytes);
@@ -77,19 +76,18 @@ void SerializationDetached::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    ColumnPtr concrete_column(column->cloneEmpty());
-    auto task = [concrete_column,
+    auto task = [wrapped_column = column,
                  nested_serialization = nested,
                  limit,
                  format_settings = settings.format_settings,
-                 avg_value_size_hint = settings.avg_value_size_hint](const ColumnBLOB::Blob & blob, int)
+                 avg_value_size_hint = settings.avg_value_size_hint](const ColumnBLOB::BLOB & blob)
     {
         // In case of alias columns, `column` might be a reference to the same column for a number of calls to this function.
         // To avoid deserializing into the same column multiple times, we clone the column here one more time.
-        return ColumnBLOB::fromBlob(blob, concrete_column->cloneEmpty(), nested_serialization, limit, format_settings, avg_value_size_hint);
+        return ColumnBLOB::fromBLOB(blob, wrapped_column->cloneEmpty(), nested_serialization, limit, format_settings, avg_value_size_hint);
     };
 
-    auto column_blob = ColumnPtr(ColumnBLOB::create(std::move(task), concrete_column, limit));
+    auto column_blob = ColumnPtr(ColumnBLOB::create(std::move(task), column, limit));
     ISerialization::deserializeBinaryBulkWithMultipleStreams(column_blob, rows_offset, limit, settings, state, cache);
     column = column_blob;
 }

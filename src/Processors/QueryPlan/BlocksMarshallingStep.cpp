@@ -23,10 +23,10 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-struct MarshallBlocks : ISimpleTransform
+struct MarshallBlocksTransform : ISimpleTransform
 {
 public:
-    explicit MarshallBlocks(const Block & header_, BlockMarshallingCallback callback_)
+    explicit MarshallBlocksTransform(const Block & header_, BlockMarshallingCallback callback_)
         : ISimpleTransform(header_, header_, false)
         , callback(std::move(callback_))
     {
@@ -60,7 +60,7 @@ void BlocksMarshallingStep::transformPipeline(QueryPipelineBuilder & pipeline, c
     const size_t num_threads = pipeline.getNumThreads();
     pipeline.resize(num_threads);
     pipeline.addSimpleTransform([&](const Block & header)
-                                { return std::make_shared<MarshallBlocks>(header, settings.block_marshalling_callback); });
+                                { return std::make_shared<MarshallBlocksTransform>(header, settings.block_marshalling_callback); });
     if (single_stream)
         pipeline.addTransform(std::make_shared<SortChunksBySequenceNumber>(pipeline.getHeader(), num_threads));
 }

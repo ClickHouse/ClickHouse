@@ -291,10 +291,10 @@ Chunk RemoteExtremesSource::generate()
     return {};
 }
 
-struct ConvertBlobColumnsTransform : ISimpleTransform
+struct UnmarshallBlocksTransform : ISimpleTransform
 {
 public:
-    explicit ConvertBlobColumnsTransform(const Block & header_)
+    explicit UnmarshallBlocksTransform(const Block & header_)
         : ISimpleTransform(header_, header_, false)
     {
     }
@@ -335,7 +335,7 @@ Pipe createRemoteSourcePipe(
         pipe.addExtremesSource(std::make_shared<RemoteExtremesSource>(query_executor));
 
     pipe.resize(parallel_marshalling_threads);
-    pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<ConvertBlobColumnsTransform>(header); });
+    pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
     pipe.addTransform(std::make_shared<SortChunksBySequenceNumber>(pipe.getHeader(), parallel_marshalling_threads));
 
     return pipe;
