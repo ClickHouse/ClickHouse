@@ -778,7 +778,6 @@ bool Client::buzzHouse()
                         : BuzzHouse::PeerQuery::AllPeers;
                     const bool clickhouse_only = nquery == BuzzHouse::PeerQuery::ClickHouseOnly;
 
-                    sq1.Clear();
                     sq2.Clear();
                     qo.generateOracleSelectQuery(rg, nquery, gen, sq1);
                     qo.replaceQueryWithTablePeers(rg, sq1, gen, peer_queries, sq2);
