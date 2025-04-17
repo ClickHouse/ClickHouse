@@ -243,6 +243,14 @@ bool isQueryOrUnionNode(const QueryTreeNodePtr & node)
     return isQueryOrUnionNode(node.get());
 }
 
+bool isCorrelatedQueryOrUnionNode(const QueryTreeNodePtr & node)
+{
+    auto * query_node = node->as<QueryNode>();
+    auto * union_node = node->as<UnionNode>();
+
+    return (query_node != nullptr && query_node->isCorrelated()) || (union_node != nullptr && union_node->isCorrelated());
+}
+
 bool checkCorrelatedColumn(
     IdentifierResolveScope * scope_to_check,
     const ColumnNodePtr & column

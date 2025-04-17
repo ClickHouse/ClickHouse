@@ -62,6 +62,9 @@ bool isQueryOrUnionNode(const IQueryTreeNode * node);
 /// Returns true, if node has type QUERY or UNION
 bool isQueryOrUnionNode(const QueryTreeNodePtr & node);
 
+/// Returns true, if node has type QUERY or UNION and uses any columns from outer scope
+bool isCorrelatedQueryOrUnionNode(const QueryTreeNodePtr & node);
+
 /* Checks, if column source is not registered in scopes that appear
  * before nearest query scope.
  * If column appears to be correlated in the scope than it be registered
