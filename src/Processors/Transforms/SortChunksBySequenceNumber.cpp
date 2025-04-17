@@ -18,6 +18,11 @@ struct ChunkSequenceNumber : public DB::ChunkInfoCloneable<ChunkSequenceNumber>
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 void AddSequenceNumber::transform(Chunk & chunk)
 {
     chunk.getChunkInfos().extract<ChunkSequenceNumber>();
