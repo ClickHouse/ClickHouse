@@ -544,56 +544,70 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 
     const auto & query_node = query_info.query_tree->as<const QueryNode &>();
 
+    // Checks if the provided expressions contain all the columns
+    // required by the sharding key and ensures that the functions in the expressions
+    // are injective (one-to-one mapping).
     auto expr_contains_sharding_key = [&](const ListNode & exprs) -> bool
     {
+        // A set to store the column names found in the expressions.
         std::unordered_set<std::string> expr_columns;
+
+        // A flag to track whether all functions in the expressions are injective.
         bool is_injective = true;
 
+        // Recursively traverses a query tree to collect column names
+        // and checks if the functions in the query tree are injective.
         std::function<void(const QueryTreeNodePtr &)> get_columns = [&](const QueryTreeNodePtr & node) -> void
         {
+            // If the injectivity flag is already false, stop further processing.
             if (!is_injective)
                 return;
+
+            // If the node is a function node, check its injectivity and process its arguments.
             if (const auto * func = node->as<FunctionNode>())
             {
                 auto function = func->getFunctionOrThrow();
+
                 if (!function->isInjective(func->getArgumentColumns()))
                 {
+                    // If not injective, set the flag to false and stop further processing.
                     is_injective = false;
                     return;
                 }
+
                 for (const auto & arg : func->getArguments())
                     get_columns(arg);
             }
+            // If the node is a column node, validate its source and add its name to the set.
             else if (const auto * id = node->as<ColumnNode>())
             {
                 if (!id)
                     return;
-
                 auto source = id->getColumnSourceOrNull();
                 if (!source)
                     return;
-
                 if (source.get() != query_info.table_expression.get())
                     return;
-
                 expr_columns.emplace(id->getColumnName());
             }
         };
 
+        // If any function in the expressions is not injective, return false.
         if (!is_injective)
             return false;
 
+        // Traverse each expression in the list and collect column names.
         for (const auto & expr : exprs)
         {
             get_columns(expr);
         }
 
+        // Check if all sharding key columns are present in the expressions.
         for (const auto & column : sharding_key_expr->getRequiredColumns())
         {
             if (!expr_columns.contains(column))
                 return false;
         }
-
         return true;
     };
 
