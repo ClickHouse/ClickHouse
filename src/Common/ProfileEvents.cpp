@@ -293,6 +293,7 @@
     \
     M(MutationTotalParts, "Number of total parts for which mutations tried to be applied", ValueType::Number) \
     M(MutationUntouchedParts, "Number of total parts for which mutations tried to be applied but which was completely skipped according to predicate", ValueType::Number) \
+    M(MutationCreatedEmptyParts, "Number of total parts which were replaced to empty parts instead of running mutation", ValueType::Number) \
     M(MutatedRows, "Rows read for mutations. This is the number of rows before mutation", ValueType::Number) \
     M(MutatedUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) that was read for mutations. This is the number before mutation.", ValueType::Bytes) \
     M(MutationTotalMilliseconds, "Total time spent for mutations.", ValueType::Milliseconds) \
