@@ -142,9 +142,11 @@ class HtmlRunnerHooks:
                 # fetch running status with start_time for current job
                 result = Result.from_fs(job.name)
             else:
-                result = Result.generate_pending(job.name)
+                result = Result.create_new(job.name, Result.Status.PENDING)
             results.append(result)
-        summary_result = Result.generate_pending(_workflow.name, results=results)
+        summary_result = Result.create_new(
+            _workflow.name, Result.Status.RUNNING, results=results
+        )
         summary_result.start_time = Utils.timestamp()
         summary_result.links.append(env.CHANGE_URL)
         summary_result.links.append(env.RUN_URL)
@@ -200,18 +202,26 @@ class HtmlRunnerHooks:
                         sha=cache_record.sha,
                         job_name=skipped_job,
                     )
-                    result = Result.generate_skipped(
-                        skipped_job, [report_link], "reused from cache"
+                    result = Result.create_new(
+                        skipped_job,
+                        Result.Status.SKIPPED,
+                        [report_link],
+                        "reused from cache",
                     )
                 else:
-                    result = Result.generate_skipped(
-                        skipped_job, info=filtered_job_and_reason[skipped_job]
+                    result = Result.create_new(
+                        skipped_job,
+                        Result.Status.SKIPPED,
+                        info=filtered_job_and_reason[skipped_job],
                     )
                 results.append(result)
             if results:
-                assert _ResultS3.update_workflow_results(
-                    _workflow.name, new_sub_results=results
-                )
+                assert (
+                    _ResultS3.update_workflow_results(
+                        _workflow.name, new_sub_results=results
+                    )
+                    is None
+                ), "Workflow status supposed to remain 'running'"
 
     @classmethod
     def pre_run(cls, _workflow, _job):
