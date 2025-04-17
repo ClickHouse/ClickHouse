@@ -888,7 +888,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 └──────────────────────────────────────┘
 ```
 
-## arrayEnumerate(arr)
+## arrayEnumerate(arr) {#arrayenumeratearr}
 
 Returns the array \[1, 2, 3, ..., length (arr) \]
 
