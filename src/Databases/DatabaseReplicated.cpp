@@ -23,6 +23,7 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ReplicatedDatabaseQueryStatusSource.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -1462,8 +1463,13 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                 }
 
                 auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_query_string);
-                LOG_INFO(log, "Executing {}", query_ast->formatForLogging());
+
                 auto create_query_context = make_query_context();
+                /// Check larger comment in DatabaseOnDisk::createTableFromAST
+                /// TL;DR applySettingsFromQuery will move the settings from engine to query level
+                /// making it possible to overcome a backward incompatible change.
+                InterpreterSetQuery::applySettingsFromQuery(query_ast, create_query_context);
+                LOG_INFO(log, "Executing {}", query_ast->formatForLogging());
                 InterpreterCreateQuery(query_ast, create_query_context).execute();
             };
 

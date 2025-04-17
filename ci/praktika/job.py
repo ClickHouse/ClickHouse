@@ -1,10 +1,12 @@
 import copy
+import fnmatch
 import json
+import os
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
 from . import Artifact
-from .utils import Utils
+from .utils import Shell, Utils
 
 
 class Job:
@@ -17,6 +19,7 @@ class Job:
     class CacheDigestConfig:
         include_paths: List[str] = field(default_factory=list)
         exclude_paths: List[str] = field(default_factory=list)
+        # set to true if any submodule affects the job
         with_git_submodules: bool = False
 
     @dataclass
@@ -185,9 +188,56 @@ class Job:
                     )
             return res
 
+        def set_allow_merge_on_failure(self, value):
+            res = copy.deepcopy(self)
+            res.allow_merge_on_failure = value
+            return res
+
         @staticmethod
         def get_job(job_configs, job_name):
             for job in job_configs:
                 if job.name == job_name:
                     return job
             raise RuntimeError(f"Failed to find job [{job_name}] in [{job_configs}]")
+
+        def get_docker_image_name(self):
+            return self.run_in_docker.split("+")[0] if self.run_in_docker else ""
+
+        def is_affected_by(self, changed_files: List[str]) -> bool:
+            if changed_files is None:
+                return True
+            if len(changed_files) == 0:
+                return False
+            if not self.digest_config:
+                return True
+            normalized_files = [os.path.normpath(f) for f in changed_files]
+
+            # Check all other include/exclude logic
+            for file in normalized_files:
+                # Check if excluded
+                for exclude in self.digest_config.exclude_paths:
+                    exclude_norm = os.path.normpath(exclude)
+                    if file == exclude_norm or file.startswith(exclude_norm + os.sep):
+                        break
+                else:
+                    # Check if included
+                    for include in self.digest_config.include_paths:
+                        include_norm = os.path.normpath(include)
+                        if fnmatch.fnmatch(file, include_norm) or file.startswith(
+                            include_norm + os.sep
+                        ):
+                            return True
+
+            # Optionally check for submodule changes
+            if self.digest_config.with_git_submodules:
+                try:
+                    submodule_paths_str = Shell.get_output(
+                        command="git config --file .gitmodules --get-regexp path | awk '{print $2}'",
+                        verbose=True,
+                    )
+                    if any(file in submodule_paths_str for file in normalized_files):
+                        return True
+                except Exception as e:
+                    print(f"Warning: failed to check git submodules: {e}")
+
+            return False
