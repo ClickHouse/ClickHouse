@@ -42,7 +42,7 @@ public:
 private:
     void fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info);
 
-    void fillWordsFromBlock(Block block);
+    void fillWordsFromBlock(const Block & block);
 
     /// Words are fetched asynchronously.
     std::thread loading_thread;

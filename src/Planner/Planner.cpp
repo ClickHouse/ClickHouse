@@ -5,12 +5,9 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include "Common/StackTrace.h"
+#include <Processors/QueryPlan/BlocksMarshallingStep.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
-#include "Core/QueryProcessingStage.h"
-#include "Processors/QueryPlan/BlocksMarshallingStep.h"
-#include "Processors/QueryPlan/Optimizations/Optimizations.h"
 
 #include <DataTypes/DataTypeString.h>
 

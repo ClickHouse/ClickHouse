@@ -1008,7 +1008,7 @@ ContextData::ContextData()
 {
     settings = std::make_unique<Settings>();
 }
-// clang-format off
+
 ContextData::ContextData(const ContextData &o) :
     shared(o.shared),
     client_info(o.client_info),
@@ -6063,7 +6063,6 @@ void Context::setMergeTreeAllRangesCallback(MergeTreeAllRangesCallback && callba
     merge_tree_all_ranges_callback = callback;
 }
 
-
 BlockMarshallingCallback Context::getBlockMarshallingCallback() const
 {
     return block_marshalling_callback;
@@ -6073,7 +6072,6 @@ void Context::setBlockMarshallingCallback(BlockMarshallingCallback && callback)
 {
     block_marshalling_callback = std::move(callback);
 }
-
 
 void Context::setParallelReplicasGroupUUID(UUID uuid)
 {

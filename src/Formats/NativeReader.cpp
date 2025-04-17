@@ -11,9 +11,6 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <base/range.h>
 #include <Common/typeid_cast.h>
-#include "Columns/ColumnBlob.h"
-#include "Columns/IColumn.h"
-#include "Core/ColumnWithTypeAndName.h"
 
 #include <Formats/NativeReader.h>
 #include <Formats/insertNullAsDefaultIfNeeded.h>
@@ -119,16 +116,6 @@ void NativeReader::readData(
 Block NativeReader::getHeader() const
 {
     return header;
-}
-
-bool NativeReader::eof() const
-{
-    return istr.eof();
-}
-
-bool NativeReader::hasPendingData() const
-{
-    return istr.hasPendingData();
 }
 
 Block NativeReader::read()

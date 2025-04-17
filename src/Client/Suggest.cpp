@@ -2,20 +2,19 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <Columns/ColumnString.h>
+#include <Common/Exception.h>
+#include <Common/typeid_cast.h>
+#include <Common/Macros.h>
+#include "Core/Protocol.h"
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/Operators.h>
+#include <Functions/FunctionFactory.h>
+#include <TableFunctions/TableFunctionFactory.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <Interpreters/Context.h>
 #include <Client/Connection.h>
 #include <Client/LocalConnection.h>
-#include <Columns/ColumnBlob.h>
-#include <Columns/ColumnString.h>
-#include <Core/Protocol.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <Functions/FunctionFactory.h>
-#include <IO/Operators.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
-#include <Interpreters/Context.h>
-#include <TableFunctions/TableFunctionFactory.h>
-#include <Common/Exception.h>
-#include <Common/Macros.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -199,7 +198,7 @@ void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & t
     }
 }
 
-void Suggest::fillWordsFromBlock(Block block)
+void Suggest::fillWordsFromBlock(const Block & block)
 {
     if (!block)
         return;
@@ -207,7 +206,6 @@ void Suggest::fillWordsFromBlock(Block block)
     if (block.columns() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of columns received for query to read words for suggestion");
 
-    block = convertBlobColumns(block);
     const ColumnString & column = typeid_cast<const ColumnString &>(*block.getByPosition(0).column);
 
     size_t rows = block.rows();

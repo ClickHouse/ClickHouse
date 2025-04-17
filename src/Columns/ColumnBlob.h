@@ -60,7 +60,7 @@ public:
 
     size_t size() const override { return rows; }
 
-    bool concreteIsSparse() const
+    bool wrappedColumnIsSparse() const
     {
         chassert(concrete_column);
         return concrete_column->isSparse();

@@ -364,7 +364,6 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
         }
         else
         {
-            // Const columns are not converted to `ColumnBlob`
             const auto & col = block.getByName(elem.name);
             if (const auto * blob = typeid_cast<const ColumnBlob *>(col.column.get()))
             {
@@ -372,9 +371,7 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
                 column = col.column;
             }
             else
-            {
                 column = castColumn(col, elem.type);
-            }
         }
 
         res.insert({column, elem.type, elem.name});

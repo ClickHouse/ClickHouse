@@ -26,7 +26,7 @@ ISerialization::Kind ISerialization::getKind(const IColumn & column)
         return Kind::SPARSE;
 
     if (const auto * column_blob = typeid_cast<const ColumnBlob *>(&column))
-        return column_blob->concreteIsSparse() ? Kind::DETACHED_OVER_SPARSE : Kind::DETACHED;
+        return column_blob->wrappedColumnIsSparse() ? Kind::DETACHED_OVER_SPARSE : Kind::DETACHED;
 
     return Kind::DEFAULT;
 }
