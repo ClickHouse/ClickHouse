@@ -57,7 +57,7 @@ boost::context::stack_context FiberStack::allocate() const
     if (!data)
         throw DB::ErrnoException(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate FiberStack");
 
-    if (guardPagesEnabled())
+    if constexpr (guardPagesEnabled())
     {
         /// TODO: make reports on illegal guard page access more clear.
         /// Currently we will see segfault and almost random stacktrace.
