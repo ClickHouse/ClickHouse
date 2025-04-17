@@ -132,13 +132,18 @@ public:
             const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
             const IColumn & wrapper_column = const_column ? const_column->getDataColumn() : *arguments[0].column.get();
             const auto & source_col = checkAndGetColumn<DataTypeDateTime64::ColumnType>(wrapper_column);
+            const ColumnDateTime64 * decimal_column = &source_col;
+            assert(decimal_column != nullptr);
+            DateTime64 value = decimal_column->getElement(i);
+            UInt32 scale = decimal_column->getScale();
+            if ((scale != 6) && (scale != 9))
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Unsupported scale for DateTime64 in IcebergHash function. Supports only microseconds and nanoseconds");
+            }
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                const ColumnDateTime64 * decimal_column = &source_col;
-                assert(decimal_column != nullptr);
-                DateTime64 value = decimal_column->getElement(i);
-                UInt32 scale = decimal_column->getScale();
-                assert(scale == 6 || scale == 9);
                 Int64 value_int = value.convertTo<Int64>();
                 if (scale == 9)
                 {
@@ -197,19 +202,20 @@ private:
     {
         std::array<char, 16> big_endian_representation;
         size_t taken = 1;
-        char prev = 0;
+        signed char prev = 0;
         for (size_t i = 0; i < 16; ++i)
         {
-            char c = static_cast<unsigned char>(value & 0xFF);
+            signed char c = static_cast<signed char>(value & 0xFF);
             big_endian_representation[i] = c;
             value >>= 8;
-            if ((i == 0) || ((c != static_cast<char>(0)) && (c != static_cast<char>(-1)))
-                || ((c & static_cast<char>(0x80)) != (prev & static_cast<char>(0x80))))
+            // Take minimum number of bytes to represent the value and sign bit
+            if ((i == 0) || ((c != 0) && (c != -1)) || ((c & 0x80) != (prev & 0x80)))
             {
                 taken = i + 1;
             }
             prev = c;
         }
+        // Take all bytes
         if (!reduce_two_complement)
         {
             taken = 16;
