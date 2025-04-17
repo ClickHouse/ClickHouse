@@ -1,5 +1,7 @@
 #include <Columns/ColumnUniqueCompressed.h>
 
+#include <Columns/ColumnVector.h>
+
 namespace DB
 {
 
@@ -129,13 +131,20 @@ size_t ColumnUniqueFCBlockDF::getPosToInsert(StringRef value) const
 {
     size_t pos = getPosOfClosestHeader(value);
     StringRef data = getDecompressedAt(pos);
-    /// it's guranteed that this takes up to block_size iterations
+    /// it's guranteed that this takes no more than block_size iterations
     while (data < value && pos < data_column->size())
     {
         ++pos;
         data = getDecompressedAt(pos);
     }
     return pos;
+}
+
+void ColumnUniqueFCBlockDF::recalculateForNewData(const ColumnPtr & string_column)
+{
+    ColumnUniqueFCBlockDF temp_column(string_column, block_size);
+    data_column = temp_column.data_column;
+    common_prefix_lengths = std::move(temp_column.common_prefix_lengths);
 }
 
 std::optional<UInt64> ColumnUniqueFCBlockDF::getOrFindValueIndex(StringRef value) const
@@ -163,12 +172,20 @@ size_t ColumnUniqueFCBlockDF::uniqueInsert(const Field & x)
     auto temp_strings_column = getDecompressedColumn();
     temp_strings_column->insertRangeFrom(*single_value_column, 0, single_value_column->size());
 
-    ColumnUniqueFCBlockDF temp_column(std::move(temp_strings_column), block_size);
-
-    data_column = temp_column.data_column;
-    common_prefix_lengths = std::move(temp_column.common_prefix_lengths);
+    recalculateForNewData(std::move(temp_strings_column));
 
     return output;
+}
+
+bool ColumnUniqueFCBlockDF::tryUniqueInsert(const Field & x, size_t & index)
+{
+    String result;
+    if (!x.tryGet<String>(result)) {
+        return false;
+    }
+
+    index = uniqueInsertData(result.data(), result.size());
+    return true;
 }
 
 MutableColumnPtr ColumnUniqueFCBlockDF::uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length)
@@ -176,7 +193,59 @@ MutableColumnPtr ColumnUniqueFCBlockDF::uniqueInsertRangeFrom(const IColumn & sr
     auto temp_column = getDecompressedColumn();
     temp_column->insertRangeFrom(src, start, length);
 
-    return ColumnUniqueFCBlockDF::create(temp_column, block_size);
+    recalculateForNewData(std::move(temp_column));
+
+    auto positions = ColumnVector<UInt64>::create();
+    for (size_t i = start; i < start + length; ++i)
+    {
+        const StringRef data = src.getDataAt(i);
+        const UInt64 pos = getPosToInsert(data);
+        positions->insert(pos);
+    }
+    return positions;
+}
+
+size_t ColumnUniqueFCBlockDF::uniqueInsertData(const char * pos, size_t length)
+{
+    const size_t output = getPosToInsert(StringRef{pos, length});
+    auto single_value_column = ColumnString::create();
+    single_value_column->insertData(pos, length);
+    recalculateForNewData(std::move(single_value_column));
+    return output;
+}
+
+size_t ColumnUniqueFCBlockDF::uniqueInsertFrom(const IColumn & src, size_t n)
+{
+    const StringRef data = src.getDataAt(n);
+    const size_t output = uniqueInsertData(data.data, data.size);
+    return output;
+}
+
+IColumnUnique::IndexesWithOverflow
+ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t start, size_t length, size_t max_dictionary_size)
+{
+    const size_t limit = max_dictionary_size >= data_column->size() ? max_dictionary_size - data_column->size() : 0;
+    
+    auto extracted_values_column = ColumnString::create();
+    extracted_values_column->insertRangeFrom(src, start, length);
+
+    IColumn::Permutation sorted_permutation;
+    extracted_values_column->getPermutation(
+        IColumn::PermutationSortDirection::Ascending,
+        IColumn::PermutationSortStability::Unstable,
+        0, /* limit */
+        1, /* nan_direction_hint */
+        sorted_permutation);
+    auto sorted_column = extracted_values_column->permute(sorted_permutation, 0);
+
+    auto indexes = uniqueInsertRangeFrom(*sorted_column, 0, limit);
+    
+    auto overflow = ColumnVector<UInt64>::create();
+    for (size_t i = limit; i < sorted_permutation.size(); ++i) {
+        overflow->insert(sorted_permutation[i]);
+    }
+
+    return IndexesWithOverflow{std::move(indexes), std::move(overflow)};
 }
 
 }

@@ -152,6 +152,9 @@ private:
     /// Returns a string column containing all the decompressed values
     MutableColumnPtr getDecompressedColumn() const;
 
+    /// It's useful when mutating the column as data_column and prefix lengths recalculations are needed
+    void recalculateForNewData(const ColumnPtr & string_column);
+
     IColumn::WrappedPtr data_column;
     Lengths common_prefix_lengths;
 
