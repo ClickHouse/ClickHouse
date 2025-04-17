@@ -25,7 +25,8 @@ SELECT
     parseDateTime64BestEffortUS(syslog_before) - time_shift AS res64_us,
     parseDateTime64BestEffortUSOrNull(syslog_before) - time_shift AS res64_us_null,
     parseDateTime64BestEffortUSOrZero(syslog_before) - time_shift AS res64_us_zero
-FORMAT Vertical;
+FORMAT Vertical
+SETTINGS formatdatetime_e_format_with_space_padding = 1;
 
 SELECT '──────────────────────────────────────────────';
 SELECT 'The argument is after the reference time point';
@@ -51,4 +52,5 @@ SELECT
     parseDateTime64BestEffortUS(syslog_after) - time_shift AS res64_us,
     parseDateTime64BestEffortUSOrNull(syslog_after) - time_shift AS res64_us_null,
     parseDateTime64BestEffortUSOrZero(syslog_after) - time_shift AS res64_us_zero
-FORMAT Vertical;
+FORMAT Vertical
+SETTINGS formatdatetime_e_format_with_space_padding = 1;
