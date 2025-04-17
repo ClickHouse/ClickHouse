@@ -3637,6 +3637,9 @@ Formatter '%e' in function 'parseDateTime' expects that single-digit days are sp
     DECLARE(Bool, formatdatetime_format_without_leading_zeros, false, R"(
 Formatters '%c', '%l' and '%k' in function 'formatDateTime' print months and hours without leading zeros.
 )", 0) \
+    DECLARE(Bool, formatdatetime_e_format_with_space_padding, false, R"(
+    Formatters '%e' in function 'formatDateTime' print single-digit days with leading spaces.
+    )", 0) \
     DECLARE(Bool, least_greatest_legacy_null_behavior, false, R"(
 If enabled, functions 'least' and 'greatest' return NULL if one of their arguments is NULL.
 )", 0) \
