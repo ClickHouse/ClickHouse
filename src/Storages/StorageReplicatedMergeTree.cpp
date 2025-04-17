@@ -3939,12 +3939,14 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobsAssigne
             }, common_assignee_trigger, getStorageID()));
         return true;
     }
+
     if (job_type == LogEntry::MERGE_PARTS)
     {
         auto task = std::make_shared<MergeFromLogEntryTask>(selected_entry, *this, common_assignee_trigger);
         assignee.scheduleMergeMutateTask(task);
         return true;
     }
+
     if (job_type == LogEntry::MUTATE_PART)
     {
         auto task = std::make_shared<MutateFromLogEntryTask>(selected_entry, *this, common_assignee_trigger);
@@ -4080,6 +4082,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
         bool can_assign_merge = max_source_parts_size_for_merge > 0;
         PartitionIdsHint partitions_to_merge_in;
+
         if (can_assign_merge)
         {
             auto local_merge_pred = std::make_shared<ReplicatedMergeTreeLocalMergePredicate>(queue);
@@ -4142,6 +4145,32 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             else
             {
                 LOG_TRACE(LogFrequencyLimiter(log.load(), 300), "Didn't select merge: {}", select_merge_result.error().explanation.text);
+            }
+
+            auto select_single_part_mutation = merger_mutator.selectSinglePartToMutate(
+                std::make_shared<ReplicatedMergeTreePartsCollector>(*this, merge_predicate),
+                merge_predicate,
+                MergeSelectorApplier{max_source_parts_size_for_merge, merge_with_ttl_allowed},
+                partitions_to_merge_in);
+
+            if (select_single_part_mutation.has_value())
+            {
+                future_merged_part = constructFuturePart(*this, select_single_part_mutation.value(), {MergeTreeDataPartState::Active});
+
+                create_result = createLogEntryToMutateSinglePart(
+                    *future_merged_part->parts.front(),
+                    future_merged_part->uuid,
+                    *select_single_part_mutation,
+                    merge_predicate->getVersion());
+
+                if (create_result == CreateMergeEntryResult::Ok)
+                    return AttemptStatus::EntryCreated;
+                if (create_result == CreateMergeEntryResult::LogUpdated)
+                    return AttemptStatus::NeedRetry;
+            }
+            else
+            {
+                LOG_TRACE(LogFrequencyLimiter(log.load(), 300), "Didn't select single part mutation: {}", select_single_part_mutation.error().explanation.text);
             }
         }
 

@@ -8,6 +8,7 @@
 
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/MutateTask.h>
+#include "Storages/MergeTree/Compaction/SinglePartMutation.h"
 
 #include <expected>
 
@@ -69,6 +70,12 @@ public:
         const String & partition_id,
         bool final,
         bool optimize_skip_merged_partitions);
+
+    std::expected<SinglePartMutationChoise, SelectMergeFailure> selectSinglePartToMutate(
+        const PartsCollectorPtr & parts_collector,
+        const MergePredicatePtr & merge_predicate,
+        const MergeSelectorApplier & selector,
+        const std::optional<PartitionIdsHint> & partitions_hint);
 
     /** Creates a task to merge parts.
       * If `reservation != nullptr`, now and then reduces the size of the reserved space
