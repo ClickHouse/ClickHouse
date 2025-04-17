@@ -36,7 +36,7 @@ MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(
     ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t object_metadata_cache_size)
     : object_storage(object_storage_)
     , storage_path_prefix(std::move(storage_path_prefix_))
-    , object_storage_path(object_storage->getPath())
+    , storage_path_full(fs::path(object_storage->getRootPrefix()) / storage_path_prefix)
 {
     if (object_metadata_cache_size)
         object_metadata_cache.emplace(object_metadata_cache_size);
@@ -49,7 +49,7 @@ MetadataTransactionPtr MetadataStorageFromPlainObjectStorage::createTransaction(
 
 const std::string & MetadataStorageFromPlainObjectStorage::getPath() const
 {
-    return object_storage_path;
+    return storage_path_full;
 }
 
 bool MetadataStorageFromPlainObjectStorage::existsFile(const std::string & path) const

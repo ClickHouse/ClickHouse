@@ -120,9 +120,13 @@ public:
 
     virtual ObjectStorageType getType() const = 0;
 
-    virtual std::string getCommonKeyPrefix() const = 0;
+    /// Root object key prefix used as the base for storage.
+    /// The prefix is relative to the storage backend and does not include the scheme or endpoint prefix.
+    virtual std::string getRootPrefix() const { return ""; }
 
-    virtual std::string getPath() const;
+    /// Common object key prefix relative to the root path,
+    /// used to group a set of related objects under a shared prefix.
+    virtual std::string getCommonKeyPrefix() const = 0;
 
     virtual std::string getDescription() const = 0;
 

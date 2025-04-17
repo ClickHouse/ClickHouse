@@ -109,7 +109,6 @@ AzureObjectStorage::AzureObjectStorage(
     , client(std::move(client_))
     , settings(std::move(settings_))
     , object_namespace(object_namespace_)
-    , common_key_prefix(fs::path(object_namespace) / "")
     , description(description_)
     , log(getLogger("AzureObjectStorage"))
 {
