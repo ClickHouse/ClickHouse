@@ -185,11 +185,11 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
         {
             read_from_mergetree_step->replaceVectorColumnWithDistance(search_column);
 
-            expression.removeUnusedResult(sort_column); /// Remove the OUPUT cosineDistance(...) FUNCTION Node
+            expression.removeUnusedResult(sort_column); /// Remove the OUTPUT cosineDistance(...) FUNCTION Node
             expression.removeUnusedActions(); /// Remove the vector column INPUT node because it is no longer needed
 
-            auto distance_node = &expression.addInput("_distance",std::make_shared<DataTypeFloat32>());
-            auto new_output = &expression.addAlias(*distance_node, sort_column);
+            const auto * distance_node = &expression.addInput("_distance",std::make_shared<DataTypeFloat32>());
+            const auto * new_output = &expression.addAlias(*distance_node, sort_column);
             expression.getOutputs().push_back(new_output);
             updated_layers = 2;
         }
