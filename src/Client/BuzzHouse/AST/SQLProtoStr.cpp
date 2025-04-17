@@ -2984,6 +2984,17 @@ CONV_FN(CreateTableAs, create_table)
     ExprSchemaTableToString(ret, create_table.est());
 }
 
+CONV_FN(CreateTableSelect, create_table)
+{
+    if (create_table.empty())
+    {
+        ret += " EMPTY";
+    }
+    ret += " AS (";
+    SelectToString(ret, create_table.sel());
+    ret += ")";
+}
+
 static void CreateOrReplaceToString(String & ret, const CreateReplaceOption & cro)
 {
     switch (cro)
@@ -3037,9 +3048,7 @@ CONV_FN(CreateTable, create_table)
     }
     if (create_table.has_table_def() && create_table.has_as_select_stmt())
     {
-        ret += " AS (";
-        SelectToString(ret, create_table.as_select_stmt());
-        ret += ")";
+        CreateTableSelectToString(ret, create_table.as_select_stmt());
     }
     if (create_table.has_comment())
     {

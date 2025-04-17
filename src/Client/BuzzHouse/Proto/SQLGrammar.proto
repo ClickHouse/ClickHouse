@@ -3146,6 +3146,11 @@ message CreateTableAs {
     required ExprSchemaTable est = 2;
 }
 
+message CreateTableSelect {
+    optional bool empty = 1;
+    required Select sel = 2;
+}
+
 enum CreateReplaceOption {
     Create = 1;
     Replace = 2;
@@ -3164,7 +3169,7 @@ message CreateTable {
     }
     required TableEngine engine = 8;
     optional TTLExpr ttl_expr = 9;
-    optional Select as_select_stmt = 10;
+    optional CreateTableSelect as_select_stmt = 10;
     optional string comment = 11;
 }
 

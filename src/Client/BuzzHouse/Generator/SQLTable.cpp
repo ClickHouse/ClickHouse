@@ -1793,6 +1793,9 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
         }
         if (rg.nextSmallNumber() < 2)
         {
+            CreateTableSelect * cts = ct->mutable_as_select_stmt();
+
+            cts->set_empty(rg.nextSmallNumber() < 3);
             this->levels[this->current_level] = QueryLevel(this->current_level);
             generateSelect(
                 rg,
@@ -1800,7 +1803,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
                 false,
                 static_cast<uint32_t>(next.numberOfInsertableColumns()),
                 std::numeric_limits<uint32_t>::max(),
-                ct->mutable_as_select_stmt());
+                cts->mutable_sel());
             this->levels.clear();
         }
     }
