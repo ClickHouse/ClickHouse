@@ -1,6 +1,3 @@
--- Tags: long, no-parallel
--- no-parallel: working with system.query_log
-
 -- Test for https://github.com/ClickHouse/ClickHouse/pull/76978
 
 drop table if exists 03274_prewhere_is_deleted;
