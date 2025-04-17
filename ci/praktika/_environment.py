@@ -39,6 +39,7 @@ class _Environment(MetaClasses.Serializable):
     PR_LABELS: List[str] = dataclasses.field(default_factory=list)
     REPORT_INFO: List[str] = dataclasses.field(default_factory=list)
     JOB_CONFIG: Optional[Job.Config] = None
+    TRACEBACKS: List[str] = dataclasses.field(default_factory=list)
     name = "environment"
 
     @classmethod
@@ -55,7 +56,7 @@ class _Environment(MetaClasses.Serializable):
         RUN_URL = f"https://github.com/{REPOSITORY}/actions/runs/{RUN_ID}"
         BASE_BRANCH = os.getenv("GITHUB_BASE_REF", "")
         USER_LOGIN = ""
-        FORK_NAME = ""
+        FORK_NAME = REPOSITORY
         PR_BODY = ""
         PR_TITLE = ""
         PR_LABELS = []

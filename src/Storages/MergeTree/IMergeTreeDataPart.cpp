@@ -1625,7 +1625,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
     {
         /// We can get list of columns only from columns.txt in compact parts.
         if (require || part_type == Type::Compact)
-            throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns.txt in part {}, expected path {} on drive {}",
+            throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns.txt in part {}, expected path {} on disk {}",
                 name, path, getDataPartStorage().getDiskName());
 
         auto metadata_snapshot = getMetadataSnapshot();
@@ -1694,10 +1694,10 @@ void IMergeTreeDataPart::storeVersionMetadata(bool force) const
 {
     if (!wasInvolvedInTransaction() && !force)
         return;
+    if (!storage.supportsTransactions())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage does not support transaction. It is a bug");
 
     LOG_TEST(storage.log, "Writing version for {} (creation: {}, removal {}, creation csn {})", name, version.creation_tid, version.removal_tid, version.creation_csn.load());
-    assert(storage.supportsTransactions());
-
     writeVersionMetadata(version, (*storage.getSettings())[MergeTreeSetting::fsync_part_directory]);
 }
 
