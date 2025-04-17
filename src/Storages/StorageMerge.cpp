@@ -83,6 +83,9 @@ extern const int SAMPLING_NOT_SUPPORTED;
 extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 extern const int STORAGE_REQUIRES_PARAMETER;
+extern const int UNKNOWN_TABLE;
+extern const int ACCESS_DENIED;
+extern const int TABLE_IS_READ_ONLY;
 }
 
 namespace
@@ -1751,7 +1754,7 @@ void StorageMerge::setTableToWrite(
     if (qualified_name.database.empty())
     {
         if (database_is_regexp_)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'table_to_write' must contain database if 'db_name' is regular expression.");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'table_to_write' must contain database if 'db_name' is regular expression");
 
         qualified_name.database = source_database_name_or_regexp_;
     }
@@ -1765,22 +1768,36 @@ SinkToStoragePtr StorageMerge::write(
     ContextPtr context_,
     bool async_insert)
 {
+    const auto & access = context_->getAccess();
+
     if (table_to_write_auto)
     {
         table_to_write = std::nullopt;
+        bool any_table_found = false;
         forEachTableName([&](const auto & table_name)
         {
-            if (!table_to_write.has_value())
-                table_to_write = table_name;
-            else if (table_to_write->getFullName() < table_name.getFullName())
-                table_to_write = table_name;
+            any_table_found = true;
+            if (!table_to_write.has_value() || table_to_write->getFullName() < table_name.getFullName())
+            {
+                if (access->isGranted(AccessType::INSERT, table_name.database, table_name.table))
+                    table_to_write = table_name;
+            }
         });
+        if (!table_to_write.has_value())
+        {
+            if (any_table_found)
+                throw Exception(ErrorCodes::ACCESS_DENIED, "Not allowed to write in any suitable table for storage {}", getName());
+            else
+                throw Exception(ErrorCodes::UNKNOWN_TABLE, "Can't find any table to write for storage {}", getName());
+        }
     }
+    else
+    {
+        if (!table_to_write.has_value())
+            throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Method write is not allowed in storage {} without described table to write", getName());
 
-    if (!table_to_write.has_value())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not allowed in storage {} without described table to write.", getName());
-
-    context_->getAccess()->checkAccess(AccessType::INSERT, table_to_write->database, table_to_write->table);
+        access->checkAccess(AccessType::INSERT, table_to_write->database, table_to_write->table);
+    }
 
     auto database = DatabaseCatalog::instance().getDatabase(table_to_write->database);
     auto table = database->getTable(table_to_write->table, context_);
@@ -1802,7 +1819,7 @@ void registerStorageMerge(StorageFactory & factory)
         if (size < 2 || size > 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                             "Storage Merge requires 2 or 3 parameters - name "
-                            "of source database, regexp for table names, and optional table name for writing.");
+                            "of source database, regexp for table names, and optional table name for writing");
 
         auto [is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(engine_args[0], args.getLocalContext());
 
@@ -1824,7 +1841,7 @@ void registerStorageMerge(StorageFactory & factory)
             if (is_identifier && table_to_write == "auto")
             {
                 if (is_regexp)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "RegExp for database with auto table_to_write is forbidden.");
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "RegExp for database with auto table_to_write is forbidden");
                 table_to_write_auto = true;
             }
         }
