@@ -119,6 +119,10 @@ public:
     const std::vector<RelationStats> & getRelationStats() const { return relation_stats; }
 
     void setRelationLabel(String label, size_t index);
+
+    void setDebugPredefinedJoinOrder(String order) { debug_predefined_join_order = std::move(order); }
+    String getDebugPredefinedJoinOrder() const { return debug_predefined_join_order; }
+
 protected:
     void updateOutputHeader() override;
 
@@ -143,6 +147,8 @@ protected:
 
     VolumePtr tmp_volume;
     TemporaryDataOnDiskScopePtr tmp_data;
+
+    String debug_predefined_join_order;
 
     std::vector<Names> using_columns_mapping;
 

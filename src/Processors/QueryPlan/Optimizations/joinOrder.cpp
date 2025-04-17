@@ -9,6 +9,9 @@
 #include <Interpreters/JoinOperator.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/joinCost.h>
+#include <absl/strings/str_split.h>
+#include <stack>
+#include <Common/safe_cast.h>
 
 namespace DB
 {
@@ -17,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 /// Represents a join edge in the query graph
@@ -69,6 +73,7 @@ private:
 
     std::shared_ptr<DPJoinEntry> solveDP();
     std::shared_ptr<DPJoinEntry> solveGreedy();
+    std::shared_ptr<DPJoinEntry> solveDummy(const String & dummy_order);
 
     std::optional<JoinKind> isValidJoinOrder(const BaseRelsSet & lhs, const BaseRelsSet & rhs) const;
 
@@ -213,6 +218,12 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
     if (relation_stats.size() <= 1)
         return nullptr;
 
+    if (auto predefined_order = original_join_step.getDebugPredefinedJoinOrder(); !predefined_order.empty())
+    {
+        LOG_WARNING(log, "Using predefined join order: {}, use it only for debugging", predefined_order);
+        return solveDummy(predefined_order);
+    }
+
     std::shared_ptr<DPJoinEntry> best_plan;
     if (relation_stats.size() <= APPLY_DP_THRESHOLD)
     {
@@ -236,8 +247,77 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDP()
 {
-    // This is a placeholder that will be properly implemented later
     return nullptr;
+}
+
+std::vector<std::string_view> parseInfixOrderToPostfix(std::string_view infix_order);
+
+std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDummy(const String & dummy_join_order)
+{
+    std::stack<std::shared_ptr<DPJoinEntry>> stack;
+
+    std::unordered_map<std::string_view, int> relation_stats_map;
+    for (size_t i = 0; i < relation_stats.size(); ++i)
+    {
+        const auto & rel = relation_stats[i];
+        relation_stats_map[rel.table_name] = i;
+    }
+
+    for (const auto & order_entry : parseInfixOrderToPostfix(dummy_join_order))
+    {
+        if (order_entry == "*")
+        {
+            if (stack.size() < 2)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not enough entries in stack to perform join");
+            auto right = stack.top();
+            stack.pop();
+            auto left = stack.top();
+            stack.pop();
+
+            std::shared_ptr<DPJoinEntry> new_entry = nullptr;
+            for (auto edge : join_edges)
+            {
+                bool connects_left_to_right = isSubsetOf(edge.left_rels, left->relations) && isSubsetOf(edge.right_rels, right->relations);
+                bool connects_right_to_left = isSubsetOf(edge.left_rels, right->relations) && isSubsetOf(edge.right_rels, left->relations);
+
+                if (!connects_left_to_right && !connects_right_to_left)
+                    continue;
+
+                auto join_kind_restrction = isValidJoinOrder(left->relations, right->relations);
+
+                if (!join_kind_restrction.has_value()
+                 || (connects_left_to_right && join_kind_restrction != edge.join_operator->kind)
+                 || (connects_right_to_left && join_kind_restrction != flipJoinKind(edge.join_operator->kind)))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Join order is not valid");
+
+                auto current_cost = computeJoinCost(left, right, edge.selectivity);
+                auto cardinality = estimateJoinCardinality(left, right, edge.selectivity, edge.join_operator->kind);
+                new_entry = std::make_shared<DPJoinEntry>(left, right, current_cost, cardinality, edge.join_operator);
+            }
+            if (!new_entry)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find a valid join edge");
+            stack.push(new_entry);
+        }
+        else
+        {
+            auto it = relation_stats_map.find(order_entry);
+            if (it == relation_stats_map.end())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown relation name: {} ([{}])", order_entry, fmt::join(relation_stats_map | std::views::keys, ", "));
+            if (it->second < 0 || safe_cast<size_t>(it->second) >= relation_stats.size())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Relation {} already exists", order_entry);
+
+            size_t rel_id = it->second;
+            it->second = -1; /// Mark as used
+            const auto & rel = relation_stats[rel_id];
+            stack.push(std::make_shared<DPJoinEntry>(rel_id, rel.estimated_rows));
+        }
+    }
+
+    if (!std::ranges::all_of(relation_stats_map | std::views::values, [](auto id) { return id < 0; }))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not all relations were used in the join order");
+    if (stack.size() != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid join order, expected 1 entry in stack but got {}", stack.size());
+    return stack.top();
 }
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()

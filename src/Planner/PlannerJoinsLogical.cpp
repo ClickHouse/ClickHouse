@@ -544,6 +544,12 @@ JoinTreeQueryPlan buildJoinStepLogical(
             join_step_holder->setRelationLabel(std::move(label), 0);
         join_step = join_step_holder.get();
         left_plan.query_plan.addStep(std::move(join_step_holder));
+
+        if (query_context->getQueryParameters().contains("_internal_join_predefined_order"))
+        {
+            auto predefined_join_order = query_context->getQueryParameters().at("_internal_join_predefined_order");
+            join_step->setDebugPredefinedJoinOrder(predefined_join_order);
+        }
     }
 
     join_step->addRequiredOutput(outer_scope_columns);

@@ -32,6 +32,9 @@ public:
 
     UInt64 getNumberOfRows() const;
 
+    String getColumnName() const;
+    StorageID getStorageID() const;
+
 private:
     const StorageSystemNumbers & getStorage() const;
 

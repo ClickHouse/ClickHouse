@@ -674,5 +674,16 @@ UInt64 ReadFromSystemNumbersStep::getNumberOfRows() const
     return estimated_rows;
 }
 
+String ReadFromSystemNumbersStep::getColumnName() const
+{
+    const auto & numbers_storage = getStorage();
+    return numbers_storage.column_name;
+}
+
+StorageID  ReadFromSystemNumbersStep::getStorageID() const
+{
+    return storage->getStorageID();
+}
+
 
 }

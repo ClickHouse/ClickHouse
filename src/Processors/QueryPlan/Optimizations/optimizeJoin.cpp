@@ -24,11 +24,6 @@
 #include <Core/Joins.h>
 #include <ranges>
 #include <memory>
-#include <Common/JSONParsers/RapidJSONParser.h>
-#include <Poco/JSON/JSON.h>
-#include <Poco/JSON/Parser.h>
-#include <Poco/JSON/Object.h>
-
 
 
 namespace DB
@@ -46,57 +41,11 @@ namespace Setting
     extern const SettingsUInt64 min_joined_block_size_bytes;
 }
 
+RelationStats getDummyStats(ContextPtr context, const String & table_name);
+
+
 namespace QueryPlanOptimizations
 {
-
-static RelationStats getDummyStats(ContextPtr context, const String & table_name)
-{
-    constexpr auto param_name = "_internal_join_table_stat_hints";
-
-    const auto & query_params = context->getQueryParameters();
-    auto it = query_params.find(param_name);
-    if (it == query_params.end())
-        return {};
-
-    try
-    {
-        Poco::JSON::Parser parser;
-        Poco::Dynamic::Var result = parser.parse(it->second);
-        auto object = result.extract<Poco::JSON::Object::Ptr>();
-        if (!object)
-            return {};
-
-        if (!object->has(table_name))
-            return {};
-
-        auto stat_object = object->getObject(table_name);
-        if (!stat_object)
-            return {};
-
-        RelationStats stats;
-        stats.table_name = table_name;
-
-        if (stat_object->has("cardinality"))
-            stats.estimated_rows = stat_object->getValue<UInt64>("cardinality");
-
-        if (stat_object->isObject("distinct_keys"))
-        {
-            auto distinct_keys = stat_object->getObject("distinct_keys");
-            for (const auto & [key, value] : *distinct_keys)
-                stats.column_stats[key].num_distinct_values = value.convert<UInt64>();
-        }
-        LOG_WARNING(getLogger("optimizeJoin"),
-            "Got dummy join stats for table '{}' from '{}' query parameter, it's supposed to be used only for testing, do not use it in production",
-            table_name, param_name);
-        return stats;
-    }
-    catch (const Poco::Exception & e)
-    {
-        LOG_WARNING(getLogger("optimizeJoin"), "Failed to parse '{}': {}", param_name, e.displayText());
-        return {};
-    }
-}
-
 
 NameSet backTrackColumnsInDag(const String & input_name, const ActionsDAG & actions)
 {
@@ -200,8 +149,14 @@ static RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filt
 
     if (const auto * reading = typeid_cast<const ReadFromSystemNumbersStep *>(step))
     {
-        UInt64 estimated_rows = reading->getNumberOfRows();
-        return RelationStats{.estimated_rows = estimated_rows, .table_name = ""};
+        RelationStats relation_stats;
+        relation_stats.estimated_rows = reading->getNumberOfRows();
+
+        auto column_name = reading->getColumnName();
+        relation_stats.column_stats[column_name].num_distinct_values = relation_stats.estimated_rows;
+        relation_stats.table_name = reading->getStorageID().getTableName();
+
+        return relation_stats;
     }
 
     if (node.children.size() != 1)
