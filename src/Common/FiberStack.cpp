@@ -46,7 +46,7 @@ boost::context::stack_context FiberStack::allocate() const
 {
     size_t num_pages = 1 + (stack_size - 1) / page_size;
 
-    if (guardPagesEnabled())
+    if constexpr (guardPagesEnabled())
         /// Add one page at bottom that will be used as guard-page
         num_pages += 1;
 
