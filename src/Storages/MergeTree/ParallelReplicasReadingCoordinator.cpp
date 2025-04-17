@@ -169,7 +169,7 @@ public:
     }
 
     Stats stats;
-    size_t replicas_count{0};
+    const size_t replicas_count{0};
     size_t unavailable_replicas_count{0};
     size_t sent_initial_requests{0};
     ProgressCallback progress_callback;
@@ -177,7 +177,9 @@ public:
     explicit ImplInterface(size_t replicas_count_)
         : stats{replicas_count_}
         , replicas_count(replicas_count_)
-    {}
+    {
+        LOG_DEBUG(getLogger("ParallelReplicasReadingCoordinator"), "Creating coordinator: replicas_count={}", replicas_count);
+    }
 
     virtual ~ImplInterface() = default;
 
@@ -407,6 +409,7 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
 void DefaultCoordinator::markReplicaAsUnavailable(size_t replica_number)
 {
     LOG_DEBUG(log, "Replica number {} is unavailable", replica_number);
+    chassert(replica_number < replicas_count);
 
     ++unavailable_replicas_count;
     stats[replica_number].is_unavailable = true;
