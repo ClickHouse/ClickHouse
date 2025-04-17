@@ -1326,9 +1326,11 @@ void MergeTreeRangeReader::executeActionsForReadHints(ReadResult & result) const
 {
     auto before_rows = result.num_rows;
 
+    /// Populate a filter that is True only for the exact "neighbour" part offsets we got from vector index
     auto filter_data = ColumnUInt8::create(result.num_rows, UInt8(0));
     IColumn::Filter & filter = filter_data->getData();
 
+    /// Populate the "_distance" virtual column from the distances we got from vector index
     auto distance_pos = read_sample_block.getPositionByName("_distance");
     auto distance_column = IColumn::mutate(std::move(result.columns[distance_pos]));
     auto & distances = typeid_cast<ColumnFloat32 *>(distance_column.get())->getData();
@@ -1339,6 +1341,7 @@ void MergeTreeRangeReader::executeActionsForReadHints(ReadResult & result) const
     const auto exact_distances = offsets_and_distances.second;
     chassert (exact_part_offsets.size() == exact_distances.size());
 
+    /// stash the distance for an offset before sorting the offsets
     std::unordered_map<UInt64, float> offset_to_distance;
     for (size_t i = 0; i < exact_distances.size(); i++)
         offset_to_distance[exact_part_offsets[i]] = exact_distances[i];
@@ -1366,7 +1369,7 @@ void MergeTreeRangeReader::executeActionsForReadHints(ReadResult & result) const
     result.columns[distance_pos] = std::move(distance_column);
     result.applyFilter(FilterWithCachedCount(filter_data->getPtr()));
     auto after_rows = result.num_rows;
-    LOG_TRACE(log, "Used similarity index to shortlist exact rows, before {} , after {}", before_rows, after_rows);
+    LOG_DEBUG(log, "Used similarity index to shortlist exact rows, before {} , after {}", before_rows, after_rows);
 }
 
 void MergeTreeRangeReader::executeActionsBeforePrewhere(ReadResult & result, Columns & read_columns, const Block & previous_header, size_t num_read_rows) const

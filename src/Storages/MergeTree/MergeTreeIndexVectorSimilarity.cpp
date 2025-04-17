@@ -473,25 +473,13 @@ std::pair<std::vector<UInt64>, std::vector<float>> MergeTreeIndexConditionVector
     if (parameters->return_distances)
     {
         distances.resize(search_result.size());
-	search_result.dump_to(neighbors.data(), distances.data());
+        search_result.dump_to(neighbors.data(), distances.data());
     }
     else
     {
         search_result.dump_to(neighbors.data());
     }
 
-#if 0
-    std::sort(neighbors.begin(), neighbors.end());
-
-    /// Duplicates should in theory not be possible but who knows ...
-    const bool has_duplicates = std::adjacent_find(neighbors.begin(), neighbors.end()) != neighbors.end();
-    if (has_duplicates)
-#ifndef NDEBUG
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Usearch returned duplicate row numbers");
-#else
-        neighbors.erase(std::unique(neighbors.begin(), neighbors.end()), neighbors.end());
-#endif
-#endif
     ProfileEvents::increment(ProfileEvents::USearchSearchCount);
     ProfileEvents::increment(ProfileEvents::USearchSearchVisitedMembers, search_result.visited_members);
     ProfileEvents::increment(ProfileEvents::USearchSearchComputedDistances, search_result.computed_distances);

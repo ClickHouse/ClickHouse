@@ -72,6 +72,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"secondary_indices_enable_bulk_filtering", false, true, "A new algorithm for filtering by data skipping indices"},
             {"implicit_table_at_top_level", "", "", "A new setting, used in clickhouse-local"},
             {"use_skip_indexes_if_final_exact_mode", 0, 0, "This setting was introduced to help FINAL query return correct results with skip indexes"},
+            {"rescore_in_ann_queries", 0, 1, "This setting was introduced to optimize vector ANN search queries."},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {

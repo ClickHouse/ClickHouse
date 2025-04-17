@@ -109,6 +109,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_TEXT;
     extern const int TOO_MANY_PARTITIONS;
     extern const int DUPLICATED_PART_UUIDS;
+    extern const int INCORRECT_DATA;
 }
 
 namespace FailPoints
@@ -1559,7 +1560,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
         IMergeTreeIndexCondition::FilteredGranules filtered_granules = condition->getPossibleGranules(granules);
         if (filtered_granules.empty())
-            return std::make_pair(res, RangesinDataPartReadHints{});
+            return std::make_pair(res, RangesInDataPartReadHints{});
 
         auto it = filtered_granules.begin();
         current_granule_num = 0;
@@ -1619,23 +1620,23 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     /// corresponding ranges have to be returned in ascending order
                     auto rows = read_hints.ann_search_results.value().first;
                     std::sort(rows.begin(), rows.end());
-		    /// Duplicates should in theory not be possible but who knows ...
+                    /// Duplicates should in theory not be possible but who knows ...
                     const bool has_duplicates = std::adjacent_find(rows.begin(), rows.end()) != rows.end();
-		    if (has_duplicates)
-		    {
+                    if (has_duplicates)
+                    {
 #ifndef NDEBUG
                         throw Exception(ErrorCodes::INCORRECT_DATA, "Usearch returned duplicate row numbers");
 #else
                         rows.erase(std::unique(rows.begin(), rows.end()), rows.end());
 #endif
-		    }
+                   }
 
                     if (!settings[Setting::rescore_in_ann_queries] || has_duplicates ||
-		        (read_hints.ann_search_results.value().second.empty()) ||
-		        index_granularity < part->index_granularity->getMarksCountWithoutFinal()) /// TODO
-		    {
+                        (read_hints.ann_search_results.value().second.empty()) ||
+                        index_granularity < part->index_granularity->getMarksCountWithoutFinal())
+                    {
                         read_hints = {};
-		    }
+                    }
                     for (auto row : rows)
                     {
                         size_t num_marks = part->index_granularity->countMarksForRows(index_mark * index_granularity, row);

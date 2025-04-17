@@ -2094,6 +2094,7 @@ void ReadFromMergeTree::updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_re
 
 void ReadFromMergeTree::replaceVectorColumnWithDistance(const std::string & column)
 {
+    chassert(!isVectorColumnReplaced());
     std::erase(all_column_names, column);
     all_column_names.emplace_back("_distance");
     output_header = MergeTreeSelectProcessor::transformHeader(
