@@ -289,7 +289,7 @@ private:
     void flatTableColumnPath(
         uint32_t flags, const std::unordered_map<uint32_t, SQLColumn> & cols, std::function<bool(const SQLColumn & c)> col_filter);
     void flatColumnPath(uint32_t flags, const std::unordered_map<uint32_t, std::unique_ptr<SQLType>> & centries);
-    void addRandomRelation(RandomGenerator & rg, std::optional<String> rel_name, uint32_t ncols, Expr * expr);
+    void addRandomRelation(RandomGenerator & rg, std::optional<String> rel_name, uint32_t ncols, bool escape, Expr * expr);
     void generateStorage(RandomGenerator & rg, Storage * store) const;
     void generateNextCodecs(RandomGenerator & rg, CodecList * cl);
     void generateTTLExpression(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * ttl_expr);

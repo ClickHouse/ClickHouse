@@ -317,7 +317,8 @@ auto StatementGenerator::getQueryTableLambda()
     };
 }
 
-void StatementGenerator::addRandomRelation(RandomGenerator & rg, const std::optional<String> rel_name, const uint32_t ncols, Expr * expr)
+void StatementGenerator::addRandomRelation(
+    RandomGenerator & rg, const std::optional<String> rel_name, const uint32_t ncols, const bool escape, Expr * expr)
 {
     if (rg.nextBool())
     {
@@ -355,7 +356,7 @@ void StatementGenerator::addRandomRelation(RandomGenerator & rg, const std::opti
             const uint32_t ncame = col_counter++;
             auto tp = std::unique_ptr<SQLType>(randomNextType(rg, this->next_type_mask, col_counter, nullptr));
 
-            buf += fmt::format("{}c{} {}", first ? "" : ", ", ncame, tp->typeName(false));
+            buf += fmt::format("{}c{} {}", first ? "" : ", ", ncame, tp->typeName(escape));
             first = false;
             centries[ncame] = std::move(tp);
         }
@@ -812,7 +813,7 @@ bool StatementGenerator::joinedTableOrFunction(
         std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
         addRandomRelation(
-            rg, rel_name, (rg.nextSmallNumber() < 8) ? rg.nextSmallNumber() : rg.nextMediumNumber(), grf->mutable_structure());
+            rg, rel_name, (rg.nextSmallNumber() < 8) ? rg.nextSmallNumber() : rg.nextMediumNumber(), false, grf->mutable_structure());
         grf->set_random_seed(rg.nextRandomUInt64());
         grf->set_max_string_length(string_length_dist(rg.generator));
         grf->set_max_array_length(nested_rows_dist(rg.generator));
