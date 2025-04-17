@@ -77,6 +77,8 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric TemporaryFilesForMerge;
+    extern const Metric NonAbortedMergeFailures;
+    extern const Metric TotalMergeFailures;
 }
 
 namespace DB
@@ -1473,6 +1475,7 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForAllColumns() const
 
 
 bool MergeTask::execute()
+try
 {
     chassert(stages_iterator != stages.end());
     const auto & current_stage = *stages_iterator;
@@ -1502,6 +1505,16 @@ bool MergeTask::execute()
 
     (*stages_iterator)->setRuntimeContext(std::move(next_stage_context), global_ctx);
     return true;
+}
+catch (...)
+{
+    const auto error_code = getCurrentExceptionCode();
+    if (error_code != ErrorCodes::ABORTED)
+    {
+        CurrentMetrics::add(CurrentMetrics::NonAbortedMergeFailures);
+    }
+    CurrentMetrics::add(CurrentMetrics::TotalMergeFailures);
+    throw;
 }
 
 void MergeTask::cancel() noexcept
