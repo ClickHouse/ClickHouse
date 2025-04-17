@@ -1,26 +1,27 @@
-#include <base/map.h>
-#include <base/range.h>
-#include <Common/StringUtils.h>
-#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnBlob.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnTuple.h>
 #include <Core/Field.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
-#include <DataTypes/Serializations/SerializationTuple.h>
-#include <DataTypes/Serializations/SerializationNamed.h>
-#include <DataTypes/Serializations/SerializationInfoTuple.h>
-#include <DataTypes/Serializations/SerializationWrapper.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
-#include <Parsers/IAST.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
+#include <DataTypes/Serializations/SerializationInfoTuple.h>
+#include <DataTypes/Serializations/SerializationNamed.h>
+#include <DataTypes/Serializations/SerializationTuple.h>
+#include <DataTypes/Serializations/SerializationWrapper.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/ASTNameTypePair.h>
+#include <Parsers/IAST.h>
+#include <base/map.h>
+#include <base/range.h>
+#include <boost/algorithm/string.hpp>
+#include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
-#include <boost/algorithm/string.hpp>
 
 
 namespace DB
@@ -389,6 +390,9 @@ SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column)
 {
     if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
         return getSerializationInfo(column_const->getDataColumn());
+
+    if (const auto * column_blob = checkAndGetColumn<ColumnBlob>(&column))
+        return getSerializationInfo(*column_blob->getWrappedColumn());
 
     MutableSerializationInfos infos;
     infos.reserve(elems.size());

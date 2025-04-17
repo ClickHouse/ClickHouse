@@ -66,6 +66,12 @@ public:
         return concrete_column->isSparse();
     }
 
+    ColumnPtr getWrappedColumn() const
+    {
+        chassert(concrete_column);
+        return concrete_column;
+    }
+
     MutableColumnPtr cloneEmpty() const override
     {
         chassert(concrete_column);

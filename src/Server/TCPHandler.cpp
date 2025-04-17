@@ -7,6 +7,7 @@
 #include <vector>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
+#include <Columns/ColumnBlob.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
@@ -41,24 +42,19 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include "Common/OpenTelemetryTraceContext.h"
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/Stopwatch.h>
 #include <Common/VersionNumber.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
-#include "IO/WriteBufferFromString.h"
-#include "QueryPipeline/printPipeline.h"
-
-#include <Columns/ColumnBlob.h>
-#include <Columns/ColumnSparse.h>
 
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
@@ -276,8 +272,7 @@ Block prepare(const Block & block, CompressionCodecPtr codec, UInt64 client_revi
     {
         ColumnWithTypeAndName column = elem;
 
-        // TODO(nickitat): support Tuple
-        if (!elem.column->isConst() && !isTuple(elem.type->getTypeId()))
+        if (!elem.column->isConst())
         {
             auto task = [column, codec, client_revision, format_settings](ColumnBlob::Blob & blob)
             { ColumnBlob::toBlob(blob, column, codec, client_revision, format_settings); };
