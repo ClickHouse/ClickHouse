@@ -513,7 +513,6 @@
 
 00955_test_final_mark_use
 01624_soft_constraints
-02968_file_log_multiple_read
 03031_minmax_index_for_pointinpolygon
 
     ORDER BY ALL is missing for multiple queries
@@ -542,3 +541,4 @@
     Tests listed after this tag are always disabled
 ###FLAKY###
 
+02968_file_log_multiple_read
