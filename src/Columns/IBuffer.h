@@ -16,8 +16,6 @@
 namespace DB
 {
 
-static constexpr size_t empty_owning_buffer_size = 1024;
-extern const char empty_owning_buffer[empty_owning_buffer_size];
 // constexpr size_t integerRoundUp(size_t value, size_t dividend);
 
 namespace BufferDetails
@@ -43,10 +41,6 @@ protected:
     static constexpr size_t pad_right = integerRoundUp(pad_right_, element_size);
     /// pad_left is also rounded up to 16 bytes to maintain alignment of allocated memory.
     static constexpr size_t pad_left = integerRoundUp(integerRoundUp(pad_left_, element_size), 16);
-    /// Empty array will point to this static memory as padding and begin/end.
-    static constexpr char * null = const_cast<char *>(empty_owning_buffer) + pad_left;
-
-    // static_assert(pad_left <= empty_pod_array_size && "Left Padding exceeds empty_pod_array_size. Is the element size too large?");
 
     // If we are using allocator with inline memory, the minimal size of
     // array must be in sync with the size of this memory.
@@ -59,10 +53,10 @@ protected:
     const T * t_start() const          { return reinterpret_cast<const T *>(this->c_start); } /// NOLINT
     const T * t_end() const            { return reinterpret_cast<const T *>(this->c_end); } /// NOLINT
 
-    virtual void alloc_for_num_elements(size_t num_elements);
-    virtual void realloc(size_t bytes);
-    virtual void dealloc();
-    virtual void alloc(size_t bytes);
+    virtual void alloc_for_num_elements(size_t) {}
+    virtual void realloc(size_t) {}
+    virtual void dealloc() {}
+    virtual void alloc(size_t) {}
 
     bool isInitialized() const
     {

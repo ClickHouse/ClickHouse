@@ -89,7 +89,7 @@ public:
 
     void dealloc() override
     {
-        if (this->c_start == nullptr)
+        if (this->c_start == Base::null)
             return;
 
         // unprotect();
@@ -99,7 +99,7 @@ public:
 
     void realloc(size_t bytes) override
     {
-        if (this->c_start == nullptr)
+        if (this->c_start == Base::null)
         {
             alloc(bytes);
             return;
