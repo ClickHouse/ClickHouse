@@ -261,7 +261,7 @@ struct TurnOffBoolSettingTemporary
     }
 };
 
-Block prepare(const Block & block, CompressionCodecPtr codec, UInt64 client_revision, const FormatSettings & format_settings)
+Block convertColumnsToBLOBs(const Block & block, CompressionCodecPtr codec, UInt64 client_revision, const FormatSettings & format_settings)
 {
     if (!block || !codec || client_revision < DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING)
         return block;
@@ -271,17 +271,8 @@ Block prepare(const Block & block, CompressionCodecPtr codec, UInt64 client_revi
     for (const auto & elem : block)
     {
         ColumnWithTypeAndName column = elem;
-
         if (!elem.column->isConst())
-        {
-            auto task = [column, codec, client_revision, format_settings](ColumnBlob::Blob & blob)
-            { ColumnBlob::toBlob(blob, column, codec, client_revision, format_settings); };
-            auto col = ColumnBlob::create(std::move(task), column.column);
-            col->convertTo();
-
-            column.column = std::move(col);
-        }
-
+            column.column = ColumnBlob::create(column, codec, client_revision, format_settings);
         res.insert(std::move(column));
     }
     return res;
@@ -711,7 +702,7 @@ void TCPHandler::runImpl()
             query_state->query_context->setBlockMarshallingCallback(
                 [this, &query_state](const Block & block)
                 {
-                    return prepare(
+                    return convertColumnsToBLOBs(
                         block,
                         getCompressionCodec(query_state->query_context->getSettingsRef(), query_state->compression),
                         client_tcp_protocol_version,
@@ -1294,7 +1285,6 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 
         try
         {
-            // TODO(nickitat): increase ConcurrentBoundedQueue size
             Block block;
             while (executor.pull(block, interactive_delay / 1000))
             {
@@ -1322,17 +1312,13 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
                     sendLogs(state);
 
                     // Block might be empty in case of timeout, i.e. there is no data to process
-                    if (!state.io.null_format && block)
-                    {
-                        OpenTelemetry::SpanHolder span{"TCPHandler::sendData"};
+                    if (block && !state.io.null_format)
                         sendData(state, block);
-                    }
                 }
             }
         }
         catch (...)
         {
-            // TODO(nickitat): make sure queue threads do not continue to work
             executor.cancel();
             throw;
         }
@@ -2207,7 +2193,7 @@ void TCPHandler::processQuery(std::optional<QueryState> & state)
     state->query_context->setBlockMarshallingCallback(
         [this, &state](const Block & block)
         {
-            return prepare(
+            return convertColumnsToBLOBs(
                 block,
                 getCompressionCodec(state->query_context->getSettingsRef(), state->compression),
                 client_tcp_protocol_version,
@@ -2543,6 +2529,8 @@ void TCPHandler::receivePacketsExpectCancel(QueryState & state)
 
 void TCPHandler::sendData(QueryState & state, const Block & block)
 {
+    OpenTelemetry::SpanHolder span{"TCPHandler::sendData"};
+
     initBlockOutput(state, block);
 
     size_t prev_bytes_written_out = out->count();

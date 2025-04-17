@@ -42,6 +42,15 @@ public:
     // TODO(nickitat): fix signature
     using FromBlob = std::function<ColumnPtr(const Blob &, int)>;
 
+    ColumnBlob(
+        ColumnWithTypeAndName concrete_column_, CompressionCodecPtr codec, UInt64 client_revision, const FormatSettings & format_settings)
+        : rows(concrete_column_.column->size())
+        , concrete_column(concrete_column_.column)
+    {
+        toBlob(blob, concrete_column_, codec, client_revision, format_settings);
+    }
+
+    // TODO: remove me
     ColumnBlob(ToBlob task, ColumnPtr concrete_column_)
         : rows(concrete_column_->size())
         , concrete_column(std::move(concrete_column_))
