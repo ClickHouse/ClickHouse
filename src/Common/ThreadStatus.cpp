@@ -77,7 +77,7 @@ struct ThreadStack
     }
     ~ThreadStack()
     {
-        if (guardPagesEnabled())
+        if constexpr (guardPagesEnabled())
             memoryGuardRemove(data, getPageSize());
 
         free(data);
