@@ -188,6 +188,12 @@ HashJoin::HashJoin(
     else if (table_join->oneDisjunct())
     {
         const auto & key_names_right = table_join->getOnlyClause().key_names_right;
+
+        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: key_names_right [{}]", __FILE__, __LINE__, fmt::join(key_names_right, ", "));
+        // LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: right_table_keys [{}]", __FILE__, __LINE__, fmt::join(right_table_keys, ", "));
+        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: right_table_keys [{}]", __FILE__, __LINE__, right_table_keys.dumpNames());
+        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: right_sample_block [{}]", __FILE__, __LINE__, right_sample_block.dumpNames());
+        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: sample_block_with_columns_to_add [{}]", __FILE__, __LINE__, sample_block_with_columns_to_add.dumpNames());
         JoinCommon::splitAdditionalColumns(key_names_right, right_sample_block, right_table_keys, sample_block_with_columns_to_add);
         required_right_keys = table_join->getRequiredRightKeys(right_table_keys, required_right_keys_sources);
     }

@@ -9,7 +9,6 @@
 #include <Interpreters/JoinOperator.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/joinCost.h>
-#include <absl/strings/str_split.h>
 #include <stack>
 #include <Common/safe_cast.h>
 

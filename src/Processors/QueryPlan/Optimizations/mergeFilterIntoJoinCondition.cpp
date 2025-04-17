@@ -7,7 +7,7 @@
 #include <Functions/IFunctionAdaptors.h>
 
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/JoinInfo.h>
+#include <Interpreters/JoinOperator.h>
 
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -192,8 +192,7 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
     ActionsDAG & filter_dag,
     const std::string & filter_name,
     const Names & left_stream_available_columns,
-    const Names & right_stream_available_columns
-)
+    const Names & right_stream_available_columns)
 {
     auto * predicate = const_cast<ActionsDAG::Node *>(filter_dag.tryFindInOutputs(filter_name));
     if (!predicate)
@@ -301,7 +300,10 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
         return 0;
 
     const auto & join_expressions = join_step->getExpressionActions();
-    auto & join_info = join_step->getJoinInfo();
+    auto & join_info = join_step->getJoinOperator();
+
+    UNUSED(join_expressions);
+    UNUSED(extractActionsForJoinCondition);
 
     auto kind = join_info.kind;
     if (kind != JoinKind::Inner && kind != JoinKind::Cross && kind != JoinKind::Comma)
@@ -313,6 +315,9 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     auto strictness = join_info.strictness;
     if (strictness != JoinStrictness::Unspecified && strictness != JoinStrictness::All)
         return 0;
+    return 0;
+
+    /*
 
     const auto & join_header = child->getOutputHeader();
     const auto & left_stream_header = child->getInputHeaders().front();
@@ -378,6 +383,7 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     }
 
     return 2;
+    */
 }
 
 }

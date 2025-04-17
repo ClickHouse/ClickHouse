@@ -753,6 +753,8 @@ bool addJoinPredicateToTableJoin(
     ActionsDAG * post_join_actions,
     const JoinPlanningContext & join_context)
 {
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: {}", __FILE__, __LINE__, formatJoinCondition(join_condition));
+
     std::vector<JoinPredicate> new_predicates;
     for (size_t i = 0; i < join_condition.predicates.size(); ++i)
     {
@@ -809,6 +811,7 @@ bool addJoinPredicateToTableJoin(
     }
 
     join_condition.predicates = std::move(new_predicates);
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: {}", __FILE__, __LINE__, formatJoinCondition(join_condition));
 
     return !join_condition.predicates.empty();
 }
@@ -1059,12 +1062,19 @@ static void buildPhysicalJoinNode(
     ActionsDAG * left_pre_join_actions = result_node.left_pre_join_actions.get();
     ActionsDAG * right_pre_join_actions = result_node.right_pre_join_actions.get();
 
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: post_join_actions {}", __FILE__, __LINE__, post_join_actions->dumpDAG());
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: left_pre_join_actions {}", __FILE__, __LINE__, left_pre_join_actions->dumpDAG());
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: right_pre_join_actions {}", __FILE__, __LINE__, right_pre_join_actions->dumpDAG());
+
     splitExpressionActions(join_info.expression, left_rels, right_rels, left_pre_join_actions, right_pre_join_actions, post_join_actions);
     ActionsTriple actions{
         .left_pre_join_actions = left_pre_join_actions,
         .right_pre_join_actions = right_pre_join_actions,
         .post_join_actions = post_join_actions,
     };
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: post_join_actions {}", __FILE__, __LINE__, post_join_actions->dumpDAG());
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: left_pre_join_actions {}", __FILE__, __LINE__, left_pre_join_actions->dumpDAG());
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: right_pre_join_actions {}", __FILE__, __LINE__, right_pre_join_actions->dumpDAG());
 
     auto & join_expression = join_info.expression;
 
@@ -1233,6 +1243,12 @@ static void buildPhysicalJoinNode(
         optimization_settings.max_entries_for_hash_table_stats,
         std::move(optimization_settings.initial_query_id),
         optimization_settings.lock_acquire_timeout);
+
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: [{}] [{}]", __FILE__, __LINE__, left_sample_block.dumpNames(), right_sample_block.dumpNames());
+
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: post_join_actions {}", __FILE__, __LINE__, post_join_actions->dumpDAG());
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: left_pre_join_actions {}", __FILE__, __LINE__, left_pre_join_actions->dumpDAG());
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: right_pre_join_actions {}", __FILE__, __LINE__, right_pre_join_actions->dumpDAG());
 
     auto join_algorithm_ptr = chooseJoinAlgorithm(
         table_join,
