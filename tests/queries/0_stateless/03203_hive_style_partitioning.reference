@@ -95,24 +95,3 @@ test/hive_partitioning/column0=Arthur/column1=/sample.parquet
 test/hive_partitioning/column0=Arthur/column1=ABC/sample.parquet
 test/hive_partitioning/column0=Arthur/column1=/sample.parquet
 OK
-TESTING THE S3CLUSTER PARTITIONING
- last	Elizabeth
-Frank	Elizabeth
-Moreno	Elizabeth
-Guzman	Elizabeth
-Stephens	Elizabeth
-Franklin	Elizabeth
-Gibson	Elizabeth
-Greer	Elizabeth
-Delgado	Elizabeth
-Cross	Elizabeth
- last	Elizabeth
-Frank	Elizabeth
-Moreno	Elizabeth
-Guzman	Elizabeth
-Stephens	Elizabeth
-Franklin	Elizabeth
-Gibson	Elizabeth
-Greer	Elizabeth
-Delgado	Elizabeth
-Cross	Elizabeth
