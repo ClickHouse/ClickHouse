@@ -9,7 +9,6 @@
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 #include "DataTypes/DataTypesNumber.h"
-#include "Processors/AccumulatingTransform.h"
 #include "Processors/ConcatProcessor.h"
 #include "Processors/ForkProcessor.h"
 #include "Processors/IAccumulatingTransform.h"
