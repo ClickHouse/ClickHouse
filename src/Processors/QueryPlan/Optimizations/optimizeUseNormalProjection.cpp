@@ -1,18 +1,15 @@
-#include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
+#include <Core/Settings.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/Sources/NullSource.h>
-#include <Common/logger_useful.h>
-#include <Core/Settings.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-
-#include <algorithm>
 
 namespace DB
 {
@@ -88,8 +85,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     {
         iter = std::next(iter);
 
-        if (!typeid_cast<FilterStep *>(iter->node->step.get()) &&
-            !typeid_cast<ExpressionStep *>(iter->node->step.get()))
+        if (!typeid_cast<FilterStep *>(iter->node->step.get()) && !typeid_cast<ExpressionStep *>(iter->node->step.get()))
             break;
     }
 
@@ -122,16 +118,13 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         normal_projections.push_back(preferred_projection);
     }
 
-    bool with_parent_part_offset = std::any_of(
-        normal_projections.begin(),
-        normal_projections.end(),
-        [](const auto & projection) { return projection->with_parent_part_offset; });
-
     Names required_columns = reading->getAllColumnNames();
 
     /// If `with_parent_part_offset` is true and the required columns include `_part_offset`,
     /// we need to remap it to `_parent_part_offset`. This ensures that the projection's
     /// ActionsDAG reads from the correct column and generates `_part_offset` in the output.
+    bool with_parent_part_offset = std::any_of(
+        normal_projections.begin(), normal_projections.end(), [](const auto & projection) { return projection->with_parent_part_offset; });
     bool need_parent_part_offset = false;
     if (with_parent_part_offset)
     {
@@ -273,7 +266,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     query_info_copy.prewhere_info = nullptr;
 
     auto projection_reading = reader.readFromParts(
-        /*parts=*/ {},
+        /*parts=*/{},
         reading->getMutationsSnapshot()->cloneEmpty(),
         required_columns,
         proj_snapshot,
@@ -293,8 +286,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
 
     if (!query_info.is_internal && context->hasQueryContext())
     {
-        context->getQueryContext()->addQueryAccessInfo(Context::QualifiedProjectionName
-        {
+        context->getQueryContext()->addQueryAccessInfo(Context::QualifiedProjectionName{
             .storage_id = reading->getMergeTreeData().getStorageID(),
             .projection_name = best_candidate->projection->name,
         });
@@ -316,15 +308,11 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         if (query.filter_node)
         {
             expr_or_filter_node.step = std::make_unique<FilterStep>(
-                projection_reading_node.step->getOutputHeader(),
-                std::move(*query.dag),
-                query.filter_node->result_name,
-                true);
+                projection_reading_node.step->getOutputHeader(), std::move(*query.dag), query.filter_node->result_name, true);
         }
         else
-            expr_or_filter_node.step = std::make_unique<ExpressionStep>(
-                projection_reading_node.step->getOutputHeader(),
-                std::move(*query.dag));
+            expr_or_filter_node.step
+                = std::make_unique<ExpressionStep>(projection_reading_node.step->getOutputHeader(), std::move(*query.dag));
 
         expr_or_filter_node.children.push_back(&projection_reading_node);
         next_node = &expr_or_filter_node;
