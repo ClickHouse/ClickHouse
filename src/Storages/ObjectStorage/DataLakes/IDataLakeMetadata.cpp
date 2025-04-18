@@ -34,12 +34,16 @@ public:
                 return nullptr;
 
             auto key = data_files[current_index];
-            auto object_metadata = object_storage->getObjectMetadata(key);
 
             if (callback)
-                callback(FileProgress(0, object_metadata.size_bytes));
+            {
+                /// Too expencive to load size for metadata always
+                /// because it requires API call to external storage.
+                /// In many cases only keys are needed.
+                callback(FileProgress(0, 1));
+            }
 
-            return std::make_shared<ObjectInfo>(key, std::move(object_metadata));
+            return std::make_shared<ObjectInfo>(key, std::nullopt);
         }
     }
 

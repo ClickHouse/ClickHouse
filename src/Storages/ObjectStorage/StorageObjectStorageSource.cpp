@@ -413,21 +413,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (!object_info || object_info->getPath().empty())
             return {};
 
-        if (!object_info->metadata)
-        {
-            const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
-
-            if (query_settings.ignore_non_existent_file)
-            {
-                auto metadata = object_storage->tryGetObjectMetadata(path);
-                if (!metadata)
-                    return {};
-
-                object_info->metadata = metadata;
-            }
-            else
-                object_info->metadata = object_storage->getObjectMetadata(path);
-        }
+        object_info->loadMetadata(object_storage, query_settings.ignore_non_existent_file);
     }
     while (query_settings.skip_empty_files && object_info->metadata->size_bytes == 0);
 

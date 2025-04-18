@@ -75,10 +75,7 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
         const auto & object_info = (*it);
         auto get_last_mod_time = [&] -> std::optional<time_t>
         {
-            const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
-            if (!object_info->metadata)
-                object_info->metadata = object_storage->tryGetObjectMetadata(path);
-
+            object_info->loadMetadata(object_storage);
             return object_info->metadata
                 ? std::optional<time_t>(object_info->metadata->last_modified.epochTime())
                 : std::nullopt;
@@ -150,7 +147,6 @@ std::unique_ptr<ReadBuffer> ReadBufferIterator::recreateLastReadBuffer()
 {
     auto context = getContext();
 
-    const auto & path = current_object_info->isArchive() ? current_object_info->getPathToArchive() : current_object_info->getPath();
     auto impl = StorageObjectStorageSource::createReadBuffer(*current_object_info, object_storage, context, getLogger("ReadBufferIterator"));
 
     const auto compression_method = chooseCompressionMethod(current_object_info->getFileName(), configuration->compression_method);
@@ -248,6 +244,8 @@ ReadBufferIterator::Data ReadBufferIterator::next()
 
             prev_read_keys_size = read_keys.size();
         }
+
+        current_object_info->loadMetadata(object_storage);
 
         if (query_settings.skip_empty_files
             && current_object_info->metadata && current_object_info->metadata->size_bytes == 0)
