@@ -226,11 +226,10 @@ void QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & ge
 void QueryOracle::generateExportQuery(
     RandomGenerator & rg, StatementGenerator & gen, const bool test_content, const SQLTable & t, SQLQuery & sq2)
 {
-    String buf;
-    bool first = true;
     std::error_code ec;
     Insert * ins = sq2.mutable_explain()->mutable_inner_query()->mutable_insert();
     FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
+    Expr * expr = ff->mutable_structure();
     SelectStatementCore * sel = ins->mutable_select()->mutable_select_core();
     const std::filesystem::path & nfile = fc.db_file_path / "table.data";
     OutFormat outf = rg.pickRandomly(outIn);
@@ -244,29 +243,36 @@ void QueryOracle::generateExportQuery(
     ff->set_path(nfile.generic_string());
 
     gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
+    if (!can_test_query_success && rg.nextSmallNumber() < 3)
+    {
+        /// Sometimes generate a not matching structure
+        gen.addRandomRelation(rg, std::nullopt, gen.entries.size(), expr);
+    }
+    else
+    {
+        String buf;
+        bool first = true;
+
+        for (const auto & entry : gen.entries)
+        {
+            buf += fmt::format(
+                "{}{} {}{}{}{}",
+                first ? "" : ", ",
+                entry.getBottomName(),
+                entry.path.size() > 1 ? "Array(" : "",
+                entry.getBottomType()->typeName(true),
+                entry.path.size() > 1 ? ")" : "",
+                (entry.path.size() == 1 && entry.nullable.has_value()) ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
+            first = false;
+        }
+        expr->mutable_lit_val()->set_string_lit(std::move(buf));
+    }
     for (const auto & entry : gen.entries)
     {
-        SQLType * tp = entry.getBottomType();
-
-        buf += fmt::format(
-            "{}{} {}{}{}{}",
-            first ? "" : ", ",
-            entry.getBottomName(),
-            entry.path.size() > 1 ? "Array(" : "",
-            tp->typeName(true),
-            entry.path.size() > 1 ? ")" : "",
-            (entry.path.size() == 1 && entry.nullable.has_value()) ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
         gen.columnPathRef(entry, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
-        /// ArrowStream doesn't support UUID
-        if (outf == OutFormat::OUT_ArrowStream && tp->getTypeClass() == SQLTypeClass::UUID)
-        {
-            outf = OutFormat::OUT_CSV;
-        }
-        first = false;
     }
     gen.entries.clear();
     ff->set_outformat(outf);
-    ff->set_structure(buf);
     if (rg.nextSmallNumber() < 4)
     {
         ff->set_fcomp(static_cast<FileCompression>((rg.nextRandomUInt32() % static_cast<uint32_t>(FileCompression_MAX)) + 1));
@@ -363,51 +369,67 @@ void QueryOracle::generateImportQuery(
 /// Run query with different settings oracle
 void QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
 {
-    const uint32_t nsets = rg.nextBool() ? 1 : ((rg.nextSmallNumber() % 3) + 1);
-    SettingValues * sv = sq1.mutable_explain()->mutable_inner_query()->mutable_setting_values();
+    const bool use_settings = rg.nextMediumNumber() < 86;
 
-    nsettings.clear();
-    for (uint32_t i = 0; i < nsets; i++)
+    /// Most of the times use SET command, other times SYSTEM
+    if (use_settings)
     {
-        const String & setting = rg.pickRandomly(queryOracleSettings);
-        const CHSetting & chs = queryOracleSettings.at(setting);
-        SetValue * setv = i == 0 ? sv->mutable_set_value() : sv->add_other_values();
+        const uint32_t nsets = rg.nextBool() ? 1 : ((rg.nextSmallNumber() % 3) + 1);
+        SettingValues * sv = sq1.mutable_explain()->mutable_inner_query()->mutable_setting_values();
 
-        setv->set_property(setting);
-        if (chs.oracle_values.size() == 2)
+        nsettings.clear();
+        for (uint32_t i = 0; i < nsets; i++)
         {
-            if (rg.nextBool())
+            const auto & toPickFrom = rg.nextMediumNumber() < 5 ? hotSettings : queryOracleSettings;
+            const String & setting = rg.pickRandomly(toPickFrom);
+            const CHSetting & chs = queryOracleSettings.at(setting);
+            SetValue * setv = i == 0 ? sv->mutable_set_value() : sv->add_other_values();
+
+            setv->set_property(setting);
+            if (chs.oracle_values.size() == 2)
             {
-                setv->set_value(*chs.oracle_values.begin());
-                nsettings.push_back(*std::next(chs.oracle_values.begin(), 1));
+                if (rg.nextBool())
+                {
+                    setv->set_value(*chs.oracle_values.begin());
+                    nsettings.push_back(*std::next(chs.oracle_values.begin(), 1));
+                }
+                else
+                {
+                    setv->set_value(*std::next(chs.oracle_values.begin(), 1));
+                    nsettings.push_back(*(chs.oracle_values.begin()));
+                }
             }
             else
             {
-                setv->set_value(*std::next(chs.oracle_values.begin(), 1));
-                nsettings.push_back(*(chs.oracle_values.begin()));
+                setv->set_value(rg.pickRandomly(chs.oracle_values));
+                nsettings.push_back(rg.pickRandomly(chs.oracle_values));
             }
+            can_test_query_success &= !chs.changes_behavior;
         }
-        else
-        {
-            setv->set_value(rg.pickRandomly(chs.oracle_values));
-            nsettings.push_back(rg.pickRandomly(chs.oracle_values));
-        }
-        can_test_query_success &= !chs.changes_behavior;
     }
 }
 
-void QueryOracle::generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3)
+void QueryOracle::generateSecondSetting(RandomGenerator & rg, StatementGenerator & gen, const SQLQuery & sq1, SQLQuery & sq3)
 {
-    const SettingValues & osv = sq1.explain().inner_query().setting_values();
-    SettingValues * sv = sq3.mutable_explain()->mutable_inner_query()->mutable_setting_values();
+    SQLQueryInner * sq = sq3.mutable_explain()->mutable_inner_query();
 
-    for (size_t i = 0; i < nsettings.size(); i++)
+    if (sq1.has_explain())
     {
-        const SetValue & osetv = i == 0 ? osv.set_value() : osv.other_values(static_cast<int>(i - 1));
-        SetValue * setv = i == 0 ? sv->mutable_set_value() : sv->add_other_values();
+        const SettingValues & osv = sq1.explain().inner_query().setting_values();
+        SettingValues * sv = sq->mutable_setting_values();
 
-        setv->set_property(osetv.property());
-        setv->set_value(nsettings[i]);
+        for (size_t i = 0; i < nsettings.size(); i++)
+        {
+            const SetValue & osetv = i == 0 ? osv.set_value() : osv.other_values(static_cast<int>(i - 1));
+            SetValue * setv = i == 0 ? sv->mutable_set_value() : sv->add_other_values();
+
+            setv->set_property(osetv.property());
+            setv->set_value(nsettings[i]);
+        }
+    }
+    else
+    {
+        gen.generateNextSystemStatement(rg, false, sq->mutable_system_cmd());
     }
 }
 
@@ -616,7 +638,11 @@ void QueryOracle::findTablesWithPeersAndReplace(
     {
         auto & tfunc = static_cast<TableFunction &>(mes);
 
-        if (tfunc.has_remote() || tfunc.has_cluster())
+        if (tfunc.has_loop())
+        {
+            findTablesWithPeersAndReplace(rg, const_cast<TableOrFunction &>(tfunc.loop()), gen, replace);
+        }
+        else if (tfunc.has_remote() || tfunc.has_cluster())
         {
             findTablesWithPeersAndReplace(
                 rg, const_cast<TableOrFunction &>(tfunc.has_remote() ? tfunc.remote().tof() : tfunc.cluster().tof()), gen, replace);
