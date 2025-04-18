@@ -42,19 +42,21 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include "Common/OpenTelemetryTraceContext.h"
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/Stopwatch.h>
 #include <Common/VersionNumber.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
+
+#include <Columns/ColumnSparse.h>
 
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
@@ -271,7 +273,7 @@ Block convertColumnsToBLOBs(const Block & block, CompressionCodecPtr codec, UInt
     for (const auto & elem : block)
     {
         ColumnWithTypeAndName column = elem;
-        if (!elem.column->isConst())
+        if (!elem.column->isConst() && !isTuple(elem.type->getTypeId()))
             column.column = ColumnBLOB::create(column, codec, client_revision, format_settings);
         res.insert(std::move(column));
     }

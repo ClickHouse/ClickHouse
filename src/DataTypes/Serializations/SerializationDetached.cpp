@@ -10,6 +10,7 @@
 
 namespace
 {
+
 struct DisableCompressionInScope
 {
     explicit DisableCompressionInScope(DB::WriteBuffer & buffer_)

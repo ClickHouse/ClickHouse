@@ -74,12 +74,6 @@ public:
         return wrapped_column->isSparse();
     }
 
-    ColumnPtr getWrappedColumn() const
-    {
-        chassert(wrapped_column);
-        return wrapped_column;
-    }
-
     MutableColumnPtr cloneEmpty() const override
     {
         chassert(wrapped_column);
