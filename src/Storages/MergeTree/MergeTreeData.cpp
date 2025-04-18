@@ -913,6 +913,30 @@ void MergeTreeData::checkProperties(
         }
     }
 
+    String projection_with_parent_part_offset;
+    for (const auto & projection : old_metadata.projections)
+    {
+        if (projection.with_parent_part_offset)
+        {
+            projection_with_parent_part_offset = projection.name;
+            break;
+        }
+    }
+
+    if (!projection_with_parent_part_offset.empty())
+    {
+        for (const auto & col : new_metadata.columns)
+        {
+            if (col.name == "_part_offset" || col.name == "_part_index" || col.name == "_parent_part_offset")
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot add column `{}` because normal projection {} references its parent `_part_offset` column. "
+                    "Columns named `_part_offset`, `_part_index`, or `_parent_part_offset` are not allowed in this case",
+                    col.name,
+                    projection_with_parent_part_offset);
+        }
+    }
+
     for (const auto & col : new_metadata.columns)
     {
         if (!col.statistics.empty())

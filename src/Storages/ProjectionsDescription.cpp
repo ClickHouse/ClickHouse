@@ -222,7 +222,7 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     /// Prevent normal projection from storing parent part offset if the parent table defines `_parent_part_offset` or
     /// `_part_offset` as physical columns, which would cause a conflict. Parent table cannot defines `_part_index` as
     /// physical column either because it's used to build part offset mapping during merge.
-    bool cannot_hold_parent_part_offset = columns.has("_part_index") || columns.has("_part_offset") || columns.has("_parent_part_offset");
+    bool can_hold_parent_part_offset = !(columns.has("_part_index") || columns.has("_part_offset") || columns.has("_parent_part_offset"));
 
     StoragePtr storage = std::make_shared<StorageProjectionSource>(columns);
     InterpreterSelectQuery select(
@@ -247,7 +247,7 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     if (select.hasAggregation())
     {
         /// Aggregate projections cannot hold parent part offset.
-        cannot_hold_parent_part_offset = true;
+        can_hold_parent_part_offset = false;
 
         if (query.orderBy())
             throw Exception(ErrorCodes::ILLEGAL_PROJECTION, "When aggregation is used in projection, ORDER BY cannot be specified");
@@ -294,7 +294,7 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     }
 
     /// Rename parent _part_offset to _parent_part_offset column
-    if (!cannot_hold_parent_part_offset && result.sample_block.has("_part_offset"))
+    if (can_hold_parent_part_offset && result.sample_block.has("_part_offset"))
     {
         auto new_column = result.sample_block.getByName("_part_offset");
         new_column.name = "_parent_part_offset";
