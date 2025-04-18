@@ -29,7 +29,7 @@ select * from t_mt_source order by k;
 
 select '-- check result with local pipeline';
 TRUNCATE TABLE t_mt_target;
-INSERT INTO t_mt_target SELECT * FROM t_mt_source SETTINGS log_comment='c1fcb43d-1703-4ddb-b353-c8079b405c16', parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan=1;
+INSERT INTO t_mt_target SELECT * FROM t_mt_source SETTINGS log_comment='c1fcb43d-1703-4ddb-b353-c8079b405c16', parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan=1, parallel_replicas_insert_select_local_pipeline=1;
 
 SYSTEM FLUSH LOGS query_log;
 select count() from system.query_log where (current_database = currentDatabase() or has(databases, currentDatabase())) and type = 'QueryFinish' and query_kind = 'Insert' and log_comment='c1fcb43d-1703-4ddb-b353-c8079b405c16' and event_date >= yesterday();

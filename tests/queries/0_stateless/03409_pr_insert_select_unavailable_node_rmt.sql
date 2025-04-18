@@ -31,7 +31,7 @@ select * from t_rmt_source order by k;
 
 select '-- check result with local pipeline';
 TRUNCATE TABLE t_rmt_target;
-INSERT INTO t_rmt_target SELECT * FROM t_rmt_source SETTINGS log_comment='4e33bcff-1d78-401b-83c0-ef454406a437', parallel_replicas_local_plan=1;
+INSERT INTO t_rmt_target SELECT * FROM t_rmt_source SETTINGS log_comment='4e33bcff-1d78-401b-83c0-ef454406a437', parallel_replicas_local_plan=1, parallel_replicas_insert_select_local_pipeline=1;
 
 SYSTEM FLUSH LOGS query_log;
 select count() from system.query_log where (current_database = currentDatabase() or has(databases, currentDatabase())) and type = 'QueryFinish' and query_kind = 'Insert' and log_comment='4e33bcff-1d78-401b-83c0-ef454406a437' and event_date >= yesterday();
