@@ -284,11 +284,11 @@ namespace ErrorCodes
     DECLARE(UInt64, max_bytes_to_merge_at_max_space_in_pool, 150ULL * 1024 * 1024 * 1024, R"(
     The maximum total parts size (in bytes) to be merged into one part, if there
     are enough resources available. Corresponds roughly to the maximum possible
-    part size created by an automatic background merge.
+    part size created by an automatic background merge. (0 means merges will be disabled)
 
     Possible values:
 
-    - Any positive integer.
+    - Any non-negative integer.
 
     The merge scheduler periodically analyzes the sizes and number of parts in
     partitions, and if there are enough free resources in the pool, it starts
