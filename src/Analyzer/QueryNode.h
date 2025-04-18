@@ -652,8 +652,6 @@ public:
         return QueryTreeNodeType::QUERY;
     }
 
-    DataTypePtr getResultType() const override;
-
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
     void setProjectionAliasesToOverride(Names pr_aliases)
