@@ -4,6 +4,12 @@
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/SetVariants.h>
 #include <Interpreters/BloomFilter.h>
+#include "Common/ThreadPool_fwd.h"
+#include <Common/ThreadPool.h>
+#include "Common/PODArray_fwd.h"
+#include "Columns/ColumnsNumber.h"
+#include "Columns/IColumn.h"
+#include "Columns/IColumn_fwd.h"
 #include "base/types.h"
 
 namespace DB
