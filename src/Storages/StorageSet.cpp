@@ -282,7 +282,7 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
 
     set = std::make_shared<Set>(SizeLimits(), 0, true);
     set->setHeader(header.getColumnsWithTypeAndName());
-	set->fillSetElements();
+    set->fillSetElements();
     set->finishInsert();
 }
 
