@@ -1209,7 +1209,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
                 false,
                 settings[Setting::async_socket_for_remote],
                 settings[Setting::async_query_sending_for_remote])};
-            pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<ConvertBlobColumnsTransform>(header); });
+            pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
             QueryPipeline remote_pipeline{std::move(pipe)};
             remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getHeader()));
 

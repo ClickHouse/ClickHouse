@@ -228,8 +228,8 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
                 add_agg_info,
                 current_settings[Setting::async_socket_for_remote],
                 current_settings[Setting::async_query_sending_for_remote])};
-        pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<ConvertBlobColumnsTransform>(header); });
-        pipes.emplace_back(std::move(pipe));
+            pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
+            pipes.emplace_back(std::move(pipe));
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));

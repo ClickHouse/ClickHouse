@@ -291,28 +291,17 @@ Chunk RemoteExtremesSource::generate()
     return {};
 }
 
-struct UnmarshallBlocksTransform : ISimpleTransform
+void UnmarshallBlocksTransform::transform(Chunk & chunk)
 {
-public:
-    explicit UnmarshallBlocksTransform(const Block & header_)
-        : ISimpleTransform(header_, header_, false)
+    const auto rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    for (auto & column : columns)
     {
+        if (const auto * col = typeid_cast<const ColumnBLOB *>(column.get()))
+            column = col->convertFrom();
     }
-
-    String getName() const override { return "ConvertBlobColumnsTransform"; }
-
-    void transform(Chunk & chunk) override
-    {
-        const auto rows = chunk.getNumRows();
-        auto columns = chunk.detachColumns();
-        for (auto & column : columns)
-        {
-            if (const auto * col = typeid_cast<const ColumnBLOB *>(column.get()))
-                column = col->convertFrom();
-        }
-        chunk.setColumns(std::move(columns), rows);
-    }
-};
+    chunk.setColumns(std::move(columns), rows);
+}
 
 Pipe createRemoteSourcePipe(
     RemoteQueryExecutorPtr query_executor,
