@@ -984,7 +984,7 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
         if ((compareValues(selected_highest_key_value, part_begin_key_value, false) < 0) ||
             (compareValues(selected_lowest_key_value, part_end_key_value, false) > 0))
         {
-            continue; /// infeasible to intersect this part
+            continue; /// infeasible to intersect any range in this part
         }
 
         for (size_t range_begin = 0; range_begin < index_granularity->getMarksCountWithoutFinal(); range_begin++)
