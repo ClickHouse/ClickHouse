@@ -442,7 +442,10 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(RangesInDataParts parts_wit
     const auto & client_info = context->getClientInfo();
 
     auto extension = ParallelReadingExtension{
-        all_ranges_callback.value(), read_task_callback.value(), number_of_current_replica.value_or(client_info.number_of_current_replica), context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount()};
+        all_ranges_callback.value(),
+        read_task_callback.value(),
+        number_of_current_replica.value_or(client_info.number_of_current_replica),
+        context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount()};
 
     auto pool = std::make_shared<MergeTreeReadPoolParallelReplicas>(
         std::move(extension),
@@ -464,8 +467,8 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(RangesInDataParts parts_wit
     {
         auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(i);
 
-        auto processor
-            = std::make_unique<MergeTreeSelectProcessor>(pool, std::move(algorithm), prewhere_info, lazily_read_info, actions_settings, reader_settings);
+        auto processor = std::make_unique<MergeTreeSelectProcessor>(
+            pool, std::move(algorithm), prewhere_info, lazily_read_info, actions_settings, reader_settings);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
         pipes.emplace_back(std::move(source));
