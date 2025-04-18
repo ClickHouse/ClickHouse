@@ -122,14 +122,26 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         normal_projections.push_back(preferred_projection);
     }
 
+    bool with_parent_part_offset = std::any_of(
+        normal_projections.begin(),
+        normal_projections.end(),
+        [](const auto & projection) { return projection->with_parent_part_offset; });
+
     Names required_columns = reading->getAllColumnNames();
+
+    /// If `with_parent_part_offset` is true and the required columns include `_part_offset`,
+    /// we need to remap it to `_parent_part_offset`. This ensures that the projection's
+    /// ActionsDAG reads from the correct column and generates `_part_offset` in the output.
     bool need_parent_part_offset = false;
-    for (auto & name : required_columns)
+    if (with_parent_part_offset)
     {
-        if (name == "_part_offset")
+        for (auto & name : required_columns)
         {
-            name = "_parent_part_offset";
-            need_parent_part_offset = true;
+            if (name == "_part_offset")
+            {
+                name = "_parent_part_offset";
+                need_parent_part_offset = true;
+            }
         }
     }
 
