@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Storages/Kafka/KafkaConsumer2.h>
 
 #include <vector>
 
@@ -17,7 +18,7 @@ struct ReplicaStateData
     String toString() const;
 
     size_t topic_partitions;
-    std::vector<std::pair<String, int32_t>> topics_assigned;
+    KafkaConsumer2::TopicPartitions topics_assigned;
 };
 
 

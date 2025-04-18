@@ -9,8 +9,8 @@ namespace DB
     {
         out << "topic partitions: " << topic_partitions << "\n";
         for (const auto& partition : topics_assigned) {
-            out << "topic: " << escape << partition.first << "\n";
-            out << "partition: " << escape << partition.second << "\n";
+            out << "topic: " << escape << partition.topic << "\n";
+            out << "partition: " << escape << partition.partition_id << "\n";
         }
     }
 
@@ -19,8 +19,8 @@ namespace DB
         in >> "topic partitions: " >> topic_partitions >> "\n";
         topics_assigned.resize(topic_partitions);
         for (size_t i = 0; i < topic_partitions; ++i) {
-            in >> "topic: " >> escape >> topics_assigned[i].first >> "\n";
-            in >> "partition: " >> escape >> topics_assigned[i].second >> "\n";
+            in >> "topic: " >> escape >> topics_assigned[i].topic >> "\n";
+            in >> "partition: " >> escape >> topics_assigned[i].partition_id >> "\n";
         }
     }
 

@@ -230,8 +230,9 @@ private:
     void createReplica();
     void dropReplica();
 
-    std::set<std::pair<String, int32_t>> lookupReplicaState(zkutil::ZooKeeper & keeper_to_use);
+    std::set<KafkaConsumer2::TopicPartition> lookupReplicaState(zkutil::ZooKeeper & keeper_to_use);
     UInt32 ActiveReplicaCount = 1; // We are always active
+    void createLocksInfo(zkutil::ZooKeeper & keeper_to_use, TopicPartitionLocks & locks, const TopicPartition& partition_to_lock);
 
     // Takes lock over topic partitions and sets the committed offset in topic_partitions.
     std::optional<TopicPartitionLocks> lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions);
