@@ -11,9 +11,9 @@ function tx()
     session="${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}_tx$tx_num"
     query_id="${session}_${RANDOM}${RANDOM}${RANDOM}${RANDOM}"
     url_without_session="http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/?"
-    url="${url_without_session}session_id=$session&query_id=$query_id&database=$CLICKHOUSE_DATABASE&apply_mutations_on_fly=0"
+    url="${url_without_session}session_id=$session&query_id=$query_id&database=$CLICKHOUSE_DATABASE&apply_mutations_on_fly=0&max_execution_time=90"
 
-    ${CLICKHOUSE_CURL} -m 90 -sSk "$url" --data "$query" | sed "s/^/tx$tx_num\t/"
+    ${CLICKHOUSE_CURL} --max-time 90 -sSk "$url" --data "$query" | sed "s/^/tx$tx_num\t/"
 }
 
 # Waits for the last query in session to finish
@@ -56,14 +56,14 @@ function tx_async()
     session="${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}_tx$tx_num"
     query_id="${session}_${RANDOM}"
     url_without_session="http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/?"
-    url="${url_without_session}session_id=$session&query_id=$query_id&database=$CLICKHOUSE_DATABASE&apply_mutations_on_fly=0"
+    url="${url_without_session}session_id=$session&query_id=$query_id&database=$CLICKHOUSE_DATABASE&apply_mutations_on_fly=0&max_execution_time=90"
 
     # We cannot be sure that query will actually start execution and appear in system.processes before the next call to tx_wait
     # Also we cannot use global map in bash to store last query_id for each tx_num, so we use tmp file...
     tmp_file_name="${CLICKHOUSE_TMP}/tmp_tx_${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}"
 
     # run query asynchronously
-    ${CLICKHOUSE_CURL} -m 90 -sSk "$url" --data "$query" | sed "s/^/tx$tx_num\t/" &
+    ${CLICKHOUSE_CURL} --max-time 90 -sSk "$url" --data "$query" | sed "s/^/tx$tx_num\t/" &
     query_pid=$!
     echo -e "$query_id\t$query_pid" >> "$tmp_file_name"
 }

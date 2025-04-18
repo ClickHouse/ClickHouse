@@ -401,21 +401,17 @@ def test_partial_auth(started_cluster, get_zk):
     finally:
         auth_connection.delete("/test_partial_acl/subnode")
         auth_connection.delete("/test_partial_acl")
-
-        auth_connection.set_acls(
-            "/test_partial_acl_delete",
-            acls=[
-                make_acl(
-                    "auth",
-                    "",
-                    read=True,
-                    write=True,
-                    create=True,
-                    delete=True,
-                    admin=True,
-                )
-            ],
+        acl = make_acl(
+            "auth",
+            "",
+            read=True,
+            write=True,
+            create=True,
+            delete=True,
+            admin=True,
         )
+        auth_connection.set_acls("/test_partial_acl_delete", acls=[acl])
+        auth_connection.set_acls("/test_partial_acl_delete/subnode", acls=[acl])
         auth_connection.delete("/test_partial_acl_delete/subnode")
         auth_connection.delete("/test_partial_acl_delete")
         zk_stop_and_close(auth_connection)
