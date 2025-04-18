@@ -1,7 +1,7 @@
 ----------
 Expression (Project names)
-  GatherExchange (sorted by (__table1.path ASC, __table1.hits ASC, __table3.path ASC, __table3.hits ASC))
-    Sorting (Sorting for ORDER BY)
+  Sorting (Sorting for ORDER BY)
+    GatherExchange
       Expression ((Before ORDER BY + Projection))
         JoinLogical
           ShuffleExchange (by hash([__table1.path]))
