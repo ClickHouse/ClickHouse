@@ -3597,12 +3597,13 @@ message AlterItem {
         FreezePartition unfreeze_partition = 42;
         ClearIndexInPartition clear_index_partition = 43;
         MovePartition move_partition = 44;
-        string comment = 45;
-        TTLExpr modify_ttl  = 46;
-        bool remove_ttl = 47;
+        TTLExpr modify_ttl  = 45;
+        bool remove_ttl = 46;
         /// For views
-        Select modify_query = 48;
-        RefreshableView refresh = 49;
+        Select modify_query = 47;
+        RefreshableView refresh = 48;
+        // For tables, views and databases
+        string comment = 49;
     }
 }
 

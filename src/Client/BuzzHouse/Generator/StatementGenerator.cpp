@@ -981,7 +981,8 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
         {
             const uint32_t alter_refresh = 1 * static_cast<uint32_t>(v.is_refreshable);
             const uint32_t alter_query = 3;
-            const uint32_t prob_space = alter_refresh + alter_query;
+            const uint32_t comment_view = 2;
+            const uint32_t prob_space = alter_refresh + alter_query + comment_view;
             AlterItem * ati = i == 0 ? at->mutable_alter() : at->add_other_alters();
             std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
             const uint32_t nopt = next_dist(rg.generator);
@@ -990,7 +991,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
             {
                 generateNextRefreshableView(rg, ati->mutable_refresh());
             }
-            else
+            else if (alter_query && nopt < (alter_refresh + alter_query + 1))
             {
                 v.staged_ncols
                     = v.has_with_cols ? static_cast<uint32_t>(v.cols.size()) : ((rg.nextMediumNumber() % fc.max_columns) + UINT32_C(1));
@@ -1006,6 +1007,14 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 this->levels.clear();
                 this->allow_in_expression_alias = true;
                 matchQueryAliases(v, ati->release_modify_query(), ati->mutable_modify_query());
+            }
+            else if (comment_view && nopt < (alter_refresh + alter_query + comment_view + 1))
+            {
+                ati->set_comment(nextComment(rg));
+            }
+            else
+            {
+                chassert(0);
             }
         }
     }
@@ -1068,6 +1077,8 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
             const uint32_t move_partition = 5 * static_cast<uint32_t>(table_has_partitions && !fc.disks.empty());
             const uint32_t modify_ttl = 5 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.is_deterministic);
             const uint32_t remove_ttl = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.is_deterministic);
+            const uint32_t attach_partition_from = 5 * static_cast<uint32_t>(t.isMergeTreeFamily());
+            const uint32_t replace_partition_from = 5 * static_cast<uint32_t>(t.isMergeTreeFamily());
             const uint32_t comment_table = 2;
             const uint32_t prob_space = alter_order_by + heavy_delete + heavy_update + add_column + materialize_column + drop_column
                 + rename_column + clear_column + modify_column + comment_column + delete_mask + add_stats + mod_stats + drop_stats
@@ -1076,7 +1087,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 + remove_projection + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition
                 + drop_partition + drop_detached_partition + forget_partition + attach_partition + move_partition_to
                 + clear_column_partition + freeze_partition + unfreeze_partition + clear_index_partition + move_partition + modify_ttl
-                + remove_ttl + comment_table;
+                + remove_ttl + attach_partition_from + replace_partition_from + comment_table;
             AlterItem * ati = i == 0 ? at->mutable_alter() : at->add_other_alters();
             std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
             const uint32_t nopt = next_dist(rg.generator);
@@ -1829,6 +1840,50 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 ati->set_remove_ttl(true);
             }
             else if (
+                attach_partition_from
+                && nopt
+                    < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
+                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
+                       + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
+                       + drop_detached_partition + forget_partition + attach_partition + move_partition_to + clear_column_partition
+                       + freeze_partition + unfreeze_partition + clear_index_partition + move_partition + modify_ttl + remove_ttl
+                       + attach_partition_from + 1))
+            {
+                AttachPartitionFrom * apf = ati->mutable_attach_partition_from();
+                PartitionExpr * pexpr = apf->mutable_single_partition()->mutable_partition();
+                const SQLTable & t2 = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
+                const String dname2 = t2.db ? ("d" + std::to_string(t2.db->dname)) : "";
+                const String tname2 = "t" + std::to_string(t2.tname);
+                const bool table_has_partitions2 = t2.isMergeTreeFamily() && fc.tableHasPartitions(false, dname2, tname2);
+
+                pexpr->set_partition_id(table_has_partitions2 ? fc.tableGetRandomPartitionOrPart(false, true, dname2, tname2) : "0");
+                t2.setName(apf->mutable_est(), false);
+            }
+            else if (
+                replace_partition_from
+                && nopt
+                    < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
+                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
+                       + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
+                       + drop_detached_partition + forget_partition + attach_partition + move_partition_to + clear_column_partition
+                       + freeze_partition + unfreeze_partition + clear_index_partition + move_partition + modify_ttl + remove_ttl
+                       + attach_partition_from + replace_partition_from + 1))
+            {
+                AttachPartitionFrom * apf = ati->mutable_replace_partition_from();
+                PartitionExpr * pexpr = apf->mutable_single_partition()->mutable_partition();
+                const SQLTable & t2 = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
+                const String dname2 = t2.db ? ("d" + std::to_string(t2.db->dname)) : "";
+                const String tname2 = "t" + std::to_string(t2.tname);
+                const bool table_has_partitions2 = t2.isMergeTreeFamily() && fc.tableHasPartitions(false, dname2, tname2);
+
+                pexpr->set_partition_id(table_has_partitions2 ? fc.tableGetRandomPartitionOrPart(false, true, dname2, tname2) : "0");
+                t2.setName(apf->mutable_est(), false);
+            }
+            else if (
                 comment_table
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
@@ -1838,7 +1893,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                        + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
                        + drop_detached_partition + forget_partition + attach_partition + move_partition_to + clear_column_partition
                        + freeze_partition + unfreeze_partition + clear_index_partition + move_partition + modify_ttl + remove_ttl
-                       + comment_table + 1))
+                       + attach_partition_from + replace_partition_from + comment_table + 1))
             {
                 ati->set_comment(nextComment(rg));
             }
