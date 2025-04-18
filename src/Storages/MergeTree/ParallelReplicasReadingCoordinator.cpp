@@ -1146,7 +1146,7 @@ void ParallelReplicasReadingCoordinator::initialize(CoordinationMode mode)
 
 ParallelReplicasReadingCoordinator::ParallelReplicasReadingCoordinator(size_t replicas_count_) : replicas_count(replicas_count_)
 {
-    LOG_DEBUG(getLogger("ParallelReplicasReadingCoordinator"), "replicas_count={}", replicas_count);
+    LOG_DEBUG(getLogger("ParallelReplicasReadingCoordinator"), "Creating parallel replicas coordinator with replicas_count={}", replicas_count);
 }
 
 ParallelReplicasReadingCoordinator::~ParallelReplicasReadingCoordinator() = default;
