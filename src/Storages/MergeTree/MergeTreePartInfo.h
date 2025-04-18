@@ -27,12 +27,12 @@ public:
         Regular,
     };
 
-private:
     static Kind getKind(const String & /*partition_id*/)
     {
         return Kind::Regular;
     }
 
+private:
     Kind kind = Kind::Regular;
     String partition_id;
 
