@@ -3,6 +3,7 @@
 /// This header exists so we can share it between multiple setting objects that include format settings
 
 #include <Core/SettingsObsoleteMacros.h>
+#include <Core/SettingsFields.h>
 
 // clang-format off
 #if defined(__CLION_IDE__)
@@ -656,6 +657,10 @@ Text to represent true bool value in TSV/CSV/Vertical/Pretty formats.
 Text to represent false bool value in TSV/CSV/Vertical/Pretty formats.
 )", 0) \
     \
+    DECLARE(Bool, allow_special_bool_values_inside_variant, false, R"(
+Allows to parse Bool values inside Variant type from special text bool values like "on", "off", "enable", "disable", etc.
+)", 0) \
+    \
     DECLARE(Bool, input_format_values_interpret_expressions, true, R"(
 For Values format: if the field could not be parsed by streaming parser, run SQL parser and try to interpret it as SQL expression.
 )", 0) \
@@ -979,7 +984,7 @@ Do Parquet encoding in multiple threads. Requires output_format_parquet_use_cust
     DECLARE(UInt64, output_format_parquet_data_page_size, 1024 * 1024, R"(
 Target page size in bytes, before compression.
 )", 0) \
-    DECLARE(UInt64, output_format_parquet_batch_size, 1024, R"(
+    DECLARE(NonZeroUInt64, output_format_parquet_batch_size, 1024, R"(
 Check page size every this many rows. Consider decreasing if you have columns with average values size above a few KBs.
 )", 0) \
     DECLARE(Bool, output_format_parquet_write_page_index, true, R"(
