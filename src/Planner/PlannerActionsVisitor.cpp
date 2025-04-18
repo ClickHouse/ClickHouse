@@ -1020,9 +1020,10 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     auto * query_node = subquery_argument->as<QueryNode>();
     auto * union_node = subquery_argument->as<UnionNode>();
     chassert(query_node != nullptr || union_node != nullptr);
-    const ColumnNodes & correlated_columns = query_node ? query_node->getCorrelatedColumns() : union_node->getCorrelatedColumns();
+    const QueryTreeNodes & correlated_columns = query_node ? query_node->getCorrelatedColumns().getNodes() : union_node->getCorrelatedColumns().getNodes();
 
     ColumnIdentifiers correlated_column_identifiers;
+    correlated_column_identifiers.reserve(correlated_columns.size());
     for (const auto & column : correlated_columns)
     {
         correlated_column_identifiers.push_back(action_node_name_helper.calculateActionNodeName(column));

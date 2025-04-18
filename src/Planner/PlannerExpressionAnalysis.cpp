@@ -590,8 +590,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
 
     ColumnsWithTypeAndName current_output_columns = join_tree_input_columns;
 
-    const auto & correlated_columns = query_node.getCorrelatedColumns();
-    ColumnNodePtrWithHashSet correlated_columns_set(correlated_columns.begin(), correlated_columns.end());
+    auto correlated_columns_set = query_node.getCorrelatedColumnsSet();
 
     std::optional<FilterAnalysisResult> where_analysis_result_optional;
     std::optional<size_t> where_action_step_index_optional;

@@ -63,10 +63,11 @@ public:
             const auto & correlated_columns = query_node != nullptr ? query_node->getCorrelatedColumns() : union_node->getCorrelatedColumns();
             for (const auto & correlated_column : correlated_columns)
             {
-                auto column_source_node = correlated_column->getColumnSource();
+                auto * column_node = correlated_column->as<ColumnNode>();
+                auto column_source_node = column_node->getColumnSource();
                 auto column_source_node_type = column_source_node->getNodeType();
                 if (column_source_node_type == QueryTreeNodeType::QUERY || column_source_node_type == QueryTreeNodeType::UNION)
-                    query_or_union_node_to_used_columns[column_source_node].insert(correlated_column->getColumnName());
+                    query_or_union_node_to_used_columns[column_source_node].insert(column_node->getColumnName());
             }
             return;
         }

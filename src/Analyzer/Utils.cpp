@@ -41,7 +41,6 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/IQueryOrUnionNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableFunctionNode.h>
@@ -273,10 +272,13 @@ bool checkCorrelatedColumn(
         if (scope_to_check->registered_table_expression_nodes.contains(column_source))
             break;
 
-        if (auto query_or_union_node = std::dynamic_pointer_cast<IQueryOrUnionNode>(scope_to_check->scope_node))
+        if (isQueryOrUnionNode(scope_to_check->scope_node))
         {
             is_correlated = true;
-            query_or_union_node->addCorrelatedColumn(column);
+            if (auto * query_node = scope_to_check->scope_node->as<QueryNode>())
+                query_node->addCorrelatedColumn(column);
+            else if (auto * union_node = scope_to_check->scope_node->as<UnionNode>())
+                union_node->addCorrelatedColumn(column);
         }
         scope_to_check = scope_to_check->parent_scope;
     }

@@ -55,12 +55,8 @@ public:
             auto * union_node = subquery_argument->as<UnionNode>();
             chassert(query_node != nullptr || union_node != nullptr);
 
-            const ColumnNodes & correlated_columns = query_node ? query_node->getCorrelatedColumns() : union_node->getCorrelatedColumns();
-            for (auto const & column : correlated_columns)
-            {
-                auto temp_node = column->clone();
-                visit(temp_node);
-            }
+            auto & correlated_columns = query_node ? query_node->getCorrelatedColumnsNode() : union_node->getCorrelatedColumnsNode();
+            visit(correlated_columns);
             return;
         }
 
@@ -410,8 +406,7 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
         ActionsDAG prewhere_actions_dag;
 
         QueryTreeNodePtr query_tree_node = query_node_typed.getPrewhere();
-        const auto & correlated_columns = query_node_typed.getCorrelatedColumns();
-        ColumnNodePtrWithHashSet correlated_columns_set(correlated_columns.begin(), correlated_columns.end());
+        auto correlated_columns_set = query_node_typed.getCorrelatedColumnsSet();
 
         PlannerActionsVisitor visitor(planner_context, /*correlated_columns_set_=*/correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
         auto [expression_nodes, correlated_subtrees] = visitor.visit(prewhere_actions_dag, query_tree_node);
