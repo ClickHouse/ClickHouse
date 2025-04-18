@@ -477,7 +477,7 @@ void executeQuery(
     query_plan.unitePlans(std::move(union_step), std::move(plans));
 }
 
-static ContextMutablePtr updateContext(const LoggerPtr & logger, const ContextPtr & context)
+static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
     auto context_mutable = Context::createCopy(context);
@@ -505,7 +505,7 @@ static ContextMutablePtr updateContext(const LoggerPtr & logger, const ContextPt
     return context_mutable;
 }
 
-static std::pair<ClusterPtr, size_t> prepairCluster(const LoggerPtr & logger, const ContextPtr & context)
+static std::pair<ClusterPtr, size_t> prepairClusterForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context)
 {
     /// check cluster for parallel replicas
     auto not_optimized_cluster = context->getClusterForParallelReplicas();
@@ -554,7 +554,7 @@ static std::pair<ClusterPtr, size_t> prepairCluster(const LoggerPtr & logger, co
     return {new_cluster, shard_num};
 }
 
-static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepairConnectionPools(const LoggerPtr & logger, const ContextPtr & context, const ClusterPtr & cluster)
+static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepairConnectionPoolsForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context, const ClusterPtr & cluster)
 {
     const auto & settings = context->getSettingsRef();
 
@@ -645,11 +645,9 @@ void executeQueryWithParallelReplicas(
     LOG_DEBUG(logger, "Executing read from {}, header {}, query ({}), stage {} with parallel replicas",
         storage_id.getNameForLogs(), header.dumpStructure(), query_ast->formatForLogging(), processed_stage);
 
-    auto new_context = updateContext(logger, context);
-
-    auto [cluster, shard_num] = prepairCluster(logger, new_context);
-
-    auto [connection_pools, max_replicas_to_use] = prepairConnectionPools(logger, new_context, cluster);
+    auto new_context = updateContextForParallelReplicas(logger, context);
+    auto [cluster, shard_num] = prepairClusterForParallelReplicas(logger, new_context);
+    auto [connection_pools, max_replicas_to_use] = prepairConnectionPoolsForParallelReplicas(logger, new_context, cluster);
 
     auto external_tables = new_context->getExternalTables();
     auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(max_replicas_to_use);
@@ -1010,9 +1008,9 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
 
     const auto & settings = context->getSettingsRef();
 
-    auto new_context = updateContext(logger, context);
-    auto [cluster, shard_num] = prepairCluster(logger, new_context);
-    auto [connection_pools, max_replicas_to_use] = prepairConnectionPools(logger, new_context, cluster);
+    auto new_context = updateContextForParallelReplicas(logger, context);
+    auto [cluster, shard_num] = prepairClusterForParallelReplicas(logger, new_context);
+    auto [connection_pools, max_replicas_to_use] = prepairConnectionPoolsForParallelReplicas(logger, new_context, cluster);
     std::optional<size_t> local_replica_index;
 
     if (coordinator)
