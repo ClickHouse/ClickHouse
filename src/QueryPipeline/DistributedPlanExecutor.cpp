@@ -461,7 +461,8 @@ String serializeQueryPlan(const QueryPlan & query_plan)
 QueryPlan deserializeQueryPlan(const String & serialized_query_plan, ContextPtr context)
 {
     ReadBufferFromString in(serialized_query_plan);
-    return QueryPlan::deserialize(in, context).plan;
+    auto plan_and_sets = QueryPlan::deserialize(in, context);
+    return QueryPlan::makeSets(std::move(plan_and_sets), context);
 }
 
 void doExecuteTask(const DistributedQueryTaskDescription & task_description, ObjectStoragePtr object_storage,
