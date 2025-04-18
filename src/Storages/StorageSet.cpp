@@ -189,6 +189,7 @@ StorageSet::StorageSet(
     set->fillSetElements();
 
     restore();
+    set->finishInsert();
 }
 
 RWLockImpl::LockHolder StorageSet::tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const
@@ -281,7 +282,8 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
 
     set = std::make_shared<Set>(SizeLimits(), 0, true);
     set->setHeader(header.getColumnsWithTypeAndName());
-    set->fillSetElements();
+	set->fillSetElements();
+    set->finishInsert();
 }
 
 void StorageSet::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
