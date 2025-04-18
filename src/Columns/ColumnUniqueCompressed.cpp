@@ -358,20 +358,106 @@ void ColumnUniqueFCBlockDF::collectSerializedValueSizes(PaddedPODArray<UInt64> &
     }
 }
 
+char * ColumnUniqueFCBlockDF::serializeIntoMemory(DecompressedValue value, char * memory) const
+{
+    const size_t value_size = value.size() + 1; /* Null terminator */
+
+    if (is_nullable)
+    {
+        UInt8 flag = (n == getNullValueIndex() ? 1 : 0);
+        unalignedStore<UInt8>(memory, flag);
+        ++memory;
+    }
+
+    memcpy(memory, &value_size, sizeof(value_size));
+    memory += sizeof(value_size);
+    memcpy(memory, value.prefix.data, value.prefix.size);
+    memory += value.prefix.size;
+    memcpy(memory, value.suffix.data, value.suffix.size);
+    memory += value.suffix.size;
+    *memory = '\0';
+    ++memory;
+
+    return memory;
+}
+
 StringRef ColumnUniqueFCBlockDF::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     const DecompressedValue value = getDecompressedRefsAt(n);
 
     StringRef res;
-    const size_t value_size = value.prefix.size + value.suffix.size + 1; /* Null terminator */
-    res.size = sizeof(value_size) + value_size;
+    const size_t value_size = value.size() + 1; /* Null terminator */
+    res.size = sizeof(value_size) + value_size + is_nullable;
     char * pos = arena.allocContinue(res.size, begin);
-    memcpy(pos, &value_size, sizeof(value_size));
-    memcpy(pos + sizeof(value_size), value.prefix.data, value.prefix.size);
-    memcpy(pos + sizeof(value_size) + value.prefix.size, value.suffix.data, value.suffix.size);
     res.data = pos;
 
+    serializeIntoMemory(value, pos);
+
     return res;
+}
+
+char * ColumnUniqueFCBlockDF::serializeValueIntoMemory(size_t n, char * memory) const
+{
+    const DecompressedValue value = getDecompressedRefsAt(n);
+    return serializeIntoMemory(value, memory);
+}
+
+void ColumnUniqueFCBlockDF::updateHashWithValue(size_t n, SipHash & hash_func) const
+{
+    data_column->updateHashWithValue(n, hash_func);
+}
+
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+int ColumnUniqueFCBlockDF::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+#else
+int ColumnUniqueFCBlockDF::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+#endif
+{
+    if (is_nullable)
+    {
+        /// See ColumnNullable::compareAt
+        bool lval_is_null = n == getNullValueIndex();
+        bool rval_is_null = m == getNullValueIndex();
+
+        if (unlikely(lval_is_null || rval_is_null))
+        {
+            if (lval_is_null && rval_is_null)
+            {
+                return 0;
+            }
+            return lval_is_null ? nan_direction_hint : -nan_direction_hint;
+        }
+    }
+
+    /// TODO: it's inefficient, it's possible to do better
+    const String lhs_value = getDecompressedAt(n);
+    const String rhs_value = assert_cast<const ColumnUniqueFCBlockDF &>(rhs).getDecompressedAt(m);
+    const StringRef lhsref = lhs_value;
+    const StringRef rhsref = rhs_value;
+    if (lhsref == rhsref)
+    {
+        return 0;
+    }
+    if (lhsref < rhsref)
+    {
+        return -1;
+    }
+    return 1;
+}
+
+void ColumnUniqueFCBlockDF::getExtremes(Field & min, Field & max) const
+{
+    /// Only default / null value
+    if (size() == 1)
+    {
+        min = "";
+        max = "";
+        return;
+    }
+
+    /// As values are sorted
+    get(1, min);
+    get(size() - 1, max);
 }
 
 }

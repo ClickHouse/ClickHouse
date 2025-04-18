@@ -68,7 +68,7 @@ public:
     bool isDefaultAt(size_t n) const override { return n == getDefaultValueIndex(); }
     bool isNullAt(size_t n) const override { return n == getNullValueIndex(); }
 
-    /// This methos is not implemented as there is no contiguous memory chunk containing the value
+    /// This methos is not implemented as there is no continuous memory chunk containing the value
     StringRef getDataAt(size_t) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getDataAt' not implemented for ColumnUniqueFCBlockDF");
@@ -77,7 +77,11 @@ public:
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
-    const char * skipSerializedInArena(const char * pos) const override;
+
+    const char * skipSerializedInArena(const char *) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'skipSerializedInArena' is not implemented for ColumnUniqueFCBlockDF");
+    }
 
     void updateHashWithValue(size_t n, SipHash & hash_func) const override;
 
@@ -88,10 +92,15 @@ public:
 #endif
 
     void getExtremes(Field & min, Field & max) const override;
-    bool valuesHaveFixedSize() const override;
-    bool isFixedAndContiguous() const override;
-    size_t sizeOfValueIfFixed() const override;
-    bool isNumeric() const override;
+
+    bool valuesHaveFixedSize() const override { return false; }
+    bool isFixedAndContiguous() const override { return false; }
+    bool isNumeric() const override { return false; }
+
+    size_t sizeOfValueIfFixed() const override
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Method 'sizeOfValueIfFixed' not implemented for ColumnUniqueFCBlockDF");
+    }
 
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;
@@ -145,6 +154,8 @@ private:
     {
         StringRef prefix;
         StringRef suffix;
+
+        size_t size() const { return prefix.size + suffix.size; }
     };
 
     DecompressedValue getDecompressedRefsAt(size_t pos) const;
@@ -163,6 +174,9 @@ private:
 
     /// It's useful when mutating the column as data_column and prefix lengths recalculations are needed
     void recalculateForNewData(const ColumnPtr & string_column);
+
+    /// Returns pointer to the end of serialization (first byte past the data)
+    char * serializeIntoMemory(DecompressedValue value, char * memory) const;
 
     IColumn::WrappedPtr data_column;
     Lengths common_prefix_lengths;
