@@ -8,6 +8,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Set.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -22,6 +23,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
+#include <Interpreters/MutationsInterpreter.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace fs = std::filesystem;
@@ -46,6 +48,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int DEADLOCK_AVOIDED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int NOT_IMPLEMENTED;
 }
 
 class SetOrJoinSink : public SinkToStorage, WithContext
@@ -183,6 +186,7 @@ StorageSet::StorageSet(
 {
     Block header = getInMemoryMetadataPtr()->getSampleBlock();
     set->setHeader(header.getColumnsWithTypeAndName());
+    set->fillSetElements();
 
     restore();
 }
@@ -277,8 +281,77 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
 
     set = std::make_shared<Set>(SizeLimits(), 0, true);
     set->setHeader(header.getColumnsWithTypeAndName());
+    set->fillSetElements();
 }
 
+void StorageSet::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
+{
+    for (const auto & command : commands)
+        if (command.type != MutationCommand::DELETE)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine Set supports only DELETE mutations");
+}
+
+void StorageSet::mutate(const MutationCommands & commands, ContextPtr context)
+{
+    std::lock_guard mutate_lock(mutex);
+
+    constexpr auto tmp_backup_file_name = "tmp/mut.bin";
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+
+    auto backup_buf = disk->writeFile(path + tmp_backup_file_name);
+    auto compressed_backup_buf = CompressedWriteBuffer(*backup_buf);
+    auto backup_stream = NativeWriter(compressed_backup_buf, 0, metadata_snapshot->getSampleBlock());
+
+    auto new_set = std::make_shared<Set>(SizeLimits(), 0, true);
+    new_set->setHeader(metadata_snapshot->getSampleBlock().getColumnsWithTypeAndName());
+    new_set->fillSetElements();
+
+    // New scope controls lifetime of pipeline.
+    {
+        auto storage_ptr = DatabaseCatalog::instance().getTable(getStorageID(), context);
+        MutationsInterpreter::Settings settings(true);
+        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, settings);
+        auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
+        PullingPipelineExecutor executor(pipeline);
+
+        Block block;
+        while (executor.pull(block))
+        {
+            new_set->insertFromBlock(block.getColumnsWithTypeAndName());
+            if (persistent)
+                backup_stream.write(block);
+        }
+    }
+
+    new_set->finishInsert();
+    /// Now acquire exclusive lock and modify storage.
+    TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
+
+    set = std::move(new_set);
+    increment = 1;
+
+    if (persistent)
+    {
+        backup_stream.flush();
+        compressed_backup_buf.finalize();
+        backup_buf->finalize();
+
+        std::vector<std::string> files;
+        disk->listFiles(path, files);
+        for (const auto & file_name: files)
+        {
+            if (file_name.ends_with(".bin"))
+                disk->removeFileIfExists(path + file_name);
+        }
+
+        disk->replaceFile(path + tmp_backup_file_name, path + std::to_string(increment) + ".bin");
+    }
+    else
+    {
+        compressed_backup_buf.cancel();
+        backup_buf->cancel();
+    }
+}
 
 void StorageSetOrJoinBase::restore()
 {
@@ -356,27 +429,52 @@ void StorageSetOrJoinBase::rename(const String & new_path_to_table_data, const S
 class SetSource : public ISource
 {
 public:
-    SetSource(SetPtr set_, TableLockHolder lock_holder_, UInt64 max_block_size_, Block sample_block_)
+    SetSource(SetPtr set_, TableLockHolder lock_holder_, UInt64 max_block_size_, ColumnNumbers column_numbers_, Block sample_block_)
         : ISource(sample_block_)
         , set(set_)
         , lock_holder(lock_holder_)
         , max_block_size(max_block_size_)
+        , column_numbers(std::move(column_numbers_))
         , sample_block(std::move(sample_block_))
     {
     }
 
+    String getName() const override { return "Set"; }
+
 protected:
     Chunk generate() override
     {
-        Chunk chunk;
-        return chunk;
+        if (!set->hasExplicitSetElements() || set->empty() || current_position >= set->getTotalRowCount())
+            return {};
+
+        const size_t total_rows = set->getTotalRowCount();
+        const size_t rows_to_read = std::min(max_block_size, total_rows - current_position);
+
+        MutableColumns mut_columns = sample_block.cloneEmpty().mutateColumns();
+
+        for (size_t idx = 0; idx < column_numbers.size(); ++idx)
+        {
+            const auto & set_column = *set->getSetElements()[column_numbers[idx]];
+            auto & res_column = mut_columns[idx];
+
+            for (size_t row = 0; row < rows_to_read; ++row)
+            {
+                res_column->insert(set_column[current_position + row]);
+            }
+        }
+
+        current_position += rows_to_read;
+
+        return Chunk(std::move(mut_columns), rows_to_read);
     }
 
 private:
     SetPtr set;
     TableLockHolder lock_holder;
 
+    UInt64 current_position = 0;
     UInt64 max_block_size;
+    ColumnNumbers column_numbers;
     Block sample_block;
 };
 
@@ -392,10 +490,11 @@ Pipe StorageSet::read(
     storage_snapshot->check(column_names);
 
     Block source_sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
-    Block sample_block = storage_snapshot->getColumnsByNames(column_names);
+
+    ColumnNumbers column_numbers = storage_snapshot->getColumnNumbersByNames(column_names);
 
     RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
-    return Pipe(std::make_shared<SetSource>(set, std::move(holder), max_block_size, source_sample_block));
+    return Pipe(std::make_shared<SetSource>(set, std::move(holder), max_block_size, column_numbers, source_sample_block));
 }
 
 void registerStorageSet(StorageFactory & factory)
