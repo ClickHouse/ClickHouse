@@ -203,6 +203,20 @@ public:
      * index in the dictionary, which can be used to operate with the indices column.
      */
     virtual std::optional<UInt64> getOrFindValueIndex(StringRef value) const = 0;
+
+class IncrementalHash
+{
+private:
+    UInt128 hash;
+    std::atomic<size_t> num_added_rows;
+
+    std::mutex mutex;
+public:
+    IncrementalHash() : num_added_rows(0) {}
+
+    UInt128 getHash(const ColumnPtr & column);
+};
+
 };
 
 using ColumnUniquePtr = IColumnUnique::ColumnUniquePtr;

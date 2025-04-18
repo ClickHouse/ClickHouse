@@ -197,20 +197,7 @@ private:
     IColumn::WrappedPtr nested_null_mask;
     IColumn::WrappedPtr nested_column_nullable;
 
-    class IncrementalHash
-    {
-    private:
-        UInt128 hash;
-        std::atomic<size_t> num_added_rows;
-
-        std::mutex mutex;
-    public:
-        IncrementalHash() : num_added_rows(0) {}
-
-        UInt128 getHash(const ColumnType & column);
-    };
-
-    mutable IncrementalHash hash;
+    mutable IColumnUnique::IncrementalHash hash;
 
     void createNullMask();
     void updateNullMask();
