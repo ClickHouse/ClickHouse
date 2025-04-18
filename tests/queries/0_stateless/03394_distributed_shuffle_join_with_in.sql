@@ -12,7 +12,8 @@ SET
     enable_parallel_replicas = 0,
     default_shuffle_join_bucket_count=3,
     default_reader_bucket_count=3,
-    force_exchange_kind='Streaming';
+    force_exchange_kind='Streaming',
+    optimize_exchanges = 1;
 
 SELECT '----------';
 
