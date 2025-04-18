@@ -112,6 +112,9 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"log_path", [&](const JSONObjectType & value) { log_path = std::filesystem::path(String(value.getString())); }},
         {"read_log", [&](const JSONObjectType & value) { read_log = value.getBool(); }},
         {"seed", [&](const JSONObjectType & value) { seed = value.getUInt64(); }},
+        {"host", [&](const JSONObjectType & value) { host = String(value.getString()); }},
+        {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }},
+        {"secure_port", [&](const JSONObjectType & value) { secure_port = static_cast<uint32_t>(value.getUInt64()); }},
         {"min_insert_rows", [&](const JSONObjectType & value) { min_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
         {"max_insert_rows", [&](const JSONObjectType & value) { max_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
         {"min_nested_rows", [&](const JSONObjectType & value) { min_nested_rows = value.getUInt64(); }},
@@ -136,6 +139,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"compare_success_results", [&](const JSONObjectType & value) { compare_success_results = value.getBool(); }},
         {"allow_infinite_tables", [&](const JSONObjectType & value) { allow_infinite_tables = value.getBool(); }},
         {"compare_explains", [&](const JSONObjectType & value) { compare_explains = value.getBool(); }},
+        {"fail_on_timeout", [&](const JSONObjectType & value) { fail_on_timeout = value.getBool(); }},
         {"clickhouse", [&](const JSONObjectType & value) { clickhouse_server = loadServerCredentials(value, "clickhouse", 9004, 9005); }},
         {"mysql", [&](const JSONObjectType & value) { mysql_server = loadServerCredentials(value, "mysql", 3306, 3306); }},
         {"postgresql", [&](const JSONObjectType & value) { postgresql_server = loadServerCredentials(value, "postgresql", 5432); }},
@@ -218,6 +222,10 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
             min_nested_rows,
             max_nested_rows);
     }
+    if (allow_infinite_tables && fail_on_timeout)
+    {
+        LOG_WARNING(log, "Setting both \"allow_infinite_tables\" and \"fail_on_timeout\" is not recommended");
+    }
     for (const auto & entry : std::views::values(metrics))
     {
         measure_performance |= entry.enabled;
@@ -269,9 +277,9 @@ void FuzzConfig::loadServerConfigurations()
     loadServerSettings(this->clusters, true, "clusters", "cluster");
 }
 
-std::string FuzzConfig::getConnectionHostAndPort() const
+String FuzzConfig::getConnectionHostAndPort(const bool secure) const
 {
-    return cb->getConnectionHostAndPortForFuzzing();
+    return fmt::format("{}:{}", this->host, secure ? this->secure_port : this->port);
 }
 
 void FuzzConfig::loadSystemTables(std::unordered_map<String, DB::Strings> & tables) const
