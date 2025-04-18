@@ -43,7 +43,7 @@ private:
         MutableColumns & lazily_read_columns);
 
     const MergeTreeData & storage;
-    DataPartsInfoPtr data_parts_info;
+    DataPartInfoByIndexPtr data_part_infos;
     StorageSnapshotPtr storage_snapshot;
     bool use_uncompressed_cache;
     Names requested_column_names;

@@ -9,8 +9,8 @@ import requests
 from ._environment import _Environment
 from .info import Info
 from .result import Result
-from .s3 import StorageUsage
 from .settings import Settings
+from .usage import ComputeUsage, StorageUsage
 from .utils import Utils
 
 
@@ -46,18 +46,18 @@ class CIDB:
         }
 
     @classmethod
-    def _get_sub_result_with_test_cases(cls, result: Result) -> Result:
-        if len(result.results) > 20:
+    def _get_sub_result_with_test_cases(
+        cls, result: Result, result_name_for_cidb
+    ) -> Optional[Result]:
+        if not result_name_for_cidb:
             return result
-        for sub_result in result.results:
-            if sub_result.name.lower() in [
-                n.lower() for n in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS
-            ]:
-                return sub_result
-        return result
+        for r in result.results:
+            if r.name == result_name_for_cidb:
+                return r
+        return None
 
     @classmethod
-    def json_data_generator(cls, result: Result):
+    def json_data_generator(cls, result: Result, result_name_for_cidb):
         """Generates JSON data records for the result and its test cases."""
         env = _Environment.get()
 
@@ -75,7 +75,7 @@ class CIDB:
             base_ref=env.BASE_BRANCH,
             base_repo=env.REPOSITORY,
             head_ref=env.BRANCH,
-            head_repo=env.REPOSITORY,  # TODO: remove from table?
+            head_repo=env.FORK_NAME,
             task_url="",
             instance_type=",".join(
                 filter(None, [env.INSTANCE_TYPE, env.INSTANCE_LIFE_CYCLE])
@@ -88,21 +88,63 @@ class CIDB:
         )
         yield json.dumps(dataclasses.asdict(base_record))
 
-        test_cases_result = cls._get_sub_result_with_test_cases(result)
-        for result_ in test_cases_result.results:
-            record = copy.copy(base_record)
-            record.test_name = result_.name
-            record.report_url = (
-                record.report_url
-                + f"&name_1={urllib.parse.quote(result.name, safe='')}"
-            )
-            if result_.start_time:
-                record.check_start_time = Utils.timestamp_to_str(result_.start_time)
-            record.test_status = result_.status
-            if result_.duration:
-                record.test_duration_ms = int(result_.duration * 1000)
-            record.test_context_raw = result_.info
-            yield json.dumps(dataclasses.asdict(record))
+        test_cases_result = cls._get_sub_result_with_test_cases(
+            result, result_name_for_cidb
+        )
+        if test_cases_result:
+            for result_ in test_cases_result.results:
+                record = copy.copy(base_record)
+                record.test_name = result_.name
+                record.report_url = (
+                    record.report_url
+                    + f"&name_1={urllib.parse.quote(result.name, safe='')}"
+                )
+                if result_.start_time:
+                    record.check_start_time = Utils.timestamp_to_str(result_.start_time)
+                record.test_status = result_.status
+                if result_.duration:
+                    record.test_duration_ms = int(result_.duration * 1000)
+                record.test_context_raw = result_.info
+                yield json.dumps(dataclasses.asdict(record))
+
+    def query(self, query: str, retries: int = 1):
+        """
+        Executes a SELECT query on CI DB with retry support.
+
+        :param query: SQL query string
+        :param retries: Number of retry attempts on failure
+        :return: Response text if successful
+        """
+        params = {
+            "database": Settings.CI_DB_DB_NAME,
+            "query": query,
+            "send_logs_level": "warning",
+        }
+
+        for attempt in range(1, retries + 1):
+            try:
+                response = requests.post(
+                    url=self.url,
+                    params=params,
+                    headers=self.auth,
+                    timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
+                )
+
+                if response.ok:
+                    return response.text
+                else:
+                    print(
+                        f"WARNING: CIDB query failed (status {response.status_code}) - Attempt {attempt}"
+                    )
+                    if attempt == retries:
+                        raise RuntimeError(
+                            f"Failed to query CI DB. Response code: {response.status_code}, Body: {response.text}"
+                        )
+
+            except Exception as ex:
+                print(f"ERROR: Exception during CI DB query attempt {attempt}: {ex}")
+                if attempt == retries:
+                    raise ex
 
     def insert_rows(self, jsons, retries=3):
         params = {
@@ -135,9 +177,9 @@ class CIDB:
                 if retry == retries - 1:
                     raise ex
 
-    def insert(self, result: Result):
+    def insert(self, result: Result, result_name_for_cidb=""):
         jsons = []
-        for json_str in self.json_data_generator(result):
+        for json_str in self.json_data_generator(result, result_name_for_cidb):
             jsons.append(json_str)
         self.insert_rows(jsons)
         return self
@@ -149,9 +191,9 @@ class CIDB:
             pull_request_number=info.pr_number,
             commit_sha=info.sha,
             commit_url=info.commit_url,
-            check_name="Usage",
+            check_name="Usage Storage",
             check_status=Result.Status.SUCCESS,
-            check_duration_ms=0,
+            check_duration_ms=storage_usage.uploaded,
             check_start_time=Utils.timestamp_to_str(Utils.timestamp()),
             report_url=info.get_report_url(),
             pull_request_url=info.change_url,
@@ -166,7 +208,7 @@ class CIDB:
             instance_id=info.instance_id,
             test_name="storage_usage_uploaded_bytes",
             test_status="OK",
-            test_duration_ms=storage_usage.uploaded,
+            test_duration_ms=0,
             test_context_raw="test_duration_ms shows total size uploaded in bytes",
         )
         json_rows.append(json.dumps(dataclasses.asdict(record)))
@@ -176,6 +218,40 @@ class CIDB:
             "test_duration_ms shows total number of uniq object names uploaded"
         )
         json_rows.append(json.dumps(dataclasses.asdict(record)))
+        self.insert_rows(json_rows)
+        return self
+
+    def insert_compute_usage(self, compute_usage: ComputeUsage):
+        info = Info()
+        json_rows = []
+        for runner_str, usage in compute_usage.runners_usage.items():
+            jobs = sorted(compute_usage.details[runner_str])
+            description = ",".join(jobs)
+            record = self.TableRecord(
+                pull_request_number=info.pr_number,
+                commit_sha=info.sha,
+                commit_url=info.commit_url,
+                check_name="Usage Compute",
+                check_status=Result.Status.SUCCESS,
+                check_duration_ms=int(usage * 1000),
+                check_start_time=Utils.timestamp_to_str(Utils.timestamp()),
+                report_url=info.get_report_url(),
+                pull_request_url=info.change_url,
+                base_ref=info.base_branch,
+                base_repo=info.repo_name,
+                head_ref=info.git_branch,
+                head_repo=info.fork_name,
+                task_url="",
+                instance_type=",".join(
+                    filter(None, [info.instance_type, info.instance_lifecycle])
+                ),
+                instance_id=info.instance_id,
+                test_name=runner_str,
+                test_status="OK",
+                test_duration_ms=0,
+                test_context_raw=description,
+            )
+            json_rows.append(json.dumps(dataclasses.asdict(record)))
         self.insert_rows(json_rows)
         return self
 

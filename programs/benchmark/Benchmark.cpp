@@ -26,7 +26,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
-#include <IO/UseSSL.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
@@ -139,7 +138,8 @@ public:
                 /* cluster_secret_= */ "",
                 /* client_name_= */ std::string(DEFAULT_CLIENT_NAME),
                 Protocol::Compression::Enable,
-                secure));
+                secure,
+                /* bind_host_= */ ""));
 
             if (!round_robin || comparison_info_per_interval.empty())
             {
@@ -663,7 +663,6 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
 
         UInt16 default_port = options.count("secure") ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT;
 
-        UseSSL use_ssl;
         Ports ports = options.count("port")
             ? options["port"].as<Ports>()
             : Ports({default_port});
