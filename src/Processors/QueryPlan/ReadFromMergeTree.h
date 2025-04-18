@@ -71,6 +71,7 @@ public:
         Partition,
         PrimaryKey,
         Skip,
+        PrimaryKeyExpand,
     };
 
     /// This is a struct with information about applied indexes.
