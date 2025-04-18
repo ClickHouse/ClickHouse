@@ -1019,9 +1019,11 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
 
         local_replica_index = findLocalReplicaIndexAndUpdatePools(connection_pools, max_replicas_to_use, cluster);
 
-        /// with local pipeline the snapshot replica is local one
-        /// and replica number was already assigned to it
-        /// so, we need to reuse it here
+        /// while building local pipeline
+        /// - the coordinator is created
+        /// - the coordinator got announcement from local replica and replica number is assigned to it
+        /// (since the coordinator got first announcement from local replica, - its snapshot will be used for query execution)
+        /// so, here, we need to reuse already assigned number to local replica
         auto snapshot_replica_num = (*coordinator)->getSnapshotReplicaNum();
         chassert(snapshot_replica_num.has_value());
 

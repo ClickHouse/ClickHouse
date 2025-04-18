@@ -795,11 +795,12 @@ InterpreterInsertQuery::buildLocalInsertSelectPipelineForParallelReplicas(ASTIns
             new_settings[Setting::preferred_block_size_bytes] = settings[Setting::min_insert_block_size_bytes];
     }
 
-    auto context_for_trivial_select = Context::createCopy(context);
+    auto context_for_trivial_select = Context::createCopy(context_ptr);
     context_for_trivial_select->setSettings(new_settings);
     context_for_trivial_select->setInsertionTable(context_ptr->getInsertionTable(), context_ptr->getInsertionTableColumnNames());
 
-    auto [pipeline_builder, coordinator] = getLocalSelectPipelineForInserSelectWithParallelReplicas(query.select, context_ptr);
+    auto [pipeline_builder, coordinator]
+        = getLocalSelectPipelineForInserSelectWithParallelReplicas(query.select, context_for_trivial_select);
     auto local_pipeline = addInsertToSelectPipeline(query, table, pipeline_builder);
     return {std::move(local_pipeline), coordinator};
 }
