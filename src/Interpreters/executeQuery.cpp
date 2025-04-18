@@ -80,6 +80,7 @@
 
 #include <Poco/Net/SocketAddress.h>
 
+#include <exception>
 #include <memory>
 #include <random>
 
@@ -328,12 +329,11 @@ addPrivilegesInfoToQueryLogElement(QueryLogElement & element, const ContextPtr c
 }
 
 static void
-addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo & info, const ASTPtr query_ast, const ContextPtr context_ptr)
+addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo & info, const ASTPtr query_ast, const ContextPtr context_ptr, std::chrono::system_clock::time_point time)
 {
-    const auto time_now = std::chrono::system_clock::now();
     UInt64 elapsed_microseconds = info.elapsed_microseconds;
-    element.event_time = timeInSeconds(time_now);
-    element.event_time_microseconds = timeInMicroseconds(time_now);
+    element.event_time = timeInSeconds(time);
+    element.event_time_microseconds = timeInMicroseconds(time);
     element.query_duration_ms = elapsed_microseconds / 1000;
 
     ProfileEvents::increment(ProfileEvents::QueryTimeMicroseconds, elapsed_microseconds);
@@ -544,7 +544,32 @@ void logQueryMetricLogFinish(ContextPtr context, bool internal, String query_id,
     }
 }
 
-void logQueryFinish(
+static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pulling_pipeline, const ProgressCallback & progress_callback, QueryStatusPtr process_list_elem)
+{
+    ResultProgress res(0, 0);
+
+    if (pulling_pipeline)
+    {
+        pipeline.tryGetResultRowsAndBytes(res.result_rows, res.result_bytes);
+    }
+    else if (process_list_elem) /// will be used only for ordinary INSERT queries
+    {
+        auto progress_out = process_list_elem->getProgressOut();
+        res.result_rows = progress_out.written_rows;
+        res.result_bytes = progress_out.written_bytes;
+    }
+
+    if (progress_callback)
+    {
+        Progress p;
+        p.incrementPiecewiseAtomically(Progress{res});
+        progress_callback(p);
+    }
+
+    return res;
+}
+
+void logQueryFinishImpl(
     QueryLogElement & elem,
     const ContextMutablePtr & context,
     const ASTPtr & query_ast,
@@ -552,7 +577,8 @@ void logQueryFinish(
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
     QueryResultCacheUsage query_result_cache_usage,
-    bool internal)
+    bool internal,
+    std::chrono::system_clock::time_point time)
 {
     const Settings & settings = context->getSettingsRef();
     auto log_queries = settings[Setting::log_queries] && !internal;
@@ -563,31 +589,15 @@ void logQueryFinish(
         /// Update performance counters before logging to query_log
         CurrentThread::finalizePerformanceCounters();
 
-        auto time_now = std::chrono::system_clock::now();
         QueryStatusInfo info = process_list_elem->getInfo(true, settings[Setting::log_profile_events]);
-        logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, std::make_shared<QueryStatusInfo>(info));
+        logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time, std::make_shared<QueryStatusInfo>(info));
         elem.type = QueryLogElementType::QUERY_FINISH;
 
-        addStatusInfoToQueryLogElement(elem, info, query_ast, context);
+        addStatusInfoToQueryLogElement(elem, info, query_ast, context, time);
 
-        if (pulling_pipeline)
-        {
-            query_pipeline.tryGetResultRowsAndBytes(elem.result_rows, elem.result_bytes);
-        }
-        else /// will be used only for ordinary INSERT queries
-        {
-            auto progress_out = process_list_elem->getProgressOut();
-            elem.result_rows = progress_out.written_rows;
-            elem.result_bytes = progress_out.written_bytes;
-        }
-
-        auto progress_callback = context->getProgressCallback();
-        if (progress_callback)
-        {
-            Progress p;
-            p.incrementPiecewiseAtomically(Progress{ResultProgress{elem.result_rows, elem.result_bytes}});
-            progress_callback(p);
-        }
+        auto result_progress = flushQueryProgress(query_pipeline, pulling_pipeline, context->getProgressCallback(), process_list_elem);
+        elem.result_rows = result_progress.result_rows;
+        elem.result_bytes = result_progress.result_bytes;
 
         if (elem.read_rows != 0)
         {
@@ -641,8 +651,22 @@ void logQueryFinish(
                 query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), convertFieldToString(change.value));
             }
         }
-        query_span->finish();
+        query_span->finish(time);
     }
+}
+
+void logQueryFinish(
+    QueryLogElement & elem,
+    const ContextMutablePtr & context,
+    const ASTPtr & query_ast,
+    const QueryPipeline & query_pipeline,
+    bool pulling_pipeline,
+    std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
+    QueryResultCacheUsage query_result_cache_usage,
+    bool internal)
+{
+    const auto time_now = std::chrono::system_clock::now();
+    logQueryFinishImpl(elem, context, query_ast, query_pipeline, pulling_pipeline, query_span, query_result_cache_usage, internal, time_now);
 }
 
 void logQueryException(
@@ -676,7 +700,7 @@ void logQueryException(
     if (process_list_elem)
     {
         info = std::make_shared<QueryStatusInfo>(process_list_elem->getInfo(true, settings[Setting::log_profile_events], false));
-        addStatusInfoToQueryLogElement(elem, *info, query_ast, context);
+        addStatusInfoToQueryLogElement(elem, *info, query_ast, context, time_now);
     }
     else
     {
@@ -710,7 +734,7 @@ void logQueryException(
         query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
         query_span->addAttribute("clickhouse.exception", elem.exception);
         query_span->addAttribute("clickhouse.exception_code", elem.exception_code);
-        query_span->finish();
+        query_span->finish(time_now);
     }
 }
 
@@ -832,7 +856,7 @@ void logExceptionBeforeStart(
         query_span->addAttribute("clickhouse.exception", elem.exception);
         query_span->addAttribute("db.statement", elem.query);
         query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
-        query_span->finish();
+        query_span->finish(query_end_time);
     }
 
     ProfileEvents::increment(ProfileEvents::FailedQuery);
@@ -1617,15 +1641,16 @@ static BlockIO executeQueryImpl(
                                     internal,
                                     implicit_txn_control,
                                     execute_implicit_tcl_query,
+                                    // Need to be cached, since will be changed after complete()
                                     pulling_pipeline = pipeline.pulling(),
-                                    query_span](QueryPipeline & query_pipeline) mutable
+                                    query_span](QueryPipeline & query_pipeline, std::chrono::system_clock::time_point finish_time) mutable
             {
                 if (query_result_cache_usage == QueryResultCacheUsage::Write)
                     /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
                     /// prevent partial/garbage results in case of exceptions during query execution.
                     query_pipeline.finalizeWriteInQueryResultCache();
 
-                logQueryFinish(elem, context, out_ast, query_pipeline, pulling_pipeline, query_span, query_result_cache_usage, internal);
+                logQueryFinishImpl(elem, context, out_ast, query_pipeline, pulling_pipeline, query_span, query_result_cache_usage, internal, finish_time);
 
                 if (*implicit_txn_control)
                     execute_implicit_tcl_query(context, ASTTransactionControl::COMMIT);
@@ -1702,7 +1727,8 @@ void executeQuery(
     SetResultDetailsFunc set_result_details,
     QueryFlags flags,
     const std::optional<FormatSettings> & output_format_settings,
-    HandleExceptionInOutputFormatFunc handle_exception_in_output_format)
+    HandleExceptionInOutputFormatFunc handle_exception_in_output_format,
+    QueryFinishCallback query_finish_callback)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -1869,6 +1895,7 @@ void executeQuery(
     }
 
     auto & pipeline = streams.pipeline;
+    bool pulling_pipeline = pipeline.pulling();
 
     std::unique_ptr<WriteBuffer> compressed_buffer;
     try
@@ -1974,7 +2001,37 @@ void executeQuery(
         throw;
     }
 
-    streams.onFinish();
+    /// The order is important here:
+    /// - first we save the finish_time that will be used for the entry in query_log/opentelemetry_span_log.finish_time_us
+    /// - then we flush the progress (to flush result_rows/result_bytes)
+    /// - then call the query_finish_callback() - right now the only purpose is to flush the data over HTTP
+    /// - then call onFinish() that will create entry in query_log/opentelemetry_span_log
+    ///
+    /// That way we have:
+    /// - correct finish time of the query (regardless of how long does the query_finish_callback() takes)
+    /// - correct progress for HTTP (X-ClickHouse-Summary requires result_rows/result_bytes)
+    /// - correct NetworkSendElapsedMicroseconds/NetworkSendBytes in query_log
+    const auto finish_time = std::chrono::system_clock::now();
+    std::exception_ptr exception_ptr;
+    if (query_finish_callback)
+    {
+        /// Dump result_rows/result_bytes, since query_finish_callback() will send final http header.
+        flushQueryProgress(pipeline, pulling_pipeline, context->getProgressCallback(), context->getProcessListElement());
+
+        try
+        {
+            query_finish_callback();
+        }
+        catch (...)
+        {
+            exception_ptr = std::current_exception();
+        }
+    }
+
+    streams.onFinish(finish_time);
+
+    if (exception_ptr)
+        std::rethrow_exception(exception_ptr);
 }
 
 void executeTrivialBlockIO(BlockIO & streams, ContextPtr context)
