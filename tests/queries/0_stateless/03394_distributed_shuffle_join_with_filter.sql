@@ -1,3 +1,4 @@
+SET optimize_exchanges = 1;
 CREATE TABLE test(src_ip UInt32, dst_ip UInt32, bytes UInt64) ENGINE MergeTree() ORDER BY src_ip;
 
 INSERT INTO test SELECT number%1000, (number+10)%1000, number%100 FROM numbers(5000);

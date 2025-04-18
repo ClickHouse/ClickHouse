@@ -1,3 +1,4 @@
+SET optimize_exchanges = 1;
 CREATE TABLE test(path String, lang String, hits UInt64) ENGINE MergeTree() ORDER BY tuple();
 
 INSERT INTO test SELECT 'path' || number::String, 'en', number FROM numbers(5);
