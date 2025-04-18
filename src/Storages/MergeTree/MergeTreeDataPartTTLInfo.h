@@ -29,6 +29,9 @@ struct MergeTreeDataPartTTLInfo
 
     void update(time_t time);
     void update(const MergeTreeDataPartTTLInfo & other_info);
+
+    bool isMinTTLExpired(time_t current_time) const { return min && min <= current_time; }
+    bool isMaxTTLExpired(time_t current_time) const { return max && max <= current_time; }
 };
 
 /// Order is important as it would be serialized and hashed for checksums

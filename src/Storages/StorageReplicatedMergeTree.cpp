@@ -4146,32 +4146,6 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             {
                 LOG_TRACE(LogFrequencyLimiter(log.load(), 300), "Didn't select merge: {}", select_merge_result.error().explanation.text);
             }
-
-            auto select_single_part_mutation = merger_mutator.selectSinglePartToMutate(
-                std::make_shared<ReplicatedMergeTreePartsCollector>(*this, merge_predicate),
-                merge_predicate,
-                MergeSelectorApplier{max_source_parts_size_for_merge, merge_with_ttl_allowed},
-                partitions_to_merge_in);
-
-            if (select_single_part_mutation.has_value())
-            {
-                future_merged_part = constructFuturePart(*this, select_single_part_mutation.value(), {MergeTreeDataPartState::Active});
-
-                create_result = createLogEntryToMutateSinglePart(
-                    *future_merged_part->parts.front(),
-                    future_merged_part->uuid,
-                    *select_single_part_mutation,
-                    merge_predicate->getVersion());
-
-                if (create_result == CreateMergeEntryResult::Ok)
-                    return AttemptStatus::EntryCreated;
-                if (create_result == CreateMergeEntryResult::LogUpdated)
-                    return AttemptStatus::NeedRetry;
-            }
-            else
-            {
-                LOG_TRACE(LogFrequencyLimiter(log.load(), 300), "Didn't select single part mutation: {}", select_single_part_mutation.error().explanation.text);
-            }
         }
 
         /// If there are many mutations in queue, it may happen, that we cannot enqueue enough merges to merge all new parts

@@ -110,6 +110,9 @@ struct TTLDescription
 using TTLColumnsDescription = std::unordered_map<String, TTLDescription>;
 using TTLDescriptions = std::vector<TTLDescription>;
 
+using TTLDescriptionRawPtr = const TTLDescription *;
+using TTLDescriptionRawPtrs = std::vector<TTLDescriptionRawPtr>;
+
 /// Common TTL for all table. Specified after defining the table columns.
 struct TTLTableDescription
 {
@@ -140,6 +143,7 @@ struct TTLTableDescription
 
     /// Parse description from string
     static TTLTableDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_attach);
+    TTLDescriptionRawPtrs getAllDescriptions() const;
 };
 
 }

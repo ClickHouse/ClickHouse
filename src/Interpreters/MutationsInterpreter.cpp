@@ -61,8 +61,6 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
-    extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
-    extern const MergeTreeSettingsBool ttl_only_drop_parts;
 }
 
 namespace ErrorCodes
@@ -74,7 +72,6 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_UPDATE_COLUMN;
     extern const int UNEXPECTED_EXPRESSION;
-    extern const int ILLEGAL_STATISTICS;
 }
 
 
@@ -130,32 +127,6 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand
     query_tree_pass_manager.run(query_tree);
 
     return query_tree;
-}
-
-ColumnDependencies getAllColumnDependencies(
-    const StorageMetadataPtr & metadata_snapshot,
-    const NameSet & updated_columns,
-    const StorageInMemoryMetadata::HasDependencyCallback & has_dependency)
-{
-    NameSet new_updated_columns = updated_columns;
-    ColumnDependencies dependencies;
-
-    while (!new_updated_columns.empty())
-    {
-        auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns, true, has_dependency);
-        new_updated_columns.clear();
-        for (const auto & dependency : new_dependencies)
-        {
-            if (!dependencies.contains(dependency))
-            {
-                dependencies.insert(dependency);
-                if (!dependency.isReadOnly())
-                    new_updated_columns.insert(dependency.column_name);
-            }
-        }
-    }
-
-    return dependencies;
 }
 
 }
@@ -347,26 +318,6 @@ bool MutationsInterpreter::Source::supportsLightweightDelete() const
         return part->supportLightweightDeleteMutate();
 
     return storage->supportsLightweightDelete();
-}
-
-bool MutationsInterpreter::Source::materializeTTLRecalculateOnly() const
-{
-    return data && (*data->getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only];
-}
-
-bool MutationsInterpreter::Source::hasSecondaryIndex(const String & name) const
-{
-    return part && part->hasSecondaryIndex(name);
-}
-
-bool MutationsInterpreter::Source::hasProjection(const String & name) const
-{
-    return part && part->hasProjection(name);
-}
-
-bool MutationsInterpreter::Source::hasBrokenProjection(const String & name) const
-{
-    return part && part->hasBrokenProjection(name);
 }
 
 bool MutationsInterpreter::Source::isCompactPart() const
@@ -581,9 +532,6 @@ void MutationsInterpreter::prepare(bool dry_run)
 
     /// TODO Should we get columns, indices and projections from the part itself? Table metadata may be different
     const ColumnsDescription & columns_desc = metadata_snapshot->getColumns();
-    const IndicesDescription & indices_desc = metadata_snapshot->getSecondaryIndices();
-    const ProjectionsDescription & projections_desc = metadata_snapshot->getProjections();
-
     auto storage_snapshot = std::make_shared<StorageSnapshot>(*source.getStorage(), metadata_snapshot);
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withVirtuals();
 
@@ -591,15 +539,11 @@ void MutationsInterpreter::prepare(bool dry_run)
     NameSet available_columns_set(available_columns.begin(), available_columns.end());
 
     NameSet updated_columns;
-    bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
 
     for (auto & command : commands)
     {
         if (command.type == MutationCommand::Type::APPLY_DELETED_MASK)
             command = createCommandToApplyDeletedMask(command);
-
-        if (command.type == MutationCommand::Type::UPDATE || command.type == MutationCommand::Type::DELETE)
-            materialize_ttl_recalculate_only = false;
 
         for (const auto & [name, _] : command.column_to_update_expression)
         {
@@ -633,23 +577,6 @@ void MutationsInterpreter::prepare(bool dry_run)
         validateUpdateColumns(source, metadata_snapshot, updated_columns, column_to_affected_materialized, context);
     }
 
-    StorageInMemoryMetadata::HasDependencyCallback has_dependency =
-        [&](const String & name, ColumnDependency::Kind kind)
-    {
-        if (kind == ColumnDependency::PROJECTION)
-            return source.hasProjection(name);
-
-        if (kind == ColumnDependency::SKIP_INDEX)
-            return source.hasSecondaryIndex(name);
-
-        return true;
-    };
-
-    if (settings.recalculate_dependencies_of_updated_columns)
-        dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns, has_dependency);
-
-    bool need_rebuild_indexes = false;
-    bool need_rebuild_projections = false;
     std::vector<String> read_columns;
 
     /// First, break a sequence of commands into stages.
@@ -660,7 +587,6 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         if (command.type == MutationCommand::DELETE)
         {
-            mutation_kind.set(MutationKind::MUTATE_OTHER);
             if (stages.empty() || !stages.back().column_to_updated.empty())
                 stages.emplace_back(context);
 
@@ -670,13 +596,9 @@ void MutationsInterpreter::prepare(bool dry_run)
                 predicate = makeASTFunction("isZeroOrNull", predicate);
 
             stages.back().filters.push_back(predicate);
-            /// ALTER DELETE can changes number of rows in the part, so we need to rebuild indexes and projection
-            need_rebuild_indexes = true;
-            need_rebuild_projections = true;
         }
         else if (command.type == MutationCommand::UPDATE)
         {
-            mutation_kind.set(MutationKind::MUTATE_OTHER);
             if (stages.empty() || !stages.back().column_to_updated.empty())
                 stages.emplace_back(context);
             if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
@@ -713,7 +635,6 @@ void MutationsInterpreter::prepare(bool dry_run)
                 {
                     type = RowExistsColumn::type;
                     deleted_mask_updated = true;
-                    need_rebuild_projections = true;
                 }
                 else
                 {
@@ -785,14 +706,14 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
             }
 
+            /// TODO: implement this in MutateTask
             /// If the part is compact and adaptive index granularity is enabled, modify data in one column via ALTER UPDATE can change
             /// the part granularity, so we need to rebuild indexes
-            if (source.isCompactPart() && source.getMergeTreeData() && (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::index_granularity_bytes] > 0)
-                need_rebuild_indexes = true;
+            // if (source.isCompactPart() && source.getMergeTreeData() && (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::index_granularity_bytes] > 0)
+            //     need_rebuild_indexes = true;
         }
         else if (command.type == MutationCommand::MATERIALIZE_COLUMN)
         {
-            mutation_kind.set(MutationKind::MUTATE_OTHER);
             if (stages.empty() || !stages.back().column_to_updated.empty())
                 stages.emplace_back(context);
             if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
@@ -817,156 +738,36 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             stages.back().column_to_updated.emplace(column.name, materialized_column);
         }
-        else if (command.type == MutationCommand::MATERIALIZE_INDEX)
-        {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
-            auto it = std::find_if(
-                    std::cbegin(indices_desc), std::end(indices_desc),
-                    [&](const IndexDescription & index)
-                    {
-                        return index.name == command.index_name;
-                    });
-            if (it == std::cend(indices_desc))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown index: {}", command.index_name);
-
-            if (!source.hasSecondaryIndex(it->name))
-            {
-                auto query = (*it).expression_list_ast->clone();
-                auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
-                const auto required_columns = syntax_result->requiredSourceColumns();
-                for (const auto & column : required_columns)
-                    dependencies.emplace(column, ColumnDependency::SKIP_INDEX);
-                materialized_indices.emplace(command.index_name);
-            }
-        }
-        else if (command.type == MutationCommand::MATERIALIZE_STATISTICS)
-        {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
-            for (const auto & stat_column_name: command.statistics_columns)
-            {
-                if (!columns_desc.has(stat_column_name) || columns_desc.get(stat_column_name).statistics.empty())
-                    throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Unknown statistics column: {}", stat_column_name);
-                dependencies.emplace(stat_column_name, ColumnDependency::STATISTICS);
-                materialized_statistics.emplace(stat_column_name);
-            }
-        }
-        else if (command.type == MutationCommand::MATERIALIZE_PROJECTION)
-        {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
-            const auto & projection = projections_desc.get(command.projection_name);
-            if (!source.hasProjection(projection.name) || source.hasBrokenProjection(projection.name))
-            {
-                for (const auto & column : projection.required_columns)
-                    dependencies.emplace(column, ColumnDependency::PROJECTION);
-                materialized_projections.emplace(command.projection_name);
-            }
-        }
-        else if (command.type == MutationCommand::DROP_INDEX)
-        {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
-            materialized_indices.erase(command.index_name);
-        }
-        else if (command.type == MutationCommand::DROP_STATISTICS)
-        {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
-            for (const auto & stat_column_name: command.statistics_columns)
-                materialized_statistics.erase(stat_column_name);
-        }
-        else if (command.type == MutationCommand::DROP_PROJECTION)
-        {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
-            materialized_projections.erase(command.projection_name);
-        }
-        else if (command.type == MutationCommand::MATERIALIZE_TTL)
-        {
-            mutation_kind.set(MutationKind::MUTATE_OTHER);
-            bool suitable_for_ttl_optimization = (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::ttl_only_drop_parts]
-                && metadata_snapshot->hasOnlyRowsTTL();
-
-            if (materialize_ttl_recalculate_only || suitable_for_ttl_optimization)
-            {
-                // just recalculate ttl_infos without remove expired data
-                auto all_columns_vec = all_columns.getNames();
-                auto all_columns_set = NameSet(all_columns_vec.begin(), all_columns_vec.end());
-                auto new_dependencies = metadata_snapshot->getColumnDependencies(all_columns_set, false, has_dependency);
-
-                for (const auto & dependency : new_dependencies)
-                {
-                    if (dependency.kind == ColumnDependency::TTL_EXPRESSION)
-                        dependencies.insert(dependency);
-                }
-            }
-            else if (metadata_snapshot->hasRowsTTL()
-                || metadata_snapshot->hasAnyRowsWhereTTL()
-                || metadata_snapshot->hasAnyGroupByTTL())
-            {
-                for (const auto & column : all_columns)
-                    dependencies.emplace(column.name, ColumnDependency::TTL_TARGET);
-            }
-            else
-            {
-                NameSet new_updated_columns;
-                auto column_ttls = metadata_snapshot->getColumns().getColumnTTLs();
-                for (const auto & elem : column_ttls)
-                {
-                    dependencies.emplace(elem.first, ColumnDependency::TTL_TARGET);
-                    new_updated_columns.insert(elem.first);
-                }
-
-                auto all_columns_vec = all_columns.getNames();
-                auto all_columns_set = NameSet(all_columns_vec.begin(), all_columns_vec.end());
-                auto all_dependencies = getAllColumnDependencies(metadata_snapshot, all_columns_set, has_dependency);
-
-                for (const auto & dependency : all_dependencies)
-                {
-                    if (dependency.kind == ColumnDependency::TTL_EXPRESSION)
-                        dependencies.insert(dependency);
-                }
-
-                /// Recalc only skip indices and projections of columns which could be updated by TTL.
-                auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns, true, has_dependency);
-                for (const auto & dependency : new_dependencies)
-                {
-                    if (dependency.kind == ColumnDependency::SKIP_INDEX
-                        || dependency.kind == ColumnDependency::PROJECTION
-                        || dependency.kind == ColumnDependency::STATISTICS)
-                        dependencies.insert(dependency);
-                }
-            }
-
-            if (dependencies.empty())
-            {
-                /// Very rare case. It can happen if we have only one MOVE TTL with constant expression.
-                /// But we still have to read at least one column.
-                dependencies.emplace(all_columns.front().name, ColumnDependency::TTL_EXPRESSION);
-            }
-        }
         else if (command.type == MutationCommand::READ_COLUMN)
         {
-            mutation_kind.set(MutationKind::MUTATE_OTHER);
             read_columns.emplace_back(command.column_name);
             /// Check if the type of this column is changed and there are projections that
             /// have this column in the primary key. We should rebuild such projections.
-            if (const auto & merge_tree_data_part = source.getMergeTreeDataPart())
-            {
-                const auto & column = merge_tree_data_part->tryGetColumn(command.column_name);
-                if (column && command.data_type && !column->type->equals(*command.data_type))
-                {
-                    for (const auto & projection : metadata_snapshot->getProjections())
-                    {
-                        const auto & pk_columns = projection.metadata->getPrimaryKeyColumns();
-                        if (std::ranges::find(pk_columns, command.column_name) != pk_columns.end())
-                        {
-                            for (const auto & col : projection.required_columns)
-                                dependencies.emplace(col, ColumnDependency::PROJECTION);
-                            materialized_projections.insert(projection.name);
-                        }
-                    }
-                }
-            }
+
+            /// TODO: implement this in MutateTask
+
+            // if (const auto & merge_tree_data_part = source.getMergeTreeDataPart())
+            // {
+            //     const auto & column = merge_tree_data_part->tryGetColumn(command.column_name);
+            //     if (column && command.data_type && !column->type->equals(*command.data_type))
+            //     {
+            //         for (const auto & projection : metadata_snapshot->getProjections())
+            //         {
+            //             const auto & pk_columns = projection.metadata->getPrimaryKeyColumns();
+            //             if (std::ranges::find(pk_columns, command.column_name) != pk_columns.end())
+            //             {
+            //                 for (const auto & col : projection.required_columns)
+            //                     dependencies.emplace(col, ColumnDependency::PROJECTION);
+            //                 materialized_projections.insert(projection.name);
+            //             }
+            //         }
+            //     }
+            // }
         }
         else
+        {
             throw Exception(ErrorCodes::UNKNOWN_MUTATION_COMMAND, "Unknown mutation command type: {}", DB::toString<int>(command.type));
+        }
     }
 
     if (!read_columns.empty())
@@ -978,113 +779,6 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         for (auto & column_name : read_columns)
             stages.back().column_to_updated.emplace(column_name, std::make_shared<ASTIdentifier>(column_name));
-    }
-
-    /// We care about affected indices and projections because we also need to rewrite them
-    /// when one of index columns updated or filtered with delete.
-    /// The same about columns, that are needed for calculation of TTL expressions.
-    NameSet changed_columns;
-    NameSet unchanged_columns;
-    if (!dependencies.empty())
-    {
-        for (const auto & dependency : dependencies)
-        {
-            if (dependency.isReadOnly())
-                unchanged_columns.insert(dependency.column_name);
-            else
-                changed_columns.insert(dependency.column_name);
-        }
-
-        if (!changed_columns.empty())
-        {
-            if (stages.empty() || !stages.back().column_to_updated.empty())
-                stages.emplace_back(context);
-            if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
-                stages.emplace_back(context);
-
-            for (const auto & column : changed_columns)
-                stages.back().column_to_updated.emplace(
-                    column, std::make_shared<ASTIdentifier>(column));
-        }
-
-        if (!unchanged_columns.empty())
-        {
-            if (!stages.empty())
-            {
-                std::vector<Stage> stages_copy;
-                /// Copy all filled stages except index calculation stage.
-                for (const auto & stage : stages)
-                {
-                    stages_copy.emplace_back(context);
-                    stages_copy.back().column_to_updated = stage.column_to_updated;
-                    stages_copy.back().output_columns = stage.output_columns;
-                    stages_copy.back().filters = stage.filters;
-                }
-
-                prepareMutationStages(stages_copy, true);
-
-                QueryPlan plan;
-                initQueryPlan(stages_copy.front(), plan);
-                auto pipeline = addStreamsForLaterStages(stages_copy, plan);
-                updated_header = std::make_unique<Block>(pipeline.getHeader());
-            }
-
-            /// Special step to recalculate affected indices, projections and TTL expressions.
-            stages.emplace_back(context);
-            for (const auto & column : unchanged_columns)
-                stages.back().column_to_updated.emplace(
-                    column, std::make_shared<ASTIdentifier>(column));
-        }
-    }
-
-    for (const auto & index : metadata_snapshot->getSecondaryIndices())
-    {
-        if (!source.hasSecondaryIndex(index.name))
-            continue;
-
-        if (need_rebuild_indexes)
-        {
-            materialized_indices.insert(index.name);
-            continue;
-        }
-
-        const auto & index_cols = index.expression->getRequiredColumns();
-        bool changed = std::any_of(
-            index_cols.begin(),
-            index_cols.end(),
-            [&](const auto & col) { return updated_columns.contains(col) || changed_columns.contains(col); });
-
-        if (changed)
-            materialized_indices.insert(index.name);
-    }
-
-    for (const auto & projection : metadata_snapshot->getProjections())
-    {
-        if (!source.hasProjection(projection.name))
-            continue;
-
-        /// Always rebuild broken projections.
-        if (source.hasBrokenProjection(projection.name))
-        {
-            LOG_DEBUG(logger, "Will rebuild broken projection {}", projection.name);
-            materialized_projections.insert(projection.name);
-            continue;
-        }
-
-        if (need_rebuild_projections)
-        {
-            materialized_projections.insert(projection.name);
-            continue;
-        }
-
-        const auto & projection_cols = projection.required_columns;
-        bool changed = std::any_of(
-            projection_cols.begin(),
-            projection_cols.end(),
-            [&](const auto & col) { return updated_columns.contains(col) || changed_columns.contains(col); });
-
-        if (changed)
-            materialized_projections.insert(projection.name);
     }
 
     /// Stages might be empty when we materialize skip indices or projections which don't add any
@@ -1495,13 +1189,7 @@ std::vector<MutationActions> MutationsInterpreter::getMutationActions() const
 
 Block MutationsInterpreter::getUpdatedHeader() const
 {
-    // If it's an index/projection materialization, we don't write any data columns, thus empty header is used
-    return mutation_kind.mutation_kind == MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION ? Block{} : *updated_header;
-}
-
-const ColumnDependencies & MutationsInterpreter::getColumnDependencies() const
-{
-    return dependencies;
+    return *updated_header;
 }
 
 size_t MutationsInterpreter::evaluateCommandsSize()
@@ -1558,11 +1246,6 @@ bool MutationsInterpreter::isAffectingAllColumns() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation interpreter has no stages");
 
     return stages.back().isAffectingAllColumns(storage_columns);
-}
-
-void MutationsInterpreter::MutationKind::set(const MutationKindEnum & kind)
-{
-    mutation_kind = std::max(mutation_kind, kind);
 }
 
 }

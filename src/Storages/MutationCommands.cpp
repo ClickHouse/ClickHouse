@@ -30,6 +30,11 @@ bool MutationCommand::isBarrierCommand() const
     return type == RENAME_COLUMN;
 }
 
+bool MutationCommand::isDeleteCommand() const
+{
+    return type == DELETE || type == APPLY_DELETED_MASK;
+}
+
 std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command, bool parse_alter_commands)
 {
     if (command->type == ASTAlterCommand::DELETE)
