@@ -747,6 +747,8 @@ void StorageKafka2::dropReplica()
 }
 
 
+/// We go through all the replicas, count the number of live replicas, 
+/// and see which partitions are already blocked by other replicas
 std::set<KafkaConsumer2::TopicPartition> StorageKafka2::lookupReplicaState(zkutil::ZooKeeper & keeper_to_use)
 {
     LOG_TRACE(log, "Starting to lookup replica's state");
@@ -799,7 +801,8 @@ void StorageKafka2::createLocksInfo(zkutil::ZooKeeper & keeper_to_use, TopicPart
     locks.emplace(TopicPartition(partition_to_lock), std::move(lock_info));
 }
 
-
+/// If the number of locks on a replica is greater than it can hold, then we first release the partitions that we can no longer hold.
+/// Otherwise, we try to lock free partitions one by one.
 std::optional<StorageKafka2::TopicPartitionLocks>
 StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions)
 {
