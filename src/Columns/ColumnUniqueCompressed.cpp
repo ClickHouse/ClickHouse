@@ -460,4 +460,30 @@ void ColumnUniqueFCBlockDF::getExtremes(Field & min, Field & max) const
     get(size() - 1, max);
 }
 
+size_t ColumnUniqueFCBlockDF::byteSize() const
+{
+    return data_column->byteSize() + common_prefix_lengths.size() * sizeof(common_prefix_lengths[0]);
+}
+
+size_t ColumnUniqueFCBlockDF::byteSizeAt(size_t n) const
+{
+    return data_column->byteSizeAt(n) + sizeof(common_prefix_lengths[n]);
+}
+
+void ColumnUniqueFCBlockDF::protect()
+{
+    data_column->protect();
+    common_prefix_lengths.protect();
+}
+
+size_t ColumnUniqueFCBlockDF::allocatedBytes() const
+{
+    return data_column->allocatedBytes() + common_prefix_lengths.allocated_bytes();
+}
+
+UInt128 ColumnUniqueFCBlockDF::getHash() const
+{
+    return hash.getHash(data_column);
+}
+
 }

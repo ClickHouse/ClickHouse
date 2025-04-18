@@ -109,15 +109,11 @@ public:
 
     void forEachSubcolumn(IColumn::ColumnCallback callback) const override { callback(data_column); }
 
-    void forEachMutableSubcolumn(IColumn::MutableColumnCallback callback) override;
+    void forEachMutableSubcolumn(IColumn::MutableColumnCallback callback) override { callback(data_column); }
 
-    void forEachSubcolumnRecursively(IColumn::RecursiveColumnCallback callback) const override
-    {
-        callback(*data_column);
-        data_column->forEachSubcolumnRecursively(callback);
-    }
+    void forEachSubcolumnRecursively(IColumn::RecursiveColumnCallback callback) const override { callback(*data_column); }
 
-    void forEachMutableSubcolumnRecursively(IColumn::RecursiveMutableColumnCallback callback) override;
+    void forEachMutableSubcolumnRecursively(IColumn::RecursiveMutableColumnCallback callback) override { callback(*data_column); }
 
     bool structureEquals(const IColumn & rhs) const override
     {
@@ -141,7 +137,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getIndicesOfNonDefaultRows' not implemented for ColumnUniqueFCBlockDF");
     }
 
-    const UInt64 * tryGetSavedHash() const override;
+    const UInt64 * tryGetSavedHash() const override { return nullptr; }
 
     UInt128 getHash() const override;
 
@@ -183,6 +179,7 @@ private:
     size_t block_size;
 
     bool is_nullable;
+    mutable IColumnUnique::IncrementalHash hash;
 };
 
 }
