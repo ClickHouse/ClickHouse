@@ -384,11 +384,11 @@ public:
 };
 
 void addExpressionStep(QueryPlan & query_plan,
-    ActionsAndProjectInputsFlagPtr & expression_actions,
+    const ActionsAndProjectInputsFlagPtr & expression_actions,
     const std::string & step_description,
     UsefulSets & useful_sets)
 {
-    auto actions = std::move(expression_actions->dag);
+    auto actions = expression_actions->dag.clone();
     if (expression_actions->project_input)
         actions.appendInputsForUnusedColumns(query_plan.getCurrentHeader());
 
@@ -439,7 +439,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     }
 
     Aggregator::Params aggregator_params = Aggregator::Params(
-        aggregation_analysis_result.aggregation_keys,
+        aggregation_analysis_result.getAggregationKeyNames(),
         aggregate_descriptions,
         query_analysis_result.aggregate_overflow_row,
         settings[Setting::max_rows_to_group_by],
@@ -465,13 +465,13 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     return aggregator_params;
 }
 
-SortDescription getSortDescriptionFromNames(const Names & names)
+SortDescription getSortDescriptionFromNames(const NamesAndTypes & names_and_types)
 {
     SortDescription order_descr;
-    order_descr.reserve(names.size());
+    order_descr.reserve(names_and_types.size());
 
-    for (const auto & name : names)
-        order_descr.emplace_back(name, 1, 1);
+    for (const auto & key : names_and_types)
+        order_descr.emplace_back(key.name, 1, 1);
 
     return order_descr;
 }
@@ -554,7 +554,7 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
       * but it can work more slowly.
       */
 
-    auto keys = aggregation_analysis_result.aggregation_keys;
+    auto keys = aggregation_analysis_result.getAggregationKeyNames();
 
     Aggregator::Params params(
         keys,
@@ -1268,15 +1268,19 @@ PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
     return std::make_shared<PlannerContext>(mutable_context, std::move(global_planner_context), select_query_options);
 }
 
-Planner::Planner(const QueryTreeNodePtr & query_tree_,
-    SelectQueryOptions & select_query_options_)
+Planner::Planner(
+    const QueryTreeNodePtr & query_tree_,
+    SelectQueryOptions & select_query_options_,
+    bool qualify_column_names
+)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)
     , planner_context(buildPlannerContext(query_tree, select_query_options,
         std::make_shared<GlobalPlannerContext>(
             findQueryForParallelReplicas(query_tree, select_query_options),
             findTableForParallelReplicas(query_tree, select_query_options),
-            collectFiltersForAnalysis(query_tree, select_query_options))))
+            collectFiltersForAnalysis(query_tree, select_query_options),
+            qualify_column_names)))
 {
 }
 
@@ -1582,10 +1586,12 @@ void Planner::buildPlanForQueryNode()
 
     PlannerQueryProcessingInfo query_processing_info(from_stage, select_query_options.to_stage);
     QueryAnalysisResult query_analysis_result(query_tree, query_processing_info, planner_context);
-    auto expression_analysis_result = buildExpressionAnalysisResult(query_tree,
+    expression_analysis_result = buildExpressionAnalysisResult(
+        query_tree,
         query_plan.getCurrentHeader().getColumnsWithTypeAndName(),
         planner_context,
         query_processing_info);
+    auto & analysis_result = expression_analysis_result.value();
 
     auto useful_sets = std::move(join_tree_query_plan.useful_sets);
 
@@ -1601,28 +1607,28 @@ void Planner::buildPlanForQueryNode()
     if (query_processing_info.isIntermediateStage())
     {
         addPreliminarySortOrDistinctOrLimitStepsIfNeeded(query_plan,
-            expression_analysis_result,
+            analysis_result,
             query_analysis_result,
             planner_context,
             query_processing_info,
             query_tree,
             useful_sets);
 
-        if (expression_analysis_result.hasAggregation())
+        if (analysis_result.hasAggregation())
         {
-            const auto & aggregation_analysis_result = expression_analysis_result.getAggregation();
+            const auto & aggregation_analysis_result = analysis_result.getAggregation();
             addMergingAggregatedStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context);
         }
     }
 
     if (query_processing_info.isFirstStage())
     {
-        if (expression_analysis_result.hasWhere())
-            addFilterStep(query_plan, expression_analysis_result.getWhere(), "WHERE", useful_sets);
+        if (analysis_result.hasWhere())
+            addFilterStep(query_plan, analysis_result.getWhere(), "WHERE", useful_sets);
 
-        if (expression_analysis_result.hasAggregation())
+        if (analysis_result.hasAggregation())
         {
-            auto & aggregation_analysis_result = expression_analysis_result.getAggregation();
+            auto & aggregation_analysis_result = analysis_result.getAggregation();
             if (aggregation_analysis_result.before_aggregation_actions)
                 addExpressionStep(query_plan, aggregation_analysis_result.before_aggregation_actions, "Before GROUP BY", useful_sets);
 
@@ -1632,16 +1638,16 @@ void Planner::buildPlanForQueryNode()
         /** If we have aggregation, we can't execute any later-stage
           * expressions on shards, neither "Before WINDOW" nor "Before ORDER BY"
           */
-        if (!expression_analysis_result.hasAggregation())
+        if (!analysis_result.hasAggregation())
         {
-            if (expression_analysis_result.hasWindow())
+            if (analysis_result.hasWindow())
             {
                 /** Window functions must be executed on initiator (second_stage).
                   * ORDER BY and DISTINCT might depend on them, so if we have
                   * window functions, we can't execute ORDER BY and DISTINCT
                   * now, on shard (first_stage).
                   */
-                auto & window_analysis_result = expression_analysis_result.getWindow();
+                auto & window_analysis_result = analysis_result.getWindow();
                 if (window_analysis_result.before_window_actions)
                     addExpressionStep(query_plan, window_analysis_result.before_window_actions, "Before WINDOW", useful_sets);
             }
@@ -1651,7 +1657,7 @@ void Planner::buildPlanForQueryNode()
                   * Projection expressions, preliminary DISTINCT and before ORDER BY expressions
                   * now, on shards (first_stage).
                   */
-                auto & projection_analysis_result = expression_analysis_result.getProjection();
+                auto & projection_analysis_result = analysis_result.getProjection();
                 addExpressionStep(query_plan, projection_analysis_result.projection_actions, "Projection", useful_sets);
 
                 if (query_node.isDistinct())
@@ -1659,22 +1665,22 @@ void Planner::buildPlanForQueryNode()
                     addDistinctStep(query_plan,
                         query_analysis_result,
                         planner_context,
-                        expression_analysis_result.getProjection().projection_column_names,
+                        analysis_result.getProjection().projection_column_names,
                         query_node,
                         true /*before_order*/,
                         true /*pre_distinct*/);
                 }
 
-                if (expression_analysis_result.hasSort())
+                if (analysis_result.hasSort())
                 {
-                    auto & sort_analysis_result = expression_analysis_result.getSort();
+                    auto & sort_analysis_result = analysis_result.getSort();
                     addExpressionStep(query_plan, sort_analysis_result.before_order_by_actions, "Before ORDER BY", useful_sets);
                 }
             }
         }
 
         addPreliminarySortOrDistinctOrLimitStepsIfNeeded(query_plan,
-            expression_analysis_result,
+            analysis_result,
             query_analysis_result,
             planner_context,
             query_processing_info,
@@ -1688,9 +1694,9 @@ void Planner::buildPlanForQueryNode()
         {
             /// Aggregation was performed on remote shards
         }
-        else if (expression_analysis_result.hasAggregation())
+        else if (analysis_result.hasAggregation())
         {
-            const auto & aggregation_analysis_result = expression_analysis_result.getAggregation();
+            const auto & aggregation_analysis_result = analysis_result.getAggregation();
 
             if (!query_processing_info.isFirstStage())
             {
@@ -1701,37 +1707,37 @@ void Planner::buildPlanForQueryNode()
 
             if (query_node.isGroupByWithTotals())
             {
-                addTotalsHavingStep(query_plan, expression_analysis_result, query_analysis_result, planner_context, query_node, useful_sets);
+                addTotalsHavingStep(query_plan, analysis_result, query_analysis_result, planner_context, query_node, useful_sets);
                 having_executed = true;
             }
 
             addCubeOrRollupStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info, query_node);
 
-            if (!having_executed && expression_analysis_result.hasHaving())
-                addFilterStep(query_plan, expression_analysis_result.getHaving(), "HAVING", useful_sets);
+            if (!having_executed && analysis_result.hasHaving())
+                addFilterStep(query_plan, analysis_result.getHaving(), "HAVING", useful_sets);
         }
 
         if (query_processing_info.isFromAggregationState())
         {
-            if (expression_analysis_result.hasWindow())
+            if (analysis_result.hasWindow())
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Window functions does not support processing from WithMergeableStateAfterAggregation");
         }
-        else if (expression_analysis_result.hasWindow() || expression_analysis_result.hasAggregation())
+        else if (analysis_result.hasWindow() || analysis_result.hasAggregation())
         {
-            if (expression_analysis_result.hasWindow())
+            if (analysis_result.hasWindow())
             {
-                auto & window_analysis_result = expression_analysis_result.getWindow();
-                if (expression_analysis_result.hasAggregation())
+                auto & window_analysis_result = analysis_result.getWindow();
+                if (analysis_result.hasAggregation())
                     addExpressionStep(query_plan, window_analysis_result.before_window_actions, "Before window functions", useful_sets);
 
                 addWindowSteps(query_plan, planner_context, window_analysis_result);
             }
 
-            if (expression_analysis_result.hasQualify())
-                addFilterStep(query_plan, expression_analysis_result.getQualify(), "QUALIFY", useful_sets);
+            if (analysis_result.hasQualify())
+                addFilterStep(query_plan, analysis_result.getQualify(), "QUALIFY", useful_sets);
 
-            auto & projection_analysis_result = expression_analysis_result.getProjection();
+            auto & projection_analysis_result = analysis_result.getProjection();
             addExpressionStep(query_plan, projection_analysis_result.projection_actions, "Projection", useful_sets);
 
             if (query_node.isDistinct())
@@ -1739,15 +1745,15 @@ void Planner::buildPlanForQueryNode()
                 addDistinctStep(query_plan,
                     query_analysis_result,
                     planner_context,
-                    expression_analysis_result.getProjection().projection_column_names,
+                    analysis_result.getProjection().projection_column_names,
                     query_node,
                     true /*before_order*/,
                     true /*pre_distinct*/);
             }
 
-            if (expression_analysis_result.hasSort())
+            if (analysis_result.hasSort())
             {
-                auto & sort_analysis_result = expression_analysis_result.getSort();
+                auto & sort_analysis_result = analysis_result.getSort();
                 addExpressionStep(query_plan, sort_analysis_result.before_order_by_actions, "Before ORDER BY", useful_sets);
             }
         }
@@ -1756,7 +1762,7 @@ void Planner::buildPlanForQueryNode()
             /// There are no aggregation or windows, all expressions before ORDER BY executed on shards
         }
 
-        if (expression_analysis_result.hasSort())
+        if (analysis_result.hasSort())
         {
             /** If there is an ORDER BY for distributed query processing,
               * but there is no aggregation, then on the remote servers ORDER BY was made
@@ -1769,8 +1775,8 @@ void Planner::buildPlanForQueryNode()
             if (query_processing_info.isFromAggregationState())
                 addMergeSortingStep(query_plan, query_analysis_result, planner_context, "after aggregation stage for ORDER BY");
             else if (!query_processing_info.isFirstStage() &&
-                !expression_analysis_result.hasAggregation() &&
-                !expression_analysis_result.hasWindow() &&
+                !analysis_result.hasAggregation() &&
+                !analysis_result.hasWindow() &&
                 !(query_node.isGroupByWithTotals() && !query_analysis_result.aggregate_final))
                 addMergeSortingStep(query_plan, query_analysis_result, planner_context, "for ORDER BY, without aggregation");
             else
@@ -1792,15 +1798,15 @@ void Planner::buildPlanForQueryNode()
             addDistinctStep(query_plan,
                 query_analysis_result,
                 planner_context,
-                expression_analysis_result.getProjection().projection_column_names,
+                analysis_result.getProjection().projection_column_names,
                 query_node,
                 false /*before_order*/,
                 false /*pre_distinct*/);
         }
 
-        if (!query_processing_info.isFromAggregationState() && expression_analysis_result.hasLimitBy())
+        if (!query_processing_info.isFromAggregationState() && analysis_result.hasLimitBy())
         {
-            auto & limit_by_analysis_result = expression_analysis_result.getLimitBy();
+            auto & limit_by_analysis_result = analysis_result.getLimitBy();
             addExpressionStep(query_plan, limit_by_analysis_result.before_limit_by_actions, "Before LIMIT BY", useful_sets);
             addLimitByStep(query_plan, limit_by_analysis_result, query_node, false /*do_not_skip_offset*/);
         }
@@ -1831,7 +1837,7 @@ void Planner::buildPlanForQueryNode()
         /// Project names is not done on shards, because initiator will not find columns in blocks
         if (!query_processing_info.isToAggregationState())
         {
-            auto & projection_analysis_result = expression_analysis_result.getProjection();
+            auto & projection_analysis_result = analysis_result.getProjection();
             addExpressionStep(query_plan, projection_analysis_result.project_names_actions, "Project names", useful_sets);
         }
 
