@@ -7,7 +7,6 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
-#include "Processors/Merges/Algorithms/CoalescingSortedAlgorithm.h"
 
 #include <cfloat>
 #include <random>
