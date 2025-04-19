@@ -567,11 +567,11 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
     const auto & read_settings = context_->getReadSettings();
 
     const auto filesystem_cache_name = settings[Setting::filesystem_cache_name].value;
-    bool use_page_cache = read_settings.page_cache && read_settings.use_page_cache_for_object_storage;
     bool use_fs_cache = read_settings.enable_filesystem_cache
         && !filesystem_cache_name.empty()
         && (object_storage->getType() == ObjectStorageType::Azure
             || object_storage->getType() == ObjectStorageType::S3);
+    bool use_page_cache = !use_fs_cache && read_settings.page_cache && read_settings.use_page_cache_for_object_storage;
 
     if (!object_info.metadata && (use_page_cache || use_fs_cache))
         object_info.metadata = object_storage->getObjectMetadata(object_info.getPath());
@@ -597,7 +597,9 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
         && modified_read_settings.remote_fs_method == RemoteFSReadMethod::threadpool
         && modified_read_settings.remote_fs_prefetch;
 
-    const bool use_async_buffer = use_prefetch;
+    /// FIXME: Use async buffer if use_cache,
+    /// because CachedOnDiskReadBufferFromFile does not work as an independent buffer currently.
+    const bool use_async_buffer = use_prefetch || use_fs_cache;
 
     if (use_async_buffer || use_page_cache)
         modified_read_settings.remote_read_buffer_use_external_buffer = true;
@@ -628,9 +630,9 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
             modified_read_settings,
             std::string(CurrentThread::getQueryId()),
             object_size,
-            /* allow_seeks */true,
-            modified_read_settings.remote_read_buffer_use_external_buffer,
-            /* read_until_position */std::nullopt,
+            /* allow_seeks= */true,
+            /* use_external_buffer= */true,
+            /* read_until_position= */std::nullopt,
             context_->getFilesystemCacheLog());
 
         LOG_TEST(
