@@ -714,6 +714,7 @@ bool MergeTreeData::supportsFinal() const
         || merging_params.mode == MergingParams::Summing
         || merging_params.mode == MergingParams::Aggregating
         || merging_params.mode == MergingParams::Replacing
+        || merging_params.mode == MergingParams::Coalescing
         || merging_params.mode == MergingParams::Graphite
         || merging_params.mode == MergingParams::VersionedCollapsing;
 }
@@ -1190,7 +1191,7 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
                         "Version column for MergeTree cannot be specified "
                         "in modes except Replacing or VersionedCollapsing.");
 
-    if (!columns_to_sum.empty() && mode != MergingParams::Summing)
+    if (!columns_to_sum.empty() && mode != MergingParams::Summing && mode != MergingParams::Coalescing)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "List of columns to sum for MergeTree cannot be specified in all modes except Summing.");
 
     /// Check that if the sign column is needed, it exists and is of type Int8.
@@ -1285,7 +1286,7 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
     if (mode == MergingParams::Collapsing)
         check_sign_column(false, "CollapsingMergeTree");
 
-    if (mode == MergingParams::Summing)
+    if (mode == MergingParams::Summing || mode == MergingParams::Coalescing)
     {
         auto columns_to_sum_sorted = columns_to_sum;
         std::sort(columns_to_sum_sorted.begin(), columns_to_sum_sorted.end());
@@ -1460,6 +1461,7 @@ String MergeTreeData::MergingParams::getModeName() const
         case Replacing:     return "Replacing";
         case Graphite:      return "Graphite";
         case VersionedCollapsing: return "VersionedCollapsing";
+        case Coalescing:    return "Coalescing";
     }
 }
 
