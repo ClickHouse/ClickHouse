@@ -286,7 +286,8 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
 
     if (!query_info.is_internal && context->hasQueryContext())
     {
-        context->getQueryContext()->addQueryAccessInfo(Context::QualifiedProjectionName{
+        context->getQueryContext()->addQueryAccessInfo(Context::QualifiedProjectionName
+        {
             .storage_id = reading->getMergeTreeData().getStorageID(),
             .projection_name = best_candidate->projection->name,
         });
