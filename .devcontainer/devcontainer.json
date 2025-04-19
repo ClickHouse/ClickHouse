@@ -27,11 +27,13 @@
                 "ms-vscode.cmake-tools",
                 "rust-lang.rust-analyzer",  
                 "tamasfe.even-better-toml",
-                "vadimcn.vscode-lldb"
+                "vadimcn.vscode-lldb",
+                "bierner.markdown-mermaid"
             ],
             "settings": {
                 "cmake.configureArgs": [
-                    "-DNO_ARMV81_OR_HIGHER=1"
+                    "-DNO_ARMV81_OR_HIGHER=1",
+                    "-DDEBUG_O_LEVEL=0"
                 ],
                 "cmake.buildDirectory": "${workspaceFolder}/build/${buildType}",
                 "aws.telemetry": false

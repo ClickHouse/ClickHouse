@@ -1,2 +1,9 @@
 contrib/
 build/
+benchmark/
+ci/
+docker/
+programs/
+rust/
+tests/
+utils/
