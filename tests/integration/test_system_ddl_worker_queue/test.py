@@ -68,3 +68,58 @@ def test_distributed_ddl_queue(started_cluster):
             )
             == "ok\n"
         )
+
+
+def test_distributed_ddl_rubbish(started_cluster):
+    node1.query(
+        "ALTER TABLE testdb.test_table ON CLUSTER test_cluster ADD COLUMN somenewcolumn UInt8 AFTER val",
+        settings={"replication_alter_partitions_sync": "2"},
+    )
+
+    zk_content = node1.query(
+        "SELECT name, value, path FROM system.zookeeper WHERE path LIKE '/clickhouse/task_queue/ddl%' SETTINGS allow_unrestricted_reads_from_keeper=true",
+        parse=True,
+    ).to_dict("records")
+
+    original_query = ""
+    new_query = "query-artificial"
+
+    # Copy information about query (one that added 'somenewcolumn') with new query ID
+    # and broken query text (TABLE => TUBLE)
+    for row in zk_content:
+        if row["value"].find("somenewcolumn") >= 0:
+            original_query = row["name"]
+            break
+
+    rows_to_insert = []
+
+    for row in zk_content:
+        if row["name"] == original_query:
+            rows_to_insert.append(
+                {
+                    "name": new_query,
+                    "path": row["path"],
+                    "value": row["value"].replace("TABLE", "TUBLE"),
+                }
+            )
+            continue
+        pos = row["path"].find(original_query)
+        if pos >= 0:
+            rows_to_insert.append(
+                {
+                    "name": row["name"],
+                    "path": row["path"].replace(original_query, new_query),
+                    "value": row["value"],
+                }
+            )
+
+    for row in rows_to_insert:
+        node1.query(
+            "insert into system.zookeeper (name, path, value) values ('{}', '{}', '{}')".format(
+                f'{row["name"]}', f'{row["path"]}', f'{row["value"]}'
+            )
+        )
+
+    assert (
+        node1.query(f"SELECT * FROM system.distributed_ddl_queue").find("UNKNOWN") >= 0
+    )
