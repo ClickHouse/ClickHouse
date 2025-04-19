@@ -232,7 +232,9 @@ private:
 
     std::set<KafkaConsumer2::TopicPartition> lookupReplicaState(zkutil::ZooKeeper & keeper_to_use);
     UInt32 ActiveReplicaCount = 1; // We are always active
-    void createLocksInfo(zkutil::ZooKeeper & keeper_to_use, TopicPartitionLocks & locks, const TopicPartition& partition_to_lock);
+    ReplicaStateData ReplicaState;
+    void createLocksInfo(zkutil::ZooKeeper & keeper_to_use, TopicPartitionLocks & locks, const TopicPartition & partition_to_lock, bool new_lock = false);
+    void unlockTopicPartition(zkutil::ZooKeeper & keeper_to_use,  const TopicPartition & partition_to_unlock);
 
     // Takes lock over topic partitions and sets the committed offset in topic_partitions.
     std::optional<TopicPartitionLocks> lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions);

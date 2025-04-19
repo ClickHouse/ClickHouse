@@ -8,11 +8,19 @@ namespace DB
     void ReplicaStateData::writeText(WriteBuffer & out) const
     {
         out << "topic partitions: " << topic_partitions << "\n";
-        for (const auto& partition : topics_assigned)
+        for (const auto & partition : topics_assigned)
         {
             out << "topic: " << escape << partition.topic << "\n";
             out << "partition: " << escape << partition.partition_id << "\n";
         }
+
+        out << "temporary topic partitions: " << tmp_topic_partitions << "\n";
+        for (const auto & partition : tmp_topics_assigned)
+        {
+            out << "topic: " << escape << partition.topic << "\n";
+            out << "partition: " << escape << partition.partition_id << "\n";
+        }
+
     }
 
     void ReplicaStateData::readText(ReadBuffer & in)
@@ -23,6 +31,14 @@ namespace DB
         {
             in >> "topic: " >> escape >> topics_assigned[i].topic >> "\n";
             in >> "partition: " >> escape >> topics_assigned[i].partition_id >> "\n";
+        }
+
+        in >> "temporary topic partitions: " >> tmp_topic_partitions >> "\n";
+        tmp_topics_assigned.resize(tmp_topic_partitions);
+        for (size_t i = 0; i < tmp_topic_partitions; ++i)
+        {
+            in >> "topic: " >> escape >> tmp_topics_assigned[i].topic >> "\n";
+            in >> "partition: " >> escape >> tmp_topics_assigned[i].partition_id >> "\n";
         }
     }
 

@@ -19,6 +19,9 @@ struct ReplicaStateData
 
     size_t topic_partitions;
     KafkaConsumer2::TopicPartitions topics_assigned;
+    
+    size_t tmp_topic_partitions;
+    KafkaConsumer2::TopicPartitions tmp_topics_assigned;
 };
 
 
