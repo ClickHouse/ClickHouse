@@ -74,6 +74,7 @@ public:
     void doInsertFrom(const IColumn & src, size_t n) override
 #endif
     {
+        data = data->getOwningBuffer();
         data->push_back(assert_cast<const Self &>(src).getData()[n]);
     }
 
@@ -83,32 +84,38 @@ public:
     void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override
 #endif
     {
+        data = data->getOwningBuffer();
         ValueType v = assert_cast<const Self &>(src).getData()[position];
         data->resize_fill(data->size() + length, v);
     }
 
     void insertMany(const Field & field, size_t length) override
     {
+        data = data->getOwningBuffer();
         data->resize_fill(data->size() + length, static_cast<T>(field.safeGet<T>()));
     }
 
     void insertData(const char * pos, size_t) override
     {
+        data = data->getOwningBuffer();
         data->emplace_back(unalignedLoad<T>(pos));
     }
 
     void insertDefault() override
     {
+        data = data->getOwningBuffer();
         data->push_back(T());
     }
 
     void insertManyDefaults(size_t length) override
     {
+        data = data->getOwningBuffer();
         data->resize_fill(data->size() + length, T());
     }
 
     void popBack(size_t n) override
     {
+        data = data->getOwningBuffer();
         data->resize_assume_reserved(data->size() - n);
     }
 
@@ -144,6 +151,7 @@ public:
 
     void insertValue(const T value)
     {
+        data = data->getOwningBuffer();
         data->push_back(value);
     }
 
@@ -181,6 +189,7 @@ public:
 
     void reserve(size_t n) override
     {
+        data = data->getOwningBuffer();
         data->reserve_exact(n);
     }
 
@@ -191,6 +200,7 @@ public:
 
     void shrinkToFit() override
     {
+        data = data->getOwningBuffer();
         data->shrink_to_fit();
     }
 
@@ -324,7 +334,7 @@ public:
 
     void * doGetContainer() override
     {
-        assert(data != nullptr && "dies from cringe");
+        assert(data != nullptr);
         data = data->getOwningBuffer();
         return static_cast<void*>(&(*std::static_pointer_cast<Container>(data)));
     }
