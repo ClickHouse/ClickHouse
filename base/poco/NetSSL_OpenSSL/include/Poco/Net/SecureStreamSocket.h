@@ -22,6 +22,7 @@
 #include "Poco/Net/NetSSL.h"
 #include "Poco/Net/Session.h"
 #include "Poco/Net/StreamSocket.h"
+#include "Poco/Net/X509Certificate.h"
 
 
 namespace Poco
@@ -147,7 +148,7 @@ namespace Net
         /// Returns true iff the peer has presented a
         /// certificate.
 
-        X509 * peerCertificate() const;
+        X509Certificate peerCertificate() const;
         /// Returns the peer's X509 certificate.
         ///
         /// Throws a SSLException if the peer did not

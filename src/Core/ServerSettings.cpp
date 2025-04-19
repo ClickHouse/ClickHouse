@@ -1135,11 +1135,6 @@ ServerSettings::~ServerSettings() = default;
 
 SERVER_SETTINGS_SUPPORTED_TYPES(ServerSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 
-Field ServerSettings::get(std::string_view name) const
-{
-    return impl->get(name);
-}
-
 void ServerSettings::set(std::string_view name, const Field & value)
 {
     impl->set(name, value);

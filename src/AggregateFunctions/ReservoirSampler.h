@@ -2,6 +2,7 @@
 
 #include <limits>
 #include <algorithm>
+#include <climits>
 #include <base/types.h>
 #include <base/sort.h>
 #include <IO/ReadBuffer.h>
@@ -52,7 +53,6 @@ struct NanLikeValueConstructor
         return std::numeric_limits<ResultType>::quiet_NaN();
     }
 };
-
 template <typename ResultType>
 struct NanLikeValueConstructor<ResultType, false>
 {
@@ -161,13 +161,6 @@ public:
     {
         if (sample_count != b.sample_count)
             throw Poco::Exception("Cannot merge ReservoirSampler's with different sample_count");
-
-        // There will be an aliasing issue if we merge the same object with itself. I.e. we will insert from `b.samples` into `a.samples`,
-        // but both refer to the same array. It might happen in case of multiplying an aggregate function state by a numeric constant.
-        // ATST, it seems that self-merging cannot improve accuracy, so there is no point to do it anyway.
-        if (this == &b)
-            return;
-
         sorted = false;
 
         if (b.total_values <= sample_count)
@@ -258,6 +251,7 @@ private:
     Array samples;
     pcg32_fast rng;
     bool sorted = false;
+
 
     UInt64 genRandom(UInt64 limit)
     {

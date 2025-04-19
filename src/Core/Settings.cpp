@@ -220,7 +220,7 @@ The maximum number of threads to parse data in input formats that support parall
     DECLARE(UInt64, max_download_buffer_size, 10*1024*1024, R"(
 The maximal size of buffer for parallel downloading (e.g. for URL engine) per each thread.
 )", 0) \
-    DECLARE(NonZeroUInt64, max_read_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, R"(
+    DECLARE(UInt64, max_read_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, R"(
 The maximum size of the buffer to read from the filesystem.
 )", 0) \
     DECLARE(UInt64, max_read_buffer_size_local_fs, 128*1024, R"(
@@ -1413,16 +1413,6 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
-    DECLARE(Bool, use_skip_indexes_if_final_exact_mode, 0, R"(
-Controls whether granules returned by a skipping index are expanded in newer parts to return correct results when executing a query with the FINAL modifier.
-
-Using skip indexes may exclude rows (granules) containing the latest data which could lead to incorrect results. This setting can ensure that correct results are returned by scanning newer parts that have overlap with the ranges returned by the skip index.
-
-Possible values:
-
-- 0 — Disabled.
-- 1 — Enabled.
-)", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
 If INSERTs build and store skip indexes. If disabled, skip indexes will be build and stored during merges or by explicit MATERIALIZE INDEX
 )", 0) \
@@ -1540,9 +1530,7 @@ SELECT * FROM data_01515 WHERE d1 = 0 SETTINGS force_data_skipping_indices='`d1_
 SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS force_data_skipping_indices='`d1_idx`, d1_null_idx'; -- Ok.
 ```
 )", 0) \
-    DECLARE(Bool, secondary_indices_enable_bulk_filtering, true, R"(
-Enable the bulk filtering algorithm for indices. It is expected to be always better, but we have this setting for compatibility and control.
-)", 0) \
+    \
     DECLARE(Float, max_streams_to_max_threads_ratio, 1, R"(
 Allows you to use more sources than the number of threads - to more evenly distribute work across threads. It is assumed that this is a temporary solution since it will be possible in the future to make the number of sources equal to the number of threads, but for each source to dynamically select available work for itself.
 )", 0) \
@@ -3624,9 +3612,6 @@ If enabled, functions 'least' and 'greatest' return NULL if one of their argumen
 )", 0) \
     DECLARE(Bool, h3togeo_lon_lat_result_order, false, R"(
 Function 'h3ToGeo' returns (lon, lat) if true, otherwise (lat, lon).
-)", 0) \
-    DECLARE(Bool, geotoh3_lon_lat_input_order, false, R"(
-Function 'geoToH3' accepts (lon, lat) if true, otherwise (lat, lon).
 )", 0) \
     DECLARE(UInt64, max_partitions_per_insert_block, 100, R"(
 Limits the maximum number of partitions in a single inserted block
@@ -6420,19 +6405,6 @@ Enable pushing user roles from originator to other nodes while performing a quer
 )", 0) \
     DECLARE(Bool, shared_merge_tree_sync_parts_on_partition_operations, true, R"(
 Automatically synchronize set of data parts after MOVE|REPLACE|ATTACH partition operations in SMT tables. Cloud only
-)", 0) \
-    DECLARE(String, implicit_table_at_top_level, "", R"(
-If not empty, queries without FROM at the top level will read from this table instead of system.one.
-
-This is used in clickhouse-local for input data processing.
-The setting could be set explicitly by a user but is not intended for this type of usage.
-
-Subqueries are not affected by this setting (neither scalar, FROM, or IN subqueries).
-SELECTs at the top level of UNION, INTERSECT, EXCEPT chains are treated uniformly and affected by this setting, regardless of their grouping in parentheses.
-It is unspecified how this setting affects views and distributed queries.
-
-The setting accepts a table name (then the table is resolved from the current database) or a qualified name in the form of 'database.table'.
-Both database and table names have to be unquoted - only simple identifiers are allowed.
 )", 0) \
     \
     DECLARE(Bool, allow_experimental_variant_type, true, R"(

@@ -3,7 +3,6 @@
 /// This header exists so we can share it between multiple setting objects that include format settings
 
 #include <Core/SettingsObsoleteMacros.h>
-#include <Core/SettingsFields.h>
 
 // clang-format off
 #if defined(__CLION_IDE__)
@@ -984,7 +983,7 @@ Do Parquet encoding in multiple threads. Requires output_format_parquet_use_cust
     DECLARE(UInt64, output_format_parquet_data_page_size, 1024 * 1024, R"(
 Target page size in bytes, before compression.
 )", 0) \
-    DECLARE(NonZeroUInt64, output_format_parquet_batch_size, 1024, R"(
+    DECLARE(UInt64, output_format_parquet_batch_size, 1024, R"(
 Check page size every this many rows. Consider decreasing if you have columns with average values size above a few KBs.
 )", 0) \
     DECLARE(Bool, output_format_parquet_write_page_index, true, R"(
