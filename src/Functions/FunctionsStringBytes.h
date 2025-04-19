@@ -1,60 +1,22 @@
 #pragma once
 
-#include <Functions/IFunction.h>
+#include <cmath>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/IFunction.h>
 #include <Common/BitHelpers.h>
-#include <cmath>
 
 namespace DB
 {
 
-// Helper class for maintaining counter array with "generation" optimization
-class ByteCounters
+namespace ErrorCodes
 {
-private:
-    static constexpr size_t COUNTERS_SIZE = 256;
-    UInt32 counters[COUNTERS_SIZE] = {0};
-    UInt32 current_generation = 0;
-    UInt32 generation_mask = 0x80000000;
-    size_t total_count = 0;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int ILLEGAL_COLUMN;
+}
 
-public:
-    void add(UInt8 byte);
-    void nextString();
-    UInt32 get(UInt8 byte) const;
-    size_t getTotalCount() const;
-};
-
-// Implementation class for stringBytesUniq
-struct StringBytesUniqImpl
-{
-    using ResultType = UInt8;
-
-    static ResultType process(const char * str, size_t size);
-};
-
-// Implementation class for stringBytesEntropy
-struct StringBytesEntropyImpl
-{
-    using ResultType = Float64;
-
-    static ResultType process(const char * str, size_t size);
-};
-
-struct NameStringBytesUniq
-{
-    static constexpr auto name = "stringBytesUniq";
-};
-
-struct NameStringBytesEntropy
-{
-    static constexpr auto name = "stringBytesEntropy";
-};
-
-// Template class for string bytes functions
 template <typename Impl, typename Name>
 class FunctionStringBytes : public IFunction
 {
@@ -62,38 +24,57 @@ public:
     static constexpr auto name = Name::name;
     using ResultType = typename Impl::ResultType;
 
-    explicit FunctionStringBytes(ContextPtr /*context*/) {}
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionStringBytes>(); }
 
-    static FunctionPtr create(ContextPtr context)
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return std::make_shared<FunctionStringBytes>(context);
+        if (!isString(arguments[0].type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}",
+                arguments[0].type->getName(),
+                getName());
+
+        if constexpr (std::is_same_v<ResultType, UInt8>)
+            return std::make_shared<DataTypeUInt8>();
+        else if constexpr (std::is_same_v<ResultType, Float64>)
+            return std::make_shared<DataTypeFloat64>();
     }
 
-    String getName() const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        return name;
-    }
+        const ColumnPtr column = arguments[0].column;
+        const ColumnString * col_str = checkAndGetColumn<ColumnString>(column.get());
 
-    size_t getNumberOfArguments() const override
-    {
-        return 1;
-    }
+        if (!col_str)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
 
-    bool useDefaultImplementationForConstants() const override
-    {
-        return true;
-    }
+        auto col_res = ColumnVector<ResultType>::create();
+        auto & vec_res = col_res->getData();
+        vec_res.resize(input_rows_count);
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override
-    {
-        return true;
-    }
+        const ColumnString::Chars & data = col_str->getChars();
+        const ColumnString::Offsets & offsets = col_str->getOffsets();
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            const char * str = reinterpret_cast<const char *>(data.data() + (i == 0 ? 0 : offsets[i - 1]));
+            const size_t size = offsets[i] - (i == 0 ? 0 : offsets[i - 1]) - 1;
+
+            vec_res[i] = Impl::process(str, size);
+        }
+
+        return col_res;
+    }
 };
-
-using FunctionStringBytesUniq = FunctionStringBytes<StringBytesUniqImpl, NameStringBytesUniq>;
-using FunctionStringBytesEntropy = FunctionStringBytes<StringBytesEntropyImpl, NameStringBytesEntropy>;
 
 }
