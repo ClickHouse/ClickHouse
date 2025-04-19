@@ -155,7 +155,7 @@ void StatementGenerator::refColumn(RandomGenerator & rg, const GroupCol & gcol, 
     }
 }
 
-void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool complex, Expr * expr)
+void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, const bool complex, Expr * expr)
 {
     const uint32_t noption = rg.nextLargeNumber();
     LiteralValue * lv = expr->mutable_lit_val();
@@ -316,6 +316,26 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool c
         lv->set_special_val(SpecialVal::VAL_NULL);
     }
     addFieldAccess(rg, expr, nested_prob);
+}
+
+void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool complex, Expr * expr)
+{
+    if (this->width < this->fc.max_width && rg.nextMediumNumber() < 16)
+    {
+        /// Generate a few arrays/tuples with literal values
+        ExprList * elist = rg.nextBool() ? expr->mutable_comp_expr()->mutable_array() : expr->mutable_comp_expr()->mutable_tuple();
+        const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.nextSmallNumber() % 8);
+
+        for (uint32_t i = 0; i < nvalues; i++)
+        {
+            /// There are no recursive calls here, so don't bother about width and depth
+            this->generateLiteralValueInternal(rg, complex, i == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
+        }
+    }
+    else
+    {
+        this->generateLiteralValueInternal(rg, complex, expr);
+    }
 }
 
 void StatementGenerator::generateColRef(RandomGenerator & rg, Expr * expr)
@@ -823,7 +843,7 @@ void StatementGenerator::generateWindowDefinition(RandomGenerator & rg, WindowDe
     }
     if (!this->allow_not_deterministic || (this->width < this->fc.max_width && rg.nextSmallNumber() < 4))
     {
-        generateOrderBy(rg, 0, true, false, wdef->mutable_order_by());
+        generateOrderBy(rg, 0, true, true, wdef->mutable_order_by());
     }
     if (this->width < this->fc.max_width && rg.nextSmallNumber() < 4)
     {
@@ -860,9 +880,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
 
     if (rg.nextSmallNumber() < 3)
     {
-        ParenthesesExpr * paren = expr->mutable_comp_expr()->mutable_par_expr();
-
-        eca = paren->mutable_expr();
+        eca = expr->mutable_comp_expr()->mutable_alias_expr();
         expr = eca->mutable_expr();
     }
 
@@ -911,7 +929,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         this->generateExpression(rg, inter->mutable_expr());
         this->depth--;
     }
-    else if (noption < 556)
+    else if (this->allow_not_deterministic && noption < 556)
     {
         String ret;
         const uint32_t nopt2 = rg.nextSmallNumber();
@@ -992,43 +1010,19 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         this->width--;
         this->depth--;
     }
-    else if (this->width < this->fc.max_width && noption < 751)
+    else if (this->width < this->fc.max_width && noption < 801)
     {
-        ArraySequence * arr = expr->mutable_comp_expr()->mutable_array();
+        ExprList * elist = rg.nextBool() ? expr->mutable_comp_expr()->mutable_array() : expr->mutable_comp_expr()->mutable_tuple();
         const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.nextSmallNumber() % 8);
 
         this->depth++;
         for (uint32_t i = 0; i < nvalues; i++)
         {
-            this->generateExpression(rg, arr->add_values());
+            this->generateExpression(rg, i == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
             this->width++;
         }
         this->depth--;
         this->width -= nvalues;
-    }
-    else if (this->width < this->fc.max_width && noption < 801)
-    {
-        TupleSequence * tupl = expr->mutable_comp_expr()->mutable_tuple();
-        const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.nextSmallNumber() % 8);
-        const uint32_t ncols = std::min(this->fc.max_width - this->width, (rg.nextSmallNumber() % 4) + 1);
-
-        this->depth++;
-        for (uint32_t i = 0; i < ncols; i++)
-        {
-            ExprList * elist = tupl->add_values();
-
-            for (uint32_t j = 0; j < nvalues; j++)
-            {
-                Expr * el = j == 0 ? elist->mutable_expr() : elist->add_extra_exprs();
-
-                this->generateExpression(rg, el);
-                this->width++;
-            }
-            this->width -= nvalues;
-            this->width++;
-        }
-        this->width -= ncols;
-        this->depth--;
     }
     else if (!this->levels[this->current_level].allow_window_funcs || this->levels[this->current_level].inside_aggregate || noption < 951)
     {
@@ -1128,13 +1122,13 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     if (eca && this->allow_in_expression_alias && !this->inside_projection && rg.nextSmallNumber() < 4)
     {
         SQLRelation rel("");
-        const uint32_t cname = this->levels[this->current_level].aliases_counter++;
-        const String cname_str = "c" + std::to_string(cname);
+        const String ncname = this->getNextAlias();
 
-        rel.cols.emplace_back(SQLRelationCol("", {cname_str}));
+        rel.cols.emplace_back(SQLRelationCol("", {ncname}));
         this->levels[this->current_level].rels.emplace_back(rel);
-        eca->mutable_col_alias()->set_column(cname_str);
-        this->levels[this->current_level].projections.emplace_back(cname);
+        eca->mutable_col_alias()->set_column(ncname);
+        this->levels[this->current_level].projections.emplace_back(ncname);
+        eca->set_use_parenthesis(rg.nextMediumNumber() < 98);
     }
 }
 
