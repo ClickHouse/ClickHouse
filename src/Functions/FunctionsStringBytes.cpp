@@ -28,7 +28,6 @@ inline UInt8 countBits(UInt64 x)
 #endif
 }
 
-// Helper class for maintaining counter array with "generation" optimization
 class ByteCounters
 {
 private:
@@ -65,7 +64,6 @@ public:
     size_t getTotalCount() const { return total_count; }
 };
 
-// Implementation of stringBytesUniq
 struct StringBytesUniqImpl
 {
     using ResultType = UInt8;
@@ -86,7 +84,6 @@ struct StringBytesUniqImpl
     }
 };
 
-// Implementation of stringBytesEntropy
 struct StringBytesEntropyImpl
 {
     using ResultType = Float64;
