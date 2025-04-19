@@ -145,7 +145,7 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
         pos = working_buffer.begin();
     }
 
-    file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
+    file_offset_of_buffer_end = result.file_offset_of_buffer_end;
     prefetch_future = {};
 
     if (use_prefetch && bytes_read)

@@ -149,10 +149,7 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request, b
 
     bool result = reader.available();
     if (!result)
-    {
-        chassert(!request.ignore); // read_result.offset must be equal to request.ignore
         result = reader.next();
-    }
 
     watch->stop();
     ProfileEvents::increment(ProfileEvents::ThreadpoolReaderTaskMicroseconds, watch->elapsedMicroseconds());
@@ -165,16 +162,16 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request, b
             read_result.page_cache_cell = page_cache_reader->getPageCacheCell();
             chassert(read_result.page_cache_cell);
             chassert(read_result.page_cache_cell->data() == reader.buffer().begin());
-            chassert(!request.ignore);
         }
         else
         {
             chassert(reader.buffer().begin() == request.buf);
             chassert(reader.buffer().end() <= request.buf + request.size);
         }
-        read_result.buf = reader.position() - request.ignore;
-        read_result.size = reader.available() + request.ignore;
-        read_result.offset = request.ignore;
+        read_result.buf = reader.buffer().begin();
+        read_result.size = reader.buffer().size();
+        read_result.offset = reader.offset();
+        read_result.file_offset_of_buffer_end = request.offset + request.ignore + (read_result.size - read_result.offset);
         ProfileEvents::increment(ProfileEvents::ThreadpoolReaderReadBytes, read_result.size);
     }
 

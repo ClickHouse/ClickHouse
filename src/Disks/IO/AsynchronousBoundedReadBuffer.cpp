@@ -274,7 +274,7 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
         pos = working_buffer.begin();
     }
 
-    file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
+    file_offset_of_buffer_end = result.file_offset_of_buffer_end;
 
     chassert(file_offset_of_buffer_end <= getFileSize());
 

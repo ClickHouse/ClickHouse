@@ -55,6 +55,9 @@ public:
         /// copying data out of userspace page cache).
         char * buf = nullptr;
         Priority priority;
+        /// Some implementations require ignore < size.
+        /// AsynchronousBoundedReadBuffer may set ignore >= size, so it should only be used with
+        /// implementations that don't require that.
         size_t ignore = 0;
     };
 
@@ -62,7 +65,6 @@ public:
     {
         /// The read data is at [buf + offset, buf + size).
         /// (Notice that `offset` is included in `size`.)
-        /// offset is equal to request.ignore.
         /// buf is either the buf from Request or inside page_cache_cell's buffer,
         /// or nullptr if size = 0.
         /// Less than requested amount of data can be returned.
@@ -71,6 +73,10 @@ public:
         char * buf = nullptr;
         size_t size = 0;
         size_t offset = 0;
+
+        /// File offset corresponding to `buf + size`. Equal to:
+        /// request.offset + request.ignore + (result.size - result.offset)
+        size_t file_offset_of_buffer_end = 0;
 
         /// If not null, `buf` points into it, so this shared_ptr must be kept alive for as long
         /// as `buf` is in use.

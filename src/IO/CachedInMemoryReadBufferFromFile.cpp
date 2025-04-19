@@ -39,8 +39,6 @@ bool CachedInMemoryReadBufferFromFile::isSeekCheap()
 {
     /// Seek is cheap in the sense that seek()+nextImpl() is never much slower than ignore()+nextImpl()
     /// (which is what the caller cares about).
-    /// (Currently this is also required for correctness because of the weird way
-    ///  IAsynchronousReader::Result.offset works.)
     return true;
 }
 
