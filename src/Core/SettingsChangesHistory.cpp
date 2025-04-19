@@ -90,6 +90,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_snapshot_id", 0, 0, "New setting."},
             {"use_iceberg_metadata_files_cache", true, true, "New setting"},
             {"query_plan_join_shard_by_pk_ranges", false, false, "New setting"},
+            {"parallel_replicas_insert_select_local_pipeline", false, false, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"},
             /// Release closed. Please use 25.5
         });
         addSettingsChanges(settings_changes_history, "25.3",
