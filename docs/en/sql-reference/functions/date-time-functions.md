@@ -2386,7 +2386,7 @@ Alias: `dateTrunc`.
 
     - `nanosecond` - Compatible only with DateTime64
     - `microsecond` - Compatible only with DateTime64
-    - `milisecond` - Compatible only with DateTime64
+    - `millisecond` - Compatible only with DateTime64
     - `second`
     - `minute`
     - `hour`
@@ -4373,7 +4373,7 @@ Using replacement fields, you can define a pattern for the resulting string. "Ex
 | %C       | year divided by 100 and truncated to integer (00-99)                                                                                                                                                | 20        |
 | %d       | day of the month, zero-padded (01-31)                                                                                                                                                               | 02        |
 | %D       | Short MM/DD/YY date, equivalent to %m/%d/%y                                                                                                                                                         | 01/02/18  |
-| %e       | day of the month, space-padded (1-31)                                                                                                                                                               | &nbsp; 2  |
+| %e       | day of the month, space-padded ( 1-31)                                                                                                                                                              | &nbsp; 2  |
 | %f       | fractional second, see 'Note 1' and 'Note 2' below                                                                                                                                                  | 123456    |
 | %F       | short YYYY-MM-DD date, equivalent to %Y-%m-%d                                                                                                                                                       | 2018-01-02 |
 | %g       | two-digit year format, aligned to ISO 8601, abbreviated from four-digit notation                                                                                                                    | 18       |

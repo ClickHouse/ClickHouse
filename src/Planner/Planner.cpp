@@ -150,7 +150,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int TOO_DEEP_SUBQUERIES;
     extern const int NOT_IMPLEMENTED;
-    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -584,7 +583,6 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
         settings[Setting::distributed_aggregation_memory_efficient] && (is_remote_storage || parallel_replicas_from_merge_tree)
             && !query_analysis_result.aggregation_with_rollup_or_cube_or_grouping_sets,
-        settings[Setting::max_threads],
         settings[Setting::aggregation_memory_efficient_merge_threads],
         query_analysis_result.aggregation_should_produce_results_in_order_of_bucket_number,
         settings[Setting::max_block_size],
@@ -1311,20 +1309,10 @@ void Planner::buildQueryPlanIfNeeded()
         QueryProcessingStage::toString(select_query_options.to_stage),
         select_query_options.only_analyze ? " only analyze" : "");
 
-    try
-    {
-        if (query_tree->getNodeType() == QueryTreeNodeType::UNION)
-            buildPlanForUnionNode();
-        else
-            buildPlanForQueryNode();
-    }
-    catch (Exception & e)
-    {
-        if (e.code() == ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK && query_plan.isInitialized())
-            e.addMessage("while building query plan:\n{}", dumpQueryPlan(query_plan));
-        throw;
-    }
-
+    if (query_tree->getNodeType() == QueryTreeNodeType::UNION)
+        buildPlanForUnionNode();
+    else
+        buildPlanForQueryNode();
     extendQueryContextAndStoragesLifetime(query_plan, planner_context);
 }
 

@@ -2,9 +2,6 @@
 
 #include <Common/JSONBuilder.h>
 
-#include <Interpreters/ActionsDAG.h>
-#include <Interpreters/ArrayJoinAction.h>
-
 #include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
 
@@ -14,7 +11,6 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -26,7 +22,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
 SettingsChanges ExplainPlanOptions::toSettingsChanges() const
@@ -169,10 +164,12 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
 
 QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     const QueryPlanOptimizationSettings & optimization_settings,
-    const BuildQueryPipelineSettings & build_pipeline_settings)
+    const BuildQueryPipelineSettings & build_pipeline_settings,
+    bool do_optimize)
 {
     checkInitialized();
-    optimize(optimization_settings);
+    if (do_optimize)
+        optimize(optimization_settings);
 
     struct Frame
     {
@@ -348,6 +345,8 @@ static void explainStep(
 
                 first = false;
                 elem.dumpNameAndType(settings.out);
+                if (elem.column && isColumnLazy(*elem.column.get()))
+                    settings.out << " (Lazy)";
             }
         }
         settings.out.write('\n');
@@ -478,25 +477,16 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
-    try
-    {
-        /// optimization need to be applied before "mergeExpressions" optimization
-        /// it removes redundant sorting steps, but keep underlying expressions,
-        /// so "mergeExpressions" optimization handles them afterwards
-        if (optimization_settings.remove_redundant_sorting)
-            QueryPlanOptimizations::tryRemoveRedundantSorting(root);
+    /// optimization need to be applied before "mergeExpressions" optimization
+    /// it removes redundant sorting steps, but keep underlying expressions,
+    /// so "mergeExpressions" optimization handles them afterwards
+    if (optimization_settings.remove_redundant_sorting)
+        QueryPlanOptimizations::tryRemoveRedundantSorting(root);
 
-        QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
-        QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
-        if (optimization_settings.build_sets)
-            QueryPlanOptimizations::addStepsToBuildSets(optimization_settings, *this, *root, nodes);
-    }
-    catch (Exception & e)
-    {
-        if (e.code() == ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK || e.code() == ErrorCodes::LOGICAL_ERROR)
-            e.addMessage("while optimizing query plan:\n{}", dumpQueryPlan(*this));
-        throw;
-    }
+    QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
+    QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
+    if (optimization_settings.build_sets)
+        QueryPlanOptimizations::addStepsToBuildSets(optimization_settings, *this, *root, nodes);
 }
 
 void QueryPlan::explainEstimate(MutableColumns & columns) const
