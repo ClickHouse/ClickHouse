@@ -77,6 +77,8 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric TemporaryFilesForMerge;
+    extern const Metric NonAbortedMergeFailures;
+    extern const Metric TotalMergeFailures;
 }
 
 namespace DB
@@ -796,9 +798,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Blo
             auto result = projection_squash_plan.getHeader().cloneWithColumns(squashed_chunk.detachColumns());
             auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
                 *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num);
-            tmp_part.finalize();
-            tmp_part.part->getDataPartStorage().commitTransaction();
-            ctx->projection_parts[projection.name].emplace_back(std::move(tmp_part.part));
+
+            tmp_part->finalize();
+            tmp_part->part->getDataPartStorage().commitTransaction();
+            ctx->projection_parts[projection.name].emplace_back(std::move(tmp_part->part));
         }
     }
 }
@@ -816,9 +819,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
             auto result = projection_squash_plan.getHeader().cloneWithColumns(squashed_chunk.detachColumns());
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
                 *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num);
-            temp_part.finalize();
-            temp_part.part->getDataPartStorage().commitTransaction();
-            ctx->projection_parts[projection.name].emplace_back(std::move(temp_part.part));
+
+            temp_part->finalize();
+            temp_part->part->getDataPartStorage().commitTransaction();
+            ctx->projection_parts[projection.name].emplace_back(std::move(temp_part->part));
         }
     }
 
@@ -1471,6 +1475,7 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForAllColumns() const
 
 
 bool MergeTask::execute()
+try
 {
     chassert(stages_iterator != stages.end());
     const auto & current_stage = *stages_iterator;
@@ -1500,6 +1505,16 @@ bool MergeTask::execute()
 
     (*stages_iterator)->setRuntimeContext(std::move(next_stage_context), global_ctx);
     return true;
+}
+catch (...)
+{
+    const auto error_code = getCurrentExceptionCode();
+    if (error_code != ErrorCodes::ABORTED)
+    {
+        CurrentMetrics::add(CurrentMetrics::NonAbortedMergeFailures);
+    }
+    CurrentMetrics::add(CurrentMetrics::TotalMergeFailures);
+    throw;
 }
 
 void MergeTask::cancel() noexcept

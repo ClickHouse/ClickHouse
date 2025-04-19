@@ -66,7 +66,6 @@ MergingAggregatedTransform::~MergingAggregatedTransform() = default;
 MergingAggregatedTransform::MergingAggregatedTransform(
     Block header_, Aggregator::Params params, bool final, GroupingSetsParamsList grouping_sets_params)
     : IAccumulatingTransform(header_, appendGroupingIfNeeded(header_, params.getHeader(header_, final)))
-    , max_threads(params.max_threads)
 {
     if (!grouping_sets_params.empty())
     {

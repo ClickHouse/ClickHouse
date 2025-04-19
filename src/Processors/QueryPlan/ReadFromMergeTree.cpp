@@ -186,6 +186,7 @@ namespace Setting
     extern const SettingsBool query_plan_merge_filters;
     extern const SettingsUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool read_in_order_use_virtual_row;
+    extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool query_condition_cache_store_conditions_as_plaintext;
     extern const SettingsBool allow_experimental_analyzer;
@@ -441,7 +442,10 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(RangesInDataParts parts_wit
     const auto & client_info = context->getClientInfo();
 
     auto extension = ParallelReadingExtension{
-        all_ranges_callback.value(), read_task_callback.value(), number_of_current_replica.value_or(client_info.number_of_current_replica), context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount()};
+        all_ranges_callback.value(),
+        read_task_callback.value(),
+        number_of_current_replica.value_or(client_info.number_of_current_replica),
+        context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount()};
 
     auto pool = std::make_shared<MergeTreeReadPoolParallelReplicas>(
         std::move(extension),
@@ -463,8 +467,8 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(RangesInDataParts parts_wit
     {
         auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(i);
 
-        auto processor
-            = std::make_unique<MergeTreeSelectProcessor>(pool, std::move(algorithm), prewhere_info, lazily_read_info, actions_settings, reader_settings);
+        auto processor = std::make_unique<MergeTreeSelectProcessor>(
+            pool, std::move(algorithm), prewhere_info, lazily_read_info, actions_settings, reader_settings);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
         pipes.emplace_back(std::move(source));
@@ -1891,6 +1895,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
     size_t total_marks_pk = 0;
     size_t parts_before_pk = 0;
+    bool add_index_stat_row_for_pk_expand = false;
 
     {
         MergeTreeDataSelectExecutor::filterPartsByPartition(
@@ -1935,9 +1940,19 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             num_streams,
             result.index_stats,
             indexes->use_skip_indexes,
-            find_exact_ranges);
+            find_exact_ranges,
+            query_info_.isFinal());
 
         MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(result.parts_with_ranges, query_info_, context_, log);
+
+        if (indexes->use_skip_indexes && !indexes->skip_indexes.useful_indices.empty()  && query_info_.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode])
+        {
+            result.parts_with_ranges = findPKRangesForFinalAfterSkipIndex(primary_key,
+                                                                          metadata_snapshot->getSortingKey(),
+                                                                          result.parts_with_ranges,
+                                                                          log);
+            add_index_stat_row_for_pk_expand = true;
+        }
     }
 
     size_t sum_marks_pk = total_marks_pk;
@@ -1954,6 +1969,15 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         sum_ranges += part.ranges.size();
         sum_marks += part.getMarksCount();
         sum_rows += part.getRowsCount();
+    }
+
+    if (add_index_stat_row_for_pk_expand)
+    {
+        result.index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::PrimaryKeyExpand,
+            .description = "Selects all granules that intersect by PK values with the previous skip indexes selection",
+            .num_parts_after = result.parts_with_ranges.size(),
+            .num_granules_after = sum_marks});
     }
 
     result.total_parts = total_parts;
@@ -2424,6 +2448,8 @@ static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
             return "PrimaryKey";
         case ReadFromMergeTree::IndexType::Skip:
             return "Skip";
+        case ReadFromMergeTree::IndexType::PrimaryKeyExpand:
+            return "PrimaryKeyExpand";
     }
 }
 

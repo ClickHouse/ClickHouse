@@ -216,50 +216,15 @@ MergeTreeIndexConditionGin::MergeTreeIndexConditionGin(
 /// Keep in-sync with MergeTreeIndexConditionGin::alwaysUnknownOrTrue
 bool MergeTreeIndexConditionGin::alwaysUnknownOrTrue() const
 {
-    /// Check like in KeyCondition.
-    std::vector<bool> rpn_stack;
-
-    for (const auto & element : rpn)
-    {
-        if (element.function == RPNElement::FUNCTION_UNKNOWN
-            || element.function == RPNElement::ALWAYS_TRUE)
-        {
-            rpn_stack.push_back(true);
-        }
-        else if (element.function == RPNElement::FUNCTION_EQUALS
-             || element.function == RPNElement::FUNCTION_NOT_EQUALS
-             || element.function == RPNElement::FUNCTION_HAS
-             || element.function == RPNElement::FUNCTION_IN
-             || element.function == RPNElement::FUNCTION_NOT_IN
-             || element.function == RPNElement::FUNCTION_MULTI_SEARCH
-             || element.function == RPNElement::FUNCTION_MATCH
-             || element.function == RPNElement::ALWAYS_FALSE)
-        {
-            rpn_stack.push_back(false);
-        }
-        else if (element.function == RPNElement::FUNCTION_NOT)
-        {
-            // do nothing
-        }
-        else if (element.function == RPNElement::FUNCTION_AND)
-        {
-            auto arg1 = rpn_stack.back();
-            rpn_stack.pop_back();
-            auto arg2 = rpn_stack.back();
-            rpn_stack.back() = arg1 && arg2;
-        }
-        else if (element.function == RPNElement::FUNCTION_OR)
-        {
-            auto arg1 = rpn_stack.back();
-            rpn_stack.pop_back();
-            auto arg2 = rpn_stack.back();
-            rpn_stack.back() = arg1 || arg2;
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
-    }
-
-    return rpn_stack[0];
+    return rpnEvaluatesAlwaysUnknownOrTrue(
+        rpn,
+        {RPNElement::FUNCTION_EQUALS,
+         RPNElement::FUNCTION_NOT_EQUALS,
+         RPNElement::FUNCTION_HAS,
+         RPNElement::FUNCTION_IN,
+         RPNElement::FUNCTION_NOT_IN,
+         RPNElement::FUNCTION_MULTI_SEARCH,
+         RPNElement::FUNCTION_MATCH});
 }
 
 bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranulePtr idx_granule,[[maybe_unused]] PostingsCacheForStore & cache_store) const

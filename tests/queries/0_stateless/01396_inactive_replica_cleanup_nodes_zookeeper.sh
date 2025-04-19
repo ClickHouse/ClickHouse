@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: replica, no-debug, no-shared-merge-tree
+# Tags: replica, no-debug, no-shared-merge-tree, long
 # no-shared-merge-tree: depends on zookeeper, specific logs of rmt and so on
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -25,7 +25,7 @@ $CLICKHOUSE_CLIENT --query "
 "
 
 # insert_keeper_fault_injection_probability=0 -- can slowdown insert a lot (produce a lot of parts)
-$CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 --max_block_size 1 --min_insert_block_size_rows 1 --min_insert_block_size_bytes 1 --max_insert_threads 16 --query "INSERT INTO r1 SELECT * FROM numbers_mt(${SCALE})"
+$CLICKHOUSE_CLIENT --max_execution_time 300 --insert_keeper_fault_injection_probability=0 --max_block_size 1 --min_insert_block_size_rows 1 --min_insert_block_size_bytes 1 --max_insert_threads 16 --query "INSERT INTO r1 SELECT * FROM numbers_mt(${SCALE})"
 
 
 # Now wait for cleanup thread
