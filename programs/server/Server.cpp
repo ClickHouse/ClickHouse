@@ -1068,6 +1068,12 @@ try
         PreformattedMessage::create("Server was built with code coverage. It will work slowly."));
 #endif
 
+#if defined(MEMORY_ACCESS_TRACING)
+    global_context->addOrUpdateWarningMessage(
+        Context::WarningType::SERVER_BUILT_WITH_MEMORY_ACCESS_TRACING,
+        PreformattedMessage::create("Server was built with memory access tracing. It will work slowly."));
+#endif
+
     const size_t physical_server_memory = getMemoryAmount();
 
     LOG_INFO(

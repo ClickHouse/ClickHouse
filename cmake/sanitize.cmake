@@ -80,3 +80,14 @@ else()
     set (WITHOUT_COVERAGE_FLAGS "")
     set (WITHOUT_COVERAGE_FLAGS_LIST "")
 endif()
+
+option (MEMORY_ACCESS_TRACING "Instrumentation for memory access tracing" OFF)
+
+if (MEMORY_ACCESS_TRACING)
+    message (STATUS "Enabled instrumentation for memory access tracing")
+
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DMEMORY_ACCESS_TRACING=1")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DMEMORY_ACCESS_TRACING=1")
+
+    set (MEMORY_TRACING_FLAGS "-fsanitize-coverage=trace-pc,trace-loads,trace-stores")
+endif()

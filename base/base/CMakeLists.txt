@@ -1,4 +1,5 @@
 add_compile_options("$<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${COVERAGE_FLAGS}>")
+add_compile_options("$<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${MEMORY_TRACING_FLAGS}>")
 
 if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
@@ -21,6 +22,7 @@ set (SRCS
     IPv4andIPv6.cpp
     itoa.cpp
     JSON.cpp
+    memory_access_tracing.cpp
     mremap.cpp
     phdr_cache.cpp
     preciseExp10.cpp
@@ -42,6 +44,12 @@ if (WITH_COVERAGE)
     target_compile_definitions(common PUBLIC WITH_COVERAGE=1)
 else ()
     target_compile_definitions(common PUBLIC WITH_COVERAGE=0)
+endif ()
+
+if (MEMORY_ACCESS_TRACING)
+    target_compile_definitions(common PUBLIC MEMORY_ACCESS_TRACING=1)
+else ()
+    target_compile_definitions(common PUBLIC MEMORY_ACCESS_TRACING=0)
 endif ()
 
 if (TARGET ch_contrib::crc32_s390x)
