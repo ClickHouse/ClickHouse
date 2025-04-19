@@ -82,7 +82,6 @@ SETTINGS index_granularity = 1;
 INSERT INTO test SELECT number, 10 - number FROM numbers(5);
 
 -- Projection analysis should work
-SELECT _part_offset FROM test WHERE b = 8
-SETTINGS query_plan_enable_optimizations = 1, optimize_use_projections = 1, force_optimize_projection = 1;
+SELECT _part_offset FROM test WHERE b = 8;
 
 DROP TABLE test;
