@@ -1340,17 +1340,14 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
 }
 
 void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query) {
-    //TODO
-    // auto handler = query.handler;
-    // auto function = query.function;
-    //temporary PSEUDOCODE
-    // What happens here:
-    // So we need to add/update information in system.instrument 
-    // Also we patch here I think(?)
-    // So we firstly map the function name to its ID(where do we store the mapping though)
-    // After that we need to do something like __xray_set_handler(functionID, handler, params);
-    // and __xray_patch(functionID)/__xray_unpatch(functionID)
-    // But does xray provide this kind of functionality?.. I am afraid it does not
+    // query.handler -- handler to be set for the function
+    // query.function -- name of the function to be patched - rename in query to function name
+    if (add) {
+        XRayInstrumentationManager::instance().setHandlerAndPatch(query.function, query.handler); // there may be exceptions -- need to consider all cases
+    } else {
+        // but if we are just unpatching we don't need handler -- consider this
+        XRayInstrumentationManager::instance().unpatchFunction(query.function);
+    }
 }
 
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
