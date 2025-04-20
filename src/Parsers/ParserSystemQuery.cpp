@@ -736,26 +736,27 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::INSTRUMENT_ADD:
         case Type::INSTRUMENT_REMOVE:
         {
-            String target;
+            String handler;
             ASTPtr temporary_string_literal;
             if (ParserStringLiteral{}.parse(pos, temporary_string_literal, expected))
             {
-                target = temporary_string_literal->as<ASTLiteral &>().value.safeGet<String>();
+                handler = temporary_string_literal->as<ASTLiteral &>().value.safeGet<String>();
             }
-            res->handler = std::move(target);
+            res->handler = std::move(handler);
 
+            String function;
             if (ParserStringLiteral{}.parse(pos, temporary_string_literal, expected))
             {
-                target = temporary_string_literal->as<ASTLiteral &>().value.safeGet<String>();
+                function = temporary_string_literal->as<ASTLiteral &>().value.safeGet<String>();
             }
-            res->function = std::move(target);
+            res->function = std::move(function);
 
             do
             {
                 ASTPtr params;
                 if (!ParserStringLiteral{}.parse(pos, params, expected))
                     return false;
-                res->parameters.emplace_back(replica_ast->as<ASTLiteral &>().value.safeGet<String>());
+                res->parameters.emplace_back(params->as<ASTLiteral &>().value.safeGet<String>());
             } while (ParserToken{TokenType::Comma}.ignore(pos, expected));
 
             break;
