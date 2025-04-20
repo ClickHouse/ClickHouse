@@ -5176,6 +5176,16 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
     resolveQueryJoinTreeNode(join_node_typed.getRightTableExpression(), scope, expressions_visitor);
     validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getRightTableExpression(), scope);
 
+    if (isCorrelatedQueryOrUnionNode(join_node_typed.getLeftTableExpression()))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Correlated subqueries are not supported in JOINs yet, but found in expression: {}",
+            join_node_typed.getLeftTableExpression()->formatASTForErrorMessage());
+
+    if (isCorrelatedQueryOrUnionNode(join_node_typed.getRightTableExpression()))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Correlated subqueries are not supported in JOINs yet, but found in expression: {}",
+            join_node_typed.getRightTableExpression()->formatASTForErrorMessage());
+
     if (!join_node_typed.getLeftTableExpression()->hasAlias() && !join_node_typed.getRightTableExpression()->hasAlias())
         checkDuplicateTableNamesOrAliasForPasteJoin(join_node_typed, scope);
 

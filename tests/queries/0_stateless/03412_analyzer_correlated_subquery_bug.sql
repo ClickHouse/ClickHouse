@@ -28,3 +28,5 @@ WHERE length(arrayFilter(x -> (x OR exists((
     FROM numbers(1)
     WHERE number >= tbl.number
 ))), range(number))) > 0;
+
+SELECT number FROM mem2 AS tbl INNER JOIN (SELECT number FROM numbers(1) WHERE tbl.number >= number) AS alias4 ON alias4.number = number; -- { serverError NOT_IMPLEMENTED}
