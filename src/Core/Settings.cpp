@@ -5564,6 +5564,18 @@ Use userspace page cache in passive mode, similar to read_from_filesystem_cache_
     DECLARE(Bool, page_cache_inject_eviction, false, R"(
 Userspace page cache will sometimes invalidate some pages at random. Intended for testing.
 )", 0) \
+    DECLARE(UInt64, page_cache_block_size, 1048576, R"(
+Size of file chunks to store in the userspace page cache, in bytes. All reads that go through the cache will be rounded up to a multiple of this size.
+
+This setting can be adjusted on a per-query level basis, but cache entries with different block sizes cannot be reused. Changing this setting effectively invalidates existing entries in the cache.
+
+A higher value, like 1 MiB is good for high-throughput queries, and a lower value, like 64 KiB is good for low-latency point queries.
+)", 0) \
+    DECLARE(UInt64, page_cache_lookahead_blocks, 16, R"(
+On userspace page cache miss, read up to this many consecutive blocks at once from the underlying storage, if they're also not in the cache. Each block is page_cache_block_size bytes.
+
+A higher value is good for high-throughput queries, while low-latency point queries will work better without readahead.
+)", 0) \
     \
     DECLARE(Bool, load_marks_asynchronously, false, R"(
 Load MergeTree marks asynchronously
