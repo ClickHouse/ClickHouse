@@ -1104,8 +1104,8 @@ void NO_INLINE Aggregator::executeImplBatch(
                 }
 
                 auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool, params.optimization_indexes, params.limit_length);
-                assert(emplace_result.has_value());
-                emplace_result->setMapped(place);
+                if (emplace_result.has_value())
+                    emplace_result->setMapped(place);
             }
         }
         return;
