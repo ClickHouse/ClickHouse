@@ -443,18 +443,18 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::INSTRUMENT_ADD:
         case Type::INSTRUMENT_REMOVE:
         {
-            if (!handler.empty()) 
+            if (!handler.empty())
             {
                 ostr << ' ';
                 print_identifier(handler);
             }
- 
-            if (!function.empty()) 
+
+            if (!function.empty())
             {
                 ostr << ' ';
                 print_identifier(function);
             }
- 
+
             if (!parameters.empty())
             {
                 bool comma = false;

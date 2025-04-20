@@ -743,13 +743,13 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 target = temporary_string_literal->as<ASTLiteral &>().value.safeGet<String>();
             }
             res->handler = std::move(target);
- 
+
             if (ParserStringLiteral{}.parse(pos, temporary_string_literal, expected))
             {
                 target = temporary_string_literal->as<ASTLiteral &>().value.safeGet<String>();
             }
             res->function = std::move(target);
- 
+
             do
             {
                 ASTPtr params;
@@ -757,7 +757,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                     return false;
                 res->parameters.emplace_back(replica_ast->as<ASTLiteral &>().value.safeGet<String>());
             } while (ParserToken{TokenType::Comma}.ignore(pos, expected));
- 
+
             break;
         }
 

@@ -41,6 +41,7 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
+#include <Interpreters/XRayInstrumentationManager.h>
 #include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
@@ -1339,15 +1340,14 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
     }
 }
 
-void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query) {
+void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query)
+{
     // query.handler -- handler to be set for the function
     // query.function -- name of the function to be patched - rename in query to function name
-    if (add) {
+    if (add)
         XRayInstrumentationManager::instance().setHandlerAndPatch(query.function, query.handler); // there may be exceptions -- need to consider all cases
-    } else {
-        // but if we are just unpatching we don't need handler -- consider this
-        XRayInstrumentationManager::instance().unpatchFunction(query.function);
-    }
+    else
+        XRayInstrumentationManager::instance().unpatchFunction(query.function); // but if we are just unpatching we don't need handler -- consider this
 }
 
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)

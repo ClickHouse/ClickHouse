@@ -43,7 +43,7 @@ void XRayInstrumentationManager::setHandlerAndPatch(const std::string & function
     functionIdToInstrumentPoint[function_id] = instrumented_functions.begin();
     __xray_set_handler(handler_function);
     __xray_patch(function_id);
-    // add/update a row "functionId | functionName | handlerName" to system.instrument 
+    // add/update a row "functionId | functionName | handlerName" to system.instrument
 }
 
 
@@ -68,7 +68,7 @@ XRayHandlerFunction XRayInstrumentationManager::getHandler(const std::string & n
 }
 
 
-//Takes path to the elf-binary file(that should contain xray_instr_map section), 
+//Takes path to the elf-binary file(that should contain xray_instr_map section),
 // and gets mapping of functionIDs to the addresses, then resolves IDs into human-readable names
 void XRayInstrumentationManager::parseXRayInstrumentationMap()
 {
@@ -91,7 +91,8 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
 
 
     // Iterate over all instrumented functions
-    for (const auto &[FuncID, Addr] : function_addresses) {
+    for (const auto &[FuncID, Addr] : function_addresses)
+    {
         // Create a SectionedAddress structure to hold the function address
         object::SectionedAddress ModuleAddress;
         ModuleAddress.Address = Addr;
@@ -101,14 +102,16 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
         std::string FunctionName = "<unknown>";
 
         // Attempt to symbolize the function address (resolve its name)
-        if (auto ResOrErr = symbolizer.symbolizeCode(binary_path, ModuleAddress)) {
+        if (auto ResOrErr = symbolizer.symbolizeCode(binary_path, ModuleAddress))
+        {
             auto &DI = *ResOrErr;
             if (DI.FunctionName != DILineInfo::BadString)
                 FunctionName = DI.FunctionName;
         }
 
         // map function ID to its resolved name and vice versa
-        if (FunctionName != "<unknown>") {
+        if (FunctionName != "<unknown>")
+        {
             functionNameToXRayID[FunctionName] = FuncID;
             xrayIdToFunctionName[FuncID] = FunctionName;
         }

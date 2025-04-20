@@ -26,7 +26,8 @@ class XRayInstrumentationManager
 {
 public:
 
-    struct InstrumentedFunctionInfo {
+    struct InstrumentedFunctionInfo
+    {
         uint32_t function_id;
         std::string function_name;
         std::string handler_name;
@@ -44,7 +45,7 @@ public:
     }
 
 private:
-    
+
     XRayInstrumentationManager();
     void registerHandler(const std::string & name, XRayHandlerFunction handler);
     XRayHandlerFunction getHandler(const std::string & name) const;
@@ -66,5 +67,4 @@ private:
     static inline std::mutex log_mutex;
 };
 
-} // namespace DB
-
+}
