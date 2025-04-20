@@ -857,7 +857,7 @@ BlockIO InterpreterSystemQuery::execute()
         {
             instrumentWithXRay(false, query);
             break;
-	    }
+        }
 
 #if USE_JEMALLOC
         case Type::JEMALLOC_PURGE:
