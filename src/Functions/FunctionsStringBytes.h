@@ -1,12 +1,13 @@
 #pragma once
 
-#include <cmath>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 #include <Common/BitHelpers.h>
+
+#include <cmath>
 
 namespace DB
 {
@@ -65,12 +66,14 @@ public:
         const ColumnString::Chars & data = col_str->getChars();
         const ColumnString::Offsets & offsets = col_str->getOffsets();
 
+        size_t prev_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const char * str = reinterpret_cast<const char *>(data.data() + (i == 0 ? 0 : offsets[i - 1]));
-            const size_t size = offsets[i] - (i == 0 ? 0 : offsets[i - 1]) - 1;
+            const UInt8 * data_ptr = data.data() + prev_offset;
+            const size_t size = offsets[i] - prev_offset - 1;
 
-            vec_res[i] = Impl::process(str, size);
+            vec_res[i] = Impl::process(data_ptr, size);
+            prev_offset = offsets[i];
         }
 
         return col_res;

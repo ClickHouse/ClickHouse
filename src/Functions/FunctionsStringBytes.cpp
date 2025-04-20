@@ -1,4 +1,3 @@
-#include <cmath>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
@@ -10,23 +9,12 @@
 #include <Common/BitHelpers.h>
 #include <Common/PODArray.h>
 
+#include <bit>
+#include <cmath>
+
 namespace DB
 {
 
-inline UInt8 countBits(UInt64 x)
-{
-#if defined(__clang__)
-    return __builtin_popcountll(x);
-#else
-    UInt8 count = 0;
-    while (x)
-    {
-        count += x & 1;
-        x >>= 1;
-    }
-    return count;
-#endif
-}
 
 class ByteCounters
 {
@@ -43,8 +31,8 @@ public:
         UInt32 & counter = counters[byte];
         if ((counter & generation_mask) != current_generation)
             counter = current_generation;
-        counter++;
-        total_count++;
+        ++counter;
+        ++total_count;
     }
 
     void nextString()
@@ -68,10 +56,9 @@ struct StringBytesUniqImpl
 {
     using ResultType = UInt8;
 
-    static ResultType process(const char * str, size_t size)
+    static ResultType process(const UInt8 * data, size_t size)
     {
-        uint64_t mask[4] = {0};
-        const UInt8 * data = reinterpret_cast<const UInt8 *>(str);
+        UInt64 mask[4] = {0};
         const UInt8 * end = data + size;
 
         for (; data < end; ++data)
@@ -80,7 +67,7 @@ struct StringBytesUniqImpl
             mask[byte >> 6] |= (1ULL << (byte & 0x3F));
         }
 
-        return countBits(mask[0]) + countBits(mask[1]) + countBits(mask[2]) + countBits(mask[3]);
+        return std::popcount(mask[0]) + std::popcount(mask[1]) + std::popcount(mask[2]) + std::popcount(mask[3]);
     }
 };
 
@@ -88,13 +75,12 @@ struct StringBytesEntropyImpl
 {
     using ResultType = Float64;
 
-    static ResultType process(const char * str, size_t size)
+    static ResultType process(const UInt8 * data, size_t size)
     {
         if (size == 0)
             return 0;
 
         ByteCounters counters;
-        const UInt8 * data = reinterpret_cast<const UInt8 *>(str);
         const UInt8 * end = data + size;
 
         for (; data < end; ++data)

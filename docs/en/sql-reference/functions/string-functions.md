@@ -2654,7 +2654,7 @@ stringBytesUniq(s)
 
 **Returned value**
 
-- The number of distinct bytes in the string. [UInt8](../data-types/int-uint.md).
+- The number of distinct bytes in the string. [UInt16](../data-types/int-uint.md).
 
 **Example**
 
