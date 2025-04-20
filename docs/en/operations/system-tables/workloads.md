@@ -12,13 +12,13 @@ Contains information for [workloads](/operations/workload-scheduling.md#workload
 
 Example:
 
-``` sql
+```sql
 SELECT *
 FROM system.workloads
 FORMAT Vertical
 ```
 
-``` text
+```text
 Row 1:
 ──────
 name:         production

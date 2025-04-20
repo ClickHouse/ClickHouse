@@ -5,6 +5,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ConnectionTimeouts.h>
+#include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -12,7 +13,6 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Parsers/queryToString.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -212,13 +212,14 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
 
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             std::vector<IConnectionPool::Entry>{try_results.front()},
-            queryToString(query_to_send),
+            query_to_send->formatWithSecretsOneLine(),
             getOutputHeader(),
             new_context,
             /*throttler=*/nullptr,
             scalars,
             Tables(),
             processed_stage,
+            nullptr,
             extension);
 
         remote_query_executor->setLogger(log);

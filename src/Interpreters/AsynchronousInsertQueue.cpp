@@ -19,8 +19,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/formatAST.h>
-#include <Parsers/queryToString.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
@@ -111,7 +110,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const Settings & settings_,
     DataKind data_kind_)
     : query(query_->clone())
-    , query_str(queryToString(query))
+    , query_str(query->formatWithSecretsOneLine())
     , user_id(user_id_)
     , current_roles(current_roles_)
     , settings(settings_)
@@ -762,7 +761,7 @@ String serializeQuery(const IAST & query, size_t max_length)
 {
     return query.hasSecretParts()
         ? query.formatForLogging(max_length)
-        : wipeSensitiveDataAndCutToLength(serializeAST(query), max_length);
+        : wipeSensitiveDataAndCutToLength(query.formatWithSecretsOneLine(), max_length);
 }
 
 }
@@ -925,7 +924,7 @@ try
             normalized_query_hash,
             key.query,
             pipeline,
-            interpreter,
+            interpreter.get(),
             internal,
             query_database,
             query_table,
@@ -964,9 +963,7 @@ try
         LOG_DEBUG(log, "Flushed {} rows, {} bytes for query '{}'", num_rows, num_bytes, key.query_str);
         queue_shard_flush_time_history.updateWithCurrentTime();
 
-        bool pulling_pipeline = false;
-        logQueryFinish(
-            query_log_elem, insert_context, key.query, pipeline, pulling_pipeline, query_span, QueryResultCacheUsage::None, internal);
+        logQueryFinish(query_log_elem, insert_context, key.query, pipeline, /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, internal);
     };
 
     try
@@ -1068,7 +1065,14 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         return 0;
     };
 
-    StreamingFormatExecutor executor(header, format, std::move(on_error), std::move(adding_defaults_transform));
+
+    StreamingFormatExecutor executor(
+        header,
+        format,
+        std::move(on_error),
+        data->size_in_bytes,
+        data->entries.size(),
+        std::move(adding_defaults_transform));
     auto chunk_info = std::make_shared<AsyncInsertInfo>();
 
     for (const auto & entry : data->entries)
@@ -1084,7 +1088,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         executor.setQueryParameters(entry->query_parameters);
 
         size_t num_bytes = bytes->size();
-        size_t num_rows = executor.execute(*buffer);
+        size_t num_rows = executor.execute(*buffer, num_bytes);
 
         total_rows += num_rows;
 
@@ -1163,7 +1167,7 @@ template <typename E>
 void AsynchronousInsertQueue::finishWithException(
     const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & exception)
 {
-    tryLogCurrentException("AsynchronousInsertQueue", fmt::format("Failed insertion for query '{}'", queryToString(query)));
+    tryLogCurrentException("AsynchronousInsertQueue", fmt::format("Failed insertion for query '{}'", query->formatForLogging()));
 
     for (const auto & entry : entries)
     {

@@ -88,6 +88,10 @@ void TableFunctionObjectStorage<Definition, Configuration>::parseArguments(const
     settings = std::make_shared<StorageObjectStorageSettings>();
 
     auto & args = args_func.at(0)->children;
+    /// Support storage settings in table function,
+    /// e.g. `s3(endpoint, ..., SETTINGS setting=value, ..., setting=value)`
+    /// We do similarly for some other table functions
+    /// whose storage implementation supports storage settings (for example, MySQL).
     for (auto * it = args.begin(); it != args.end(); ++it)
     {
         ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
@@ -172,7 +176,8 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
         /* format_settings */ std::nullopt,
         /* mode */ LoadingStrictnessLevel::CREATE,
         /* distributed_processing */ is_secondary_query,
-        /* partition_by */ nullptr);
+        /* partition_by */ nullptr,
+        /* is_table_function */true);
 
     storage->startup();
     return storage;
@@ -342,19 +347,38 @@ void registerTableFunctionIceberg(TableFunctionFactory & factory)
 #endif
 
 
-#if USE_AWS_S3
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 void registerTableFunctionDeltaLake(TableFunctionFactory & factory)
 {
+#if USE_AWS_S3
     factory.registerFunction<TableFunctionDeltaLake>(
         {.documentation
-         = {.description = R"(The table function can be used to read the DeltaLake table stored on object store.)",
+         = {.description = R"(The table function can be used to read the DeltaLake table stored on S3, alias of deltaLakeS3.)",
             .examples{{"deltaLake", "SELECT * FROM deltaLake(url, access_key_id, secret_access_key)", ""}},
             .category{""}},
          .allow_readonly = false});
+
+    factory.registerFunction<TableFunctionDeltaLakeS3>(
+        {.documentation
+         = {.description = R"(The table function can be used to read the DeltaLake table stored on S3.)",
+            .examples{{"deltaLakeS3", "SELECT * FROM deltaLakeS3(url, access_key_id, secret_access_key)", ""}},
+            .category{""}},
+         .allow_readonly = false});
+#endif
+
+#if USE_AZURE_BLOB_STORAGE
+    factory.registerFunction<TableFunctionDeltaLakeAzure>(
+        {.documentation
+         = {.description = R"(The table function can be used to read the DeltaLake table stored on Azure object store.)",
+            .examples{{"deltaLakeAzure", "SELECT * FROM deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, \"\n"
+ "                \"[account_name, account_key, format, compression, structure])", ""}},
+            .category{""}},
+         .allow_readonly = false});
+#endif
 }
 #endif
 
+#if USE_AWS_S3
 void registerTableFunctionHudi(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionHudi>(
@@ -364,7 +388,6 @@ void registerTableFunctionHudi(TableFunctionFactory & factory)
             .category{""}},
          .allow_readonly = false});
 }
-
 #endif
 
 void registerDataLakeTableFunctions(TableFunctionFactory & factory)
@@ -373,10 +396,11 @@ void registerDataLakeTableFunctions(TableFunctionFactory & factory)
 #if USE_AVRO
     registerTableFunctionIceberg(factory);
 #endif
-#if USE_AWS_S3
+
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
     registerTableFunctionDeltaLake(factory);
 #endif
+#if USE_AWS_S3
     registerTableFunctionHudi(factory);
 #endif
 }

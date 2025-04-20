@@ -31,10 +31,10 @@ SELECT * FROM example FORMAT LineAsStringWithNames;
 ```
 
 ```response title="Response"
-name	value
-John	30
-Jane	25
-Peter	35
+name    value
+John    30
+Jane    25
+Peter    35
 ```
 
 ## Format Settings {#format-settings}
