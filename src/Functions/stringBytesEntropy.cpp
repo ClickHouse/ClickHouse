@@ -4,17 +4,15 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsStringBytes.h>
+#include <Functions/stringBytes.h>
 #include <Functions/IFunction.h>
 #include <Common/BitHelpers.h>
 #include <Common/PODArray.h>
 
-#include <bit>
 #include <cmath>
 
 namespace DB
 {
-
 
 class ByteCounters
 {
@@ -52,24 +50,6 @@ public:
     size_t getTotalCount() const { return total_count; }
 };
 
-struct StringBytesUniqImpl
-{
-    using ResultType = UInt8;
-
-    static ResultType process(const UInt8 * data, size_t size)
-    {
-        UInt64 mask[4] = {0};
-        const UInt8 * end = data + size;
-
-        for (; data < end; ++data)
-        {
-            UInt8 byte = *data;
-            mask[byte >> 6] |= (1ULL << (byte & 0x3F));
-        }
-
-        return std::popcount(mask[0]) + std::popcount(mask[1]) + std::popcount(mask[2]) + std::popcount(mask[3]);
-    }
-};
 
 struct StringBytesEntropyImpl
 {
@@ -103,24 +83,15 @@ struct StringBytesEntropyImpl
     }
 };
 
-struct NameStringBytesUniq
-{
-    static constexpr auto name = "stringBytesUniq";
-};
-
 struct NameStringBytesEntropy
 {
     static constexpr auto name = "stringBytesEntropy";
 };
 
-using FunctionStringBytesUniq = FunctionStringBytes<StringBytesUniqImpl, NameStringBytesUniq>;
 using FunctionStringBytesEntropy = FunctionStringBytes<StringBytesEntropyImpl, NameStringBytesEntropy>;
 
-REGISTER_FUNCTION(StringBytes)
+REGISTER_FUNCTION(StringBytesEntropy)
 {
-    factory.registerFunction<FunctionStringBytesUniq>(
-        FunctionDocumentation{.description = R"(Counts the number of distinct bytes in a string.)"});
-
     factory.registerFunction<FunctionStringBytesEntropy>(
         FunctionDocumentation{.description = R"(Calculates Shannon's entropy of byte distribution in a string.)"});
 }
