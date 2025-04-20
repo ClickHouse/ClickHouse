@@ -169,7 +169,7 @@ public:
 
     const UInt64 * tryGetSavedHash() const override { return reverse_index.tryGetSavedHash(); }
 
-    UInt128 getHash() const override { return hash.getHash(*getRawColumnPtr()); }
+    UInt128 getHash() const override { return hash.getHash(column_holder); }
 
     /// This is strange. Please remove this method as soon as possible.
     std::optional<UInt64> getOrFindValueIndex(StringRef value) const override

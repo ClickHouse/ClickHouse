@@ -172,7 +172,8 @@ private:
     void recalculateForNewData(const ColumnPtr & string_column);
 
     /// Returns pointer to the end of serialization (first byte past the data)
-    char * serializeIntoMemory(DecompressedValue value, char * memory) const;
+    /// `pos` is the index at which the value resides in the column
+    char * serializeIntoMemory(size_t pos, DecompressedValue value, char * memory) const;
 
     IColumn::WrappedPtr data_column;
     Lengths common_prefix_lengths;

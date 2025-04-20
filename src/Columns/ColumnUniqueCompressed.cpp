@@ -80,7 +80,7 @@ ColumnUniqueFCBlockDF::ColumnUniqueFCBlockDF(const ColumnPtr & string_column, si
     , block_size(block_size_)
     , is_nullable(is_nullable_)
 {
-    if (!typeid_cast<const ColumnString *>(&string_column))
+    if (!typeid_cast<const ColumnString *>(string_column.get()))
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnUniqueFCBlockDF expected ColumnString, but got {}", string_column->getName());
     }
@@ -201,7 +201,7 @@ std::optional<UInt64> ColumnUniqueFCBlockDF::getOrFindValueIndex(StringRef value
 
 MutableColumnPtr ColumnUniqueFCBlockDF::cloneEmpty() const
 {
-    return ColumnUniqueFCBlockDF::create(ColumnString::create(), block_size);
+    return ColumnUniqueFCBlockDF::create(ColumnString::create(), block_size, is_nullable);
 }
 
 size_t ColumnUniqueFCBlockDF::uniqueInsert(const Field & x)
@@ -358,13 +358,13 @@ void ColumnUniqueFCBlockDF::collectSerializedValueSizes(PaddedPODArray<UInt64> &
     }
 }
 
-char * ColumnUniqueFCBlockDF::serializeIntoMemory(DecompressedValue value, char * memory) const
+char * ColumnUniqueFCBlockDF::serializeIntoMemory(size_t pos, DecompressedValue value, char * memory) const
 {
     const size_t value_size = value.size() + 1; /* Null terminator */
 
     if (is_nullable)
     {
-        UInt8 flag = (n == getNullValueIndex() ? 1 : 0);
+        UInt8 flag = (pos == getNullValueIndex() ? 1 : 0);
         unalignedStore<UInt8>(memory, flag);
         ++memory;
     }
@@ -391,7 +391,7 @@ StringRef ColumnUniqueFCBlockDF::serializeValueIntoArena(size_t n, Arena & arena
     char * pos = arena.allocContinue(res.size, begin);
     res.data = pos;
 
-    serializeIntoMemory(value, pos);
+    serializeIntoMemory(n, value, pos);
 
     return res;
 }
@@ -399,7 +399,7 @@ StringRef ColumnUniqueFCBlockDF::serializeValueIntoArena(size_t n, Arena & arena
 char * ColumnUniqueFCBlockDF::serializeValueIntoMemory(size_t n, char * memory) const
 {
     const DecompressedValue value = getDecompressedRefsAt(n);
-    return serializeIntoMemory(value, memory);
+    return serializeIntoMemory(n, value, memory);
 }
 
 void ColumnUniqueFCBlockDF::updateHashWithValue(size_t n, SipHash & hash_func) const
