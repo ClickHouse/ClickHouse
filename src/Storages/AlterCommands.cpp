@@ -1228,17 +1228,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     return result;
 }
 
-bool AlterCommands::hasGinIndex(const StorageInMemoryMetadata & metadata)
-{
-    for (const auto & index : metadata.secondary_indices)
-    {
-        if (index.type == GIN_INDEX_NAME)
-            return true;
-    }
-    return false;
-}
-
-bool AlterCommands::hasLegacyFullTextIndex(const StorageInMemoryMetadata & metadata)
+bool AlterCommands::hasFullTextIndex(const StorageInMemoryMetadata & metadata)
 {
     for (const auto & index : metadata.secondary_indices)
     {

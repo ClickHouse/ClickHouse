@@ -9,7 +9,6 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 
 #include <memory>
 namespace DB
@@ -141,8 +140,6 @@ public:
 
     void updateExternalDynamicMetadata(ContextPtr) override;
 
-    IDataLakeMetadata * getExternalMetadata() const;
-
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 protected:
@@ -232,18 +229,14 @@ public:
 
     virtual bool hasExternalDynamicMetadata() { return false; }
 
-    virtual IDataLakeMetadata * getExternalMetadata() const { return nullptr; }
+    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String&) const { return {}; }
 
-    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String &) const { return {}; }
-
-    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String &) const { return {}; }
+    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String&) const { return {}; }
 
     virtual ColumnsDescription updateAndGetCurrentSchema(ObjectStoragePtr, ContextPtr)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateAndGetCurrentSchema is not supported by storage {}", getEngineName());
     }
-
-    virtual void modifyFormatSettings(FormatSettings &) const {}
 
     virtual ReadFromFormatInfo prepareReadingFromFormat(
         ObjectStoragePtr object_storage,
@@ -255,8 +248,6 @@ public:
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
 
     virtual bool supportsFileIterator() const { return false; }
-    virtual bool supportsWrites() const { return true; }
-
     virtual ObjectIterator iterate(
         const ActionsDAG * /* filter_dag */,
         std::function<void(FileProgress)> /* callback */,

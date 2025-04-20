@@ -132,14 +132,14 @@ INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
 
 The data is inserted in both `test.visits` and `test.agg_visits`.
 
-To get the aggregated data, execute a query such as `SELECT ... GROUP BY ...` from the materialized view `test.visits_mv`:
+To get the aggregated data, execute a query such as `SELECT ... GROUP BY ...` from the materialized view `test.mv_visits`:
 
 ```sql
 SELECT
     StartDate,
     sumMerge(Visits) AS Visits,
     uniqMerge(Users) AS Users
-FROM test.visits_mv
+FROM test.agg_visits
 GROUP BY StartDate
 ORDER BY StartDate;
 ```

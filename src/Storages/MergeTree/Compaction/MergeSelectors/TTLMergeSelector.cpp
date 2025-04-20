@@ -103,7 +103,14 @@ PartsRange ITTLMergeSelector::select(const PartsRanges & parts_ranges, size_t ma
     if (center->size > max_total_size_to_merge)
         return {};
 
-    size_t usable_memory = max_total_size_to_merge - center->size;
+    size_t usable_memory = [max_total_size_to_merge, center]()
+    {
+        if (max_total_size_to_merge == 0)
+            return std::numeric_limits<size_t>::max();
+
+        return max_total_size_to_merge - center->size;
+    }();
+
     PartsIterator left = findLeftRangeBorder(center, range->begin(), usable_memory);
     PartsIterator right = findRightRangeBorder(std::next(center), range->end(), usable_memory);
 
