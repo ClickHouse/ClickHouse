@@ -47,29 +47,36 @@ int setCertificateCallback(SSL * ssl, const CertificateReloader::Data * current_
         LOG_ERROR(log, "Clear certificates {}", Poco::Net::Utility::getLastError());
         return -1;
     }
-    if (auto err = SSL_use_certificate(ssl, const_cast<X509 *>(current_data->certs_chain[0].certificate())); err != 1)
+
+    const auto * root_certificate = static_cast<const X509 *>(current_data->certs_chain.front());
+    if (auto err = SSL_use_certificate(ssl, const_cast<X509 *>(root_certificate)); err != 1)
     {
         LOG_ERROR(log, "Use certificate {}", Poco::Net::Utility::getLastError());
         return -1;
     }
+
     for (auto cert = current_data->certs_chain.begin() + 1; cert != current_data->certs_chain.end(); cert++)
     {
-        if (auto err = SSL_add1_chain_cert(ssl, const_cast<X509 *>(cert->certificate())); err != 1)
+        const auto * certificate = static_cast<const X509 *>(*cert);
+        if (auto err = SSL_add1_chain_cert(ssl, const_cast<X509 *>(certificate)); err != 1)
         {
             LOG_ERROR(log, "Add certificate to chain {}", Poco::Net::Utility::getLastError());
             return -1;
         }
     }
+
     if (auto err = SSL_use_PrivateKey(ssl, const_cast<EVP_PKEY *>(static_cast<const EVP_PKEY *>(current_data->key))); err != 1)
     {
         LOG_ERROR(log, "Use private key {}", Poco::Net::Utility::getLastError());
         return -1;
     }
+
     if (auto err = SSL_check_private_key(ssl); err != 1)
     {
         LOG_ERROR(log, "Unusable key-pair {}", Poco::Net::Utility::getLastError());
         return -1;
     }
+
     return 1;
 }
 
@@ -179,7 +186,7 @@ void CertificateReloader::tryReloadAll(const Poco::Util::AbstractConfiguration &
 
 
 CertificateReloader::Data::Data(std::string cert_path, std::string key_path, std::string pass_phrase)
-    : certs_chain(Poco::Crypto::X509Certificate::readPEM(cert_path)), key(/* public key */ "", /* private key */ key_path, pass_phrase)
+    : certs_chain(X509Certificate::fromFile(cert_path)), key(KeyPair::fromFile(key_path, pass_phrase))
 {
 }
 

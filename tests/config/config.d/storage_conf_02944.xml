@@ -20,6 +20,7 @@
                 <boundary_alignment>10</boundary_alignment>
                 <cache_on_write_operations>0</cache_on_write_operations>
                 <load_metadata_asynchronously>0</load_metadata_asynchronously>
+                <allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>
             </s3_cache_02944_lru>
             <s3_cache_02944_slru>
                 <type>cache</type>
@@ -32,6 +33,7 @@
                 <boundary_alignment>4</boundary_alignment>
                 <cache_on_write_operations>0</cache_on_write_operations>
                 <load_metadata_asynchronously>0</load_metadata_asynchronously>
+                <allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>
             </s3_cache_02944_slru>
         </disks>
     </storage_configuration>
