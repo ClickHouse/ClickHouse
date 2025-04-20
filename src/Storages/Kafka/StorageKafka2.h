@@ -19,6 +19,7 @@
 #include <filesystem>
 #include <list>
 #include <mutex>
+#include <unordered_set>
 #include <rdkafka.h>
 
 namespace cppkafka
@@ -105,7 +106,6 @@ private:
     using TopicPartition = KafkaConsumer2::TopicPartition;
     using TopicPartitions = KafkaConsumer2::TopicPartitions;
 
-    using ReplicaStatePtr = ReplicaState::Ptr;
 
     struct LockedTopicPartitionInfo
     {
@@ -117,6 +117,11 @@ private:
     using TopicPartitionLocks = std::unordered_map<
         TopicPartition,
         LockedTopicPartitionInfo,
+        KafkaConsumer2::OnlyTopicNameAndPartitionIdHash,
+        KafkaConsumer2::OnlyTopicNameAndPartitionIdEquality>;
+
+    using TopicPartitionSet = std::unordered_set<
+        TopicPartition,
         KafkaConsumer2::OnlyTopicNameAndPartitionIdHash,
         KafkaConsumer2::OnlyTopicNameAndPartitionIdEquality>;
 
@@ -230,11 +235,11 @@ private:
     void createReplica();
     void dropReplica();
 
-    std::set<KafkaConsumer2::TopicPartition> lookupReplicaState(zkutil::ZooKeeper & keeper_to_use);
-    UInt32 ActiveReplicaCount = 1; // We are always active
-    ReplicaStateData ReplicaState;
+    TopicPartitionSet lookupReplicaState(zkutil::ZooKeeper & keeper_to_use);
+    UInt32 active_replica_count;
+    ReplicaState replica_state;
     void createLocksInfo(zkutil::ZooKeeper & keeper_to_use, TopicPartitionLocks & locks, const TopicPartition & partition_to_lock, bool new_lock = false);
-    void unlockTopicPartition(zkutil::ZooKeeper & keeper_to_use,  const TopicPartition & partition_to_unlock);
+    void unlockTopicPartition(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & partition_to_unlock);
 
     // Takes lock over topic partitions and sets the committed offset in topic_partitions.
     std::optional<TopicPartitionLocks> lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions);
