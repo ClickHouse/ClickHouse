@@ -3,8 +3,6 @@
 #include <base/types.h>
 #include <Storages/Kafka/KafkaConsumer2.h>
 
-#include <vector>
-
 namespace DB
 {
 
@@ -17,10 +15,10 @@ struct ReplicaStateData
     void readText(ReadBuffer & in);
     String toString() const;
 
-    size_t topic_partitions;
-    KafkaConsumer2::TopicPartitions topics_assigned;
+    size_t permanent_topic_partitions = 0;
+    KafkaConsumer2::TopicPartitions permanent_topics_assigned;
     
-    size_t tmp_topic_partitions;
+    size_t tmp_topic_partitions = 0;
     KafkaConsumer2::TopicPartitions tmp_topics_assigned;
 };
 

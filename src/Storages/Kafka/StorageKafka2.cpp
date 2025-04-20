@@ -756,29 +756,27 @@ std::set<KafkaConsumer2::TopicPartition> StorageKafka2::lookupReplicaState(zkuti
     if (Coordination::Error::ZOK != keeper_to_use.tryGetChildren(keeper_path + "/replicas", replicas))
         return {};
 
-    ActiveReplicaCount = 1;
+    ActiveReplicaCount = 0;
     std::set<KafkaConsumer2::TopicPartition> locked_partitions;
     for (const auto& replica : replicas)
     {
         String current_replica_path = keeper_path + "/replicas/" + replica;
         String node_data;
         if (!keeper_to_use.tryGet(current_replica_path + "/topics_assigned", node_data))
-            continue; // нужно написать какую то логику, которая будет с нуля чем-то заполнять, если реплика, которую мы проверяем -- это мы
-        LOG_INFO(log, "Topic assigned data {}", node_data); // сделать более информативный лог
+            continue;
+        LOG_INFO(log, "Current state of the replica {} is \n {}", replica, node_data);
         ReplicaStatePtr replica_state = ReplicaState::parse(node_data);
         if (current_replica_path == replica_path)
         {
-            ReplicaState.topic_partitions = replica_state->topic_partitions;
-            ReplicaState.topics_assigned = std::move(replica_state->topics_assigned);
+            ReplicaState.permanent_topic_partitions = replica_state->permanent_topic_partitions;
+            ReplicaState.permanent_topics_assigned = replica_state->permanent_topics_assigned;
             ReplicaState.tmp_topic_partitions = replica_state->tmp_topic_partitions;
-            ReplicaState.tmp_topics_assigned = std::move(replica_state->tmp_topics_assigned);
+            ReplicaState.tmp_topics_assigned = replica_state->tmp_topics_assigned;
+            LOG_INFO(log, "Local state of the replica {} was updated successfully", replica);
         }
-        else
-        {
-            ++ActiveReplicaCount;
-            locked_partitions.insert(replica_state->topics_assigned.begin(), replica_state->topics_assigned.end());
-            locked_partitions.insert(replica_state->tmp_topics_assigned.begin(), replica_state->tmp_topics_assigned.end());
-        }
+        ++ActiveReplicaCount;
+        locked_partitions.insert(replica_state->permanent_topics_assigned.begin(), replica_state->permanent_topics_assigned.end());
+        locked_partitions.insert(replica_state->tmp_topics_assigned.begin(), replica_state->tmp_topics_assigned.end());
     }
 
     return locked_partitions;
@@ -848,6 +846,14 @@ std::optional<StorageKafka2::TopicPartitionLocks>
 StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions)
 {
     const auto already_locked_partitions = lookupReplicaState(keeper_to_use);
+    for (const auto & already_locks : already_locked_partitions) {
+        LOG_INFO(
+            log,
+            "Already locked topic partition {}:{}",
+            already_locks.topic,
+            already_locks.partition_id
+        );
+    }
 
     for (const auto & partition_to_unlock : ReplicaState.tmp_topics_assigned)
     {
@@ -855,7 +861,8 @@ StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const Topi
     }
 
     size_t can_lock_partitions = static_cast<size_t>(std::ceil(static_cast<double>(topic_partitions.size()) / ActiveReplicaCount));
-    TopicPartitionLocks locks;
+    TopicPartitionLocks permanent_locks;
+    TopicPartitionLocks tmp_locks;
 
     TopicPartitions available_topic_partitions;
     available_topic_partitions.reserve(topic_partitions.size());
@@ -864,47 +871,44 @@ StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const Topi
         if (!already_locked_partitions.contains(partition))
             available_topic_partitions.push_back(partition);
     }
+
+    for (const auto & available_locks : available_topic_partitions) {
+        LOG_INFO(
+            log,
+            "Topic partition {}:{} is available",
+            available_locks.topic,
+            available_locks.partition_id
+        );
+    }
+
     auto available_topics_it = available_topic_partitions.begin();
-
-    if (can_lock_partitions <= ReplicaState.topics_assigned.size())
+    if (can_lock_partitions < ReplicaState.permanent_topics_assigned.size())
     {
-        TopicPartitions partitions_to_lock(ReplicaState.topics_assigned.begin(), ReplicaState.topics_assigned.begin() + can_lock_partitions);
+        TopicPartitions partitions_to_lock(ReplicaState.permanent_topics_assigned.begin(), ReplicaState.permanent_topics_assigned.begin() + can_lock_partitions);
         for (const auto & partition_to_lock : partitions_to_lock)
-            createLocksInfo(keeper_to_use, locks, partition_to_lock);
+            createLocksInfo(keeper_to_use, permanent_locks, partition_to_lock);
 
-        for (size_t i = can_lock_partitions; i < ReplicaState.topics_assigned.size(); ++i)
-            // const auto topic_partition_path = getTopicPartitionPath(ReplicaState.topics_assigned[i]);
-            // const auto lock_file_path = String(topic_partition_path / lock_file_name);
-            // Coordination::Error code = keeper_to_use.tryRemove(lock_file_path);
-            // if (code == Coordination::Error::ZNONODE)
-            //     continue;
-            // LOG_TRACE(
-            //     log,
-            //     "Replica {} successfully unlocked topic partition {}:{}",
-            //     (*kafka_settings)[KafkaSetting::kafka_replica_name].value,
-            //     ReplicaState.topics_assigned[i].topic,
-            //     ReplicaState.topics_assigned[i].partition_id
-            // );
-            unlockTopicPartition(keeper_to_use, ReplicaState.topics_assigned[i]);
+        for (size_t i = can_lock_partitions; i < ReplicaState.permanent_topics_assigned.size(); ++i)
+            unlockTopicPartition(keeper_to_use, ReplicaState.permanent_topics_assigned[i]);
     }
     else
     {
-        for (const auto & partition_to_lock : ReplicaState.topics_assigned)
-            createLocksInfo(keeper_to_use, locks, partition_to_lock);
+        for (const auto & partition_to_lock : ReplicaState.permanent_topics_assigned)
+            createLocksInfo(keeper_to_use, permanent_locks, partition_to_lock);
 
         for (; available_topics_it != available_topic_partitions.end(); ++available_topics_it)
         {
-            if (locks.size() >= can_lock_partitions)
+            if (permanent_locks.size() >= can_lock_partitions)
                 break;
-            createLocksInfo(keeper_to_use, locks, *available_topics_it, true);
+            createLocksInfo(keeper_to_use, permanent_locks, *available_topics_it, true);
         }
     }
 
     ReplicaState::ReplicaStateData replica_state;
-    replica_state.topics_assigned.reserve(locks.size());
-    for (const auto & lock : locks)
+    replica_state.permanent_topics_assigned.reserve(permanent_locks.size());
+    for (const auto & lock : permanent_locks)
     {
-        replica_state.topics_assigned.push_back(
+        replica_state.permanent_topics_assigned.push_back(
             {
                 .topic = lock.first.topic,
                 .partition_id = lock.first.partition_id,
@@ -912,17 +916,16 @@ StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const Topi
             }
         );
     }
-    replica_state.topic_partitions = replica_state.topics_assigned.size();
+    replica_state.permanent_topic_partitions = replica_state.permanent_topics_assigned.size();
 
     size_t can_lock_tmp_partitions = can_lock_partitions;
-    TopicPartitionLocks tmp_locks;
     for (; available_topics_it != available_topic_partitions.end(); ++available_topics_it)
     {
-        if (tmp_locks.size() >=  can_lock_tmp_partitions)
+        if (tmp_locks.size() >= can_lock_tmp_partitions)
             break;
         createLocksInfo(keeper_to_use, tmp_locks, *available_topics_it, true);
     }
-    replica_state.tmp_topics_assigned.reserve(locks.size());
+    replica_state.tmp_topics_assigned.reserve(tmp_locks.size());
     for (const auto & lock : tmp_locks)
     {
         replica_state.tmp_topics_assigned.push_back(
@@ -932,11 +935,13 @@ StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const Topi
                 .offset = KafkaConsumer2::INVALID_OFFSET
             }
         );
-        locks.emplace(lock);
     }
     replica_state.tmp_topic_partitions = replica_state.tmp_topics_assigned.size();
-
     keeper_to_use.createOrUpdate(replica_path + "/topics_assigned", replica_state.toString(), zkutil::CreateMode::Persistent);
+
+    TopicPartitionLocks locks;
+    locks.insert(permanent_locks.begin(), permanent_locks.end());
+    locks.insert(tmp_locks.begin(), tmp_locks.end());
 
     return locks;
 }
