@@ -14,7 +14,6 @@
 #include <Analyzer/SortNode.h>
 #include <type_traits>
 #include <typeinfo>
-#include <iostream>
 
 namespace DB
 {
@@ -424,8 +423,10 @@ protected:
                             // erase found element
                             if constexpr (HasErase<Data, decltype(keyHolderGetKey(max_key_holder))>::value)
                             {
-                                if (max_key != keyHolderGetKey(key_holder)) // TODO if equals, erase and return nullptr
-                                    data.erase(max_key);
+                                data.erase(max_key);
+                                if (max_key == keyHolderGetKey(key_holder))
+                                    return std::nullopt;
+                                it = data.find(key_holder);
                             }
                         }
                     } else if constexpr (HasForEachMapped<Data>::value)

@@ -1268,7 +1268,6 @@ void NO_INLINE Aggregator::executeImplBatch(
 
             if (!emplace_result.has_value())
             {
-                assert(false); // TODO Allow state.emplaceKey return nullopt if new key is not emplaced
                 places[i] = nullptr;
                 continue;
             }
@@ -1368,10 +1367,20 @@ void Aggregator::executeAggregateInstructions(
         {
             ProfileEvents::increment(ProfileEvents::AggregationOptimizedEqualRangesOfKeys);
             auto add_into_aggregate_states_function_single_place = compiled_aggregate_functions_holder->compiled_aggregate_functions.add_into_aggregate_states_function_single_place;
-            add_into_aggregate_states_function_single_place(row_begin, row_end, columns_data.data(), places[key_start]);
+            if (places[key_start] != nullptr)
+                add_into_aggregate_states_function_single_place(row_begin, row_end, columns_data.data(), places[key_start]);
         }
         else
         {
+            // shift
+            size_t last_nullptr_index = row_begin;
+            for (size_t i = row_begin; i < row_end; ++i)
+                if (places[i] != nullptr)
+                {
+                    std::swap(places[last_nullptr_index], places[i]);
+                    ++last_nullptr_index;
+                }
+            row_end = last_nullptr_index;
             auto add_into_aggregate_states_function = compiled_aggregate_functions_holder->compiled_aggregate_functions.add_into_aggregate_states_function;
             add_into_aggregate_states_function(row_begin, row_end, columns_data.data(), places.get());
         }
@@ -1391,7 +1400,8 @@ void Aggregator::executeAggregateInstructions(
         if (all_keys_are_const || (inst->can_optimize_equal_keys_ranges && has_only_one_value_since_last_reset))
         {
             ProfileEvents::increment(ProfileEvents::AggregationOptimizedEqualRangesOfKeys);
-            addBatchSinglePlace(row_begin, row_end, inst, places[key_start] + inst->state_offset, aggregates_pool);
+            if (places[key_start] != nullptr && places[key_start] + inst->state_offset != nullptr)
+                addBatchSinglePlace(row_begin, row_end, inst, places[key_start] + inst->state_offset, aggregates_pool);
         }
         else
         {
