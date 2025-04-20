@@ -842,6 +842,7 @@ void StorageKafka2::unlockTopicPartition(zkutil::ZooKeeper & keeper_to_use,  con
 
 /// If the number of locks on a replica is greater than it can hold, then we first release the partitions that we can no longer hold.
 /// Otherwise, we try to lock free partitions one by one.
+/// Also, each replica holds temporary locks. The replica removes these temporary locks at each new iteration of processing.
 std::optional<StorageKafka2::TopicPartitionLocks>
 StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions)
 {
