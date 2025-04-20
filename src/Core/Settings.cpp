@@ -5080,6 +5080,10 @@ Connect timeout in seconds. Now supported only for MySQL
 Read/write timeout in seconds. Now supported only for MySQL
 )", 0)  \
     \
+    DECLARE(Bool, allow_experimental_correlated_subqueries, false, R"(
+Allow to execute correlated subqueries.
+)", EXPERIMENTAL) \
+    \
     DECLARE(SetOperationMode, union_default_mode, SetOperationMode::Unspecified, R"(
 Sets a mode for combining `SELECT` query results. The setting is only used when shared with [UNION](../../sql-reference/statements/select/union.md) without explicitly specifying the `UNION ALL` or `UNION DISTINCT`.
 
@@ -5418,7 +5422,10 @@ Possible values:
 Method of reading data from storage file, one of: `read`, `pread`, `mmap`. The mmap method does not apply to clickhouse-server (it's intended for clickhouse-local).
 )", 0) \
     DECLARE(String, local_filesystem_read_method, "pread_threadpool", R"(
-Method of reading data from local filesystem, one of: read, pread, mmap, io_uring, pread_threadpool. The 'io_uring' method is experimental and does not work for Log, TinyLog, StripeLog, File, Set and Join, and other tables with append-able files in presence of concurrent reads and writes.
+Method of reading data from local filesystem, one of: read, pread, mmap, io_uring, pread_threadpool.
+
+The 'io_uring' method is experimental and does not work for Log, TinyLog, StripeLog, File, Set and Join, and other tables with append-able files in presence of concurrent reads and writes.
+If you read various articles about 'io_uring' on the Internet, don't be blinded by them. It is not a better method of reading files, unless the case of a large amount of small IO requests, which is not the case in ClickHouse. There are no reasons to enable 'io_uring'.
 )", 0) \
     DECLARE(String, remote_filesystem_read_method, "threadpool", R"(
 Method of reading data from remote filesystem, one of: read, threadpool.
@@ -5556,6 +5563,18 @@ Use userspace page cache in passive mode, similar to read_from_filesystem_cache_
 )", 0) \
     DECLARE(Bool, page_cache_inject_eviction, false, R"(
 Userspace page cache will sometimes invalidate some pages at random. Intended for testing.
+)", 0) \
+    DECLARE(UInt64, page_cache_block_size, 1048576, R"(
+Size of file chunks to store in the userspace page cache, in bytes. All reads that go through the cache will be rounded up to a multiple of this size.
+
+This setting can be adjusted on a per-query level basis, but cache entries with different block sizes cannot be reused. Changing this setting effectively invalidates existing entries in the cache.
+
+A higher value, like 1 MiB is good for high-throughput queries, and a lower value, like 64 KiB is good for low-latency point queries.
+)", 0) \
+    DECLARE(UInt64, page_cache_lookahead_blocks, 16, R"(
+On userspace page cache miss, read up to this many consecutive blocks at once from the underlying storage, if they're also not in the cache. Each block is page_cache_block_size bytes.
+
+A higher value is good for high-throughput queries, while low-latency point queries will work better without readahead.
 )", 0) \
     \
     DECLARE(Bool, load_marks_asynchronously, false, R"(
