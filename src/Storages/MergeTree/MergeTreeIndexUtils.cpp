@@ -127,6 +127,11 @@ const ActionsDAG::Node & cloneFilterDAGNodeForIndexesAnalysis(
             }
             break;
         }
+        case ActionsDAG::ActionType::PLACEHOLDER:
+        {
+            res = &new_dag.addPlaceholder(node.result_name, node.result_type);
+            break;
+        }
     }
 
     cloned_nodes[&node] = res;
