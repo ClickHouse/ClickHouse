@@ -46,6 +46,8 @@ protected:
     using WidthsPerColumn = std::vector<Widths>;
     using StringsPerCol = std::vector<Strings>;
     using WidthsPerSubcolumn = std::vector<WidthsPerColumn>;
+    using EnclosureLevelContainer = std::vector<int64_t>;
+    using LeavesPerColumn = std::vector<EnclosureLevelContainer>;
 
     void write(Chunk chunk, PortKind port_kind);
     virtual void writeChunk(const Chunk & chunk, PortKind port_kind);
@@ -58,10 +60,15 @@ protected:
     void findWidth(
         size_t & width, size_t & max_padded_width, String & serialized_value, bool split_by_lines, bool & out_has_newlines, size_t prefix);
 
+    size_t returnNeededEnclosureLvl(
+        DataTypePtr column_type, int32_t subcolumn_lvl, EnclosureLevelContainer & needed_enclosure_lvl,
+        size_t column_ind, int64_t subcolumn_ind, int32_t & max_enc_lvl, int32_t cur_lvl);
+
     void calculateWidths(
         const Block & header, const Chunk & chunk, bool split_by_lines, bool & out_has_newlines,
         WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths, Strings & names,
-        StringsPerCol & subcolumn_names, WidthsPerSubcolumn & subcolumn_widths, WidthsPerColumn & max_subcolumn_widths, WidthsPerColumn & subcolumn_name_widths);
+        StringsPerCol & subcolumn_names, WidthsPerSubcolumn & subcolumn_widths, WidthsPerColumn & max_subcolumn_widths,
+        WidthsPerColumn & subcolumn_name_widths, LeavesPerColumn & column_leaves, std::vector<int32_t> & max_enc_lvl);
 
     void writeValueWithPadding(
         const IColumn & column, const ISerialization & serialization, size_t row_num,
