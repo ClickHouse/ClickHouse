@@ -326,7 +326,7 @@ try
 
         if (!it->second.table || isSharedPtrUnique(it->second.table))
         {
-            LOG_DEBUG(log, "Drop table {} from cache.", backQuote(it->first));
+            LOG_DEBUG(log, "Removing table {} from cache.", backQuote(it->first));
             it->second.table.reset();
             expired_tables.erase(it->second.expiration_iterator);
             it->second.expiration_iterator = cache_expiration_queue.end();
