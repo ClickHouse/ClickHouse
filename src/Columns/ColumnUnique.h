@@ -105,7 +105,7 @@ public:
     size_t sizeOfValueIfFixed() const override { return column_holder->sizeOfValueIfFixed(); }
     bool isNumeric() const override { return column_holder->isNumeric(); }
 
-    size_t byteSize() const override { return column_holder->byteSize() + reverse_index.allocatedBytes(); }
+    size_t byteSize() const override { return column_holder->byteSize(); }
     size_t byteSizeAt(size_t n) const override
     {
         return getNestedColumn()->byteSizeAt(n);
