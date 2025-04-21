@@ -66,7 +66,7 @@ struct StringBytesEntropyImpl
         for (; data < end; ++data)
             counters.add(*data);
 
-        double entropy = 0.0;
+        Float64 entropy = 0.0;
         size_t total = counters.getTotalCount();
 
         for (size_t byte = 0; byte < 256; ++byte)
@@ -74,7 +74,7 @@ struct StringBytesEntropyImpl
             UInt32 count = counters.get(byte);
             if (count > 0)
             {
-                double p = static_cast<double>(count) / total;
+                Float64 p = static_cast<Float64>(count) / total;
                 entropy -= p * std::log2(p);
             }
         }

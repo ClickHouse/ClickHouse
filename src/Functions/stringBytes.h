@@ -44,8 +44,8 @@ public:
                 arguments[0].type->getName(),
                 getName());
 
-        if constexpr (std::is_same_v<ResultType, UInt8>)
-            return std::make_shared<DataTypeUInt8>();
+        if constexpr (std::is_same_v<ResultType, UInt16>)
+            return std::make_shared<DataTypeUInt16>();
         else if constexpr (std::is_same_v<ResultType, Float64>)
             return std::make_shared<DataTypeFloat64>();
     }

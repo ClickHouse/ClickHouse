@@ -1,3 +1,5 @@
+-- { echo }
+
 SELECT stringBytesUniq('Hello');
 SELECT stringBytesUniq('');
 SELECT stringBytesUniq('aaaa');

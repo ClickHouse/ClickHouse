@@ -17,7 +17,7 @@ namespace DB
 
 struct StringBytesUniqImpl
 {
-    using ResultType = UInt8;
+    using ResultType = UInt16;
 
     static ResultType process(const UInt8 * data, size_t size)
     {
