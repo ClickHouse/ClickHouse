@@ -380,8 +380,6 @@ QueryResultCacheWriter::QueryResultCacheWriter(
     const QueryResultCache::Key & key_,
     size_t max_entry_size_in_bytes_,
     size_t max_entry_size_in_rows_,
-    size_t disk_cache_max_entry_size_in_bytes_,
-    size_t disk_cache_max_entry_size_in_rows_,
     std::chrono::milliseconds min_query_runtime_,
     bool squash_partial_results_,
     size_t max_block_size_)
@@ -390,8 +388,6 @@ QueryResultCacheWriter::QueryResultCacheWriter(
     , key(key_)
     , max_entry_size_in_bytes(max_entry_size_in_bytes_)
     , max_entry_size_in_rows(max_entry_size_in_rows_)
-    , disk_cache_max_entry_size_in_bytes(disk_cache_max_entry_size_in_bytes_)
-    , disk_cache_max_entry_size_in_rows(disk_cache_max_entry_size_in_rows_)
     , min_query_runtime(min_query_runtime_)
     , squash_partial_results(squash_partial_results_)
     , max_block_size(max_block_size_)
@@ -409,8 +405,6 @@ QueryResultCacheWriter::QueryResultCacheWriter(const QueryResultCacheWriter & ot
     , key(other.key)
     , max_entry_size_in_bytes(other.max_entry_size_in_bytes)
     , max_entry_size_in_rows(other.max_entry_size_in_rows)
-    , disk_cache_max_entry_size_in_bytes(other.disk_cache_max_entry_size_in_bytes)
-    , disk_cache_max_entry_size_in_rows(other.disk_cache_max_entry_size_in_rows)
     , min_query_runtime(other.min_query_runtime)
     , squash_partial_results(other.squash_partial_results)
     , max_block_size(other.max_block_size)
@@ -521,6 +515,29 @@ Chunks compressChunks(Chunks & chunks) {
     return compressed_chunks;
 }
 
+size_t countRowsInChunks(const QueryResultCache::Entry & entry) {
+    size_t res = 0;
+    for (const auto & chunk : entry.chunks)
+        res += chunk.getNumRows();
+
+    res += entry.totals.has_value() ? entry.totals->getNumRows() : 0;
+    res += entry.extremes.has_value() ? entry.extremes->getNumRows() : 0;
+
+    return res;
+}
+
+QueryResultCache::Cache::MappedPtr cloneQueryResult(const QueryResultCache::Cache::MappedPtr & entry) {
+    auto result = std::make_shared<QueryResultCache::Entry>();
+    for (const auto& chunk : entry->chunks) 
+        result->chunks.push_back(chunk.clone());
+    
+    if (entry->extremes)
+        result->extremes = entry->extremes->clone();
+
+    if (entry->totals) 
+        result->totals = entry->totals->clone();
+    return result;
+}
 }
 
 void QueryResultCacheWriter::finalizeWrite()
@@ -548,6 +565,11 @@ void QueryResultCacheWriter::finalizeWrite()
         return;
     }
 
+    /// Write result to disk cache
+    if (disk_cache)
+        disk_cache->set(key, cloneQueryResult(query_result));
+
+
     if (squash_partial_results)
     {
         /// Squash partial result chunks to chunks of size 'max_block_size' each. This costs some performance but provides a more natural
@@ -560,29 +582,18 @@ void QueryResultCacheWriter::finalizeWrite()
     /// Need to keep uncompressed chunks for query result cache on disk,
     /// because it can squash it with different max_chunks_size,
     /// but can't squash already compressed chunks
-    Chunks uncompressed_chunks = std::move(query_result->chunks);
 
     if (key.is_compressed)
     {
         /// Compress result chunks. Reduces the space consumption of the cache but means reading from it will be slower due to decompression.
-        Chunks compressed_chunks = compressChunks(uncompressed_chunks);
+        Chunks compressed_chunks = compressChunks(query_result->chunks);
         query_result->chunks = std::move(compressed_chunks);
     }
 
     /// Check more reasons why the entry must not be cached.
 
-    auto count_rows_in_chunks = [](const QueryResultCache::Entry & entry)
-    {
-        size_t res = 0;
-        for (const auto & chunk : entry.chunks)
-            res += chunk.getNumRows();
-        res += entry.totals.has_value() ? entry.totals->getNumRows() : 0;
-        res += entry.extremes.has_value() ? entry.extremes->getNumRows() : 0;
-        return res;
-    };
-
     size_t new_entry_size_in_bytes = QueryResultCache::QueryResultCacheEntryWeight()(*query_result);
-    size_t new_entry_size_in_rows = count_rows_in_chunks(*query_result);
+    size_t new_entry_size_in_rows = countRowsInChunks(*query_result);
 
     if ((new_entry_size_in_bytes > max_entry_size_in_bytes) || (new_entry_size_in_rows > max_entry_size_in_rows))
     {
@@ -591,14 +602,7 @@ void QueryResultCacheWriter::finalizeWrite()
         return;
     }
 
-    // cache.set(key, query_result); 
-    
-    if (disk_cache) {
-        query_result->chunks = std::move(uncompressed_chunks); /// Use previously saved uncompressed chunks
-        disk_cache->set(key, query_result);
-    }
-
-    /// Write result to disk cache
+    cache.set(key, query_result); 
 
     LOG_TRACE(logger, "Stored query result of query {}", doubleQuoteString(key.query_string));
 
@@ -625,7 +629,7 @@ void QueryResultCacheReader::buildSourceFromChunks(Block header, Chunks && chunk
     }
 }
 
-QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, std::optional<OnDiskCache> & disk_cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &)
+QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, std::optional<OnDiskCache> & disk_cache_, const Cache::Key & key, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows, const std::lock_guard<std::mutex> &)
 {
     auto entry = cache_.getWithKey(key);
 
@@ -636,8 +640,15 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, std::optional<OnD
             if (disk_entry) {
                 LOG_TRACE(logger, "Query result found in disk cache for query {}", doubleQuoteString(key.query_string));
                 entry.emplace(std::move(disk_entry.value()));
-                /// Should also check constraints for in-memory cache if they differs
-                // cache_.set(entry->key, entry->mapped); /// Add entry to in-memory cache
+
+                /// Should check constraints for in-memory cache, before adding entry
+                size_t entry_size_in_bytes = QueryResultCache::QueryResultCacheEntryWeight()(*entry->mapped);
+                size_t entry_size_in_rows = countRowsInChunks(*entry->mapped);
+
+                if (entry_size_in_bytes < max_entry_size_in_bytes && entry_size_in_rows < max_entry_size_in_rows && !QueryResultCache::IsStale()(entry->key))
+                {
+                    cache_.set(entry->key, entry->mapped); /// Add entry to in-memory cache   
+                }
             } else {
                 LOG_TRACE(logger, "No query result found for query {}", doubleQuoteString(key.query_string));
                 return;
@@ -673,20 +684,14 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, std::optional<OnD
         // case (the default case aka. compressed chunks) we need to decompress the entry anyways and couldn't apply the potential
         // optimization.
 
-        LOG_TRACE(logger, "Not compressed");
-
         Chunks cloned_chunks;
         for (const auto & chunk : entry_mapped->chunks)
             cloned_chunks.push_back(chunk.clone());
-
-        LOG_TRACE(logger, "Chunks rows {} cols {} count {}", cloned_chunks[0].getNumRows(), cloned_chunks[0].getNumColumns(), cloned_chunks.size());
-        
 
         buildSourceFromChunks(entry_key.header, std::move(cloned_chunks), entry_mapped->totals, entry_mapped->extremes);
     }
     else
     {
-        LOG_TRACE(logger, "Compressed");
         Chunks decompressed_chunks;
         const Chunks & chunks = entry_mapped->chunks;
         for (const auto & chunk : chunks)
@@ -740,7 +745,7 @@ QueryResultCache::QueryResultCache(size_t max_size_in_bytes, size_t max_entries,
           std::make_unique<PerUserTTLCachePolicyUserQuota>()))
 {
     if (disk_cache_path_) {
-        disk_cache.emplace(disk_cache_path_.value(), disk_cache_max_size_in_bytes, disk_cache_max_entries);
+        disk_cache.emplace(disk_cache_path_.value(), disk_cache_max_size_in_bytes, disk_cache_max_entries, disk_cache_max_entry_size_in_bytes_, disk_cache_max_entry_size_in_rows_);
     }
 
     updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_, disk_cache_max_size_in_bytes, disk_cache_max_entries, disk_cache_max_entry_size_in_bytes_, disk_cache_max_entry_size_in_rows_);
@@ -766,7 +771,7 @@ void QueryResultCache::updateConfiguration(size_t max_size_in_bytes, size_t max_
 QueryResultCacheReader QueryResultCache::createReader(const Key & key)
 {
     std::lock_guard lock(mutex);
-    return QueryResultCacheReader(cache, disk_cache, key, lock);
+    return QueryResultCacheReader(cache, disk_cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, lock);
 }
 
 QueryResultCacheWriter QueryResultCache::createWriter(
@@ -785,7 +790,7 @@ QueryResultCacheWriter QueryResultCache::createWriter(
         cache.setQuotaForUser(*key.user_id, max_query_result_cache_size_in_bytes_quota, max_query_result_cache_entries_quota);
 
     std::lock_guard lock(mutex);
-    return QueryResultCacheWriter(cache, disk_cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, disk_cache_max_entry_size_in_bytes, disk_cache_max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
+    return QueryResultCacheWriter(cache, disk_cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
 }
 
 void QueryResultCache::clear(const std::optional<String> & tag)
@@ -844,8 +849,10 @@ namespace FormatTokens {
     static constexpr auto * token_has_extremes = "has_extremes: ";
 };
 
-QueryResultCache::OnDiskCache::OnDiskCache(const std::filesystem::path& path_, size_t max_size_in_bytes_, size_t max_entries_)
+QueryResultCache::OnDiskCache::OnDiskCache(const std::filesystem::path& path_, size_t max_size_in_bytes_, size_t max_entries_, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
     : query_cache_path(path_)
+    , max_entry_size_in_bytes(max_entry_size_in_bytes_)
+    , max_entry_size_in_rows(max_entry_size_in_rows_)
 {
     auto on_weight_loss_function = [](size_t){};
     auto on_evict_function = [&](CachePolicy::MappedPtr mapped) { onEvictFunction(mapped); };
@@ -937,10 +944,27 @@ void QueryResultCache::OnDiskCache::set(const Key & key, const MappedPtr & mappe
     IASTHash ast_hash = key.ast_hash;
     String ast_hash_str = std::to_string(ast_hash.low64) + '_' + std::to_string(ast_hash.high64);
 
-    /// also check staleness
+    Chunks & chunks = mapped->chunks;
+
+    /// To keep the file format simple, squash the result chunks to a single chunk.
+    chunks = squashChunks(chunks, std::numeric_limits<size_t>::max());
+    if (key.is_compressed) {
+        chunks = compressChunks(chunks);
+    }
+
+    size_t new_entry_size_in_bytes = QueryResultCache::QueryResultCacheEntryWeight()(*mapped);
+    size_t new_entry_size_in_rows = countRowsInChunks(*mapped);
+
+    if ((new_entry_size_in_bytes > max_entry_size_in_bytes) || (new_entry_size_in_rows > max_entry_size_in_rows))
+    {
+        LOG_TRACE(logger, "Skipped insert to disk because the query result is too big, query result size: {} (maximum size: {}), query result size in rows: {} (maximum size: {}), query: {}",
+                formatReadableSizeWithBinarySuffix(new_entry_size_in_bytes, 0), formatReadableSizeWithBinarySuffix(max_entry_size_in_bytes, 0), new_entry_size_in_rows, max_entry_size_in_rows, doubleQuoteString(key.query_string));
+        return;
+    }
+
     if (cache_policy->contains(key)) { 
         LOG_TRACE(logger, "Entry already in disk cache, skip inserting");
-        return; /// also change lru 
+        return;
     }
 
     std::filesystem::path entry_file_path = query_cache_path / ast_hash_str;
@@ -1002,18 +1026,9 @@ void QueryResultCache::OnDiskCache::writeCacheEntry(const Key & entry_key, const
         writeText(entry_key.query_string, entry_file);
         writeText("\n", entry_file);
 
-        /// TODO write chunks, totals, extremes (in separate files?)
-
         Chunks & chunks = entry_mapped->chunks;
         const std::optional<Chunk> & totals = entry_mapped->totals;
         const std::optional<Chunk> & extremes = entry_mapped->extremes;
-
-        /// To keep the file format simple, squash the result chunks to a single chunk.
-        chunks = squashChunks(chunks, std::numeric_limits<size_t>::max());
-
-        if (entry_key.is_compressed) {
-            chunks = compressChunks(chunks);
-        }
         
         /// Get only one chunk after squash
         auto& chunk = chunks[0];
