@@ -323,11 +323,10 @@ private:
             /// However, just for safety, let's store the old node for a little longer.
             ASTPtr old_node = node;
             node = std::make_shared<ASTLiteral>(database_name);
-            void * new_pointer = node.get();
 
             if (parent)
             {
-                parent->updatePointerToChild(old_pointer, new_pointer);
+                parent->updatePointerToChild(old_node.get(), node.get());
             }
         }
     }
