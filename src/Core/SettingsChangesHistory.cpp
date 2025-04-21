@@ -72,6 +72,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"secondary_indices_enable_bulk_filtering", false, true, "A new algorithm for filtering by data skipping indices"},
             {"implicit_table_at_top_level", "", "", "A new setting, used in clickhouse-local"},
             {"use_skip_indexes_if_final_exact_mode", 0, 0, "This setting was introduced to help FINAL query return correct results with skip indexes"},
+            {"parallel_replicas_insert_select_local_pipeline", false, false, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"},
+            {"page_cache_block_size", 1048576, 1048576, "Made this setting adjustable on a per-query level."},
+            {"page_cache_lookahead_blocks", 16, 16, "Made this setting adjustable on a per-query level."},
+            {"output_format_pretty_glue_chunks", "0", "auto", "A new setting to make Pretty formats prettier."},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
@@ -83,6 +87,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_convert_join_to_in", false, false, "New setting"},
             {"enable_hdfs_pread", true, true, "New setting."},
             {"low_priority_query_wait_time_ms", 1000, 1000, "New setting."},
+            {"allow_experimental_correlated_subqueries", false, false, "Added new setting to allow correlated subqueries execution."},
             {"serialize_query_plan", false, false, "NewSetting"},
             {"allow_experimental_shared_set_join", 0, 1, "A setting for ClickHouse Cloud to enable SharedSet and SharedJoin"},
             {"allow_special_bool_values_inside_variant", true, false, "Don't allow special bool values during Variant type parsing"},
@@ -720,11 +725,11 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",
         {
             /// Release closed. Please use 25.5
+            {"max_postpone_time_for_failed_replicated_fetches_ms", 0, 1ULL * 60 * 1000, "Added new setting to enable postponing fetch tasks in the replication queue."},
+            {"max_postpone_time_for_failed_replicated_merges_ms", 0, 1ULL * 60 * 1000, "Added new setting to enable postponing merge tasks in the replication queue."},
+            {"max_postpone_time_for_failed_replicated_tasks_ms", 0, 5ULL * 60 * 1000, "Added new setting to enable postponing tasks in the replication queue."},
             {"refresh_parts_interval", 0, 0, "A new setting"},
             {"max_merge_delayed_streams_for_parallel_write", 1000, 40, "New setting"},
-            {"max_postpone_time_for_failed_replicated_fetches_ms", 1ULL * 60 * 1000, 1ULL * 60 * 1000, "Added new setting to enable postponing fetch tasks in the replication queue."},
-            {"max_postpone_time_for_failed_replicated_merges_ms", 1ULL * 60 * 1000, 1ULL * 60 * 1000, "Added new setting to enable postponing merge tasks in the replication queue."},
-            {"max_postpone_time_for_failed_replicated_tasks_ms", 5ULL * 60 * 1000, 5ULL * 60 * 1000, "Added new setting to enable postponing tasks in the replication queue."},
             {"allow_summing_columns_in_partition_or_order_key", true, false, "New setting to allow summing of partition or sorting key columns"},
             /// Release closed. Please use 25.5
         });
