@@ -1,5 +1,9 @@
 ---
-slug: /en/sql-reference/functions/numeric-indexed-vector-functions
+description: 'Documentation for NumericIndexedVector and Its Functions'
+sidebar_label: 'NumericIndexedVector'
+sidebar_position: 26
+slug: /sql-reference/functions/numeric-indexed-vector-functions
+title: 'NumericIndexedVector Functions'
 ---
 
 # NumericIndexedVector
