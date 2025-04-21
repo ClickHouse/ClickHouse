@@ -53,11 +53,7 @@ def create_tables(table_name, populate, skip_last_replica):
     if not skip_last_replica:
         node3.query(f"SYSTEM SYNC REPLICA {table_name}")
 
-#
-# cases
-# 3 nodes
-#   - max_parallel_replicas 2, 3
-#
+
 @pytest.mark.parametrize(
     "cluster_name,max_parallel_replicas,local_pipeline,executed_queries",
     [
