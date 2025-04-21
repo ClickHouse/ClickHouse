@@ -20,13 +20,26 @@ namespace
 
 static int trace_fd = -1;
 
+#define NO_SANITIZE __attribute__((no_sanitize("all")))
+
+
+NO_SANITIZE
 __attribute__((constructor))
 static void init_trace() {
-    trace_fd = open("/tmp/memory_trace.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
+    pid_t pid = getpid();
+    trace_fd = open(("/tmp/memory_trace_" + std::to_string(pid) + ".log").c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644); // O_TRUNC - опасно
 }
 
+
+NO_SANITIZE
 uint64_t getMemoryAccessCount()
 {
+    char buffer[128];
+    int len = snprintf(buffer, sizeof(buffer), "getMemoryAccessCount %lu %d %lu\n", pthread_self(), trace_fd, memory_access_counter);
+    std::cout << buffer << std::endl;
+    pid_t pid = getpid();
+    trace_fd = open(("/tmp/memory_trace_" + std::to_string(pid) + ".log").c_str(), O_WRONLY | O_CREAT | O_APPEND, 0644);
+    write(trace_fd, buffer, len);
     return memory_access_counter;
 }
 
@@ -37,7 +50,6 @@ void resetMemoryAccessCount()
 
 extern "C"
 {
-    #define NO_SANITIZE __attribute__((no_sanitize("all")))
 
     NO_SANITIZE
     void __sanitizer_cov_trace_pc()
@@ -71,8 +83,8 @@ extern "C"
         if (ENABLE_TRACE == 1) {
             ++memory_access_counter;
             char buffer[64];
-            int len = snprintf(buffer, sizeof(buffer), "l4\t%p\t%lu\t%p\t%lu\n", 
-                            reinterpret_cast<void*>(addr), pthread_self(), __builtin_return_address(0), memory_access_counter);
+            int len = snprintf(buffer, sizeof(buffer), "l4\t%p\t%lu\t%p\t%lu\t%d\n", 
+                            reinterpret_cast<void*>(addr), pthread_self(), __builtin_return_address(0), memory_access_counter, trace_fd);
             write(trace_fd, buffer, len);
         }
     }

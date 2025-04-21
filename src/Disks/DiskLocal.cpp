@@ -386,6 +386,7 @@ void DiskLocal::removeFileIfExists(const String & path)
 {
     ENABLE_TRACE = 0;
     auto fs_path = fs::path(disk_path) / path;
+    std::cout << "removeFileIfExists " << fs_path.c_str() << std::endl;
     if (0 != unlink(fs_path.c_str()))
     {
         if (errno != ENOENT)
