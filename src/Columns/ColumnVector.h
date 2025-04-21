@@ -6,7 +6,10 @@
 #include <Columns/IColumnImpl.h>
 #include <Columns/IBuffer.h>
 #include <Columns/PODArrayOwning.h>
+#include <Columns/PODArrayView.h>
+#include <Columns/PODArrayLimitView.h>
 #include "Common/PODArray_fwd.h"
+#include "Common/typeid_cast.h"
 #include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
 #include <Core/CompareHelper.h>
@@ -16,6 +19,7 @@
 #include <base/unaligned.h>
 
 #include "Columns/BufferFWD.h"
+#include "IO/BufferWithOwnMemory.h"
 #include "config.h"
 
 class SipHash;
@@ -51,7 +55,7 @@ public:
     using Container = PaddedPODArray<ValueType>;
 
 private:
-    ColumnVector() :data(std::make_shared<OwningBuffer<T>>()) {}
+    ColumnVector() : data(std::make_shared<OwningBuffer<T>>()) {}
     explicit ColumnVector(const size_t n) : data(std::make_shared<OwningBuffer<T>>(n)) {}
     ColumnVector(const size_t n, const ValueType x) : data(std::make_shared<OwningBuffer<T>>(n, x)) {}
     ColumnVector(const ColumnVector & src) : data(std::make_shared<OwningBuffer<T>>(src.data->begin(), src.data->end())) {}
@@ -117,6 +121,20 @@ public:
     {
         data = data->getOwningBuffer();
         data->resize_assume_reserved(data->size() - n);
+    }
+
+    // [[nodiscard]] ColumnFixedSizeHelper::Ptr cut(size_t start, size_t length) const override
+    // {
+    //     ColumnFixedSizeHelper::MutablePtr res = this->cloneEmpty();
+    //     auto * col = typeid_cast<ColumnVector<T> *>(&*res);
+    //     col->data = std::make_shared<LimitViewBuffer<T>>(col->data, start, length);
+    //     return res;
+    // }
+
+    auto getBufferViewCreator() {
+        return [this] (std::shared_ptr<Memory<>> memory_ptr, char * pos, size_t n) mutable {
+            this->data = std::make_shared<ViewBuffer<T>>(std::move(memory_ptr), pos, n);
+        };
     }
 
     const char * deserializeAndInsertFromArena(const char * pos) override;

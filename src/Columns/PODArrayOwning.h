@@ -2,14 +2,6 @@
 
 #include <memory>
 #include "IBuffer.h"
-#include "IO/BufferBase.h"
-
-/** Whether we can use memcpy instead of a loop with assignment to T from U.
-  * It is Ok if types are the same. And if types are integral and of the same size,
-  *  example: char, signed char, unsigned char.
-  * It's not Ok for int and float.
-  * Don't forget to apply std::decay when using this constexpr.
-  */
 
 namespace DB
 {

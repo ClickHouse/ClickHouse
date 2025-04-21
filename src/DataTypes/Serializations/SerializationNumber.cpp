@@ -9,7 +9,10 @@
 #include <Common/NaNUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include "Columns/PODArrayView.h"
+#include "IO/ReadBuffer.h"
 
+#include <cstdio>
 #include <ranges>
 
 namespace DB
@@ -218,13 +221,22 @@ void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer 
     istr.ignore(sizeof(typename ColumnVector<T>::ValueType) * rows_offset);
     typename ColumnVector<T>::Container & x = typeid_cast<ColumnVector<T> &>(column).getData();
     const size_t initial_size = x.size();
-    x.resize(initial_size + limit);
-    const size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(typename ColumnVector<T>::ValueType) * limit);
-    x.resize(initial_size + size / sizeof(typename ColumnVector<T>::ValueType));
 
-    if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)
-        for (size_t i = initial_size; i < x.size(); ++i)
-            transformEndianness<std::endian::big, std::endian::little>(x[i]);
+    auto* memory_owning_buffer = dynamic_cast<BufferWithOwnMemory<ReadBuffer>*>(&istr);
+    if (false && dynamic_cast<ReadBufferFromFileBase*>(&istr) && memory_owning_buffer != nullptr && initial_size == 0 && (limit * sizeof(typename ColumnVector<T>::ValueType)) < istr.available()) {
+        auto * pos = istr.position();
+        auto& col_vec = typeid_cast<ColumnVector<T> &>(column);
+        auto view_buffer_creator = col_vec.getBufferViewCreator();
+        view_buffer_creator(memory_owning_buffer->memory_ptr, pos, limit);
+    } else {
+        x.resize(initial_size + limit);
+        const size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(typename ColumnVector<T>::ValueType) * limit);
+        x.resize(initial_size + size / sizeof(typename ColumnVector<T>::ValueType));
+
+        if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)
+            for (size_t i = initial_size; i < x.size(); ++i)
+                transformEndianness<std::endian::big, std::endian::little>(x[i]);
+    }
 }
 
 template class SerializationNumber<UInt8>;

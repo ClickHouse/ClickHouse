@@ -578,7 +578,7 @@ uint8_t suffixToCopy(UInt64 mask)
 }
 
 DECLARE_DEFAULT_CODE(
-template <typename T, typename Container, size_t SIMD_ELEMENTS>
+template <typename T, typename Container, size_t SIMD_ELEMENTS> // NOLINT
 inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
 {
     while (filt_pos < filt_end_aligned)
@@ -628,7 +628,7 @@ void resize(Container & res_data, size_t reserve_size)
 }
 
 DECLARE_AVX512VBMI2_SPECIFIC_CODE(
-template <size_t ELEMENT_WIDTH>
+template <size_t ELEMENT_WIDTH> // NOLINT
 inline void compressStoreAVX512(const void *src, void *dst, const UInt64 mask)
 {
     __m512i vsrc = _mm512_loadu_si512(src);
@@ -642,7 +642,7 @@ inline void compressStoreAVX512(const void *src, void *dst, const UInt64 mask)
         _mm512_mask_compressstoreu_epi64(dst, static_cast<__mmask8>(mask), vsrc);
 }
 
-template <typename T, typename Container, size_t SIMD_ELEMENTS>
+template <typename T, typename Container, size_t SIMD_ELEMENTS> // NOLINT
 inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
 {
     static constexpr size_t VEC_LEN = 64;   /// AVX512 vector length - 64 bytes
