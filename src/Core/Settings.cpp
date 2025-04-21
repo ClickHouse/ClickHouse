@@ -5080,6 +5080,10 @@ Connect timeout in seconds. Now supported only for MySQL
 Read/write timeout in seconds. Now supported only for MySQL
 )", 0)  \
     \
+    DECLARE(Bool, allow_experimental_correlated_subqueries, false, R"(
+Allow to execute correlated subqueries.
+)", EXPERIMENTAL) \
+    \
     DECLARE(SetOperationMode, union_default_mode, SetOperationMode::Unspecified, R"(
 Sets a mode for combining `SELECT` query results. The setting is only used when shared with [UNION](../../sql-reference/statements/select/union.md) without explicitly specifying the `UNION ALL` or `UNION DISTINCT`.
 
@@ -5418,7 +5422,10 @@ Possible values:
 Method of reading data from storage file, one of: `read`, `pread`, `mmap`. The mmap method does not apply to clickhouse-server (it's intended for clickhouse-local).
 )", 0) \
     DECLARE(String, local_filesystem_read_method, "pread_threadpool", R"(
-Method of reading data from local filesystem, one of: read, pread, mmap, io_uring, pread_threadpool. The 'io_uring' method is experimental and does not work for Log, TinyLog, StripeLog, File, Set and Join, and other tables with append-able files in presence of concurrent reads and writes.
+Method of reading data from local filesystem, one of: read, pread, mmap, io_uring, pread_threadpool.
+
+The 'io_uring' method is experimental and does not work for Log, TinyLog, StripeLog, File, Set and Join, and other tables with append-able files in presence of concurrent reads and writes.
+If you read various articles about 'io_uring' on the Internet, don't be blinded by them. It is not a better method of reading files, unless the case of a large amount of small IO requests, which is not the case in ClickHouse. There are no reasons to enable 'io_uring'.
 )", 0) \
     DECLARE(String, remote_filesystem_read_method, "threadpool", R"(
 Method of reading data from remote filesystem, one of: read, threadpool.
@@ -5556,6 +5563,18 @@ Use userspace page cache in passive mode, similar to read_from_filesystem_cache_
 )", 0) \
     DECLARE(Bool, page_cache_inject_eviction, false, R"(
 Userspace page cache will sometimes invalidate some pages at random. Intended for testing.
+)", 0) \
+    DECLARE(UInt64, page_cache_block_size, 1048576, R"(
+Size of file chunks to store in the userspace page cache, in bytes. All reads that go through the cache will be rounded up to a multiple of this size.
+
+This setting can be adjusted on a per-query level basis, but cache entries with different block sizes cannot be reused. Changing this setting effectively invalidates existing entries in the cache.
+
+A higher value, like 1 MiB is good for high-throughput queries, and a lower value, like 64 KiB is good for low-latency point queries.
+)", 0) \
+    DECLARE(UInt64, page_cache_lookahead_blocks, 16, R"(
+On userspace page cache miss, read up to this many consecutive blocks at once from the underlying storage, if they're also not in the cache. Each block is page_cache_block_size bytes.
+
+A higher value is good for high-throughput queries, while low-latency point queries will work better without readahead.
 )", 0) \
     \
     DECLARE(Bool, load_marks_asynchronously, false, R"(
@@ -6320,6 +6339,9 @@ Index analysis done only on replica-coordinator and skipped on other replicas. E
     DECLARE(Bool, parallel_replicas_only_with_analyzer, true, R"(
 The analyzer should be enabled to use parallel replicas. With disabled analyzer query execution fallbacks to local execution, even if parallel reading from replicas is enabled. Using parallel replicas without the analyzer enabled is not supported
 )", BETA) \
+    DECLARE(Bool, parallel_replicas_insert_select_local_pipeline, false, R"(
+Use local pipeline during distributed INSERT SELECT with parallel replicas
+)", BETA) \
     DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
 Replace table function engines with their -Cluster alternatives
 )", 0) \
@@ -6468,7 +6490,10 @@ This only affects operations performed on the client side, in particular parsing
 Normally this setting should be set in user profile (users.xml or queries like `ALTER USER`), not through the client (client command line arguments, `SET` query, or `SETTINGS` section of `SELECT` query). Through the client it can be changed to false, but can't be changed to true (because the server won't send the settings if user profile has `apply_settings_from_server = false`).
 
 Note that initially (24.12) there was a server setting (`send_settings_to_client`), but latter it got replaced with this client setting, for better usability.
-)", 0)                                  \
+)", 0) \
+    DECLARE(Bool, allow_archive_path_syntax, true, R"(
+File/S3 engines/table function will parse paths with '::' as `<archive> :: <file>` if the archive has correct extension.
+)", 0) \
     DECLARE(Milliseconds, low_priority_query_wait_time_ms, 1000, R"(
 When the query prioritization mechanism is employed (see setting `priority`), low-priority queries wait for higher-priority queries to finish. This setting specifies the duration of waiting.
 )", BETA) \
@@ -6546,10 +6571,6 @@ Allows using statistics to optimize queries
     DECLARE(Bool, allow_experimental_statistics, false, R"(
 Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md/#column-statistics).
 )", EXPERIMENTAL) ALIAS(allow_experimental_statistic) \
-    \
-    DECLARE(Bool, allow_archive_path_syntax, true, R"(
-File/S3 engines/table function will parse paths with '::' as `<archive> :: <file>\` if archive has correct extension
-)", EXPERIMENTAL) \
     \
     DECLARE(Bool, allow_experimental_inverted_index, false, R"(
 If it is set to true, allow to use experimental inverted index.
