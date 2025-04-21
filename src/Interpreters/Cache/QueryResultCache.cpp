@@ -28,6 +28,7 @@
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 #include "Processors/Chunk.h"
+#include "Processors/Formats/Impl/TemplateBlockOutputFormat.h"
 #include <Core/Settings.h>
 #include <base/defines.h> /// chassert
 
@@ -839,6 +840,8 @@ namespace FormatTokens {
     static constexpr auto * token_expires_at = "expires_at: ";
     static constexpr auto * token_is_compressed = "is_compressed: ";
     static constexpr auto * token_query_string = "query_string: ";
+    static constexpr auto * token_has_totals = "has_totals: ";
+    static constexpr auto * token_has_extremes = "has_extremes: ";
 };
 
 QueryResultCache::OnDiskCache::OnDiskCache(const std::filesystem::path& path_, size_t max_size_in_bytes_, size_t max_entries_)
@@ -1002,8 +1005,8 @@ void QueryResultCache::OnDiskCache::writeCacheEntry(const Key & entry_key, const
         /// TODO write chunks, totals, extremes (in separate files?)
 
         Chunks & chunks = entry_mapped->chunks;
-        // const std::optional<Chunk> & totals = entry_mapped->totals;
-        // const std::optional<Chunk> & extremes = entry_mapped->extremes;
+        const std::optional<Chunk> & totals = entry_mapped->totals;
+        const std::optional<Chunk> & extremes = entry_mapped->extremes;
 
         /// To keep the file format simple, squash the result chunks to a single chunk.
         chunks = squashChunks(chunks, std::numeric_limits<size_t>::max());
@@ -1020,8 +1023,39 @@ void QueryResultCache::OnDiskCache::writeCacheEntry(const Key & entry_key, const
         NativeWriter block_writer(entry_file, 0, header);
 
         Block block = header.cloneWithColumns(chunk.getColumns());
-
         block_writer.write(block);
+
+        writeText(FormatTokens::token_has_totals, entry_file);
+
+        if (totals)
+        {
+            writeBoolText(true, entry_file);
+            writeText("\n", entry_file);
+
+            Block block_totals = header.cloneWithColumns(totals->getColumns());
+            block_writer.write(block_totals);
+        } 
+        else
+        {
+            writeBoolText(false, entry_file);
+            writeText("\n", entry_file);
+        }
+        
+        writeText(FormatTokens::token_has_extremes, entry_file);
+
+        if (extremes)
+        {
+            writeBoolText(true, entry_file);
+            writeText("\n", entry_file);
+
+            Block block_extremes = header.cloneWithColumns(extremes->getColumns());
+            block_writer.write(block_extremes);
+        }
+        else
+        {
+            writeBoolText(false, entry_file);
+            writeText("\n", entry_file);
+        }
 
         entry_file.finalize();
     }
@@ -1093,7 +1127,6 @@ std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDisk
 
         NativeReader block_reader(entry_file, 0);
         Block block = block_reader.read();
-
         block.checkNumberOfRows();
 
         Block header = block.cloneEmpty();
@@ -1102,13 +1135,39 @@ std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDisk
         Chunks chunks;
         chunks.push_back(std::move(chunk));
 
-        /// TODO: also read totals and extremes
+        assertString(FormatTokens::token_has_totals, entry_file);
+        bool has_totals;
+        readBoolText(has_totals, entry_file);
+        assertChar('\n', entry_file);
+
+        std::optional<Chunk> totals;
+
+        if (has_totals) {
+            Block block_totals = block_reader.read();
+            block_totals.checkNumberOfRows();
+
+            totals = Chunk(block_totals.getColumns(), block_totals.rows());
+        }
+
+        assertString(FormatTokens::token_has_extremes, entry_file);
+        bool has_extremes;
+        readBoolText(has_extremes, entry_file);
+        assertChar('\n', entry_file);
+
+        std::optional<Chunk> extremes;
+
+        if (has_extremes) {
+            Block block_extremes = block_reader.read();
+            block_extremes.checkNumberOfRows();
+
+            extremes = Chunk(block_extremes.getColumns(), block_extremes.rows());
+        }
 
         String query_id; /// dummy value
         String tag; /// dummy value 
 
         Key key(ast_hash, header, user_id, current_user_roles, is_shared, expires_at, is_compressed, query_string, query_id, tag);
-        MappedPtr entry = std::make_shared<Mapped>(std::move(chunks), std::nullopt, std::nullopt);
+        MappedPtr entry = std::make_shared<Mapped>(std::move(chunks), std::move(totals), std::move(extremes));
 
         return KeyMapped{key, entry};
     }
@@ -1116,7 +1175,8 @@ std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDisk
     {
         LOG_TRACE(logger, "Exception on reading entry from disk cache {}", e.what());
     }
-    catch (...) {
+    catch (...)
+    {
         LOG_TRACE(logger, "Unknown exception on reading entry from disk cache");
     }
 
