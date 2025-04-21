@@ -829,15 +829,17 @@ std::vector<QueryResultCache::Cache::KeyMapped> QueryResultCache::dump() const
     return cache.dump();
 }
 
-static constexpr std::string_view format_version_txt = "format_version.txt";
-static constexpr uint32_t current_version = 1;
+namespace FormatTokens {
+    static constexpr std::string_view format_version_txt = "format_version.txt";
+    static constexpr uint32_t current_version = 1;
 
-static constexpr auto * token_user_id = "user_id: ";
-static constexpr auto * token_current_user_roles = "current_user_roles: ";
-static constexpr auto * token_is_shared = "is_shared: ";
-static constexpr auto * token_expires_at = "expires_at: ";
-static constexpr auto * token_is_compressed = "is_compressed: ";
-static constexpr auto * token_query_string = "query_string: ";
+    static constexpr auto * token_user_id = "user_id: ";
+    static constexpr auto * token_current_user_roles = "current_user_roles: ";
+    static constexpr auto * token_is_shared = "is_shared: ";
+    static constexpr auto * token_expires_at = "expires_at: ";
+    static constexpr auto * token_is_compressed = "is_compressed: ";
+    static constexpr auto * token_query_string = "query_string: ";
+};
 
 QueryResultCache::OnDiskCache::OnDiskCache(const std::filesystem::path& path_, size_t max_size_in_bytes_, size_t max_entries_)
     : query_cache_path(path_)
@@ -847,19 +849,21 @@ QueryResultCache::OnDiskCache::OnDiskCache(const std::filesystem::path& path_, s
 
     cache_policy = std::make_unique<LRUCachePolicy<Key, DiskEntryMetadata, KeyHasher, DiskEntryWeight>>(max_size_in_bytes_, max_entries_, on_weight_loss_function, on_evict_function);
     
-    try {
+    try
+    {
         checkFormatVersion();
         readCacheEntriesMetaData();
-    } catch (...) {
+    } catch (...)
+    {
         // Remove old cache files and create new format_version.txt
         namespace fs = std::filesystem;
 
         fs::remove_all(query_cache_path);
         fs::create_directory(query_cache_path);
 
-        fs::path format_version_path = query_cache_path / format_version_txt;
+        fs::path format_version_path = query_cache_path / FormatTokens::format_version_txt;
         WriteBufferFromFile format_version_file(format_version_path);
-        writeIntText(current_version, format_version_file);
+        writeIntText(FormatTokens::current_version, format_version_file);
         format_version_file.finalize();
     }
 }
@@ -869,20 +873,14 @@ void QueryResultCache::OnDiskCache::readCacheEntriesMetaData() {
 
     try
     {
-        /// TODO document the data organization on disk
-
-        LoggerPtr logger = getLogger("XXX");
-
         namespace fs = std::filesystem;
 
-        LOG_TRACE(getLogger("XXX"), "Reading disk cache {}", query_cache_path.string());
-
-        fs::path format_version_path = query_cache_path / format_version_txt;
+        fs::path format_version_path = query_cache_path / FormatTokens::format_version_txt;
         ReadBufferFromFile format_version_file(format_version_path); /// throws if file can't be opened
         uint32_t version;
 
         readIntText(version, format_version_file);
-        if (version != current_version)
+        if (version != FormatTokens::current_version)
             return;
 
         for (const auto & entry_file_it : fs::directory_iterator(query_cache_path))
@@ -895,18 +893,22 @@ void QueryResultCache::OnDiskCache::readCacheEntriesMetaData() {
             String ast_hash_str = entry_path.filename();
 
             auto cache_entry = readCacheEntry(ast_hash_str);
-            auto metadata = std::make_shared<DiskEntryMetadata>(1, entry_path);
-            
-            cache_policy->set(cache_entry.key, metadata);
 
-            LOG_TRACE(logger, "entry {} read on start up", ast_hash_str);
+            if (cache_entry)
+            {
+                auto entry_weight = QueryResultCacheEntryWeight()(*cache_entry->mapped);
+                auto metadata = std::make_shared<DiskEntryMetadata>(entry_weight, entry_path);
+                cache_policy->set(cache_entry->key, metadata);
+            }
         }
+    }
+    catch (const Exception& e)
+    {
+        LOG_TRACE(logger, "Exception on reading metadata for QueryResultCache on disk. Error: {}", e.what());
     }
     catch (...)
     {
-        /// TODO log exception
-        /// throw; /// TODO don't throw, silently swallow exception
-        LOG_TRACE(getLogger("XXX"), "Exception on reading disk cache");
+        LOG_TRACE(logger, "Unknown exception on reading metadata for QueryResultCache on disk.");
     }
 }
 
@@ -918,7 +920,7 @@ std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDisk
     String ast_hash_str = std::to_string(ast_hash.low64) + '_' + std::to_string(ast_hash.high64);
 
     if (!cache_policy->contains(key)) {
-        LOG_TRACE(getLogger("XXX"), "No entry on disk, key not found in metadata: {}", query_cache_path.string());
+        LOG_TRACE(logger, "No entry on disk, key not found in metadata");
         return std::nullopt;
     }
 
@@ -934,12 +936,14 @@ void QueryResultCache::OnDiskCache::set(const Key & key, const MappedPtr & mappe
 
     /// also check staleness
     if (cache_policy->contains(key)) { 
-        LOG_TRACE(getLogger("XXX"), "Entry already in disk cache, skip inserting: {}", query_cache_path.string());
+        LOG_TRACE(logger, "Entry already in disk cache, skip inserting");
         return; /// also change lru 
     }
 
     std::filesystem::path entry_file_path = query_cache_path / ast_hash_str;
-    auto metadata = std::make_shared<DiskEntryMetadata>(1, entry_file_path);
+
+    auto entry_weight = QueryResultCacheEntryWeight()(*mapped);
+    auto metadata = std::make_shared<DiskEntryMetadata>(entry_weight, entry_file_path);
 
     cache_policy->set(key, metadata);
     
@@ -949,17 +953,10 @@ void QueryResultCache::OnDiskCache::set(const Key & key, const MappedPtr & mappe
 void QueryResultCache::OnDiskCache::writeCacheEntry(const Key & entry_key, const MappedPtr & entry_mapped) {
     try
     {
-        LoggerPtr logger = getLogger("XXX");
-
         /// Store query cache entries to persistence:
-
-        LOG_TRACE(logger, "Writing entries to disk");
-
         namespace fs = std::filesystem;
-        
-        LOG_TRACE(logger, "Writing entries to disk on path: {}", query_cache_path.string());
 
-        // check format version again in case of format_version.txt change
+        // check format version again in case of format_version.txt changed
         checkFormatVersion();
 
         IASTHash ast_hash = entry_key.ast_hash;
@@ -968,12 +965,12 @@ void QueryResultCache::OnDiskCache::writeCacheEntry(const Key & entry_key, const
         fs::path entry_file_path = query_cache_path / ast_hash_str;
         WriteBufferFromFile entry_file(entry_file_path.string());
 
-        writeText(token_user_id, entry_file);
+        writeText(FormatTokens::token_user_id, entry_file);
         UUID user_id = entry_key.user_id ? *entry_key.user_id : UUIDHelpers::Nil;
         writeUUIDText(user_id, entry_file);
         writeText("\n", entry_file);
 
-        writeText(token_current_user_roles, entry_file);
+        writeText(FormatTokens::token_current_user_roles, entry_file);
         for (size_t i = 0; i < entry_key.current_user_roles.size(); ++i)
         {
             writeUUIDText(entry_key.current_user_roles[i], entry_file);
@@ -982,11 +979,11 @@ void QueryResultCache::OnDiskCache::writeCacheEntry(const Key & entry_key, const
         }
         writeText("\n", entry_file);
 
-        writeText(token_is_shared, entry_file);
+        writeText(FormatTokens::token_is_shared, entry_file);
         writeBoolText(entry_key.is_shared, entry_file);
         writeText("\n", entry_file);
 
-        writeText(token_expires_at, entry_file);
+        writeText(FormatTokens::token_expires_at, entry_file);
 
         auto duration = entry_key.expires_at.time_since_epoch();
         Int64 nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
@@ -994,15 +991,11 @@ void QueryResultCache::OnDiskCache::writeCacheEntry(const Key & entry_key, const
         writeIntText(nanoseconds, entry_file);
         writeText("\n", entry_file);
 
-        LOG_TRACE(logger, "Writing entries to disk compression: {}", entry_key.is_compressed);
-
-        writeText(token_is_compressed, entry_file);
+        writeText(FormatTokens::token_is_compressed, entry_file);
         writeBoolText(entry_key.is_compressed, entry_file);
-        // bool is_compressed = false;
-        // writeBoolText(is_compressed, entry_file);
         writeText("\n", entry_file);
 
-        writeText(token_query_string, entry_file);
+        writeText(FormatTokens::token_query_string, entry_file);
         writeText(entry_key.query_string, entry_file);
         writeText("\n", entry_file);
 
@@ -1031,26 +1024,21 @@ void QueryResultCache::OnDiskCache::writeCacheEntry(const Key & entry_key, const
         block_writer.write(block);
 
         entry_file.finalize();
-
-        LOG_TRACE(logger, "entry written");
     }
     catch (const Exception& e)
     {
-        /// TODO log exception
-        LOG_TRACE(getLogger("XXX"), "Exception on writing entry to disk cache {}", e.what());
+        LOG_TRACE(logger, "Exception on writing entry to disk cache {}", e.what());
+    }
+    catch (...)
+    {
+        LOG_TRACE(logger, "Unknown exception on writing entry to disk cache");
     }
 }
 
-QueryResultCache::OnDiskCache::KeyMapped QueryResultCache::OnDiskCache::readCacheEntry(String ast_hash_str) {
+std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDiskCache::readCacheEntry(String ast_hash_str) {
     try
     {
-        /// TODO document the data organization on disk
-
-        LoggerPtr logger = getLogger("XXX");
-
         namespace fs = std::filesystem;
-
-        LOG_TRACE(getLogger("XXX"), "Reading disk cache {}", query_cache_path.string());
 
         checkFormatVersion();
 
@@ -1063,32 +1051,29 @@ QueryResultCache::OnDiskCache::KeyMapped QueryResultCache::OnDiskCache::readCach
         String high64_str = ast_hash_str.substr(separator_pos + 1, ast_hash_str.size());
         IASTHash ast_hash(std::stoull(low64_str), std::stoull(high64_str));
 
-        /// TODO construct a key, add it to the cache (needs a new ctor which accepts the hash directly)
-
-        assertString(token_user_id, entry_file);
+        assertString(FormatTokens::token_user_id, entry_file);
         UUID user_id;
         readUUIDText(user_id, entry_file);
         /// can be UUIDHelpers::Nil
 
         assertChar('\n', entry_file);
 
-        assertString(token_current_user_roles, entry_file);
+        assertString(FormatTokens::token_current_user_roles, entry_file);
         std::vector<UUID> current_user_roles;
         while (!checkChar('\n', entry_file))
         {
-            LOG_TRACE(logger, "usr role");
             UUID user_role;
             readUUIDText(user_role, entry_file);
             current_user_roles.push_back(user_role);
             assertChar(',', entry_file);
         }
 
-        assertString(token_is_shared, entry_file);
+        assertString(FormatTokens::token_is_shared, entry_file);
         bool is_shared;
         readBoolText(is_shared, entry_file);
         assertChar('\n', entry_file);
 
-        assertString(token_expires_at, entry_file);
+        assertString(FormatTokens::token_expires_at, entry_file);
         int64_t duration;
         readIntText(duration, entry_file);
         std::chrono::nanoseconds nanoseconds(duration);
@@ -1096,12 +1081,12 @@ QueryResultCache::OnDiskCache::KeyMapped QueryResultCache::OnDiskCache::readCach
             std::chrono::duration_cast<std::chrono::system_clock::duration>(nanoseconds)};
         assertChar('\n', entry_file);
         
-        assertString(token_is_compressed, entry_file);
+        assertString(FormatTokens::token_is_compressed, entry_file);
         bool is_compressed;
         readBoolText(is_compressed, entry_file);
         assertChar('\n', entry_file);
 
-        assertString(token_query_string, entry_file);
+        assertString(FormatTokens::token_query_string, entry_file);
         String query_string;
         readStringUntilNewlineInto(query_string, entry_file);
         assertChar('\n', entry_file);
@@ -1117,7 +1102,7 @@ QueryResultCache::OnDiskCache::KeyMapped QueryResultCache::OnDiskCache::readCach
         Chunks chunks;
         chunks.push_back(std::move(chunk));
 
-        /// also read totals and extremes
+        /// TODO: also read totals and extremes
 
         String query_id; /// dummy value
         String tag; /// dummy value 
@@ -1125,27 +1110,27 @@ QueryResultCache::OnDiskCache::KeyMapped QueryResultCache::OnDiskCache::readCach
         Key key(ast_hash, header, user_id, current_user_roles, is_shared, expires_at, is_compressed, query_string, query_id, tag);
         MappedPtr entry = std::make_shared<Mapped>(std::move(chunks), std::nullopt, std::nullopt);
 
-        LOG_TRACE(logger, "entry read {} {} {} {} {}", is_shared, is_compressed, query_string, block.rows(), block.columns());
-        
-        return {key, entry};
+        return KeyMapped{key, entry};
     }
     catch (const Exception& e)
     {
-        /// TODO log exception
-        /// throw; /// TODO don't throw, silently swallow exception
-        LOG_TRACE(getLogger("XXX"), "Exception on reading entry from disk cache {}", e.what());
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Exception on reading entry from disk cache");
+        LOG_TRACE(logger, "Exception on reading entry from disk cache {}", e.what());
     }
+    catch (...) {
+        LOG_TRACE(logger, "Unknown exception on reading entry from disk cache");
+    }
+
+    return std::nullopt;
 }
 
 void QueryResultCache::OnDiskCache::checkFormatVersion() {
     namespace fs = std::filesystem;
-    fs::path format_version_path = query_cache_path / format_version_txt;
+    fs::path format_version_path = query_cache_path / FormatTokens::format_version_txt;
     ReadBufferFromFile format_version_file(format_version_path); /// throws if file can't be opened
     uint32_t version;
 
     readIntText(version, format_version_file);
-    if (version != current_version)
+    if (version != FormatTokens::current_version)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "On disk query result cache format_version mismatch");
 }
 
@@ -1157,6 +1142,10 @@ void QueryResultCache::OnDiskCache::setMaxSizeInBytes(size_t max_size_in_bytes) 
 void QueryResultCache::OnDiskCache::setMaxCount(size_t max_count) {
     std::lock_guard lock(mutex);
     cache_policy->setMaxCount(max_count);
+}
+
+void QueryResultCache::OnDiskCache::onEvictFunction(CachePolicy::MappedPtr mapped) {
+    std::filesystem::remove(mapped->path);
 }
 
 }

@@ -197,7 +197,7 @@ public:
         void setMaxCount(size_t max_count);
 
     private:
-        KeyMapped readCacheEntry(String ast_hash_str);
+        std::optional<KeyMapped> readCacheEntry(String ast_hash_str);
 
         void writeCacheEntry(const Key & key, const MappedPtr & mapped);
 
@@ -205,10 +205,9 @@ public:
 
         void checkFormatVersion();
 
-        void onEvictFunction(CachePolicy::MappedPtr mapped) {
-            std::filesystem::remove(mapped->path);
-            LOG_TRACE(getLogger("XXX"), "Evict");
-        }
+        void onEvictFunction(CachePolicy::MappedPtr mapped);
+
+        LoggerPtr logger = getLogger("QueryResultCache");
 
         std::mutex mutex;
 
