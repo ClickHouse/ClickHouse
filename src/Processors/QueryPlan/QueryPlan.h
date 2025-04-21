@@ -139,6 +139,9 @@ public:
     Node * getRootNode() const { return root; }
     static std::pair<Nodes, QueryPlanResourceHolder> detachNodesAndResources(QueryPlan && plan);
 
+    QueryPlan extractSubplan(Node * subplan_root);
+    QueryPlan clone() const;
+
 private:
     struct SerializationFlags;
 
