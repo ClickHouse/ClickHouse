@@ -174,18 +174,41 @@ LoggerPtr KeyMetadata::logger() const
     return cache_metadata->log;
 }
 
+size_t KeyMetadata::getBlockSize() const
+{
+    return cache_metadata->getBlockSize();
+}
+
+size_t KeyMetadata::alignFileSize(size_t file_size) const
+{
+    return cache_metadata->alignFileSize(file_size);
+}
+
 CacheMetadata::CacheMetadata(
     const std::string & path_,
     size_t background_download_queue_size_limit_,
     size_t background_download_threads_,
-    bool write_cache_per_user_directory_)
+    bool write_cache_per_user_directory_,
+    bool use_real_disk_size_)
     : path(path_)
     , cleanup_queue(std::make_shared<CleanupQueue>())
     , download_queue(std::make_shared<DownloadQueue>(background_download_queue_size_limit_))
     , write_cache_per_user_directory(write_cache_per_user_directory_)
+    , path_stat(getStatVFS(path))
+    , use_real_disk_size(use_real_disk_size_)
     , log(getLogger("CacheMetadata"))
     , download_threads_num(background_download_threads_)
 {
+}
+
+size_t CacheMetadata::getBlockSize() const
+{
+    return path_stat.f_bsize;
+}
+
+size_t CacheMetadata::alignFileSize(size_t file_size) const
+{
+    return ::DB::alignFileSize(path_stat, file_size);
 }
 
 String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind)

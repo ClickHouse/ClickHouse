@@ -33,7 +33,13 @@ public:
         const size_t offset;
         const KeyMetadataPtr key_metadata;
 
-        std::atomic<size_t> size;
+        size_t getSize() const;
+        void setSize(size_t size_);
+        bool use_real_disk_size = false;
+
+        void increaseSize(size_t size_);
+        void decreaseSize(size_t size_);
+
         size_t hits = 0;
 
         std::string toString() const { return fmt::format("{}:{}:{}", key, offset, size.load()); }
@@ -64,6 +70,8 @@ public:
         }
 
     private:
+        std::atomic<size_t> size;
+        std::atomic<size_t> aligned_size;
         mutable std::atomic<bool> evicting = false;
     };
     using EntryPtr = std::shared_ptr<Entry>;

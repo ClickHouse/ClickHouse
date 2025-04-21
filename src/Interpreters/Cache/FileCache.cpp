@@ -76,6 +76,7 @@ namespace FileCacheSetting
     extern const FileCacheSettingsUInt64 cache_hits_threshold;
     extern const FileCacheSettingsBool enable_filesystem_query_cache_limit;
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
+    extern const FileCacheSettingsBool use_real_disk_size;
 }
 
 namespace
@@ -125,7 +126,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , metadata(settings[FileCacheSetting::path],
                settings[FileCacheSetting::background_download_queue_size_limit],
                settings[FileCacheSetting::background_download_threads],
-               write_cache_per_user_directory)
+               write_cache_per_user_directory, settings[FileCacheSetting::use_real_disk_size])
 {
     switch (settings[FileCacheSetting::cache_policy].value)
     {
@@ -1112,7 +1113,7 @@ bool FileCache::tryReserve(
     }
 
     file_segment.reserved_size += size;
-    chassert(file_segment.reserved_size == queue_iterator->getEntry()->size);
+    chassert(file_segment.reserved_size == queue_iterator->getEntry()->getSize());
 
     if (main_priority->getSize(cache_lock) > (1ull << 63))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");

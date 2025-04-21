@@ -9,6 +9,7 @@
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <Common/ThreadPool.h>
+#include <Common/filesystemHelpers.h>
 
 #include <memory>
 #include <shared_mutex>
@@ -88,72 +89,7 @@ private:
 
 using FileSegmentMetadataPtr = std::shared_ptr<FileSegmentMetadata>;
 
-
-struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
-                     private boost::noncopyable,
-                     public std::enable_shared_from_this<KeyMetadata>
-{
-    friend class CacheMetadata;
-    friend struct LockedKey;
-
-    using Key = FileCacheKey;
-    using iterator = iterator;
-    using UserInfo = FileCacheUserInfo;
-    using UserID = UserInfo::UserID;
-
-    KeyMetadata(
-        const Key & key_,
-        const UserInfo & user_id_,
-        const CacheMetadata * cache_metadata_,
-        bool created_base_directory_ = false);
-
-    enum class KeyState : uint8_t
-    {
-        ACTIVE,
-        REMOVING,
-        REMOVED,
-    };
-
-    const Key key;
-    const UserInfo user;
-
-    LockedKeyPtr lock();
-
-    LockedKeyPtr tryLock();
-
-    bool createBaseDirectory(bool throw_if_failed = false);
-
-    std::string getPath() const;
-
-    std::string getFileSegmentPath(const FileSegment & file_segment) const;
-
-    bool checkAccess(const UserID & user_id_) const;
-
-    void assertAccess(const UserID & user_id_) const;
-
-    /// This method is used for loadMetadata() on server startup,
-    /// where we know there is no concurrency on Key and we do not want therefore taking a KeyGuard::Lock,
-    /// therefore we use this Unlocked version. This method should not be used anywhere else.
-    template< class... Args >
-    auto emplaceUnlocked(Args &&... args) { return emplace(std::forward<Args>(args)...); }
-    size_t sizeUnlocked() const { return size(); }
-
-private:
-    const CacheMetadata * cache_metadata;
-
-    KeyState key_state = KeyState::ACTIVE;
-    KeyGuard guard;
-
-    std::atomic<bool> created_base_directory = false;
-
-    LockedKeyPtr lockNoStateCheck();
-    LoggerPtr logger() const;
-    bool addToDownloadQueue(FileSegmentPtr file_segment);
-    void addToCleanupQueue();
-};
-
-using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
-
+struct KeyMetadata;
 
 class CacheMetadata : private boost::noncopyable
 {
@@ -168,7 +104,8 @@ public:
         const std::string & path_,
         size_t background_download_queue_size_limit_,
         size_t background_download_threads_,
-        bool write_cache_per_user_directory_);
+        bool write_cache_per_user_directory_,
+        bool use_real_disk_size_);
 
     void startup();
 
@@ -218,6 +155,10 @@ public:
 
     bool isBackgroundDownloadEnabled();
 
+    size_t getBlockSize() const;
+
+    size_t alignFileSize(size_t file_size) const;
+
 private:
     static constexpr size_t buckets_num = 1024;
 
@@ -225,6 +166,8 @@ private:
     const CleanupQueuePtr cleanup_queue;
     const DownloadQueuePtr download_queue;
     const bool write_cache_per_user_directory;
+    struct statvfs path_stat;
+    bool use_real_disk_size;
 
     LoggerPtr log;
     mutable std::shared_mutex key_prefix_directory_mutex;
@@ -271,7 +214,76 @@ private:
     void cleanupThreadFunc();
 };
 
+struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
+                     private boost::noncopyable,
+                     public std::enable_shared_from_this<KeyMetadata>
+{
+    friend class CacheMetadata;
+    friend struct LockedKey;
 
+    using Key = FileCacheKey;
+    using iterator = iterator;
+    using UserInfo = FileCacheUserInfo;
+    using UserID = UserInfo::UserID;
+
+    KeyMetadata(
+        const Key & key_,
+        const UserInfo & user_id_,
+        const CacheMetadata * cache_metadata_,
+        bool created_base_directory_ = false);
+
+    enum class KeyState : uint8_t
+    {
+        ACTIVE,
+        REMOVING,
+        REMOVED,
+    };
+
+    const Key key;
+    const UserInfo user;
+
+    LockedKeyPtr lock();
+
+    LockedKeyPtr tryLock();
+
+    bool createBaseDirectory(bool throw_if_failed = false);
+
+    std::string getPath() const;
+
+    std::string getFileSegmentPath(const FileSegment & file_segment) const;
+
+    bool checkAccess(const UserID & user_id_) const;
+
+    void assertAccess(const UserID & user_id_) const;
+
+    size_t getBlockSize() const;
+
+    size_t alignFileSize(size_t file_size) const;
+
+    /// This method is used for loadMetadata() on server startup,
+    /// where we know there is no concurrency on Key and we do not want therefore taking a KeyGuard::Lock,
+    /// therefore we use this Unlocked version. This method should not be used anywhere else.
+    template< class... Args >
+    auto emplaceUnlocked(Args &&... args) { return emplace(std::forward<Args>(args)...); }
+    size_t sizeUnlocked() const { return size(); }
+
+    bool useRealDiskSize() const { return cache_metadata->use_real_disk_size; }
+
+private:
+    const CacheMetadata * cache_metadata;
+
+    KeyState key_state = KeyState::ACTIVE;
+    KeyGuard guard;
+
+    std::atomic<bool> created_base_directory = false;
+
+    LockedKeyPtr lockNoStateCheck();
+    LoggerPtr logger() const;
+    bool addToDownloadQueue(FileSegmentPtr file_segment);
+    void addToCleanupQueue();
+};
+
+using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
 /**
  * `LockedKey` is an object which makes sure that as long as it exists the following is true:
  * 1. the key cannot be removed from cache
