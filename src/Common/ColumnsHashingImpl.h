@@ -200,7 +200,7 @@ public:
     }
 
     template <typename Data>
-    ALWAYS_INLINE std::optional<EmplaceResult> emplaceKey(Data & data, size_t row, Arena & pool, const std::optional<std::vector<std::pair<UInt64, SortDirection>>> & optimization_indexes, size_t limit_length)
+    ALWAYS_INLINE std::optional<EmplaceResult> emplaceKey(Data & data, size_t row, Arena & pool, const std::optional<std::vector<std::pair<UInt64, SortDirection>>> & optimization_indexes, size_t limit_offset_plus_length)
     {
         if constexpr (nullable)
         {
@@ -226,7 +226,7 @@ public:
         }
 
         auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
-        return emplaceImpl(key_holder, data, limit_length, optimization_indexes);
+        return emplaceImpl(key_holder, data, limit_offset_plus_length, optimization_indexes);
     }
 
     template <typename Data>
@@ -367,7 +367,7 @@ protected:
     ALWAYS_INLINE std::optional<EmplaceResult> emplaceImpl(
         KeyHolder & key_holder,
         Data & data,
-        size_t limit_length,
+        size_t limit_offset_plus_length,
         const std::optional<std::vector<std::pair<UInt64, SortDirection>>> & optimization_indexes)
     {
         if constexpr (consecutive_keys_optimization)
@@ -392,7 +392,7 @@ protected:
                        && !std::is_same_v<KeyHolder, UInt128>
                        && !std::is_same_v<KeyHolder, Int256>
                        && !std::is_same_v<KeyHolder, UInt256>) { // MVP. TODO support all types
-                if (optimization_indexes && data.size() > limit_length)
+                if (optimization_indexes && data.size() > limit_offset_plus_length)
                 {
                     assert(optimization_indexes->size() == 1 && (*optimization_indexes)[0].first == 0); // TODO support arbitrary number of expressions in findOptimizationSublistIndexes
                     if constexpr (HasBegin<Data>::value)

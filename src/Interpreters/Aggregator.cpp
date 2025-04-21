@@ -212,7 +212,7 @@ Aggregator::Params::Params(
     bool optimize_group_by_constant_keys_,
     float min_hit_rate_to_use_consecutive_keys_optimization_,
     const StatsCollectingParams & stats_collecting_params_,
-    size_t limit_length_,
+    size_t limit_offset_plus_length_,
     std::optional<std::vector<std::pair<UInt64, SortDirection>>> optimization_indexes_)
     : keys(keys_)
     , keys_size(keys.size())
@@ -236,7 +236,7 @@ Aggregator::Params::Params(
     , optimize_group_by_constant_keys(optimize_group_by_constant_keys_)
     , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
     , stats_collecting_params(stats_collecting_params_)
-    , limit_length(limit_length_)
+    , limit_offset_plus_length(limit_offset_plus_length_)
     , optimization_indexes(std::move(optimization_indexes_))
 {
 }
@@ -1082,7 +1082,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         AggregateDataPtr place = reinterpret_cast<AggregateDataPtr>(0x1);
         if (all_keys_are_const)
         {
-            auto emplace_result = state.emplaceKey(method.data, 0, *aggregates_pool, params.optimization_indexes, params.limit_length);
+            auto emplace_result = state.emplaceKey(method.data, 0, *aggregates_pool, params.optimization_indexes, params.limit_offset_plus_length);
             assert(emplace_result.has_value());
             emplace_result->setMapped(place);
         }
@@ -1103,7 +1103,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                     }
                 }
 
-                auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool, params.optimization_indexes, params.limit_length);
+                auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool, params.optimization_indexes, params.limit_offset_plus_length);
                 if (emplace_result.has_value())
                     emplace_result->setMapped(place);
             }
@@ -1264,7 +1264,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 }
             }
 
-            auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool, params.optimization_indexes, params.limit_length);
+            auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool, params.optimization_indexes, params.limit_offset_plus_length);
 
             if (!emplace_result.has_value())
             {

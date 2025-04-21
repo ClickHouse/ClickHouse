@@ -118,7 +118,7 @@ public:
         bool optimize_group_by_constant_keys = false;
         const float min_hit_rate_to_use_consecutive_keys_optimization = 0.;
         StatsCollectingParams stats_collecting_params;
-        size_t limit_length;
+        size_t limit_offset_plus_length;
         std::optional<std::vector<std::pair<UInt64, SortDirection>>> optimization_indexes;
 
         static size_t getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by);
