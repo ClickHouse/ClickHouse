@@ -192,6 +192,10 @@ public:
 
         void set(const Key & key, const MappedPtr & mapped);
 
+        void setMaxSizeInBytes(size_t max_size_in_bytes);
+
+        void setMaxCount(size_t max_count);
+
     private:
         KeyMapped readCacheEntry(String ast_hash_str);
 
@@ -212,12 +216,11 @@ public:
 
         std::filesystem::path query_cache_path; /// directory containing persisted query cache entries which are loaded/stored on
                                                 /// database startup/shutdown (only set if query cache persistence is configured)
-        std::unordered_set<String> keys TSA_GUARDED_BY(mutex);
     };
 
-    QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_, const std::optional<std::filesystem::path> & path_);
+    QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows, size_t disk_cache_max_size_in_bytes, size_t disk_cache_max_entries, size_t disk_cache_max_entry_size_in_bytes, size_t disk_cache_max_entry_size_in_rows, const std::optional<std::filesystem::path> & disk_cache_path_);
 
-    void updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
+    void updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows, size_t disk_cache_max_size_in_bytes, size_t disk_cache_max_entries, size_t disk_cache_max_entry_size_in_bytes, size_t disk_cache_max_entry_size_in_rows);
 
     QueryResultCacheReader createReader(const Key & key);
     QueryResultCacheWriter createWriter(
@@ -253,6 +256,10 @@ private:
     /// Cache configuration
     size_t max_entry_size_in_bytes TSA_GUARDED_BY(mutex) = 0;
     size_t max_entry_size_in_rows TSA_GUARDED_BY(mutex) = 0;
+
+    /// On disk cache configuration
+    size_t disk_cache_max_entry_size_in_bytes TSA_GUARDED_BY(mutex) = 0;
+    size_t disk_cache_max_entry_size_in_rows TSA_GUARDED_BY(mutex) = 0;
 
     friend class StorageSystemQueryResultCache;
     friend class QueryResultCacheWriter;
@@ -294,6 +301,8 @@ private:
     const QueryResultCache::Key key;
     const size_t max_entry_size_in_bytes;
     const size_t max_entry_size_in_rows;
+    const size_t disk_cache_max_entry_size_in_bytes;
+    const size_t disk_cache_max_entry_size_in_rows;
     const std::chrono::time_point<std::chrono::system_clock> query_start_time = std::chrono::system_clock::now(); /// Writer construction and finalizeWrite() coincide with query start/end
     const std::chrono::milliseconds min_query_runtime;
     const bool squash_partial_results;
@@ -309,6 +318,8 @@ private:
         const Cache::Key & key_,
         size_t max_entry_size_in_bytes_,
         size_t max_entry_size_in_rows_,
+        size_t disk_cache_max_entry_size_in_bytes_,
+        size_t disk_cache_max_entry_size_in_rows_,
         std::chrono::milliseconds min_query_runtime_,
         bool squash_partial_results_,
         size_t max_block_size_);

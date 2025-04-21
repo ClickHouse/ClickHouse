@@ -34,6 +34,7 @@
 #include <chrono>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <optional>
 
 namespace ProfileEvents
@@ -378,6 +379,8 @@ QueryResultCacheWriter::QueryResultCacheWriter(
     const QueryResultCache::Key & key_,
     size_t max_entry_size_in_bytes_,
     size_t max_entry_size_in_rows_,
+    size_t disk_cache_max_entry_size_in_bytes_,
+    size_t disk_cache_max_entry_size_in_rows_,
     std::chrono::milliseconds min_query_runtime_,
     bool squash_partial_results_,
     size_t max_block_size_)
@@ -386,6 +389,8 @@ QueryResultCacheWriter::QueryResultCacheWriter(
     , key(key_)
     , max_entry_size_in_bytes(max_entry_size_in_bytes_)
     , max_entry_size_in_rows(max_entry_size_in_rows_)
+    , disk_cache_max_entry_size_in_bytes(disk_cache_max_entry_size_in_bytes_)
+    , disk_cache_max_entry_size_in_rows(disk_cache_max_entry_size_in_rows_)
     , min_query_runtime(min_query_runtime_)
     , squash_partial_results(squash_partial_results_)
     , max_block_size(max_block_size_)
@@ -403,6 +408,8 @@ QueryResultCacheWriter::QueryResultCacheWriter(const QueryResultCacheWriter & ot
     , key(other.key)
     , max_entry_size_in_bytes(other.max_entry_size_in_bytes)
     , max_entry_size_in_rows(other.max_entry_size_in_rows)
+    , disk_cache_max_entry_size_in_bytes(other.disk_cache_max_entry_size_in_bytes)
+    , disk_cache_max_entry_size_in_rows(other.disk_cache_max_entry_size_in_rows)
     , min_query_runtime(other.min_query_runtime)
     , squash_partial_results(other.squash_partial_results)
     , max_block_size(other.max_block_size)
@@ -727,24 +734,32 @@ std::unique_ptr<SourceFromChunks> QueryResultCacheReader::getSourceExtremes()
     return std::move(source_from_chunks_extremes);
 }
 
-QueryResultCache::QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_, const std::optional<std::filesystem::path> & path_)
+QueryResultCache::QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_, size_t disk_cache_max_size_in_bytes, size_t disk_cache_max_entries, size_t disk_cache_max_entry_size_in_bytes_, size_t disk_cache_max_entry_size_in_rows_, const std::optional<std::filesystem::path> & disk_cache_path_)
     : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, QueryResultCacheEntryWeight, IsStale>>(
           std::make_unique<PerUserTTLCachePolicyUserQuota>()))
 {
-    if (path_) {
-        disk_cache.emplace(path_.value(), 2, max_entries);
+    if (disk_cache_path_) {
+        disk_cache.emplace(disk_cache_path_.value(), disk_cache_max_size_in_bytes, disk_cache_max_entries);
     }
 
-    updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_);
+    updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_, disk_cache_max_size_in_bytes, disk_cache_max_entries, disk_cache_max_entry_size_in_bytes_, disk_cache_max_entry_size_in_rows_);
 }
 
-void QueryResultCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
+void QueryResultCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_, size_t disk_cache_max_size_in_bytes, size_t disk_cache_max_entries, size_t disk_cache_max_entry_size_in_bytes_, size_t disk_cache_max_entry_size_in_rows_)
 {
     std::lock_guard lock(mutex);
     cache.setMaxSizeInBytes(max_size_in_bytes);
     cache.setMaxCount(max_entries);
     max_entry_size_in_bytes = max_entry_size_in_bytes_;
     max_entry_size_in_rows = max_entry_size_in_rows_;
+
+    if (disk_cache) {
+        disk_cache->setMaxSizeInBytes(disk_cache_max_size_in_bytes);
+        disk_cache->setMaxCount(disk_cache_max_entries);
+
+        disk_cache_max_entry_size_in_bytes = disk_cache_max_entry_size_in_bytes_;
+        disk_cache_max_entry_size_in_rows = disk_cache_max_entry_size_in_rows_;
+    }
 }
 
 QueryResultCacheReader QueryResultCache::createReader(const Key & key)
@@ -769,7 +784,7 @@ QueryResultCacheWriter QueryResultCache::createWriter(
         cache.setQuotaForUser(*key.user_id, max_query_result_cache_size_in_bytes_quota, max_query_result_cache_entries_quota);
 
     std::lock_guard lock(mutex);
-    return QueryResultCacheWriter(cache, disk_cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
+    return QueryResultCacheWriter(cache, disk_cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, disk_cache_max_entry_size_in_bytes, disk_cache_max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
 }
 
 void QueryResultCache::clear(const std::optional<String> & tag)
@@ -879,7 +894,10 @@ void QueryResultCache::OnDiskCache::readCacheEntriesMetaData() {
 
             String ast_hash_str = entry_path.filename();
 
-            keys.insert(ast_hash_str);
+            auto cache_entry = readCacheEntry(ast_hash_str);
+            auto metadata = std::make_shared<DiskEntryMetadata>(1, entry_path);
+            
+            cache_policy->set(cache_entry.key, metadata);
 
             LOG_TRACE(logger, "entry {} read on start up", ast_hash_str);
         }
@@ -924,8 +942,6 @@ void QueryResultCache::OnDiskCache::set(const Key & key, const MappedPtr & mappe
     auto metadata = std::make_shared<DiskEntryMetadata>(1, entry_file_path);
 
     cache_policy->set(key, metadata);
-
-    keys.insert(ast_hash_str);
     
     writeCacheEntry(key, mapped);
 }
@@ -1131,6 +1147,16 @@ void QueryResultCache::OnDiskCache::checkFormatVersion() {
     readIntText(version, format_version_file);
     if (version != current_version)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "On disk query result cache format_version mismatch");
+}
+
+void QueryResultCache::OnDiskCache::setMaxSizeInBytes(size_t max_size_in_bytes) {
+    std::lock_guard lock(mutex);
+    cache_policy->setMaxSizeInBytes(max_size_in_bytes);
+}
+
+void QueryResultCache::OnDiskCache::setMaxCount(size_t max_count) {
+    std::lock_guard lock(mutex);
+    cache_policy->setMaxCount(max_count);
 }
 
 }
