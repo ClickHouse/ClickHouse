@@ -4,6 +4,8 @@
 
 #if defined(MEMORY_ACCESS_TRACING)
 
+extern int ENABLE_TRACE;
+
 /// Get the number of memory accesses since application start or last reset
 uint64_t getMemoryAccessCount();
 
