@@ -174,3 +174,20 @@ TEST(ColumnUniqueCompressed, SerializationFCBlockDF)
         EXPECT_EQ(value, real_value + '\0');
     }
 }
+
+TEST(ColumnUniqueCompressed, DeserializationFCBlockDF)
+{
+    const auto column_unique_compressed = getNotEmptyColumnUniqueCompressedFCBlockDF();
+    const auto other_column = column_unique_compressed->cloneEmpty();
+    ColumnUniqueFCBlockDF * other_column_ptr = typeid_cast<ColumnUniqueFCBlockDF *>(other_column.get());
+    Arena arena;
+
+    const char * pos = nullptr;
+    for (size_t i = 0; i < column_unique_compressed->size(); ++i)
+    {
+        const StringRef data = column_unique_compressed->serializeValueIntoArena(i, arena, pos);
+        const char * new_pos = nullptr;
+        const size_t index = other_column_ptr->uniqueDeserializeAndInsertFromArena(data.data, new_pos);
+        EXPECT_EQ((*other_column)[index].safeGet<String>(), (*column_unique_compressed)[i].safeGet<String>());
+    }
+}
