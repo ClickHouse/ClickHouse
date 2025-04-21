@@ -475,7 +475,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
             else
             {
                 const DatabasePtr & database = databases.at(database_name);
-                for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+                for (auto iterator = database->getLightweightTablesIterator(context); iterator->isValid(); iterator->next())
                 {
                     if (const auto & table = iterator->table())
                     {

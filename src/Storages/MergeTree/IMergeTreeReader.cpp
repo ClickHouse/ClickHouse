@@ -1,3 +1,5 @@
+#include <cstddef>
+#include <vector>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -71,7 +73,7 @@ IMergeTreeReader::IMergeTreeReader(
     }
 }
 
-const IMergeTreeReader::ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const
+const ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const
 {
     return avg_value_size_hints;
 }
@@ -123,9 +125,9 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
     try
     {
         NamesAndTypesList available_columns(columns_to_read.begin(), columns_to_read.end());
+
         DB::fillMissingColumns(
-            res_columns, num_rows,
-            Nested::convertToSubcolumns(requested_columns),
+            res_columns, num_rows, Nested::convertToSubcolumns(requested_columns),
             Nested::convertToSubcolumns(available_columns),
             partially_read_columns, storage_snapshot->metadata);
 
@@ -389,17 +391,88 @@ void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
                         "Expected {}, got {}", requested_columns.size(), num_columns_to_read);
 }
 
-String IMergeTreeReader::getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const
+String IMergeTreeReader::getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read, size_t offset) const
 {
     const auto & data_part_storage = data_part_info_for_read->getDataPartStorage();
     return fmt::format(
-        "(while reading from part {} in table {} located on disk {} of type {}, from mark {} with max_rows_to_read = {})",
+        "(while reading from part {} in table {} located on disk {} of type {}, from mark {} with max_rows_to_read = {}, offset = {})",
         data_part_storage->getFullPath(),
         data_part_info_for_read->getTableName(),
         data_part_storage->getDiskName(),
         data_part_storage->getDiskType(),
         from_mark,
-        max_rows_to_read);
+        max_rows_to_read,
+        offset);
+}
+
+MergeTreeReaderPtr createMergeTreeReaderCompact(
+    const MergeTreeDataPartInfoForReaderPtr & read_info,
+    const NamesAndTypesList & columns_to_read,
+    const StorageSnapshotPtr & storage_snapshot,
+    const MarkRanges & mark_ranges,
+    const VirtualFields & virtual_fields,
+    UncompressedCache * uncompressed_cache,
+    MarkCache * mark_cache,
+    DeserializationPrefixesCache * deserialization_prefixes_cache,
+    const MergeTreeReaderSettings & reader_settings,
+    const ValueSizeMap & avg_value_size_hints,
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback);
+
+MergeTreeReaderPtr createMergeTreeReaderWide(
+    const MergeTreeDataPartInfoForReaderPtr & read_info,
+    const NamesAndTypesList & columns_to_read,
+    const StorageSnapshotPtr & storage_snapshot,
+    const MarkRanges & mark_ranges,
+    const VirtualFields & virtual_fields,
+    UncompressedCache * uncompressed_cache,
+    MarkCache * mark_cache,
+    DeserializationPrefixesCache * deserialization_prefixes_cache,
+    const MergeTreeReaderSettings & reader_settings,
+    const ValueSizeMap & avg_value_size_hints,
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback);
+
+MergeTreeReaderPtr createMergeTreeReader(
+    const MergeTreeDataPartInfoForReaderPtr & read_info,
+    const NamesAndTypesList & columns_to_read,
+    const StorageSnapshotPtr & storage_snapshot,
+    const MarkRanges & mark_ranges,
+    const VirtualFields & virtual_fields,
+    UncompressedCache * uncompressed_cache,
+    MarkCache * mark_cache,
+    DeserializationPrefixesCache * deserialization_prefixes_cache,
+    const MergeTreeReaderSettings & reader_settings,
+    const ValueSizeMap & avg_value_size_hints,
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback)
+{
+    if (read_info->isCompactPart())
+        return createMergeTreeReaderCompact(
+            read_info,
+            columns_to_read,
+            storage_snapshot,
+            mark_ranges,
+            virtual_fields,
+            uncompressed_cache,
+            mark_cache,
+            deserialization_prefixes_cache,
+            reader_settings,
+            avg_value_size_hints,
+            profile_callback);
+
+    if (read_info->isWidePart())
+        return createMergeTreeReaderWide(
+            read_info,
+            columns_to_read,
+            storage_snapshot,
+            mark_ranges,
+            virtual_fields,
+            uncompressed_cache,
+            mark_cache,
+            deserialization_prefixes_cache,
+            reader_settings,
+            avg_value_size_hints,
+            profile_callback);
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown part type");
 }
 
 }

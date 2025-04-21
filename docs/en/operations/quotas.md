@@ -6,6 +6,10 @@ slug: /operations/quotas
 title: 'Quotas'
 ---
 
+:::note Quotas in ClickHouse Cloud
+Quotas are supported in ClickHouse Cloud but must be created using the [DDL syntax](/sql-reference/statements/create/quota). The XML configuration approach documented below is **not supported**.
+:::
+
 Quotas allow you to limit resource usage over a period of time or track the use of resources.
 Quotas are set up in the user config, which is usually 'users.xml'.
 
@@ -18,7 +22,7 @@ In contrast to query complexity restrictions, quotas:
 
 Let's look at the section of the 'users.xml' file that defines quotas.
 
-``` xml
+```xml
 <!-- Quotas -->
 <quotas>
     <!-- Quota name. -->
@@ -43,7 +47,7 @@ Let's look at the section of the 'users.xml' file that defines quotas.
 By default, the quota tracks resource consumption for each hour, without limiting usage.
 The resource consumption calculated for each interval is output to the server log after each request.
 
-``` xml
+```xml
 <statbox>
     <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->
     <interval>
@@ -97,7 +101,7 @@ If the limit is exceeded for at least one time interval, an exception is thrown 
 
 Quotas can use the "quota key" feature to report on resources for multiple keys independently. Here is an example of this:
 
-``` xml
+```xml
 <!-- For the global reports designer. -->
 <web_global>
     <!-- keyed – The quota_key "key" is passed in the query parameter,
@@ -117,3 +121,7 @@ The quota is assigned to users in the 'users' section of the config. See the sec
 For distributed query processing, the accumulated amounts are stored on the requestor server. So if the user goes to another server, the quota there will "start over".
 
 When the server is restarted, quotas are reset.
+
+## Related Content {#related-content}
+
+- Blog: [Building single page applications with ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)
