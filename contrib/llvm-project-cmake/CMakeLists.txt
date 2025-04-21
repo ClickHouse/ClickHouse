@@ -22,6 +22,7 @@ endif()
 set (LLVM_VERSION "19.0.0bundled")
 set (LLVM_INCLUDE_DIRS
     "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/llvm/include"
+    "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/compiler-rt/include"
     "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm/include"
 )
 set (LLVM_LIBRARY_DIRS "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm")

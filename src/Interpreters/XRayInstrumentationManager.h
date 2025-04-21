@@ -8,17 +8,17 @@
 #include <unordered_map>
 #include <list>
 #include <mutex>
-#include <xray/xray_interface.h>
 
-#include "llvm/Object/Binary.h"
-#include "llvm/Object/ObjectFile.h"
-#include "llvm/Support/Error.h"
-#include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/XRay/InstrumentationMap.h"
-#include "llvm/DebugInfo/Symbolize/Symbolize.h"
-#include "llvm/Support/Path.h"
-#include "llvm/Support/TargetSelect.h"
+#include <xray/xray_interface.h>
+#include <llvm/Object/Binary.h>
+#include <llvm/Object/ObjectFile.h>
+#include <llvm/Support/Error.h>
+#include <llvm/Support/MemoryBuffer.h>
+#include <llvm/Support/raw_ostream.h>
+#include <llvm/XRay/InstrumentationMap.h>
+#include <llvm/DebugInfo/Symbolize/Symbolize.h>
+#include <llvm/Support/Path.h>
+#include <llvm/Support/TargetSelect.h>
 
 namespace DB
 {
