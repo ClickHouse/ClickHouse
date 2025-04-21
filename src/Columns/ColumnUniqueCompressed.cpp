@@ -80,6 +80,12 @@ ColumnUniqueFCBlockDF::ColumnUniqueFCBlockDF(const ColumnPtr & string_column, si
     , block_size(block_size_)
     , is_nullable(is_nullable_)
 {
+    /// sanity check
+    if (block_size < 2)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnUniqueFCBlockDF is senseless for block_size < 2, got block_size={}", block_size);
+    }
+
     if (!typeid_cast<const ColumnString *>(string_column.get()))
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnUniqueFCBlockDF expected ColumnString, but got {}", string_column->getName());
@@ -142,10 +148,16 @@ ColumnUniqueFCBlockDF::ColumnUniqueFCBlockDF(const ColumnUniqueFCBlockDF & other
 
 size_t ColumnUniqueFCBlockDF::getPosOfClosestHeader(StringRef value) const
 {
+    /// Default value case
+    if (value.empty())
+    {
+        return 0;
+    }
+
     /// it's a binsearch over "header" positions
-    size_t left = 0;
+    size_t left = 1;
     size_t right = (data_column->size() - 1) / block_size;
-    size_t output = 0;
+    size_t output = 1;
     while (left <= right)
     {
         size_t mid = (left + right) / 2;
@@ -172,12 +184,18 @@ size_t ColumnUniqueFCBlockDF::getPosOfClosestHeader(StringRef value) const
 size_t ColumnUniqueFCBlockDF::getPosToInsert(StringRef value) const
 {
     size_t pos = getPosOfClosestHeader(value);
-    StringRef data = getDecompressedAt(pos);
     /// it's guranteed that this takes no more than block_size iterations
-    while (data < value && pos < data_column->size())
+    while (pos < data_column->size())
     {
-        ++pos;
-        data = getDecompressedAt(pos);
+        const StringRef data = getDecompressedAt(pos);
+        if (data < value)
+        {
+            ++pos;
+        }
+        else
+        {
+            break;
+        }
     }
     return pos;
 }
@@ -192,7 +210,7 @@ void ColumnUniqueFCBlockDF::recalculateForNewData(const ColumnPtr & string_colum
 std::optional<UInt64> ColumnUniqueFCBlockDF::getOrFindValueIndex(StringRef value) const
 {
     const size_t expected_pos = getPosToInsert(value);
-    if (expected_pos == data_column->size() || data_column->getDataAt(expected_pos) != value)
+    if (expected_pos == data_column->size() || getDecompressedAt(expected_pos) != value)
     {
         return {};
     }
@@ -255,6 +273,26 @@ size_t ColumnUniqueFCBlockDF::uniqueInsertData(const char * pos, size_t length)
     single_value_column->insertData(pos, length);
     recalculateForNewData(std::move(single_value_column));
     return output;
+}
+
+size_t ColumnUniqueFCBlockDF::uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos)
+{
+    if (is_nullable)
+    {
+        UInt8 val = unalignedLoad<UInt8>(pos);
+        pos += sizeof(val);
+
+        if (val)
+        {
+            new_pos = pos;
+            return getNullValueIndex();
+        }
+    }
+
+    const size_t string_size = unalignedLoad<size_t>(pos);
+    pos += sizeof(string_size);
+    new_pos = pos + string_size;
+    return uniqueInsertData(pos, string_size - 1); /// -1 because of null terminator
 }
 
 size_t ColumnUniqueFCBlockDF::uniqueInsertFrom(const IColumn & src, size_t n)
