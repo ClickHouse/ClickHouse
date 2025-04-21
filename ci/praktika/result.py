@@ -1,10 +1,12 @@
 import copy
 import dataclasses
 import datetime
+import io
 import json
 import random
 import sys
 import time
+from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -44,6 +46,11 @@ class Result(MetaClasses.Serializable):
         PENDING = "pending"
         RUNNING = "running"
         ERROR = "error"
+
+    class Label:
+        NOT_REQUIRED = "not required"
+        FLAKY = "flaky"
+        BROKEN = "broken"
 
     name: str
     status: str
@@ -280,6 +287,14 @@ class Result(MetaClasses.Serializable):
         self.duration = stopwatch.duration
         return self
 
+    def set_label(self, label):
+        if not self.ext["labels"]:
+            self.ext["labels"] = []
+        self.ext["labels"].append(label)
+
+    def set_not_required_label(self):
+        self.set_label(self.Label.NOT_REQUIRED)
+
     def update_sub_result(self, result: "Result", drop_nested_results=False):
         assert self.results, "BUG?"
         for i, result_ in enumerate(self.results):
@@ -329,23 +344,10 @@ class Result(MetaClasses.Serializable):
         return self
 
     @classmethod
-    def generate_pending(cls, name, results=None):
+    def create_new(cls, name, status, links=None, info="", results=None):
         return Result(
             name=name,
-            status=Result.Status.PENDING,
-            start_time=None,
-            duration=None,
-            results=results or [],
-            files=[],
-            links=[],
-            info="",
-        )
-
-    @classmethod
-    def generate_skipped(cls, name, links=None, info="", results=None):
-        return Result(
-            name=name,
-            status=Result.Status.SKIPPED,
+            status=status,
             start_time=None,
             duration=None,
             results=results or [],
@@ -428,7 +430,13 @@ class Result(MetaClasses.Serializable):
             for command_ in command:
                 if callable(command_):
                     # If command is a Python function, call it with provided arguments
-                    result = command_(*command_args, **command_kwargs)
+                    if with_info:
+                        buffer = io.StringIO()
+                        with redirect_stdout(buffer):
+                            result = command_(*command_args, **command_kwargs)
+                        error_infos = buffer.getvalue()
+                    else:
+                        result = command_(*command_args, **command_kwargs)
                     if isinstance(result, bool):
                         res = result
                     elif result:
@@ -490,10 +498,10 @@ class Result(MetaClasses.Serializable):
 
 class ResultInfo:
     SETUP_ENV_JOB_FAILED = (
-        "Failed to set up job env, it's praktika bug or misconfiguration"
+        "Failed to set up job env, it is praktika bug or misconfiguration"
     )
     PRE_JOB_FAILED = (
-        "Failed to do a job pre-run step, it's praktika bug or misconfiguration"
+        "Failed to do a job pre-run step, it is praktika bug or misconfiguration"
     )
     KILLED = "Job killed or terminated, no Result provided"
     NOT_FOUND_IMPOSSIBLE = (
@@ -535,20 +543,21 @@ class _ResultS3:
         env = _Environment.get()
         file_name = Path(local_path).name
         local_dir = Path(local_path).parent
-        file_name_pattern = f"{file_name}_*"
-        for file_path in local_dir.glob(file_name_pattern):
-            file_path.unlink()
-        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/"
-        S3.copy_file_from_s3_matching_pattern(
-            s3_path=s3_path, local_path=local_dir, include=file_name_pattern
+        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}"
+        latest_result_file = Shell.get_output(
+            f"aws s3 ls {s3_path}/{file_name}_ | awk '{{print $4}}' | sort -r | head -n 1",
+            strict=True,
+            verbose=True,
         )
-        result_files = []
-        for file_path in local_dir.glob(file_name_pattern):
-            result_files.append(file_path)
-        assert result_files, "No result files found"
-        result_files.sort()
-        version = int(result_files[-1].name.split("_")[-1])
-        Shell.check(f"cp {result_files[-1]} {local_path}", strict=True, verbose=True)
+        version = int(latest_result_file.split("_")[-1])
+        S3.copy_file_from_s3(
+            s3_path=f"{s3_path}/{latest_result_file}", local_path=local_dir
+        )
+        Shell.check(
+            f"cp {local_dir}/{latest_result_file} {local_path}",
+            strict=True,
+            verbose=True,
+        )
         return version
 
     @classmethod
@@ -677,6 +686,7 @@ class _ResultS3:
             # when multiple concurrent jobs attempt to update the workflow report
             time.sleep(random.uniform(0, 2))
 
+        print(f"Workflow status changed: [{prev_status}] -> [{new_status}]")
         if prev_status != new_status:
             return new_status
         else:
