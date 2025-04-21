@@ -48,7 +48,7 @@ namespace ErrorCodes
 /** These settings represent fine tunes for internal details of MergeTree storages
   * and should not be changed by the user without a reason.
   */
-#define MERGE_TREE_SETTINGS(DECLARE, ALIAS) \
+#define MERGE_TREE_SETTINGS(DECLARE, DECLARE_WITH_ALIAS) \
     DECLARE(UInt64, min_compress_block_size, 0, R"(
     Minimum size of blocks of uncompressed data required for compression when
     writing the next mark. You can also specify this setting in the global settings
@@ -1566,9 +1566,9 @@ namespace ErrorCodes
     DECLARE(Bool, disable_fetch_partition_for_zero_copy_replication, true, R"(
     Disable FETCH PARTITION query for zero copy replication.
     )", 0) \
-    DECLARE(Bool, enable_block_number_column, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_block_number_column, false, R"(
     Enable persisting column _block_number for each row.
-    )", 0) ALIAS(allow_experimental_block_number_column) \
+    )", 0, allow_experimental_block_number_column) \
     DECLARE(Bool, enable_block_offset_column, false, R"(
     Persists virtual column `_block_number` on merges.
     )", 0) \
@@ -2095,11 +2095,11 @@ void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
     }
 }
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) MergeTreeSettings##TYPE NAME = &MergeTreeSettingsImpl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) MergeTreeSettings##TYPE NAME = &MergeTreeSettingsImpl ::NAME;
 
 namespace MergeTreeSetting
 {
-    LIST_OF_MERGE_TREE_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)  /// NOLINT(misc-use-internal-linkage)
+    LIST_OF_MERGE_TREE_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)  /// NOLINT(misc-use-internal-linkage)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
