@@ -86,7 +86,7 @@ struct Memory : boost::noncopyable, Allocator
             return;
         }
 
-        if (new_size <= m_capacity - pad_right - pad_left)
+        if (new_size <= m_capacity - pad_right /*- pad_left*/)
         {
             m_size = new_size;
             return;
@@ -97,8 +97,8 @@ struct Memory : boost::noncopyable, Allocator
         size_t diff = new_capacity - m_capacity;
         ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, diff);
 
-        m_data = static_cast<char *>(Allocator::realloc(m_data - pad_left, m_capacity, new_capacity, alignment));
-        m_data += pad_left;
+        m_data = static_cast<char *>(Allocator::realloc(m_data /*- pad_left*/, m_capacity, new_capacity, alignment));
+        // m_data += pad_left;
         m_capacity = new_capacity;
         m_size = new_size;
     }
@@ -108,7 +108,7 @@ private:
     {
         size_t res = 0;
 
-        if (common::addOverflow<size_t>(value, pad_right + pad_left, res))
+        if (common::addOverflow<size_t>(value, pad_right /* + pad_left*/, res))
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "value is too big to apply padding");
 
         return res;
@@ -128,7 +128,7 @@ private:
         ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, new_capacity);
 
         m_data = static_cast<char *>(Allocator::alloc(new_capacity, alignment));
-        m_data += pad_left;
+        // m_data += pad_left;
         m_capacity = new_capacity;
         m_size = new_size;
     }
@@ -138,7 +138,7 @@ private:
         if (!m_data)
             return;
 
-        Allocator::free(m_data - pad_left, m_capacity);
+        Allocator::free(m_data /* - pad_left*/, m_capacity);
         m_data = nullptr;    /// To avoid double free if next alloc will throw an exception.
     }
 };
