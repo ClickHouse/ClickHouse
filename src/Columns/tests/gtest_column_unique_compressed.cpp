@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Columns/ColumnUniqueCompressed.h>
+#include <Common/Arena.h>
 
 #include <string>
 #include <vector>
@@ -55,7 +56,7 @@ TEST(ColumnUniqueCompressed, SingleInsertsFCBlockDF)
     }
 }
 
-static auto getNotEmptyColumnUniqueCompressedFCBlockDF()
+static auto getNotEmptyColumnUniqueCompressedFCBlockDF(bool is_nullable = false)
 {
     const std::vector<std::string> data
         = {"this is",
@@ -81,7 +82,7 @@ static auto getNotEmptyColumnUniqueCompressedFCBlockDF()
         strings_column->insert(str);
     }
 
-    return ColumnUniqueFCBlockDF::create(std::move(strings_column), block_size, false);
+    return ColumnUniqueFCBlockDF::create(std::move(strings_column), block_size, is_nullable);
 }
 
 TEST(ColumnUniqueCompressed, RangeInsertFCBlockDF)
@@ -101,7 +102,14 @@ TEST(ColumnUniqueCompressed, RangeInsertFCBlockDF)
     }
 
     auto unique_compressed_column = getNotEmptyColumnUniqueCompressedFCBlockDF();
-    unique_compressed_column->uniqueInsertRangeFrom(*strings_column, 0, 5);
+    auto indexes = unique_compressed_column->uniqueInsertRangeFrom(*strings_column, 0, 5);
+
+    for (size_t i = 0; i < indexes->size(); ++i)
+    {
+        const size_t index = (*indexes)[i].safeGet<size_t>();
+        const auto field = (*unique_compressed_column)[index];
+        EXPECT_EQ(data[i], field.safeGet<String>());
+    }
 
     for (const auto & str : data)
     {
@@ -109,5 +117,60 @@ TEST(ColumnUniqueCompressed, RangeInsertFCBlockDF)
         EXPECT_TRUE(index.has_value());
         const auto field = (*unique_compressed_column)[index.value()];
         EXPECT_EQ(field.safeGet<String>(), str);
+    }
+}
+
+TEST(ColumnUniqueCompressed, RangeInsertWithOverflowFCBlockDF)
+{
+    const std::vector<std::string> data = {
+        "block",
+        "blocking",
+        "blockings",
+        "sort",
+        "sorted",
+    };
+
+    auto strings_column = ColumnString::create();
+    for (const auto & str : data)
+    {
+        strings_column->insert(str);
+    }
+
+    auto unique_compressed_column = getNotEmptyColumnUniqueCompressedFCBlockDF();
+    const size_t to_add = 2;
+    const size_t max_dict_size = unique_compressed_column->size() + to_add;
+    const auto res_with_overflow = unique_compressed_column->uniqueInsertRangeWithOverflow(*strings_column, 0, 5, max_dict_size);
+
+    for (size_t i = 0; i < to_add; ++i)
+    {
+        const auto index = unique_compressed_column->getOrFindValueIndex(data[i]);
+        EXPECT_TRUE(index.has_value());
+        EXPECT_EQ((*res_with_overflow.indexes)[i].safeGet<size_t>(), index.value());
+    }
+
+    EXPECT_EQ(res_with_overflow.overflowed_keys->size(), strings_column->size() - to_add);
+    for (size_t i = 0; i < res_with_overflow.overflowed_keys->size(); ++i)
+    {
+        const auto index = unique_compressed_column->getOrFindValueIndex(res_with_overflow.overflowed_keys->getDataAt(i));
+        EXPECT_FALSE(index.has_value());
+        EXPECT_EQ(res_with_overflow.overflowed_keys->getDataAt(i), strings_column->getDataAt(i + to_add)); /// as data is sorted
+    }
+}
+
+TEST(ColumnUniqueCompressed, SerializationFCBlockDF)
+{
+    const auto column_unique_compressed = getNotEmptyColumnUniqueCompressedFCBlockDF();
+    Arena arena;
+
+    const char * pos = nullptr;
+    for (size_t i = 0; i < column_unique_compressed->size(); ++i)
+    {
+        const auto data = column_unique_compressed->serializeValueIntoArena(i, arena, pos);
+        const size_t string_size = unalignedLoad<size_t>(data.data);
+        const StringRef value(data.data + sizeof(size_t), string_size);
+
+        const auto real_value = (*column_unique_compressed)[i].safeGet<String>();
+        EXPECT_EQ(string_size, real_value.size() + 1);
+        EXPECT_EQ(value, real_value + '\0');
     }
 }

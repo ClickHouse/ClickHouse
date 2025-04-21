@@ -321,11 +321,8 @@ ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t
 
     auto indexes = uniqueInsertRangeFrom(*sorted_column, 0, limit);
 
-    auto overflow = ColumnVector<UInt64>::create();
-    for (size_t i = limit; i < sorted_permutation.size(); ++i)
-    {
-        overflow->insert(sorted_permutation[i]);
-    }
+    auto overflow = sorted_column->cloneEmpty();
+    overflow->insertRangeFrom(*sorted_column, limit, sorted_column->size() - limit);
 
     return IndexesWithOverflow{std::move(indexes), std::move(overflow)};
 }
