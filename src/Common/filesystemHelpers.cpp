@@ -63,6 +63,12 @@ struct statvfs getStatVFS(String path)
     return fs;
 }
 
+size_t alignFileSize(const struct statvfs& fs, size_t file_size)
+{
+    size_t aligned_file_size = ((file_size + fs.f_bsize - 1) / fs.f_bsize) * fs.f_bsize;
+    return aligned_file_size;
+}
+
 bool enoughSpaceInDirectory(const std::string & path, size_t data_size)
 {
     fs::path filepath(path);
