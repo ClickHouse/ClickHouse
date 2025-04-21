@@ -4671,3 +4671,67 @@ Result:
 │                                         206 │
 └─────────────────────────────────────────────┘
 ```
+
+## getServerSetting {#getserversetting}
+
+Returns the current value of one of the server settings
+
+**Syntax**
+
+```sql
+getServerSetting('server_setting');
+```
+
+**Parameter**
+
+- `server_setting` — The setting name. [String](../data-types/string.md).
+
+**Returned value**
+
+- The server setting's current value.
+
+**Example**
+
+```sql
+SELECT getServerSetting('allow_use_jemalloc_memory');
+```
+
+Result:
+
+```text
+┌─getServerSetting('allow_use_jemalloc_memory')─┐
+│ true                                          │
+└───────────────────────────────────────────────┘
+```
+
+## getMergeTreeSetting {#getmergetreesetting}
+
+Returns the current value of one of the merge tree settings
+
+**Syntax**
+
+```sql
+getMergeTreeSetting('merge_tree_setting');
+```
+
+**Parameter**
+
+- `merge_tree_setting` — The setting name. [String](../data-types/string.md).
+
+**Returned value**
+
+- The merge tree setting's current value.
+
+**Example**
+
+```sql
+SELECT getMergeTreeSetting('index_granularity');
+```
+
+Result:
+
+```text
+┌─getMergeTree(index_granularity')─┐
+│                     8192         │
+└──────────────────────────────────┘
+```

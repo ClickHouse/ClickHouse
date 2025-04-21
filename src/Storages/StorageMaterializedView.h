@@ -30,6 +30,7 @@ public:
 
     bool supportsSampling() const override { return getTargetTable()->supportsSampling(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
+    std::optional<NameSet> supportedPrewhereColumns() const override;
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
