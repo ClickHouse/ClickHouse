@@ -7,7 +7,7 @@
 #include <mutex>
 #include <xray/xray_interface.h>
 
-#include "llvm/Object/Binary.h"
+#include "llvm/include/llvm/Object/Binary.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/MemoryBuffer.h"
