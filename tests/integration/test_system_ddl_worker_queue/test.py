@@ -1,4 +1,5 @@
 import pytest
+import time
 
 from helpers.cluster import ClickHouseCluster
 
@@ -25,24 +26,37 @@ def started_cluster():
     try:
         cluster.start()
 
-        for i, node in enumerate([node1, node2]):
-            node.query("CREATE DATABASE testdb")
-            node.query(
-                """CREATE TABLE testdb.test_table(id UInt32, val String) ENGINE = ReplicatedMergeTree('/clickhouse/test/test_table1', '{}') ORDER BY id;""".format(
-                    i
-                )
-            )
-        for i, node in enumerate([node3, node4]):
-            node.query("CREATE DATABASE testdb")
-            node.query(
-                """CREATE TABLE testdb.test_table(id UInt32, val String) ENGINE = ReplicatedMergeTree('/clickhouse/test/test_table2', '{}') ORDER BY id;""".format(
-                    i
-                )
-            )
         yield cluster
 
     finally:
         cluster.shutdown()
+
+
+@pytest.fixture(scope="function", autouse=True)
+def maintain_test_table(request):
+    current_step = int(request.node.name.split("[")[1].split("-")[0])
+
+    for i, node in enumerate([node1, node2]):
+        node.query("DROP TABLE IF EXISTS testdb.test_table SYNC")
+        node.query("DROP DATABASE IF EXISTS testdb")
+
+        node.query("CREATE DATABASE testdb")
+        node.query(
+            """CREATE TABLE testdb.test_table(id UInt32, val String) ENGINE = ReplicatedMergeTree('/clickhouse/test/test_table1', '{}') ORDER BY id;""".format(
+                i
+            )
+        )
+    for i, node in enumerate([node3, node4]):
+        node.query("DROP TABLE IF EXISTS testdb.test_table SYNC")
+        node.query("DROP DATABASE IF EXISTS testdb")
+
+        node.query("CREATE DATABASE testdb")
+        node.query(
+            """CREATE TABLE testdb.test_table(id UInt32, val String) ENGINE = ReplicatedMergeTree('/clickhouse/test/test_table2', '{}') ORDER BY id;""".format(
+                i
+            )
+        )
+    yield
 
 
 def test_distributed_ddl_queue(started_cluster):
@@ -68,6 +82,11 @@ def test_distributed_ddl_queue(started_cluster):
             )
             == "ok\n"
         )
+
+    node1.query(
+        "ALTER TABLE testdb.test_table ON CLUSTER test_cluster DROP COLUMN somecolumn",
+        settings={"replication_alter_partitions_sync": "2"},
+    )
 
 
 def test_distributed_ddl_rubbish(started_cluster):
@@ -122,4 +141,9 @@ def test_distributed_ddl_rubbish(started_cluster):
 
     assert (
         node1.query(f"SELECT * FROM system.distributed_ddl_queue").find("UNKNOWN") >= 0
+    )
+
+    node1.query(
+        "ALTER TABLE testdb.test_table ON CLUSTER test_cluster DROP COLUMN somenewcolumn",
+        settings={"replication_alter_partitions_sync": "2"},
     )
