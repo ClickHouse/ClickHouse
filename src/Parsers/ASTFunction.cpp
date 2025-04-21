@@ -2,7 +2,6 @@
 
 #include <Parsers/ASTFunction.h>
 
-#include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/KnownObjectNames.h>
@@ -10,6 +9,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -530,6 +530,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 bool tuple_arguments_valid = true;
                 const auto * lit_left = arguments->children[0]->as<ASTLiteral>();
                 const auto * lit_right = arguments->children[1]->as<ASTLiteral>();
+
+                if (arguments->children[0]->as<ASTAsterisk>())
+                    tuple_arguments_valid = false;
 
                 if (lit_left)
                 {

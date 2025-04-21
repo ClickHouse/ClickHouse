@@ -17,14 +17,14 @@ This table can be used for monitoring. The table contains a row for every schedu
 
 Example:
 
-``` sql
+```sql
 SELECT *
 FROM system.scheduler
 WHERE resource = 'network_read' AND path = '/prio/fair/prod'
 FORMAT Vertical
 ```
 
-``` text
+```text
 Row 1:
 ──────
 resource:          network_read

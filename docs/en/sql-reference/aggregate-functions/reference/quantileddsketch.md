@@ -9,7 +9,7 @@ Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a 
 
 **Syntax**
 
-``` sql
+```sql
 quantileDD(relative_accuracy, [level])(expr)
 ```
 
@@ -33,7 +33,7 @@ Type: [Float64](/sql-reference/data-types/float).
 
 Input table has an integer and a float columns:
 
-``` text
+```text
 ┌─a─┬─────b─┐
 │ 1 │ 1.001 │
 │ 2 │ 1.002 │
@@ -44,13 +44,13 @@ Input table has an integer and a float columns:
 
 Query to calculate 0.75-quantile (third quartile):
 
-``` sql
+```sql
 SELECT quantileDD(0.01, 0.75)(a), quantileDD(0.01, 0.75)(b) FROM example_table;
 ```
 
 Result:
 
-``` text
+```text
 ┌─quantileDD(0.01, 0.75)(a)─┬─quantileDD(0.01, 0.75)(b)─┐
 │               2.974233423476717 │                            1.01 │
 └─────────────────────────────────┴─────────────────────────────────┘

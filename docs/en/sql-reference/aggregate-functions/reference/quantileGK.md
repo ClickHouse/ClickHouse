@@ -14,7 +14,7 @@ Computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric dat
 
 **Syntax**
 
-``` sql
+```sql
 quantileGK(accuracy, level)(expr)
 ```
 
@@ -42,7 +42,7 @@ Type:
 
 **Example**
 
-``` sql
+```sql
 SELECT quantileGK(1, 0.25)(number + 1)
 FROM numbers(1000)
 
