@@ -57,6 +57,7 @@ public:
         visitDDLWithParent(nullptr, ast);
     }
 
+    /// TODO: Add `parent` to the IAST
     void visitDDLWithParent(ASTPtr parent, ASTPtr & ast) const
     {
         visitDDLChildren(ast);
@@ -318,11 +319,16 @@ private:
         if (function.name == "currentDatabase")
         {
             void * old_pointer = node.get();
+            /// The `updatePointerToChild` function replaces the old address with the new one without access, so it is safe to invalidate it in place.
+            /// However, just for safety, let's store the old node for a little longer.
+            ASTPtr old_node = node;
             node = std::make_shared<ASTLiteral>(database_name);
             void * new_pointer = node.get();
 
             if (parent)
+            {
                 parent->updatePointerToChild(old_pointer, new_pointer);
+            }
         }
     }
 
