@@ -9,6 +9,8 @@
 #include <Common/iota.h>
 
 #include <algorithm>
+#include <iomanip>
+#include <iostream>
 
 #ifdef __SSE4_2__
 #    include <nmmintrin.h>
@@ -469,6 +471,281 @@ struct ByteJaroWinklerSimilarityImpl
     }
 };
 
+template <bool is_utf8>
+struct ByteAffineGapDistanceImpl
+{
+    using ResultType = Float64;
+    
+    static constexpr size_t max_string_size = 1000000; // 1MB safety limit
+    static constexpr double default_gap_open = 1.0;    // Default penalty for opening a gap
+    static constexpr double default_gap_extend = 0.5;  // Default penalty for extending a gap
+    static constexpr double default_mismatch = 1.0;    // Default penalty for substitution
+    static constexpr double big_value = 1e10; // Large but not infinity to avoid overflow
+
+    static ResultType process(
+        const char * __restrict haystack, size_t haystack_size,
+        const char * __restrict needle, size_t needle_size,
+        double gap_open = default_gap_open,
+        double gap_extend = default_gap_extend,
+        double mismatch = default_mismatch)
+    {
+        /// Safety threshold against DoS
+        if (haystack_size > max_string_size || needle_size > max_string_size)
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                "The string size is too big for function affineGap, should be at most {}", max_string_size);
+                
+        /// Shortcuts:
+        if (haystack_size == 0)
+            return needle_size * gap_open;
+
+        if (needle_size == 0)
+            return haystack_size * gap_open;
+
+        if (haystack_size == needle_size && memcmp(haystack, needle, haystack_size) == 0)
+            return 0.0;
+            
+        /// For UTF-8 strings, convert to code points first
+        std::vector<UInt32> haystack_codepoints;
+        std::vector<UInt32> needle_codepoints;
+        
+        if constexpr (is_utf8)
+        {
+            parseUTF8String(haystack, haystack_size, [&](UInt32 code_point) {
+                haystack_codepoints.push_back(code_point);
+            });
+            
+            parseUTF8String(needle, needle_size, [&](UInt32 code_point) {
+                needle_codepoints.push_back(code_point);
+            });
+            
+            haystack_size = haystack_codepoints.size();
+            needle_size = needle_codepoints.size();
+        }
+        
+        /// Three dynamic programming matrices:
+        /// m_matrix: represents match/mismatch
+        /// x_matrix: represents gap in sequence 1 (haystack)
+        /// y_matrix: represents gap in sequence 2 (needle)
+        
+        /// Initialize matrices
+        std::vector<std::vector<double>> m_matrix(haystack_size + 1, std::vector<double>(needle_size + 1, big_value));
+        std::vector<std::vector<double>> x_matrix(haystack_size + 1, std::vector<double>(needle_size + 1, big_value));
+        std::vector<std::vector<double>> y_matrix(haystack_size + 1, std::vector<double>(needle_size + 1, big_value));
+        
+        /// Initialize matrices with safe values
+        m_matrix[0][0] = 0.0;
+        x_matrix[0][0] = gap_open;
+        y_matrix[0][0] = gap_open;
+        
+        for (size_t i = 1; i <= haystack_size; ++i)
+        {
+            m_matrix[i][0] = big_value;      // Invalid transition
+            x_matrix[i][0] = gap_open + gap_extend * (i - 1);
+            y_matrix[i][0] = big_value;      // Invalid transition
+        }
+        
+        for (size_t j = 1; j <= needle_size; ++j)
+        {
+            m_matrix[0][j] = big_value;      // Invalid transition
+            x_matrix[0][j] = big_value;      // Invalid transition
+            y_matrix[0][j] = gap_open + gap_extend * (j - 1);
+        }
+        
+        /// Fill in the matrices
+        for (size_t i = 1; i <= haystack_size; ++i)
+        {
+            for (size_t j = 1; j <= needle_size; ++j)
+            {
+                bool match;
+                if constexpr (is_utf8)
+                    match = haystack_codepoints[i-1] == needle_codepoints[j-1];
+                else
+                    match = haystack[i-1] == needle[j-1];
+                
+                double match_cost = match ? 0.0 : mismatch;
+                
+                /// Match or mismatch
+                m_matrix[i][j] = m_matrix[i-1][j-1] + match_cost;
+                m_matrix[i][j] = std::min(m_matrix[i][j], x_matrix[i-1][j-1] + match_cost);
+                m_matrix[i][j] = std::min(m_matrix[i][j], y_matrix[i-1][j-1] + match_cost);
+                
+                /// Gap in haystack (deletion)
+                x_matrix[i][j] = m_matrix[i-1][j] + gap_open;
+                x_matrix[i][j] = std::min(x_matrix[i][j], x_matrix[i-1][j] + gap_extend);
+                
+                /// Gap in needle (insertion)
+                y_matrix[i][j] = m_matrix[i][j-1] + gap_open;
+                y_matrix[i][j] = std::min(y_matrix[i][j], y_matrix[i][j-1] + gap_extend);
+            }
+        }
+        
+        /// Return minimum of the three matrices at the bottom-right corner
+        return std::min({m_matrix[haystack_size][needle_size], 
+                         x_matrix[haystack_size][needle_size], 
+                         y_matrix[haystack_size][needle_size]});
+    }
+};
+
+template <bool is_utf8>
+struct ByteSmashSimilarityImpl
+{
+    using ResultType = Float64;
+    static constexpr size_t max_string_size = 1000000; // 1MB safety limit
+    static constexpr double big_value = 1e10; // Large but not infinity to avoid overflow
+
+    static ResultType process(
+        const char* __restrict haystack, size_t haystack_size,
+        const char* __restrict needle, size_t needle_size)
+    {
+        if (haystack_size > max_string_size || needle_size > max_string_size)
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                "String size too large for smashSimilarity");
+
+        std::string_view long_str(haystack, haystack_size);
+        std::string_view short_str(needle, needle_size);
+        if (long_str.size() < short_str.size()) {
+            std::swap(long_str, short_str);
+        }
+
+        std::vector<std::string_view> words;
+        if constexpr (is_utf8)
+        {
+            size_t pos = 0;
+            while (pos < long_str.size()) {
+                size_t space_pos = long_str.find(' ', pos);
+                if (space_pos == std::string_view::npos)
+                    space_pos = long_str.size();
+                
+                if (space_pos > pos) {
+                    auto word = std::string_view(long_str.data() + pos, space_pos - pos);
+                    words.emplace_back(word);
+                }
+                
+                pos = space_pos + 1;
+            }
+        }
+        else
+        {
+            size_t start = 0;
+            for (size_t i = 0; i <= long_str.size(); ++i) {
+                if (i == long_str.size() || long_str[i] == ' ') {
+                    if (i > start) {
+                        auto word = std::string_view(long_str.data() + start, i - start);
+                        words.emplace_back(word);
+                    }
+                    start = i + 1;
+                }
+            }
+        }
+
+        const int m = words.size();
+        const int n = short_str.size();
+         // Large but not infinity to avoid overflow
+        std::vector<std::vector<double>> dp(m+1, std::vector<double>(n+1, big_value));
+        dp[0][0] = 0.0;
+
+        for (int i = 1; i <= m; ++i) {
+            for (int j = 1; j <= n; ++j) {
+                
+                for (int k = i-1; k < j; ++k) {
+                    auto current_word = words[i-1];
+                    auto substring = short_str.substr(k, j - k);
+                    
+                    double dist = calculateDistance<is_utf8>(current_word, substring);
+                    
+                    double new_dist = dp[i-1][k] + dist;
+                    dp[i][j] = std::min(new_dist, dp[i][j]);
+                }
+            }
+        }
+
+        std::cout << "\nDP Table:\n";
+        const int col_width = 12;  // Фиксированная ширина столбца
+        const int word_width = 15; // Ширина для слов в первом столбце
+        
+        std::cout << std::string(word_width, '-') << "+" << std::string((n + 1) * col_width, '-') << "\n";
+        
+        std::cout << std::setw(word_width) << std::left << " ";
+        std::cout << "|";
+        for (int j = 0; j <= n; ++j) {
+            std::string header = (j == 0 ? "ε" : std::string(short_str.substr(0, j)));
+            std::cout << std::setw( col_width) << std::right << header;
+        }
+        std::cout << "\n";
+        
+        std::cout << std::string(word_width, '-') << "+" << std::string((n + 1) * col_width, '-') << "\n";
+        
+        for (int i = 0; i <= m; ++i) {
+            std::string word = (i == 0 ? "ε" : std::string(words[i-1]));
+            if (word.length() > word_width - 2) {
+                word = word.substr(0, word_width - 5) + "...";
+            }
+            std::cout << std::setw(word_width-1) << std::left << word << "|";
+            
+            for (int j = 0; j <= n; ++j) {
+                if (dp[i][j] == big_value)
+                    std::cout << std::setw(col_width) << std::right << "∞";
+                else
+                    std::cout << std::setw(col_width) << std::right << std::fixed 
+                             << std::setprecision(2) << dp[i][j];
+            }
+            std::cout << "\n";
+        }
+        std::cout << std::string(word_width, '-') << "+" << std::string((n + 1) * col_width, '-') << "\n";
+
+        std::cout << "\nFinal distance: " << dp[m][n] << "\n";
+        const double max_distance = 10.0;
+        double similarity = 1.0 - (dp[m][n] / max_distance);
+        std::cout << "Normalized similarity (max_distance=" << max_distance << "): " << similarity << "\n";
+        
+        auto result = std::clamp(similarity, 0.0, 1.0);
+        std::cout << "Final clamped result: " << result << "\n";
+        std::cout << "=== SMASH Similarity Process End ===\n\n";
+        return result;
+    }
+
+private:
+    template <bool utf8>
+    static double calculateDistance(std::string_view word, std::string_view substr) {
+        auto is_subsequence = [](std::string_view shorter, std::string_view longer) {
+            if (shorter.empty()) return true;
+            if (longer.empty()) return false;
+            
+            size_t j = 0;
+            for (size_t i = 0; i < longer.size() && j < shorter.size(); i++) {
+                if (longer[i] == shorter[j]) {
+                    j++;
+                }
+            }
+            return j == shorter.size();
+        };
+
+        if (is_subsequence(substr, word) || is_subsequence(word, substr)) {
+            return 0.0;
+        }
+
+        if constexpr (utf8) {
+            return ByteAffineGapDistanceImpl<true>::process(
+                word.data(), word.size(), 
+                substr.data(), substr.size(),
+                0.7, // gap_open
+                0.3, // gap_extend
+                1.0  // mismatch
+            );
+        } else {
+            return ByteAffineGapDistanceImpl<false>::process(
+                word.data(), word.size(), 
+                substr.data(), substr.size(),
+                0.7, // gap_open
+                0.3, // gap_extend
+                1.0  // mismatch
+            );
+        }
+    }
+};
+
 struct NameByteHammingDistance
 {
     static constexpr auto name = "byteHammingDistance";
@@ -516,6 +793,30 @@ struct NameJaroWinklerSimilarity
 };
 using FunctionJaroWinklerSimilarity = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteJaroWinklerSimilarityImpl>, NameJaroWinklerSimilarity>;
 
+struct NameSmashSimilarity
+{
+    static constexpr auto name = "smashSimilarity";
+};
+using FunctionSmashSimilarity = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteSmashSimilarityImpl<false>>, NameSmashSimilarity>;
+
+struct NameSmashSimilarityUTF8
+{
+    static constexpr auto name = "smashSimilarityUTF8";
+};
+using FunctionSmashSimilarityUTF8 = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteSmashSimilarityImpl<true>>, NameSmashSimilarityUTF8>;
+
+struct NameAffineGap
+{
+    static constexpr auto name = "affineGap";
+};
+using FunctionAffineGap = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteAffineGapDistanceImpl<false>>, NameAffineGap>;
+
+struct NameAffineGapUTF8
+{
+    static constexpr auto name = "affineGapUTF8";
+};
+using FunctionAffineGapUTF8 = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteAffineGapDistanceImpl<true>>, NameAffineGapUTF8>;
+
 REGISTER_FUNCTION(StringDistance)
 {
     factory.registerFunction<FunctionByteHammingDistance>(
@@ -543,5 +844,17 @@ REGISTER_FUNCTION(StringDistance)
 
     factory.registerFunction<FunctionJaroWinklerSimilarity>(
         FunctionDocumentation{.description = R"(Calculates the Jaro-Winkler similarity between two byte-string.)"});
+        
+    factory.registerFunction<FunctionSmashSimilarity>(
+        FunctionDocumentation{.description = R"(Calculates the SMASH similarity between two byte-strings)"});
+
+    factory.registerFunction<FunctionSmashSimilarityUTF8>(
+        FunctionDocumentation{.description = R"(Calculates the SMASH similarity between two UTF8 strings)"});
+
+    factory.registerFunction<FunctionAffineGap>(
+        FunctionDocumentation{.description = R"(Calculates the affine gap distance between two byte-strings.)"});
+    
+    factory.registerFunction<FunctionAffineGapUTF8>(
+        FunctionDocumentation{.description = R"(Calculates the affine gap distance between two UTF8 strings.)"});
 }
 }
