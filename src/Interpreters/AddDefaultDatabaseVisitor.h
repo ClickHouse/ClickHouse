@@ -318,7 +318,6 @@ private:
     {
         if (function.name == "currentDatabase")
         {
-            void * old_pointer = node.get();
             /// The `updatePointerToChild` function replaces the old address with the new one without access, so it is safe to invalidate it in place.
             /// However, just for safety, let's store the old node for a little longer.
             ASTPtr old_node = node;
