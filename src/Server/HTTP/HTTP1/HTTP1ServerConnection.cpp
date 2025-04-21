@@ -1,4 +1,4 @@
-#include <Server/HTTP/HTTPServerConnection.h>
+#include <Server/HTTP/HTTP1/HTTP1ServerConnection.h>
 #include <Server/TCPServer.h>
 
 #include <Poco/Net/NetException.h>
@@ -7,7 +7,7 @@
 namespace DB
 {
 
-HTTPServerConnection::HTTPServerConnection(
+HTTP1ServerConnection::HTTP1ServerConnection(
     HTTPContextPtr context_,
     TCPServer & tcp_server_,
     const Poco::Net::StreamSocket & socket,
@@ -20,7 +20,7 @@ HTTPServerConnection::HTTPServerConnection(
     poco_check_ptr(factory);
 }
 
-void HTTPServerConnection::run()
+void HTTP1ServerConnection::run()
 {
     std::string server = params->getSoftwareVersion();
     Poco::Net::HTTPServerSession session(socket(), params);
@@ -126,7 +126,7 @@ void HTTPServerConnection::run()
 }
 
 // static
-void HTTPServerConnection::sendErrorResponse(Poco::Net::HTTPServerSession & session, Poco::Net::HTTPResponse::HTTPStatus status)
+void HTTP1ServerConnection::sendErrorResponse(Poco::Net::HTTPServerSession & session, Poco::Net::HTTPResponse::HTTPStatus status)
 {
     HTTPServerResponse response(session);
     response.setVersion(Poco::Net::HTTPMessage::HTTP_1_1);
