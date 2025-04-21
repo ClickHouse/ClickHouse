@@ -1,4 +1,7 @@
 #include "XRayInstrumentationManager.h"
+
+#ifdef USE_XRAY
+
 #include <filesystem>
 #include <stdexcept>
 #include <thread>
@@ -173,5 +176,6 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     in_hook = false;
 }
 
-
 }
+
+#endif

@@ -1,13 +1,16 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_XRAY
+
 #include <string>
-#include <functional>
 #include <unordered_map>
 #include <list>
 #include <mutex>
 #include <xray/xray_interface.h>
 
-#include "llvm/include/llvm/Object/Binary.h"
+#include "llvm/Object/Binary.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -68,3 +71,5 @@ private:
 };
 
 }
+
+#endif
