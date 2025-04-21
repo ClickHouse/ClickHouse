@@ -224,15 +224,10 @@ MutableColumnPtr ColumnUniqueFCBlockDF::cloneEmpty() const
 
 size_t ColumnUniqueFCBlockDF::uniqueInsert(const Field & x)
 {
-    const size_t output = getPosToInsert(x.safeGet<String>());
+    const String & str = x.safeGet<String>();
+    const size_t output = getPosToInsert(str);
 
-    auto single_value_column = ColumnString::create();
-    single_value_column->insert(x);
-
-    auto temp_strings_column = getDecompressedColumn();
-    temp_strings_column->insertRangeFrom(*single_value_column, 0, single_value_column->size());
-
-    recalculateForNewData(std::move(temp_strings_column));
+    uniqueInsertData(str.data(), str.size());
 
     return output;
 }
@@ -271,7 +266,9 @@ size_t ColumnUniqueFCBlockDF::uniqueInsertData(const char * pos, size_t length)
     const size_t output = getPosToInsert(StringRef{pos, length});
     auto single_value_column = ColumnString::create();
     single_value_column->insertData(pos, length);
-    recalculateForNewData(std::move(single_value_column));
+    auto temp_strings_column = getDecompressedColumn();
+    temp_strings_column->insertRangeFrom(*single_value_column, 0, single_value_column->size());
+    recalculateForNewData(std::move(temp_strings_column));
     return output;
 }
 
