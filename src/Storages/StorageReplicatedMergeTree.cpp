@@ -109,7 +109,6 @@
 
 
 #include <Backups/BackupEntriesCollector.h>
-#include <Backups/BackupEntryFromMemory.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/IBackupEntry.h>
