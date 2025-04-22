@@ -547,7 +547,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     }
 
     size_t limit_offset_plus_length = 18446744073709551615ull;
-    if (query_analysis_result.limit_offset == 0 && query_analysis_result.limit_length > 0)
+    if (query_analysis_result.limit_offset == 0 && query_analysis_result.limit_length > 1)
         limit_offset_plus_length = query_analysis_result.limit_length;
     Aggregator::Params aggregator_params = Aggregator::Params(
         aggregation_analysis_result.aggregation_keys,

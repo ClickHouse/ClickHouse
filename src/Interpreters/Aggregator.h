@@ -144,7 +144,7 @@ public:
             bool optimize_group_by_constant_keys_,
             float min_hit_rate_to_use_consecutive_keys_optimization_,
             const StatsCollectingParams & stats_collecting_params_,
-            size_t limit_length_ = 9223372036854775807ll,
+            size_t limit_offset_plus_length_ = 9223372036854775807ll,
             std::optional<std::vector<std::pair<UInt64, SortDirection>>> optimization_indexes_ = std::nullopt);
 
         /// Only parameters that matter during merge.
