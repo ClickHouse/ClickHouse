@@ -7,6 +7,8 @@
 #include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/sha.h>
+#include <openssl/kdf.h>
+
 
 namespace DB
 {
@@ -86,6 +88,35 @@ std::vector<uint8_t> hmacSHA256(const std::vector<uint8_t> & key, const std::str
 
     result.resize(out_len);
     return result;
+}
+
+std::vector<uint8_t> pbkdf2SHA256(std::string_view password, const std::vector<uint8_t>& salt, int iterations)
+{
+    using EVP_KDF_ptr = std::unique_ptr<EVP_KDF, decltype(&EVP_KDF_free)>;
+    using EVP_KDF_CTX_ptr = std::unique_ptr<EVP_KDF_CTX, decltype(&EVP_KDF_CTX_free)>;
+
+    EVP_KDF_ptr kdf(EVP_KDF_fetch(nullptr, "PBKDF2", nullptr), &EVP_KDF_free);
+    if (!kdf)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_KDF_fetch failed");
+
+    EVP_KDF_CTX_ptr ctx(EVP_KDF_CTX_new(kdf.get()), &EVP_KDF_CTX_free);
+    if (!ctx)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_KDF_CTX_new failed");
+
+    std::vector<uint8_t> derived_key(SHA256_DIGEST_LENGTH);
+
+    OSSL_PARAM params[] = {
+        OSSL_PARAM_construct_utf8_string("digest", const_cast<char*>("SHA256"), 0),
+        OSSL_PARAM_construct_octet_string("salt", const_cast<uint8_t*>(salt.data()), salt.size()),
+        OSSL_PARAM_construct_int("iter", &iterations),
+        OSSL_PARAM_construct_octet_string("pass", const_cast<char*>(password.data()), password.size()),
+        OSSL_PARAM_construct_end()
+    };
+
+    if (EVP_KDF_derive(ctx.get(), derived_key.data(), derived_key.size(), params) != 1)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_KDF_derive failed");
+
+    return derived_key;
 }
 
 String getOpenSSLErrors()

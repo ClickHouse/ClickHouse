@@ -19,7 +19,6 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/UseSSL.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
 
@@ -72,7 +71,7 @@ Client::Client()
 
 Client::~Client() = default;
 
-void Client::processError(const String & query) const
+void Client::processError(std::string_view query) const
 {
     if (server_exception)
     {
@@ -339,7 +338,6 @@ void Client::initialize(Poco::Util::Application & self)
 int Client::main(const std::vector<std::string> & /*args*/)
 try
 {
-    UseSSL use_ssl;
     auto & thread_status = MainThreadStatus::getInstance();
     setupSignalHandler();
 

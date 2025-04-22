@@ -47,6 +47,7 @@ public:
     };
 
     ITransformingStep(Header input_header, Header output_header, Traits traits, bool collect_processors_ = true);
+    ITransformingStep(const ITransformingStep &) = default;
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 

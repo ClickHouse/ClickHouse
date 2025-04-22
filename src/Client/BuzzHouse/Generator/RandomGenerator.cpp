@@ -166,43 +166,47 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
         use_bad_utf8 = true;
     }
     ret += delimiter;
-    const String & pick = pickRandomly(
-        use_bad_utf8 ? bad_utf8
-                     : (allow_nasty && this->nextSmallNumber() < 3 ? nasty_strings : (this->nextBool() ? common_english : common_chinese)));
-
-    if ((pick.length() >> (use_bad_utf8 ? 1 : 0)) < limit)
+    /* A few times generate empty strings */
+    if (this->nextMediumNumber() > 2)
     {
-        ret += pick;
-        /// A few times, generate a large string
-        if (this->nextLargeNumber() < 4)
+        const String & pick = pickRandomly(
+            use_bad_utf8
+                ? bad_utf8
+                : (allow_nasty && this->nextSmallNumber() < 3 ? nasty_strings : (this->nextBool() ? common_english : common_chinese)));
+        if ((pick.length() >> (use_bad_utf8 ? 1 : 0)) < limit)
         {
-            uint32_t i = 0;
-            uint32_t len = static_cast<uint32_t>(pick.size());
-            const uint32_t max_iterations = this->nextBool() ? 10000 : this->nextMediumNumber();
-
-            while (i < max_iterations)
+            ret += pick;
+            /// A few times, generate a large string
+            if (this->nextLargeNumber() < 4)
             {
-                const String & npick = pickRandomly(
-                    use_bad_utf8 ? bad_utf8
-                                 : (allow_nasty && this->nextSmallNumber() < 3 ? nasty_strings
-                                                                               : (this->nextBool() ? common_english : common_chinese)));
+                uint32_t i = 0;
+                uint32_t len = static_cast<uint32_t>(pick.size());
+                const uint32_t max_iterations = this->nextBool() ? 10000 : this->nextMediumNumber();
 
-                len += (npick.length() >> (use_bad_utf8 ? 1 : 0));
-                if (len < limit)
+                while (i < max_iterations)
                 {
-                    ret += npick;
+                    const String & npick = pickRandomly(
+                        use_bad_utf8 ? bad_utf8
+                                     : (allow_nasty && this->nextSmallNumber() < 3 ? nasty_strings
+                                                                                   : (this->nextBool() ? common_english : common_chinese)));
+
+                    len += (npick.length() >> (use_bad_utf8 ? 1 : 0));
+                    if (len < limit)
+                    {
+                        ret += npick;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                    i++;
                 }
-                else
-                {
-                    break;
-                }
-                i++;
             }
         }
-    }
-    else
-    {
-        ret += "a";
+        else
+        {
+            ret += "a";
+        }
     }
     ret += delimiter;
     return ret;

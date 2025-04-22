@@ -27,13 +27,13 @@ public:
 protected:
     Poco::Util::LayeredConfiguration & getClientConfiguration() override;
 
-    bool processWithFuzzing(const String & full_query) override;
+    bool processWithFuzzing(std::string_view full_query) override;
     bool buzzHouse() override;
     std::optional<bool> processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query, bool permissive);
 
     void connect() override;
 
-    void processError(const String & query) const override;
+    void processError(std::string_view query) const override;
 
     String getName() const override { return "client"; }
 

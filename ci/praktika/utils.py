@@ -176,7 +176,9 @@ class Shell:
         if res.stderr:
             print(f"WARNING: stderr: {res.stderr.strip()}")
         if strict and res.returncode != 0:
-            raise RuntimeError(f"command failed with {res.returncode}")
+            raise RuntimeError(
+                f"command failed with, exit_code {res.returncode}, stderr:\n>>>\n{res.stderr.strip()}\n<<<"
+            )
         return res.stdout.strip()
 
     @classmethod
@@ -654,7 +656,7 @@ class Utils:
         path = str(path)
 
         if path.endswith(".zst"):
-            path_to = path_to or path.removesuffix('.zst')
+            path_to = path_to or path.removesuffix(".zst")
 
             # Ensure zstd is installed
             if not Shell.check("which zstd", verbose=True, strict=not no_strict):
@@ -668,7 +670,9 @@ class Utils:
                 strict=not no_strict,
             )
         else:
-            raise NotImplementedError(f"Decompression for file type not supported: {path}")
+            raise NotImplementedError(
+                f"Decompression for file type not supported: {path}"
+            )
 
         if res and remove_archive:
             Shell.check(f"rm -f {quote(path)}", verbose=True)

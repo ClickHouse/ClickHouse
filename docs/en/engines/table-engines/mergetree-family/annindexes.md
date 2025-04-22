@@ -148,7 +148,7 @@ The default values of all HNSW-specific parameters work reasonably well in the m
 We therefore do not recommend customizing the HNSW-specific parameters.
 
 Further restrictions apply:
-- Vector similarity indexes can only be build on columns of type [Array(Float32)](../../../sql-reference/data-types/array.md) or [Array(Float64)](../../../sql-reference/data-types/array.md). Arrays of nullable and low-cardinality floats such as `Array(Nullable(Float32))` and `Array(LowCardinality(Float32))` are not allowed.
+- Vector similarity indexes can only be build on columns of type [Array(Float32)](../../../sql-reference/data-types/array.md), [Array(Float64)](../../../sql-reference/data-types/array.md), or [Array(BFloat16)](../../../sql-reference/data-types/array.md). Arrays of nullable and low-cardinality floats such as `Array(Nullable(Float32))` and `Array(LowCardinality(Float32))` are not allowed.
 - Vector similarity indexes must be build on single columns.
 - Vector similarity indexes may be build on calculated expressions (e.g., `INDEX index_name arraySort(vectors) TYPE vector_similarity([...])`) but such indexes cannot be used for approximate neighbor search later on.
 - Vector similarity indexes require that all arrays in the underlying column have `<dimension>`-many elements - this is checked during index creation. To detect violations of this requirement as soon as possible, users can add a [constraint](/sql-reference/statements/create/table.md#constraints) for the vector column, e.g., `CONSTRAINT same_length CHECK length(vectors) = 256`.
@@ -188,11 +188,11 @@ As an example, query
 
 ```sql
 EXPLAIN indexes = 1
-WITH [0., 2.] AS reference_vec
+WITH [0.462, 0.084, ..., -0.110] AS reference_vec
 SELECT id, vec
 FROM tab
 ORDER BY L2Distance(vec, reference_vec) ASC
-LIMIT 3;
+LIMIT 10;
 ```
 
 may return
@@ -208,14 +208,18 @@ may return
  7. │           PrimaryKey                                                                            │
  8. │             Condition: true                                                                     │
  9. │             Parts: 1/1                                                                          │
-10. │             Granules: 4/4                                                                       │
+10. │             Granules: 575/575                                                                   │
 11. │           Skip                                                                                  │
 12. │             Name: idx                                                                           │
 13. │             Description: vector_similarity GRANULARITY 100000000                                │
 14. │             Parts: 1/1                                                                          │
-15. │             Granules: 2/4                                                                       │
+15. │             Granules: 10/575                                                                    │
     └─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+In this example, 1 million vectors in the [dbpedia dataset](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M), each with dimension 1536, are stored in 575 granules, i.e. 1.7k rows per granule.
+The query asks for 10 neighbours and the vector similarity index finds these 10 neighbours in 10 separate granules.
+These 10 granules will be read during query execution.
 
 Vector similarity indexes are used if the output contains `Skip` and the name and type of the vector index (in the example, `idx` and `vector_similarity`).
 In this case, the vector similarity index dropped two of four granules, i.e. 50% of the data.

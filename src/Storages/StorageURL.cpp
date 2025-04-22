@@ -71,7 +71,7 @@ namespace Setting
     extern const SettingsUInt64 glob_expansion_max_elements;
     extern const SettingsUInt64 max_http_get_redirects;
     extern const SettingsMaxThreads max_parsing_threads;
-    extern const SettingsUInt64 max_read_buffer_size;
+    extern const SettingsNonZeroUInt64 max_read_buffer_size;
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsBool schema_inference_cache_require_modification_time_for_url;
     extern const SettingsSchemaInferenceMode schema_inference_mode;

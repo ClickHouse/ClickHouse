@@ -54,6 +54,7 @@ struct QueryPlanOptimizationSettings
     bool remove_redundant_distinct;
     bool try_use_vector_search;
     bool convert_join_to_in;
+    bool merge_filter_into_join_condition;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
@@ -67,7 +68,8 @@ struct QueryPlanOptimizationSettings
     bool optimize_sorting_by_input_stream_properties;
     bool aggregation_in_order;
     bool optimize_projection;
-    bool use_query_condition_cache = false;
+    bool use_query_condition_cache;
+    bool query_condition_cache_store_conditions_as_plaintext;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting

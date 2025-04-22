@@ -36,6 +36,8 @@ const auto threadSetting = CHSetting(
     {"0", "1", std::to_string(std::thread::hardware_concurrency())},
     false);
 
+extern std::unordered_map<String, CHSetting> hotSettings;
+
 extern std::unordered_map<String, CHSetting> serverSettings;
 
 extern std::unordered_map<String, CHSetting> performanceSettings;
@@ -47,8 +49,8 @@ extern std::unordered_map<String, CHSetting> formatSettings;
 const std::unordered_map<String, CHSetting> memoryTableSettings
     = {{"min_bytes_to_keep", CHSetting(bytesRange, {}, false)},
        {"max_bytes_to_keep", CHSetting(bytesRange, {}, false)},
-       {"min_rows_to_keep", CHSetting(bytesRange, {}, false)},
-       {"max_rows_to_keep", CHSetting(bytesRange, {}, false)},
+       {"min_rows_to_keep", CHSetting(rowsRange, {}, false)},
+       {"max_rows_to_keep", CHSetting(rowsRange, {}, false)},
        {"compress", CHSetting(trueOrFalse, {}, false)}};
 
 const std::unordered_map<String, CHSetting> setTableSettings = {{"persistent", CHSetting(trueOrFalse, {}, false)}};

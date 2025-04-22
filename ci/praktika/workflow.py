@@ -30,6 +30,7 @@ class Workflow:
         artifacts: List[Artifact.Config] = field(default_factory=list)
         dockers: List[Docker.Config] = field(default_factory=list)
         secrets: List[Secret.Config] = field(default_factory=list)
+        enable_job_filtering_by_changes: bool = False
         enable_cache: bool = False
         enable_report: bool = False
         enable_merge_ready_status: bool = False

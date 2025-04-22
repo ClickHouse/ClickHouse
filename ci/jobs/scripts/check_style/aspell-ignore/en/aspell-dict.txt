@@ -33,6 +33,7 @@ Approximative
 ArrayJoin
 ArrowCompression
 ArrowStream
+aspell
 AsyncInsertCacheSize
 AsynchronousHeavyMetricsCalculationTimeSpent
 AsynchronousHeavyMetricsUpdateInterval
@@ -129,6 +130,7 @@ CMPLNT
 CMake
 CMakeLists
 CODECS
+codespell
 CORS
 COVID
 CPUFrequencyMHz
@@ -659,6 +661,7 @@ Multiqueries
 Multithreading
 Multiword
 MurmurHash
+mypy
 MySQLConnection
 MySQLDataTypesSupport
 MySQLDump
@@ -1648,6 +1651,7 @@ dbal
 dbeaver
 dbgen
 dbms
+dbpedia
 ddl
 deallocated
 deallocation
@@ -1724,6 +1728,7 @@ distinctdynamictypes
 distinctjsonpaths
 distro
 divideDecimal
+divideOrNull
 dmesg
 doesnt
 domainRFC
@@ -1883,8 +1888,10 @@ geospatial
 getClientHTTPHeader
 getMacro
 getMaxTableNameLengthForDatabase
+getMergeTreeSetting
 getOSKernelVersion
 getServerPort
+getServerSetting
 getSetting
 getSettingOrDefault
 getSizeOfEnumType
@@ -2032,6 +2039,7 @@ inodes
 instantiation
 instantiations
 intDiv
+intDivOrNull
 intDivOrZero
 intExp
 intHash
@@ -2229,6 +2237,7 @@ mebibytes
 memtable
 memtables
 mergeTreeIndex
+mergeTreeProjection
 mergeable
 mergetree
 messageID
@@ -2257,6 +2266,7 @@ mmap
 mmapped
 modularization
 moduli
+moduloOrNull
 moduloOrZero
 mongoc
 mongocxx
@@ -2469,6 +2479,7 @@ positionCaseInsensitive
 positionCaseInsensitiveUTF
 positionUTF
 positiveModulo
+positiveModuloOrNull
 postfix
 postfixes
 postgres

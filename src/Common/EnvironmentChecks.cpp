@@ -172,6 +172,7 @@ struct Checker
     }
 } checker
 #ifndef OS_DARWIN
+    /// See also main.cpp and keeper_main.cpp for other static initializers.
     __attribute__((init_priority(101)))    /// Run before other static initializers.
 #endif
 ;

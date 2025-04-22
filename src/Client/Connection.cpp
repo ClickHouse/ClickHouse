@@ -34,6 +34,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <pcg_random.hpp>
 #include <base/scope_guard.h>
 #include <Common/FailPoint.h>
@@ -589,6 +590,11 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
             settings.read(*in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
             settings_from_server = settings.changes();
         }
+
+        if (server_revision >= DBMS_MIN_REVISION_WITH_QUERY_PLAN_SERIALIZATION)
+        {
+            readVarUInt(server_query_plan_serialization_version, *in);
+        }
     }
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();
@@ -963,6 +969,12 @@ void Connection::sendQuery(
     completed = true;
 }
 
+
+void Connection::sendQueryPlan(const QueryPlan & query_plan)
+{
+    writeVarUInt(Protocol::Client::QueryPlan, *out);
+    query_plan.serialize(*out, server_query_plan_serialization_version);
+}
 
 void Connection::sendCancel()
 {

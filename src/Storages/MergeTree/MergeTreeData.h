@@ -8,10 +8,8 @@
 #include <Common/Logger.h>
 #include <Storages/IStorage.h>
 #include <Interpreters/ExpressionActionsSettings.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/StoragePolicy.h>
 #include <Processors/Merges/Algorithms/Graphite.h>
@@ -29,7 +27,6 @@
 #include <Storages/MergeTree/TemporaryParts.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/AlterConversions.h>
-#include <Storages/DataDestinationType.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MarkCache.h>
@@ -514,6 +511,10 @@ public:
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
+
+    /// Check the set of data parts on disk and load if needed, assuming the data on disk can change under the hood.
+    /// This method allows read-only replicas of tables on a shared storage.
+    void refreshDataParts(UInt64 interval_milliseconds);
 
     /// Returns a pointer to primary index cache if it is enabled.
     PrimaryIndexCachePtr getPrimaryIndexCache() const;
@@ -1179,6 +1180,10 @@ public:
     bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) override;
 
     static VirtualColumnsDescription createVirtuals(const StorageInMemoryMetadata & metadata);
+    static VirtualColumnsDescription createProjectionVirtuals(const StorageInMemoryMetadata & metadata);
+
+    /// Similar to IStorage::getVirtuals but returns only virtual columns valid in projection.
+    VirtualsDescriptionPtr getProjectionVirtualsPtr() const { return projection_virtuals.get(); }
 
     /// Load/unload primary keys of all data parts
     void loadPrimaryKeys() const;
@@ -1607,6 +1612,8 @@ protected:
     void startOutdatedAndUnexpectedDataPartsLoadingTask();
     void stopOutdatedAndUnexpectedDataPartsLoadingTask();
 
+    BackgroundSchedulePoolTaskHolder refresh_parts_task;
+
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);
 
@@ -1720,6 +1727,8 @@ private:
     static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 
     mutable TemporaryParts temporary_parts;
+
+    MultiVersionVirtualsDescriptionPtr projection_virtuals;
 
     /// Estimate the number of marks to read to make a decision whether to enable parallel replicas (distributed processing) or not
     /// Note: it could be very rough.

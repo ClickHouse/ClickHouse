@@ -657,6 +657,12 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
                 null_map.push_back(1);
                 null_added = true;
             }
+            const auto & arg = arrays.args[0];
+            // const array has only one row
+            if (arg.is_const)
+                prev_off[0] = 0;
+            else
+                prev_off[0] = (*arg.offsets)[row];
         }
         else if constexpr (std::is_same_v<Mode, ArrayModeSymmetricDifference>)
         {

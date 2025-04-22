@@ -27,6 +27,7 @@ void registerTableFunctions()
 #endif
     registerTableFunctionRedis(factory);
     registerTableFunctionMergeTreeIndex(factory);
+    registerTableFunctionMergeTreeProjection(factory);
     registerTableFunctionFuzzQuery(factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerTableFunctionFuzzJSON(factory);

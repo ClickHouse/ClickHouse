@@ -114,6 +114,8 @@ public:
     String backed_db;
     String backed_disk;
 
+    static void setName(Database * db, const uint32_t name) { db->set_database("d" + std::to_string(name)); }
+
     bool isReplicatedDatabase() const { return deng == DatabaseEngineValues::DReplicated; }
 
     bool isReplicatedOrSharedDatabase() const { return deng == DatabaseEngineValues::DReplicated || deng == DatabaseEngineValues::DShared; }
@@ -126,7 +128,7 @@ public:
 
     bool isDettached() const { return attached != DetachStatus::ATTACHED; }
 
-    void setName(Database * db) const { db->set_database("d" + std::to_string(dname)); }
+    void setName(Database * db) const { SQLDatabase::setName(db, dname); }
 
     void finishDatabaseSpecification(DatabaseEngine * dspec)
     {
@@ -275,14 +277,16 @@ public:
 
     bool hasVersionColumn() const { return teng == TableEngineValues::VersionedCollapsingMergeTree; }
 
-    void setName(ExprSchemaTable * est, const bool setdbname) const
+    static void setName(ExprSchemaTable * est, const bool setdbname, std::shared_ptr<SQLDatabase> database, const uint32_t name)
     {
-        if (db || setdbname)
+        if (database || setdbname)
         {
-            est->mutable_database()->set_database("d" + (db ? std::to_string(db->dname) : "efault"));
+            est->mutable_database()->set_database("d" + (database ? std::to_string(database->dname) : "efault"));
         }
-        est->mutable_table()->set_table("t" + std::to_string(tname));
+        est->mutable_table()->set_table("t" + std::to_string(name));
     }
+
+    void setName(ExprSchemaTable * est, const bool setdbname) const { SQLTable::setName(est, setdbname, db, tname); }
 
     void setName(TableEngine * te) const
     {
@@ -298,14 +302,16 @@ public:
     uint32_t staged_ncols = 0;
     std::unordered_set<uint32_t> cols;
 
-    void setName(ExprSchemaTable * est, const bool setdbname) const
+    static void setName(ExprSchemaTable * est, const bool setdbname, std::shared_ptr<SQLDatabase> database, const uint32_t name)
     {
-        if (db || setdbname)
+        if (database || setdbname)
         {
-            est->mutable_database()->set_database("d" + (db ? std::to_string(db->dname) : "efault"));
+            est->mutable_database()->set_database("d" + (database ? std::to_string(database->dname) : "efault"));
         }
-        est->mutable_table()->set_table("v" + std::to_string(tname));
+        est->mutable_table()->set_table("v" + std::to_string(name));
     }
+
+    void setName(ExprSchemaTable * est, const bool setdbname) const { SQLView::setName(est, setdbname, db, tname); }
 
     void setName(TableEngine * te) const
     {
@@ -321,14 +327,16 @@ struct SQLDictionary : SQLBase
 public:
     std::unordered_map<uint32_t, SQLColumn> cols;
 
-    void setName(ExprSchemaTable * est, const bool setdbname) const
+    static void setName(ExprSchemaTable * est, const bool setdbname, std::shared_ptr<SQLDatabase> database, const uint32_t name)
     {
-        if (db || setdbname)
+        if (database || setdbname)
         {
-            est->mutable_database()->set_database("d" + (db ? std::to_string(db->dname) : "efault"));
+            est->mutable_database()->set_database("d" + (database ? std::to_string(database->dname) : "efault"));
         }
-        est->mutable_table()->set_table("d" + std::to_string(tname));
+        est->mutable_table()->set_table("d" + std::to_string(name));
     }
+
+    void setName(ExprSchemaTable * est, const bool setdbname) const { SQLDictionary::setName(est, setdbname, db, tname); }
 
     void setName(TableEngine * te) const
     {

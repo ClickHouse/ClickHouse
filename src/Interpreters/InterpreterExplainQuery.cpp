@@ -435,7 +435,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         {
             if (!query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "EXPLAIN QUERY TREE is only supported with a new analyzer. Set allow_experimental_analyzer = 1.");
+                    "EXPLAIN QUERY TREE is only supported with a new analyzer. SET enable_analyzer = 1.");
 
             if (ast.getExplainedQuery()->as<ASTSelectWithUnionQuery>() == nullptr)
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN QUERY TREE query");

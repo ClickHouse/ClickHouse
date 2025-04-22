@@ -1,5 +1,9 @@
-#include <Common/SipHash.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
+#include <Common/SipHash.h>
+#include <Common/logger_useful.h>
+#include <Columns/ColumnsNumber.h>
+#include <IO/WriteHelpers.h>
+#include <filesystem>
 
 namespace DB
 {

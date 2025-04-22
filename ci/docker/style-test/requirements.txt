@@ -3,3 +3,8 @@ yamllint==1.26.3
 codespell==2.2.1
 mypy==1.15.0
 pylint==3.1.0
+# required for change log generation:
+tqdm==4.67.1
+thefuzz==0.22.1
+PyGitHub==2.6.1
+boto3==1.37.38

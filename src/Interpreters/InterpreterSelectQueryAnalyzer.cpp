@@ -158,6 +158,7 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     /// We should not apply any query tree level optimizations on shards
     /// because it can lead to a changed header.
     if (select_query_options.ignore_ast_optimizations
+        || select_query_options.is_create_view
         || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
         query_tree_pass_manager.runOnlyResolve(query_tree);
     else

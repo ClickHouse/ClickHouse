@@ -17,7 +17,8 @@ Columns:
 
 - `table_uuid` ([String](../../sql-reference/data-types/string.md)) — The table UUID.
 - `part_name` ([String](../../sql-reference/data-types/string.md)) — The part name.
-- `key_hash` ([String](/sql-reference/data-types/string.md)) — The hash of the filter condition.
+- `condition` ([String](/sql-reference/data-types/string.md)) — The hashed filter condition. Only set if setting query_condition_cache_store_conditions_as_plaintext = true.
+- `condition_hash` ([String](/sql-reference/data-types/string.md)) — The hash of the filter condition.
 - `entry_size` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The size of the entry in bytes.
 - `matching_marks` ([String](../../sql-reference/data-types/string.md)) — Matching marks.
 
@@ -32,7 +33,8 @@ Row 1:
 ──────
 table_uuid:     28270a24-ea27-49f6-99cd-97b9bee976ac
 part_name:      all_1_1_0
-key_hash:       5456494897146899690 -- 5.46 quintillion
+condition:      or(equals(b, 10000_UInt16), equals(c, 10000_UInt16))
+condition_hash: 5456494897146899690 -- 5.46 quintillion
 entry_size:     40
 matching_marks: 111111110000000000000000000000000000000000000000000000000111111110000000000000000
 

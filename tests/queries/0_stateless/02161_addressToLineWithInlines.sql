@@ -11,6 +11,7 @@ SELECT count() FROM numbers_mt(10000000000) SETTINGS log_comment='02161_test_cas
 SET log_queries = 0;
 SET query_profiler_cpu_time_period_ns = 0;
 SYSTEM FLUSH LOGS query_log, trace_log;
+SET max_execution_time = 300;
 
 WITH
     lineWithInlines AS

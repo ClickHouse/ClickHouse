@@ -35,10 +35,8 @@ class Secret:
         def get_aws_ssm_var(self):
             res = Shell.get_output(
                 f"aws ssm get-parameter --name {self.name} --with-decryption --output text --query Parameter.Value",
+                strict=True,
             )
-            if not res:
-                print(f"ERROR: Failed to get secret [{self.name}]")
-                raise RuntimeError()
             return res
 
         def get_aws_ssm_secret(self):

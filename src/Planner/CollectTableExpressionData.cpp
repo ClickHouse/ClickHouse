@@ -2,16 +2,19 @@
 
 #include <Storages/IStorage.h>
 
-#include <Analyzer/Utils.h>
-#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ColumnNode.h>
-#include <Analyzer/QueryNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/TableFunctionNode.h>
-#include <Analyzer/ListNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/ListNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/UnionNode.h>
+#include <Analyzer/Utils.h>
 
 #include <Planner/PlannerActionsVisitor.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/PlannerCorrelatedSubqueries.h>
 
 
 namespace DB
@@ -41,6 +44,19 @@ public:
         if (isIndexHintFunction(node))
         {
             is_inside_index_hint_function = true;
+            return;
+        }
+
+        if (isExistsFunction(node))
+        {
+            auto * function_node = node->as<FunctionNode>();
+            const auto & subquery_argument = function_node->getArguments().getNodes().front();
+            auto * query_node = subquery_argument->as<QueryNode>();
+            auto * union_node = subquery_argument->as<UnionNode>();
+            chassert(query_node != nullptr || union_node != nullptr);
+
+            auto & correlated_columns = query_node ? query_node->getCorrelatedColumnsNode() : union_node->getCorrelatedColumnsNode();
+            visit(correlated_columns);
             return;
         }
 
@@ -103,11 +119,15 @@ public:
                 auto column_identifier = planner_context->getGlobalPlannerContext()->createColumnIdentifier(node);
 
                 ActionsDAG alias_column_actions_dag;
-                PlannerActionsVisitor actions_visitor(planner_context, false);
-                auto outputs = actions_visitor.visit(alias_column_actions_dag, column_node->getExpression());
+                ColumnNodePtrWithHashSet empty_correlated_columns_set;
+                PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set, false);
+                auto [outputs, correlated_subtrees] = actions_visitor.visit(alias_column_actions_dag, column_node->getExpression());
                 if (outputs.size() != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Expected single output in actions dag for alias column {}. Actual {}", column_node->dumpTree(), outputs.size());
+                if (correlated_subtrees.notEmpty())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Correlated subquery in alias column expression {}. Actual {}", column_node->dumpTree(), outputs.size());
 
                 auto & alias_node = outputs[0];
                 const auto & column_name = column_node->getColumnName();
@@ -178,6 +198,11 @@ public:
     static bool isIndexHintFunction(const QueryTreeNodePtr & node)
     {
         return node->as<FunctionNode>() && node->as<FunctionNode>()->getFunctionName() == "indexHint";
+    }
+
+    static bool isExistsFunction(const QueryTreeNodePtr & node)
+    {
+        return node->as<FunctionNode>() && node->as<FunctionNode>()->getFunctionName() == "exists";
     }
 
     static bool isColumnSourceMergeTree(const ColumnNode & node)
@@ -381,12 +406,17 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
         ActionsDAG prewhere_actions_dag;
 
         QueryTreeNodePtr query_tree_node = query_node_typed.getPrewhere();
+        auto correlated_columns_set = query_node_typed.getCorrelatedColumnsSet();
 
-        PlannerActionsVisitor visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
-        auto expression_nodes = visitor.visit(prewhere_actions_dag, query_tree_node);
+        PlannerActionsVisitor visitor(planner_context, /*correlated_columns_set_=*/correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
+        auto [expression_nodes, correlated_subtrees] = visitor.visit(prewhere_actions_dag, query_tree_node);
         if (expression_nodes.size() != 1)
             throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                 "Invalid PREWHERE. Expected single boolean expression. In query {}",
+                query_node->formatASTForErrorMessage());
+        if (correlated_subtrees.notEmpty())
+            throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+                "Correlated subqueries are not allowed in PREWHERE expression. In query {}",
                 query_node->formatASTForErrorMessage());
 
         prewhere_actions_dag.getOutputs().push_back(expression_nodes.back());

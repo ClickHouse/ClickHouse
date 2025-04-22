@@ -66,8 +66,7 @@ Result:
 
 ## seriesPeriodDetectFFT {#seriesperioddetectfft}
 
-Finds the period of the given series data data using FFT
-FFT - [Fast Fourier transform](https://en.wikipedia.org/wiki/Fast_Fourier_transform)
+Finds the period of the given series data using FFT - [Fast Fourier transform](https://en.wikipedia.org/wiki/Fast_Fourier_transform)
 
 **Syntax**
 

@@ -4,6 +4,7 @@
 #include <Core/StreamingHandleErrorMode.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer.h>
+#include <Storages/Kafka/Kafka_fwd.h>
 #include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ThreadPool_fwd.h>
@@ -49,7 +50,7 @@ public:
 
     ~StorageKafka() override;
 
-    std::string getName() const override { return "Kafka"; }
+    std::string getName() const override { return Kafka::TABLE_ENGINE_NAME; }
 
     bool noPushingToViews() const override { return true; }
 
@@ -94,6 +95,8 @@ public:
 
     bool supportsDynamicSubcolumns() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
+
+    const KafkaSettings & getKafkaSettings() const { return *kafka_settings; }
 
 private:
     friend class ReadFromStorageKafka;

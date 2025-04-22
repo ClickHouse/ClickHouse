@@ -16,7 +16,8 @@ ColumnsDescription StorageSystemQueryConditionCache::getColumnsDescription()
     {
         {"table_uuid", std::make_shared<DataTypeUUID>(), "The table UUID."},
         {"part_name", std::make_shared<DataTypeString>(), "The part name."},
-        {"key_hash", std::make_shared<DataTypeUInt64>(), "The hash of the filter condition."},
+        {"condition", std::make_shared<DataTypeString>(), "The hashed filter condition. Only set if setting query_condition_cache_store_conditions_as_plaintext = true."},
+        {"condition_hash", std::make_shared<DataTypeUInt64>(), "The hash of the filter condition."},
         {"entry_size", std::make_shared<DataTypeUInt64>(), "The size of the entry in bytes."},
         {"matching_marks", std::make_shared<DataTypeString>(), "Matching marks."}
     };
@@ -48,11 +49,12 @@ void StorageSystemQueryConditionCache::fillData(MutableColumns & res_columns, Co
     {
         res_columns[0]->insert(key.table_id);
         res_columns[1]->insert(key.part_name);
-        res_columns[2]->insert(key.condition_hash);
-        res_columns[3]->insert(QueryConditionCache::QueryConditionCacheEntryWeight()(*entry));
+        res_columns[2]->insert(key.condition);
+        res_columns[3]->insert(key.condition_hash);
+        res_columns[4]->insert(QueryConditionCache::QueryConditionCacheEntryWeight()(*entry));
 
         std::shared_lock lock(entry->mutex);
-        res_columns[4]->insert(to_string(entry->matching_marks));
+        res_columns[5]->insert(to_string(entry->matching_marks));
     }
 }
 

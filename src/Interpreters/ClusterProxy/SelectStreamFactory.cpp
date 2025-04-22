@@ -43,6 +43,8 @@ namespace Setting
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsBool prefer_localhost_replica;
+    extern const SettingsBool serialize_query_plan;
+    extern const SettingsUInt64 distributed_group_by_no_merge;
 }
 
 namespace ErrorCodes
@@ -175,15 +177,32 @@ void SelectStreamFactory::createForShardImpl(
     {
         Block shard_header;
         PlannerContextPtr planner_context;
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-            std::tie(shard_header, planner_context) = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(query_tree, context, SelectQueryOptions(processed_stage).analyze());
+        std::unique_ptr<QueryPlan> query_plan;
+
+        const auto & settings = context->getSettingsRef();
+
+        /// Disable for distributed_group_by_no_merge now, because distributed-over-distributed only works up to FetchColums,
+        /// But distributed_group_by_no_merge requires Complete.
+        if (settings[Setting::allow_experimental_analyzer] && settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
+        {
+            query_plan = createLocalPlan(
+                query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, has_missing_objects, true, shard_info.default_database);
+
+            shard_header = query_plan->getCurrentHeader();
+        }
         else
-            shard_header = header;
+        {
+            if (settings[Setting::allow_experimental_analyzer])
+                std::tie(shard_header, planner_context) = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(query_tree, context, SelectQueryOptions(processed_stage).analyze());
+            else
+                shard_header = header;
+        }
 
         remote_shards.emplace_back(Shard{
             .query = query_ast,
             .query_tree = query_tree,
             .planner_context = planner_context,
+            .query_plan = std::move(query_plan),
             .main_table = main_table,
             .header = shard_header,
             .has_missing_objects = has_missing_objects,
