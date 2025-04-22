@@ -597,7 +597,7 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable *
     }
 }
 
-void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
+void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_parallel, Insert * ins)
 {
     String buf;
     TableOrFunction * tof = ins->mutable_tof();
@@ -642,7 +642,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
         columnPathRef(entry, ins->add_cols());
     }
 
-    if (noption < 801)
+    if (!in_parallel && noption < 801)
     {
         const uint64_t nrows = rows_dist(rg.generator);
 
@@ -3438,7 +3438,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
     }
     else if (insert && nopt < (create_table + create_view + drop + insert + 1))
     {
-        generateNextInsert(rg, sq->mutable_insert());
+        generateNextInsert(rg, in_parallel, sq->mutable_insert());
     }
     else if (light_delete && nopt < (create_table + create_view + drop + insert + light_delete + 1))
     {

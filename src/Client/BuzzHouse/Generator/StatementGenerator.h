@@ -324,7 +324,7 @@ private:
     void generateNextCreateView(RandomGenerator & rg, CreateView * cv);
     void generateNextCreateDictionary(RandomGenerator & rg, CreateDictionary * cd);
     void generateNextDrop(RandomGenerator & rg, Drop * dp);
-    void generateNextInsert(RandomGenerator & rg, Insert * ins);
+    void generateNextInsert(RandomGenerator & rg, bool in_parallel, Insert * ins);
     void generateNextDelete(RandomGenerator & rg, LightDelete * del);
     void generateNextTruncate(RandomGenerator & rg, Truncate * trunc);
     void generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * ot);
