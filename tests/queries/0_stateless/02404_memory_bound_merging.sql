@@ -74,7 +74,7 @@ select count() from pr_t;
 
 -- { echoOn } --
 explain pipeline select a from pr_t group by a order by a limit 5 offset 500 settings parallel_replicas_local_plan=0;
-explain pipeline select a from pr_t group by a order by a limit 5 offset 500 settings allow_experimental_analyzer=1, parallel_replicas_local_plan=1;
+explain pipeline select a from pr_t group by a order by a limit 5 offset 500 SETTINGS enable_analyzer=1, parallel_replicas_local_plan=1;
 
 select a, count() from pr_t group by a order by a limit 5 offset 500;
 select a, count() from pr_t group by a, b order by a limit 5 offset 500;

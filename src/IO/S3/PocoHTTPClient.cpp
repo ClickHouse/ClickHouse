@@ -591,7 +591,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
             else
             {
                 /// Error statuses are more important so we show them even if `enable_s3_requests_logging == false`.
-                LOG_INFO(log, "Response status: {}, {}", status_code, poco_response.getReason());
+                LOG_DEBUG(log, "Response status: {}, {}", status_code, poco_response.getReason());
             }
 
             if (poco_response.getStatus() == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT)

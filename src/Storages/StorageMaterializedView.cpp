@@ -854,22 +854,22 @@ bool StorageMaterializedView::supportsBackupPartition() const
     return false;
 }
 
-std::optional<UInt64> StorageMaterializedView::totalRows(const Settings & settings) const
+std::optional<UInt64> StorageMaterializedView::totalRows(ContextPtr query_context) const
 {
     if (hasInnerTable())
     {
         if (auto table = tryGetTargetTable())
-            return table->totalRows(settings);
+            return table->totalRows(query_context);
     }
     return {};
 }
 
-std::optional<UInt64> StorageMaterializedView::totalBytes(const Settings & settings) const
+std::optional<UInt64> StorageMaterializedView::totalBytes(ContextPtr query_context) const
 {
     if (hasInnerTable())
     {
         if (auto table = tryGetTargetTable())
-            return table->totalBytes(settings);
+            return table->totalBytes(query_context);
     }
     return {};
 }
@@ -926,6 +926,25 @@ void StorageMaterializedView::updateTargetTableId(std::optional<String> database
         target_table_id.database_name = *std::move(database_name);
     if (table_name)
         target_table_id.table_name = *std::move(table_name);
+}
+
+std::optional<NameSet> StorageMaterializedView::supportedPrewhereColumns() const
+{
+    auto table = tryGetTargetTable();
+    if (!table)
+        return std::nullopt;
+
+    auto view_columns = getInMemoryMetadata().getColumns().getAll();
+    auto target_table_columns = table->getInMemoryMetadata().getColumns();
+    NameSet supported_columns;
+    for (const auto & [name, type] : view_columns)
+    {
+        auto target_column = target_table_columns.tryGetColumn(GetColumnsOptions::All, name);
+        if (target_column && target_column->type->equals(*type))
+            supported_columns.insert(name);
+    }
+
+    return supported_columns;
 }
 
 void registerStorageMaterializedView(StorageFactory & factory)

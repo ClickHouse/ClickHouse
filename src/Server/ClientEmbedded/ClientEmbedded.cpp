@@ -43,7 +43,7 @@ void ClientEmbedded::printHelpMessage(const OptionsDescription & options_descrip
 }
 
 
-void ClientEmbedded::processError(const String &) const
+void ClientEmbedded::processError(std::string_view) const
 {
     if (ignore_error)
         return;
@@ -183,7 +183,7 @@ try
     load_suggestions = true;
     wait_for_suggestions_to_load = true;
     server_display_name = getFQDNOrHostName();
-    prompt = fmt::format("{} :) ", server_display_name);
+    prompt = format("{} :) ", global_context->getConfigRef().getString("display_name", server_display_name));
     query_processing_stage = QueryProcessingStage::Enum::Complete;
     pager = getClientConfiguration().getString("pager", "");
     enable_highlight = getClientConfiguration().getBool("highlight", true);

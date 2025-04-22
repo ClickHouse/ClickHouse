@@ -237,6 +237,15 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.comment = ast_comment.value.safeGet<String>();
         return command;
     }
+    if (command_ast->type == ASTAlterCommand::MODIFY_DATABASE_COMMENT)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = MODIFY_DATABASE_COMMENT;
+        const auto & ast_comment = command_ast->comment->as<ASTLiteral &>();
+        command.comment = ast_comment.value.safeGet<String>();
+        return command;
+    }
     if (command_ast->type == ASTAlterCommand::MODIFY_ORDER_BY)
     {
         AlterCommand command;
@@ -1219,7 +1228,17 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     return result;
 }
 
-bool AlterCommands::hasFullTextIndex(const StorageInMemoryMetadata & metadata)
+bool AlterCommands::hasGinIndex(const StorageInMemoryMetadata & metadata)
+{
+    for (const auto & index : metadata.secondary_indices)
+    {
+        if (index.type == GIN_INDEX_NAME)
+            return true;
+    }
+    return false;
+}
+
+bool AlterCommands::hasLegacyFullTextIndex(const StorageInMemoryMetadata & metadata)
 {
     for (const auto & index : metadata.secondary_indices)
     {

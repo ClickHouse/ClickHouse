@@ -135,9 +135,10 @@ jobs:
           ./utils/list-versions/update-docker-version.sh
           echo "Generate ChangeLog"
           export CI=1
+          docker pull clickhouse/style-test:latest
           docker run -u "${UID}:${GID}" -e PYTHONUNBUFFERED=1 -e CI=1 --network=host \
             --volume=".:/wd" --workdir="/wd" \
-            clickhouse/style-test \
+            clickhouse/style-test:latest \
             ./tests/ci/changelog.py -v --debug-helpers \
             --gh-user-or-token ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }} \
             --jobs=5 \
