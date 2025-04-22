@@ -617,7 +617,8 @@ bool Client::buzzHouse()
 
             if (total_create_database_tries < 10 && nsuccessfull_create_database < max_initial_databases)
             {
-                gen.generateNextCreateDatabase(rg, sq1.mutable_explain()->mutable_inner_query()->mutable_create_database());
+                gen.generateNextCreateDatabase(
+                    rg, sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_create_database());
                 BuzzHouse::SQLQueryToString(full_query, sq1);
                 outf << full_query << std::endl;
                 server_up &= processBuzzHouseQuery(full_query);
@@ -630,7 +631,8 @@ bool Client::buzzHouse()
                 gen.collectionHas<std::shared_ptr<BuzzHouse::SQLDatabase>>(gen.attached_databases) && total_create_table_tries < 50
                 && nsuccessfull_create_table < max_initial_tables)
             {
-                gen.generateNextCreateTable(rg, sq1.mutable_explain()->mutable_inner_query()->mutable_create_table());
+                gen.generateNextCreateTable(
+                    rg, sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_create_table());
                 BuzzHouse::SQLQueryToString(full_query, sq1);
                 outf << full_query << std::endl;
                 server_up &= processBuzzHouseQuery(full_query);
@@ -676,8 +678,9 @@ bool Client::buzzHouse()
                 else if (settings_oracle && nopt < (correctness_oracle + settings_oracle + 1))
                 {
                     /// Test running query with different settings, but some times, call system commands
-                    qo.generateFirstSetting(rg, sq1);
-                    if (sq1.has_explain())
+                    const bool use_settings = qo.generateFirstSetting(rg, sq1);
+
+                    if (use_settings)
                     {
                         /// Run query only when something was generated
                         BuzzHouse::SQLQueryToString(full_query, sq1);
@@ -696,7 +699,7 @@ bool Client::buzzHouse()
 
                     sq3.Clear();
                     full_query.resize(0);
-                    qo.generateSecondSetting(rg, gen, sq1, sq3);
+                    qo.generateSecondSetting(rg, gen, use_settings, sq1, sq3);
                     BuzzHouse::SQLQueryToString(full_query, sq3);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);

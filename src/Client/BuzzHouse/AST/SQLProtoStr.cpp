@@ -4681,9 +4681,9 @@ CONV_FN(ExplainQuery, explain)
     SQLQueryInnerToString(ret, explain.inner_query());
 }
 
-CONV_FN(SQLQuery, query)
+CONV_FN(SingleSQLQuery, query)
 {
-    using QueryType = SQLQuery::QueryOneofCase;
+    using QueryType = SingleSQLQuery::QueryOneofCase;
     switch (query.query_oneof_case())
     {
         case QueryType::kExplain:
@@ -4701,6 +4701,17 @@ CONV_FN(SQLQuery, query)
         default:
             ret += "SELECT 1";
     }
+}
+
+CONV_FN(SQLQuery, query)
+{
+    SingleSQLQueryToString(ret, query.single_query());
+    for (int i = 0; i < query.parallel_queries_size(); i++)
+    {
+        ret += " PARALLEL WITH ";
+        SingleSQLQueryToString(ret, query.parallel_queries(i));
+    }
     ret += ";";
 }
+
 }

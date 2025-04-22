@@ -57,9 +57,9 @@ public:
     generateImportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4) const;
 
     /// Run query with different settings oracle
-    void generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1);
+    bool generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1);
     void generateOracleSelectQuery(RandomGenerator & rg, PeerQuery pq, StatementGenerator & gen, SQLQuery & sq2);
-    void generateSecondSetting(RandomGenerator & rg, StatementGenerator & gen, const SQLQuery & sq1, SQLQuery & sq3);
+    void generateSecondSetting(RandomGenerator & rg, StatementGenerator & gen, bool use_settings, const SQLQuery & sq1, SQLQuery & sq3);
 
     /// Replace query with peer tables
     void truncatePeerTables(const StatementGenerator & gen);

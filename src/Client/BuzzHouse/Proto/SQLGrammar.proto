@@ -3834,11 +3834,16 @@ message ExplainQuery {
     required SQLQueryInner inner_query = 4;
 }
 
-message SQLQuery {
+message SingleSQLQuery {
     oneof query_oneof {
         ExplainQuery explain = 1;
         bool start_trans = 2;
         bool commit_trans = 3;
         bool rollback_trans = 4;
     }
+}
+
+message SQLQuery {
+    required SingleSQLQuery single_query = 1;
+    repeated SingleSQLQuery parallel_queries = 2;
 }

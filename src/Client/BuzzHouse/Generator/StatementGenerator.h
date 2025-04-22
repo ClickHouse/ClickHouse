@@ -408,6 +408,7 @@ private:
     void generateNextBackup(RandomGenerator & rg, BackupRestore * br);
     void generateNextRestore(RandomGenerator & rg, BackupRestore * br);
     void generateNextBackupOrRestore(RandomGenerator & rg, BackupRestore * br);
+    void updateGeneratorFromSingleQuery(const SingleSQLQuery & sq, ExternalIntegrations & ei, bool success);
 
     template <typename T>
     void exchangeObjects(uint32_t tname1, uint32_t tname2);

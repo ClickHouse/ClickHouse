@@ -3695,30 +3695,31 @@ void StatementGenerator::generateNextStatement(RandomGenerator & rg, SQLQuery & 
     const uint32_t prob_space = start_transaction + commit + explain_query + run_query;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
+    SingleSQLQuery * ssq = sq.mutable_single_query();
 
     chassert(this->levels.empty());
     if (start_transaction && nopt < (start_transaction + 1))
     {
-        sq.set_start_trans(true);
+        ssq->set_start_trans(true);
     }
     else if (commit && nopt < (start_transaction + commit + 1))
     {
         if (rg.nextSmallNumber() < 7)
         {
-            sq.set_commit_trans(true);
+            ssq->set_commit_trans(true);
         }
         else
         {
-            sq.set_rollback_trans(true);
+            ssq->set_rollback_trans(true);
         }
     }
     else if (explain_query && nopt < (start_transaction + commit + explain_query + 1))
     {
-        generateNextExplain(rg, sq.mutable_explain());
+        generateNextExplain(rg, ssq->mutable_explain());
     }
     else if (run_query)
     {
-        generateNextQuery(rg, sq.mutable_explain()->mutable_inner_query());
+        generateNextQuery(rg, ssq->mutable_explain()->mutable_inner_query());
     }
     else
     {
@@ -3842,17 +3843,17 @@ void StatementGenerator::attachOrDetachObject(const uint32_t tname, const Detach
     }
 }
 
-void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegrations & ei, bool success)
+void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & ssq, ExternalIntegrations & ei, bool success)
 {
-    const SQLQueryInner & query = sq.explain().inner_query();
+    const SQLQueryInner & query = ssq.explain().inner_query();
 
     success &= (!ei.getRequiresExternalCallCheck() || ei.getNextExternalCallSucceeded());
 
-    if (sq.has_explain() && query.has_create_table())
+    if (ssq.has_explain() && query.has_create_table())
     {
         const uint32_t tname = static_cast<uint32_t>(std::stoul(query.create_table().est().table().table().substr(1)));
 
-        if (!sq.explain().is_explain() && success)
+        if (!ssq.explain().is_explain() && success)
         {
             if (query.create_table().create_opt() == CreateReplaceOption::Replace)
             {
@@ -3862,11 +3863,11 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
         }
         dropTable(true, !success, tname);
     }
-    else if (sq.has_explain() && query.has_create_view())
+    else if (ssq.has_explain() && query.has_create_view())
     {
         const uint32_t tname = static_cast<uint32_t>(std::stoul(query.create_view().est().table().table().substr(1)));
 
-        if (!sq.explain().is_explain() && success)
+        if (!ssq.explain().is_explain() && success)
         {
             if (query.create_view().create_opt() == CreateReplaceOption::Replace)
             {
@@ -3876,11 +3877,11 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
         }
         this->staged_views.erase(tname);
     }
-    else if (sq.has_explain() && query.has_create_dictionary())
+    else if (ssq.has_explain() && query.has_create_dictionary())
     {
         const uint32_t dname = static_cast<uint32_t>(std::stoul(query.create_dictionary().est().table().table().substr(1)));
 
-        if (!sq.explain().is_explain() && success)
+        if (!ssq.explain().is_explain() && success)
         {
             if (query.create_view().create_opt() == CreateReplaceOption::Replace)
             {
@@ -3890,7 +3891,7 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
         }
         this->staged_dictionaries.erase(dname);
     }
-    else if (sq.has_explain() && !sq.explain().is_explain() && query.has_drop() && success)
+    else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_drop() && success)
     {
         const Drop & drp = query.drop();
         const bool istable = drp.object().has_est() && drp.object().est().table().table()[0] == 't';
@@ -3920,7 +3921,7 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
             this->functions.erase(static_cast<uint32_t>(std::stoul(drp.object().function().function().substr(1))));
         }
     }
-    else if (sq.has_explain() && !sq.explain().is_explain() && query.has_exchange() && success)
+    else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_exchange() && success)
     {
         const Exchange & ex = query.exchange();
         const SQLObjectName & obj1 = ex.object1();
@@ -3943,7 +3944,7 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
             this->exchangeObjects<SQLDictionary>(tname1, tname2);
         }
     }
-    else if (sq.has_explain() && !sq.explain().is_explain() && query.has_rename() && success)
+    else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_rename() && success)
     {
         const Rename & ren = query.rename();
         const SQLObjectName & oobj = ren.old_object();
@@ -3979,7 +3980,7 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
             this->renameObjects<std::shared_ptr<SQLDatabase>>(old_tname, new_tname, new_db);
         }
     }
-    else if (sq.has_explain() && !sq.explain().is_explain() && query.has_alter())
+    else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_alter())
     {
         const Alter & at = query.alter();
         const bool istable = at.object().has_est() && at.object().est().table().table()[0] == 't';
@@ -4178,7 +4179,7 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
             }
         }
     }
-    else if (sq.has_explain() && !sq.explain().is_explain() && (query.has_attach() || query.has_detach()) && success)
+    else if (ssq.has_explain() && !ssq.explain().is_explain() && (query.has_attach() || query.has_detach()) && success)
     {
         const SQLObjectName & oobj = query.has_attach() ? query.attach().object() : query.detach().object();
         const bool istable = oobj.has_est() && oobj.est().table().table()[0] == 't';
@@ -4208,31 +4209,31 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
             this->attachOrDetachObject<std::shared_ptr<SQLDatabase>>(tname, status);
         }
     }
-    else if (sq.has_explain() && query.has_create_database())
+    else if (ssq.has_explain() && query.has_create_database())
     {
         const uint32_t dname = static_cast<uint32_t>(std::stoul(query.create_database().database().database().substr(1)));
 
-        if (!sq.explain().is_explain() && success)
+        if (!ssq.explain().is_explain() && success)
         {
             this->databases[dname] = std::move(this->staged_databases[dname]);
         }
         this->staged_databases.erase(dname);
     }
-    else if (sq.has_explain() && query.has_create_function())
+    else if (ssq.has_explain() && query.has_create_function())
     {
         const uint32_t fname = static_cast<uint32_t>(std::stoul(query.create_function().function().function().substr(1)));
 
-        if (!sq.explain().is_explain() && success)
+        if (!ssq.explain().is_explain() && success)
         {
             this->functions[fname] = std::move(this->staged_functions[fname]);
         }
         this->staged_functions.erase(fname);
     }
-    else if (sq.has_explain() && !sq.explain().is_explain() && query.has_trunc() && query.trunc().has_database())
+    else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_trunc() && query.trunc().has_database())
     {
         dropDatabase(static_cast<uint32_t>(std::stoul(query.trunc().database().database().substr(1))));
     }
-    else if (sq.has_explain() && query.has_backup_restore() && !sq.explain().is_explain() && success)
+    else if (ssq.has_explain() && query.has_backup_restore() && !ssq.explain().is_explain() && success)
     {
         const BackupRestore & br = query.backup_restore();
         const BackupRestoreElement & bre = br.backup_element();
@@ -4364,16 +4365,21 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
             }
         }
     }
-    else if (sq.has_start_trans() && success)
+    else if (ssq.has_start_trans() && success)
     {
         this->in_transaction = true;
     }
-    else if ((sq.has_commit_trans() || sq.has_rollback_trans()) && success)
+    else if ((ssq.has_commit_trans() || ssq.has_rollback_trans()) && success)
     {
         this->in_transaction = false;
     }
 
     ei.resetExternalStatus();
+}
+
+void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegrations & ei, bool success)
+{
+    updateGeneratorFromSingleQuery(sq.single_query(), ei, success);
 }
 
 }
