@@ -1,2 +1,5 @@
-all_1_1_0 (state Active)	$val2$val1$val3
-all_2_2_0 (state Active)	$val3$val2$val1
+all_1_1_0 (state Active)	${val2}${val1}${val3} ; ${val2}${val1}.com ; https://${val1}${val3} ; https://${val1}.com
+all_1_1_0 (state Active)	${val2}${val1}${val3} ; ${val2}${val1}.com ; https://${val1}${val3} ; https://${val1}.com
+all_2_2_0 (state Active)	${val3}${val2}${val1} ; ${val3}https://${val1} ; .com${val2}${val1} ; .comhttps://${val1}
+all_1_1_0 (state Active)	${val3}${val2}${val1} ; ${val3}https://${val1} ; .com${val2}${val1} ; .comhttps://${val1}
+all_1_1_0 (state Active)	im a const 1${val3}${val2}${val1}im a const 2 ; im a const 1${val3}https://${val1}im a const 2 ; im a const 1.com${val2}${val1}im a const 2 ; im a const 1.comhttps://${val1}im a const 2

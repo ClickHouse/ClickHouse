@@ -35,14 +35,14 @@ extern const int THERE_IS_NO_COLUMN;
 BlockIO InterpreterDeduceQuery::execute()
 {
     const auto & ast = query_ptr->as<ASTDeduceQuery &>();
+    auto context = getContext();
+    context->checkAccess(getRequiredAccess());
 
-    getContext()->checkAccess(getRequiredAccess());
-
-    auto table_id = getContext()->resolveStorageID(ast);
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
-    checkStorageSupportsTransactionsIfNeeded(table, getContext());
+    auto table_id = context->resolveStorageID(ast);
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, context);
+    checkStorageSupportsTransactionsIfNeeded(table, context);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
-    auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
+    auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot, context);
 
     if (auto * snapshot_data = dynamic_cast<MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
         snapshot_data->parts = {};
@@ -51,8 +51,7 @@ BlockIO InterpreterDeduceQuery::execute()
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "no columns to deduce specified");
     }
-    LOG_INFO(getLogger("MEM"), "{}", ast.col_to_deduce->as<ASTIdentifier>()->name());
-    auto result = table->deduce(query_ptr, (ast.col_to_deduce)->as<ASTIdentifier>()->name(), metadata_snapshot, getContext());
+    auto result = table->deduce(query_ptr, (ast.col_to_deduce)->as<ASTIdentifier>()->name(), metadata_snapshot, context);
 
     Block block(ColumnsWithTypeAndName{
         ColumnWithTypeAndName(DataTypePtr(new DataTypeString()), "partition"),
