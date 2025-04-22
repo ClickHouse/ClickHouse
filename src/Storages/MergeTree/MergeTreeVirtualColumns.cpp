@@ -30,8 +30,10 @@ const String BlockOffsetColumn::name = "_block_offset";
 const DataTypePtr BlockOffsetColumn::type = std::make_shared<DataTypeUInt64>();
 const ASTPtr BlockOffsetColumn::codec = getCompressionCodecDeltaLZ4();
 
-Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTreeDataPart & part)
+Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTreeDataPart & part_or_projection)
 {
+    const auto & part = part_or_projection.isProjectionPart() ? *part_or_projection.getParentPart() : part_or_projection;
+
     if (column_name == RowExistsColumn::name)
         return 1ULL;
 
