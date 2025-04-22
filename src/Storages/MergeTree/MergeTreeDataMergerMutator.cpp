@@ -547,6 +547,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         std::move(merging_params),
         need_prefix,
         parent_part,
+        nullptr,
         suffix,
         std::move(txn),
         &data,

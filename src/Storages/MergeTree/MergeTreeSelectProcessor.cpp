@@ -110,7 +110,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
 {
     bool has_prewhere_actions_steps = !prewhere_actions.steps.empty();
     if (has_prewhere_actions_steps)
-        LOG_TRACE(log, "PREWHERE condition was split into {} steps", prewhere_actions.steps.size());
+        LOG_TEST(log, "PREWHERE condition was split into {} steps", prewhere_actions.steps.size());
 
     if (prewhere_info || has_prewhere_actions_steps)
         LOG_TEST(log, "PREWHERE conditions: {}, Original PREWHERE DAG:\n{}\nPREWHERE actions:\n{}",
@@ -342,7 +342,7 @@ static String dumpStatistics(const ReadStepsPerformanceCounters & counters)
 
 void MergeTreeSelectProcessor::onFinish() const
 {
-    LOG_TRACE(log, "Read steps statistics: {}", dumpStatistics(read_steps_performance_counters));
+    LOG_TEST(log, "Read steps statistics: {}", dumpStatistics(read_steps_performance_counters));
 }
 
 }

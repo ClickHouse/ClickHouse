@@ -618,6 +618,24 @@ VirtualColumnsDescription MergeTreeData::createVirtuals(const StorageInMemoryMet
     return desc;
 }
 
+VirtualColumnsDescription MergeTreeData::createProjectionVirtuals(const StorageInMemoryMetadata & metadata)
+{
+    VirtualColumnsDescription desc;
+
+    desc.addEphemeral("_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of part");
+    desc.addEphemeral("_part_uuid", std::make_shared<DataTypeUUID>(), "Unique part identifier (if enabled MergeTree setting assign_part_uuids)");
+    desc.addEphemeral("_partition_id", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of partition");
+    desc.addEphemeral("_part_data_version", std::make_shared<DataTypeUInt64>(), "Data version of part (either min block number or mutation version)");
+
+    if (metadata.hasPartitionKey())
+    {
+        auto partition_types = metadata.partition_key.sample_block.getDataTypes();
+        desc.addEphemeral("_partition_value", std::make_shared<DataTypeTuple>(std::move(partition_types)), "Value (a tuple) of a PARTITION BY expression");
+    }
+
+    return desc;
+}
+
 StoragePolicyPtr MergeTreeData::getStoragePolicy() const
 {
     auto settings = getSettings();
@@ -895,6 +913,30 @@ void MergeTreeData::checkProperties(
         }
     }
 
+    String projection_with_parent_part_offset;
+    for (const auto & projection : old_metadata.projections)
+    {
+        if (projection.with_parent_part_offset)
+        {
+            projection_with_parent_part_offset = projection.name;
+            break;
+        }
+    }
+
+    if (!projection_with_parent_part_offset.empty())
+    {
+        for (const auto & col : new_metadata.columns)
+        {
+            if (col.name == "_part_offset" || col.name == "_part_index" || col.name == "_parent_part_offset")
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot add column `{}` because normal projection {} references its parent `_part_offset` column. "
+                    "Columns named `_part_offset`, `_part_index`, or `_parent_part_offset` are not allowed in this case",
+                    col.name,
+                    projection_with_parent_part_offset);
+        }
+    }
+
     for (const auto & col : new_metadata.columns)
     {
         if (!col.statistics.empty())
@@ -920,6 +962,7 @@ void MergeTreeData::setProperties(
         local_context);
     setInMemoryMetadata(new_metadata);
     setVirtuals(createVirtuals(new_metadata));
+    projection_virtuals.set(std::make_unique<VirtualColumnsDescription>(createProjectionVirtuals(new_metadata)));
 }
 
 namespace
@@ -1341,14 +1384,10 @@ Block MergeTreeData::getBlockWithVirtualsForFilter(
 {
     auto block = getHeaderWithVirtualsForFilter(metadata);
 
-    for (const auto & part_or_projection : parts)
+    for (const auto & part : parts)
     {
-        if (ignore_empty && part_or_projection->isEmpty())
+        if (ignore_empty && part->isEmpty())
             continue;
-
-        const auto * part = part_or_projection->isProjectionPart()
-            ? part_or_projection->getParentPart()
-            : part_or_projection.get();
 
         for (auto & column : block)
         {
