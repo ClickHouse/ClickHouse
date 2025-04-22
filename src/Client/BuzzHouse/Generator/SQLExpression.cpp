@@ -51,7 +51,7 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
             TypeName * tpn = nullptr;
             JSONColumns * subcols = expr->mutable_subcols();
             const uint32_t noption = rg.nextMediumNumber();
-            const uint32_t nvalues = std::max(std::min(this->fc.max_width - this->width, rg.nextSmallNumber() % 5), UINT32_C(1));
+            const uint32_t nvalues = std::max(std::min(this->fc.max_width - this->width, rg.nextMediumNumber() % 4), UINT32_C(1));
 
             for (uint32_t i = 0; i < nvalues; i++)
             {
@@ -324,7 +324,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool c
     {
         /// Generate a few arrays/tuples with literal values
         ExprList * elist = rg.nextBool() ? expr->mutable_comp_expr()->mutable_array() : expr->mutable_comp_expr()->mutable_tuple();
-        const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.nextSmallNumber() % 8);
+        const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.nextMediumNumber() % 8);
 
         for (uint32_t i = 0; i < nvalues; i++)
         {
@@ -459,7 +459,7 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
         else if (this->width < this->fc.max_width && noption < 501)
         {
             const uint32_t nopt2 = rg.nextSmallNumber();
-            const uint32_t nclauses = std::min(this->fc.max_width - this->width, (rg.nextSmallNumber() % 4) + 1);
+            const uint32_t nclauses = std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % 4) + 1);
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
             ExprIn * ein = cexpr->mutable_expr_in();
             ExprList * elist = ein->mutable_expr();
@@ -832,7 +832,7 @@ void StatementGenerator::generateWindowDefinition(RandomGenerator & rg, WindowDe
 {
     if (this->width < this->fc.max_width && rg.nextSmallNumber() < 4)
     {
-        const uint32_t nclauses = std::min(this->fc.max_width - this->width, (rg.nextSmallNumber() % 4) + 1);
+        const uint32_t nclauses = std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % 4) + 1);
 
         for (uint32_t i = 0; i < nclauses; i++)
         {
@@ -963,7 +963,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     else if (this->fc.max_width > this->width + 1 && noption < 601)
     {
         ExprCase * caseexp = expr->mutable_comp_expr()->mutable_expr_case();
-        const uint32_t nwhen = std::min(this->fc.max_width - this->width, rg.nextSmallNumber() % 4);
+        const uint32_t nwhen = std::min(this->fc.max_width - this->width, rg.nextMediumNumber() % 4);
 
         this->depth++;
         if (rg.nextSmallNumber() < 5)
@@ -1013,7 +1013,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     else if (this->width < this->fc.max_width && noption < 801)
     {
         ExprList * elist = rg.nextBool() ? expr->mutable_comp_expr()->mutable_array() : expr->mutable_comp_expr()->mutable_tuple();
-        const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.nextSmallNumber() % 8);
+        const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.nextMediumNumber() % 8);
 
         this->depth++;
         for (uint32_t i = 0; i < nvalues; i++)
