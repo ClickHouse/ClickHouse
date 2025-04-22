@@ -27,7 +27,7 @@ SELECT replaceRegexpAll(explain, 'ReadFromRemoteParallelReplicas.*', 'ReadFromRe
 FROM (
    EXPLAIN distributed = 1
     SELECT a
-      FROM remote('127.0.0.{1,2}', default.t)
+      FROM remote('127.0.0.{1,2}', currentDatabase(), t)
   GROUP BY a
 );
 
