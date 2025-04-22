@@ -46,7 +46,7 @@ namespace
 
         BackupEntryPtr toBackupEntry() const
         {
-            WriteBufferFromOwnString buf;
+            WriteBufferFromOwnString buf;  
 
             for (const auto & [id, entity] : entities)
             {
