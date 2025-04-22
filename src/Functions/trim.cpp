@@ -49,9 +49,26 @@ public:
         std::optional<SearchSymbols> custom_trim_characters;
         if (arguments.size() == 2 && input_rows_count > 0)
         {
-            const ColumnConst * col_trim_characters_const = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
-            const String & trim_characters_string = col_trim_characters_const->getDataAt(0).toString();
-            custom_trim_characters = std::make_optional<SearchSymbols>(trim_characters_string);
+            // Normal case, trim_character is a constant string
+            if (const ColumnConst * col_trim_characters_const = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
+            {
+                const String & trim_characters_string = col_trim_characters_const->getDataAt(0).toString();
+                custom_trim_characters = std::make_optional<SearchSymbols>(trim_characters_string);
+            }
+            else
+            {
+                // input_rows_count should be 1 when trim_character is not a const ColumnString
+                const ColumnString* col_trim_characters = checkAndGetColumn<ColumnString>(arguments[1].column.get());
+                if (col_trim_characters && input_rows_count == 1)
+                {
+                    custom_trim_characters = std::make_optional<SearchSymbols>(col_trim_characters->getDataAt(0).toString());
+                }
+            }
+            if (!custom_trim_characters.has_value())
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[1].column->getName(), getName());
+            }
         }
 
         ColumnPtr col_input_full;
