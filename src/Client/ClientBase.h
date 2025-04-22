@@ -105,8 +105,6 @@ public:
     ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements);
     /// Returns true if query succeeded
     bool processTextAsSingleQuery(const String & full_query);
-
-    std::string getConnectionHostAndPortForFuzzing() const;
 protected:
     void runInteractive();
     void runNonInteractive();
@@ -117,7 +115,7 @@ protected:
     /// This is the analogue of Poco::Application::config()
     virtual Poco::Util::LayeredConfiguration & getClientConfiguration() = 0;
 
-    virtual bool processWithFuzzing(const String &)
+    virtual bool processWithFuzzing(std::string_view)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query processing with fuzzing is not implemented");
     }
@@ -128,14 +126,18 @@ protected:
     }
 
     virtual void connect() = 0;
-    virtual void processError(const String & query) const = 0;
+    virtual void processError(std::string_view query) const = 0;
     virtual String getName() const = 0;
 
-    void processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query);
-    void processInsertQuery(const String & query_to_execute, ASTPtr parsed_query);
+    void processOrdinaryQuery(String query, ASTPtr parsed_query);
+    void processInsertQuery(String query, ASTPtr parsed_query);
 
-    void processParsedSingleQuery(const String & full_query, const String & query_to_execute,
-        ASTPtr parsed_query, std::optional<bool> echo_query_ = {}, bool report_error = false);
+    void processParsedSingleQuery(
+        std::string_view query_,
+        ASTPtr parsed_query,
+        bool & is_async_insert_with_inlined_data,
+        // to handle INSERT w/o async_insert
+        size_t insert_query_without_data_length = 0);
 
     static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth, uint32_t max_parser_backtracks);
     virtual void setupSignalHandler() = 0;
@@ -145,7 +147,7 @@ protected:
     bool executeMultiQuery(const String & all_queries_text);
     MultiQueryProcessingStage analyzeMultiQueryText(
         const char *& this_query_begin, const char *& this_query_end, const char * all_queries_end,
-        String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
+        ASTPtr & parsed_query,
         std::unique_ptr<Exception> & current_exception);
 
     void clearTerminal();
@@ -267,7 +269,7 @@ protected:
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
     bool processMultiQueryFromFile(const String & file_name);
 
-    static bool isRegularFile(int fd);
+    static bool isFileDescriptorSuitableForInput(int fd);
 
     /// Adjust some settings after command line options and config had been processed.
     void adjustSettings();
