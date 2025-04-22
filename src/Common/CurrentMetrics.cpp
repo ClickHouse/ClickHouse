@@ -337,6 +337,7 @@
     M(DistrCacheRegisteredServers, "Number of distributed cache registered servers") \
     M(DistrCacheRegisteredServersCurrentAZ, "Number of distributed cache registered servers in current az") \
     M(DistrCacheServerS3CachedClients, "Number of distributed cache S3 cached clients") \
+    M(DistrCacheServerRegistryConnections, "Number of active connections to ClickHouse server from Distributed Cache (not marked as cancelled because of limit)") \
     \
     M(SchedulerIOReadScheduled, "Number of IO reads are being scheduled currently") \
     M(SchedulerIOWriteScheduled, "Number of IO writes are being scheduled currently") \
@@ -389,6 +390,9 @@
     \
     M(TotalMergeFailures, "Number of all failed merges since startup, including the ones that were aborted") \
     M(NonAbortedMergeFailures, "Number of failed merges since startup, excluding the merges that were aborted") \
+    M(StatelessWorkerThreads, "Number of threads in the stateless worker thread pool.") \
+    M(StatelessWorkerThreadsActive, "Number of threads in the stateless worker thread pool running a task.") \
+    M(StatelessWorkerThreadsScheduled, "Number of queued or active jobs in the stateless worker thread pool.") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

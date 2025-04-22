@@ -1156,7 +1156,6 @@ public:
     void clearUncompressedCache() const;
 
     void setPageCache(
-        size_t default_block_size, size_t default_lookahead_blocks,
         std::chrono::milliseconds history_window, const String & cache_policy, double size_ratio,
         size_t min_size_in_bytes, size_t max_size_in_bytes, double free_memory_ratio,
         size_t num_shards);
