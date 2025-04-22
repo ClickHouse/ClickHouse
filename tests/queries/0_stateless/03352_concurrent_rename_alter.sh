@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas
+# Tags: no-parallel-replicas, long
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
