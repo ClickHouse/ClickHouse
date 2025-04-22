@@ -1,0 +1,23 @@
+-- { echo ON }
+
+drop table if exists test;
+
+-- disable merge
+create table test (i int, j int, projection p (select *, _part_offset order by j)) engine MergeTree order by i settings index_granularity = 1, max_bytes_to_merge_at_max_space_in_pool = 1;
+
+-- make 5 parts
+insert into test select number, 10 - number from numbers(5);
+insert into test select number, 10 - number from numbers(5);
+insert into test select number, 10 - number from numbers(5);
+insert into test select number, 10 - number from numbers(5);
+insert into test select number, 10 - number from numbers(5);
+
+-- verify _part_starting_offset and _part_offset in parent part and projection
+select _part, _part_starting_offset, _part_offset from test order by _part;
+select _part, _part_starting_offset, _part_offset from test where j = 8 order by _part;
+
+-- make sure key analysis works correctly
+select *, _part_starting_offset + _part_offset from test where _part_starting_offset + _part_offset = 8 settings max_rows_to_read = 1;
+select *, _part_offset + _part_starting_offset from test where _part_offset + _part_starting_offset = 8 settings max_rows_to_read = 1;
+
+drop table test;
