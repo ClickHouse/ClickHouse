@@ -838,6 +838,8 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
         }
         catch (...)
         {
+            DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+
             exception_from_job = std::current_exception();
             thread_trace_context.root_span.addAttribute(exception_from_job);
 
