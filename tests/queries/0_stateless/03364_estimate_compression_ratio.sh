@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Random settings limits: index_granularity=(10, None)
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh

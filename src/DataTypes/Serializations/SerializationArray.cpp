@@ -396,7 +396,7 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     /// Number of values corresponding with `offset_values` must be read.
     size_t last_offset = offset_values.back();
     if (last_offset < prev_last_offset)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Nested column is longer than last offset");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Array elements column is longer (>{}) than the last offset ({})", prev_last_offset, last_offset);
     size_t nested_limit = last_offset - prev_last_offset;
 
     if (unlikely(nested_limit > MAX_ARRAYS_SIZE))

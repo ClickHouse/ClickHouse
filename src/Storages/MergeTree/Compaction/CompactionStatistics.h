@@ -27,6 +27,16 @@ UInt64 getMaxSourcePartsSizeForMerge(const MergeTreeData & data);
   */
 UInt64 getMaxSourcePartsSizeForMerge(const MergeTreeData & data, size_t max_count, size_t scheduled_tasks_count);
 
+/** Same as above but with settings specification.
+  */
+UInt64 getMaxSourcePartsSizeForMerge(
+    size_t max_count,
+    size_t scheduled_tasks_count,
+    size_t max_unreserved_free_space,
+    size_t size_lowering_threshold,
+    size_t size_limit_at_min_pool_space,
+    size_t size_limit_at_max_pool_space);
+
 /** Get maximum total size of parts to do mutation, at current moment of time.
   * It depends only on amount of free space in disk.
   */

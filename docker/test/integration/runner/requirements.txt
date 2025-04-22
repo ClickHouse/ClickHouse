@@ -28,8 +28,8 @@ cramjam==2.9.1
 cryptography==42.0.0
 datacompy==0.7.3
 decorator==5.1.1
-delta-spark==2.3.0
-deltalake==0.16.0
+delta-spark==3.3.0
+deltalake==0.25.5
 dict2xml==1.7.4
 dicttoxml==1.7.16
 docker==6.1.3
@@ -68,7 +68,7 @@ protobuf==4.25.2
 psycopg-binary==3.2.4
 psycopg2-binary==2.9.6
 psycopg==3.2.4
-py4j==0.10.9.5
+py4j==0.10.9.7
 pyarrow-hotfix==0.6
 pyarrow==17.0.0
 pycparser==2.22
@@ -79,7 +79,7 @@ pyiceberg==0.8.1
 pyiceberg[glue]==0.8.1
 pymongo==3.11.0
 pyparsing==3.1.0
-pyspark==3.3.2
+pyspark==3.5.5
 pyspnego==0.10.2
 pytest-order==1.0.0
 pytest-random-order==1.1.1

@@ -399,9 +399,14 @@ def get_supported_versions(
 def update_cmake_version(
     version: ClickHouseVersion,
     versions_path: Union[Path, str] = FILE_WITH_VERSION_PATH,
+    preserve_sha: bool = False
 ) -> None:
+    version_dict = version.as_dict()
+    if preserve_sha:
+        githash = read_versions(versions_path)["githash"]
+        version_dict["githash"] = githash
     get_abs_path(versions_path).write_text(
-        VERSIONS_TEMPLATE.format_map(version.as_dict()), encoding="utf-8"
+        VERSIONS_TEMPLATE.format_map(version_dict), encoding="utf-8"
     )
 
 

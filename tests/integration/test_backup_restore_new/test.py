@@ -13,7 +13,7 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV, assert_eq_with_retry
+from helpers.test_tools import TSV, assert_eq_with_retry, wait_condition
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -1798,26 +1798,25 @@ def test_system_backups():
     id = instance.query(
         f"RESTORE TABLE test.table FROM {backup_name}", query_id=restore_query_id
     ).split("\t")[0]
-    restore_info = get_backup_info_from_system_backups(by_id=id)
-    restore_events = get_events_for_query(restore_query_id)
 
-    assert restore_info.name == escaped_backup_name
-    assert restore_info.status == "RESTORED"
-    assert restore_info.error == ""
-    assert restore_info.start_time < restore_info.end_time
-    assert restore_info.num_files == info.num_files
-    assert restore_info.total_size == info.total_size
-    assert restore_info.num_entries == info.num_entries
-    assert restore_info.uncompressed_size == info.uncompressed_size
-    assert restore_info.compressed_size == info.compressed_size
-    assert (
-        restore_info.files_read + restore_events["RestorePartsSkippedFiles"]
-        == restore_info.num_files
-    )
-    assert (
-        restore_info.bytes_read + restore_events["RestorePartsSkippedBytes"]
-        == restore_info.total_size
-    )
+    def verify_restore_info():
+        restore_info = get_backup_info_from_system_backups(by_id=id)
+        restore_events = get_events_for_query(restore_query_id)
+        return (
+            restore_info.name == escaped_backup_name and
+            restore_info.status == "RESTORED" and
+            restore_info.error == "" and
+            restore_info.start_time < restore_info.end_time and
+            restore_info.num_files == info.num_files and
+            restore_info.total_size == info.total_size and
+            restore_info.num_entries == info.num_entries and
+            restore_info.uncompressed_size == info.uncompressed_size and
+            restore_info.compressed_size == info.compressed_size and
+            restore_info.files_read + restore_events["RestorePartsSkippedFiles"] == restore_info.num_files and
+            restore_info.bytes_read + restore_events["RestorePartsSkippedBytes"] == restore_info.total_size
+        )
+
+    wait_condition(verify_restore_info, lambda x: x)
 
     # Failed backup.
     backup_name = new_backup_name()

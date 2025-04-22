@@ -117,6 +117,7 @@ if(WITH_SASL_CYRUS)
    set(WITH_SASL_SCRAM 1)
    set(WITH_SASL_OAUTHBEARER 1)
 endif()
+add_definitions(-DOPENSSL_NO_ENGINE)
 list(APPEND SRCS "${RDKAFKA_SOURCE_DIR}/rdkafka_ssl.c")
 
 if(WITH_SSL AND WITH_CURL)

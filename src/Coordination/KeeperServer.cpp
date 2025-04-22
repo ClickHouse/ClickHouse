@@ -32,7 +32,6 @@
 #if USE_SSL
 #    include <Server/CertificateReloader.h>
 #    include <openssl/ssl.h>
-#    include <Poco/Crypto/EVPPKey.h>
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SSLManager.h>
 #    include <Poco/Net/Utility.h>
@@ -159,12 +158,14 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
             if (auto err = SSL_CTX_clear_chain_certs(ssl_ctx); err != 1)
                 throw Exception(ErrorCodes::OPENSSL_ERROR, "Clear certificates {}", Poco::Net::Utility::getLastError());
 
-            if (auto err = SSL_CTX_use_certificate(ssl_ctx, const_cast<X509 *>(certificate_data->certs_chain[0].certificate())); err != 1)
+            const auto * root_certificate = static_cast<const X509 *>(certificate_data->certs_chain.front());
+            if (auto err = SSL_CTX_use_certificate(ssl_ctx, const_cast<X509 *>(root_certificate)); err != 1)
                 throw Exception(ErrorCodes::OPENSSL_ERROR, "Use certificate {}", Poco::Net::Utility::getLastError());
 
             for (auto cert = certificate_data->certs_chain.begin() + 1; cert != certificate_data->certs_chain.end(); cert++)
             {
-                if (auto err = SSL_CTX_add1_chain_cert(ssl_ctx, const_cast<X509 *>(cert->certificate())); err != 1)
+                const auto * certificate = static_cast<const X509 *>(*cert);
+                if (auto err = SSL_CTX_add1_chain_cert(ssl_ctx, const_cast<X509 *>(certificate)); err != 1)
                     throw Exception(ErrorCodes::OPENSSL_ERROR, "Add certificate to chain {}", Poco::Net::Utility::getLastError());
             }
 
@@ -174,7 +175,6 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
             if (auto err = SSL_CTX_check_private_key(ssl_ctx); err != 1)
                 throw Exception(ErrorCodes::OPENSSL_ERROR, "Unusable key-pair {}", Poco::Net::Utility::getLastError());
         }
-
 
         return context.takeSslContext();
     };
@@ -559,6 +559,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     nuraft::raft_server::limits raft_limits;
     raft_limits.reconnect_limit_ = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::raft_limits_reconnect_limit], "raft_limits_reconnect_limit", log);
     raft_limits.response_limit_ = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::raft_limits_response_limit], "response_limit", log);
+    raft_limits.busy_connection_limit_ = 0;
     KeeperRaftServer::set_raft_limits(raft_limits);
 
     raft_instance->start_server(init_options.skip_initial_election_timeout_);

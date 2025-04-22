@@ -5,4 +5,4 @@ Three or six index arguments
 4nd argument (quantization), if given, must be String and f32, f16, ...
 5nd argument (M), if given, must be UInt64 and > 1
 Must be created on single column
-Must be created on Array(Float*) columns
+Must be created on Array(Float32|Float64|BFloat16) columns

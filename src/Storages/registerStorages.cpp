@@ -37,9 +37,10 @@ void registerStorageFuzzJSON(StorageFactory & factory);
 void registerStorageS3(StorageFactory & factory);
 void registerStorageHudi(StorageFactory & factory);
 void registerStorageS3Queue(StorageFactory & factory);
-#  if USE_PARQUET
+#endif
+
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
 void registerStorageDeltaLake(StorageFactory & factory);
-#  endif
 #endif
 
 #if USE_AVRO
@@ -145,11 +146,10 @@ void registerStorages()
 #if USE_AWS_S3
     registerStorageHudi(factory);
     registerStorageS3Queue(factory);
+#endif
 
-#  if USE_PARQUET && USE_DELTA_KERNEL_RS
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
     registerStorageDeltaLake(factory);
-#  endif
-
 #endif
 
 #if USE_HDFS

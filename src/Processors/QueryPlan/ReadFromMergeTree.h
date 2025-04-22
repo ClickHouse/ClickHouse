@@ -71,6 +71,7 @@ public:
         Partition,
         PrimaryKey,
         Skip,
+        PrimaryKeyExpand,
     };
 
     /// This is a struct with information about applied indexes.
@@ -131,6 +132,9 @@ public:
         std::optional<MergeTreeReadTaskCallback> read_task_callback_ = std::nullopt,
         std::optional<size_t> number_of_current_replica_ = std::nullopt);
 
+    ReadFromMergeTree(const ReadFromMergeTree &) = default;
+    ReadFromMergeTree(ReadFromMergeTree &&) = default;
+
     std::unique_ptr<ReadFromMergeTree> createLocalParallelReplicasReadingStep(
         AnalysisResultPtr analyzed_result_ptr_,
         MergeTreeAllRangesCallback all_ranges_callback_,
@@ -139,6 +143,8 @@ public:
 
     static constexpr auto name = "ReadFromMergeTree";
     String getName() const override { return name; }
+
+    QueryPlanStepPtr clone() const override;
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 

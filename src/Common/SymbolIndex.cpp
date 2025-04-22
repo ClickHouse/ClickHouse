@@ -1,9 +1,11 @@
+#include <base/defines.h>
 #if defined(__ELF__) && !defined(OS_FREEBSD)
 
-#    include <base/MemorySanitizer.h>
-#    include <base/hex.h>
-#    include <base/sort.h>
-#    include <Common/SymbolIndex.h>
+#include <base/MemorySanitizer.h>
+#include <base/hex.h>
+#include <base/sort.h>
+#include <Common/MemoryTrackerDebugBlockerInThread.h>
+#include <Common/SymbolIndex.h>
 
 #include <algorithm>
 #include <optional>
@@ -511,6 +513,21 @@ String SymbolIndex::getBuildIDHex() const
 
 const SymbolIndex & SymbolIndex::instance()
 {
+    /// To avoid recursive initialization of SymbolIndex we need to block debug
+    /// checks in MemoryTracker.
+    ///
+    /// Those debug checks capture the stacktrace for the log if big enough
+    /// allocation is done (big enough > 16MiB), while SymbolIndex will do
+    /// ~25MiB, and so if exception will be thrown before SymbolIndex
+    /// initialized (this is the case for client/local, and no, we do not want
+    /// to initialize it explicitly, since this will increase startup time for
+    /// the client) and later during SymbolIndex initialization it will try to
+    /// initialize it one more time, and in debug build you will get pretty
+    /// nice error:
+    ///
+    ///   __cxa_guard_acquire detected recursive initialization: do you have a function-local static variable whose initialization depends on that function
+    ///
+    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
     static SymbolIndex instance;
     return instance;
 }

@@ -20,8 +20,20 @@ If enabled, indicates that metadata is taken from iceberg specification that is 
     DECLARE(Bool, allow_experimental_delta_kernel_rs, false, R"(
 If enabled, the engine would use delta-kernel-rs for DeltaLake metadata parsing
 )", 0) \
+    DECLARE(Bool, delta_lake_read_schema_same_as_table_schema, false, R"(
+Whether delta-lake read schema is the same as table schema.
+)", 0) \
     DECLARE(String, iceberg_metadata_file_path, "", R"(
 Explicit path to desired Iceberg metadata file, should be relative to path in object storage. Make sense for table function use case only.
+)", 0) \
+    DECLARE(String, iceberg_metadata_table_uuid, "", R"(
+Explicit table UUID to read metadata for. Ignored if iceberg_metadata_file_path is set.
+)", 0) \
+    DECLARE(Bool, iceberg_recent_metadata_file_by_last_updated_ms_field, false, R"(
+If enabled, the engine would use the metadata file with the most recent last_updated_ms json field. Does not make sense to use with iceberg_metadata_file_path.
+)", 0) \
+    DECLARE(Bool, iceberg_use_version_hint, false, R"(
+Get latest metadata path from version-hint.text file.
 )", 0) \
 
 // clang-format on
@@ -37,12 +49,12 @@ struct StorageObjectStorageSettingsImpl : public BaseSettings<StorageObjectStora
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
     StorageObjectStorageSettings##TYPE NAME = &StorageObjectStorageSettingsImpl ::NAME;
 
 namespace StorageObjectStorageSetting
 {
-LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
+LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
 }
 
 #undef INITIALIZE_SETTING_EXTERN

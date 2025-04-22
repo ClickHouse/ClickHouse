@@ -963,9 +963,7 @@ try
         LOG_DEBUG(log, "Flushed {} rows, {} bytes for query '{}'", num_rows, num_bytes, key.query_str);
         queue_shard_flush_time_history.updateWithCurrentTime();
 
-        bool pulling_pipeline = false;
-        logQueryFinish(
-            query_log_elem, insert_context, key.query, pipeline, pulling_pipeline, query_span, QueryResultCacheUsage::None, internal);
+        logQueryFinish(query_log_elem, insert_context, key.query, pipeline, /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, internal);
     };
 
     try
@@ -1067,7 +1065,14 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         return 0;
     };
 
-    StreamingFormatExecutor executor(header, format, std::move(on_error), std::move(adding_defaults_transform));
+
+    StreamingFormatExecutor executor(
+        header,
+        format,
+        std::move(on_error),
+        data->size_in_bytes,
+        data->entries.size(),
+        std::move(adding_defaults_transform));
     auto chunk_info = std::make_shared<AsyncInsertInfo>();
 
     for (const auto & entry : data->entries)
@@ -1083,7 +1088,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         executor.setQueryParameters(entry->query_parameters);
 
         size_t num_bytes = bytes->size();
-        size_t num_rows = executor.execute(*buffer);
+        size_t num_rows = executor.execute(*buffer, num_bytes);
 
         total_rows += num_rows;
 

@@ -1,8 +1,10 @@
 #include <Planner/PlannerContext.h>
 
-#include <Analyzer/TableNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/UnionNode.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 
@@ -46,6 +48,23 @@ bool GlobalPlannerContext::hasColumnIdentifier(const ColumnIdentifier & column_i
     return column_identifiers.contains(column_identifier);
 }
 
+void GlobalPlannerContext::collectTableExpressionDataForCorrelatedColumns(
+    const QueryTreeNodePtr & table_expression_node,
+    const PlannerContextPtr & planner_context)
+{
+
+    auto * query_node = table_expression_node->as<QueryNode>();
+    auto * union_node = table_expression_node->as<UnionNode>();
+    chassert(query_node != nullptr && query_node->isCorrelated() || union_node != nullptr && union_node->isCorrelated());
+
+    const auto & correlated_columns = query_node ? query_node->getCorrelatedColumns().getNodes() : union_node->getCorrelatedColumns().getNodes();
+    for (const auto & column : correlated_columns)
+    {
+        auto column_source = column->as<ColumnNode>()->getColumnSource();
+        shared_table_expression_data.emplace(column_source, &planner_context->getTableExpressionDataOrThrow(column_source));
+    }
+}
+
 PlannerContext::PlannerContext(ContextMutablePtr query_context_, GlobalPlannerContextPtr global_planner_context_, const SelectQueryOptions & select_query_options_)
     : query_context(std::move(query_context_))
     , global_planner_context(std::move(global_planner_context_))
@@ -60,6 +79,10 @@ PlannerContext::PlannerContext(ContextMutablePtr query_context_, PlannerContextP
 
 TableExpressionData & PlannerContext::getOrCreateTableExpressionData(const QueryTreeNodePtr & table_expression_node)
 {
+    auto & shared_table_expression_data = getSharedTableExpressionDataMap();
+    if (auto it = shared_table_expression_data.find(table_expression_node); it != shared_table_expression_data.end())
+        return *it->second;
+
     auto [it, _] = table_expression_node_to_data.emplace(table_expression_node, TableExpressionData());
     return it->second;
 }
@@ -68,9 +91,15 @@ const TableExpressionData & PlannerContext::getTableExpressionDataOrThrow(const 
 {
     auto table_expression_data_it = table_expression_node_to_data.find(table_expression_node);
     if (table_expression_data_it == table_expression_node_to_data.end())
+    {
+        const auto & shared_table_expression_data = getSharedTableExpressionDataMap();
+        if (auto it = shared_table_expression_data.find(table_expression_node); it != shared_table_expression_data.end())
+            return *it->second;
+
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Table expression {} is not registered in planner context",
             table_expression_node->formatASTForErrorMessage());
+    }
 
     return table_expression_data_it->second;
 }
@@ -79,9 +108,17 @@ TableExpressionData & PlannerContext::getTableExpressionDataOrThrow(const QueryT
 {
     auto table_expression_data_it = table_expression_node_to_data.find(table_expression_node);
     if (table_expression_data_it == table_expression_node_to_data.end())
+    {
+        auto & shared_table_expression_data = getSharedTableExpressionDataMap();
+
+        auto it = shared_table_expression_data.find(table_expression_node);
+        if (it != shared_table_expression_data.end())
+            return *it->second;
+
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Table expression {} is not registered in planner context",
             table_expression_node->formatASTForErrorMessage());
+    }
 
     return table_expression_data_it->second;
 }
@@ -90,7 +127,14 @@ const TableExpressionData * PlannerContext::getTableExpressionDataOrNull(const Q
 {
     auto table_expression_data_it = table_expression_node_to_data.find(table_expression_node);
     if (table_expression_data_it == table_expression_node_to_data.end())
+    {
+        const auto & shared_table_expression_data = getSharedTableExpressionDataMap();
+
+        if (auto it = shared_table_expression_data.find(table_expression_node); it != shared_table_expression_data.end())
+            return it->second;
+
         return nullptr;
+    }
 
     return &table_expression_data_it->second;
 }
@@ -99,7 +143,14 @@ TableExpressionData * PlannerContext::getTableExpressionDataOrNull(const QueryTr
 {
     auto table_expression_data_it = table_expression_node_to_data.find(table_expression_node);
     if (table_expression_data_it == table_expression_node_to_data.end())
+    {
+        auto & shared_table_expression_data = getSharedTableExpressionDataMap();
+
+        if (auto it = shared_table_expression_data.find(table_expression_node); it != shared_table_expression_data.end())
+            return it->second;
+
         return nullptr;
+    }
 
     return &table_expression_data_it->second;
 }

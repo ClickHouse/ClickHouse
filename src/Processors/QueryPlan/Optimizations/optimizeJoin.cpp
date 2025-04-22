@@ -304,6 +304,7 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
             settings.max_block_size);
         new_join_node.children = {new_left_node};
     }
+    new_join_node.step->setStepDescription(node.step->getStepDescription());
 
     QueryPlan::Node result_node;
     if (post_filter)

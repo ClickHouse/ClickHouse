@@ -53,20 +53,23 @@ def start_cluster():
     ],
 )
 def test(storage_policy, key_prefix):
-    def create_insert(node, insert_values):
+    def create_insert(node, table_name, insert_values):
+        node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
         node.query(
             """
-            CREATE TABLE test (
+            CREATE TABLE {} (
                 id Int64,
                 data String
             ) ENGINE=MergeTree()
+            PARTITION BY id % 10
             ORDER BY id
             SETTINGS storage_policy='{}'
             """.format(
-                storage_policy
+                table_name, storage_policy
             )
         )
-        node.query("INSERT INTO test VALUES {}".format(insert_values))
+        if insert_values:
+            node.query("INSERT INTO {} VALUES {}".format(table_name, insert_values))
 
     insert_values_arr = [
         gen_insert_values(random.randint(1, MAX_ROWS)) for _ in range(0, NUM_WORKERS)
@@ -75,9 +78,10 @@ def test(storage_policy, key_prefix):
     assert len(cluster.instances) == NUM_WORKERS
     for i in range(NUM_WORKERS):
         node = cluster.instances[f"node{i + 1}"]
-        t = threading.Thread(target=create_insert, args=(node, insert_values_arr[i]))
-        threads.append(t)
-        t.start()
+        for table_name, values in [("test", insert_values_arr[i]), ("test_dst", "")]:
+            t = threading.Thread(target=create_insert, args=(node, table_name, values))
+            threads.append(t)
+            t.start()
 
     for t in threads:
         t.join()
@@ -114,9 +118,20 @@ def test(storage_policy, key_prefix):
             != -1
         )
 
+        count_part_0 = int(node.query("SELECT count(*) FROM test WHERE id % 10 = 0"))
+        node.query("ALTER TABLE test MOVE PARTITION 0 TO TABLE test_dst")
+
+        count_part_1 = int(node.query("SELECT count(*) FROM test WHERE id % 10 = 1"))
+        node.query("ALTER TABLE test_dst REPLACE PARTITION 1 FROM test")
+
+        count_dst = int(node.query("SELECT count(*) FROM test_dst"))
+        assert count_dst > 0
+        assert count_dst == count_part_0 + count_part_1
+
     insert_values_arr = []
     for i in range(NUM_WORKERS):
         node = cluster.instances[f"node{i + 1}"]
+        node.query("OPTIMIZE TABLE test FINAL")
         insert_values_arr.append(
             node.query("SELECT * FROM test ORDER BY id FORMAT Values")
         )
@@ -156,7 +171,8 @@ def test(storage_policy, key_prefix):
 
     for i in range(NUM_WORKERS):
         node = cluster.instances[f"node{i + 1}"]
-        node.query("DROP TABLE IF EXISTS test SYNC")
+        node.query("DROP TABLE test SYNC")
+        node.query("DROP TABLE test_dst SYNC")
 
     it = cluster.minio_client.list_objects(
         cluster.minio_bucket, key_prefix, recursive=True

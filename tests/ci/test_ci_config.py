@@ -610,7 +610,7 @@ class TestCIConfig(unittest.TestCase):
         assert not ci_cache.jobs_to_skip
 
         MOCK_AFFECTED_JOBS = [
-            CI.JobNames.STATELESS_TEST_S3_DEBUG,
+            CI.JobNames.STATELESS_TEST_S3_DEBUG_DISTRIBUTED_PLAN,
             CI.JobNames.STRESS_TEST_TSAN,
         ]
         MOCK_REQUIRED_BUILDS = []

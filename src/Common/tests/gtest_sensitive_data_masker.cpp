@@ -9,7 +9,6 @@
 #pragma clang diagnostic ignored "-Wundef"
 
 #include <gtest/gtest.h>
-#include <chrono>
 
 
 namespace DB
@@ -28,11 +27,11 @@ TEST(Common, SensitiveDataMasker)
 
     Poco::AutoPtr<Poco::Util::XMLConfiguration> empty_xml_config = new Poco::Util::XMLConfiguration();
     DB::SensitiveDataMasker masker(*empty_xml_config, "");
-    masker.addMaskingRule("all a letters", "a+", "--a--");
-    masker.addMaskingRule("all b letters", "b+", "--b--");
-    masker.addMaskingRule("all d letters", "d+", "--d--");
-    masker.addMaskingRule("all x letters", "x+", "--x--");
-    masker.addMaskingRule("rule \"d\" result", "--d--", "*****"); // RE2 regexps are applied one-by-one in order
+    masker.addMaskingRule("all a letters", "a+", "--a--", /*throw_on_match=*/false);
+    masker.addMaskingRule("all b letters", "b+", "--b--", /*throw_on_match=*/false);
+    masker.addMaskingRule("all d letters", "d+", "--d--", /*throw_on_match=*/false);
+    masker.addMaskingRule("all x letters", "x+", "--x--", /*throw_on_match=*/false);
+    masker.addMaskingRule("rule \"d\" result", "--d--", "*****", /*throw_on_match=*/false); // RE2 regexps are applied one-by-one in order
     std::string x = "aaaaaaaaaaaaa   bbbbbbbbbb cccc aaaaaaaaaaaa d ";
     EXPECT_EQ(masker.wipeSensitiveData(x), 5);
     EXPECT_EQ(x, "--a--   --b-- cccc --a-- ***** ");
@@ -46,9 +45,9 @@ TEST(Common, SensitiveDataMasker)
 #endif
 
     DB::SensitiveDataMasker masker2(*empty_xml_config, "");
-    masker2.addMaskingRule("hide root password", "qwerty123", "******");
-    masker2.addMaskingRule("hide SSN", "[0-9]{3}-[0-9]{2}-[0-9]{4}", "000-00-0000");
-    masker2.addMaskingRule("hide email", "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,4}", "hidden@hidden.test");
+    masker2.addMaskingRule("hide root password", "qwerty123", "******", /*throw_on_match=*/false);
+    masker2.addMaskingRule("hide SSN", "[0-9]{3}-[0-9]{2}-[0-9]{4}", "000-00-0000", /*throw_on_match=*/false);
+    masker2.addMaskingRule("hide email", "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,4}", "hidden@hidden.test", /*throw_on_match=*/false);
 
     std::string query = "SELECT id FROM mysql('localhost:3308', 'database', 'table', 'root', 'qwerty123') WHERE ssn='123-45-6789' or "
                         "email='JonhSmith@secret.domain.test'";
@@ -63,7 +62,7 @@ TEST(Common, SensitiveDataMasker)
     // gtest has not good way to check exception content, so just do it manually (see https://github.com/google/googletest/issues/952 )
     try
     {
-        maskerbad.addMaskingRule("bad regexp", "**", "");
+        maskerbad.addMaskingRule("bad regexp", "**", "", /*throw_on_match=*/false);
         ADD_FAILURE() << "addMaskingRule() should throw an error" << std::endl;
     }
     catch (const DB::Exception & e)

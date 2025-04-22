@@ -1459,11 +1459,11 @@ jobs:
             python3 -m praktika run 'Integration tests (tsan, 6/6)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stress_test_debug:
+  stress_test_amd_debug:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd_and_merge, build_amd_debug]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKGRlYnVnKQ==') }}
-    name: "Stress test (debug)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKGFtZF9kZWJ1Zyk=') }}
+    name: "Stress test (amd_debug)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -1492,16 +1492,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stress test (debug)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_debug)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stress test (debug)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_debug)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stress_test_tsan:
+  stress_test_amd_tsan:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd_and_merge, build_amd_tsan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKHRzYW4p') }}
-    name: "Stress test (tsan)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKGFtZF90c2FuKQ==') }}
+    name: "Stress test (amd_tsan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -1530,16 +1530,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stress test (tsan)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_tsan)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stress test (tsan)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_tsan)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stress_test_asan:
-    runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_asan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKGFzYW4p') }}
-    name: "Stress test (asan)"
+  stress_test_arm_asan:
+    runs-on: [self-hosted, func-tester-aarch64]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_asan]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKGFybV9hc2FuKQ==') }}
+    name: "Stress test (arm_asan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -1568,16 +1568,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stress test (asan)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (arm_asan)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stress test (asan)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (arm_asan)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stress_test_ubsan:
+  stress_test_amd_ubsan:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd_and_merge, build_amd_ubsan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKHVic2FuKQ==') }}
-    name: "Stress test (ubsan)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKGFtZF91YnNhbik=') }}
+    name: "Stress test (amd_ubsan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -1606,16 +1606,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stress test (ubsan)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_ubsan)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stress test (ubsan)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_ubsan)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stress_test_msan:
+  stress_test_amd_msan:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd_and_merge, build_amd_msan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKG1zYW4p') }}
-    name: "Stress test (msan)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKGFtZF9tc2FuKQ==') }}
+    name: "Stress test (amd_msan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -1644,7 +1644,7 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stress test (msan)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_msan)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stress test (msan)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_msan)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
           fi

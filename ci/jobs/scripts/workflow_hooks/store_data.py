@@ -1,4 +1,7 @@
-from ci.jobs.scripts.clickhouse_version import CHVersion
+import copy
+
+from ci.defs.job_configs import JobConfigs
+from ci.praktika.digest import Digest
 from ci.praktika.info import Info
 from ci.praktika.utils import Shell
 
@@ -18,6 +21,13 @@ if __name__ == "__main__":
     if changed_files_str:
         changed_files = changed_files_str.split("\n")
         info.store_custom_data("changed_files", changed_files)
+
+    # hack to get build digest
+    some_build_job = copy.deepcopy(JobConfigs.build_jobs[0])
+    some_build_job.run_in_docker = ""
+    some_build_job.provides = []
+    digest = Digest().calc_job_digest(some_build_job, {}, {}).split("-")[0]
+    info.store_custom_data("build_digest", digest)
 
     if info.git_branch == "master" and info.repo_name == "ClickHouse/ClickHouse":
         # store previous commits for perf tests

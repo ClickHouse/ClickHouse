@@ -207,4 +207,4 @@ Templates:
 
 ## How to Build Documentation
 
-You can build your documentation manually by following the instructions in the docs repo [contrib-writing-guide](https://github.com/ClickHouse/clickhouse-docs/blob/main/contrib-writing-guide.md). Also, our CI runs the documentation build after the `documentation` label is added to PR. You can see the results of a build in the GitHub interface. If you have no permissions to add labels, a reviewer of your PR will add it.
+You can build your documentation manually by following the instructions in the docs repo [contrib-writing-guide](https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/contrib-writing-guide.md). Also, our CI runs the documentation build after the `documentation` label is added to PR. You can see the results of a build in the GitHub interface. If you have no permissions to add labels, a reviewer of your PR will add it.

@@ -2,6 +2,7 @@
 #include "config.h"
 
 #include <Storages/IndicesDescription.h>
+#include <Interpreters/ActionsDAG.h>
 
 #include <memory>
 #include <string>
@@ -12,6 +13,60 @@ constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 
 namespace DB
 {
+
+namespace Internal
+{
+
+enum class RPNEvaluationIndexUsefulnessState : uint8_t
+{
+    // the following states indicate if the index might be useful
+    TRUE,
+    FALSE,
+    // the following states indicate RPN always evaluates to TRUE or FALSE, they are used for short-circuit.
+    ALWAYS_TRUE,
+    ALWAYS_FALSE
+};
+
+[[nodiscard]] inline RPNEvaluationIndexUsefulnessState
+evalAndRpnIndexStates(RPNEvaluationIndexUsefulnessState lhs, RPNEvaluationIndexUsefulnessState rhs)
+{
+    if (lhs == RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE || rhs == RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE)
+    {
+        // short circuit
+        return RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE;
+    }
+    else if (lhs == RPNEvaluationIndexUsefulnessState::TRUE || rhs == RPNEvaluationIndexUsefulnessState::TRUE)
+    {
+        return RPNEvaluationIndexUsefulnessState::TRUE;
+    }
+    else if (lhs == RPNEvaluationIndexUsefulnessState::FALSE || rhs == RPNEvaluationIndexUsefulnessState::FALSE)
+    {
+        return RPNEvaluationIndexUsefulnessState::FALSE;
+    }
+    chassert(lhs == RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE && rhs == RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE);
+    return RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE;
+}
+
+[[nodiscard]] inline RPNEvaluationIndexUsefulnessState
+evalOrRpnIndexStates(RPNEvaluationIndexUsefulnessState lhs, RPNEvaluationIndexUsefulnessState rhs)
+{
+    if (lhs == RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE || rhs == RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE)
+    {
+        // short circuit
+        return RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE;
+    }
+    else if (lhs == RPNEvaluationIndexUsefulnessState::TRUE || rhs == RPNEvaluationIndexUsefulnessState::TRUE)
+    {
+        return RPNEvaluationIndexUsefulnessState::TRUE;
+    }
+    else if (lhs == RPNEvaluationIndexUsefulnessState::FALSE || rhs == RPNEvaluationIndexUsefulnessState::FALSE)
+    {
+        return RPNEvaluationIndexUsefulnessState::FALSE;
+    }
+    chassert(lhs == RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE && rhs == RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE);
+    return RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE;
+}
+}
 
 class ActionsDAG;
 class Block;
@@ -63,7 +118,7 @@ struct IMergeTreeIndexGranule
     /// - 1 -- everything else.
     ///
     /// Implementation is responsible for version check,
-    /// and throw LOGICAL_ERROR in case of unsupported version.
+    /// and throws LOGICAL_ERROR in case of unsupported version.
     ///
     /// See also:
     /// - IMergeTreeIndex::getSerializedFileExtension()
@@ -80,6 +135,16 @@ struct IMergeTreeIndexGranule
 
 using MergeTreeIndexGranulePtr = std::shared_ptr<IMergeTreeIndexGranule>;
 using MergeTreeIndexGranules = std::vector<MergeTreeIndexGranulePtr>;
+
+
+/// Stores many granules at once in a more optimal form, allowing bulk filtering.
+struct IMergeTreeIndexBulkGranules
+{
+    virtual ~IMergeTreeIndexBulkGranules() = default;
+    virtual void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) = 0;
+};
+
+using MergeTreeIndexBulkGranulesPtr = std::shared_ptr<IMergeTreeIndexBulkGranules>;
 
 
 /// Aggregates info about a single block of data.
@@ -110,6 +175,12 @@ public:
 
     virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const = 0;
 
+    using FilteredGranules = std::vector<size_t>;
+    virtual FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr &) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support filtering in bulk");
+    }
+
     /// Special method for vector similarity indexes:
     /// Returns the row positions of the N nearest neighbors in the index granule
     /// The returned row numbers are guaranteed to be sorted and unique.
@@ -117,10 +188,64 @@ public:
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
     }
+
+    template <typename RPNElement>
+    bool rpnEvaluatesAlwaysUnknownOrTrue(
+        const std::vector<RPNElement> & rpn, const std::unordered_set<typename RPNElement::Function> & matchingFunctions) const
+    {
+        std::vector<Internal::RPNEvaluationIndexUsefulnessState> rpn_stack;
+        rpn_stack.reserve(rpn.size() - 1);
+
+        for (const auto & element : rpn)
+        {
+            if (element.function == RPNElement::ALWAYS_TRUE)
+            {
+                rpn_stack.emplace_back(Internal::RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE);
+            }
+            else if (element.function == RPNElement::ALWAYS_FALSE)
+            {
+                rpn_stack.emplace_back(Internal::RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE);
+            }
+            else if (element.function == RPNElement::FUNCTION_UNKNOWN)
+            {
+                rpn_stack.emplace_back(Internal::RPNEvaluationIndexUsefulnessState::FALSE);
+            }
+            else if (matchingFunctions.contains(element.function))
+            {
+                rpn_stack.push_back(Internal::RPNEvaluationIndexUsefulnessState::TRUE);
+            }
+            else if (element.function == RPNElement::FUNCTION_NOT)
+            {
+                // do nothing
+            }
+            else if (element.function == RPNElement::FUNCTION_AND)
+            {
+                auto lhs = rpn_stack.back();
+                rpn_stack.pop_back();
+                auto rhs = rpn_stack.back();
+                rpn_stack.back() = evalAndRpnIndexStates(lhs, rhs);
+            }
+            else if (element.function == RPNElement::FUNCTION_OR)
+            {
+                auto lhs = rpn_stack.back();
+                rpn_stack.pop_back();
+                auto rhs = rpn_stack.back();
+                rpn_stack.back() = evalOrRpnIndexStates(lhs, rhs);
+            }
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in RPNElement");
+        }
+
+        chassert(rpn_stack.size() == 1);
+        /*
+         * In case the result is `ALWAYS_TRUE`, it means we don't need any indices at all, it might be a constant result.
+         * Thus, we only check against the `TRUE` to determine the usefulness of the index condition.
+         */
+        return rpn_stack.front() != Internal::RPNEvaluationIndexUsefulnessState::TRUE;
+    }
 };
 
 using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;
-using MergeTreeIndexConditions = std::vector<MergeTreeIndexConditionPtr>;
 
 struct IMergeTreeIndex;
 using MergeTreeIndexPtr = std::shared_ptr<const IMergeTreeIndex>;
@@ -146,7 +271,6 @@ protected:
 };
 
 using MergeTreeIndexMergedConditionPtr = std::shared_ptr<IMergeTreeIndexMergedCondition>;
-using MergeTreeIndexMergedConditions = std::vector<IMergeTreeIndexMergedCondition>;
 
 
 struct IMergeTreeIndex
@@ -181,6 +305,17 @@ struct IMergeTreeIndex
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
+    /// A more optimal filtering method
+    virtual bool supportsBulkFiltering() const
+    {
+        return false;
+    }
+
+    virtual MergeTreeIndexBulkGranulesPtr createIndexBulkGranules() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support filtering in bulk");
+    }
+
     virtual MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const = 0;
 
     virtual MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const GinIndexStorePtr & /*store*/, const MergeTreeWriterSettings & settings) const
@@ -189,11 +324,11 @@ struct IMergeTreeIndex
     }
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
-        const ActionsDAG * filter_actions_dag, ContextPtr context) const = 0;
+        const ActionsDAG::Node * predicate, ContextPtr context) const = 0;
 
     /// The vector similarity index overrides this method
     virtual MergeTreeIndexConditionPtr createIndexCondition(
-        const ActionsDAG * /*filter_actions_dag*/, ContextPtr /*context*/,
+        const ActionsDAG::Node * /*predicate*/, ContextPtr /*context*/,
         const std::optional<VectorSearchParameters> & /*parameters*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -269,7 +404,7 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach)
 MergeTreeIndexPtr legacyVectorSimilarityIndexCreator(const IndexDescription & index);
 void legacyVectorSimilarityIndexValidator(const IndexDescription & index, bool attach);
 
-MergeTreeIndexPtr fullTextIndexCreator(const IndexDescription & index);
-void fullTextIndexValidator(const IndexDescription & index, bool attach);
+MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index);
+void ginIndexValidator(const IndexDescription & index, bool attach);
 
 }

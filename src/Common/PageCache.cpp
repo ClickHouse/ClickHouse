@@ -1,19 +1,13 @@
 #include "PageCache.h"
 
-#include <unistd.h>
 #include <sys/mman.h>
 #include <Common/Allocator.h>
-#include <Common/logger_useful.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/formatReadable.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
-#include <base/hex.h>
-#include <base/errnoToString.h>
-#include <base/getPageSize.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadHelpers.h>
+
 
 namespace ProfileEvents
 {
@@ -47,10 +41,15 @@ std::string PageCacheKey::toString() const
     return fmt::format("{}:{}:{}{}{}", path, offset, size, file_version.empty() ? "" : ":", file_version);
 }
 
-PageCache::PageCache(size_t default_block_size_, size_t default_lookahead_blocks_, std::chrono::milliseconds history_window_, const String & cache_policy, double size_ratio, size_t min_size_in_bytes_, size_t max_size_in_bytes_, double free_memory_ratio_, size_t num_shards)
-    : default_block_size(default_block_size_)
-    , default_lookahead_blocks(default_lookahead_blocks_)
-    , min_size_in_bytes(min_size_in_bytes_)
+PageCache::PageCache(
+    std::chrono::milliseconds history_window_,
+    const String & cache_policy,
+    double size_ratio,
+    size_t min_size_in_bytes_,
+    size_t max_size_in_bytes_,
+    double free_memory_ratio_,
+    size_t num_shards)
+    : min_size_in_bytes(min_size_in_bytes_)
     , max_size_in_bytes(max_size_in_bytes_)
     , free_memory_ratio(free_memory_ratio_)
     , history_window(history_window_)
