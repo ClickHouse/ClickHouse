@@ -93,10 +93,14 @@ ARG TARGETARCH
 COPY --from=clickhouse/cctools:a0b654d08b8d0b2c71ac \
   /opt/openssl-fips/ssl/openssl.cnf \
   /opt/openssl-fips/ssl/fipsmodule.cnf \
-  /etc/ssl/
-COPY --from=clickhouse/cctools:a0b654d08b8d0b2c71ac \
   /opt/openssl-fips/providers/fips.so \
-  /usr/lib/${TARGETARCH}-linux-gnu/ossl-modules/
+  /etc/ssl/
+RUN arch=${TARGETARCH:-amd64} \
+  && case $arch in \
+      amd64) rarch=x86_64 ;; \
+      arm64) rarch=aarch64 ;; \
+    esac \
+  && mv /etc/ssl/fips.so /usr/lib/${rarch}-linux-gnu/ossl-modules/fips.so
 
 # Same options as in test/base/Dockerfile
 # (in case you need to override them in tests)
