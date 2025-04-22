@@ -1285,8 +1285,6 @@ void MutationsInterpreter::Source::read(
             storage_snapshot,
             part,
             alter_conversions,
-            nullptr,
-            0,
             required_columns,
             nullptr,
             apply_deleted_mask_,

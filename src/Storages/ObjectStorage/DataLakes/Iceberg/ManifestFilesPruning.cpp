@@ -145,10 +145,7 @@ ManifestFilesPruner::ManifestFilesPruner(
     {
         partition_key = &manifest_file.getPartitionKeyDescription();
         if (transformed_dag != nullptr)
-        {
-            ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
-            partition_key_condition.emplace(inverted_dag, context, partition_key->column_names, partition_key->expression, true /* single_point */);
-        }
+            partition_key_condition.emplace(transformed_dag.get(), context, partition_key->column_names, partition_key->expression, true /* single_point */);
     }
 
     if (manifest_file.hasBoundsInfoInManifests() && transformed_dag != nullptr)
@@ -166,8 +163,7 @@ ManifestFilesPruner::ManifestFilesPruner(
                 ExpressionActionsPtr expression = std::make_shared<ExpressionActions>(
                     ActionsDAG({name_and_type}), ExpressionActionsSettings(context));
 
-                ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
-                min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type.name}, expression));
+                min_max_key_conditions.emplace(used_column_id, KeyCondition(transformed_dag.get(), context, {name_and_type.name}, expression));
             }
         }
     }

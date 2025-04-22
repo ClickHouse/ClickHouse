@@ -169,7 +169,7 @@ randUniform(min, max)
 - `min` - `Float64` - left boundary of the range,
 - `max` - `Float64` - right boundary of the range.
 
-**Returned value**
+**Arguments**
 
 A random number of type [Float64](../data-types/float.md).
 

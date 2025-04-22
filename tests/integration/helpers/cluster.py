@@ -348,14 +348,14 @@ def rabbitmq_debuginfo(rabbitmq_id, cookie):
 
 async def check_nats_is_available(nats_port, ssl_ctx=None):
     nc = await nats_connect_ssl(
-        nats_port, user="click", password="house", ssl_ctx=ssl_ctx, max_reconnect_attempts=1
+        nats_port, user="click", password="house", ssl_ctx=ssl_ctx
     )
     available = nc.is_connected
     await nc.close()
     return available
 
 
-async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None, **connect_options):
+async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None):
     if not ssl_ctx:
         ssl_ctx = ssl.create_default_context()
         ssl_ctx.check_hostname = False
@@ -365,7 +365,6 @@ async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None, **connect_op
         user=user,
         password=password,
         tls=ssl_ctx,
-        **connect_options
     )
     return nc
 
@@ -2417,7 +2416,7 @@ class ClickHouseCluster:
                     return True
             except Exception as ex:
                 logging.debug("RabbitMQ await_startup failed, %s:", ex)
-                time.sleep(0.1)
+                time.sleep(0.5)
 
         start = time.time()
         while time.time() - start < timeout:
@@ -2444,9 +2443,6 @@ class ClickHouseCluster:
         self.stop_rabbitmq_app()
         run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "reset", timeout)
         self.start_rabbitmq_app()
-
-    def run_rabbitmqctl(self, command):
-        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, command)
 
     def wait_nats_is_available(self, max_retries=5):
         retries = 0
