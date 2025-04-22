@@ -2637,3 +2637,76 @@ Result:
 1. │ [417784657,728683856,3071092609] │
    └──────────────────────────────────┘
 ```
+
+## smashSimilarity {#smashsimilarity}
+
+Calculates the SMASH (Smart String Similarity) between two strings. This function is designed to handle word-based string comparisons with intelligent gap handling and subsequence matching.
+
+**Syntax**
+
+```sql
+smashSimilarity(haystack, needle)
+```
+
+**Arguments**
+
+- `haystack` — First input string. [String](../data-types/string.md).
+- `needle` — Second input string. [String](../data-types/string.md).
+
+**Returned value**
+
+- Returns a value between 0 and 1, where 1 indicates identical strings and 0 indicates completely different strings. [Float64](../data-types/float.md).
+
+The algorithm:
+- Splits the longer string into words
+- Compares each word with substrings of the shorter string
+- Uses affine gap penalties for better alignment
+- Handles subsequence matching for partial word matches
+- Normalizes the result to [0,1] range
+
+**Example**
+
+Query:
+```sql
+SELECT smashSimilarity('Hello World', 'hello wrld');
+```
+
+Result:
+```text
+┌─smashSimilarity('Hello World', 'hello wrld')─┐
+│                                        0.825 │
+└────────────────────────────────────────────┘
+```
+
+## smashSimilarityUTF8 {#smashsimilarityutf8}
+
+Calculates the SMASH similarity between two UTF-8 encoded strings. This is the UTF-8 aware version of smashSimilarity that correctly handles multi-byte characters.
+
+**Syntax**
+
+```sql
+smashSimilarityUTF8(haystack, needle)
+```
+
+**Arguments**
+
+- `haystack` — First input UTF-8 string. [String](../data-types/string.md).
+- `needle` — Second input UTF-8 string. [String](../data-types/string.md).
+
+**Returned value**
+
+- Returns a value between 0 and 1, where 1 indicates identical strings and 0 indicates completely different strings. [Float64](../data-types/float.md).
+
+**Example**
+
+Query:
+```sql
+SELECT smashSimilarityUTF8('Привет мир', 'привет мр');
+```
+
+Result:
+```text
+┌─smashSimilarityUTF8('Привет мир', 'привет мр')─┐
+│                                          0.850 │
+└──────────────────────────────────────────────┘
+```
