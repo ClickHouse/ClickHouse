@@ -496,7 +496,8 @@ Chunks squashChunks(Chunks & chunks, size_t max_chunk_size)
     return squashed_chunks;
 }
 
-Chunks compressChunks(Chunks & chunks) {
+Chunks compressChunks(Chunks & chunks)
+{
     Chunks compressed_chunks;
 
     for (const auto & chunk : chunks)
@@ -515,7 +516,8 @@ Chunks compressChunks(Chunks & chunks) {
     return compressed_chunks;
 }
 
-size_t countRowsInChunks(const QueryResultCache::Entry & entry) {
+size_t countRowsInChunks(const QueryResultCache::Entry & entry)
+{
     size_t res = 0;
     for (const auto & chunk : entry.chunks)
         res += chunk.getNumRows();
@@ -526,7 +528,8 @@ size_t countRowsInChunks(const QueryResultCache::Entry & entry) {
     return res;
 }
 
-QueryResultCache::Cache::MappedPtr cloneQueryResult(const QueryResultCache::Cache::MappedPtr & entry) {
+QueryResultCache::Cache::MappedPtr cloneQueryResult(const QueryResultCache::Cache::MappedPtr & entry)
+{
     auto result = std::make_shared<QueryResultCache::Entry>();
     for (const auto& chunk : entry->chunks) 
         result->chunks.push_back(chunk.clone());
@@ -635,9 +638,11 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, std::optional<OnD
 
     if (!entry.has_value())
     {
-        if (disk_cache_) { /// If disk cache enabled, try to find entry there
+        if (disk_cache_)
+        { /// If disk cache enabled, try to find entry there
             auto disk_entry = disk_cache_->getWithKey(key);
-            if (disk_entry) {
+            if (disk_entry)
+            {
                 LOG_TRACE(logger, "Query result found in disk cache for query {}", doubleQuoteString(key.query_string));
                 entry.emplace(std::move(disk_entry.value()));
 
@@ -649,11 +654,15 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, std::optional<OnD
                 {
                     cache_.set(entry->key, entry->mapped); /// Add entry to in-memory cache   
                 }
-            } else {
+            }
+            else
+            {
                 LOG_TRACE(logger, "No query result found for query {}", doubleQuoteString(key.query_string));
                 return;
             }
-        } else {
+        }
+        else
+        {
             LOG_TRACE(logger, "No disk cache and no query result found for query {}", doubleQuoteString(key.query_string));
             return;
         }
@@ -744,10 +753,9 @@ QueryResultCache::QueryResultCache(size_t max_size_in_bytes, size_t max_entries,
     : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, QueryResultCacheEntryWeight, IsStale>>(
           std::make_unique<PerUserTTLCachePolicyUserQuota>()))
 {
-    if (disk_cache_path_) {
+    if (disk_cache_path_)
         disk_cache.emplace(disk_cache_path_.value(), disk_cache_max_size_in_bytes, disk_cache_max_entries, disk_cache_max_entry_size_in_bytes_, disk_cache_max_entry_size_in_rows_);
-    }
-
+    
     updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_, disk_cache_max_size_in_bytes, disk_cache_max_entries, disk_cache_max_entry_size_in_bytes_, disk_cache_max_entry_size_in_rows_);
 }
 
@@ -759,7 +767,8 @@ void QueryResultCache::updateConfiguration(size_t max_size_in_bytes, size_t max_
     max_entry_size_in_bytes = max_entry_size_in_bytes_;
     max_entry_size_in_rows = max_entry_size_in_rows_;
 
-    if (disk_cache) {
+    if (disk_cache)
+    {
         disk_cache->setMaxSizeInBytes(disk_cache_max_size_in_bytes);
         disk_cache->setMaxCount(disk_cache_max_entries);
 
@@ -863,7 +872,8 @@ QueryResultCache::OnDiskCache::OnDiskCache(const std::filesystem::path& path_, s
     {
         checkFormatVersion();
         readCacheEntriesMetaData();
-    } catch (...)
+    }
+    catch (...)
     {
         // Remove old cache files and create new format_version.txt
         namespace fs = std::filesystem;
@@ -878,7 +888,8 @@ QueryResultCache::OnDiskCache::OnDiskCache(const std::filesystem::path& path_, s
     }
 }
 
-void QueryResultCache::OnDiskCache::readCacheEntriesMetaData() {
+void QueryResultCache::OnDiskCache::readCacheEntriesMetaData()
+{
     std::lock_guard lock(mutex);
 
     try
@@ -929,7 +940,8 @@ std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDisk
     IASTHash ast_hash = key.ast_hash;
     String ast_hash_str = std::to_string(ast_hash.low64) + '_' + std::to_string(ast_hash.high64);
 
-    if (!cache_policy->contains(key)) {
+    if (!cache_policy->contains(key))
+    {
         LOG_TRACE(logger, "No entry on disk, key not found in metadata");
         return std::nullopt;
     }
@@ -948,9 +960,8 @@ void QueryResultCache::OnDiskCache::set(const Key & key, const MappedPtr & mappe
 
     /// To keep the file format simple, squash the result chunks to a single chunk.
     chunks = squashChunks(chunks, std::numeric_limits<size_t>::max());
-    if (key.is_compressed) {
+    if (key.is_compressed)
         chunks = compressChunks(chunks);
-    }
 
     size_t new_entry_size_in_bytes = QueryResultCache::QueryResultCacheEntryWeight()(*mapped);
     size_t new_entry_size_in_rows = countRowsInChunks(*mapped);
@@ -962,7 +973,8 @@ void QueryResultCache::OnDiskCache::set(const Key & key, const MappedPtr & mappe
         return;
     }
 
-    if (cache_policy->contains(key)) { 
+    if (cache_policy->contains(key))
+    { 
         LOG_TRACE(logger, "Entry already in disk cache, skip inserting");
         return;
     }
@@ -977,7 +989,8 @@ void QueryResultCache::OnDiskCache::set(const Key & key, const MappedPtr & mappe
     writeCacheEntry(key, mapped);
 }
 
-void QueryResultCache::OnDiskCache::writeCacheEntry(const Key & entry_key, const MappedPtr & entry_mapped) {
+void QueryResultCache::OnDiskCache::writeCacheEntry(const Key & entry_key, const MappedPtr & entry_mapped)
+{
     try
     {
         /// Store query cache entries to persistence:
@@ -1084,7 +1097,8 @@ void QueryResultCache::OnDiskCache::writeCacheEntry(const Key & entry_key, const
     }
 }
 
-std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDiskCache::readCacheEntry(String ast_hash_str) {
+std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDiskCache::readCacheEntry(String ast_hash_str)
+{
     try
     {
         namespace fs = std::filesystem;
@@ -1157,7 +1171,8 @@ std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDisk
 
         std::optional<Chunk> totals;
 
-        if (has_totals) {
+        if (has_totals)
+        {
             Block block_totals = block_reader.read();
             block_totals.checkNumberOfRows();
 
@@ -1171,7 +1186,8 @@ std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDisk
 
         std::optional<Chunk> extremes;
 
-        if (has_extremes) {
+        if (has_extremes)
+        {
             Block block_extremes = block_reader.read();
             block_extremes.checkNumberOfRows();
 
@@ -1198,7 +1214,8 @@ std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDisk
     return std::nullopt;
 }
 
-void QueryResultCache::OnDiskCache::checkFormatVersion() {
+void QueryResultCache::OnDiskCache::checkFormatVersion()
+{
     namespace fs = std::filesystem;
     fs::path format_version_path = query_cache_path / FormatTokens::format_version_txt;
     ReadBufferFromFile format_version_file(format_version_path); /// throws if file can't be opened
@@ -1209,17 +1226,20 @@ void QueryResultCache::OnDiskCache::checkFormatVersion() {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "On disk query result cache format_version mismatch");
 }
 
-void QueryResultCache::OnDiskCache::setMaxSizeInBytes(size_t max_size_in_bytes) {
+void QueryResultCache::OnDiskCache::setMaxSizeInBytes(size_t max_size_in_bytes)
+{
     std::lock_guard lock(mutex);
     cache_policy->setMaxSizeInBytes(max_size_in_bytes);
 }
 
-void QueryResultCache::OnDiskCache::setMaxCount(size_t max_count) {
+void QueryResultCache::OnDiskCache::setMaxCount(size_t max_count)
+{
     std::lock_guard lock(mutex);
     cache_policy->setMaxCount(max_count);
 }
 
-void QueryResultCache::OnDiskCache::onEvictFunction(CachePolicy::MappedPtr mapped) {
+void QueryResultCache::OnDiskCache::onEvictFunction(CachePolicy::MappedPtr mapped)
+{
     std::filesystem::remove(mapped->path);
 }
 
