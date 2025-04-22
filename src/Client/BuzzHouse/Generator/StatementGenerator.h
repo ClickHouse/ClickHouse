@@ -391,8 +391,8 @@ private:
     void generateSelect(RandomGenerator & rg, bool top, bool force_global_agg, uint32_t ncols, uint32_t allowed_clauses, Select * sel);
 
     void generateTopSelect(RandomGenerator & rg, bool force_global_agg, uint32_t allowed_clauses, TopSelect * ts);
-    void generateNextExplain(RandomGenerator & rg, ExplainQuery * eq);
-    void generateNextQuery(RandomGenerator & rg, SQLQueryInner * sq);
+    void generateNextExplain(RandomGenerator & rg, bool in_parallel, ExplainQuery * eq);
+    void generateNextQuery(RandomGenerator & rg, bool in_parallel, SQLQueryInner * sq);
 
     std::tuple<SQLType *, Integers> randomIntType(RandomGenerator & rg, uint32_t allowed_types);
     std::tuple<SQLType *, FloatingPoints> randomFloatType(RandomGenerator & rg) const;
@@ -461,7 +461,7 @@ public:
 
     StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, bool scf, bool rs);
 
-    void generateNextCreateTable(RandomGenerator & rg, CreateTable * ct);
+    void generateNextCreateTable(RandomGenerator & rg, bool in_parallel, CreateTable * ct);
     void generateNextCreateDatabase(RandomGenerator & rg, CreateDatabase * cd);
     void generateNextStatement(RandomGenerator & rg, SQLQuery & sq);
 

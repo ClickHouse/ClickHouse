@@ -1652,7 +1652,7 @@ static const std::vector<TableEngineValues> likeEngs = {/* Deterministic engines
                                                         TableEngineValues::Merge,
                                                         TableEngineValues::GenerateRandom};
 
-void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTable * ct)
+void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const bool in_parallel, CreateTable * ct)
 {
     SQLTable next;
     uint32_t tname = 0;
@@ -1694,9 +1694,12 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
         /// Create table with definition
         TableDef * colsdef = ct->mutable_table_def();
 
-        getNextTableEngine(rg, true, next);
+        getNextTableEngine(rg, !in_parallel, next);
         te->set_engine(next.teng);
-        getNextPeerTableDatabase(rg, next);
+        if (!in_parallel)
+        {
+            getNextPeerTableDatabase(rg, next);
+        }
         added_pkey |= (!next.isMergeTreeFamily() && !next.isRocksEngine() && !next.isRedisEngine());
         const bool add_version_to_replacing = next.teng == TableEngineValues::ReplacingMergeTree && !next.hasPostgreSQLPeer()
             && !next.hasSQLitePeer() && rg.nextSmallNumber() < 4;

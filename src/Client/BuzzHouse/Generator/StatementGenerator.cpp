@@ -3373,7 +3373,7 @@ void StatementGenerator::generateNextRename(RandomGenerator & rg, Rename * ren)
     }
 }
 
-void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner * sq)
+void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_parallel, SQLQueryInner * sq)
 {
     const bool has_databases = collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases);
     const bool has_tables = collectionHas<SQLTable>(attached_tables);
@@ -3416,7 +3416,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
     const uint32_t create_dictionary = 10 * static_cast<uint32_t>(static_cast<uint32_t>(dictionaries.size()) < this->fc.max_dictionaries);
     const uint32_t rename
         = 1 * static_cast<uint32_t>(collectionHas<SQLTable>(exchange_table_lambda) || has_views || has_dictionaries || has_databases);
-    const uint32_t select_query = 800;
+    const uint32_t select_query = 800 * static_cast<uint32_t>(!in_parallel);
     const uint32_t prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table
         + desc_table + exchange + alter + set_values + attach + detach + create_database + create_function + system_stmt + backup_or_restore
         + create_dictionary + rename + select_query;
@@ -3426,7 +3426,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
     chassert(this->ids.empty());
     if (create_table && nopt < (create_table + 1))
     {
-        generateNextCreateTable(rg, sq->mutable_create_table());
+        generateNextCreateTable(rg, in_parallel, sq->mutable_create_table());
     }
     else if (create_view && nopt < (create_table + create_view + 1))
     {
@@ -3602,7 +3602,7 @@ static const std::vector<ExplainOptValues> explainSettings{
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_header, trueOrFalseInt),
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_compact, trueOrFalseInt)};
 
-void StatementGenerator::generateNextExplain(RandomGenerator & rg, ExplainQuery * eq)
+void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_parallel, ExplainQuery * eq)
 {
     std::optional<ExplainQuery_ExplainValues> val;
 
@@ -3683,47 +3683,52 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, ExplainQuery 
             this->ids.clear();
         }
     }
-    generateNextQuery(rg, eq->mutable_inner_query());
+    generateNextQuery(rg, in_parallel, eq->mutable_inner_query());
 }
 
 void StatementGenerator::generateNextStatement(RandomGenerator & rg, SQLQuery & sq)
 {
-    const uint32_t start_transaction = 2 * static_cast<uint32_t>(!this->in_transaction);
-    const uint32_t commit = 50 * static_cast<uint32_t>(this->in_transaction);
+    const uint32_t nqueries = rg.nextMediumNumber() < 96 ? 1 : (rg.nextSmallNumber() % 4) + 1;
+    const uint32_t start_transaction = 2 * static_cast<uint32_t>(nqueries == 1 && !this->in_transaction);
+    const uint32_t commit = 50 * static_cast<uint32_t>(nqueries == 1 && this->in_transaction);
     const uint32_t explain_query = 10;
     const uint32_t run_query = 120;
     const uint32_t prob_space = start_transaction + commit + explain_query + run_query;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-    const uint32_t nopt = next_dist(rg.generator);
-    SingleSQLQuery * ssq = sq.mutable_single_query();
 
-    chassert(this->levels.empty());
-    if (start_transaction && nopt < (start_transaction + 1))
+    for (uint32_t i = 0; i < nqueries; i++)
     {
-        ssq->set_start_trans(true);
-    }
-    else if (commit && nopt < (start_transaction + commit + 1))
-    {
-        if (rg.nextSmallNumber() < 7)
+        const uint32_t nopt = next_dist(rg.generator);
+        SingleSQLQuery * ssq = i == 0 ? sq.mutable_single_query() : sq.add_parallel_queries();
+
+        chassert(this->levels.empty());
+        if (start_transaction && nopt < (start_transaction + 1))
         {
-            ssq->set_commit_trans(true);
+            ssq->set_start_trans(true);
+        }
+        else if (commit && nopt < (start_transaction + commit + 1))
+        {
+            if (rg.nextSmallNumber() < 7)
+            {
+                ssq->set_commit_trans(true);
+            }
+            else
+            {
+                ssq->set_rollback_trans(true);
+            }
+        }
+        else if (explain_query && nopt < (start_transaction + commit + explain_query + 1))
+        {
+            generateNextExplain(rg, nqueries > 1, ssq->mutable_explain());
+        }
+        else if (run_query)
+        {
+            generateNextQuery(rg, nqueries > 1, ssq->mutable_explain()->mutable_inner_query());
         }
         else
         {
-            ssq->set_rollback_trans(true);
+            chassert(0);
         }
-    }
-    else if (explain_query && nopt < (start_transaction + commit + explain_query + 1))
-    {
-        generateNextExplain(rg, ssq->mutable_explain());
-    }
-    else if (run_query)
-    {
-        generateNextQuery(rg, ssq->mutable_explain()->mutable_inner_query());
-    }
-    else
-    {
-        chassert(0);
     }
 }
 
@@ -4380,6 +4385,10 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
 void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegrations & ei, bool success)
 {
     updateGeneratorFromSingleQuery(sq.single_query(), ei, success);
+    for (int i = 0; i < sq.parallel_queries_size(); i++)
+    {
+        updateGeneratorFromSingleQuery(sq.parallel_queries(i), ei, success);
+    }
 }
 
 }

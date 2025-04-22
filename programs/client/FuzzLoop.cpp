@@ -632,7 +632,7 @@ bool Client::buzzHouse()
                 && nsuccessfull_create_table < max_initial_tables)
             {
                 gen.generateNextCreateTable(
-                    rg, sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_create_table());
+                    rg, false, sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_create_table());
                 BuzzHouse::SQLQueryToString(full_query, sq1);
                 outf << full_query << std::endl;
                 server_up &= processBuzzHouseQuery(full_query);

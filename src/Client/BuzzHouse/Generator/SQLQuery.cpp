@@ -50,7 +50,7 @@ void StatementGenerator::prepareNextExplain(RandomGenerator & rg, ExplainQuery *
     }
     this->remote_entries.clear();
 
-    generateNextExplain(rg, eq);
+    generateNextExplain(rg, false, eq);
 
     this->levels.clear();
     for (const auto & entry : levels_backup)
