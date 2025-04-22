@@ -91,6 +91,11 @@ size_t SLRUFileCachePriority::getElementsCountApprox() const
     return protected_queue.getElementsCountApprox() + probationary_queue.getElementsCountApprox();
 }
 
+FileCachePriorityPtr SLRUFileCachePriority::copy() const 
+{ 
+    return std::make_unique<SLRUFileCachePriority>(max_size, max_elements, size_ratio, probationary_queue.state, protected_queue.state); 
+}
+
 bool SLRUFileCachePriority::canFit( /// NOLINT
     size_t size,
     size_t elements,
