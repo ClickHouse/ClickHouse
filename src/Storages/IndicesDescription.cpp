@@ -28,6 +28,42 @@ namespace ErrorCodes
 namespace
 {
 using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+
+[[nodiscard]] inline Tuple parseGinIndexArgumentFromAST(const auto & arguments)
+{
+    const auto & idenfitier = arguments->children[0]->template as<ASTIdentifier>();
+    if (idenfitier == nullptr)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Expected identifier");
+
+    const auto & literal = arguments->children[1]->template as<ASTLiteral>();
+    if (literal == nullptr)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Expected literal");
+
+    Tuple key_value_pair{};
+    key_value_pair.emplace_back(idenfitier->name());
+    key_value_pair.emplace_back(literal->value);
+    return key_value_pair;
+}
+
+[[nodiscard]] FieldVector parseGinIndexArgumentsFromAST(const auto & arguments)
+{
+    FieldVector parsed_arguments;
+    parsed_arguments.reserve(arguments->children.size());
+
+    for (const auto & argument : arguments->children)
+    {
+        if (const auto * ast_function = argument->template as<ASTFunction>(); ast_function != nullptr)
+        {
+            if (ast_function->name != "equals" || ast_function->arguments->children.size() != 2)
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Accepted format is <identifier> = <literal>");
+            parsed_arguments.emplace_back(parseGinIndexArgumentFromAST(ast_function->arguments));
+        }
+        else
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Only key-value pair can be GIN index arguments");
+    }
+
+    return parsed_arguments;
+}
 }
 
 IndexDescription::IndexDescription(const IndexDescription & other)
@@ -129,17 +165,21 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
 
     if (index_type && index_type->arguments)
     {
-        for (size_t i = 0; i < index_type->arguments->children.size(); ++i)
-        {
-            const auto & child = index_type->arguments->children[i];
-            if (const auto * ast_literal = child->as<ASTLiteral>(); ast_literal != nullptr)
-                /// E.g. INDEX index_name column_name TYPE vector_similarity('hnsw', 'f32')
-                result.arguments.emplace_back(ast_literal->value);
-            else if (const auto * ast_identifier = child->as<ASTIdentifier>(); ast_identifier != nullptr)
-                /// E.g. INDEX index_name column_name TYPE vector_similarity(hnsw, f32)
-                result.arguments.emplace_back(ast_identifier->name());
-            else
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only literals can be skip index arguments");
+        if (index_type->name == "gin") {
+            result.arguments = parseGinIndexArgumentsFromAST(index_type->arguments);
+        } else {
+            for (size_t i = 0; i < index_type->arguments->children.size(); ++i)
+            {
+                const auto & child = index_type->arguments->children[i];
+                if (const auto * ast_literal = child->as<ASTLiteral>(); ast_literal != nullptr)
+                    /// E.g. INDEX index_name column_name TYPE vector_similarity('hnsw', 'f32')
+                    result.arguments.emplace_back(ast_literal->value);
+                else if (const auto * ast_identifier = child->as<ASTIdentifier>(); ast_identifier != nullptr)
+                    /// E.g. INDEX index_name column_name TYPE vector_similarity(hnsw, f32)
+                    result.arguments.emplace_back(ast_identifier->name());
+                else
+                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Only literals can be skip index arguments");
+            }
         }
     }
 

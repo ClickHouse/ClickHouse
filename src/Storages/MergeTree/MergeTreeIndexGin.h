@@ -96,6 +96,8 @@ private:
         enum Function
         {
             /// Atoms of a Boolean expression.
+            FUNCTION_MATCH_ANY,
+            FUNCTION_MATCH_ALL,
             FUNCTION_EQUALS,
             FUNCTION_NOT_EQUALS,
             FUNCTION_HAS,

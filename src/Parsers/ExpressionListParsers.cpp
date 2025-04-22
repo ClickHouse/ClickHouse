@@ -2419,6 +2419,8 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {".",             Operator("tupleElement",    14, 2, OperatorType::TupleElement)},
     {"[",             Operator("arrayElement",    14, 2, OperatorType::ArrayElement)},
     {"::",            Operator(toString(toStringView(Keyword::CAST)),            14, 2, OperatorType::Cast)},
+    {toStringView(Keyword::GIN_MATCH_ANY),          Operator("ginMatchAny",    9,  3)},
+    {toStringView(Keyword::GIN_MATCH_ALL),          Operator("ginMatchAll",    9,  3)},
 };
 
 const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::unary_operators_table

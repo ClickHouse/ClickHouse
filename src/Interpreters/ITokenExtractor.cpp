@@ -2,12 +2,9 @@
 
 #include <boost/algorithm/string.hpp>
 
+#include "Common/Tokenizer/ChineseTokenizer.h"
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
-
-#if USE_CPPJIEBA
-#    include "Common/Tokenizer/ChineseTokenizer.h"
-#endif
 
 #if defined(__SSE2__)
 #include <emmintrin.h>

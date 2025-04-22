@@ -13,11 +13,19 @@ static inline constexpr UInt64 UNLIMITED_ROWS_PER_POSTINGS_LIST = 0;
 static inline constexpr UInt64 MIN_ROWS_PER_POSTINGS_LIST = 8 * 1024;
 static inline constexpr UInt64 DEFAULT_MAX_ROWS_PER_POSTINGS_LIST = 64 * 1024;
 
+enum class GinMatch : uint8_t
+{
+    ANY,
+    ALL
+};
+
+
 struct GinFilterParameters
 {
-    GinFilterParameters(size_t ngrams_, UInt64 max_rows_per_postings_list_);
+    GinFilterParameters(String tokenizer_, UInt64 max_rows_per_postings_list_);
 
-    size_t ngrams;
+    String tokenizer;
+
     UInt64 max_rows_per_postings_list;
 };
 
@@ -56,7 +64,7 @@ public:
 
     /// Check if the filter (built from query string) contains any rows in given filter by using
     /// given postings list cache
-    bool contains(const GinFilter & filter, PostingsCacheForStore & cache_store) const;
+    bool contains(const GinFilter & filter, PostingsCacheForStore & cache_store, GinMatch match = GinMatch::ALL) const;
 
     /// Set the query string of the filter
     void setQueryString(const char * data, size_t len)
@@ -101,9 +109,6 @@ private:
 
     /// Row ID ranges which are (segmentID, RowIDStart, RowIDEnd)
     GinSegmentWithRowIdRangeVector rowid_ranges;
-
-    /// Check if the given postings list cache has matched rows by using the filter
-    bool match(const GinPostingsCache & postings_cache) const;
 };
 
 using GinFilters = std::vector<GinFilter>;
