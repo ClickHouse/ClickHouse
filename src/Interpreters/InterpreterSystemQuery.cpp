@@ -849,6 +849,7 @@ BlockIO InterpreterSystemQuery::execute()
             unloadPrimaryKeys();
             break;
         }
+#if USE_XRAY
         case Type::INSTRUMENT_ADD:
         {
             instrumentWithXRay(true, query);
@@ -859,7 +860,9 @@ BlockIO InterpreterSystemQuery::execute()
             instrumentWithXRay(false, query);
             break;
         }
-
+#else
+        case Type::INSTRUMENT_ADD:
+        case Type::INSTRUMENT_REMOVE:
 #if USE_JEMALLOC
         case Type::JEMALLOC_PURGE:
         {
