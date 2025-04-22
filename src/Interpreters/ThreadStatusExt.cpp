@@ -1,3 +1,4 @@
+#include <memory>
 #include <mutex>
 #include <Common/ThreadStatus.h>
 
@@ -72,7 +73,7 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_err
     , query_context(query_context_)
     , global_context(query_context_->getGlobalContext())
     , fatal_error_callback(fatal_error_callback_)
-    , memory_spill_scheduler(query_context_->getSettingsRef()[Setting::enable_adaptive_memory_spill_scheduler])
+    , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>(query_context_->getSettingsRef()[Setting::enable_adaptive_memory_spill_scheduler]))
 {
     shared_data.query_is_canceled_predicate = [this] () -> bool {
             if (auto context_locked = query_context.lock())
@@ -89,7 +90,7 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
     , query_context(parent->query_context)
     , global_context(parent->global_context)
     , fatal_error_callback(parent->fatal_error_callback)
-    , memory_spill_scheduler(false) // memory_spill_scheduler is not used inside processors which is designated for MV, no need to enable it here
+    , memory_spill_scheduler(parent->memory_spill_scheduler)
     , performance_counters(VariableContext::Process, &parent->performance_counters)
     , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
     , shared_data(parent->getSharedData())
@@ -339,6 +340,8 @@ void ThreadStatus::applyQuerySettings()
 
 void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
 {
+    thread_attach_time.setUp();
+
     /// Attach or init current thread to thread group and copy useful information from it
     thread_group = thread_group_;
     thread_group->linkThread(thread_id);
@@ -474,8 +477,6 @@ void ThreadStatus::initPerformanceCounters()
     performance_counters.resetCounters();
     memory_tracker.resetCounters();
     memory_tracker.setDescription("Thread");
-
-    thread_attach_time.setUp();
 
     // query_start_time.nanoseconds cannot be used here since RUsageCounters expect CLOCK_MONOTONIC
     *last_rusage = RUsageCounters::current();

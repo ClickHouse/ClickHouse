@@ -505,9 +505,12 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
     }
     catch (...)
     {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+
         cancel(ExecutionStatus::Exception);
         if (pool)
             pool->wait();
+
         throw;
     }
 }

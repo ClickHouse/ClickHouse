@@ -7,7 +7,6 @@
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
-#include <Common/logger_useful.h>
 #include <Poco/Event.h>
 
 namespace DB

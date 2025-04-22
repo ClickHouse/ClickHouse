@@ -7,7 +7,6 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/ThreadStatus.h>
 #include <QueryPipeline/QueryPipeline.h>
-#include <Processors/Sinks/SinkToStorage.h>
 
 namespace DB
 {
@@ -58,12 +57,6 @@ public:
         bool no_destination = false,
         bool allow_materialized = false);
 
-    static Block getSampleBlock(
-      const Names & names,
-      const StoragePtr & table,
-      const StorageMetadataPtr & metadata_snapshot,
-      bool allow_virtuals,
-      bool allow_materialized);
 
     bool supportsTransactions() const override { return true; }
 
@@ -72,6 +65,12 @@ public:
     static bool shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context);
 
 private:
+    static Block getSampleBlock(
+        const Names & names,
+        const StoragePtr & table,
+        const StorageMetadataPtr & metadata_snapshot,
+        bool allow_virtuals,
+        bool allow_materialized);
 
     ASTPtr query_ptr;
     const bool allow_materialized;

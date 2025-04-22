@@ -633,7 +633,6 @@ StorageURLSink::StorageURLSink(
     , compression_method(compression_method_)
     , headers(std::move(headers_))
     , http_method(std::move(method))
-
 {
 }
 

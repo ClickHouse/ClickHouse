@@ -51,8 +51,6 @@ private:
         std::vector<StorageIDPrivate> path;
         std::set<StorageIDPrivate> visited;
 
-        static StorageIDPrivate empty_id;
-
     public:
         void pushBack(StorageIDPrivate id);
         void popBack();
@@ -60,7 +58,7 @@ private:
         [[maybe_unused]] bool empty() const { return path.empty(); }
         const StorageIDPrivate & back() const { return path.back(); }
         const StorageIDPrivate & current() const { return back(); }
-        const StorageIDPrivate & parent(size_t inheritance) const;
+        StorageIDPrivate parent(size_t inheritance) const;
         String debugString() const;
     };
 
@@ -98,8 +96,10 @@ protected:
     InsertDependenciesBuilder(StoragePtr table, ASTPtr query, Block insert_header, bool async_insert_, bool skip_destination_table_, bool allow_materialized_, ContextPtr context);
 
 private:
+    bool isView(StorageIDPrivate id) const;
+
     std::pair<ContextPtr, ContextPtr> createSelectInsertContext(const DependencyPath & path);
-    bool collectPath(const DependencyPath & path);
+    bool observePath(const DependencyPath & path);
     void collectAllDependencies();
 
     Chain createPreSink(StorageIDPrivate view_id) const;

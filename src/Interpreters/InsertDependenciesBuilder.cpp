@@ -506,6 +506,37 @@ private:
 };
 
 
+DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, StoragePtr storage)
+{
+    auto constraints = metadata->getConstraints();
+
+    auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
+    if (storage_merge_tree
+        && (storage_merge_tree->merging_params.mode == MergeTreeData::MergingParams::Collapsing
+            || storage_merge_tree->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
+        && (*storage_merge_tree->getSettings())[MergeTreeSetting::add_implicit_sign_column_constraint_for_collapsing_engine])
+    {
+        auto sign_column_check_constraint = std::make_unique<ASTConstraintDeclaration>();
+        sign_column_check_constraint->name = "_implicit_sign_column_constraint";
+        sign_column_check_constraint->type = ASTConstraintDeclaration::Type::CHECK;
+
+        Array valid_values_array;
+        valid_values_array.emplace_back(-1);
+        valid_values_array.emplace_back(1);
+
+        auto valid_values_ast = std::make_unique<ASTLiteral>(std::move(valid_values_array));
+        auto sign_column_ast = std::make_unique<ASTIdentifier>(storage_merge_tree->merging_params.sign_column);
+        sign_column_check_constraint->set(sign_column_check_constraint->expr, makeASTFunction("in", std::move(sign_column_ast), std::move(valid_values_ast)));
+
+        auto constraints_ast = constraints.getConstraints();
+        constraints_ast.push_back(std::move(sign_column_check_constraint));
+        constraints = ConstraintsDescription(constraints_ast);
+    }
+
+    return constraints;
+}
+
+
 /// For source chunk, execute view query over it.
 template <typename Executor>
 class ExecutingInnerQueryFromViewTransform final : public ExceptionKeepingTransform
@@ -516,7 +547,7 @@ public:
         ASTPtr select_query_,
         StorageID source_id_, StoragePtr source_storage_, StorageMetadataPtr source_metadata_,
         StorageID view_id_,
-        StorageID inner_id_, StorageMetadataPtr inner_metadata_,
+        StorageID inner_id_, StoragePtr inner_storage_, StorageMetadataPtr inner_metadata_,
         ContextPtr context_)
         : ExceptionKeepingTransform(input_header, output_header)
         , select_query(select_query_)
@@ -526,6 +557,7 @@ public:
         , view_id(view_id_)
         , inner_id(inner_id_)
         , inner_metadata(inner_metadata_)
+        , inner_storage(inner_storage_)
         , context(context_)
     {
     }
@@ -567,6 +599,7 @@ private:
     StorageID view_id;
     StorageID inner_id;
     StorageMetadataPtr inner_metadata;
+    StoragePtr inner_storage;
     ContextPtr context;
 
     struct State
@@ -619,13 +652,17 @@ private:
             insert_null_as_default);
 
         auto converting_types = ActionsDAG::makeConvertingActions(
-            adding_missing_defaults.getResultColumns(), //pipeline.getHeader().getColumnsWithTypeAndName(),
+            adding_missing_defaults.getResultColumns(),
             inner_metadata->getSampleBlock().getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
 
         pipeline.addTransform(std::make_shared<ExpressionTransform>(
             pipeline.getHeader(),
             std::make_shared<ExpressionActions>(ActionsDAG::merge(std::move(adding_missing_defaults), std::move(converting_types)))));
+
+        auto constraints = buildConstraints(inner_metadata, inner_storage);
+        if (!constraints.empty())
+            pipeline.addTransform(std::make_shared<CheckConstraintsTransform>(inner_id, pipeline.getHeader(), constraints, context));
 
         /// Squashing is needed here because the materialized view query can generate a lot of blocks
         /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
@@ -653,9 +690,6 @@ private:
 
     std::optional<State> state;
 };
-
-
-InsertDependenciesBuilder::StorageIDPrivate InsertDependenciesBuilder::DependencyPath::empty_id = {};
 
 
 InsertDependenciesBuilder::InsertDependenciesBuilder(StoragePtr table, ASTPtr query, Block insert_header,
@@ -742,7 +776,7 @@ std::pair<ContextPtr, ContextPtr> InsertDependenciesBuilder::createSelectInsertC
 }
 
 
-bool InsertDependenciesBuilder::collectPath(const DependencyPath & path)
+bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 {
     const auto & parent = path.parent(1);
     const auto & current = path.current();
@@ -758,7 +792,7 @@ bool InsertDependenciesBuilder::collectPath(const DependencyPath & path)
                 "Table '{}' doesn't exists.",
                 init_table_id);
 
-        if (inner_tables.contains(parent))
+        if (isView(parent))
         {
             if (parent == init_table_id)
                 throw Exception(
@@ -790,7 +824,7 @@ bool InsertDependenciesBuilder::collectPath(const DependencyPath & path)
     auto set_defaults_for_root_view = [&] (const StorageIDPrivate & root_view_, const StorageIDPrivate & inner_table_)
     {
         root_view = root_view_;
-        inner_tables[root_view_] = inner_table_;
+        inner_tables[root_view] = inner_table_;
         select_queries[root_view] = init_query;
         select_contexts[root_view] = init_context;
         insert_contexts[root_view] = init_context;
@@ -810,12 +844,12 @@ bool InsertDependenciesBuilder::collectPath(const DependencyPath & path)
         }
 
         StorageIDPrivate select_table_id = metadata->getSelectQuery().select_table_id;
-        if (select_table_id != path.parent(1))
+        if (select_table_id != parent)
         {
             /// It may happen if materialize view query was changed and it doesn't depend on this source table anymore.
             /// See setting `allow_experimental_alter_materialized_view_structure`
             LOG_INFO(logger, "Table '{}' is not a source for view '{}' anymore, current source is '{}'",
-                path.parent(1), current, select_table_id);
+                parent, current, select_table_id);
             return false;
         }
 
@@ -862,8 +896,8 @@ bool InsertDependenciesBuilder::collectPath(const DependencyPath & path)
 
         if (init_context->hasQueryContext())
         {
-            init_context->getQueryContext()->addViewAccessInfo(init_table_id.getFullTableName());
-            init_context->getQueryContext()->addQueryAccessInfo(init_table_id, /*column_names=*/ {});
+            init_context->getQueryContext()->addViewAccessInfo(current.getFullTableName());
+            init_context->getQueryContext()->addQueryAccessInfo(current, /*column_names=*/ {});
         }
 
         dependent_views[path.parent(2)].push_back(current);
@@ -874,7 +908,7 @@ bool InsertDependenciesBuilder::collectPath(const DependencyPath & path)
     {
         if (current == init_table_id)
         {
-            set_defaults_for_root_view(init_table_id, {});
+            set_defaults_for_root_view(init_table_id, init_table_id);
             view_types[init_table_id] = QueryViewsLogElement::ViewType::WINDOW;
             return true;
         }
@@ -894,8 +928,8 @@ bool InsertDependenciesBuilder::collectPath(const DependencyPath & path)
 
         if (init_context->hasQueryContext())
         {
-            init_context->getQueryContext()->addViewAccessInfo(init_table_id.getFullTableName());
-            init_context->getQueryContext()->addQueryAccessInfo(init_table_id, /*column_names=*/ {});
+            init_context->getQueryContext()->addViewAccessInfo(current.getFullTableName());
+            init_context->getQueryContext()->addQueryAccessInfo(current, /*column_names=*/ {});
         }
 
         dependent_views[path.parent(2)].push_back(current);
@@ -915,7 +949,7 @@ bool InsertDependenciesBuilder::collectPath(const DependencyPath & path)
             return true;
         }
 
-        const auto & view_id = path.parent(1);
+        const auto & view_id = parent;
 
         chassert(inner_tables.at(view_id) == current);
         output_headers[view_id] = metadata->getSampleBlock();
@@ -948,7 +982,7 @@ void InsertDependenciesBuilder::collectAllDependencies()
 
         try
         {
-            if (!collectPath(path))
+            if (!observePath(path))
                 return;
         }
         catch (...)
@@ -956,12 +990,10 @@ void InsertDependenciesBuilder::collectAllDependencies()
             if (!materialized_views_ignore_errors)
                 throw;
 
-            if (path.current() == init_table_id)
+            if (id == init_table_id)
                 throw;
 
-            auto view_id = path.current();
-            if (!inner_tables.contains(view_id))
-                view_id = path.parent(1);
+            auto view_id = isView(id) ? id : path.parent(1);
 
             if (view_id == init_table_id)
                 throw;
@@ -976,11 +1008,11 @@ void InsertDependenciesBuilder::collectAllDependencies()
             return;
         }
 
-        auto inner_table_iterator = inner_tables.find(id);
-        if (inner_table_iterator != inner_tables.end()) // StorageMaterializedView, StorageLiveView, StorageWindowView have some id in inner_tables
+        if (isView(id)) // StorageMaterializedView, StorageLiveView, StorageWindowView have some id in inner_tables
         {
-            if (!inner_table_iterator->second.empty())
-                expand(inner_table_iterator->second);
+            auto inner_table = inner_tables.at(id);
+            if (!inner_table.empty() && inner_table != id)
+                expand(inner_table);
         }
         else
         {
@@ -1051,7 +1083,7 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDPrivate view_id) const
             select_query,
             source_table_id, storages.at(source_table_id), metadata_snapshots.at(source_table_id),
             view_id,
-            inner_table_id, metadata_snapshots.at(inner_table_id),
+            inner_table_id, inner_storage, metadata_snapshots.at(inner_table_id),
             select_context);
 
         executing_inner_query->setRuntimeData(thread_groups.at(view_id));
@@ -1065,7 +1097,7 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDPrivate view_id) const
             select_query,
             source_table_id, storages.at(source_table_id), metadata_snapshots.at(source_table_id),
             view_id,
-            inner_table_id, metadata_snapshots.at(inner_table_id),
+            inner_table_id, inner_storage, metadata_snapshots.at(inner_table_id),
             select_context);
 
         executing_inner_query->setRuntimeData(thread_groups.at(view_id));
@@ -1120,33 +1152,9 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDPrivate view_id) const
 
     inner_metadata->check(result.getOutputHeader().getColumnsWithTypeAndName());
 
-    /// Note that we wrap transforms one on top of another, so we write them in reverse of data processing order.
     /// Checking constraints. It must be done after calculation of all defaults, so we can check them on calculated columns.
     /// Add implicit sign constraint for Collapsing and VersionedCollapsing tables.
-    auto constraints = inner_metadata->getConstraints();
-    auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storages.at(inner_table_id));
-    if (storage_merge_tree
-        && (storage_merge_tree->merging_params.mode == MergeTreeData::MergingParams::Collapsing
-            || storage_merge_tree->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
-        && (*storage_merge_tree->getSettings())[MergeTreeSetting::add_implicit_sign_column_constraint_for_collapsing_engine])
-    {
-        auto sign_column_check_constraint = std::make_unique<ASTConstraintDeclaration>();
-        sign_column_check_constraint->name = "_implicit_sign_column_constraint";
-        sign_column_check_constraint->type = ASTConstraintDeclaration::Type::CHECK;
-
-        Array valid_values_array;
-        valid_values_array.emplace_back(-1);
-        valid_values_array.emplace_back(1);
-
-        auto valid_values_ast = std::make_unique<ASTLiteral>(std::move(valid_values_array));
-        auto sign_column_ast = std::make_unique<ASTIdentifier>(storage_merge_tree->merging_params.sign_column);
-        sign_column_check_constraint->set(sign_column_check_constraint->expr, makeASTFunction("in", std::move(sign_column_ast), std::move(valid_values_ast)));
-
-        auto constraints_ast = constraints.getConstraints();
-        constraints_ast.push_back(std::move(sign_column_check_constraint));
-        constraints = ConstraintsDescription(constraints_ast);
-    }
-
+    auto constraints = buildConstraints(inner_metadata, storages.at(inner_table_id));
     if (!constraints.empty())
         result.addSink(std::make_shared<CheckConstraintsTransform>(inner_table_id, output_header, constraints, insert_context));
 
@@ -1194,7 +1202,10 @@ Chain InsertDependenciesBuilder::createSink(StorageIDPrivate view_id) const
         result.addSource(std::move(sink));
     }
 
-    result.addSink(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(result.getOutputHeader()));
+    const auto & settings = insert_context->getSettingsRef();
+
+    if (isViewsInvolved() && settings[Setting::deduplicate_blocks_in_dependent_materialized_views])
+        result.addSink(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(result.getOutputHeader()));
 
     return result;
 }
@@ -1412,11 +1423,11 @@ bool InsertDependenciesBuilder::StorageIDPrivate::operator==(const StorageIDPriv
 
 bool InsertDependenciesBuilder::isViewsInvolved() const
 {
-    return inner_tables.contains(init_table_id) || !dependent_views.at(root_view).empty();
+    return isView(init_table_id) || !dependent_views.at(root_view).empty();
 }
 
 
-const InsertDependenciesBuilder::StorageIDPrivate & InsertDependenciesBuilder::DependencyPath::parent(size_t inheritance) const
+InsertDependenciesBuilder::StorageIDPrivate InsertDependenciesBuilder::DependencyPath::parent(size_t inheritance) const
 {
     if (path.size() > inheritance)
     {
@@ -1424,7 +1435,12 @@ const InsertDependenciesBuilder::StorageIDPrivate & InsertDependenciesBuilder::D
         std::advance(it, inheritance);
         return *it;
     }
-    return empty_id;
+    return InsertDependenciesBuilder::StorageIDPrivate{};
 }
 
+
+bool InsertDependenciesBuilder::isView(StorageIDPrivate id) const
+{
+    return inner_tables.contains(id);
+}
 }

@@ -69,7 +69,7 @@ public:
     ThreadGroup();
     using FatalErrorCallback = std::function<void()>;
     explicit ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
-    explicit ThreadGroup(ThreadGroupPtr pare);
+    explicit ThreadGroup(ThreadGroupPtr parent);
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -80,7 +80,7 @@ public:
 
     const FatalErrorCallback fatal_error_callback;
 
-    MemorySpillScheduler memory_spill_scheduler;
+    MemorySpillScheduler::Ptr memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 

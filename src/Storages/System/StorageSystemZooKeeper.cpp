@@ -725,7 +725,6 @@ ReadFromSystemZooKeeper::ReadFromSystemZooKeeper(
 void ReadFromSystemZooKeeper::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     const auto & header = getOutputHeader();
-    LOG_DEBUG(getLogger("ReadFromSystemZooKeeper"), "expected header {}", header.dumpStructure());
 
     auto source = std::make_shared<SystemZooKeeperSource>(std::move(paths), header, max_block_size, context);
     source->setStorageLimits(storage_limits);

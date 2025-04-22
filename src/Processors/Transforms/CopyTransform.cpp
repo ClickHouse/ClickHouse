@@ -16,7 +16,7 @@ IProcessor::Status CopyTransform::prepare()
     Status status = Status::Ready;
     while (status == Status::Ready)
     {
-        status = bool(data) ? prepareGenerate() : prepareConsume();
+        status = data.isEmpty() ? prepareConsume() : prepareGenerate();
     }
     return status;
 }
