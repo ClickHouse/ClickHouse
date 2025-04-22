@@ -59,7 +59,7 @@ SELECT naiveBayesClassifier('language', 'How are you?')
 ### Implementation Details
 
 **Algorithm**  
-Uses Naive Bayes classification alorithm with [Laplace smoothing](https://en.wikipedia.org/wiki/Additive_smoothing) to handle unseen ngrams based on n-gram probabilities from [this](https://web.stanford.edu/~jurafsky/slp3/4.pdf).
+Uses Naive Bayes classification algorithm with [Laplace smoothing](https://en.wikipedia.org/wiki/Additive_smoothing) to handle unseen ngrams based on n-gram probabilities from [this](https://web.stanford.edu/~jurafsky/slp3/4.pdf).
 
 **Key Features**
 - Supports ngrams of any size
