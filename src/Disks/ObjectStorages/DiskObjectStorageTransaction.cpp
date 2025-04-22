@@ -432,6 +432,11 @@ struct ReplaceFileObjectStorageOperation final : public IDiskObjectStorageOperat
         if (metadata_storage.existsFile(path_to))
         {
             objects_to_remove = metadata_storage.getStorageObjects(path_to);
+            if (auto plain_object_tx = std::dynamic_pointer_cast<MetadataStorageFromPlainObjectStorageTransaction>(tx))
+            {
+                //  MetadataStorageFromPlainObjectStorageTransaction removes the source objects by itself.
+                objects_to_remove.clear();
+            }
             tx->replaceFile(path_from, path_to);
         }
         else

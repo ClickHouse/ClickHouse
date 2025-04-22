@@ -1,7 +1,4 @@
 <clickhouse>
-    <database_disk>
-        <disk>disk_db_remote</disk>
-    </database_disk>
     <storage_configuration>
         <disks>
             <disk_db_remote>
@@ -14,4 +11,14 @@
             </disk_db_remote>
         </disks>
     </storage_configuration>
+    <macros>
+        <shard>s1</shard>
+        <replica>r1</replica>
+    </macros>
+    <zookeeper>
+        <node index="1">
+            <host>localhost</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
 </clickhouse>
