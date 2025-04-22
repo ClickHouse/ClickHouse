@@ -27,8 +27,6 @@ public:
     bool empty() const override;
 
 protected:
-    void loadDrivers() override;
-
     std::unordered_map<String, DriverConfigurationPtr> driver_name_to_configuration_map;
     mutable std::recursive_mutex mutex;
 };

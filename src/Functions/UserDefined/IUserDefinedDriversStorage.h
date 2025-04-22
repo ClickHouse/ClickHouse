@@ -31,10 +31,6 @@ public:
 
     /// Check whether any driver have been stored by loadDrivers.
     virtual bool empty() const = 0;
-
-protected:
-    /// Loads all system drivers.
-    virtual void loadDrivers() = 0;
 };
 
 }

@@ -10,7 +10,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_DRIVER;
 }
 
-void UserDefinedDriversStorage::loadDrivers()
+UserDefinedDriversStorage::UserDefinedDriversStorage()
 {
     std::lock_guard lock(mutex);
 
@@ -39,11 +39,6 @@ void UserDefinedDriversStorage::loadDrivers()
             .setContainer("docker run --rm -i python:3 /bin/bash -c")
             .setFormat("JSONEachRow")
     );
-}
-
-UserDefinedDriversStorage::UserDefinedDriversStorage()
-{
-    loadDrivers();
 }
 
 DriverConfigurationPtr UserDefinedDriversStorage::get(const String & driver_name) const
