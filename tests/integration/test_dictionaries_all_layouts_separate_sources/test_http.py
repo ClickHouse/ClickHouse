@@ -73,6 +73,7 @@ def started_cluster():
 @pytest.mark.parametrize("layout_name", sorted(LAYOUTS_SIMPLE))
 def test_simple(started_cluster, layout_name):
     simple_tester.execute(layout_name, node)
+    assert False, 'fake fail to check if logging works'
 
 
 @pytest.mark.parametrize("layout_name", sorted(LAYOUTS_COMPLEX))
