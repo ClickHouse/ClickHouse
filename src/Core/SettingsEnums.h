@@ -319,7 +319,7 @@ enum class DeduplicateMergeProjectionMode : uint8_t
 
 DECLARE_SETTING_ENUM(DeduplicateMergeProjectionMode)
 
-enum class SecondaryIndicesOnColumnsAlter : uint8_t
+enum class SecondaryIndicesOnColumnsAlterModify : uint8_t
 {
     IGNORE,
     THROW,
@@ -327,7 +327,7 @@ enum class SecondaryIndicesOnColumnsAlter : uint8_t
     REBUILD,
 };
 
-DECLARE_SETTING_ENUM(SecondaryIndicesOnColumnsAlter)
+DECLARE_SETTING_ENUM(SecondaryIndicesOnColumnsAlterModify)
 
 DECLARE_SETTING_ENUM(ParallelReplicasMode)
 

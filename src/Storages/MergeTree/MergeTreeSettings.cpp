@@ -1776,8 +1776,8 @@ namespace ErrorCodes
     of on table initialization.
     )", 0) \
     /** Secondary Index settings. */ \
-    DECLARE(SecondaryIndicesOnColumnsAlter, secondary_indices_on_columns_alter, SecondaryIndicesOnColumnsAlter::THROW, R"(
-    The setting will be only applicable to ALTER (modify column and update), not to lightweight updates.
+    DECLARE(SecondaryIndicesOnColumnsAlterModify, secondary_indices_on_columns_alter_modify, SecondaryIndicesOnColumnsAlterModify::THROW, R"(
+    The setting will be only applicable to ALTER modify column.
     The value throw will prevent doing ALTERs of columns covered by secondary indices.
     The value drop will drop the dependent secondary indices.
     The value rebuild acts like dropping and then doing MATERIALIZE INDEX.

@@ -73,7 +73,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
     extern const MergeTreeSettingsBool exclude_deleted_rows_for_part_size_in_merge;
     extern const MergeTreeSettingsLightweightMutationProjectionMode lightweight_mutation_projection_mode;
-    extern const MergeTreeSettingsSecondaryIndicesOnColumnsAlter secondary_indices_on_columns_alter;
+    extern const MergeTreeSettingsSecondaryIndicesOnColumnsAlterModify secondary_indices_on_columns_alter_modify;
     extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
     extern const MergeTreeSettingsUInt64 max_file_name_length;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
@@ -1076,12 +1076,12 @@ static void getSecondaryIndicesOnColumnAlterModifyOptions(
     }
 
     secondary_indices_on_columns_alter_modify_drop = secondary_indices_on_columns_alter &&
-        (*settings)[MergeTreeSetting::secondary_indices_on_columns_alter]
-            == SecondaryIndicesOnColumnsAlter::DROP;
+        (*settings)[MergeTreeSetting::secondary_indices_on_columns_alter_modify]
+            == SecondaryIndicesOnColumnsAlterModify::DROP;
 
     secondary_indices_on_columns_alter_modify_rebuild = secondary_indices_on_columns_alter &&
-        (*settings)[MergeTreeSetting::secondary_indices_on_columns_alter]
-            == SecondaryIndicesOnColumnsAlter::REBUILD;
+        (*settings)[MergeTreeSetting::secondary_indices_on_columns_alter_modify]
+            == SecondaryIndicesOnColumnsAlterModify::REBUILD;
 }
 
 }
@@ -1960,8 +1960,8 @@ private:
         ctx->new_data_part->checksums = ctx->source_part->checksums;
 
         /// Remove dropped secondary indices from checksums, to avoid complain of broken parts.
-        if ((*ctx->data->getSettings())[MergeTreeSetting::secondary_indices_on_columns_alter] ==
-            SecondaryIndicesOnColumnsAlter::DROP)
+        if ((*ctx->data->getSettings())[MergeTreeSetting::secondary_indices_on_columns_alter_modify] ==
+            SecondaryIndicesOnColumnsAlterModify::DROP)
         {
             NameSet secondary_indices_rebuild;
             for (const auto & idx : ctx->indices_to_recalc)
