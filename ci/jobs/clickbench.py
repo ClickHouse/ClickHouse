@@ -95,7 +95,7 @@ def main():
         verbose=True,
     )
 
-    Result.create_from(results=results, stopwatch=stop_watch, files=[]).complete_job()
+    Result.create_from(results=results, stopwatch=stop_watch, files=[ch.log_file]).complete_job()
 
 
 if __name__ == "__main__":
