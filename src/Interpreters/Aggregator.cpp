@@ -1,6 +1,4 @@
 #include <algorithm>
-#include <future>
-#include <numeric>
 #include <optional>
 #include <Core/Settings.h>
 #include <Poco/Util/Application.h>
@@ -42,10 +40,6 @@
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
-
-#include <algorithm>
-#include <numeric>
-#include <optional>
 
 namespace ProfileEvents
 {
