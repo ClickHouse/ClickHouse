@@ -23,6 +23,7 @@
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
+#include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
@@ -976,12 +977,19 @@ try
     try
     {
         Chunk chunk;
+        Chunks chunks(0);
         auto header = pipeline.getHeader();
+
+        bool many_chunks = false;
 
         if (key.data_kind == DataKind::Parsed)
         {
             if (parse_pool_ptr)
-                chunk = processEntriesWithAsyncParsing(key, data, header, insert_context, log, add_entry_to_asynchronous_insert_log);
+            {
+
+                processEntriesWithAsyncParsing(chunks, key, data, header, insert_context, log, add_entry_to_asynchronous_insert_log);
+                many_chunks = true;
+            }
             else
                 chunk = processEntriesWithParsing(key, data, header, insert_context, log, add_entry_to_asynchronous_insert_log);
         }
@@ -997,11 +1005,27 @@ try
             return;
         }
 
-        size_t num_rows = chunk.getNumRows();
-        size_t num_bytes = chunk.bytes();
+        size_t num_rows = 0;
+        size_t num_bytes = 0;
 
-        auto source = std::make_shared<SourceFromSingleChunk>(header, std::move(chunk));
-        pipeline.complete(Pipe(std::move(source)));
+        if (many_chunks)
+        {
+            for (auto & achunk : chunks)
+            {
+                num_rows += achunk.getNumRows();
+                num_bytes += achunk.bytes();
+            }
+
+            auto source = std::make_unique<SourceFromChunks>(header, std::move(chunks));
+            pipeline.complete(Pipe(std::move(source)));
+        }
+        else
+        {
+            num_rows = chunk.getNumRows();
+            num_bytes = chunk.bytes();
+            auto source = std::make_unique<SourceFromSingleChunk>(header, std::move(chunk));
+            pipeline.complete(Pipe(std::move(source)));
+        }
 
         CompletedPipelineExecutor completed_executor(pipeline);
         completed_executor.execute();
@@ -1124,7 +1148,8 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
 }
 
 template <typename LogFunc>
-Chunk AsynchronousInsertQueue::processEntriesWithAsyncParsing(
+void AsynchronousInsertQueue::processEntriesWithAsyncParsing(
+    Chunks & chunks,
     const InsertQuery & key,
     const InsertDataPtr & data,
     const Block & header,
@@ -1253,19 +1278,16 @@ Chunk AsynchronousInsertQueue::processEntriesWithAsyncParsing(
     }
 
     parse_pool_ptr->wait();
-    Chunk result_chunk;
+    chunks.resize(num_threads);
 
     for (size_t executors_num = 0; executors_num < num_threads; ++executors_num)
     {
         auto & ei = executor_info_v[executors_num];
         Chunk chunk(ei.executor->getResultColumns(), ei.total_rows);
         chunk.getChunkInfos().add(ei.chunk_info);
-        if (executors_num)
-            result_chunk.append(chunk);
-        else
-            result_chunk.swap(chunk);
+        chunks[executors_num] = std::move(chunk);
     }
-    return result_chunk;
+    return;
 }
 
 template <typename LogFunc>

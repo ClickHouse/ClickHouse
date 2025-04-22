@@ -291,7 +291,8 @@ private:
         LogFunc && add_to_async_insert_log);
 
     template <typename LogFunc>
-    Chunk processEntriesWithAsyncParsing(
+    void processEntriesWithAsyncParsing(
+        Chunks & chunks,
         const InsertQuery & key,
         const InsertDataPtr & data,
         const Block & header,
