@@ -41,7 +41,7 @@ private:
     XRayInstrumentationManager();
     void registerHandler(const std::string & name, XRayHandlerFunction handler);
     XRayHandlerFunction getHandler(const std::string & name) const;
-    std::unordered_map<int32_t, std::string> parseXRayInstrumentationMap();
+    void parseXRayInstrumentationMap();
 
     [[clang::xray_never_instrument]] static void logEntry(int32_t FuncId, XRayEntryType Type);
     [[clang::xray_never_instrument]] static void logAndSleep(int32_t FuncId, XRayEntryType Type);
