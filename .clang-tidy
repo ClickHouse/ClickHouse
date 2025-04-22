@@ -23,19 +23,24 @@ Checks: [
 
   '-bugprone-assignment-in-if-condition',
   '-bugprone-branch-clone',
+  '-bugprone-crtp-constructor-accessibility',
   '-bugprone-easily-swappable-parameters',
   '-bugprone-exception-escape',
   '-bugprone-implicit-widening-of-multiplication-result',
   '-bugprone-multi-level-implicit-pointer-conversion',
   '-bugprone-narrowing-conversions',
-  '-bugprone-unchecked-optional-access',
-  '-bugprone-crtp-constructor-accessibility',
+  '-bugprone-nondeterministic-pointer-iteration-order',
   '-bugprone-not-null-terminated-result',
   '-bugprone-forward-declaration-namespace',
+  '-bugprone-unchecked-optional-access',
 
   '-cert-dcl16-c',
   '-cert-err58-cpp',
+  '-cert-arr39-c',
 
+  '-clang-analyzer-core.uninitialized.Assign',
+  '-clang-analyzer-cplusplus.NewDeleteLeaks',
+  '-clang-analyzer-optin.cplusplus.UninitializedObject',
   '-clang-analyzer-optin.performance.Padding',
 
   '-clang-analyzer-core.BitwiseShift', # false positive on boost::dynamic_bitset::to_ulong
@@ -94,6 +99,7 @@ Checks: [
   '-modernize-use-ranges',
   '-modernize-use-trailing-return-type',
   '-modernize-use-designated-initializers',
+  '-modernize-use-integer-sign-comparison',
 
   '-performance-avoid-endl',
   '-performance-enum-size',
@@ -103,6 +109,7 @@ Checks: [
   '-performance-unnecessary-value-param',
 
   '-portability-simd-intrinsics',
+  '-portability-template-virtual-member-function',
 
   '-readability-avoid-nested-conditional-operator',
   '-readability-avoid-unconditional-preprocessor-if',
@@ -129,6 +136,7 @@ Checks: [
   '-readability-uppercase-literal-suffix',
   '-readability-use-anyofallof',
   '-readability-math-missing-parentheses',
+  '-readability-container-contains',
 
   '-zircon-*'
 ]
