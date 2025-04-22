@@ -782,13 +782,16 @@ void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
         const String & metadata_path_in_backup = table_info.metadata_path_in_backup;
         backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(new_create_query->formatWithSecretsOneLine()));
 
-        // Store metadata_version separately from the parts
-        // This should happen before processing parts to ensure it's captured regardless of part processing
-        int32_t metadata_version = table_info.storage->getInMemoryMetadataPtr()->metadata_version;
-        backup_entries.emplace_back(
-            fs::path(table_info.data_path_in_backup) / "table_metadata_version.txt",
-            std::make_shared<const BackupEntryFromMemory>(toString(metadata_version))
-        );
+        // metadata_version only makes sense for replicated tables.
+        // Process metadata_version separately from the parts
+        // to ensure it's captured regardless of part processing (e.g. structure_only=1)
+        if (table_info.storage->getName().starts_with("Replicated"))
+        {
+            int32_t metadata_version = table_info.storage->getInMemoryMetadataPtr()->metadata_version;
+            backup_entries.emplace_back(
+                fs::path(table_info.data_path_in_backup) / "table_metadata_version.txt",
+                std::make_shared<const BackupEntryFromMemory>(toString(metadata_version)));
+        }
     }
 }
 
