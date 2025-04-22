@@ -5,28 +5,19 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 CopyTransform::CopyTransform(const Block & header, size_t num_outputs)
     : IProcessor(InputPorts(1, header), OutputPorts(num_outputs, header))
+    , was_output_processed(num_outputs, 0)
 {
-    if (num_outputs <= 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "CopyTransform expects more than 1 outputs, got {}", num_outputs);
 }
 
 IProcessor::Status CopyTransform::prepare()
 {
     Status status = Status::Ready;
-
     while (status == Status::Ready)
     {
-        status = !has_data ? prepareConsume()
-                           : prepareGenerate();
+        status = bool(data) ? prepareGenerate() : prepareConsume();
     }
-
     return status;
 }
 
@@ -65,9 +56,10 @@ IProcessor::Status CopyTransform::prepareConsume()
     if (!input.hasData())
         return Status::NeedData;
 
-    chunk = input.pull();
-    has_data = true;
-    was_output_processed.assign(outputs.size(), false);
+    data = input.pullData();
+
+    for (auto & was_processed : was_output_processed)
+        was_processed = false;
 
     return Status::Ready;
 }
@@ -76,11 +68,11 @@ IProcessor::Status CopyTransform::prepareGenerate()
 {
     bool all_outputs_processed = true;
 
-    size_t chunk_number = 0;
+    size_t output_number = 0;
     for (auto & output : outputs)
     {
-        auto & was_processed = was_output_processed[chunk_number];
-        ++chunk_number;
+        auto & was_processed = was_output_processed[output_number];
+        ++output_number;
 
         if (was_processed)
             continue;
@@ -94,13 +86,17 @@ IProcessor::Status CopyTransform::prepareGenerate()
             continue;
         }
 
-        output.push(chunk.clone());
+        if (data.exception)
+            output.pushException(data.exception);
+        else
+            output.push(data.chunk.clone());
+
         was_processed = true;
     }
 
     if (all_outputs_processed)
     {
-        has_data = false;
+        data = {};
         return Status::Ready;
     }
 

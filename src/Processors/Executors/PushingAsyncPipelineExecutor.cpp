@@ -7,6 +7,7 @@
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
+#include <Common/logger_useful.h>
 #include <Poco/Event.h>
 
 namespace DB
@@ -184,6 +185,12 @@ void PushingAsyncPipelineExecutor::push(Chunk chunk)
 {
     if (!started)
         start();
+
+    if (data->is_finished)
+    {
+        data->rethrowExceptionIfHas();
+        throwOnExecutionStatus(data->executor->getExecutionStatus());
+    }
 
     bool is_pushed = pushing_source->setData(std::move(chunk));
     data->rethrowExceptionIfHas();

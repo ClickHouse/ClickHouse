@@ -1,6 +1,7 @@
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
+#include "base/defines.h"
 
 namespace DB
 {
@@ -12,6 +13,11 @@ QueryPlanResourceHolder & QueryPlanResourceHolder::append(QueryPlanResourceHolde
     interpreter_context.insert(interpreter_context.end(),
                                rhs.interpreter_context.begin(), rhs.interpreter_context.end());
     query_id_holders.insert(query_id_holders.end(), rhs.query_id_holders.begin(), rhs.query_id_holders.end());
+
+    if (insert_dependencies_holder)
+        chassert(!rhs.insert_dependencies_holder);
+
+    insert_dependencies_holder = std::move(rhs.insert_dependencies_holder);
 
     return *this;
 }

@@ -47,7 +47,7 @@ done
 
 for i in {1..4}
 do
-    timeout $TIMEOUT bash -c insert 20 &
+    timeout $TIMEOUT bash -c "insert 20" &
 done
 
 wait
