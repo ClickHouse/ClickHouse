@@ -89,6 +89,14 @@ COPY misc/ /misc/
 COPY --from=clickhouse/cctools:4670e95dde3de689f103 /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
 
+COPY --from=clickhouse/cctools:a0b654d08b8d0b2c71ac \
+  /opt/openssl-fips/ssl/openssl.cnf \
+  /opt/openssl-fips/ssl/fipsmodule.cnf \
+  /etc/ssl/
+COPY --from=clickhouse/cctools:a0b654d08b8d0b2c71ac \
+  /opt/openssl-fips/lib64/ossl-modules/fips.so \
+  /usr/lib/x86_64-linux-gnu/ossl-modules/
+
 # Same options as in test/base/Dockerfile
 # (in case you need to override them in tests)
 ENV TSAN_OPTIONS='halt_on_error=1 abort_on_error=1 history_size=7 memory_limit_mb=46080 second_deadlock_stack=1'

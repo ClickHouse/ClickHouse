@@ -82,3 +82,11 @@ RUN apt-get update \
 
 COPY --from=clickhouse/cctools:4670e95dde3de689f103 /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
+
+COPY --from=clickhouse/cctools:a0b654d08b8d0b2c71ac \
+  /opt/openssl-fips/ssl/openssl.cnf \
+  /opt/openssl-fips/ssl/fipsmodule.cnf \
+  /etc/ssl/
+COPY --from=clickhouse/cctools:a0b654d08b8d0b2c71ac \
+  /opt/openssl-fips/lib64/ossl-modules/fips.so \
+  /usr/lib/x86_64-linux-gnu/ossl-modules/
