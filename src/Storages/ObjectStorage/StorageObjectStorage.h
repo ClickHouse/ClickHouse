@@ -159,7 +159,6 @@ protected:
     ConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
-    const ASTPtr partition_by;
     const bool distributed_processing;
     std::shared_ptr<PartitionStrategy> partition_strategy;
     bool update_configuration_on_read;

@@ -90,14 +90,13 @@ StorageObjectStorage::StorageObjectStorage(
     std::optional<FormatSettings> format_settings_,
     LoadingStrictnessLevel mode,
     bool distributed_processing_,
-    ASTPtr partition_by_,
+    ASTPtr partition_by,
     bool is_table_function_,
     bool lazy_init)
     : IStorage(table_id_)
     , configuration(configuration_)
     , object_storage(object_storage_)
     , format_settings(format_settings_)
-    , partition_by(partition_by_)
     , distributed_processing(distributed_processing_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
@@ -382,7 +381,7 @@ void StorageObjectStorage::read(
     if (update_configuration_on_read)
         configuration->update(object_storage, local_context);
 
-    if (partition_by && configuration->withPartitionWildcard())
+    if (partition_strategy)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Reading from a partitioned {} storage is not implemented yet",
