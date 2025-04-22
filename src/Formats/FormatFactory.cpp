@@ -27,9 +27,9 @@ namespace DB
 namespace Setting
 {
     /// There are way too many format settings to handle extern declarations manually.
-#define DECLARE_FORMAT_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
+#define DECLARE_FORMAT_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
     extern Settings ## TYPE NAME;
-FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, SKIP_ALIAS)
+FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
 #undef DECLARE_FORMAT_EXTERN
 
     extern const SettingsBool allow_experimental_object_type;
