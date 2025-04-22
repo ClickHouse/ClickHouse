@@ -1,6 +1,7 @@
 from ci.defs.defs import JobNames
 from ci.jobs.scripts.workflow_hooks.pr_description import Labels
 from ci.praktika.info import Info
+from ci.defs.job_configs import JobConfigs
 
 
 def only_docs(changed_files):
@@ -32,12 +33,12 @@ PRELIMINARY_JOBS = [
     "Build (arm_tidy)",
 ]
 
-INTEGRATION_TEST_CHECK_JOBS = [
+INTEGRATION_TEST_FLAKY_CHECK_JOBS = [
     "Build (amd_asan)",
     "Integration tests (asan, flaky check)",
 ]
 
-FUNCTIONAL_TEST_CHECK_JOBS = [
+FUNCTIONAL_TEST_FLAKY_CHECK_JOBS = [
     "Build (amd_asan)",
     "Stateless tests (asan, flaky check)",
 ]
@@ -65,17 +66,35 @@ def should_skip_job(job_name):
         return True, f"Skipped, labeled with '{Labels.NO_FAST_TESTS}'"
 
     if (
-        Labels.CI_INTEGRATION in _info_cache.pr_labels
-        and job_name not in INTEGRATION_TEST_CHECK_JOBS
+        Labels.CI_INTEGRATION_FLAKY in _info_cache.pr_labels
+        and job_name not in INTEGRATION_TEST_FLAKY_CHECK_JOBS
+    ):
+        return (
+            True,
+            f"Skipped, labeled with '{Labels.CI_INTEGRATION_FLAKY}' - run integration test jobs only",
+        )
+
+    if (
+        Labels.CI_FUNCTIONAL_FLAKY in _info_cache.pr_labels
+        and job_name not in FUNCTIONAL_TEST_FLAKY_CHECK_JOBS
+    ):
+        return (
+            True,
+            f"Skipped, labeled with '{Labels.CI_FUNCTIONAL_FLAKY}' - run stateless test jobs only",
+        )
+
+    if Labels.CI_INTEGRATION in _info_cache.pr_labels and not (
+        job_name.startswith(JobNames.INTEGRATION) or job_name in JobConfigs.builds_for_tests
     ):
         return (
             True,
             f"Skipped, labeled with '{Labels.CI_INTEGRATION}' - run integration test jobs only",
         )
 
-    if (
-        Labels.CI_FUNCTIONAL in _info_cache.pr_labels
-        and job_name not in FUNCTIONAL_TEST_CHECK_JOBS
+    if Labels.CI_FUNCTIONAL in _info_cache.pr_labels and not (
+        job_name.startswith(JobNames.STATELESS)
+        or job_name.startswith(JobNames.STATEFUL)
+        or job_name in JobConfigs.builds_for_tests
     ):
         return (
             True,
