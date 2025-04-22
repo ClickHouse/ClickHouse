@@ -23,7 +23,6 @@
 * Enhance `SummingMergeTree` validation to skip aggregation for columns used in partition or sort keys. [#78022](https://github.com/ClickHouse/ClickHouse/pull/78022) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)).
 
 #### New Feature
-* Support correlated subqueries as an argument of `EXISTS` expression in the `WHERE` clause. Closes [#72459](https://github.com/ClickHouse/ClickHouse/issues/72459). [#76078](https://github.com/ClickHouse/ClickHouse/pull/76078) ([Dmitry Novik](https://github.com/novikd)).
 * Added CPU slot scheduling for workloads, see [the docs](https://clickhouse.com/docs/operations/workload-scheduling#cpu_scheduling) for details. [#77595](https://github.com/ClickHouse/ClickHouse/pull/77595) ([Sergei Trifonov](https://github.com/serxa)).
 * `clickhouse-local` will retain its databases after restart if you specify the `--path` command line argument. This closes [#50647](https://github.com/ClickHouse/ClickHouse/issues/50647). This closes [#49947](https://github.com/ClickHouse/ClickHouse/issues/49947). [#71722](https://github.com/ClickHouse/ClickHouse/pull/71722) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * Reject queries when the server is overloaded. The decision is made based on the ratio of wait time (`OSCPUWaitMicroseconds`) to busy time (`OSCPUVirtualTimeMicroseconds`). The query is dropped with some probability, when this ratio is between `min_os_cpu_wait_time_ratio_to_throw` and `max_os_cpu_wait_time_ratio_to_throw` (those are query level settings). [#63206](https://github.com/ClickHouse/ClickHouse/pull/63206) ([Alexey Katsman](https://github.com/alexkats)).
@@ -48,6 +47,7 @@
 * Support password based auth in SSH protocol in ClickHouse. [#78586](https://github.com/ClickHouse/ClickHouse/pull/78586) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
 
 #### Experimental Feature
+* Support correlated subqueries as an argument of `EXISTS` expression in the `WHERE` clause. Closes [#72459](https://github.com/ClickHouse/ClickHouse/issues/72459). [#76078](https://github.com/ClickHouse/ClickHouse/pull/76078) ([Dmitry Novik](https://github.com/novikd)).
 * Functions `sparseGrams` and `sparseGramsHashes` with ASCII and UTF8 versions added. Author: [scanhex12](https://github.com/scanhex12). [#78176](https://github.com/ClickHouse/ClickHouse/pull/78176) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)). Do not use it: the implementation will change in the next versions.
 
 #### Performance Improvement
