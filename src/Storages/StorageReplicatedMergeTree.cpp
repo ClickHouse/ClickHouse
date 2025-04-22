@@ -11150,14 +11150,6 @@ void StorageReplicatedMergeTree::backupData(
     auto local_context = backup_entries_collector.getContext();
     auto zookeeper_retries_info = backup_entries_collector.getZooKeeperRetriesInfo();
 
-    // Store metadata_version separately from the parts
-    // This should happen before processing parts to ensure it's captured regardless of part processing
-    int32_t metadata_version = getInMemoryMetadataPtr()->metadata_version;
-    backup_entries_collector.addBackupEntry(
-        fs::path(data_path_in_backup) / "table_metadata_version.txt",
-        std::make_shared<const BackupEntryFromMemory>(toString(metadata_version))
-    );
-
     DataPartsVector data_parts;
     if (partitions)
         data_parts = getVisibleDataPartsVectorInPartitions(local_context, getPartitionIDsFromQuery(*partitions, local_context));
