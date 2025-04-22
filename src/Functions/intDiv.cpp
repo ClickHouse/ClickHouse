@@ -126,4 +126,11 @@ REGISTER_FUNCTION(IntDiv)
     factory.registerFunction<FunctionIntDiv>();
 }
 
+struct NameIntDivOrNull { static constexpr auto name = "intDivOrNull"; };
+using FunctionIntDivOrNull = BinaryArithmeticOverloadResolver<DivideIntegralOrNullImpl, NameIntDivOrNull, false>;
+
+REGISTER_FUNCTION(IntDivOrNull)
+{
+    factory.registerFunction<FunctionIntDivOrNull>();
+}
 }
