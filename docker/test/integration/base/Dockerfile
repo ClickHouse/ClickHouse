@@ -81,5 +81,5 @@ COPY --from=clickhouse/cctools:a0b654d08b8d0b2c71ac \
   /opt/openssl-fips/ssl/fipsmodule.cnf \
   /etc/ssl/
 COPY --from=clickhouse/cctools:a0b654d08b8d0b2c71ac \
-  /opt/openssl-fips/lib64/ossl-modules/fips.so \
-  /usr/lib/x86_64-linux-gnu/ossl-modules/
+  /opt/openssl-fips/providers/fips.so \
+  /usr/lib/${TARGETARCH}-linux-gnu/ossl-modules/
