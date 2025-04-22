@@ -321,6 +321,23 @@ void PrettyBlockOutputFormat::calculateWidths(
             names[i] = std::move(name);
             name_widths[i] = std::min<UInt64>(format_settings.pretty.max_column_pad_width, width);
             
+            EnclosureLevelContainer next_level_under;
+            int32_t cur_max;
+            returnNeededEnclosureLvl(elem.type, 1, next_level_under, i, -1, cur_max, 0);
+            size_t padding = 0;
+            for (auto & j : next_level_under)
+            {
+                if (j >= 0)
+                {
+                    padding += 1;
+                }
+                
+            }
+            if (padding)
+            {
+                max_padded_widths[i] += (padding - 1) * 3;
+            }
+            
             // Add width if column name width is bigger than all subcolumns' max widths combined
             if (!elem.type->isNullable() && (elem.type->getTypeId() != TypeIndex::Array) && (elem.type->getTypeId() != TypeIndex::Variant)
             && leaves.size() != 0 && name_widths[i] > max_padded_widths[i] && format_settings.pretty.display_tuple_as_subcolumns)
@@ -337,22 +354,6 @@ void PrettyBlockOutputFormat::calculateWidths(
                         --remainder;
                     }
                 }
-            }
-            EnclosureLevelContainer next_level_under;
-            int32_t cur_max;
-            returnNeededEnclosureLvl(elem.type, 1, next_level_under, i, -1, cur_max, 0);
-            size_t padding = 0;
-            for (auto & j : next_level_under)
-            {
-                if (j >= 0)
-                {
-                    padding += 1;
-                }
-                
-            }
-            if (padding)
-            {
-                max_padded_widths[i] += (padding - 1) * 3;
             }
             max_padded_widths[i] = std::max<UInt64>(max_padded_widths[i], name_widths[i]);
         }
@@ -673,7 +674,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                     header_footer_separator_out  << vertical_bold_bar;
                 else
                 {
-                    header_footer_separator_out  << (was_empty ? vertical_bold_bar : grid[7][0]);
+                    header_footer_separator_out  << (was_empty ? vertical_bold_bar : grid[7][3]);
                 }
                 ++string_offset;
                 was_empty = true;
@@ -746,6 +747,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         {
             header_footer_separator.clear();
         }
+        header_footer_separator_out.finalize();
         if (is_top)
         {
             writeString(header_footer_separator, out);
@@ -753,7 +755,6 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         }
         else
         {
-            header_footer_separator_out.finalize();
             return header_footer_separator;
         }
     };
@@ -955,9 +956,9 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
             string_out << horizontal_bar << grid[2][3];
 
         string_out << "\n";
+        string_out.finalize();
         if (!is_top && style == Style::Compact)
         {
-            string_out.finalize();
             return string;
         }
         else
