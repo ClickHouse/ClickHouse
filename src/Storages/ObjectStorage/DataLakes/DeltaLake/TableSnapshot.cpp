@@ -200,6 +200,13 @@ public:
         ffi::SharedScanMetadata * scan_metadata)
     {
         ffi::visit_scan_metadata(scan_metadata, engine_context, Iterator::scanCallback);
+
+        auto * context = static_cast<TableSnapshot::Iterator *>(engine_context);
+
+        ffi::KernelBoolSlice selection_vector_res = KernelUtils::unwrapResult(
+            ffi::selection_vector_from_scan_metadata(scan_metadata, context->engine.get()),
+            "selection_vector_from_scan");
+        free_bool_slice(selection_vector_res);
     }
 
     static void scanCallback(
