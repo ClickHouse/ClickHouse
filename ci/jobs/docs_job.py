@@ -57,7 +57,7 @@ if __name__ == "__main__":
     results.append(
         Result.from_commands_run(
             name=testname,
-            command=[f"yarn autogenerate-settings -b /ci/tmp/clickhouse"],
+            command=[f"yarn autogenerate-settings -b ci/tmp/clickhouse"],
             workdir="/opt/clickhouse-docs",
         )
     )
