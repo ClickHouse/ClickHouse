@@ -69,20 +69,22 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 
-#include <Planner/findQueryForParallelReplicas.h>
-#include <Planner/Utils.h>
-#include <Planner/PlannerContext.h>
-#include <Planner/PlannerActionsVisitor.h>
-#include <Planner/PlannerJoins.h>
-#include <Planner/PlannerAggregation.h>
-#include <Planner/PlannerSorting.h>
-#include <Planner/PlannerWindowFunctions.h>
+#include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
-#include <Planner/PlannerJoinTree.h>
+#include <Planner/findQueryForParallelReplicas.h>
+#include <Planner/PlannerActionsVisitor.h>
+#include <Planner/PlannerAggregation.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/PlannerCorrelatedSubqueries.h>
 #include <Planner/PlannerExpressionAnalysis.h>
-#include <Planner/CollectColumnIdentifiers.h>
+#include <Planner/PlannerJoins.h>
+#include <Planner/PlannerJoinTree.h>
 #include <Planner/PlannerQueryProcessingInfo.h>
+#include <Planner/PlannerSorting.h>
+#include <Planner/PlannerWindowFunctions.h>
+#include <Planner/Utils.h>
+
 
 namespace ProfileEvents
 {
@@ -398,11 +400,19 @@ void addExpressionStep(QueryPlan & query_plan,
     query_plan.addStep(std::move(expression_step));
 }
 
-void addFilterStep(QueryPlan & query_plan,
+void addFilterStep(
+    const PlannerContextPtr & planner_context,
+    QueryPlan & query_plan,
     FilterAnalysisResult & filter_analysis_result,
+    const SelectQueryOptions & select_query_options,
     const std::string & step_description,
     UsefulSets & useful_sets)
 {
+    for (const auto & correlated_subquery : filter_analysis_result.correlated_subtrees.subqueries)
+    {
+        buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options);
+    }
+
     auto actions = std::move(filter_analysis_result.filter_actions->dag);
     if (filter_analysis_result.filter_actions->project_input)
         actions.appendInputsForUnusedColumns(query_plan.getCurrentHeader());
@@ -797,14 +807,17 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
             {
                 auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
 
-                PlannerActionsVisitor planner_actions_visitor(planner_context);
-                auto expression_to_interpolate_expression_nodes = planner_actions_visitor.visit(interpolate_actions_dag,
+                ColumnNodePtrWithHashSet empty_correlated_columns_set;
+                PlannerActionsVisitor planner_actions_visitor(planner_context, empty_correlated_columns_set);
+                auto [expression_to_interpolate_expression_nodes, expression_to_interpolate_correlated_subtrees] = planner_actions_visitor.visit(interpolate_actions_dag,
                     interpolate_node_typed.getExpression());
+                expression_to_interpolate_correlated_subtrees.assertEmpty("in expression to interpolate");
                 if (expression_to_interpolate_expression_nodes.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression to interpolate expected to have single action node");
 
-                auto interpolate_expression_nodes = planner_actions_visitor.visit(interpolate_actions_dag,
+                auto [interpolate_expression_nodes, interpolate_correlated_subtrees] = planner_actions_visitor.visit(interpolate_actions_dag,
                     interpolate_node_typed.getInterpolateExpression());
+                interpolate_correlated_subtrees.assertEmpty("in interpolate expression");
                 if (interpolate_expression_nodes.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate expression expected to have single action node");
 
@@ -1363,23 +1376,7 @@ void Planner::buildPlanForUnionNode()
     }
 
     Block union_common_header = buildCommonHeaderForUnion(query_plans_headers, union_mode);
-
-    for (size_t i = 0; i < queries_size; ++i)
-    {
-        auto & query_node_plan = query_plans[i];
-        if (blocksHaveEqualStructure(query_node_plan->getCurrentHeader(), union_common_header))
-            continue;
-
-        auto actions_dag = ActionsDAG::makeConvertingActions(
-            query_node_plan->getCurrentHeader().getColumnsWithTypeAndName(),
-            union_common_header.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position);
-        auto converting_step = std::make_unique<ExpressionStep>(query_node_plan->getCurrentHeader(), std::move(actions_dag));
-        converting_step->setStepDescription("Conversion before UNION");
-        query_node_plan->addStep(std::move(converting_step));
-
-        query_plans_headers[i] = query_node_plan->getCurrentHeader();
-    }
+    addConvertingToCommonHeaderActionsIfNeeded(query_plans, union_common_header, query_plans_headers);
 
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -1618,7 +1615,7 @@ void Planner::buildPlanForQueryNode()
     if (query_processing_info.isFirstStage())
     {
         if (expression_analysis_result.hasWhere())
-            addFilterStep(query_plan, expression_analysis_result.getWhere(), "WHERE", useful_sets);
+            addFilterStep(planner_context, query_plan, expression_analysis_result.getWhere(), select_query_options, "WHERE", useful_sets);
 
         if (expression_analysis_result.hasAggregation())
         {
@@ -1708,7 +1705,7 @@ void Planner::buildPlanForQueryNode()
             addCubeOrRollupStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info, query_node);
 
             if (!having_executed && expression_analysis_result.hasHaving())
-                addFilterStep(query_plan, expression_analysis_result.getHaving(), "HAVING", useful_sets);
+                addFilterStep(planner_context, query_plan, expression_analysis_result.getHaving(), select_query_options, "HAVING", useful_sets);
         }
 
         if (query_processing_info.isFromAggregationState())
@@ -1729,7 +1726,7 @@ void Planner::buildPlanForQueryNode()
             }
 
             if (expression_analysis_result.hasQualify())
-                addFilterStep(query_plan, expression_analysis_result.getQualify(), "QUALIFY", useful_sets);
+                addFilterStep(planner_context, query_plan, expression_analysis_result.getQualify(), select_query_options, "QUALIFY", useful_sets);
 
             auto & projection_analysis_result = expression_analysis_result.getProjection();
             addExpressionStep(query_plan, projection_analysis_result.projection_actions, "Projection", useful_sets);
