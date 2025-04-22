@@ -642,7 +642,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
         columnPathRef(entry, ins->add_cols());
     }
 
-    if (!in_parallel && noption < 801)
+    if (!in_parallel && noption < 701)
     {
         const uint64_t nrows = rows_dist(rg.generator);
 
@@ -690,7 +690,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
         }
         ins->set_query(buf);
     }
-    else if (!in_parallel && noption < 851)
+    else if (!in_parallel && noption < 751)
     {
         const uint32_t nrows = (rg.nextSmallNumber() % 3) + 1;
         ValuesStatement * vs = ins->mutable_values();
