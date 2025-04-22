@@ -59,8 +59,8 @@ struct BackupOperationInfo
     /// Profile events collected during the backup.
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters = nullptr;
 
-    std::chrono::system_clock::time_point start_time;
-    std::chrono::system_clock::time_point end_time;
+    UInt64 start_time_us = 0;
+    UInt64 end_time_us = 0;
 };
 
 }

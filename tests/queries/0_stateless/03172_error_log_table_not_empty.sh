@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 # system.error_log is created lazy, flush logs query makes it sure that the table is created.
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS;"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS error_log;"
 
 # Get the previous number of errors for 111, 222 and 333
 errors_111=$($CLICKHOUSE_CLIENT -q "SELECT sum(value) FROM system.error_log WHERE code = 111")
@@ -20,7 +20,7 @@ SELECT throwIf(true, 'error_log', toInt16(111)) SETTINGS allow_custom_error_code
 SELECT throwIf(true, 'error_log', toInt16(222)) SETTINGS allow_custom_error_code_in_throwif=1; -- { serverError 222 }
 SELECT throwIf(true, 'error_log', toInt16(333)) SETTINGS allow_custom_error_code_in_throwif=1; -- { serverError 333 }
 SELECT sleep(2) format NULL;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS error_log;
 "
 
 # Check that the three random errors are propagated
@@ -36,7 +36,7 @@ SELECT throwIf(true, 'error_log', toInt16(111)) SETTINGS allow_custom_error_code
 SELECT throwIf(true, 'error_log', toInt16(222)) SETTINGS allow_custom_error_code_in_throwif=1; -- { serverError 222 }
 SELECT throwIf(true, 'error_log', toInt16(333)) SETTINGS allow_custom_error_code_in_throwif=1; -- { serverError 333 }
 SELECT sleep(2) format NULL;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS error_log;
 "
 
 $CLICKHOUSE_CLIENT -m -q "

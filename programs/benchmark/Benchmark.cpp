@@ -13,6 +13,7 @@
 #include <Common/ThreadPool.h>
 #include <AggregateFunctions/ReservoirSampler.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <base/defines.h>
 #include <boost/program_options.hpp>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/Exception.h>
@@ -25,7 +26,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
-#include <IO/UseSSL.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
@@ -138,7 +138,8 @@ public:
                 /* cluster_secret_= */ "",
                 /* client_name_= */ std::string(DEFAULT_CLIENT_NAME),
                 Protocol::Compression::Enable,
-                secure));
+                secure,
+                /* bind_host_= */ ""));
 
             if (!round_robin || comparison_info_per_interval.empty())
             {
@@ -224,7 +225,8 @@ private:
     ContextMutablePtr global_context;
     QueryProcessingStage::Enum query_processing_stage;
 
-    AutoFinalizedWriteBuffer<WriteBufferFromFileDescriptor> log{STDERR_FILENO};
+    std::mutex mutex;
+    AutoFinalizedWriteBuffer<WriteBufferFromFileDescriptor> log TSA_GUARDED_BY(mutex) {STDERR_FILENO};
 
     std::atomic<size_t> consecutive_errors{0};
 
@@ -274,8 +276,6 @@ private:
     Stopwatch total_watch;
     Stopwatch delay_watch;
 
-    std::mutex mutex;
-
     ThreadPool pool;
 
     void readQueries()
@@ -303,14 +303,19 @@ private:
         }
 
 
+        std::lock_guard lock(mutex);
         log << "Loaded " << queries.size() << " queries.\n" << flush;
     }
 
 
     void printNumberOfQueriesExecuted(size_t num)
     {
+        std::lock_guard lock(mutex);
+
         log << "\nQueries executed: " << num;
-        if (queries.size() > 1)
+        if (max_iterations > 1)
+            log << " (" << (num * 100.0 / max_iterations) << "%)";
+        else if (queries.size() > 1)
             log << " (" << (num * 100.0 / queries.size()) << "%)";
         log << ".\n" << flush;
     }
@@ -541,7 +546,7 @@ private:
         }
         log << "\n";
 
-        auto print_percentile = [&](double percent)
+        auto print_percentile = [&](double percent) TSA_REQUIRES(mutex)
         {
             log << percent << "%\t\t";
             for (const auto & info : infos)
@@ -650,7 +655,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         {
             std::cout << "Usage: " << argv[0] << " [options] < queries.txt\n";
             std::cout << desc << "\n";
-            std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-benchmark/\n";
+            std::cout << "\nSee also: https://clickhouse.com/docs/operations/utilities/clickhouse-benchmark/\n";
             return 0;
         }
 
@@ -660,7 +665,6 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
 
         UInt16 default_port = options.count("secure") ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT;
 
-        UseSSL use_ssl;
         Ports ports = options.count("port")
             ? options["port"].as<Ports>()
             : Ports({default_port});

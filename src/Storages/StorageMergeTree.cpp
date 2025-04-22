@@ -8,17 +8,18 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <Databases/IDatabase.h>
+#include <IO/SharedThreadPools.h>
 #include <IO/copyData.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTPartition.h>
-#include <Parsers/formatAST.h>
 #include <Planner/Utils.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -27,6 +28,11 @@
 #include <Processors/LimitTransform.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
+#include <Storages/MergeTree/Compaction/CompactionStatistics.h>
+#include <Storages/MergeTree/Compaction/ConstructFuturePart.h>
+#include <Storages/MergeTree/Compaction/MergePredicates/MergeTreeMergePredicate.h>
+#include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
+#include <Storages/MergeTree/Compaction/PartsCollectors/MergeTreePartsCollector.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
@@ -34,11 +40,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Storages/MergeTree/Compaction/CompactionStatistics.h>
-#include <Storages/MergeTree/Compaction/ConstructFuturePart.h>
-#include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
-#include <Storages/MergeTree/Compaction/MergePredicates/MergeTreeMergePredicate.h>
-#include <Storages/MergeTree/Compaction/PartsCollectors/MergeTreePartsCollector.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/StorageMemory.h>
@@ -56,12 +57,8 @@
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/Hypothesis/Deducer.hpp>
 #include <IO/SharedThreadPools.h>
-
-namespace CurrentMetrics
-{
-    extern const Metric ActiveDataMutations;
-    extern const Metric ActiveMetadataMutations;
-}
+#include "Core/BackgroundSchedulePool.h"
+#include "Core/Names.h"
 
 namespace DB
 {
@@ -69,7 +66,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char storage_merge_tree_background_clear_old_parts_pause[];
-};
+}
 
 namespace Setting
 {
@@ -95,8 +92,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
+    extern const MergeTreeSettingsBool enable_replacing_merge_with_cleanup_for_min_age_to_force_merge;
     extern const MergeTreeSettingsUInt64 finished_mutations_to_keep;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
+    extern const MergeTreeSettingsBool min_age_to_force_merge_on_partition_only;
+    extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
     extern const MergeTreeSettingsUInt64 max_number_of_merges_with_ttl_in_pool;
     extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_mutations_ms;
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_parts_interval_seconds;
@@ -238,6 +238,9 @@ void StorageMergeTree::shutdown(bool)
     if (shutdown_called.exchange(true))
         return;
 
+    if (refresh_parts_task)
+        refresh_parts_task->deactivate();
+
     stopOutdatedAndUnexpectedDataPartsLoadingTask();
 
     /// Unlock all waiting mutations
@@ -260,9 +263,6 @@ void StorageMergeTree::shutdown(bool)
 StorageMergeTree::~StorageMergeTree()
 {
     shutdown(false);
-
-    CurrentMetrics::sub(CurrentMetrics::ActiveDataMutations, num_data_mutations_to_apply);
-    CurrentMetrics::sub(CurrentMetrics::ActiveMetadataMutations, num_metadata_mutations_to_apply);
 }
 
 void StorageMergeTree::read(
@@ -326,7 +326,7 @@ void StorageMergeTree::read(
         query_plan = std::move(*plan);
 }
 
-std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const
+std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr) const
 {
     return getTotalActiveSizeInRows();
 }
@@ -337,7 +337,7 @@ std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const Acti
     return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, parts);
 }
 
-std::optional<UInt64> StorageMergeTree::totalBytes(const Settings &) const
+std::optional<UInt64> StorageMergeTree::totalBytes(ContextPtr) const
 {
     return getTotalActiveSizeInBytes();
 }
@@ -599,7 +599,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
         if (!inserted)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", version);
 
-        incrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *it->second.commands);
+        incrementMutationsCounters(mutation_counters, *it->second.commands);
     }
 
     LOG_INFO(log, "Added mutation: {}{}", mutation_id, additional_info);
@@ -881,12 +881,10 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
 
         for (const MutationCommand & command : *entry.commands)
         {
-            WriteBufferFromOwnString buf;
-            formatAST(*command.ast, buf, false, true);
             result.push_back(MergeTreeMutationStatus
             {
                 entry.file_name,
-                buf.str(),
+                command.ast->formatWithSecretsOneLine(),
                 entry.create_time,
                 block_numbers_map,
                 parts_to_do_names,
@@ -919,7 +917,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
         if (it != current_mutations_by_version.end())
         {
             if (!it->second.is_done)
-                decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *it->second.commands);
+                decrementMutationsCounters(mutation_counters, *it->second.commands);
 
             to_kill.emplace(std::move(it->second));
             current_mutations_by_version.erase(it);
@@ -1003,7 +1001,7 @@ void StorageMergeTree::loadMutations()
                 if (!inserted)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", block_number);
 
-                incrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *entry_it->second.commands);
+                incrementMutationsCounters(mutation_counters, *entry_it->second.commands);
             }
             else if (startsWith(it->name(), "tmp_mutation_"))
             {
@@ -1479,7 +1477,13 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         if (is_cancelled(merge_entry))
             return false;
 
-        auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, /* deduplicate */ false, Names{}, /* cleanup */ false, merge_entry, shared_lock, common_assignee_trigger);
+        bool cleanup = merge_entry->future_part->final
+            && (*getSettings())[MergeTreeSetting::allow_experimental_replacing_merge_with_cleanup]
+            && (*getSettings())[MergeTreeSetting::enable_replacing_merge_with_cleanup_for_min_age_to_force_merge]
+            && (*getSettings())[MergeTreeSetting::min_age_to_force_merge_seconds]
+            && (*getSettings())[MergeTreeSetting::min_age_to_force_merge_on_partition_only];
+
+        auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, /* deduplicate */ false, Names{}, cleanup, merge_entry, shared_lock, common_assignee_trigger);
         task->setCurrentTransaction(std::move(transaction_for_merge), std::move(txn));
         bool scheduled = assignee.scheduleMergeMutateTask(task);
         /// The problem that we already booked a slot for TTL merge, but a merge list entry will be created only in a prepare method
@@ -1583,7 +1587,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
             if (!entry.is_done)
             {
                 entry.is_done = true;
-                decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *entry.commands);
+                decrementMutationsCounters(mutation_counters, *entry.commands);
             }
 
             ++done_count;
@@ -1631,7 +1635,7 @@ size_t StorageMergeTree::clearOldPartsFromFilesystem(bool force, bool with_pause
         // All parts which are dropped in that operations are not removed until failpoint is released
         // If we would set this failpoint before grabOldParts, it leads us to a case when
         // background thread already passed the failpoint but did not reach grabOldParts yet
-        // if failpoint is enabled at that time, background thead could grab parts from those operations and remove them regardless enabled failpoint
+        // if failpoint is enabled at that time, background thread could grab parts from those operations and remove them regardless enabled failpoint
         FailPointInjection::pauseFailPoint(FailPoints::storage_merge_tree_background_clear_old_parts_pause);
     }
 
@@ -2496,7 +2500,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         throw Exception(ErrorCodes::TOO_MANY_PARTS,
                         "Cannot move {} parts at once, the limit is {}. "
                         "Wait until some parts are merged and retry, move smaller partitions, or increase the setting 'max_parts_to_move'.",
-                        src_parts.size(), settings[Setting::max_parts_to_move]);
+                        src_parts.size(), settings[Setting::max_parts_to_move].value);
     }
 
     MutableDataPartsVector dst_parts;
@@ -2729,24 +2733,19 @@ MutationCommands StorageMergeTree::MutationsSnapshot::getAlterMutationCommandsFo
         if (mutation_version <= part_data_version)
             break;
 
-        for (const auto & command : *commands | std::views::reverse)
-        {
-            if (params.need_data_mutations && AlterConversions::isSupportedDataMutation(command.type))
-                result.push_back(command);
-            else if (AlterConversions::isSupportedMetadataMutation(command.type))
-                result.push_back(command);
-        }
+        addSupportedCommands(*commands, result);
     }
 
+    std::reverse(result.begin(), result.end());
     return result;
 }
 
 NameSet StorageMergeTree::MutationsSnapshot::getAllUpdatedColumns() const
 {
-    if (!hasDataMutations())
-        return {};
-
     NameSet res;
+    if (!hasDataMutations())
+        return res;
+
     for (const auto & [version, commands] : mutations_by_version)
     {
         auto names = commands->getAllUpdatedColumns();
@@ -2759,40 +2758,25 @@ MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
 
-    MutationsSnapshot::Info info
-    {
-        .num_data_mutations = num_data_mutations_to_apply,
-        .num_metadata_mutations = num_metadata_mutations_to_apply,
-    };
-
-    auto res = std::make_shared<MutationsSnapshot>(params, std::move(info));
-
-    bool need_data_mutations = res->hasDataMutations();
-    bool need_metadata_mutations = res->hasMetadataMutations();
-
-    if (!need_data_mutations && !need_metadata_mutations)
+    auto res = std::make_shared<MutationsSnapshot>(params, mutation_counters);
+    if (!res->hasAnyMutations())
         return res;
 
     for (const auto & [version, entry] : current_mutations_by_version)
     {
-        bool has_required_command = std::ranges::any_of(*entry.commands, [&](const auto & command)
-        {
-            if (need_data_mutations && AlterConversions::isSupportedDataMutation(command.type))
-                return true;
-
-            if (need_metadata_mutations && AlterConversions::isSupportedMetadataMutation(command.type))
-                return true;
-
-            return false;
-        });
-
         /// Copy a pointer to all commands to avoid extracting and copying them.
         /// Required commands will be copied later only for specific parts.
-        if (has_required_command)
+        if (res->hasSupportedCommands(*entry.commands))
             res->mutations_by_version.emplace(version, entry.commands);
     }
 
     return res;
+}
+
+MutationCounters StorageMergeTree::getMutationCounters() const
+{
+    std::lock_guard lock(currently_processing_in_background_mutex);
+    return mutation_counters;
 }
 
 void StorageMergeTree::startBackgroundMovesIfNeeded()

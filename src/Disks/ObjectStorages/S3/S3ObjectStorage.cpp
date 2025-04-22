@@ -243,8 +243,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
 
     S3::ListObjectsV2Request request;
     request.SetBucket(uri.bucket);
-    if (path != "/")
-        request.SetPrefix(path);
+    request.SetPrefix(path);
     if (max_keys)
         request.SetMaxKeys(static_cast<int>(max_keys));
     else
@@ -349,6 +348,7 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::s
     ObjectMetadata result;
     result.size_bytes = object_info.size;
     result.last_modified = Poco::Timestamp::fromEpochTime(object_info.last_modification_time);
+    result.etag = object_info.etag;
     result.attributes = object_info.metadata;
 
     return result;

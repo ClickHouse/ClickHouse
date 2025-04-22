@@ -8,7 +8,7 @@
 
 namespace DB
 {
-class ASTStorage;
+class ASTSetQuery;
 struct StorageObjectStorageSettingsImpl;
 struct MutableColumnsAndConstraints;
 class StorageObjectStorage;
@@ -40,6 +40,7 @@ class SettingsChanges;
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt32) \
     M(CLASS_NAME, UInt64) \
+    M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, URI)
 
@@ -54,7 +55,7 @@ struct StorageObjectStorageSettings
 
     STORAGE_OBJECT_STORAGE_SETTINGS_SUPPORTED_TYPES(StorageObjectStorageSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    void loadFromQuery(ASTStorage & storage_def);
+    void loadFromQuery(ASTSetQuery & settings_ast);
 
     Field get(const std::string & name);
 
@@ -63,5 +64,7 @@ struct StorageObjectStorageSettings
 private:
     std::unique_ptr<StorageObjectStorageSettingsImpl> impl;
 };
+
+using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
 
 }

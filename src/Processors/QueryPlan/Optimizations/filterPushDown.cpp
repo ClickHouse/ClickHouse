@@ -21,6 +21,7 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/CustomMetricLogViewStep.h>
 #include <Storages/StorageMerge.h>
 
 #include <Interpreters/ActionsDAG.h>
@@ -151,6 +152,14 @@ addNewFilterStepOrThrow(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
     /// New filter column is the first one.
     String split_filter_column_name = split_filter.getOutputs().front()->result_name;
 
+    // If no new columns added, filter just used one of the input columns as-is and moved it to the front, move it back to keep aggregation key in order.
+    if (const auto & input = node.children.at(0)->step->getOutputHeader(); split_filter.getOutputs().size() == input.columns())
+    {
+        auto pos = input.getPositionByName(split_filter_column_name);
+        if (pos != 0)
+            std::rotate(split_filter.getOutputs().begin(), split_filter.getOutputs().begin() + 1, split_filter.getOutputs().begin() + pos + 1);
+    }
+
     node.step = std::make_unique<FilterStep>(
         node.children.at(0)->step->getOutputHeader(), std::move(split_filter), std::move(split_filter_column_name), can_remove_filter);
 
@@ -209,12 +218,15 @@ static void buildEquialentSetsForJoinStepLogical(
 
     for (const auto & predicate : join_info.expression.condition.predicates)
     {
+        auto left_column = predicate.left_node.getColumn();
+        auto right_column = predicate.right_node.getColumn();
+
         if (predicate.op != PredicateOperator::Equals && predicate.op != PredicateOperator::NullSafeEquals)
             continue;
-        if (!predicate.left_node.node->result_type->equals(*predicate.right_node.node->result_type))
+        if (!left_column.type->equals(*right_column.type))
             continue;
-        equivalent_left_column[predicate.left_node.column_name] = predicate.right_node.getColumn();
-        equivalent_right_column[predicate.right_node.column_name] = predicate.left_node.getColumn();
+        equivalent_left_column[left_column.name] = right_column;
+        equivalent_right_column[right_column.name] = left_column;
     }
 }
 
@@ -443,6 +455,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     auto & parent = parent_node->step;
     auto & child = child_node->step;
+
     auto * filter = typeid_cast<FilterStep *>(parent.get());
 
     if (!filter)
@@ -489,8 +502,10 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
         const bool filter_column_is_not_among_aggregation_keys
             = std::find(keys.begin(), keys.end(), filter->getFilterColumnName()) == keys.end();
-        const bool can_remove_filter = filter_column_is_not_among_aggregation_keys
-            && filterColumnIsNotAmongAggregatesArguments(params.aggregates, filter->getFilterColumnName());
+
+        /// When we only merging aggregated data, we do not need aggregation arguments.
+        bool filter_is_not_among_aggregates_arguments = merging_aggregated || filterColumnIsNotAmongAggregatesArguments(params.aggregates, filter->getFilterColumnName());
+        const bool can_remove_filter = filter_column_is_not_among_aggregation_keys && filter_is_not_among_aggregates_arguments;
 
         if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, keys, can_remove_filter))
             return updated_steps;
@@ -520,10 +535,14 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// CreatingSets does not change header.
         /// We can push down filter and update header.
         /// Filter - DelayedCreatingSets - Something
-        child = std::make_unique<DelayedCreatingSetsStep>(filter->getOutputHeader(), delayed->detachSets(), delayed->getContext());
+
+        child = std::make_unique<DelayedCreatingSetsStep>(
+            filter->getOutputHeader(),
+            delayed->detachSets(),
+            delayed->getNetworkTransferLimits(),
+            delayed->getPreparedSetsCache());
+
         std::swap(parent, child);
-        std::swap(parent_node->children, child_node->children);
-        std::swap(parent_node->children.front(), child_node->children.front());
         /// DelayedCreatingSets - Filter - Something
         return 2;
     }
@@ -601,6 +620,13 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
         Names allowed_inputs = child->getOutputHeader().getNames();
         if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs, can_remove_filter))
+            return updated_steps;
+    }
+
+    if (typeid_cast<CustomMetricLogViewStep *>(child.get()))
+    {
+        Names allowed_inputs = {"event_date", "event_time", "hostname"};
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs, true))
             return updated_steps;
     }
 

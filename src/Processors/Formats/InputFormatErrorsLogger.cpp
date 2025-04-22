@@ -1,8 +1,10 @@
 #include <Processors/Formats/InputFormatErrorsLogger.h>
 #include <Processors/Formats/IRowOutputFormat.h>
+#include <Processors/Port.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/filesystemHelpers.h>
 #include <Core/Settings.h>

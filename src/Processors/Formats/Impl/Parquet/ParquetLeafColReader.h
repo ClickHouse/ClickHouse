@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 #include "ParquetColumnReader.h"

@@ -12,7 +12,7 @@
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/queryToString.h>
+#include <Parsers/ASTLiteral.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
@@ -27,6 +27,8 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 
 #include <algorithm>
+
+#include <fmt/ranges.h>
 
 
 namespace DB
@@ -283,7 +285,7 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_,
 
     auto & cache = context_->getSampleBlockCache();
     /// Using query string because query_ptr changes for every internal SELECT
-    auto key = queryToString(query_ptr_);
+    auto key = query_ptr_->formatWithSecretsOneLine();
     if (cache.find(key) != cache.end())
     {
         return cache[key];

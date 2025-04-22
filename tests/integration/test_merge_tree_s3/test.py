@@ -888,8 +888,6 @@ def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_poli
     )
     assert "ExpectedError Message: mock s3 injected unretryable error" in error, error
 
-    node.wait_for_log_line("ExpectedError Message: mock s3 injected unretryable error")
-
     table_uuid = node.query(
         "SELECT uuid FROM system.tables WHERE database = 'default' AND name = 'test_merge_canceled_by_s3_errors' LIMIT 1"
     ).strip()
@@ -940,7 +938,10 @@ def test_merge_canceled_by_s3_errors_when_move(cluster, broken_s3, node_name):
 
     node.query("OPTIMIZE TABLE merge_canceled_by_s3_errors_when_move FINAL")
 
-    node.wait_for_log_line("ExpectedError Message: mock s3 injected unretryable error")
+    node.wait_for_log_line(
+        "ExpectedError Message: mock s3 injected unretryable error",
+        look_behind_lines=1000,
+    )
 
     count = node.query("SELECT count() FROM merge_canceled_by_s3_errors_when_move")
     assert int(count) == 2000, count
@@ -976,7 +977,7 @@ def test_s3_engine_heavy_write_check_mem(
         " ("
         "   key UInt32 CODEC(NONE), value String CODEC(NONE)"
         " )"
-        " ENGINE S3('http://resolver:8083/root/data/test-upload.csv', 'minio', 'minio123', 'CSV')",
+        " ENGINE S3('http://resolver:8083/root/data/test-upload.csv', 'minio', '{minio_secret_key}', 'CSV')",
     )
 
     broken_s3.setup_fake_multpartuploads()

@@ -1,12 +1,11 @@
 #pragma once
 
 #include <Processors/Formats/IRowOutputFormat.h>
-#include <Core/Block.h>
-
 
 namespace DB
 {
 
+class Block;
 class IColumn;
 class IDataType;
 class WriteBuffer;

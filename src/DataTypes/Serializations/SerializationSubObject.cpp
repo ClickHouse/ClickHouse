@@ -29,6 +29,20 @@ struct DeserializeBinaryBulkStateSubObject : public ISerialization::DeserializeB
     std::vector<String> dynamic_sub_paths;
     ISerialization::DeserializeBinaryBulkStatePtr shared_data_state;
     ColumnPtr shared_data;
+
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    {
+        auto new_state = std::make_shared<DeserializeBinaryBulkStateSubObject>(*this);
+
+        for (const auto & [path, state] : typed_path_states)
+            new_state->typed_path_states[path] = state ? state->clone() : nullptr;
+
+        for (const auto & [path, state] : dynamic_path_states)
+            new_state->dynamic_path_states[path] = state ? state->clone() : nullptr;
+
+        new_state->shared_data_state = shared_data_state ? shared_data_state->clone() : nullptr;
+        return new_state;
+    }
 };
 
 void SerializationSubObject::enumerateStreams(
@@ -153,6 +167,7 @@ void SerializationSubObject::serializeBinaryBulkWithMultipleStreams(const IColum
 
 void SerializationSubObject::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & result_column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -176,7 +191,7 @@ void SerializationSubObject::deserializeBinaryBulkWithMultipleStreams(
     {
         settings.path.push_back(Substream::ObjectTypedPath);
         settings.path.back().object_path_name = path;
-        serialization->deserializeBinaryBulkWithMultipleStreams(typed_paths[path.substr(path_prefix.size())], limit, settings, sub_object_state->typed_path_states[path], cache);
+        serialization->deserializeBinaryBulkWithMultipleStreams(typed_paths[path.substr(path_prefix.size())], rows_offset, limit, settings, sub_object_state->typed_path_states[path], cache);
         settings.path.pop_back();
     }
 
@@ -184,7 +199,7 @@ void SerializationSubObject::deserializeBinaryBulkWithMultipleStreams(
     {
         settings.path.push_back(Substream::ObjectDynamicPath);
         settings.path.back().object_path_name = path;
-        dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(dynamic_paths[path.substr(path_prefix.size())], limit, settings, sub_object_state->dynamic_path_states[path], cache);
+        dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(dynamic_paths[path.substr(path_prefix.size())], rows_offset, limit, settings, sub_object_state->dynamic_path_states[path], cache);
         settings.path.pop_back();
     }
 
@@ -193,7 +208,7 @@ void SerializationSubObject::deserializeBinaryBulkWithMultipleStreams(
     if (result_column->empty())
         sub_object_state->shared_data = DataTypeObject::getTypeOfSharedData()->createColumn();
     size_t prev_size = column_object.size();
-    shared_data_serialization->deserializeBinaryBulkWithMultipleStreams(sub_object_state->shared_data, limit, settings, sub_object_state->shared_data_state, cache);
+    shared_data_serialization->deserializeBinaryBulkWithMultipleStreams(sub_object_state->shared_data, rows_offset, limit, settings, sub_object_state->shared_data_state, cache);
     settings.path.pop_back();
 
     auto & sub_object_shared_data = column_object.getSharedDataColumn();

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/IColumn_fwd.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
@@ -14,12 +15,13 @@
 namespace DB
 {
 
+using IColumnPermutation = PaddedPODArray<size_t>;
 struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
-Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation);
+Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation);
 
-Block permuteBlockIfNeeded(const Block & block, const IColumn::Permutation * permutation);
+Block permuteBlockIfNeeded(const Block & block, const IColumnPermutation * permutation);
 
 /// Writes data part to disk in different formats.
 /// Calculates and serializes primary and skip indices if needed.
@@ -40,7 +42,7 @@ public:
 
     virtual ~IMergeTreeDataPartWriter();
 
-    virtual void write(const Block & block, const IColumn::Permutation * permutation) = 0;
+    virtual void write(const Block & block, const IColumnPermutation * permutation) = 0;
 
     virtual void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) = 0;
 

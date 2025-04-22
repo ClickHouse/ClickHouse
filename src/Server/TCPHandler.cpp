@@ -7,6 +7,7 @@
 #include <vector>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/VersionNumber.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -25,6 +26,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/Session.h>
@@ -57,10 +59,12 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 
 #if USE_SSL
-#   include <Poco/Net/SecureStreamSocket.h>
-#   include <Poco/Net/SecureStreamSocketImpl.h>
+#    include <Poco/Net/SecureStreamSocket.h>
+#    include <Poco/Net/SecureStreamSocketImpl.h>
+#    include <Common/Crypto/X509Certificate.h>
 #endif
 
 #include <Core/Protocol.h>
@@ -91,6 +95,7 @@ namespace Setting
     extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsBool calculate_text_stack_trace;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
+    extern const SettingsBool enable_deflate_qpl_codec;
     extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsUInt64 idle_connection_timeout;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
@@ -113,12 +118,13 @@ namespace Setting
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsBool apply_settings_from_server;
 }
 
 namespace ServerSetting
 {
     extern const ServerSettingsBool validate_tcp_client_information;
-    extern const ServerSettingsBool send_settings_to_client;
+    extern const ServerSettingsBool process_query_plan_packet;
 }
 }
 
@@ -158,6 +164,7 @@ namespace DB::ErrorCodes
     extern const int UNKNOWN_PROTOCOL;
     extern const int UNSUPPORTED_METHOD;
     extern const int USER_EXPIRED;
+    extern const int INCORRECT_DATA;
 
     // We have to distinguish the case when query is killed by `KILL QUERY` statement
     // and when it is killed by `Protocol::Client::Cancel` packet.
@@ -539,6 +546,22 @@ void TCPHandler::runImpl()
 
             if (!is_interserver_mode)
                 session->checkIfUserIsStillValid();
+
+            if (query_state->stage == QueryProcessingStage::QueryPlan)
+            {
+                if (!session->globalContext()->getServerSettings()[ServerSetting::process_query_plan_packet])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Reading of QueryPlan packet is disabled. "
+                        "Enable process_query_plan_packet in server config or disable serialize_query_plan setting.");
+
+                query_state->query_context->setQueryPlanDeserializationCallback([&query_state]()
+                {
+                    if (!query_state->plan_and_sets)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Expected query plan packet for QueryPlan stage");
+
+                    return query_state->plan_and_sets;
+                });
+            }
 
             query_state->query_context->setExternalTablesInitializer([this, &query_state] (ContextPtr context)
             {
@@ -986,6 +1009,9 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
                 return !empty_block;
             }
 
+            case Protocol::Client::QueryPlan:
+                return receiveQueryPlan(state);
+
             case Protocol::Client::Ping:
                 writeVarUInt(Protocol::Server::Pong, *out);
                 out->finishChunk();
@@ -1070,7 +1096,7 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
     while (receivePacketsExpectDataConcurrentWithExecutor(state))
     {
         squashing.setHeader(state.block_for_insert.cloneEmpty());
-        auto result_chunk = Squashing::squash(squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()}));
+        auto result_chunk = Squashing::squash(squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()}, /*flush_if_enough_size*/ true));
 
         sendLogs(state);
         sendInsertProfileEvents(state);
@@ -1719,7 +1745,7 @@ void TCPHandler::receiveHello()
             try
             {
                 session->authenticate(
-                    SSLCertificateCredentials{user, extractSSLCertificateSubjects(secure_socket.peerCertificate())},
+                    SSLCertificateCredentials{user, X509Certificate(secure_socket.peerCertificate()).extractAllSubjects()},
                     getClientAddress(client_info));
                 return;
             }
@@ -1874,10 +1900,16 @@ void TCPHandler::sendHello()
 
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_SETTINGS)
     {
-        if (is_interserver_mode || !Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::send_settings_to_client])
+        if (is_interserver_mode ||
+            !session->sessionContext()->getSettingsRef()[Setting::apply_settings_from_server])
             Settings::writeEmpty(*out); // send empty list of setting changes
         else
             session->sessionContext()->getSettingsRef().write(*out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+    }
+
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_QUERY_PLAN_SERIALIZATION)
+    {
+        writeVarUInt(DBMS_QUERY_PLAN_SERIALIZATION_VERSION, *out);
     }
 
     out->next();
@@ -2107,7 +2139,7 @@ void TCPHandler::processQuery(std::optional<QueryState> & state)
             /// the query was come, since the real address is the address of
             /// the initiator server, while we are interested in client's
             /// address.
-            session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, client_info.initial_address, external_roles);
+            session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, *client_info.initial_address, external_roles);
         }
 
         is_interserver_authenticated = true;
@@ -2220,6 +2252,21 @@ void TCPHandler::processUnexpectedQuery()
     throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Query received from client");
 }
 
+bool TCPHandler::receiveQueryPlan(QueryState & state)
+{
+    bool unexpected_packet = state.stage != QueryProcessingStage::QueryPlan || state.plan_and_sets || !state.query_context || state.read_all_data;
+    auto context = unexpected_packet ? Context::getGlobalContextInstance() : state.query_context;
+
+    auto plan_and_sets = QueryPlan::deserialize(*in, context);
+    LOG_TRACE(log, "Received query plan");
+
+    if (!state.skipping_data && unexpected_packet)
+        throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet QueryPlan received from client");
+
+    state.plan_and_sets = std::make_shared<QueryPlanAndSets>(std::move(plan_and_sets));
+    return true;
+}
+
 bool TCPHandler::processData(QueryState & state, bool scalar)
 {
     initBlockInput(state);
@@ -2318,7 +2365,8 @@ void TCPHandler::initBlockInput(QueryState & state)
         state.block_in = std::make_unique<NativeReader>(
             *state.maybe_compressed_in,
             header,
-            client_tcp_protocol_version);
+            client_tcp_protocol_version,
+            getFormatSettings(state.query_context));
     }
 }
 
@@ -2342,6 +2390,7 @@ void TCPHandler::initBlockOutput(QueryState & state, const Block & block)
                     level,
                     !query_settings[Setting::allow_suspicious_codecs],
                     query_settings[Setting::allow_experimental_codecs],
+                    query_settings[Setting::enable_deflate_qpl_codec],
                     query_settings[Setting::enable_zstd_qat_codec]);
 
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
@@ -2368,7 +2417,7 @@ void TCPHandler::initLogsBlockOutput(QueryState & state, const Block & block)
         /// Use uncompressed stream since log blocks usually contain only one row
         const Settings & query_settings = state.query_context->getSettingsRef();
         state.logs_block_out = std::make_unique<NativeWriter>(
-            *out, client_tcp_protocol_version, block.cloneEmpty(), std::nullopt, !query_settings[Setting::low_cardinality_allow_in_native_format]);
+            *out, client_tcp_protocol_version, block.cloneEmpty(), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
 
@@ -2379,7 +2428,7 @@ void TCPHandler::initProfileEventsBlockOutput(QueryState & state, const Block & 
     {
         const Settings & query_settings = state.query_context->getSettingsRef();
         state.profile_events_block_out = std::make_unique<NativeWriter>(
-            *out, client_tcp_protocol_version, block.cloneEmpty(), std::nullopt, !query_settings[Setting::low_cardinality_allow_in_native_format]);
+            *out, client_tcp_protocol_version, block.cloneEmpty(), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
 
