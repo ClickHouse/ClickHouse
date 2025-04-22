@@ -7,7 +7,7 @@ if (ENABLE_CLANG_TIDY)
 
     find_program (CLANG_TIDY_CACHE_PATH NAMES "clang-tidy-cache")
     if (CLANG_TIDY_CACHE_PATH)
-        find_program (_CLANG_TIDY_PATH NAMES "clang-tidy-19" "clang-tidy-18" "clang-tidy-17" "clang-tidy")
+        find_program (_CLANG_TIDY_PATH NAMES  "clang-tidy-20" "clang-tidy-19" "clang-tidy-18" "clang-tidy")
 
         # Why do we use ';' here?
         # It's a cmake black magic: https://cmake.org/cmake/help/latest/prop_tgt/LANG_CLANG_TIDY.html#prop_tgt:%3CLANG%3E_CLANG_TIDY
