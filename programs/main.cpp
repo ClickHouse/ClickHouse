@@ -1,6 +1,5 @@
 #include <base/phdr_cache.h>
 #include <base/scope_guard.h>
-#include <base/argsToConfig.h>
 #include <Common/EnvironmentChecks.h>
 #include <Common/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
@@ -19,7 +18,6 @@
 #include <string_view>
 #include <utility> /// pair
 #include <vector>
-#include <regex>
 
 /// Universal executable for various clickhouse applications
 int mainEntryClickHouseBenchmark(int argc, char ** argv);
