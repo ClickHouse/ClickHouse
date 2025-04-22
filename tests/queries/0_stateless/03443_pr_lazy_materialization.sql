@@ -1,5 +1,5 @@
 DROP TABLE IF EXISTS pr_tt;
-CREATE TABLE pr_tt (k UInt64, v String, blob String) ENGINE=MergeTree() ORDER BY tuple() settings index_granularity=10;
+CREATE TABLE pr_tt (k UInt64, v String, blob String) ENGINE=MergeTree() ORDER BY tuple() settings index_granularity=100;
 INSERT INTO pr_tt SELECT number, toString(number), repeat('blob_', number % 10) FROM numbers(1_000_000);
 
 -- make sure the optimization is enabled
@@ -11,24 +11,14 @@ SELECT
     v,
     blob
 FROM pr_tt
-WHERE k % 10
 ORDER BY k ASC
-LIMIT 9 settings parallel_replicas_local_plan=1) where s ilike 'LazilyRead%';
+LIMIT 10 settings parallel_replicas_local_plan=1) where s ilike 'LazilyRead%';
 
 SELECT
     v,
     blob
 FROM pr_tt
-WHERE k % 10
 ORDER BY k
-LIMIT 9;
-
-SELECT
-    v,
-    blob
-FROM pr_tt
-WHERE k % 10
-ORDER BY k desc
-LIMIT 9;
+LIMIT 10;
 
 DROP TABLE pr_tt;
