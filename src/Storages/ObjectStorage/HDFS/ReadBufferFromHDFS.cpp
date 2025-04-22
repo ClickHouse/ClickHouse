@@ -182,6 +182,16 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         }
         return bytes_read;
     }
+
+    void setReadUntilPosition(size_t position) override
+    {
+        read_until_position = position;
+    }
+
+    void setReadUntilEnd() override
+    {
+        read_until_position = 0;
+    }
 };
 
 
@@ -278,6 +288,14 @@ size_t ReadBufferFromHDFS::readBigAt(char * buffer, size_t size, size_t offset, 
 bool ReadBufferFromHDFS::supportsReadAt()
 {
     return impl->enable_pread;
+}
+void ReadBufferFromHDFS::setReadUntilPosition(size_t position)
+{
+    return impl->setReadUntilPosition(position);
+}
+void ReadBufferFromHDFS::setReadUntilEnd()
+{
+    return impl->setReadUntilEnd();
 }
 
 }

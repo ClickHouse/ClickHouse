@@ -58,6 +58,10 @@ public:
 
     bool supportsReadAt() override;
 
+    void setReadUntilPosition(size_t position) override;
+
+    void setReadUntilEnd() override;
+
 private:
     std::unique_ptr<ReadBufferFromHDFSImpl> impl;
     bool use_external_buffer;

@@ -44,13 +44,10 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
     current_object = object;
     auto buf = read_buffer_creator(/* restricted_seek */true, object);
 
-    if (object.offset || (read_until_position > start_offset && read_until_position < start_offset + object.bytes_size))
-    {
-        if (read_until_position)
-            buf->setReadUntilPosition(object.offset + read_until_position - start_offset);
-        else
-            buf->setReadUntilPosition(object.offset + object.bytes_size);
-    }
+    if (read_until_position > start_offset && read_until_position < start_offset + object.bytes_size)
+        buf->setReadUntilPosition(object.offset + read_until_position - start_offset);
+    else
+        buf->setReadUntilPosition(object.offset + object.bytes_size);
 
     return buf;
 }
