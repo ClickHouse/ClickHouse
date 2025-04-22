@@ -515,6 +515,7 @@ ENGINE = MergeTree() ORDER BY tuple()
 SETTINGS disk = disk(type = cache,
             max_size = '10Gi',
             path = "test_system_sync_filesystem_cache",
+            cache_policy = 'lru',
             disk = hdd_blob),
         min_bytes_for_wide_part = 10485760;
     """
