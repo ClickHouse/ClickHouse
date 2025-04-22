@@ -94,6 +94,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
@@ -520,7 +521,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 
     std::optional<QueryProcessingStage::Enum> optimized_stage;
     if (settings[Setting::allow_experimental_analyzer])
-        optimized_stage = getOptimizedQueryProcessingStageAnalyzer(query_info, settings);
+        optimized_stage = getOptimizedQueryProcessingStageAnalyzer(query_info, settings, storage_snapshot);
     else
         optimized_stage = getOptimizedQueryProcessingStage(query_info, settings);
     if (optimized_stage)
@@ -533,7 +534,31 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     return QueryProcessingStage::WithMergeableState;
 }
 
-std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const
+/// Reuses the logic of isPartitionKeySuitsGroupByKey in useDataParallelAggregation.cpp
+/// Will skip merging step in the initial server when the following conditions are met:
+/// 1. Sharding key columns should be a subset of expression columns.
+/// 2. Sharding key expression is a deterministic function of col1, ..., coln and expression key is injective functions of these col1, ..., coln.
+bool StorageDistributed::isShardingKeySuitsExpressionKey(const QueryTreeNodePtr & node, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const
+{
+    ASTPtr node_ast = node->toAST({ .add_cast_for_constants = false, .fully_qualified_identifiers = false, .qualify_indentifiers_with_database = false })->clone();
+    const auto & context = query_info.planner_context->getQueryContext();
+    const auto & syntax_result = TreeRewriter(context).analyze(node_ast, storage_snapshot->getAllColumnsDescription().getAllPhysical()); 
+    const auto & expression_action = ExpressionAnalyzer(node_ast, syntax_result, context).getActions(false);
+    const auto & expression_dag = expression_action->getActionsDAG();
+    if (expression_dag.hasArrayJoin() || expression_dag.hasStatefulFunctions() || expression_dag.hasNonDeterministic())
+        return false;
+    const auto & expression_required_columns = expression_dag.getRequiredColumnsNames();
+    const auto & sharding_key_dag = sharding_key_expr->getActionsDAG();
+    for (const auto & col : sharding_key_expr->getRequiredColumns())
+        if (std::ranges::find(expression_required_columns, col) == expression_required_columns.end())
+            return false;
+    const auto irreducibe_nodes = removeInjectiveFunctionsFromResultsRecursively(expression_dag);
+    const auto matches = matchTrees(expression_dag.getOutputs(), sharding_key_dag);
+
+    return allOutputsDependsOnlyOnAllowedNodes(sharding_key_dag, irreducibe_nodes, matches);
+}
+
+std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings, const StorageSnapshotPtr & storage_snapshot) const
 {
     bool optimize_sharding_key_aggregation = settings[Setting::optimize_skip_unused_shards] && settings[Setting::optimize_distributed_group_by_sharding_key]
         && has_sharding_key && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic);
@@ -543,73 +568,6 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
         default_stage = QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
     const auto & query_node = query_info.query_tree->as<const QueryNode &>();
-
-    // Checks if the provided expressions contain all the columns
-    // required by the sharding key and ensures that the functions in the expressions
-    // are injective (one-to-one mapping).
-    auto expr_contains_sharding_key = [&](const ListNode & exprs) -> bool
-    {
-        // A set to store the column names found in the expressions.
-        std::unordered_set<std::string> expr_columns;
-
-        // A flag to track whether all functions in the expressions are injective.
-        bool is_injective = true;
-
-        // Recursively traverses a query tree to collect column names
-        // and checks if the functions in the query tree are injective.
-        std::function<void(const QueryTreeNodePtr &)> get_columns = [&](const QueryTreeNodePtr & node) -> void
-        {
-            // If the injectivity flag is already false, stop further processing.
-            if (!is_injective)
-                return;
-
-            // If the node is a function node, check its injectivity and process its arguments.
-            if (const auto * func = node->as<FunctionNode>())
-            {
-                auto function = func->getFunctionOrThrow();
-
-                if (!function->isInjective(func->getArgumentColumns()))
-                {
-                    // If not injective, set the flag to false and stop further processing.
-                    is_injective = false;
-                    return;
-                }
-
-                for (const auto & arg : func->getArguments())
-                    get_columns(arg);
-            }
-            // If the node is a column node, validate its source and add its name to the set.
-            else if (const auto * id = node->as<ColumnNode>())
-            {
-                if (!id)
-                    return;
-                auto source = id->getColumnSourceOrNull();
-                if (!source)
-                    return;
-                if (source.get() != query_info.table_expression.get())
-                    return;
-                expr_columns.emplace(id->getColumnName());
-            }
-        };
-
-        // If any function in the expressions is not injective, return false.
-        if (!is_injective)
-            return false;
-
-        // Traverse each expression in the list and collect column names.
-        for (const auto & expr : exprs)
-        {
-            get_columns(expr);
-        }
-
-        // Check if all sharding key columns are present in the expressions.
-        for (const auto & column : sharding_key_expr->getRequiredColumns())
-        {
-            if (!expr_columns.contains(column))
-                return false;
-        }
-        return true;
-    };
 
     // GROUP BY qualifiers
     // - TODO: WITH TOTALS can be implemented
@@ -627,21 +585,21 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     // DISTINCT
     if (query_node.isDistinct())
     {
-        if (!optimize_sharding_key_aggregation || !expr_contains_sharding_key(query_node.getProjection()))
+        if (!optimize_sharding_key_aggregation || !isShardingKeySuitsExpressionKey(query_node.getProjectionNode(), storage_snapshot, query_info))
             return {};
     }
 
     // GROUP BY
     if (query_info.has_aggregates || query_node.hasGroupBy())
     {
-        if (!optimize_sharding_key_aggregation || !query_node.hasGroupBy() || !expr_contains_sharding_key(query_node.getGroupBy()))
+        if (!optimize_sharding_key_aggregation || !query_node.hasGroupBy() || !isShardingKeySuitsExpressionKey(query_node.getGroupByNode(), storage_snapshot, query_info))
             return {};
     }
 
     // LIMIT BY
     if (query_node.hasLimitBy())
     {
-        if (!optimize_sharding_key_aggregation || !expr_contains_sharding_key(query_node.getLimitBy()))
+        if (!optimize_sharding_key_aggregation || !isShardingKeySuitsExpressionKey(query_node.getLimitByNode(), storage_snapshot, query_info))
             return {};
     }
 
