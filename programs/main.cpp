@@ -1,5 +1,6 @@
 #include <base/phdr_cache.h>
 #include <base/scope_guard.h>
+#include <base/argsToConfig.h>
 #include <Common/EnvironmentChecks.h>
 #include <Common/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
@@ -18,6 +19,7 @@
 #include <string_view>
 #include <utility> /// pair
 #include <vector>
+#include <regex>
 
 /// Universal executable for various clickhouse applications
 int mainEntryClickHouseBenchmark(int argc, char ** argv);
@@ -134,6 +136,14 @@ std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
 {
     {"chl", "local"},
     {"chc", "client"},
+};
+
+std::pair<std::string_view, std::string_view> clickhouse_client_args[] =
+{
+    {"h", "host"},
+    {"", "port"},
+    {"u", "user"},
+    {"", "password"}
 };
 
 }
@@ -259,6 +269,40 @@ int main(int argc_, char ** argv_)
     ///     clickhouse /tmp/repro --enable-analyzer
     ///
     std::error_code ec;
+    if (main_func == printHelp && !argv.empty())
+    {
+        for (int i = 1; i < argc_; ++i)
+        {
+            for (const auto & [short_arg, arg] : clickhouse_client_args)
+            {
+                if (std::string_view(argv[i]).starts_with("--"))
+                {
+                    if (std::string_view(argv[i]).substr(2) == arg)
+                    {
+                        main_func = mainEntryClickHouseClient;
+                        break;
+                    }
+                }
+                else if (std::string_view(argv[i]).starts_with("-"))
+                {
+                    if (std::string_view(argv[i]).substr(1) == short_arg)
+                    {
+                        main_func = mainEntryClickHouseClient;
+                        break;
+                    }
+                }
+            }
+
+            if (main_func == mainEntryClickHouseClient)
+                break;
+            
+            if (std::string_view(argv[i]).starts_with("clickhouse:"))
+            {
+                main_func = mainEntryClickHouseClient;
+            }
+        }
+    }
+
     if (main_func == printHelp && !argv.empty()
         && (argv.size() == 1 || argv[1][0] == '-' || std::string_view(argv[1]).contains(' ')
             || std::filesystem::is_regular_file(std::filesystem::path{argv[1]}, ec)))
