@@ -197,7 +197,7 @@ bool UserDefinedDriverFunctionFactory::registerFunction(const ContextMutablePtr 
     checkCanBeRegistered(function_name, create_function_query);
 
     auto function_body = create_function_query->as<ASTCreateDriverFunctionQuery>()->function_body;
-    auto literal_function_body = function_body->as<ASTLiteral>();
+    auto * literal_function_body = function_body->as<ASTLiteral>();
     auto str_function_body = literal_function_body->value.safeGet<String>();
     literal_function_body->value = formatCodeBlock(str_function_body);
 

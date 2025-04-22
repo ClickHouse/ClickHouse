@@ -54,6 +54,11 @@ BlockIO InterpreterDropFunctionQuery::execute()
     {
         UserDefinedDriverFunctionFactory::instance().unregisterFunction(current_context, drop_function_query.function_name, throw_if_not_exists);
     }
+    else
+    {
+        // TODO: This branch is only to throw an exception. Maybe exists something better than it
+        UserDefinedSQLFunctionFactory::instance().unregisterFunction(current_context, drop_function_query.function_name, throw_if_not_exists);
+    }
 
     return {};
 }
