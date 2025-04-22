@@ -55,10 +55,8 @@ private:
 
 #if USE_SENTRY
     static std::unique_ptr<SentryWriter> instance;
-#if USE_SENTRY
     bool initialized = false;
     bool anonymize = false;
-#endif
     std::string server_data_path;
 
     enum Type
