@@ -863,6 +863,7 @@ BlockIO InterpreterSystemQuery::execute()
 #else
         case Type::INSTRUMENT_ADD:
         case Type::INSTRUMENT_REMOVE:
+#endif
 #if USE_JEMALLOC
         case Type::JEMALLOC_PURGE:
         {

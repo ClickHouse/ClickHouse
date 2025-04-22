@@ -1,18 +1,30 @@
 #include "XRayInstrumentationManager.h"
 
-#ifdef USE_XRAY
+#if USE_XRAY
 
 #include <filesystem>
 #include <stdexcept>
 #include <thread>
 
-namespace DB
-{
+#include <xray/xray_interface.h>
+#include <llvm/Object/Binary.h>
+#include <llvm/Object/ObjectFile.h>
+#include <llvm/Support/Error.h>
+#include <llvm/Support/MemoryBuffer.h>
+#include <llvm/Support/raw_ostream.h>
+#include <llvm/XRay/InstrumentationMap.h>
+#include <llvm/DebugInfo/Symbolize/Symbolize.h>
+#include <llvm/Support/Path.h>
+#include <llvm/Support/TargetSelect.h>
+
 
 using namespace llvm;
 using namespace llvm::object;
 using namespace llvm::xray;
 using namespace llvm::symbolize;
+
+namespace DB
+{
 
 void XRayInstrumentationManager::registerHandler(const std::string & name, XRayHandlerFunction handler)
 {
@@ -45,7 +57,7 @@ void XRayInstrumentationManager::setHandlerAndPatch(const std::string & function
     instrumented_functions.emplace_front(function_id, function_name, handler_name);
     functionIdToInstrumentPoint[function_id] = instrumented_functions.begin();
     __xray_set_handler(handler_function);
-    __xray_patch(function_id);
+    __xray_patch_function(function_id);
     // add/update a row "functionId | functionName | handlerName" to system.instrument
 }
 
