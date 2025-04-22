@@ -1079,7 +1079,8 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
             std::lock_guard lock{mutex};
             auto & table_info = table_infos.at(table_name);
             String metadata_version_path = fs::path(table_info.data_path_in_backup) / "table_metadata_version.txt";
-            if (backup->fileExists(metadata_version_path))
+            // Metadata version is only important to replicated tables
+            if (table_info.storage && table_info.storage->getName().starts_with("Replicated") && backup->fileExists(metadata_version_path))
             {
                 auto buf = backup->readFile(metadata_version_path);
                 String metadata_version_str;
