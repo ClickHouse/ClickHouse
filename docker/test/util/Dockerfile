@@ -86,16 +86,10 @@ ENV PATH="/opt/gdb/bin:${PATH}"
 ARG TARGETARCH
 COPY --from=clickhouse/cctools:a0b654d08b8d0b2c71ac \
   /opt/openssl-fips/ /tmp/openssl-fips
-RUN arch="${TARGETARCH:-amd64}" \
- && case "$arch" in \
-      amd64) rarch=x86_64 ;; \
-      arm64) rarch=aarch64 ;; \
-      *) echo "Unsupported arch: $arch" >&2 && exit 1 ;; \
-    esac \
- && fips_so=$(find /tmp/openssl-fips -name fips.so -type f | head -n1) \
+RUN fips_so=$(find /tmp/openssl-fips -name fips.so -type f | head -n1) \
  && [ -n "$fips_so" ] || { echo "fips.so not found!" >&2; exit 1; } \
- && mkdir -p "/usr/lib/${rarch}-linux-gnu/ossl-modules" \
- && cp "$fips_so" "/usr/lib/${rarch}-linux-gnu/ossl-modules/fips.so" \
+ && mkdir -p /usr/local/lib/ossl-modules \
+ && cp "$fips_so" /usr/local/lib/ossl-modules/fips.so \
  && mkdir -p /etc/ssl \
  && cp /tmp/openssl-fips/ssl/openssl.cnf /etc/ssl/openssl.cnf \
  && cp /tmp/openssl-fips/ssl/fipsmodule.cnf /etc/ssl/fipsmodule.cnf \
