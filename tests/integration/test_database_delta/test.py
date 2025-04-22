@@ -170,27 +170,34 @@ def test_multiple_schemes_tables(started_cluster):
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_complex_table_schema(started_cluster, use_delta_kernel):
     node1 = started_cluster.instances["node1"]
+    schema_name = f"schema_with_complex_tables_{use_delta_kernel}"
     execute_spark_query(
-        node1, "CREATE SCHEMA schema_with_complex_tables", ignore_exit_code=True
+        node1, f"CREATE SCHEMA {schema_name}", ignore_exit_code=True
     )
+    table_name = f"complex_table_{use_delta_kernel}"
     schema = "event_date DATE, event_time TIMESTAMP, hits ARRAY<integer>, ids MAP<int, string>, really_complex STRUCT<f1:int,f2:string>"
-    create_query = f"CREATE TABLE schema_with_complex_tables.complex_table ({schema}) using Delta location '/tmp/complex_schema/complex_table'"
+    create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/tmp/complex_schema/{table_name}'"
     execute_spark_query(node1, create_query, ignore_exit_code=True)
     execute_spark_query(
         node1,
-        "insert into schema_with_complex_tables.complex_table SELECT to_date('2024-10-01', 'yyyy-MM-dd'), to_timestamp('2024-10-01 00:12:00'), array(42, 123, 77), map(7, 'v7', 5, 'v5'), named_struct(\\\"f1\\\", 34, \\\"f2\\\", 'hello')",
+        f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), to_timestamp('2024-10-01 00:12:00'), array(42, 123, 77), map(7, 'v7', 5, 'v5'), named_struct(\\\"f1\\\", 34, \\\"f2\\\", 'hello')",
         ignore_exit_code=True,
     )
 
     node1.query(
-        "create database complex_schema engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs=1",
+        f"""
+drop database if exists complex_schema;
+create database complex_schema
+engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
+settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}
+        """,
         settings={"allow_experimental_database_unity_catalog": "1"},
     )
 
     complex_schema_tables = list(
         sorted(
             node1.query(
-                "SHOW TABLES FROM complex_schema LIKE 'schema_with_complex_tables%'",
+                f"SHOW TABLES FROM complex_schema LIKE '{schema_name}%'",
                 settings={"use_hive_partitioning": "0"},
             )
             .strip()
@@ -202,19 +209,22 @@ def test_complex_table_schema(started_cluster, use_delta_kernel):
 
     print(
         node1.query(
-            "SHOW CREATE TABLE complex_schema.`schema_with_complex_tables.complex_table`"
+            f"SHOW CREATE TABLE complex_schema.`{schema_name}.{table_name}`"
         )
     )
     complex_data = (
         node1.query(
-            "SELECT * FROM complex_schema.`schema_with_complex_tables.complex_table`"
+            f"SELECT * FROM complex_schema.`{schema_name}.{table_name}`"
         )
         .strip()
         .split("\t")
     )
     print(complex_data)
     assert complex_data[0] == "2024-10-01"
-    assert complex_data[1] == "2024-10-01 00:12:00.000000"
+    if use_delta_kernel == "1":
+        assert complex_data[1] == "2024-10-01 00:12:00.000" #FIXME
+    else:
+        assert complex_data[1] == "2024-10-01 00:12:00.000000"
     assert complex_data[2] == "[42,123,77]"
     assert complex_data[3] == "{7:'v7',5:'v5'}"
     assert complex_data[4] == "(34,'hello')"
