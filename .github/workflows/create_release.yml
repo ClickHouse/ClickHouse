@@ -117,11 +117,11 @@ jobs:
         shell: bash
         run: |
           python3 ./tests/ci/create_release.py --push-new-release-branch ${{ inputs.dry-run == true && '--dry-run' || '' }}
-#      - name: Bump CH Version and Update Contributors' List
-#        if: ${{ ! inputs.only-repo && ! inputs.only-docker }}
-#        shell: bash
-#        run: |
-#          python3 ./tests/ci/create_release.py --create-bump-version-pr ${{ inputs.dry-run == true && '--dry-run' || '' }}
+      - name: Bump CH Version and Update Contributors' List
+        if: ${{ ! inputs.only-repo && ! inputs.only-docker }}
+        shell: bash
+        run: |
+          python3 ./tests/ci/create_release.py --create-bump-version-pr ${{ inputs.dry-run == true && '--dry-run' || '' }}
       - name: Bump Docker versions, Changelog, Security
         if: ${{ inputs.type == 'patch' && ! inputs.only-repo && ! inputs.only-docker }}
         shell: bash
