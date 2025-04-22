@@ -66,10 +66,12 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     const Scalars & scalars_,
     const Tables & external_tables_,
     QueryProcessingStage::Enum stage_,
+    std::shared_ptr<const QueryPlan> query_plan_,
     std::optional<Extension> extension_,
     GetPriorityForLoadBalancing::Func priority_func_)
     : header(header_)
     , query(query_)
+    , query_plan(std::move(query_plan_))
     , context(context_)
     , scalars(scalars_)
     , external_tables(external_tables_)
@@ -78,6 +80,8 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     , priority_func(priority_func_)
     , read_packet_type_separately(context->canUseParallelReplicasOnInitiator() && !context->getSettingsRef()[Setting::use_hedged_requests])
 {
+    if (stage == QueryProcessingStage::QueryPlan && !query_plan)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query plan is not passed for QueryPlan processing stage");
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
@@ -91,7 +95,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     QueryProcessingStage::Enum stage_,
     std::optional<Extension> extension_,
     ConnectionPoolWithFailoverPtr connection_pool_with_failover_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, extension_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, nullptr, extension_)
 {
     create_connections = [this, pool, throttler, extension_, connection_pool_with_failover_](AsyncCallback)
     {
@@ -152,7 +156,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     const Tables & external_tables_,
     QueryProcessingStage::Enum stage_,
     std::optional<Extension> extension_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, extension_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, nullptr, extension_)
 {
     create_connections = [this, &connection, throttler, extension_](AsyncCallback)
     {
@@ -173,7 +177,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     const Tables & external_tables_,
     QueryProcessingStage::Enum stage_,
     std::optional<Extension> extension_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, extension_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, nullptr, extension_)
 {
     create_connections = [this, connection_ptr, throttler, extension_](AsyncCallback)
     {
@@ -193,8 +197,9 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     const Scalars & scalars_,
     const Tables & external_tables_,
     QueryProcessingStage::Enum stage_,
+    std::shared_ptr<const QueryPlan> query_plan_,
     std::optional<Extension> extension_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, extension_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, std::move(query_plan_), extension_)
 {
     create_connections = [this, connections_, throttler, extension_](AsyncCallback) mutable
     {
@@ -214,9 +219,10 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     const Scalars & scalars_,
     const Tables & external_tables_,
     QueryProcessingStage::Enum stage_,
+    std::shared_ptr<const QueryPlan> query_plan_,
     std::optional<Extension> extension_,
     GetPriorityForLoadBalancing::Func priority_func_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, extension_, priority_func_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, std::move(query_plan_), extension_, priority_func_)
 {
     create_connections = [this, pool, throttler](AsyncCallback async_callback)->std::unique_ptr<IConnections>
     {
@@ -435,6 +441,10 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
     if (settings[Setting::enable_scalar_subquery_optimization])
         sendScalars();
+
+    if (query_plan)
+        connections->sendQueryPlan(*query_plan);
+
     sendExternalTables();
 }
 

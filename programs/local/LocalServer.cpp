@@ -37,7 +37,6 @@
 #include <Loggers/OwnPatternFormatter.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/UseSSL.h>
 #include <IO/SharedThreadPools.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -53,6 +52,7 @@
 #include <boost/program_options/options_description.hpp>
 #include <base/argsToConfig.h>
 #include <filesystem>
+#include <Common/filesystemHelpers.h>
 
 #include "config.h"
 
@@ -151,7 +151,7 @@ Poco::Util::LayeredConfiguration & LocalServer::getClientConfiguration()
     return config();
 }
 
-void LocalServer::processError(const String &) const
+void LocalServer::processError(std::string_view) const
 {
     if (ignore_error)
         return;
@@ -281,7 +281,19 @@ static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const Str
 static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context)
 {
     auto overlay = std::make_shared<DatabasesOverlay>(name_, context);
-    overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, fs::weakly_canonical(context->getPath()), UUIDHelpers::generateV4(), context));
+
+    UUID default_database_uuid;
+
+    fs::path existing_path_symlink = fs::weakly_canonical(context->getPath()) / "metadata" / "default";
+    if (FS::isSymlinkNoThrow(existing_path_symlink))
+        default_database_uuid = parse<UUID>(FS::readSymlink(existing_path_symlink).filename());
+    else
+        default_database_uuid = UUIDHelpers::generateV4();
+
+    fs::path default_database_metadata_path = fs::weakly_canonical(context->getPath()) / "store"
+        / DatabaseCatalog::getPathForUUID(default_database_uuid);
+
+    overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, default_database_metadata_path, default_database_uuid, context));
     overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context));
     return overlay;
 }
@@ -293,7 +305,7 @@ void LocalServer::tryInitPath()
 
     if (getClientConfiguration().has("path"))
     {
-        // User-supplied path.
+        /// User-supplied path.
         path = getClientConfiguration().getString("path");
         Poco::trimInPlace(path);
 
@@ -307,15 +319,15 @@ void LocalServer::tryInitPath()
     }
     else
     {
-        // The path is not provided explicitly - use a unique path in the system temporary directory
-        // (or in the current dir if a temporary doesn't exist)
+        /// The user requested to use a temporary path - use a unique path in the system temporary directory
+        /// (or in the current dir if a temporary doesn't exist)
         LoggerRawPtr log = &logger();
         std::filesystem::path parent_folder;
         std::filesystem::path default_path;
 
         try
         {
-            // try to guess a tmp folder name, and check if it's a directory (throw exception otherwise)
+            /// Try to guess a tmp folder name, and check if it's a directory (throw an exception otherwise).
             parent_folder = std::filesystem::temp_directory_path();
 
         }
@@ -343,7 +355,7 @@ void LocalServer::tryInitPath()
         temporary_directory_to_delete = default_path;
 
         path = default_path.string();
-        LOG_DEBUG(log, "Working directory created: {}", path);
+        LOG_DEBUG(log, "Working directory will be created as needed: {}", path);
     }
 
     global_context->setPath(fs::path(path) / "");
@@ -406,12 +418,19 @@ void LocalServer::cleanup()
 }
 
 
-std::string LocalServer::getInitialCreateTableQuery()
+std::pair<std::string, std::string> LocalServer::getInitialCreateTableQuery()
 {
-    if (!getClientConfiguration().has("table-structure") && !getClientConfiguration().has("table-file") && !getClientConfiguration().has("table-data-format") && (!isRegularFile(STDIN_FILENO) || queries.empty()))
+    /// The input data can be specified explicitly with any of the `file`, `structure`, `input-format` command line arguments,
+    /// or it can be implicitly specified in stdin - then the structure and format is autodetected.
+    /// But if queries were not specified in the command line, they might me in stdin, and this means that stdin is not input data.
+
+    if (!getClientConfiguration().has("table-structure")
+        && !getClientConfiguration().has("table-file")
+        && !getClientConfiguration().has("table-data-format")
+        && (queries.empty() || !isFileDescriptorSuitableForInput(stdin_fd))) /// In we know that there is data in stdin, we can auto-detect the format.
         return {};
 
-    auto table_name = backQuoteIfNeed(getClientConfiguration().getString("table-name", "table"));
+    auto table_name = getClientConfiguration().getString("table-name", "table");
     auto table_structure = getClientConfiguration().getString("table-structure", "auto");
 
     String table_file;
@@ -430,15 +449,24 @@ std::string LocalServer::getInitialCreateTableQuery()
         table_file = quoteString(file_name);
     }
 
-    String data_format = backQuoteIfNeed(default_input_format);
+    String data_format;
+
+    if (default_input_format == "auto" && getClientConfiguration().has("table-structure"))
+        data_format = "TabSeparated";   /// Compatibility with older versions when format inference was not available.
+    else
+        data_format = backQuoteIfNeed(default_input_format);
 
     if (table_structure == "auto")
         table_structure = "";
     else
         table_structure = "(" + table_structure + ")";
 
-    return fmt::format("CREATE TEMPORARY TABLE {} {} ENGINE = File({}, {}, {});",
-                       table_name, table_structure, data_format, table_file, compression);
+    return
+    {
+        table_name,
+        fmt::format("CREATE TEMPORARY TABLE {} {} ENGINE = File({}, {}, {});",
+            backQuote(table_name), table_structure, data_format, table_file, compression)
+    };
 }
 
 
@@ -536,7 +564,6 @@ void LocalServer::connect()
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
-    UseSSL use_ssl;
     thread_status.emplace();
 
     StackTrace::setShowAddresses(server_settings[ServerSetting::show_addresses_in_stack_traces]);
@@ -615,10 +642,13 @@ try
         std::cerr << std::endl;
     }
 
+    auto [table_name, initial_query] = getInitialCreateTableQuery();
+    if (!table_name.empty())
+        client_context->setSetting("implicit_table_at_top_level", table_name);
+
     connect();
 
-    String initial_query = getInitialCreateTableQuery();
-    if (!initial_query.empty())
+    if (!table_name.empty())
         processQueryText(initial_query);
 
 #if USE_FUZZING_MODE
@@ -857,7 +887,7 @@ void LocalServer::processConfig()
 #endif
 
     /// NOTE: it is important to apply any overrides before
-    /// setDefaultProfiles() calls since it will copy current context (i.e.
+    /// `setDefaultProfiles` calls since it will copy current context (i.e.
     /// there is separate context for Buffer tables).
     adjustSettings();
     applySettingsOverridesForLocal(global_context);
@@ -885,30 +915,48 @@ void LocalServer::processConfig()
 
     if (getClientConfiguration().has("path"))
     {
-        String path = global_context->getPath();
-        fs::create_directories(fs::path(path));
-
-        /// Lock path directory before read
-        status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
-
-        LOG_DEBUG(log, "Loading metadata from {}", path);
-        auto load_system_metadata_tasks = loadMetadataSystem(global_context);
-        attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
-        waitLoad(TablesLoaderForegroundPoolId, load_system_metadata_tasks);
 
-        if (!getClientConfiguration().has("only-system-tables"))
+        /// Attaching "automatic" tables in the system database is done after attaching the system database.
+        /// Consequently, it depends on whether we load it from the path.
+        /// If it is loaded from a user-specified path, we load it as usual. If not, we create it as a memory (ephemeral) database.
+        bool attached_system_database = false;
+
+        String path = global_context->getPath();
+
+        /// Lock path directory before read
+        fs::create_directories(fs::path(path));
+        status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
+
+        if (fs::exists(fs::path(path) / "metadata"))
         {
-            DatabaseCatalog::instance().createBackgroundTasks();
-            waitLoad(loadMetadata(global_context));
-            DatabaseCatalog::instance().startupBackgroundTasks();
+            LOG_DEBUG(log, "Loading metadata from {}", path);
+
+            if (fs::exists(std::filesystem::path(path) / "metadata" / "system.sql"))
+            {
+                LoadTaskPtrs load_system_metadata_tasks = loadMetadataSystem(global_context);
+                waitLoad(TablesLoaderForegroundPoolId, load_system_metadata_tasks);
+
+                attachSystemTablesServer(global_context, *DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE), false);
+                attached_system_database = true;
+            }
+
+            if (!getClientConfiguration().has("only-system-tables"))
+            {
+                DatabaseCatalog::instance().createBackgroundTasks();
+                waitLoad(loadMetadata(global_context));
+                DatabaseCatalog::instance().startupBackgroundTasks();
+            }
+
+            /// For ClickHouse local if path is not set the loader will be disabled.
+            global_context->getUserDefinedSQLObjectsStorage().loadObjects();
+
+            LOG_DEBUG(log, "Loaded metadata.");
         }
 
-        /// For ClickHouse local if path is not set the loader will be disabled.
-        global_context->getUserDefinedSQLObjectsStorage().loadObjects();
-
-        LOG_DEBUG(log, "Loaded metadata.");
+        if (!attached_system_database)
+            attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
     }
     else if (!getClientConfiguration().has("no-system-tables"))
     {
@@ -983,7 +1031,7 @@ void LocalServer::addExtraOptions(OptionsDescription & options_description)
         ("logger.level", po::value<std::string>(), "Log level")
 
         ("no-system-tables", "do not attach system tables (better startup time)")
-        ("path", po::value<std::string>(), "Storage path")
+        ("path", po::value<std::string>(), "Storage path. If it was not specified, we will use a temporary directory, that is cleaned up on exit.")
         ("only-system-tables", "attach only system tables from specified path")
         ("top_level_domains_path", po::value<std::string>(), "Path to lists with custom TLDs")
         ;
@@ -1025,8 +1073,6 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         getClientConfiguration().setBool("no-system-tables", true);
     if (options.count("only-system-tables"))
         getClientConfiguration().setBool("only-system-tables", true);
-    if (options.count("database"))
-        getClientConfiguration().setString("default_database", options["database"].as<std::string>());
 
     if (options.count("input-format"))
         getClientConfiguration().setString("table-data-format", options["input-format"].as<std::string>());

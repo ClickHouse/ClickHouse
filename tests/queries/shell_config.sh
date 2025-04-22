@@ -213,3 +213,29 @@ function run_with_error()
 
     return 0
 }
+
+if [[ -n $CLICKHOUSE_BASH_TRACING_FILE ]]; then
+    exec 3>"$CLICKHOUSE_BASH_TRACING_FILE"
+    # It will be also nice to have stderr in the tracing output, but:
+    # - exec 2>&3
+    #
+    #   This will not preserve it in the stderr, and even though explicit
+    #   stderr handling in tests will work, the check for non-empty stderr will
+    #   not work at least
+    #
+    # - exec 2> >(stdbuf -o0 -e0 -i0 tee -a "$CLICKHOUSE_BASH_TRACING_FILE" >&2)
+    #
+    #   The problem with duplicating stderr with tee is bufferization, even
+    #   with "tee -a" (opens with O_APPEND) and stdbuf I still got stderr after tracing
+    #
+    #   I've also tried unbuffer but it does not work
+    #
+    # But anyway it is useful even without stderr!
+    #
+    # Note, that we can redirect stderr into separate file, this should work,
+    # but we will have to add a code to handle this in clickhouse-test wrapper,
+    # but let's keep things simple for now.
+    BASH_XTRACEFD=3
+    export PS4='+ [\D{%Y-%m-%d %H:%M:%S}] [:${LINENO}] '
+    set -x
+fi

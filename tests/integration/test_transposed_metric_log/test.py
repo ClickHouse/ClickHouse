@@ -131,6 +131,8 @@ def test_table_rotation(start_cluster):
 
     time.sleep(1)
     node1.query("SYSTEM FLUSH LOGS")
+    print(node1.query("SHOW TABLES FROM system"))
+
     assert int(node1.query("EXISTS TABLE system.metric_log").strip()) == 1
     assert int(node1.query("EXISTS TABLE system.metric_log_0").strip()) == 1
     assert int(node1.query("EXISTS TABLE system.metric_log_1").strip()) == 1
@@ -150,14 +152,17 @@ def test_table_rotation(start_cluster):
     assert "ProfileEvent_Query" in node1.query("SHOW CREATE TABLE system.metric_log_1")
     assert int(node1.query("SELECT count() FROM system.metric_log_1 WHERE not ignore(*)").strip()) > 0
 
-    assert "SystemMetricLogView" not in node1.query("SHOW CREATE TABLE system.metric_log_2")
-    assert "ProfileEvent_Query" in node1.query("SHOW CREATE TABLE system.metric_log_2")
+    node1.query("DROP TABLE system.transposed_metric_log_0")
+    node1.query("CREATE TABLE system.transposed_metric_log_2 as system.transposed_metric_log")
+    node1.query("CREATE TABLE system.transposed_metric_log_3 as system.transposed_metric_log")
+    node1.query("INSERT INTO system.transposed_metric_log_3 SELECT * FROM system.transposed_metric_log")
+    node1.query("SYSTEM FLUSH LOGS")
 
-    assert "SystemMetricLogView" not in node1.query("SHOW CREATE TABLE system.metric_log_3")
-    assert "metric" in node1.query("SHOW CREATE TABLE system.metric_log_3")
-
-    assert "SystemMetricLogView" not in node1.query("SHOW CREATE TABLE system.metric_log_4")
-    assert "ProfileEvent_Query" in node1.query("SHOW CREATE TABLE system.metric_log_4")
+    assert "SystemMetricLogView" in node1.query("SHOW CREATE TABLE system.metric_log_3")
+    assert int(node1.query("SELECT count() FROM system.metric_log_3 WHERE not ignore(*)").strip()) > 0
+    node1.query("DROP TABLE system.transposed_metric_log_3 SYNC")
+    # still works, return 0
+    assert int(node1.query("SELECT count() FROM system.metric_log_3 WHERE not ignore(*)").strip()) == 0
 
 
 def insert_into_transposed_metric_log(node, table_name, size):

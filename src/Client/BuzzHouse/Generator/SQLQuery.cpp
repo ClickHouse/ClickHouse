@@ -130,6 +130,7 @@ void StatementGenerator::generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj)
         }
         rel.cols.emplace_back(SQLRelationCol("", {ncname}));
         eca->mutable_col_alias()->set_column(ncname);
+        eca->set_use_parenthesis(rg.nextSmallNumber() < 4);
     }
     this->levels[this->current_level].rels.emplace_back(rel);
 }
@@ -242,18 +243,16 @@ void StatementGenerator::setTableRemote(
         flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
         for (const auto & entry : this->remote_entries)
         {
-            SQLType * tp = entry.getBottomType();
-
             buf += fmt::format(
                 "{}{} {}{}",
                 first ? "" : ", ",
                 entry.getBottomName(),
-                tp->typeName(true),
+                entry.getBottomType()->typeName(true),
                 entry.nullable.has_value() ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
             first = false;
         }
         this->remote_entries.clear();
-        sfunc->set_structure(buf);
+        sfunc->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
         if (!t.file_comp.empty())
         {
             sfunc->set_fcomp(t.file_comp);
@@ -316,6 +315,72 @@ auto StatementGenerator::getQueryTableLambda()
             /* May require MergeTree table */
             && (!RequireMergeTree || tt.isMergeTreeFamily());
     };
+}
+
+void StatementGenerator::addRandomRelation(RandomGenerator & rg, const std::optional<String> rel_name, const uint32_t ncols, Expr * expr)
+{
+    if (rg.nextBool())
+    {
+        /// Use generateRandomStructure function
+        SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
+        sfc->mutable_func()->set_catalog_func(FUNCgenerateRandomStructure);
+
+        /// Number of columns parameter
+        sfc->add_args()->mutable_expr()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(static_cast<uint64_t>(ncols));
+        /// Seed parameter
+        sfc->add_args()->mutable_expr()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.nextRandomUInt64());
+        if (rel_name.has_value())
+        {
+            SQLRelation rel(rel_name.value());
+
+            for (uint32_t i = 0; i < ncols; i++)
+            {
+                rel.cols.emplace_back(SQLRelationCol(rel_name.value(), {"c" + std::to_string(i + 1)}));
+            }
+            this->levels[this->current_level].rels.emplace_back(rel);
+        }
+    }
+    else
+    {
+        /// Use BuzzHouse approach
+        String buf;
+        bool first = true;
+        uint32_t col_counter = 0;
+        const uint32_t type_mask_backup = this->next_type_mask;
+        std::unordered_map<uint32_t, std::unique_ptr<SQLType>> centries;
+
+        this->next_type_mask = fc.type_mask;
+        for (uint32_t i = 0; i < ncols; i++)
+        {
+            const uint32_t ncame = col_counter++;
+            auto tp = std::unique_ptr<SQLType>(randomNextType(rg, this->next_type_mask, col_counter, nullptr));
+
+            buf += fmt::format("{}c{} {}", first ? "" : ", ", ncame, tp->typeName(false));
+            first = false;
+            centries[ncame] = std::move(tp);
+        }
+        this->next_type_mask = type_mask_backup;
+        expr->mutable_lit_val()->set_string_lit(std::move(buf));
+        if (rel_name.has_value())
+        {
+            SQLRelation rel(rel_name.value());
+
+            flatColumnPath(flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated, centries);
+            for (const auto & entry : this->table_entries)
+            {
+                DB::Strings names;
+
+                names.reserve(entry.path.size());
+                for (const auto & path : entry.path)
+                {
+                    names.push_back(path.cname);
+                }
+                rel.cols.emplace_back(SQLRelationCol(rel_name.value(), std::move(names)));
+            }
+            this->table_entries.clear();
+            this->levels[this->current_level].rels.emplace_back(rel);
+        }
+    }
 }
 
 bool StatementGenerator::joinedTableOrFunction(
@@ -742,66 +807,15 @@ bool StatementGenerator::joinedTableOrFunction(
             < (derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf + cluster_udf
                + merge_index_udf + loop_udf + values_udf + random_data_udf + 1))
     {
-        SQLRelation rel(rel_name);
-        const uint32_t ncols = (rg.nextSmallNumber() < 8) ? rg.nextSmallNumber() : rg.nextMediumNumber();
         GenerateRandomFunc * grf = tof->mutable_tfunc()->mutable_grandom();
         std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
         std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
-        if (rg.nextBool())
-        {
-            /// Use generateRandomStructure function
-            SQLFuncCall * sfc = grf->mutable_structure()->mutable_comp_expr()->mutable_func_call();
-            sfc->mutable_func()->set_catalog_func(FUNCgenerateRandomStructure);
-
-            /// Number of columns parameter
-            sfc->add_args()->mutable_expr()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(static_cast<uint64_t>(ncols));
-            /// Seed parameter
-            sfc->add_args()->mutable_expr()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.nextRandomUInt64());
-            for (uint32_t i = 0; i < ncols; i++)
-            {
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(i + 1)}));
-            }
-        }
-        else
-        {
-            /// Use BuzzHouse approach
-            String buf;
-            bool first = true;
-            uint32_t col_counter = 0;
-            const uint32_t type_mask_backup = this->next_type_mask;
-            std::unordered_map<uint32_t, std::unique_ptr<SQLType>> centries;
-
-            this->next_type_mask = fc.type_mask;
-            for (uint32_t i = 0; i < ncols; i++)
-            {
-                const uint32_t ncame = col_counter++;
-                auto tp = std::unique_ptr<SQLType>(randomNextType(rg, this->next_type_mask, col_counter, nullptr));
-
-                buf += fmt::format("{}c{} {}", first ? "" : ", ", ncame, tp->typeName(false));
-                first = false;
-                centries[ncame] = std::move(tp);
-            }
-            this->next_type_mask = type_mask_backup;
-            grf->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
-            flatColumnPath(flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated, centries);
-            for (const auto & entry : this->table_entries)
-            {
-                DB::Strings names;
-
-                names.reserve(entry.path.size());
-                for (const auto & path : entry.path)
-                {
-                    names.push_back(path.cname);
-                }
-                rel.cols.emplace_back(SQLRelationCol(rel_name, std::move(names)));
-            }
-            this->table_entries.clear();
-        }
+        addRandomRelation(
+            rg, rel_name, (rg.nextSmallNumber() < 8) ? rg.nextSmallNumber() : rg.nextMediumNumber(), grf->mutable_structure());
         grf->set_random_seed(rg.nextRandomUInt64());
         grf->set_max_string_length(string_length_dist(rg.generator));
         grf->set_max_array_length(nested_rows_dist(rg.generator));
-        this->levels[this->current_level].rels.emplace_back(rel);
     }
     else if (
         dictionary
@@ -1877,6 +1891,7 @@ void StatementGenerator::generateSelect(
                 eca->mutable_col_alias()->set_column(ncname);
                 this->levels[this->current_level].projections.emplace_back(ncname);
             }
+            eca->set_use_parenthesis(rg.nextLargeNumber() < 11);
         }
         this->depth--;
         this->width -= ncols;
