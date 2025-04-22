@@ -155,21 +155,40 @@ def create_mv(
     src_table_name,
     dst_table_name,
     mv_name=None,
+    create_dst_table_first=True,
     format="column1 UInt32, column2 UInt32, column3 UInt32",
+    extra_dst_format=None,
 ):
     if mv_name is None:
         mv_name = f"{src_table_name}_mv"
-    node.query(
-        f"""
+    if extra_dst_format is not None:
+        extra_dst_format = f", {extra_dst_format}"
+    else:
+        extra_dst_format = ""
+
+    node.query(f"""
         DROP TABLE IF EXISTS {dst_table_name};
         DROP TABLE IF EXISTS {mv_name};
+    """)
 
-        CREATE TABLE {dst_table_name} ({format}, _path String)
-        ENGINE = MergeTree()
-        ORDER BY column1;
-
-        CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT *, _path FROM {src_table_name};
-        """
+    if create_dst_table_first:
+        node.query(
+            f"""
+            CREATE TABLE {dst_table_name} ({format}{extra_dst_format}, _path String)
+            ENGINE = MergeTree()
+            ORDER BY column1;
+            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT *, _path FROM {src_table_name};
+            """
+        )
+    else:
+        node.query(
+            f"""
+            SET allow_materialized_view_with_bad_select=1;
+            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT *, _path FROM {src_table_name};
+            CREATE TABLE {dst_table_name} ({format}{extra_dst_format}, _path String)
+            ENGINE = MergeTree()
+            ORDER BY column1;
+            """
     )
 
 

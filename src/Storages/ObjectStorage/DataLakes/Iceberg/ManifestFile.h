@@ -7,6 +7,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
 #include <Storages/KeyDescription.h>
+#include <Storages/MergeTree/KeyCondition.h>
 #include <Core/Field.h>
 
 #include <cstdint>
@@ -41,8 +42,7 @@ struct ColumnInfo
     std::optional<Int64> rows_count;
     std::optional<Int64> bytes_size;
     std::optional<Int64> nulls_count;
-    std::optional<DB::Field> lower_bound;
-    std::optional<DB::Field> upper_bound;
+    std::optional<DB::Range> hyperrectangle;
 };
 
 using FileEntry = std::variant<DataFileEntry>; // In the future we will add PositionalDeleteFileEntry and EqualityDeleteFileEntry here
@@ -92,6 +92,7 @@ public:
         Int32 format_version_,
         const String & common_path,
         Int32 schema_id_,
+        Poco::JSON::Object::Ptr schema_object_,
         const DB::IcebergSchemaProcessor & schema_processor,
         Int64 inherited_sequence_number,
         const std::string & table_location,
@@ -102,20 +103,27 @@ public:
 
     bool hasPartitionKey() const;
     const DB::KeyDescription & getPartitionKeyDescription() const;
-    const std::vector<Int32> & getPartitionKeyColumnIDs() const;
+    Poco::JSON::Object::Ptr getSchemaObject() const { return schema_object; }
+    /// Get size in bytes of how much memory one instance of this ManifestFileContent class takes.
+    /// Used for in-memory caches size accounting.
+    size_t getSizeInMemory() const;
 
     /// Fields with rows count in manifest files are optional
     /// they can be absent.
     std::optional<Int64> getRowsCountInAllDataFilesExcludingDeleted() const;
     std::optional<Int64> getBytesCountInAllDataFiles() const;
+
+    bool hasBoundsInfoInManifests() const;
+    const std::set<Int32> & getColumnsIDsWithBounds() const;
 private:
 
     Int32 schema_id;
-
+    Poco::JSON::Object::Ptr schema_object;
     std::optional<DB::KeyDescription> partition_key_description;
-    std::vector<Int32> partition_column_ids;
     // Size - number of files
     std::vector<ManifestFileEntry> files;
+
+    std::set<Int32> column_ids_which_have_bounds;
 
 };
 

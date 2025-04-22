@@ -128,7 +128,7 @@ void PushingPipelineExecutor::finish()
 
     if (executor)
     {
-        auto res = executor->executeStep();
+        [[maybe_unused]] auto res = executor->executeStep();
         chassert(!res);
     }
 }
