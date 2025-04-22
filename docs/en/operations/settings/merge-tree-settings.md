@@ -6,6 +6,8 @@ title: 'MergeTree tables settings'
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import BetaBadge from '@theme/badges/BetaBadge';
+import SettingsInfoBlock from '@theme/SettingsInfoBlock/SettingsInfoBlock';
+import VersionHistory from '@theme/VersionHistory/VersionHistory';
 
 System table `system.merge_tree_settings` shows the globally set MergeTree settings.
 
