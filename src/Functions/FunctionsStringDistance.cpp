@@ -587,7 +587,7 @@ struct ByteAffineGapDistanceImpl
     }
 };
 
-template <bool is_utf8>
+template <bool utf8_enabled>
 struct ByteSmashSimilarityImpl
 {
     using ResultType = Float64;
@@ -603,140 +603,158 @@ struct ByteSmashSimilarityImpl
                 ErrorCodes::TOO_LARGE_STRING_SIZE,
                 "String size too large for smashSimilarity");
 
-        std::string_view long_str(haystack, haystack_size);
-        std::string_view short_str(needle, needle_size);
-        if (long_str.size() < short_str.size()) {
-            std::swap(long_str, short_str);
-        }
-
-        std::vector<std::string_view> words;
-        if constexpr (is_utf8)
+        // Convert input strings to UTF-8 code points if needed
+        std::vector<UInt32> haystack_codepoints;
+        std::vector<UInt32> needle_codepoints;
+        
+        if constexpr (utf8_enabled)
         {
-            size_t pos = 0;
-            while (pos < long_str.size()) {
-                size_t space_pos = long_str.find(' ', pos);
-                if (space_pos == std::string_view::npos)
-                    space_pos = long_str.size();
+            try 
+            {
+                parseUTF8String(haystack, haystack_size, [&](UInt32 code_point) {
+                    haystack_codepoints.push_back(code_point);
+                });
+                parseUTF8String(needle, needle_size, [&](UInt32 code_point) {
+                    needle_codepoints.push_back(code_point);
+                });
                 
-                if (space_pos > pos) {
-                    auto word = std::string_view(long_str.data() + pos, space_pos - pos);
-                    words.emplace_back(word);
-                }
+                // Create string views from code points
+                std::string_view long_str(reinterpret_cast<const char*>(haystack_codepoints.data()), 
+                                       haystack_codepoints.size() * sizeof(UInt32));
+                std::string_view short_str(reinterpret_cast<const char*>(needle_codepoints.data()),
+                                        needle_codepoints.size() * sizeof(UInt32));
+                if (long_str.size() < short_str.size())
+                    std::swap(long_str, short_str);
                 
-                pos = space_pos + 1;
+                return processStrings(long_str, short_str, haystack_codepoints);
+            }
+            catch (const Exception & e)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Invalid UTF-8 sequence in input strings: {}", e.message());
             }
         }
         else
         {
-            size_t start = 0;
-            for (size_t i = 0; i <= long_str.size(); ++i) {
-                if (i == long_str.size() || long_str[i] == ' ') {
-                    if (i > start) {
-                        auto word = std::string_view(long_str.data() + start, i - start);
-                        words.emplace_back(word);
-                    }
-                    start = i + 1;
-                }
+            std::string_view long_str(haystack, haystack_size);
+            std::string_view short_str(needle, needle_size);
+            if (long_str.size() < short_str.size())
+                std::swap(long_str, short_str);
+            
+            return processStrings(long_str, short_str, haystack_codepoints);
+        }
+    }
+
+private:
+    static ResultType processStrings(
+        const std::string_view& long_str,
+        const std::string_view& short_str,
+        const std::vector<UInt32>& codepoints)
+    {
+        if (long_str.empty() && short_str.empty())
+            return 1.0;
+
+        if (long_str.empty() || short_str.empty())
+            return 0.0;
+
+        std::vector<std::string_view> words;
+        size_t pos = 0;
+
+        // Split into words
+        while (pos < long_str.size())
+        {
+            // Skip spaces
+            while (pos < long_str.size() && isSpace(long_str, pos, codepoints))
+                pos++;
+                
+            size_t word_start = pos;
+            
+            // Find word end
+            while (pos < long_str.size() && !isSpace(long_str, pos, codepoints))
+                pos++;
+                
+            if (pos > word_start)
+            {
+                words.emplace_back(long_str.substr(word_start, pos - word_start));
             }
         }
 
         const int m = words.size();
         const int n = short_str.size();
-         // Large but not infinity to avoid overflow
-        std::vector<std::vector<double>> dp(m+1, std::vector<double>(n+1, big_value));
+
+        if (m == 0 || n == 0)
+            return 0.0;
+
+        std::vector<std::vector<double>> dp(m + 1, std::vector<double>(n + 1, big_value));
         dp[0][0] = 0.0;
 
-        for (int i = 1; i <= m; ++i) {
-            for (int j = 1; j <= n; ++j) {
-                
-                for (int k = i-1; k < j; ++k) {
-                    auto current_word = words[i-1];
+        for (int i = 1; i <= m; ++i)
+        {
+            for (int j = 1; j <= n; ++j)
+            {
+                for (int k = i - 1; k < j; ++k)
+                {
+                    auto current_word = words[i - 1];
                     auto substring = short_str.substr(k, j - k);
-                    
-                    double dist = calculateDistance<is_utf8>(current_word, substring);
-                    
-                    double new_dist = dp[i-1][k] + dist;
+
+                    double dist = calculateDistance(current_word, substring);
+                    double new_dist = dp[i - 1][k] + dist;
                     dp[i][j] = std::min(new_dist, dp[i][j]);
                 }
             }
         }
 
-        std::cout << "\nDP Table:\n";
-        const int col_width = 12;  // Фиксированная ширина столбца
-        const int word_width = 15; // Ширина для слов в первом столбце
-        
-        std::cout << std::string(word_width, '-') << "+" << std::string((n + 1) * col_width, '-') << "\n";
-        
-        std::cout << std::setw(word_width) << std::left << " ";
-        std::cout << "|";
-        for (int j = 0; j <= n; ++j) {
-            std::string header = (j == 0 ? "ε" : std::string(short_str.substr(0, j)));
-            std::cout << std::setw( col_width) << std::right << header;
-        }
-        std::cout << "\n";
-        
-        std::cout << std::string(word_width, '-') << "+" << std::string((n + 1) * col_width, '-') << "\n";
-        
-        for (int i = 0; i <= m; ++i) {
-            std::string word = (i == 0 ? "ε" : std::string(words[i-1]));
-            if (word.length() > word_width - 2) {
-                word = word.substr(0, word_width - 5) + "...";
-            }
-            std::cout << std::setw(word_width-1) << std::left << word << "|";
-            
-            for (int j = 0; j <= n; ++j) {
-                if (dp[i][j] == big_value)
-                    std::cout << std::setw(col_width) << std::right << "∞";
-                else
-                    std::cout << std::setw(col_width) << std::right << std::fixed 
-                             << std::setprecision(2) << dp[i][j];
-            }
-            std::cout << "\n";
-        }
-        std::cout << std::string(word_width, '-') << "+" << std::string((n + 1) * col_width, '-') << "\n";
-
-        std::cout << "\nFinal distance: " << dp[m][n] << "\n";
         const double max_distance = 10.0;
         double similarity = 1.0 - (dp[m][n] / max_distance);
-        std::cout << "Normalized similarity (max_distance=" << max_distance << "): " << similarity << "\n";
-        
-        auto result = std::clamp(similarity, 0.0, 1.0);
-        std::cout << "Final clamped result: " << result << "\n";
-        std::cout << "=== SMASH Similarity Process End ===\n\n";
-        return result;
+        return std::clamp(similarity, 0.0, 1.0);
     }
 
-private:
-    template <bool utf8>
-    static double calculateDistance(std::string_view word, std::string_view substr) {
+    static bool isSpace(const std::string_view& str, size_t pos, const std::vector<UInt32>& codepoints)
+    {
+        if constexpr (utf8_enabled)
+        {
+            size_t code_point_idx = pos / sizeof(UInt32);
+            return code_point_idx < codepoints.size() && codepoints[code_point_idx] == ' ';
+        }
+        else
+        {
+            return str[pos] == ' ';
+        }
+    }
+
+    static double calculateDistance(std::string_view word, std::string_view substr)
+    {
         auto is_subsequence = [](std::string_view shorter, std::string_view longer) {
             if (shorter.empty()) return true;
             if (longer.empty()) return false;
             
             size_t j = 0;
-            for (size_t i = 0; i < longer.size() && j < shorter.size(); i++) {
-                if (longer[i] == shorter[j]) {
+            for (size_t i = 0; i < longer.size() && j < shorter.size(); i++)
+            {
+                if (longer[i] == shorter[j])
                     j++;
-                }
             }
             return j == shorter.size();
         };
 
-        if (is_subsequence(substr, word) || is_subsequence(word, substr)) {
+        if (is_subsequence(substr, word) || is_subsequence(word, substr))
             return 0.0;
-        }
 
-        if constexpr (utf8) {
+        if constexpr (utf8_enabled)
+        {
             return ByteAffineGapDistanceImpl<true>::process(
-                word.data(), word.size(), 
+                word.data(), word.size(),
                 substr.data(), substr.size(),
                 0.7, // gap_open
                 0.3, // gap_extend
                 1.0  // mismatch
             );
-        } else {
+        }
+        else
+        {
             return ByteAffineGapDistanceImpl<false>::process(
-                word.data(), word.size(), 
+                word.data(), word.size(),
                 substr.data(), substr.size(),
                 0.7, // gap_open
                 0.3, // gap_extend
