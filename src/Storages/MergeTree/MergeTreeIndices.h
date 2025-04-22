@@ -14,6 +14,60 @@ constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 namespace DB
 {
 
+namespace Internal
+{
+
+enum class RPNEvaluationIndexUsefulnessState : uint8_t
+{
+    // the following states indicate if the index might be useful
+    TRUE,
+    FALSE,
+    // the following states indicate RPN always evaluates to TRUE or FALSE, they are used for short-circuit.
+    ALWAYS_TRUE,
+    ALWAYS_FALSE
+};
+
+[[nodiscard]] inline RPNEvaluationIndexUsefulnessState
+evalAndRpnIndexStates(RPNEvaluationIndexUsefulnessState lhs, RPNEvaluationIndexUsefulnessState rhs)
+{
+    if (lhs == RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE || rhs == RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE)
+    {
+        // short circuit
+        return RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE;
+    }
+    else if (lhs == RPNEvaluationIndexUsefulnessState::TRUE || rhs == RPNEvaluationIndexUsefulnessState::TRUE)
+    {
+        return RPNEvaluationIndexUsefulnessState::TRUE;
+    }
+    else if (lhs == RPNEvaluationIndexUsefulnessState::FALSE || rhs == RPNEvaluationIndexUsefulnessState::FALSE)
+    {
+        return RPNEvaluationIndexUsefulnessState::FALSE;
+    }
+    chassert(lhs == RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE && rhs == RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE);
+    return RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE;
+}
+
+[[nodiscard]] inline RPNEvaluationIndexUsefulnessState
+evalOrRpnIndexStates(RPNEvaluationIndexUsefulnessState lhs, RPNEvaluationIndexUsefulnessState rhs)
+{
+    if (lhs == RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE || rhs == RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE)
+    {
+        // short circuit
+        return RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE;
+    }
+    else if (lhs == RPNEvaluationIndexUsefulnessState::TRUE || rhs == RPNEvaluationIndexUsefulnessState::TRUE)
+    {
+        return RPNEvaluationIndexUsefulnessState::TRUE;
+    }
+    else if (lhs == RPNEvaluationIndexUsefulnessState::FALSE || rhs == RPNEvaluationIndexUsefulnessState::FALSE)
+    {
+        return RPNEvaluationIndexUsefulnessState::FALSE;
+    }
+    chassert(lhs == RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE && rhs == RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE);
+    return RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE;
+}
+}
+
 class ActionsDAG;
 class Block;
 class IDataPartStorage;
@@ -133,6 +187,61 @@ public:
     virtual std::vector<UInt64> calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr /*granule*/) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
+    }
+
+    template <typename RPNElement>
+    bool rpnEvaluatesAlwaysUnknownOrTrue(
+        const std::vector<RPNElement> & rpn, const std::unordered_set<typename RPNElement::Function> & matchingFunctions) const
+    {
+        std::vector<Internal::RPNEvaluationIndexUsefulnessState> rpn_stack;
+        rpn_stack.reserve(rpn.size() - 1);
+
+        for (const auto & element : rpn)
+        {
+            if (element.function == RPNElement::ALWAYS_TRUE)
+            {
+                rpn_stack.emplace_back(Internal::RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE);
+            }
+            else if (element.function == RPNElement::ALWAYS_FALSE)
+            {
+                rpn_stack.emplace_back(Internal::RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE);
+            }
+            else if (element.function == RPNElement::FUNCTION_UNKNOWN)
+            {
+                rpn_stack.emplace_back(Internal::RPNEvaluationIndexUsefulnessState::FALSE);
+            }
+            else if (matchingFunctions.contains(element.function))
+            {
+                rpn_stack.push_back(Internal::RPNEvaluationIndexUsefulnessState::TRUE);
+            }
+            else if (element.function == RPNElement::FUNCTION_NOT)
+            {
+                // do nothing
+            }
+            else if (element.function == RPNElement::FUNCTION_AND)
+            {
+                auto lhs = rpn_stack.back();
+                rpn_stack.pop_back();
+                auto rhs = rpn_stack.back();
+                rpn_stack.back() = evalAndRpnIndexStates(lhs, rhs);
+            }
+            else if (element.function == RPNElement::FUNCTION_OR)
+            {
+                auto lhs = rpn_stack.back();
+                rpn_stack.pop_back();
+                auto rhs = rpn_stack.back();
+                rpn_stack.back() = evalOrRpnIndexStates(lhs, rhs);
+            }
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in RPNElement");
+        }
+
+        chassert(rpn_stack.size() == 1);
+        /*
+         * In case the result is `ALWAYS_TRUE`, it means we don't need any indices at all, it might be a constant result.
+         * Thus, we only check against the `TRUE` to determine the usefulness of the index condition.
+         */
+        return rpn_stack.front() != Internal::RPNEvaluationIndexUsefulnessState::TRUE;
     }
 };
 

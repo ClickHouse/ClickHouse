@@ -314,14 +314,12 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_size;
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_free_size;
     extern const ServerSettingsUInt64 prefixes_deserialization_thread_pool_thread_pool_queue_size;
-    extern const ServerSettingsUInt64 page_cache_block_size;
     extern const ServerSettingsUInt64 page_cache_history_window_ms;
     extern const ServerSettingsString page_cache_policy;
     extern const ServerSettingsDouble page_cache_size_ratio;
     extern const ServerSettingsUInt64 page_cache_min_size;
     extern const ServerSettingsUInt64 page_cache_max_size;
     extern const ServerSettingsDouble page_cache_free_memory_ratio;
-    extern const ServerSettingsUInt64 page_cache_lookahead_blocks;
     extern const ServerSettingsUInt64 page_cache_shards;
     extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
     extern const ServerSettingsFloat min_os_cpu_wait_time_ratio_to_drop_connection;
@@ -828,6 +826,8 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
         config.keys("startup_scripts", keys);
 
         SetResultDetailsFunc callback;
+        std::vector<String> skipped_startup_scripts;
+
         for (const auto & key : keys)
         {
             std::string full_prefix = "startup_scripts." + key;
@@ -854,17 +854,20 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
                 executeQuery(condition_read_buffer, condition_write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
 
                 auto result = condition_write_buffer.str();
-
                 if (result != "1\n" && result != "true\n")
                 {
                     if (result != "0\n" && result != "false\n")
-                        context->addOrUpdateWarningMessage(
-                            Context::WarningType::SKIPPING_CONDITION_QUERY,
-                            PreformattedMessage::create(
-                                "The condition query returned `{}`, which can't be interpreted as a boolean (`0`, "
-                                "`false`, `1`, `true`). Will skip this query.",
-                                result));
-
+                    {
+                        if (result.empty())
+                            LOG_DEBUG(log, "Skipping startup script as condition query returned empty value.");
+                        else
+                            LOG_DEBUG(
+                                log,
+                                "Skipping startup script as condition query returned value `{}` "
+                                "which can't be interpreted as a boolean (`0`, `false`, `1`, `true`).",
+                                result);
+                        skipped_startup_scripts.emplace_back(full_prefix);
+                    }
                     continue;
                 }
 
@@ -878,6 +881,16 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
             LOG_DEBUG(log, "Executing query `{}`", query);
             startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
             executeQuery(read_buffer, write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
+        }
+
+        if (!skipped_startup_scripts.empty())
+        {
+            context->addOrUpdateWarningMessage(
+                Context::WarningType::SKIPPING_CONDITION_QUERY,
+                PreformattedMessage::create(
+                    "Skipped the following startup script(s): {} as the condition query for those returned values, "
+                    "which can't be interpreted as a boolean (`0`, `false`, `1`, `true`).",
+                    fmt::join(skipped_startup_scripts, ", ")));
         }
 
         CurrentMetrics::set(CurrentMetrics::StartupScriptsExecutionState, StartupScriptsExecutionState::Success);
@@ -1155,8 +1168,6 @@ try
     if (server_settings[ServerSetting::page_cache_max_size] != 0)
     {
         global_context->setPageCache(
-            server_settings[ServerSetting::page_cache_block_size],
-            server_settings[ServerSetting::page_cache_lookahead_blocks],
             std::chrono::milliseconds(Int64(server_settings[ServerSetting::page_cache_history_window_ms])),
             server_settings[ServerSetting::page_cache_policy],
             server_settings[ServerSetting::page_cache_size_ratio],
