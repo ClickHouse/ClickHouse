@@ -441,6 +441,9 @@ def test_streaming_to_many_views(started_cluster, mode):
     expect_rows_num = [0]
     files = []
 
+    # ensure that streaming from S3 will be started only once all MVs has been created
+    time.sleep(5)
+
     def generate_files(files_num=20, row_num=100, file_prefix = "a"):
         files.extend(
             [
