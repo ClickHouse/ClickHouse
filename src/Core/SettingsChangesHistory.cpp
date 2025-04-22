@@ -72,6 +72,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"secondary_indices_enable_bulk_filtering", false, true, "A new algorithm for filtering by data skipping indices"},
             {"implicit_table_at_top_level", "", "", "A new setting, used in clickhouse-local"},
             {"use_skip_indexes_if_final_exact_mode", 0, 0, "This setting was introduced to help FINAL query return correct results with skip indexes"},
+            {"parallel_replicas_insert_select_local_pipeline", false, false, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"},
+            {"page_cache_block_size", 1048576, 1048576, "Made this setting adjustable on a per-query level."},
+            {"page_cache_lookahead_blocks", 16, 16, "Made this setting adjustable on a per-query level."},
+            {"output_format_pretty_glue_chunks", "0", "auto", "A new setting to make Pretty formats prettier."},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
@@ -83,8 +87,15 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_convert_join_to_in", false, false, "New setting"},
             {"enable_hdfs_pread", true, true, "New setting."},
             {"low_priority_query_wait_time_ms", 1000, 1000, "New setting."},
+            {"allow_experimental_correlated_subqueries", false, false, "Added new setting to allow correlated subqueries execution."},
             {"serialize_query_plan", false, false, "NewSetting"},
             {"allow_experimental_shared_set_join", 0, 1, "A setting for ClickHouse Cloud to enable SharedSet and SharedJoin"},
+            {"make_distributed_plan", 0, 0, "New experimental setting."},
+            {"execute_distributed_plan_locally", 0, 0, "New experimental setting."},
+            {"default_shuffle_join_bucket_count", 8, 8, "New experimental setting."},
+            {"default_reader_bucket_count", 8, 8, "New experimental setting."},
+            {"optimize_exchanges", 0, 0, "New experimental setting."},
+            {"force_exchange_kind", "", "", "New experimental setting."},
             {"allow_special_bool_values_inside_variant", true, false, "Don't allow special bool values during Variant type parsing"},
             {"cast_string_to_variant_use_inference", true, true, "New setting to enable/disable types inference during CAST from String to Variant"},
             {"distributed_cache_read_request_max_tries", 20, 20, "New setting"},
@@ -720,11 +731,11 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",
         {
             /// Release closed. Please use 25.5
+            {"max_postpone_time_for_failed_replicated_fetches_ms", 0, 1ULL * 60 * 1000, "Added new setting to enable postponing fetch tasks in the replication queue."},
+            {"max_postpone_time_for_failed_replicated_merges_ms", 0, 1ULL * 60 * 1000, "Added new setting to enable postponing merge tasks in the replication queue."},
+            {"max_postpone_time_for_failed_replicated_tasks_ms", 0, 5ULL * 60 * 1000, "Added new setting to enable postponing tasks in the replication queue."},
             {"refresh_parts_interval", 0, 0, "A new setting"},
             {"max_merge_delayed_streams_for_parallel_write", 1000, 40, "New setting"},
-            {"max_postpone_time_for_failed_replicated_fetches_ms", 1ULL * 60 * 1000, 1ULL * 60 * 1000, "Added new setting to enable postponing fetch tasks in the replication queue."},
-            {"max_postpone_time_for_failed_replicated_merges_ms", 1ULL * 60 * 1000, 1ULL * 60 * 1000, "Added new setting to enable postponing merge tasks in the replication queue."},
-            {"max_postpone_time_for_failed_replicated_tasks_ms", 5ULL * 60 * 1000, 5ULL * 60 * 1000, "Added new setting to enable postponing tasks in the replication queue."},
             {"allow_summing_columns_in_partition_or_order_key", true, false, "New setting to allow summing of partition or sorting key columns"},
             /// Release closed. Please use 25.5
         });
