@@ -169,6 +169,7 @@ IsStorageTouched isStorageTouchedByMutations(
 {
     static constexpr IsStorageTouched no_rows = {.any_rows_affected = false, .all_rows_affected = false};
     static constexpr IsStorageTouched all_rows = {.any_rows_affected = true, .all_rows_affected = true};
+    static constexpr IsStorageTouched some_rows = {.any_rows_affected = true, .all_rows_affected = false};
 
     if (commands.empty())
         return no_rows;
@@ -181,7 +182,7 @@ IsStorageTouched isStorageTouchedByMutations(
         if (command.type == MutationCommand::APPLY_DELETED_MASK)
         {
             if (source_part->hasLightweightDelete())
-                return all_rows;
+                return some_rows;
         }
         else
         {
