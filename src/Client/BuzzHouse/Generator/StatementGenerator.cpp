@@ -690,7 +690,41 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
         }
         ins->set_query(buf);
     }
-    else if (noption < 951)
+    else if (!in_parallel && noption < 851)
+    {
+        const uint32_t nrows = (rg.nextSmallNumber() % 3) + 1;
+        ValuesStatement * vs = ins->mutable_values();
+
+        this->levels[this->current_level] = QueryLevel(this->current_level);
+        this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
+        this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
+        for (uint32_t i = 0; i < nrows; i++)
+        {
+            bool first = true;
+            ExprList * elist = i == 0 ? vs->mutable_expr_list() : vs->add_extra_expr_lists();
+
+            for (const auto & entry : this->entries)
+            {
+                Expr * expr = first ? elist->mutable_expr() : elist->add_extra_exprs();
+
+                if (entry.special == ColumnSpecial::SIGN)
+                {
+                    expr->mutable_lit_val()->mutable_int_lit()->set_int_lit(rg.nextBool() ? 1 : -1);
+                }
+                else if (entry.special == ColumnSpecial::IS_DELETED)
+                {
+                    expr->mutable_lit_val()->mutable_int_lit()->set_int_lit(rg.nextBool() ? 1 : 0);
+                }
+                else
+                {
+                    generateExpression(rg, expr);
+                }
+                first = false;
+            }
+        }
+        this->levels.clear();
+    }
+    else
     {
         Select * sel = ins->mutable_select();
 
@@ -738,40 +772,6 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
             generateSelect(rg, true, false, static_cast<uint32_t>(this->entries.size()), std::numeric_limits<uint32_t>::max(), sel);
             this->levels.clear();
         }
-    }
-    else
-    {
-        const uint32_t nrows = (rg.nextSmallNumber() % 3) + 1;
-        ValuesStatement * vs = ins->mutable_values();
-
-        this->levels[this->current_level] = QueryLevel(this->current_level);
-        this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
-        this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
-        for (uint32_t i = 0; i < nrows; i++)
-        {
-            bool first = true;
-            ExprList * elist = i == 0 ? vs->mutable_expr_list() : vs->add_extra_expr_lists();
-
-            for (const auto & entry : this->entries)
-            {
-                Expr * expr = first ? elist->mutable_expr() : elist->add_extra_exprs();
-
-                if (entry.special == ColumnSpecial::SIGN)
-                {
-                    expr->mutable_lit_val()->mutable_int_lit()->set_int_lit(rg.nextBool() ? 1 : -1);
-                }
-                else if (entry.special == ColumnSpecial::IS_DELETED)
-                {
-                    expr->mutable_lit_val()->mutable_int_lit()->set_int_lit(rg.nextBool() ? 1 : 0);
-                }
-                else
-                {
-                    generateExpression(rg, expr);
-                }
-                first = false;
-            }
-        }
-        this->levels.clear();
     }
     this->entries.clear();
     if (rg.nextSmallNumber() < 3)
