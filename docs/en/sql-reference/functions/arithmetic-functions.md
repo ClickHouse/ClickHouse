@@ -37,7 +37,7 @@ SELECT toTypeName(0), toTypeName(0 + 0), toTypeName(0 + 0 + 0), toTypeName(0 + 0
 
 Overflows are produced the same way as in C++.
 
-## plus
+## plus {#plus}
 
 Calculates the sum of two values `a` and `b`.
 
@@ -51,7 +51,7 @@ It is possible to add an integer and a date or date with time. The former operat
 
 Alias: `a + b` (operator)
 
-## minus
+## minus {#minus}
 
 Calculates the difference of two values `a` and `b`. The result is always signed.
 
