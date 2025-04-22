@@ -61,8 +61,79 @@ RUN wget https://sourceware.org/pub/gdb/releases/gdb-$GDB_VERSION.tar.gz \
 # just in case
 RUN /opt/gdb/bin/gdb --version
 
+#
+# OpenSSL FIPS
+#
+# Three things are required to set OpenSSL in FIPS-permissive mode:
+# - /usr/lib/x86_64-linux-gnu/ossl-modules/fips.so
+# - /etc/ssl/fipsmodule.cnf
+# - Modifications to /etc/ssl/openssl.conf
+# FIPS provider status may be verified with the output of `openssl list -providers`:
+#
+#  Providers:
+#    fips
+#      name: OpenSSL Default Provider
+#      version: 3.1.2
+#      status: active
+#
+# Version 3.1.2 is special, it passed FIPS 140-3 certification
+# and can produce a fips.so provider module.
+# Provider can be loaded by any OpenSSL version >= 3.1.
+# https://openssl-library.org/post/2025-03-11-fips-140-3/
+ENV PREFIX=/opt/openssl-fips
+ENV OPENSSL_VERSION=3.1.2
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    wget \
+    perl \
+    python3 \
+    make \
+    git \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /tmp
+RUN wget https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz && \
+    tar xzf openssl-${OPENSSL_VERSION}.tar.gz && \
+    cd openssl-${OPENSSL_VERSION} && \
+    ./Configure enable-fips --prefix=${PREFIX} && \
+    make -j$(nproc) && \
+    make install_sw && \
+    make install_ssldirs && \
+    make install_fips && \
+    mv "${PREFIX}/ssl/openssl.cnf.dist" "${PREFIX}/ssl/openssl.cnf"
+
+# We will put fipsmodule.cnf to /etc/ssl in target containers
+RUN echo ".include /etc/ssl/fipsmodule.cnf" >> ${PREFIX}/ssl/openssl.cnf
+
+# Patching openssl.cnf to enable FIPS provider.
+# Although documentation mentions setting "default_properties = fips=yes",
+# we don't want to set it, as it will enable FIPS mode for each and every application (they will break).
+RUN cat >> ${PREFIX}/ssl/openssl.cnf <<EOF
+
+[openssl_init]
+providers = provider_sect
+ssl_conf = ssl_sect
+
+[ssl_sect]
+system_default = system_default_sect
+
+[system_default_sect]
+CipherString = DEFAULT:@SECLEVEL=2
+
+[provider_sect]
+fips = fips_sect
+default = default_sect
+
+[default_sect]
+activate = 1
+
+EOF
+
 FROM scratch
 COPY --from=builder /cctools /cctools
 COPY --from=builder /opt/gdb /opt/gdb
+COPY --from=builder /opt/openssl-fips /opt/openssl-fips
 
 # NOTE: this file should be kept in sync with other docker images, since they use COPY from this image
