@@ -76,6 +76,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"page_cache_block_size", 1048576, 1048576, "Made this setting adjustable on a per-query level."},
             {"page_cache_lookahead_blocks", 16, 16, "Made this setting adjustable on a per-query level."},
             {"output_format_pretty_glue_chunks", "0", "auto", "A new setting to make Pretty formats prettier."},
+            {"allow_experimental_delta_kernel_rs", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
