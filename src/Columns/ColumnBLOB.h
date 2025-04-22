@@ -26,6 +26,11 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
+/// ColumnBLOB is a special column type that stores a serialized and compressed version of another column.
+/// Most of the `IColumn` methods are not applicable to it, thus they throw exceptions.
+/// Used to offload the (de)serialization and (de)compression of columns to the pipeline threads instead of TCPHandler and remote connection threads.
+/// Methods `toBLOB` and `fromBLOB` are used to convert between the original column and the BLOB representation.
+/// See `MarshallBlocksTransform`, `UnmarshallBlocksTransform`, and `SerializationDetached`.
 class ColumnBLOB : public COWHelper<IColumnHelper<ColumnBLOB>, ColumnBLOB>
 {
 public:
@@ -52,21 +57,25 @@ public:
         chassert(wrapped_column);
     }
 
-    ColumnBLOB(const ColumnBLOB & other)
+    // Only needed to make compiler happy.
+    [[noreturn]] ColumnBLOB(const ColumnBLOB & other)
         : COWHelper(other)
         , blob(other.blob.begin(), other.blob.end())
         , rows(other.rows)
         , wrapped_column(other.wrapped_column)
         , from_blob_task(other.from_blob_task)
-        , cast_from(other.cast_from)
-        , cast_to(other.cast_to)
     {
-        chassert(wrapped_column);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnBLOB copy constructor should not be called");
     }
 
     const char * getFamilyName() const override { return "BLOB"; }
 
     size_t size() const override { return rows; }
+    size_t byteSize() const override { return wrapped_column->byteSize() + blob.size(); }
+    size_t allocatedBytes() const override { return wrapped_column->allocatedBytes() + blob.capacity(); }
+
+    BLOB & getBLOB() { return blob; }
+    const BLOB & getBLOB() const { return blob; }
 
     bool wrappedColumnIsSparse() const
     {
@@ -80,17 +89,10 @@ public:
         return wrapped_column->cloneEmpty();
     }
 
-    BLOB & getBLOB() { return blob; }
-
-    const BLOB & getBLOB() const { return blob; }
-
     ColumnPtr convertFrom() const
     {
         chassert(from_blob_task);
-        ColumnWithTypeAndName col;
-        col.column = from_blob_task(blob);
-        col.type = cast_from;
-        return cast_to ? DB::castColumn(col, cast_to) : col.column;
+        return from_blob_task(blob);
     }
 
     /// Creates serialized and compressed blob from the source column.
@@ -125,15 +127,17 @@ public:
         return nested;
     }
 
-    void addCast(const DataTypePtr & from, const DataTypePtr & to) const
+    void addCast(DataTypePtr from, DataTypePtr to)
     {
-        cast_from = from;
-        cast_to = to;
+        chassert(from_blob_task);
+        from_blob_task = [from_task = std::move(from_blob_task), from, to, this](const BLOB &)
+        {
+            ColumnWithTypeAndName col;
+            col.column = from_task(blob);
+            col.type = from;
+            return castColumn(col, to);
+        };
     }
-
-    size_t byteSize() const override { return blob.size(); }
-
-    size_t allocatedBytes() const override { return blob.capacity(); }
 
     /// All other methods throw the exception.
 
@@ -196,13 +200,15 @@ public:
     void takeDynamicStructureFromSourceColumns(const Columns &) override { throwInapplicable(); }
 
 private:
+    /// Compressed and serialized representation of the wrapped column.
     BLOB blob;
+
+    /// Always set
     const size_t rows;
     ColumnPtr wrapped_column;
-    FromBLOB from_blob_task;
 
-    mutable DataTypePtr cast_from;
-    mutable DataTypePtr cast_to;
+    /// Set only in cast of "from" conversion
+    FromBLOB from_blob_task;
 
     [[noreturn]] void throwInapplicable() const
     {

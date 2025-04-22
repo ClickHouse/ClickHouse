@@ -15,3 +15,27 @@ FROM (
       FROM t
   GROUP BY a
 );
+
+SELECT replaceRegexpAll(explain, 'ReadFromRemoteParallelReplicas.*', 'ReadFromRemoteParallelReplicas')
+FROM (
+   EXPLAIN distributed = 1
+    SELECT a
+      FROM t
+);
+
+SELECT replaceRegexpAll(explain, 'ReadFromRemoteParallelReplicas.*', 'ReadFromRemoteParallelReplicas')
+FROM (
+   EXPLAIN distributed = 1
+    SELECT a
+      FROM remote('127.0.0.{1,2}', default.t)
+  GROUP BY a
+);
+
+-- Not yet supported
+--SELECT replaceRegexpAll(explain, 'ReadFromRemoteParallelReplicas.*', 'ReadFromRemoteParallelReplicas')
+--FROM (
+--   EXPLAIN distributed = 1
+--    SELECT a
+--      FROM remote('127.0.0.{1,2}', default.t)
+--);
+

@@ -365,7 +365,7 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
         else
         {
             const auto & col = block.getByName(elem.name);
-            if (const auto * blob = typeid_cast<const ColumnBLOB *>(col.column.get()))
+            if (auto * blob = typeid_cast<ColumnBLOB *>(col.column->assumeMutable().get()))
             {
                 blob->addCast(col.type, elem.type);
                 column = col.column;

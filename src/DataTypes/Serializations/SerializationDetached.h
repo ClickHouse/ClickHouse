@@ -7,7 +7,7 @@ namespace DB
 
 /// Implementation detail for parallel blocks marshalling on pipeline threads.
 /// Input column for `serialize` method should be `ColumnBLOB`. To serialize it we simply copy the BLOB into the output buffer.
-/// `deserialize` method will return a `ColumnBLOB` with the same BLOB as input. Deserialization and decompression of the BLOB will be done later by `ConvertBlobColumnsTransform`.
+/// `deserialize` method will return a `ColumnBLOB` with the same BLOB as input. Deserialization and decompression of the BLOB will be done later by `UnmarshallBlocksTransform`.
 class SerializationDetached final : public ISerialization
 {
 public:
