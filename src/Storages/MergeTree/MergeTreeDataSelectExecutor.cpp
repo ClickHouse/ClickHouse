@@ -554,7 +554,7 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(
     /// After folding, we expect a single input representing their combination.
     /// If more than one input remains, it means either of them is used independently,
     /// and we should skip adding total_offset_condition in that case.
-    if (dag->getInputs() != 1)
+    if (dag->getInputs().size() != 1)
         return;
 
     auto required_columns = dag->getRequiredColumns();
