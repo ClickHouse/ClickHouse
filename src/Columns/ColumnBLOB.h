@@ -36,6 +36,9 @@ class ColumnBLOB : public COWHelper<IColumnHelper<ColumnBLOB>, ColumnBLOB>
 public:
     using BLOB = PODArray<char>;
 
+private:
+    friend class COWHelper<IColumnHelper<ColumnBLOB>, ColumnBLOB>;
+
     // The argument is supposed to be some ColumnBLOB's internal BLOB,
     // the return value is the reconstructed column.
     using FromBLOB = std::function<ColumnPtr(const BLOB &)>;
@@ -68,6 +71,7 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnBLOB copy constructor should not be called");
     }
 
+public:
     const char * getFamilyName() const override { return "BLOB"; }
 
     size_t size() const override { return rows; }
