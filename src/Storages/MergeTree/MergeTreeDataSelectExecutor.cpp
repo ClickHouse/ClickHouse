@@ -536,17 +536,13 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(
         = &total_offset.addFunction(FunctionFactory::instance().get("plus", context), {part_offset, part_starting_offset}, {});
     const auto * node2
         = &total_offset.addFunction(FunctionFactory::instance().get("plus", context), {part_starting_offset, part_offset}, {});
-    auto matches = matchTrees(dag->getOutputs(), total_offset, false /* check_monotonicity */);
-    const auto * match1 = matches[node1].node;
-    const auto * match2 = matches[node2].node;
-    if (!match1 && !match2)
-        return;
-
+    auto matches = matchTrees({node1, node2}, *dag, false /* check_monotonicity */);
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> new_inputs;
-    if (match1)
-        new_inputs.emplace(match1, node1);
-    if (match2)
-        new_inputs.emplace(match2, node1); /// Always fold to node1 to avoid generating duplicate inputs
+    for (const auto & [match, node] : matches)
+    {
+        if (node.node == node1 || node.node == node2)
+            new_inputs.emplace(match, node1); /// Always fold to node1 to avoid generating duplicate inputs
+    }
 
     dag = ActionsDAG::foldActionsByProjection(new_inputs, dag->getOutputs());
 

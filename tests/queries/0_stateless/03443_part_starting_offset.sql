@@ -20,4 +20,7 @@ select _part, _part_starting_offset, _part_offset from test where j = 8 order by
 select *, _part_starting_offset + _part_offset from test where _part_starting_offset + _part_offset = 8 settings max_rows_to_read = 1;
 select *, _part_offset + _part_starting_offset from test where _part_offset + _part_starting_offset = 8 settings max_rows_to_read = 1;
 
+-- from fuzzer
+select * from test prewhere 8 = (_part_offset + _part_starting_offset) where 8 = (_part_offset + _part_starting_offset) settings max_rows_to_read = 1;
+
 drop table test;
