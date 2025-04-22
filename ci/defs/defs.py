@@ -332,8 +332,8 @@ class JobNames:
 
 
 class ToolSet:
-    COMPILER_C = "clang-19"
-    COMPILER_CPP = "clang++-19"
+    COMPILER_C = "clang-20"
+    COMPILER_CPP = "clang++-20"
 
 
 class ArtifactNames:
