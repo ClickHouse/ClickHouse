@@ -891,7 +891,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             parts_with_ranges,
             [&](const auto & part)
             {
-                size_t index = &part - &parts_with_ranges[0];
+                size_t index = &part - parts_with_ranges.data();
                 if (is_final_query && settings[Setting::use_skip_indexes_if_final_exact_mode] && skip_index_used_in_part[index])
                 {
                     /// retain this part even if empty due to FINAL
