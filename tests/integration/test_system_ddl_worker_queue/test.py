@@ -34,8 +34,6 @@ def started_cluster():
 
 @pytest.fixture(scope="function", autouse=True)
 def maintain_test_table(request):
-    current_step = int(request.node.name.split("[")[1].split("-")[0])
-
     for i, node in enumerate([node1, node2]):
         node.query("DROP TABLE IF EXISTS testdb.test_table SYNC")
         node.query("DROP DATABASE IF EXISTS testdb")
@@ -101,7 +99,7 @@ def test_distributed_ddl_rubbish(started_cluster):
     ).to_dict("records")
 
     original_query = ""
-    new_query = "query-artificial"
+    new_query = "query-artificial-" + str(time.monotonic_ns())
 
     # Copy information about query (one that added 'somenewcolumn') with new query ID
     # and broken query text (TABLE => TUBLE)
@@ -132,6 +130,7 @@ def test_distributed_ddl_rubbish(started_cluster):
                 }
             )
 
+    # Ingest it to ZK
     for row in rows_to_insert:
         node1.query(
             "insert into system.zookeeper (name, path, value) values ('{}', '{}', '{}')".format(
@@ -139,8 +138,9 @@ def test_distributed_ddl_rubbish(started_cluster):
             )
         )
 
+    # Ensure that data is visible via system.distributed_ddl_queue
     assert (
-        node1.query(f"SELECT * FROM system.distributed_ddl_queue").find("UNKNOWN") >= 0
+        int(node1.query(f"SELECT count(1) FROM system.distributed_ddl_queue WHERE entry='{new_query}' AND IsNull(cluster)")) == 4
     )
 
     node1.query(

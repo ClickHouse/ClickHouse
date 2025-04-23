@@ -62,7 +62,7 @@ ColumnsDescription StorageSystemDDLWorkerQueue::getColumnsDescription()
         {"entry_version",       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "Version of the entry."},
         {"initiator_host",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Host that initiated the DDL operation."},
         {"initiator_port",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt16>()), "Port used by the initiator."},
-        {"cluster",             std::make_shared<DataTypeString>(), "Cluster name."},
+        {"cluster",             std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Cluster name."},
         {"query",               std::make_shared<DataTypeString>(), "Query executed."},
         {"settings",            std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "Settings used in the DDL operation."},
         {"query_create_time",   std::make_shared<DataTypeDateTime>(), "Query created time."},
@@ -95,7 +95,8 @@ static String clusterNameFromDDLQuery(ContextPtr context, const DDLTask & task)
     catch (Exception &)
     {
         /// Best effort - ignore parse error and present available information
-        return "UNKNOWN";
+        LOG_INFO(getLogger("StorageSystemDDLWorkerQueue"), "Failed to determine cluster");
+        return "";
     }
 
     String cluster_name;
@@ -130,7 +131,14 @@ static void fillCommonColumns(MutableColumns & res_columns, size_t & col, const 
     }
 
     /// cluster
-    res_columns[col++]->insert(cluster_name);
+    if (cluster_name.empty())
+    {
+        res_columns[col++]->insert(Field{});
+    }
+    else
+    {
+        res_columns[col++]->insert(cluster_name);
+    }
 
     /// query
     res_columns[col++]->insert(task.entry.query);
