@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <list>
 #include <mutex>
+#include <xray/xray_interface.h>
 
 namespace DB
 {

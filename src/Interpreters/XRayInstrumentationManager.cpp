@@ -6,7 +6,6 @@
 #include <stdexcept>
 #include <thread>
 
-#include <xray/xray_interface.h>
 #include <llvm/Object/Binary.h>
 #include <llvm/Object/ObjectFile.h>
 #include <llvm/Support/Error.h>
