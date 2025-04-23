@@ -323,7 +323,8 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool c
     if (this->width < this->fc.max_width && rg.nextMediumNumber() < 16)
     {
         /// Generate a few arrays/tuples with literal values
-        ExprList * elist = rg.nextBool() ? expr->mutable_comp_expr()->mutable_array() : expr->mutable_comp_expr()->mutable_tuple();
+        ExprList * elist
+            = (!complex || rg.nextBool()) ? expr->mutable_comp_expr()->mutable_array() : expr->mutable_comp_expr()->mutable_tuple();
         const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.nextMediumNumber() % 8);
 
         for (uint32_t i = 0; i < nvalues; i++)
