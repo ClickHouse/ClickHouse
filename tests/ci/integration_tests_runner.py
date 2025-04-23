@@ -32,11 +32,10 @@ SLEEP_BETWEEN_RETRIES = 5
 PARALLEL_GROUP_SIZE = 100
 CLICKHOUSE_BINARY_PATH = "usr/bin/clickhouse"
 
-FLAKY_TRIES_COUNT = 2  # run whole pytest several times
-FLAKY_REPEAT_COUNT = 3  # runs test case in single module several times
-MAX_TIME_SECONDS = 3600
+FLAKY_TRIES_COUNT = 250  # run whole pytest several times
+FLAKY_REPEAT_COUNT = 4  # runs test case in single module several times
 
-MAX_TIME_IN_SANDBOX = 20 * 60  # 20 minutes
+MAX_TIME_IN_SANDBOX = 20 * 600  # 20 minutes
 TASK_TIMEOUT = 8 * 60 * 60  # 8 hours
 
 NO_CHANGES_MSG = "Nothing to run"
