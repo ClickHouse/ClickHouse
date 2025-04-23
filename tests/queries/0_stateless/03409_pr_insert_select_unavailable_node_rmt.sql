@@ -4,7 +4,7 @@ SET enable_analyzer=1; -- parallel distributed insert select for replicated tabl
 SET parallel_distributed_insert_select=2;
 
 -- use cluster with unavailable replica
-SET enable_parallel_replicas = 1, cluster_for_parallel_replicas = 'parallel_replicas';
+SET enable_parallel_replicas = 1, parallel_replicas_mark_segment_size = 128, cluster_for_parallel_replicas = 'parallel_replicas';
 
 DROP TABLE IF EXISTS t_rmt_source SYNC;
 DROP TABLE IF EXISTS t_rmt_target SYNC;

@@ -10,7 +10,7 @@ CREATE TABLE t_mt_target (k UInt64, v String) ENGINE = MergeTree() ORDER BY ();
 INSERT INTO t_mt_source SELECT number as k, toString(number) as v FROM system.numbers LIMIT 1e6;
 select 'mt source table count()', count() from t_mt_source;
 
-SET enable_parallel_replicas = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', max_parallel_replicas = 3;
+SET enable_parallel_replicas = 1, parallel_replicas_mark_segment_size = 128, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', max_parallel_replicas = 3;
 
 select '-- check result without local pipeline';
 INSERT INTO t_mt_target SELECT * FROM t_mt_source SETTINGS log_comment='cb01f13a-410c-4985-b233-35289776b58f', parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan=0;

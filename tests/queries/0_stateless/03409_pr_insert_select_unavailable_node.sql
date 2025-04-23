@@ -11,7 +11,7 @@ INSERT INTO t_mt_source SELECT number as k, toString(number) as v FROM system.nu
 select 'mt source table count()', count() from t_mt_source;
 
 -- use cluster with unavailable replica
-SET enable_parallel_replicas = 1, cluster_for_parallel_replicas = 'parallel_replicas';
+SET enable_parallel_replicas = 1, parallel_replicas_mark_segment_size = 128, cluster_for_parallel_replicas = 'parallel_replicas';
 
 -- to ensure that unavailable replica will not be chosen in subsequent INSERT SELECTs, so query count from query_log will match the test expectations
 SELECT k FROM t_mt_source SETTINGS max_parallel_replicas=11 FORMAT Null;
