@@ -7,6 +7,13 @@
 
 #include <stack>
 
+namespace DB::ErrorCodes
+{
+
+extern const int LOGICAL_ERROR;
+
+}
+
 namespace DB
 {
 MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag, const ActionsDAG & outer_dag, bool check_monotonicity)
@@ -547,6 +554,8 @@ void removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG::Node * nod
         case ActionsDAG::ActionType::INPUT:
             irreducible.insert(node);
             break;
+        case ActionsDAG::ActionType::PLACEHOLDER:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "PLACEHOLDER action node must be removed before query plan optimization");
     }
 }
 

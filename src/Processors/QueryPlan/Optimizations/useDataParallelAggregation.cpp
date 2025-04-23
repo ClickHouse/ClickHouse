@@ -12,13 +12,6 @@
 
 using namespace DB;
 
-namespace DB::ErrorCodes
-{
-
-extern const int LOGICAL_ERROR;
-
-}
-
 namespace
 {
 
