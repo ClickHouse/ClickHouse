@@ -1,0 +1,2 @@
+../../../build/programs/clickhouse client --query SELECT * FROM s3('http://localhost:9000/test/hello.csv', '', '', 'CSV', 'value String');
+../../../build/programs/clickhouse client --query=SELECT * FROM s3('http://localhost:9000/test/hello.csv', '', '', 'CSV', 'value String');
