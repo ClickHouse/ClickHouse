@@ -223,7 +223,7 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
         if (auto id = t->getStorageID(); !access->isGranted(AccessType::SHOW_TABLES, id.database_name, id.table_name))
             return false;
 
-        res = t->getInMemoryMetadata().getColumns();
+        res = ColumnsDescription{t->getInMemoryMetadata().getColumns().getAllPhysical()};
 
         return true;
     });
@@ -275,7 +275,17 @@ bool StorageMerge::isRemote() const
 
 bool StorageMerge::tableSupportsPrewhere() const
 {
-    return traverseTablesUntil([](const auto & table) { return !table->supportsPrewhere(); }) == nullptr;
+    /// NOTE: This check is used during query analysis as condition for applying
+    /// "move to PREWHERE" optimization. However, it contains a logical race:
+    /// If new table that matches regexp for current storage and doesn't support PREWHERE
+    /// will appear after this check and before calling "read" method, the optimized query may fail.
+    /// Since it's quite rare case, we just ignore this possibility.
+    /// TODO: Store tables inside StorageSnapshot
+    ///
+    /// NOTE: Type can be different, and in this case, PREWHERE cannot be
+    /// applied for those columns, but there a separate method to return
+    /// supported columns for PREWHERE - supportedPrewhereColumns().
+    return traverseTablesUntil([](const auto & table) { return !table->canMoveConditionsToPrewhere(); }) == nullptr;
 }
 
 std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
@@ -1663,11 +1673,9 @@ std::tuple<bool /* is_regexp */, ASTPtr> StorageMerge::evaluateDatabaseName(cons
     return {false, ast};
 }
 
-bool StorageMerge::supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr ctx) const
+bool StorageMerge::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr ctx) const
 {
-    /// Here we actually need storage snapshot of all nested tables.
-    /// But to avoid complexity pass nullptr to make more lightweight check in MergeTreeData.
-    return traverseTablesUntil([&](const auto & table) { return !table->supportsTrivialCountOptimization(nullptr, ctx); }) == nullptr;
+    return traverseTablesUntil([&](const auto & table) { return !table->supportsTrivialCountOptimization(storage_snapshot, ctx); }) == nullptr;
 }
 
 std::optional<UInt64> StorageMerge::totalRows(const Settings & settings) const

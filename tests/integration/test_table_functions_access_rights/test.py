@@ -45,7 +45,7 @@ def test_merge():
     )
 
     instance.query("GRANT CREATE TEMPORARY TABLE ON *.* TO A")
-    assert "no tables satisfied provided regexp" in instance.query_and_get_error(
+    assert "no tables in database matches" in instance.query_and_get_error(
         select_query, user="A"
     )
 
