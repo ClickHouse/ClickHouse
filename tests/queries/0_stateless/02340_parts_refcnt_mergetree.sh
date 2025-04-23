@@ -57,7 +57,7 @@ function check_refcnt_for_table()
     # background threads (i.e. asynchronous metrics) that uses the part, so we
     # simply filter parts not by "refcount > 1" but with some delta - "3", to
     # avoid flakiness.
-    $CLICKHOUSE_CLIENT -q "select table, name, refcount>=6 from system.parts where database = '$CLICKHOUSE_DATABASE' and table = '$table' and refcount >= 3"
+    $CLICKHOUSE_CLIENT -q "select table, name, refcount>=6 from system.parts where database = '$CLICKHOUSE_DATABASE' and table = '$table' and refcount >= 2"
 
     # Kill the query gracefully.
     kill -INT $PID
