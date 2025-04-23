@@ -259,8 +259,6 @@ public:
         std::memcpy(block_data, &check_sum, sizeof(size_t));
     }
 
-    size_t getBlockSize() const { return block_size; }
-
     /// Returns block data
     char * getBlockData() const { return block_data; }
 

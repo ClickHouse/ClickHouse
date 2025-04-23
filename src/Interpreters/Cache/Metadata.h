@@ -155,10 +155,9 @@ public:
 
     bool isBackgroundDownloadEnabled();
 
-    size_t getBlockSize() const;
-
     size_t alignFileSize(size_t file_size) const;
 
+    bool useRealDiskSize() const { return use_real_disk_size; }
 private:
     static constexpr size_t buckets_num = 1024;
 
@@ -255,8 +254,6 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
     bool checkAccess(const UserID & user_id_) const;
 
     void assertAccess(const UserID & user_id_) const;
-
-    size_t getBlockSize() const;
 
     size_t alignFileSize(size_t file_size) const;
 

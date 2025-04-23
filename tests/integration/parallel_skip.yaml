@@ -2,6 +2,7 @@
 # The list of "directories/", "directory/file.py", or "directory_prefix" (acting as "directory_prefix*" glob)
 # tests that will be launched sequentially without other parallel running tests
 # After adding something else, sort it for future yourself 💕
+- test_aligned_cache_s3/
 - test_atomic_drop_table/
 - test_attach_without_fetching/
 - test_cleanup_dir_after_bad_zk_conn/

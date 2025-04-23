@@ -4031,6 +4031,14 @@ class ClickHouseInstance:
             )
 
         return error
+    
+    def get_cache_size(self, cache_path) -> int:
+        exec_str = f"find {cache_path}  -mindepth 3 -maxdepth 3 -type f -print0 " + "| xargs --null du -B 1 | cut -f 1 | awk '{s+=$1} END {print s}'"
+        return int(self.exec_in_container(
+            (["bash", "-c", exec_str]),
+            privileged=True,
+            user="root",
+        ).rstrip())
 
     def append_hosts(self, name, ip):
         self.exec_in_container(
