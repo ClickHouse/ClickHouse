@@ -89,7 +89,7 @@ public:
             const String & query_to_execute_,
             size_t max_consecutive_errors_,
             bool continue_on_errors_,
-            bool reconnect_,
+            size_t reconnect_,
             bool display_client_side_time_,
             bool print_stacktrace_,
             const Settings & settings_)
@@ -147,6 +147,9 @@ public:
                 comparison_info_total.emplace_back(std::make_shared<Stats>());
             }
         }
+
+        // Initialize queries_per_connection to track queries for each connection
+        queries_per_connection.resize(connections.size(), 0);
 
         global_context->makeGlobalContext();
         global_context->setSettings(settings);
@@ -234,6 +237,8 @@ private:
     std::atomic<bool> shutdown{false};
 
     std::atomic<size_t> queries_executed{0};
+
+    std::vector<size_t> queries_per_connection;
 
     struct Stats
     {
@@ -471,7 +476,7 @@ private:
         ConnectionPool::Entry entry = connections[connection_index]->get(
             ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings));
 
-        if (reconnect)
+        if (reconnect > 0 && (++queries_per_connection[connection_index] % reconnect == 0))
             entry->disconnect();
 
         RemoteQueryExecutor executor(
@@ -638,7 +643,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("query_id_prefix", value<std::string>()->default_value(""), "")
             ("max-consecutive-errors", value<size_t>()->default_value(0), "set number of allowed consecutive errors")
             ("ignore-error,continue_on_errors", "continue testing even if a query fails")
-            ("reconnect", "establish new connection for every query")
+            ("reconnect", value<size_t>()->implicit_value(1)->default_value(0), "establish new connection: never (0), for every query (1 or no value), for every N queries (N)")
             ("client-side-time", "display the time including network communication instead of server-side time; note that for server versions before 22.8 we always display client-side time")
         ;
 
@@ -739,7 +744,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["query"].as<std::string>(),
             options["max-consecutive-errors"].as<size_t>(),
             options.count("ignore-error"),
-            options.count("reconnect"),
+            options["reconnect"].as<size_t>(),
             options.count("client-side-time"),
             print_stacktrace,
             settings);
