@@ -237,7 +237,6 @@ private:
 
     TopicPartitionSet lookupReplicaState(zkutil::ZooKeeper & keeper_to_use);
     UInt32 active_replica_count;
-    ReplicaState replica_state;
     std::optional<LockedTopicPartitionInfo> createLocksInfo(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & partition_to_lock);
     TopicPartitionLocks permanent_locks;
     TopicPartitionLocks tmp_locks;
@@ -262,6 +261,7 @@ private:
 
 
     std::filesystem::path getTopicPartitionPath(const TopicPartition & topic_partition);
+    std::filesystem::path getTopicPartitionLockPath(const TopicPartition & topic_partition);
 };
 
 }
