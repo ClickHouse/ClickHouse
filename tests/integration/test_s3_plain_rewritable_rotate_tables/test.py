@@ -18,9 +18,9 @@ def gen_insert_values(size):
     )
 
 
-def randomize_disk_name(table_name, random_suffix_length=5):
+def randomize_name(table_name, random_suffix_length=8):
     letters = string.ascii_letters
-    return f"{table_name}{''.join(random.choice(letters) for _ in range(random_suffix_length))}"
+    return f"{table_name}_{''.join(random.choice(letters) for _ in range(random_suffix_length))}"
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -69,19 +69,23 @@ def test():
 
         node.query("INSERT INTO {} VALUES {}".format(table_name, insert_values))
 
-    create_insert(node1, "test1", gen_insert_values(1000))
+    table1 = randomize_name("t1")
+    create_insert(node1, table1, gen_insert_values(1000))
 
-    assert int(node1.query("SELECT count(*) FROM test1")) == 1000
+    assert int(node1.query(f"SELECT count(*) FROM {table1}")) == 1000
 
-    uuid1 = node1.query("SELECT uuid FROM system.tables WHERE table='test1'").strip()
+    uuid1 = node1.query(
+        f"SELECT uuid FROM system.tables WHERE table='{table1}'"
+    ).strip()
 
-    node1.query("DETACH TABLE test1 SYNC")
+    node1.query(f"DETACH TABLE {table1} PERMANENTLY SYNC")
 
-    disk_name = randomize_disk_name("disk_")
+    disk_name = randomize_name("disk")
     node2 = cluster.instances["node2"]
-    node2.query("DROP TABLE IF EXISTS test2 SYNC")
+    table2 = randomize_name("table2")
+    node2.query(f"DROP TABLE IF EXISTS {table2} SYNC")
     node2.query(
-        f"""CREATE TABLE test2 (id Int64, data String)
+        f"""CREATE TABLE {table2} (id Int64, data String)
         ENGINE=MergeTree()
         ORDER BY id
         PARTITION BY id%10
@@ -94,10 +98,10 @@ def test():
         """
     )
 
-    rotated_name = "test1_rotated"
-    node2.query(f"""DROP TABLE IF EXISTS {rotated_name} SYNC""")
+    rotated_table = f"{table1}_rotated"
+    node2.query(f"""DROP TABLE IF EXISTS {rotated_table} SYNC""")
     node2.query(
-        f"""ATTACH TABLE {rotated_name} UUID '{uuid1}' (id Int64, data String)
+        f"""ATTACH TABLE {rotated_table} UUID '{uuid1}' (id Int64, data String)
         ENGINE=MergeTree()
         ORDER BY id
         PARTITION BY id%10
@@ -113,21 +117,18 @@ def test():
     assert (
         int(
             node2.query(
-                f"SELECT count(*) FROM {rotated_name} WHERE _partition_id = '0'"
+                f"SELECT count(*) FROM {rotated_table} WHERE _partition_id = '0'"
             )
         )
         == 100
     )
 
-    assert int(node2.query(f"SELECT count(*) FROM {rotated_name}")) == 1000
+    assert int(node2.query(f"SELECT count(*) FROM {rotated_table}")) == 1000
 
-    node2.query(f"""ALTER TABLE {rotated_name} MOVE PARTITION '0' TO TABLE test2""")
+    node2.query(f"""ALTER TABLE {rotated_table} MOVE PARTITION '0' TO TABLE {table2}""")
 
-    assert int(node2.query(f"SELECT count(*) FROM {rotated_name}")) == 900
-    assert int(node2.query("SELECT count(*) FROM test2")) == 100
+    assert int(node2.query(f"SELECT count(*) FROM {rotated_table}")) == 900
+    assert int(node2.query(f"SELECT count(*) FROM {table2}")) == 100
 
-    node2.query(f"DROP TABLE {rotated_name} SYNC")
-    node2.query("DROP TABLE test2 SYNC")
-
-    node1.query(f"ATTACH TABLE test1")
-    node1.query(f"DROP TABLE test1 SYNC")
+    node2.query(f"DROP TABLE {rotated_table} SYNC")
+    node2.query(f"DROP TABLE {table2} SYNC")
