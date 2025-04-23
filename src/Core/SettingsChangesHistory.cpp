@@ -86,6 +86,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_delta_kernel_rs", false, false, "New setting"},
             {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
             {"enable_shared_storage_snapshot_in_query", false, false, "A new setting to shard storage snapshot in query"},
+            {"merge_tree_storage_snapshot_sleep_ms", 0, 0, "A new setting to debug storage snapshot consistency in query"},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
