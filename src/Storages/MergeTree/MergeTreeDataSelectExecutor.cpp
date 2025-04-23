@@ -544,6 +544,9 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(
             new_inputs.emplace(match, node1); /// Always fold to node1 to avoid generating duplicate inputs
     }
 
+    if (new_inputs.empty())
+        return;
+
     dag = ActionsDAG::foldActionsByProjection(new_inputs, dag->getOutputs());
 
     /// total_offset_condition is only valid if _part_offset and _part_starting_offset are used *together*.
