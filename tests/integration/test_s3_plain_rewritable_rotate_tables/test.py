@@ -18,6 +18,11 @@ def gen_insert_values(size):
     )
 
 
+def randomize_disk_name(table_name, random_suffix_length=5):
+    letters = string.ascii_letters
+    return f"{table_name}{''.join(random.choice(letters) for _ in range(random_suffix_length))}"
+
+
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     cluster.add_instance(
@@ -50,6 +55,7 @@ def test():
     node1 = cluster.instances["node1"]
 
     def create_insert(node, table_name, insert_values):
+        node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
         node.query(
             f"""CREATE TABLE {table_name} (
                 id Int64,
@@ -69,17 +75,18 @@ def test():
 
     uuid1 = node1.query("SELECT uuid FROM system.tables WHERE table='test1'").strip()
 
-    node1.query("DETACH TABLE test1")
-    node1.stop()
+    node1.query("DETACH TABLE test1 SYNC")
 
+    disk_name = randomize_disk_name("disk_")
     node2 = cluster.instances["node2"]
+    node2.query("DROP TABLE IF EXISTS test2 SYNC")
     node2.query(
         f"""CREATE TABLE test2 (id Int64, data String)
         ENGINE=MergeTree()
         ORDER BY id
         PARTITION BY id%10
         SETTINGS disk=disk(
-            name=custom_disk,
+            name={disk_name},
             type='s3_plain_rewritable',
             endpoint='http://minio1:9001/root/data/node1',
             access_key_id='minio',
@@ -87,13 +94,15 @@ def test():
         """
     )
 
+    rotated_name = "test1_rotated"
+    node2.query(f"""DROP TABLE IF EXISTS {rotated_name} SYNC""")
     node2.query(
-        f"""ATTACH TABLE test_rotated_test1 UUID '{uuid1}' (id Int64, data String)
+        f"""ATTACH TABLE {rotated_name} UUID '{uuid1}' (id Int64, data String)
         ENGINE=MergeTree()
         ORDER BY id
         PARTITION BY id%10
         SETTINGS disk=disk(
-            name=custom_disk,
+            name={disk_name},
             type='s3_plain_rewritable',
             endpoint='http://minio1:9001/root/data/node1',
             access_key_id='minio',
@@ -104,13 +113,21 @@ def test():
     assert (
         int(
             node2.query(
-                "SELECT count(*) FROM test_rotated_test1 WHERE _partition_id = '0'"
+                f"SELECT count(*) FROM {rotated_name} WHERE _partition_id = '0'"
             )
         )
         == 100
     )
 
-    node2.query(f"""ALTER TABLE test_rotated_test1 MOVE PARTITION '0' TO TABLE test2""")
+    assert int(node2.query(f"SELECT count(*) FROM {rotated_name}")) == 1000
 
-    assert int(node2.query("SELECT count(*) FROM test_rotated_test1")) == 900
+    node2.query(f"""ALTER TABLE {rotated_name} MOVE PARTITION '0' TO TABLE test2""")
+
+    assert int(node2.query(f"SELECT count(*) FROM {rotated_name}")) == 900
     assert int(node2.query("SELECT count(*) FROM test2")) == 100
+
+    node2.query(f"DROP TABLE {rotated_name} SYNC")
+    node2.query("DROP TABLE test2 SYNC")
+
+    node1.query(f"ATTACH TABLE test1")
+    node1.query(f"DROP TABLE test1 SYNC")
