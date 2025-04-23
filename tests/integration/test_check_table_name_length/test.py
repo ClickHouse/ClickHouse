@@ -8,7 +8,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster, QueryRuntimeException
 
 
-LARGE_TABLE_NAME_SIZE = 220
+LARGE_TABLE_NAME_LENGTH = 220
 
 
 cluster = ClickHouseCluster(__file__)
@@ -44,7 +44,7 @@ def test_backward_compatibility(start_cluster):
     because we only perform the check for initial create queries and skip it for secondary ones.
     """
 
-    table_name = generate_name(LARGE_TABLE_NAME_SIZE)
+    table_name = generate_name(LARGE_TABLE_NAME_LENGTH)
 
     # create database
     old_node.query("DROP DATABASE IF EXISTS rdb SYNC")
@@ -65,7 +65,7 @@ def test_check_table_name_length(start_cluster):
     Verify that the new node gets error trying to create a table with name that is too long.
     """
 
-    table_name = generate_name(LARGE_TABLE_NAME_SIZE)
+    table_name = generate_name(LARGE_TABLE_NAME_LENGTH)
 
     # create database
     new_node.query("DROP DATABASE IF EXISTS rdb2 SYNC")
