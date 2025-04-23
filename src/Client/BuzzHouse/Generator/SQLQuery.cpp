@@ -526,6 +526,7 @@ bool StatementGenerator::joinedTableOrFunction(
         const GenerateSeriesFunc_GSName val = static_cast<GenerateSeriesFunc_GSName>(
             (rg.nextRandomUInt32() % static_cast<uint32_t>(GenerateSeriesFunc_GSName_GSName_MAX)) + 1);
         const String & cname = val == GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_numbers ? "number" : "generate_series";
+        std::uniform_int_distribution<uint32_t> numbers_range(1, UINT32_C(1000000));
 
         gsf->set_fname(val);
         for (const auto & entry : this->levels)
@@ -548,7 +549,7 @@ bool StatementGenerator::joinedTableOrFunction(
                 /// 2 args
                 if (rg.nextBool())
                 {
-                    gsf->mutable_expr1()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(static_cast<uint64_t>(rg.nextRandomUInt16()));
+                    gsf->mutable_expr1()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(numbers_range(rg.generator));
                 }
                 else
                 {
@@ -560,8 +561,7 @@ bool StatementGenerator::joinedTableOrFunction(
                     /// 3 args
                     if (rg.nextBool())
                     {
-                        gsf->mutable_expr3()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(
-                            static_cast<uint64_t>(rg.nextRandomUInt16()));
+                        gsf->mutable_expr3()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(numbers_range(rg.generator));
                     }
                     else
                     {
@@ -575,7 +575,7 @@ bool StatementGenerator::joinedTableOrFunction(
             //2 args
             if (rg.nextBool())
             {
-                gsf->mutable_expr1()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(static_cast<uint64_t>(rg.nextRandomUInt16()));
+                gsf->mutable_expr1()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(numbers_range(rg.generator));
             }
             else
             {
@@ -587,7 +587,7 @@ bool StatementGenerator::joinedTableOrFunction(
                 //3 args
                 if (rg.nextBool())
                 {
-                    gsf->mutable_expr3()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(static_cast<uint64_t>(rg.nextRandomUInt16()));
+                    gsf->mutable_expr3()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(numbers_range(rg.generator));
                 }
                 else
                 {
@@ -595,7 +595,7 @@ bool StatementGenerator::joinedTableOrFunction(
                 }
             }
         }
-        limit->mutable_lit_val()->mutable_int_lit()->set_uint_lit(static_cast<uint64_t>(rg.nextRandomUInt16()));
+        limit->mutable_lit_val()->mutable_int_lit()->set_uint_lit(numbers_range(rg.generator));
         this->levels.erase(this->current_level);
         this->ctes.erase(this->current_level);
         this->current_level--;
