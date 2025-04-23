@@ -434,7 +434,7 @@ void applyActionsToSortDescription(
     description.resize(prefix_size);
 }
 
-std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> resolveMatchedInputs(
+std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *>> resolveMatchedInputs(
     const MatchedTrees::Matches & matches,
     const std::unordered_set<const ActionsDAG::Node *> & allowed_inputs,
     const ActionsDAG::NodeRawConstPtrs & nodes)
@@ -485,7 +485,7 @@ std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> resolveMa
 
             /// Not a match and there is no matched child.
             if (frame.node->type == ActionsDAG::ActionType::INPUT)
-                return {};
+                return std::nullopt;
 
             /// Not a match, but all children matched.
             visited.insert(frame.node);

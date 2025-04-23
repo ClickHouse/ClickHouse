@@ -336,9 +336,10 @@ std::optional<ActionsDAG> analyzeAggregateProjection(
     /// Here we want to match query keys with projection keys.
     /// Query key can be any expression depending on projection keys.
     auto new_inputs = resolveMatchedInputs(matches, proj_key_nodes, query_key_nodes);
-    if (new_inputs.empty())
+    if (!new_inputs)
         return {};
-    auto proj_dag = ActionsDAG::foldActionsByProjection(new_inputs, query_key_nodes);
+
+    auto proj_dag = ActionsDAG::foldActionsByProjection(*new_inputs, query_key_nodes);
     appendAggregateFunctions(proj_dag, aggregates, *matched_aggregates);
     return proj_dag;
 }

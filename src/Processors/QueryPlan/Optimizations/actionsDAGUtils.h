@@ -69,12 +69,13 @@ void applyActionsToSortDescription(
 /// - The match is non-monotonic (`!match.monotonicity`)
 /// - The matched node is allowed (present in `allowed_inputs`)
 ///
-/// The function performs a depth-first traversal and builds a mapping from the original node
-/// to the matched input node. If any node resolves to an INPUT node without a valid match,
-/// the function returns an empty result (indicating failure to resolve).
+/// This function performs a depth-first traversal to ensure all nodes and their dependencies
+/// can be substituted by valid inputs. If any node ultimately resolves to an INPUT node that
+/// has no valid match in `matches`, the function returns `std::nullopt` to indicate that
+/// a consistent input substitution map cannot be constructed.
 ///
 /// The primary use case is to construct the input substitution map required by `ActionsDAG::foldActionsByProjection`.
-std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> resolveMatchedInputs(
+std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *>> resolveMatchedInputs(
     const MatchedTrees::Matches & matches,
     const std::unordered_set<const ActionsDAG::Node *> & allowed_inputs,
     const ActionsDAG::NodeRawConstPtrs & nodes);

@@ -538,9 +538,9 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(
         = &total_offset.addFunction(FunctionFactory::instance().get("plus", context), {part_starting_offset, part_offset}, {});
     auto matches = matchTrees({node1, node2}, *dag, false /* check_monotonicity */);
     auto new_inputs = resolveMatchedInputs(matches, {node1, node2}, dag->getOutputs());
-    if (new_inputs.empty())
+    if (!new_inputs)
         return;
-    dag = ActionsDAG::foldActionsByProjection(new_inputs, dag->getOutputs());
+    dag = ActionsDAG::foldActionsByProjection(*new_inputs, dag->getOutputs());
 
     /// total_offset_condition is only valid if _part_offset and _part_starting_offset are used *together*.
     /// After folding, we expect a single input representing their combination.
