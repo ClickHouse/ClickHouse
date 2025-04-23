@@ -1006,7 +1006,7 @@ void Client::readArguments(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter must be in external group, try add --external before {}", arg);
 
             /// Parameter arg after underline or dash.
-            if (arg.starts_with("_") || arg.starts_with("--param-"))
+            if (arg.starts_with("--param_") || arg.starts_with("--param-"))
             {
                 auto param_continuation = arg.substr(strlen("--param_"));
                 auto equal_pos = param_continuation.find_first_of('=');
