@@ -1,3 +1,5 @@
+-- Tags: no-replicated-database
+
 CREATE TABLE IF NOT EXISTS truncate_test_set(id UInt64) ENGINE = Set;
 CREATE TABLE IF NOT EXISTS truncate_test_log(id UInt64) ENGINE = Log;
 CREATE TABLE IF NOT EXISTS truncate_test_memory(id UInt64) ENGINE = Memory;
