@@ -188,6 +188,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
     extern const SettingsUInt64 parts_to_delay_insert;
     extern const SettingsUInt64 parts_to_throw_insert;
+    extern const SettingsBool enable_shared_storage_snapshot_in_query;
 }
 
 namespace MergeTreeSetting
@@ -9229,8 +9230,15 @@ Int64 MergeTreeData::getMinMetadataVersion(const DataPartsVector & parts)
     return version;
 }
 
-StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
+StorageSnapshotPtr
+MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const
 {
+    if (without_data)
+    {
+        auto lock = lockParts();
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::make_unique<SnapshotData>());
+    }
+
     auto snapshot_data = std::make_unique<SnapshotData>();
     ColumnsDescription object_columns_copy;
 
@@ -9256,10 +9264,20 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns_copy), std::move(snapshot_data));
 }
 
-StorageSnapshotPtr MergeTreeData::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const
+StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
-    auto lock = lockParts();
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::make_unique<SnapshotData>());
+    if (!query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query] || !query_context->hasQueryContext())
+        return createStorageSnapshot(metadata_snapshot, query_context, false);
+
+    return query_context->getStorageSnapshotCache()
+        .emplace(this, createStorageSnapshot(metadata_snapshot, query_context, false))
+        .first->second;
+}
+
+StorageSnapshotPtr
+MergeTreeData::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
+{
+    return createStorageSnapshot(metadata_snapshot, query_context, true);
 }
 
 void MergeTreeData::incrementInsertedPartsProfileEvent(MergeTreeDataPartType type)

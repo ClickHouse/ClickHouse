@@ -5551,10 +5551,15 @@ void Context::setGoogleProtosPath(const String & path)
 
 std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> Context::getSampleBlockCache() const
 {
-    assert(hasQueryContext());
+    chassert(hasQueryContext());
     return std::make_pair(&getQueryContext()->sample_block_cache, std::unique_lock(getQueryContext()->sample_block_cache_mutex));
 }
 
+Context::StorageSnapshotCache & Context::getStorageSnapshotCache() const
+{
+    chassert(hasQueryContext());
+    return getQueryContext()->storage_snapshot_cache;
+}
 
 bool Context::hasQueryParameters() const
 {

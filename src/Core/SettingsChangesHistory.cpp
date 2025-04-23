@@ -115,6 +115,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_url_encoding", true, false, "Changed existing setting's default value"},
             {"s3_slow_all_threads_after_network_error", false, true, "New setting"},
             /// Release closed. Please use 25.6
+            {"enable_shared_storage_snapshot_in_query", false, false, "A new setting to shard storage snapshot in query"},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
