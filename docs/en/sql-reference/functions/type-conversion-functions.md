@@ -6518,6 +6518,54 @@ Result:
 └───────┴───────────────┴──────┴──────────────┴──────────────┴──────────────────────┘
 ```
 
+## toInterval {#toInterval}
+
+Creates an [Interval](../../sql-reference/data-types/special-data-types/interval.md) data type value from a numeric value and interval unit (eg. 'second' or 'day').
+
+**Syntax**
+
+```sql
+toInterval(value, unit)
+```
+
+**Arguments**
+
+- `value` — Length of the interval. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
+
+- `unit` — The type of interval to create. [String Literal](/sql-reference/syntax#string).
+    Possible values:
+
+    - `nanosecond`
+    - `microsecond`
+    - `millisecond`
+    - `second`
+    - `minute`
+    - `hour`
+    - `day`
+    - `week`
+    - `month`
+    - `quarter`
+    - `year`
+
+    The `unit` argument is case-insensitive.
+
+
+**Returned value**
+
+- The resulting interval. [Interval](../../sql-reference/data-types/special-data-types/interval.md)
+
+**Example**
+
+```sql
+SELECT toDateTime('2025-01-01 00:00:00') + toInterval(1, 'hour')
+```
+
+```response
+┌─toDateTime('2025-01-01 00:00:00') + toInterval(1, 'hour') ─┐
+│                                        2025-01-01 01:00:00 │
+└────────────────────────────────────────────────────────────┘
+```
+
 ## toIntervalYear {#tointervalyear}
 
 Returns an interval of `n` years of data type [IntervalYear](../data-types/special-data-types/interval.md).

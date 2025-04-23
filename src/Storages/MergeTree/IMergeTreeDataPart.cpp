@@ -29,6 +29,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <base/JSON.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -351,7 +352,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
 {
     if (parent_part)
     {
-        chassert(parent_part_name.starts_with(parent_part->info.partition_id));     /// Make sure there's no prefix
+        chassert(parent_part_name.starts_with(parent_part->info.getPartitionId()));     /// Make sure there's no prefix
         state = MergeTreeDataPartState::Active;
     }
 
@@ -1312,10 +1313,10 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
 
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     String calculated_partition_id = partition.getID(metadata_snapshot->getPartitionKey().sample_block);
-    if (calculated_partition_id != info.partition_id)
+    if (calculated_partition_id != info.getPartitionId())
         throw Exception(ErrorCodes::CORRUPTED_DATA, "While loading part {}: "
             "calculated partition ID: {} differs from partition ID in part name: {}",
-            getDataPartStorage().getFullPath(), calculated_partition_id, info.partition_id);
+            getDataPartStorage().getFullPath(), calculated_partition_id, info.getPartitionId());
 }
 
 void IMergeTreeDataPart::loadChecksums(bool require)
@@ -1515,7 +1516,11 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
     StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr();
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
 
-    MergeTreeReaderPtr reader = getReader(
+    auto alter_conversions = std::make_shared<AlterConversions>();
+    auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
+
+    MergeTreeReaderPtr reader = createMergeTreeReader(
+        part_info,
         cols,
         storage_snapshot_ptr,
         MarkRanges{MarkRange(0, total_mark)},
@@ -1523,16 +1528,9 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
         /*uncompressed_cache=*/{},
         storage.getContext()->getMarkCache().get(),
         nullptr,
-        std::make_shared<AlterConversions>(),
         MergeTreeReaderSettings{},
         ValueSizeMap{},
         ReadBufferFromFileBase::ProfileCallback{});
-
-    if (!reader)
-    {
-        LOG_WARNING(storage.log, "Create reader failed while reading existing rows count");
-        return rows_count;
-    }
 
     size_t current_mark = 0;
     bool continue_reading = false;
@@ -1627,7 +1625,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
     {
         /// We can get list of columns only from columns.txt in compact parts.
         if (require || part_type == Type::Compact)
-            throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns.txt in part {}, expected path {} on drive {}",
+            throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns.txt in part {}, expected path {} on disk {}",
                 name, path, getDataPartStorage().getDiskName());
 
         auto metadata_snapshot = getMetadataSnapshot();
@@ -1696,10 +1694,10 @@ void IMergeTreeDataPart::storeVersionMetadata(bool force) const
 {
     if (!wasInvolvedInTransaction() && !force)
         return;
+    if (!storage.supportsTransactions())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage does not support transaction. It is a bug");
 
     LOG_TEST(storage.log, "Writing version for {} (creation: {}, removal {}, creation csn {})", name, version.creation_tid, version.removal_tid, version.creation_csn.load());
-    assert(storage.supportsTransactions());
-
     writeVersionMetadata(version, (*storage.getSettings())[MergeTreeSetting::fsync_part_directory]);
 }
 
@@ -2420,13 +2418,13 @@ String IMergeTreeDataPart::getNewPartBlockID(std::string_view token) const
     if (token.empty())
     {
         const auto hash_value = getPartBlockIDHash();
-        return info.partition_id + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
+        return info.getPartitionId() + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
     }
 
     SipHash hash;
     hash.update(token.data(), token.size());
     const auto hash_value = hash.get128();
-    return info.partition_id + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
+    return info.getPartitionId() + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
 }
 
 std::optional<String> IMergeTreeDataPart::getStreamNameOrHash(
@@ -2538,7 +2536,11 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
     MergeTreeReaderSettings settings;
     settings.can_read_part_without_marks = true;
 
-    MergeTreeReaderPtr reader = getReader(
+    auto alter_conversions = std::make_shared<AlterConversions>();
+    auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
+
+    MergeTreeReaderPtr reader = createMergeTreeReader(
+        part_info,
         cols,
         storage_snapshot_ptr,
         MarkRanges{MarkRange(0, total_mark)},
@@ -2546,7 +2548,6 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
         /*uncompressed_cache=*/{},
         storage.getContext()->getMarkCache().get(),
         nullptr,
-        std::make_shared<AlterConversions>(),
         settings,
         ValueSizeMap{},
         ReadBufferFromFileBase::ProfileCallback{});
