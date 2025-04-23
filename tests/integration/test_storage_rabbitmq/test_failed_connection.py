@@ -9,7 +9,7 @@ from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 DEFAULT_TIMEOUT_SEC = 120
-RABBITMQ_CONSUMPTION_TIMEOUT_SEC = 240
+CLICKHOUSE_VIEW_TIMEOUT_SEC = 240
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -252,7 +252,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, r
 
     resume_rabbitmq(rabbitmq_cluster, rabbitmq_monitor)
 
-    deadline = time.monotonic() + RABBITMQ_CONSUMPTION_TIMEOUT_SEC
+    deadline = time.monotonic() + CLICKHOUSE_VIEW_TIMEOUT_SEC
     while time.monotonic() < deadline:
         result = instance.query("SELECT count(DISTINCT key) FROM test.view")
         if int(result) == messages_num:
@@ -261,7 +261,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, r
         time.sleep(1)
     else:
         pytest.fail(
-            f"Time limit of {RABBITMQ_CONSUMPTION_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
+            f"Time limit of {CLICKHOUSE_VIEW_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
         )
 
     instance.query(
@@ -349,7 +349,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster, r
     # kill_rabbitmq()
     # revive_rabbitmq()
 
-    deadline = time.monotonic() + RABBITMQ_CONSUMPTION_TIMEOUT_SEC
+    deadline = time.monotonic() + CLICKHOUSE_VIEW_TIMEOUT_SEC
     while time.monotonic() < deadline:
         result = instance.query("SELECT count(DISTINCT key) FROM test.view").strip()
         if int(result) == messages_num:
@@ -358,7 +358,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster, r
         time.sleep(1)
     else:
         pytest.fail(
-            f"Time limit of {RABBITMQ_CONSUMPTION_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
+            f"Time limit of {CLICKHOUSE_VIEW_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
         )
 
     instance.query(
