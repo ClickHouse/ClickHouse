@@ -1377,8 +1377,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
                 static_cast<uint32_t>(
                     (allowed_types & set_no_decimal_limit) ? DecimalN::DecimalPrecision_MAX
                                                            : DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128));
-            short_notation = std::optional<DecimalN_DecimalPrecision>(
-                static_cast<DecimalN_DecimalPrecision>(static_cast<DecimalN_DecimalPrecision>(dec_range(rg.generator))));
+            short_notation = std::optional<DecimalN_DecimalPrecision>(static_cast<DecimalN_DecimalPrecision>(dec_range(rg.generator)));
             switch (short_notation.value())
             {
                 case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D32:
