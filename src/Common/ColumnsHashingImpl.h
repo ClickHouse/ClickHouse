@@ -12,6 +12,7 @@
 #include "Interpreters/AggregatedData.h"
 #include <Interpreters/AggregationCommon.h>
 #include <Analyzer/SortNode.h>
+#include <algorithm>
 #include <type_traits>
 #include <typeinfo>
 
@@ -397,7 +398,7 @@ protected:
                     assert(optimization_indexes->size() == 1 && (*optimization_indexes)[0].first == 0); // TODO support arbitrary number of expressions in findOptimizationSublistIndexes
                     if constexpr (HasBegin<Data>::value)
                     {
-                        if constexpr (!std::is_same_v<decltype(data.begin()->getKey()), const VoidKey>)
+                        if constexpr (!std::is_same_v<decltype(data.begin()->getKey()), const VoidKey> && HasErase<Data, decltype(keyHolderGetKey(key_holder))>::value)
                         {
                             // TODO Remove after support more types
                             assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), StringRef>));
@@ -421,13 +422,10 @@ protected:
                             const auto& max_key = keyHolderGetKey(max_key_holder);
 
                             // erase found element
-                            if constexpr (HasErase<Data, decltype(keyHolderGetKey(max_key_holder))>::value)
-                            {
-                                data.erase(max_key);
-                                if (max_key == keyHolderGetKey(key_holder))
-                                    return std::nullopt;
-                                it = data.find(key_holder);
-                            }
+                            data.erase(max_key);
+                            if (max_key == keyHolderGetKey(key_holder))
+                                return std::nullopt;
+                            it = data.find(key_holder);
                         }
                     } else if constexpr (HasForEachMapped<Data>::value)
                     {
