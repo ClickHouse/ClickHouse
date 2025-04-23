@@ -25,11 +25,11 @@ The `ProtobufList` format is similar to the [`Protobuf`](./Protobuf.md) format b
 For example:
 
 ```sql
-SELECT * FROM test.table FORMAT ProtobufList SETTINGS format_schema = 'schemafile:MessageType'
+SELECT * FROM test.table SETTINGS format_schema = 'schemafile:MessageType' FORMAT ProtobufList
 ```
 
 ```bash
-cat protobuflist_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT ProtobufList SETTINGS format_schema='schemafile:MessageType'"
+cat protobuflist_messages.bin | clickhouse-client --query "INSERT INTO test.table SETTINGS format_schema='schemafile:MessageType'" FORMAT ProtobufList
 ```
 
 Where the file `schemafile.proto` looks like this:
