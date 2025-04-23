@@ -102,16 +102,13 @@ set(SRCS
 )
 
 if(TARGET ch_contrib::curl)
-    message (STATUS "librdkafka with curl")
     set(WITH_CURL 1)
 endif()
 
 if(TARGET ch_contrib::sasl2)
-    message (STATUS "librdkafka with SASL support")
     set(WITH_SASL_CYRUS 1)
 endif()
 
-message (STATUS "librdkafka with SSL support")
 set(WITH_SSL 1)
 if(WITH_SASL_CYRUS)
    set(WITH_SASL_SCRAM 1)

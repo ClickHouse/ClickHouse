@@ -83,7 +83,7 @@ def should_skip_job(job_name):
             f"Skipped, labeled with '{Labels.CI_FUNCTIONAL_FLAKY}' - run stateless test jobs only",
         )
 
-    if Labels.CI_INTEGRATION in _info_cache.pr_labels and (
+    if Labels.CI_INTEGRATION in _info_cache.pr_labels and not (
         job_name.startswith(JobNames.INTEGRATION) or job_name in JobConfigs.builds_for_tests
     ):
         return (
@@ -91,9 +91,10 @@ def should_skip_job(job_name):
             f"Skipped, labeled with '{Labels.CI_INTEGRATION}' - run integration test jobs only",
         )
 
-    if Labels.CI_FUNCTIONAL in _info_cache.pr_labels and (
+    if Labels.CI_FUNCTIONAL in _info_cache.pr_labels and not (
         job_name.startswith(JobNames.STATELESS)
-        or job_name.startswith(JobNames.STATEFUL or job_name in JobConfigs.builds_for_tests)
+        or job_name.startswith(JobNames.STATEFUL)
+        or job_name in JobConfigs.builds_for_tests
     ):
         return (
             True,
