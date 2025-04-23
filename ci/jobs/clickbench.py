@@ -32,7 +32,9 @@ def main():
 
         def start():
             return ch.start() and (
-                ch.start_log_exports() if not Info().is_local_run else True
+                ch.start_log_exports(check_start_time=stop_watch.start_time)
+                if not Info().is_local_run
+                else True
             )
 
         results.append(
@@ -95,7 +97,9 @@ def main():
         verbose=True,
     )
 
-    Result.create_from(results=results, stopwatch=stop_watch, files=[ch.log_file]).complete_job()
+    Result.create_from(
+        results=results, stopwatch=stop_watch, files=[ch.log_file]
+    ).complete_job()
 
 
 if __name__ == "__main__":
