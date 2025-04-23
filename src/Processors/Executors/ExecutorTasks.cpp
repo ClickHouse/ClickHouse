@@ -119,8 +119,6 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
 
 void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context)
 {
-    context.setTask(nullptr);
-
     /// Take local task from queue if has one.
     if (!queue.empty() && !context.hasAsyncTasks()
         && context.num_scheduled_local_tasks < ExecutionThreadContext::max_scheduled_local_tasks)
@@ -130,7 +128,10 @@ void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThrea
         queue.pop();
     }
     else
+    {
         context.num_scheduled_local_tasks = 0;
+        context.setTask(nullptr);
+    }
 
     if (!queue.empty() || !async_queue.empty())
     {
