@@ -60,7 +60,7 @@ protected:
             Chunk chunk;
             std::exception_ptr exception;
 
-            bool isEmpty() const { return bool(chunk) || bool(exception); }
+            bool isEmpty() const { return chunk.empty() && !exception; }
         };
 
     private:
