@@ -1,4 +1,4 @@
-#include <Storages/System/StorageSystemCurrentRoles.h>
+#include <Storages/System/SystemStorageInstrumentation.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
@@ -7,6 +7,7 @@
 #include <Access/EnabledRolesInfo.h>
 #include <Interpreters/Context.h>
 
+#if USE_XRAY
 
 namespace DB
 {
@@ -48,3 +49,4 @@ void SystemStorageInstrumentation::fillData(MutableColumns & res_columns, Contex
 }
 
 }
+#endif
