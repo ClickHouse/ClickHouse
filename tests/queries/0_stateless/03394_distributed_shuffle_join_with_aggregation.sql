@@ -19,7 +19,8 @@ SET
     enable_join_runtime_filters=1,
     distributed_plan_default_shuffle_join_bucket_count=3,
     distributed_plan_default_reader_bucket_count=3,
-    distributed_plan_force_exchange_kind='Streaming';
+    distributed_plan_force_exchange_kind='Streaming',
+    distributed_plan_max_rows_to_broadcast=0;
 
 SELECT '----------';
 
