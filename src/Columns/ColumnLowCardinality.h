@@ -263,7 +263,7 @@ public:
     size_t sizeOfValueIfFixed() const override { return getDictionary().sizeOfValueIfFixed(); }
     bool isNumeric() const override { return getDictionary().isNumeric(); }
     bool lowCardinality() const override { return true; }
-    bool isCollationSupported() const override { return getDictionary().getNestedColumn()->isCollationSupported(); }
+    bool isCollationSupported() const override { return getDictionary().isCollationSupported(); }
 
     /**
      * Checks if the dictionary column is Nullable(T).
