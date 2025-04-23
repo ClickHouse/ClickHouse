@@ -3,7 +3,6 @@
 #include <DataTypes/ObjectUtils.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 #include <Core/Settings.h>
@@ -55,8 +54,6 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric PartMutation;
-    extern const Metric TotalMergeFailures;
-    extern const Metric NonAbortedMergeFailures;
 }
 
 namespace DB
@@ -1103,7 +1100,7 @@ struct MutationContext
 
     bool checkOperationIsNotCanceled() const
     {
-        if (new_data_part ? merges_blocker->isCancelledForPartition(new_data_part->info.partition_id) : merges_blocker->isCancelled()
+        if (new_data_part ? merges_blocker->isCancelledForPartition(new_data_part->info.getPartitionId()) : merges_blocker->isCancelled()
             || (*mutate_entry)->is_cancelled)
         {
             throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
@@ -1301,9 +1298,9 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
         ctx->new_data_part.get(),
         ++block_num);
 
-    tmp_part.finalize();
-    tmp_part.part->getDataPartStorage().commitTransaction();
-    projection_parts[projection.name].emplace_back(std::move(tmp_part.part));
+    tmp_part->finalize();
+    tmp_part->part->getDataPartStorage().commitTransaction();
+    projection_parts[projection.name].emplace_back(std::move(tmp_part->part));
 }
 
 void PartMergerWriter::finalizeTempProjections()
@@ -2099,50 +2096,37 @@ bool MutateTask::execute()
     Stopwatch watch;
     SCOPE_EXIT({ ctx->execute_elapsed_ns += watch.elapsedNanoseconds(); });
 
-    try
+    switch (state)
     {
-        switch (state)
+        case State::NEED_PREPARE:
         {
-            case State::NEED_PREPARE:
-            {
-                if (!prepare())
-                    return false;
-
-                state = State::NEED_EXECUTE;
-                return true;
-            }
-            case State::NEED_EXECUTE:
-            {
-                ctx->checkOperationIsNotCanceled();
-
-                if (task->executeStep())
-                    return true;
-
-                // The `new_data_part` is a shared pointer and must be moved to allow
-                // part deletion in case it is needed in `MutateFromLogEntryTask::finalize`.
-                //
-                // `tryRemovePartImmediately` requires `std::shared_ptr::unique() == true`
-                // to delete the part timely. When there are multiple shared pointers,
-                // only the part state is changed to `Deleting`.
-                //
-                // Fetching a byte-identical part (in case of checksum mismatches) will fail with
-                // `Part ... should be deleted after previous attempt before fetch`.
-                promise.set_value(std::move(ctx->new_data_part));
+            if (!prepare())
                 return false;
-            }
+
+            state = State::NEED_EXECUTE;
+            return true;
         }
-        return false;
-    }
-    catch (...)
-    {
-        const auto error_code = getCurrentExceptionCode();
-        if (error_code != ErrorCodes::ABORTED)
+        case State::NEED_EXECUTE:
         {
-            CurrentMetrics::add(CurrentMetrics::NonAbortedMergeFailures);
+            ctx->checkOperationIsNotCanceled();
+
+            if (task->executeStep())
+                return true;
+
+            // The `new_data_part` is a shared pointer and must be moved to allow
+            // part deletion in case it is needed in `MutateFromLogEntryTask::finalize`.
+            //
+            // `tryRemovePartImmediately` requires `std::shared_ptr::unique() == true`
+            // to delete the part timely. When there are multiple shared pointers,
+            // only the part state is changed to `Deleting`.
+            //
+            // Fetching a byte-identical part (in case of checksum mismatches) will fail with
+            // `Part ... should be deleted after previous attempt before fetch`.
+            promise.set_value(std::move(ctx->new_data_part));
+            return false;
         }
-        CurrentMetrics::add(CurrentMetrics::TotalMergeFailures);
-        throw;
     }
+    return false;
 }
 
 void MutateTask::cancel() noexcept
@@ -2204,7 +2188,7 @@ static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, con
     if (command.partition)
     {
         auto command_partition_id = part->storage.getPartitionIDFromQuery(command.partition, context);
-        if (part->info.partition_id != command_partition_id)
+        if (part->info.getPartitionId() != command_partition_id)
             return true;
     }
 
@@ -2286,6 +2270,7 @@ bool MutateTask::prepare()
             .files_to_copy_instead_of_hardlinks = std::move(files_to_copy_instead_of_hardlinks),
             .keep_metadata_version = true,
         };
+
         MergeTreeData::MutableDataPartPtr part;
         scope_guard lock;
 
@@ -2302,7 +2287,6 @@ bool MutateTask::prepare()
     }
 
     LOG_TRACE(ctx->log, "Mutating part {} to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
-
 
     /// We must read with one thread because it guarantees that output stream will be sorted.
     /// Disable all settings that can enable reading with several streams.

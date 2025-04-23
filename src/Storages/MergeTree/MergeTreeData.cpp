@@ -618,6 +618,24 @@ VirtualColumnsDescription MergeTreeData::createVirtuals(const StorageInMemoryMet
     return desc;
 }
 
+VirtualColumnsDescription MergeTreeData::createProjectionVirtuals(const StorageInMemoryMetadata & metadata)
+{
+    VirtualColumnsDescription desc;
+
+    desc.addEphemeral("_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of part");
+    desc.addEphemeral("_part_uuid", std::make_shared<DataTypeUUID>(), "Unique part identifier (if enabled MergeTree setting assign_part_uuids)");
+    desc.addEphemeral("_partition_id", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of partition");
+    desc.addEphemeral("_part_data_version", std::make_shared<DataTypeUInt64>(), "Data version of part (either min block number or mutation version)");
+
+    if (metadata.hasPartitionKey())
+    {
+        auto partition_types = metadata.partition_key.sample_block.getDataTypes();
+        desc.addEphemeral("_partition_value", std::make_shared<DataTypeTuple>(std::move(partition_types)), "Value (a tuple) of a PARTITION BY expression");
+    }
+
+    return desc;
+}
+
 StoragePolicyPtr MergeTreeData::getStoragePolicy() const
 {
     auto settings = getSettings();
@@ -895,6 +913,30 @@ void MergeTreeData::checkProperties(
         }
     }
 
+    String projection_with_parent_part_offset;
+    for (const auto & projection : old_metadata.projections)
+    {
+        if (projection.with_parent_part_offset)
+        {
+            projection_with_parent_part_offset = projection.name;
+            break;
+        }
+    }
+
+    if (!projection_with_parent_part_offset.empty())
+    {
+        for (const auto & col : new_metadata.columns)
+        {
+            if (col.name == "_part_offset" || col.name == "_part_index" || col.name == "_parent_part_offset")
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot add column `{}` because normal projection {} references its parent `_part_offset` column. "
+                    "Columns named `_part_offset`, `_part_index`, or `_parent_part_offset` are not allowed in this case",
+                    col.name,
+                    projection_with_parent_part_offset);
+        }
+    }
+
     for (const auto & col : new_metadata.columns)
     {
         if (!col.statistics.empty())
@@ -920,6 +962,7 @@ void MergeTreeData::setProperties(
         local_context);
     setInMemoryMetadata(new_metadata);
     setVirtuals(createVirtuals(new_metadata));
+    projection_virtuals.set(std::make_unique<VirtualColumnsDescription>(createProjectionVirtuals(new_metadata)));
 }
 
 namespace
@@ -1341,14 +1384,10 @@ Block MergeTreeData::getBlockWithVirtualsForFilter(
 {
     auto block = getHeaderWithVirtualsForFilter(metadata);
 
-    for (const auto & part_or_projection : parts)
+    for (const auto & part : parts)
     {
-        if (ignore_empty && part_or_projection->isEmpty())
+        if (ignore_empty && part->isEmpty())
             continue;
-
-        const auto * part = part_or_projection->isProjectionPart()
-            ? part_or_projection->getParentPart()
-            : part_or_projection.get();
 
         for (auto & column : block)
         {
@@ -1433,7 +1472,7 @@ Int64 MergeTreeData::getMaxBlockNumber() const
 
 void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const String & name, const DiskPtr & disk)
 {
-    auto & current_ptr = root_by_partition[info.partition_id];
+    auto & current_ptr = root_by_partition[info.getPartitionId()];
     if (!current_ptr)
         current_ptr = std::make_shared<Node>(MergeTreePartInfo{}, "", disk);
 
@@ -3017,7 +3056,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
         for (const auto & part : parts)
         {
-            part_log_elem.partition_id = part->info.partition_id;
+            part_log_elem.partition_id = part->info.getPartitionId();
             part_log_elem.partition = part->partition.serializeToString(part->getMetadataSnapshot());
             part_log_elem.part_name = part->name;
             part_log_elem.bytes_compressed_on_disk = part->getBytesOnDisk();
@@ -4410,7 +4449,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
 
 void MergeTreeData::checkPartPartition(MutableDataPartPtr & part, DataPartsLock & lock) const
 {
-    if (DataPartPtr existing_part_in_partition = getAnyPartInPartition(part->info.partition_id, lock))
+    if (DataPartPtr existing_part_in_partition = getAnyPartInPartition(part->info.getPartitionId(), lock))
     {
         if (part->partition.value != existing_part_in_partition->partition.value)
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Partition value mismatch between two parts with the same partition ID. "
@@ -4700,11 +4739,11 @@ DataPartsVector MergeTreeData::grabActivePartsToRemoveForDropRange(
     if (drop_range.min_block > drop_range.max_block)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid drop range: {}", drop_range.getPartNameForLogs());
 
-    auto partition_range = getVisibleDataPartsVectorInPartition(txn, drop_range.partition_id, &lock);
+    auto partition_range = getVisibleDataPartsVectorInPartition(txn, drop_range.getPartitionId(), &lock);
 
     for (const DataPartPtr & part : partition_range)
     {
-        if (part->info.partition_id != drop_range.partition_id)
+        if (part->info.getPartitionId() != drop_range.getPartitionId())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected partition_id of part {}. This is a bug.", part->name);
 
         /// It's a DROP PART and it's already executed by fetching some covering part
@@ -4782,7 +4821,7 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
     /// We a going to remove active parts covered by drop_range without timeout.
     /// Let's also reset timeout for inactive parts
     /// and add these parts to list of parts to remove from ZooKeeper
-    auto inactive_parts_to_remove_immediately = getDataPartsVectorInPartitionForInternalUsage({DataPartState::Outdated, DataPartState::Deleting}, drop_range.partition_id, &lock);
+    auto inactive_parts_to_remove_immediately = getDataPartsVectorInPartitionForInternalUsage({DataPartState::Outdated, DataPartState::Deleting}, drop_range.getPartitionId(), &lock);
 
     /// FIXME refactor removePartsFromWorkingSet(...), do not remove parts twice
     removePartsFromWorkingSet(txn, parts_to_remove, clear_without_timeout, lock);
@@ -5016,9 +5055,9 @@ std::pair<size_t, size_t> MergeTreeData::getMaxPartsCountAndSizeForPartitionWith
 
     for (const auto & part : getDataPartsStateRange(state))
     {
-        if (!cur_partition_id || part->info.partition_id != *cur_partition_id)
+        if (!cur_partition_id || part->info.getPartitionId() != *cur_partition_id)
         {
-            cur_partition_id = &part->info.partition_id;
+            cur_partition_id = &part->info.getPartitionId();
             cur_parts_count = 0;
             cur_parts_size = 0;
         }
@@ -6208,7 +6247,7 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
                             String{data_path_in_backup_fs / part_name});
         }
 
-        if (partition_ids && !partition_ids->contains(part_info->partition_id))
+        if (partition_ids && !partition_ids->contains(part_info->getPartitionId()))
             continue;
 
         restorer.addDataRestoreTask(
@@ -6698,11 +6737,11 @@ std::unordered_set<String> MergeTreeData::getAllPartitionIds() const
     std::string_view prev_id;
     for (const auto & part : getDataPartsStateRange(DataPartState::Active))
     {
-        if (prev_id == part->info.partition_id)
+        if (prev_id == part->info.getPartitionId())
             continue;
 
-        res.insert(part->info.partition_id);
-        prev_id = part->info.partition_id;
+        res.insert(part->info.getPartitionId());
+        prev_id = part->info.getPartitionId();
     }
     return res;
 }
@@ -6907,7 +6946,7 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr
             partition_id = getPartitionIDFromQuery(partition, local_context);
         DetachedPartsInfo detached_parts = getDetachedParts();
         for (const auto & part_info : detached_parts)
-            if (part_info.valid_name && (all || part_info.partition_id == partition_id)
+            if (part_info.valid_name && (all || part_info.getPartitionId() == partition_id)
                 && part_info.prefix != "attaching" && part_info.prefix != "deleting")
                 renamed_parts.addPart(part_info.dir_name, "deleting_" + part_info.dir_name, part_info.disk);
     }
@@ -6963,7 +7002,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         auto detached_parts = getDetachedParts();
         std::erase_if(detached_parts, [&partition_id](const DetachedPartInfo & part_info)
         {
-            return !part_info.valid_name || !part_info.prefix.empty() || (!partition_id.empty() && part_info.partition_id != partition_id);
+            return !part_info.valid_name || !part_info.prefix.empty() || (!partition_id.empty() && part_info.getPartitionId() != partition_id);
         });
 
         for (const auto & part_info : detached_parts)
@@ -7273,7 +7312,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getAnyPartInPartition(
 {
     auto it = data_parts_by_state_and_info.lower_bound(DataPartStateAndPartitionID{DataPartState::Active, partition_id});
 
-    if (it != data_parts_by_state_and_info.end() && (*it)->getState() == DataPartState::Active && (*it)->info.partition_id == partition_id)
+    if (it != data_parts_by_state_and_info.end() && (*it)->getState() == DataPartState::Active && (*it)->info.getPartitionId() == partition_id)
         return *it;
 
     return nullptr;
@@ -7549,8 +7588,6 @@ bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(
     return false;
 }
 
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
-
 Block MergeTreeData::getMinMaxCountProjectionBlock(
     const StorageMetadataPtr & metadata_snapshot,
     const Names & required_columns,
@@ -7658,7 +7695,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
 
         if (max_block_numbers_to_read)
         {
-            auto blocks_iterator = max_block_numbers_to_read->find(part->info.partition_id);
+            auto blocks_iterator = max_block_numbers_to_read->find(part->info.getPartitionId());
             if (blocks_iterator == max_block_numbers_to_read->end() || part->info.max_block > blocks_iterator->second)
                 continue;
         }
@@ -8307,7 +8344,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     {
         if (local_context->isCurrentQueryKilled())
             return result;
-        if (!matcher(part->info.partition_id))
+        if (!matcher(part->info.getPartitionId()))
             continue;
 
         LOG_DEBUG(log, "Freezing part {} snapshot will be placed at {}", part->name, backup_path);
@@ -8340,7 +8377,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
         part->is_frozen.store(true, std::memory_order_relaxed);
         result.push_back(PartitionCommandResultInfo{
             .command_type = "FREEZE PART",
-            .partition_id = part->info.partition_id,
+            .partition_id = part->info.getPartitionId(),
             .part_name = part->name,
             .backup_path = new_storage->getFullRootPath(),
             .part_backup_path = new_storage->getFullPath(),
@@ -8453,7 +8490,7 @@ try
     part_log_elem.database_name = table_id.database_name;
     part_log_elem.table_name = table_id.table_name;
     part_log_elem.table_uuid = table_id.uuid;
-    part_log_elem.partition_id = MergeTreePartInfo::fromPartName(new_part_name, format_version).partition_id;
+    part_log_elem.partition_id = MergeTreePartInfo::fromPartName(new_part_name, format_version).getPartitionId();
 
     if (result_part)
         part_log_elem.partition = result_part->partition.serializeToString(result_part->getMetadataSnapshot());
@@ -8968,7 +9005,7 @@ ReservationPtr MergeTreeData::balancedReservation(
 
             for (const auto & part : currently_submerging_big_parts)
             {
-                if (part_info.partition_id == part->info.partition_id)
+                if (part_info.getPartitionId() == part->info.getPartitionId())
                     submerging_big_parts_from_partition.insert(part->name);
             }
 
@@ -8995,7 +9032,7 @@ ReservationPtr MergeTreeData::balancedReservation(
                 for (const auto & part : getDataPartsStateRange(MergeTreeData::DataPartState::Active))
                 {
                     if (part->getBytesOnDisk() >= min_bytes_to_rebalance_partition_over_jbod
-                        && part_info.partition_id == part->info.partition_id)
+                        && part_info.getPartitionId() == part->info.getPartitionId())
                     {
                         auto name = part->getDataPartStorage().getDiskName();
                         auto it = disk_occupation.find(name);
@@ -9024,7 +9061,7 @@ ReservationPtr MergeTreeData::balancedReservation(
             {
                 // It's possible that the emerging big parts are committed and get added twice. Thus a set is used to deduplicate.
                 if (committed_big_parts_from_partition.find(name) == committed_big_parts_from_partition.end()
-                    && part_info.partition_id == emerging_part.partition_id)
+                    && part_info.getPartitionId() == emerging_part.partition_id)
                 {
                     auto it = disk_occupation.find(emerging_part.disk_name);
                     if (it != disk_occupation.end())
@@ -9081,7 +9118,7 @@ ReservationPtr MergeTreeData::balancedReservation(
                 if (reserved_space)
                 {
                     currently_emerging_big_parts.emplace(
-                        part_name, EmergingPartInfo{reserved_space->getDisk(0)->getName(), part_info.partition_id, part_size});
+                        part_name, EmergingPartInfo{reserved_space->getDisk(0)->getName(), part_info.getPartitionId(), part_size});
 
                     for (const auto & part : covered_parts)
                     {
