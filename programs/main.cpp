@@ -267,7 +267,11 @@ int main(int argc_, char ** argv_)
     ///     clickhouse /tmp/repro --enable-analyzer
     ///
     std::error_code ec;
-    if (main_func == printHelp && !argv.empty())
+
+    if (
+    main_func == printHelp && !argv.empty() && (std::string_view(argv[0]) == "ch" ||
+    std::string_view(argv[0]) == "clickhouse" || endsWith(argv[0], "/ch") ||
+    endsWith(argv[0], "/clickhouse")))
     {
         for (int i = 1; i < argc_; ++i)
         {
