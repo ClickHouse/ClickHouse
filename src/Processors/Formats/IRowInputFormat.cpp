@@ -132,7 +132,8 @@ Chunk IRowInputFormat::read()
 
         RowReadExtension info;
         bool continue_reading = true;
-        for (size_t rows = 0; (rows < params.max_block_size || num_rows == 0) && continue_reading; ++rows)
+        size_t total_bytes = 0;
+        for (size_t rows = 0; ((rows < params.max_block_size && (!params.max_block_size_bytes || total_bytes < params.max_block_size_bytes)) || num_rows == 0) && continue_reading; ++rows)
         {
             try
             {
@@ -166,6 +167,12 @@ Chunk IRowInputFormat::read()
                 /// The case when there is no columns. Just count rows.
                 if (columns.empty())
                     ++num_rows;
+
+                if (params.max_block_size_bytes)
+                {
+                    for (const auto & column : columns)
+                        total_bytes += column->byteSizeAt(column->size() - 1);
+                }
             }
             catch (Exception & e)
             {
