@@ -144,16 +144,20 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     {
         auto caches = FileCacheFactory::instance().getAll();
         size_t total_bytes = 0;
+        size_t max_bytes = 0;
         size_t total_files = 0;
 
         for (const auto & [_, cache_data] : caches)
         {
             total_bytes += cache_data->cache->getUsedCacheSize();
+            max_bytes += cache_data->cache->getMaxCacheSize();
             total_files += cache_data->cache->getFileSegmentsNum();
         }
 
         new_values["FilesystemCacheBytes"] = { total_bytes,
             "Total bytes in the `cache` virtual filesystem. This cache is hold on disk." };
+        new_values["FilesystemCacheCapacity"] = { max_bytes,
+            "Total capacity in the `cache` virtual filesystem. This cache is hold on disk." };
         new_values["FilesystemCacheFiles"] = { total_files,
             "Total number of cached file segments in the `cache` virtual filesystem. This cache is hold on disk." };
     }

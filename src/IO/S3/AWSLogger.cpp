@@ -23,8 +23,8 @@ const std::pair<DB::LogsLevel, Poco::Message::Priority> & convertLogLevel(Aws::U
     {
         {Aws::Utils::Logging::LogLevel::Off, {DB::LogsLevel::none, Poco::Message::PRIO_INFORMATION}},
         {Aws::Utils::Logging::LogLevel::Fatal, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
-        {Aws::Utils::Logging::LogLevel::Error, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
-        {Aws::Utils::Logging::LogLevel::Warn, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
+        {Aws::Utils::Logging::LogLevel::Error, {DB::LogsLevel::debug, Poco::Message::PRIO_DEBUG}},
+        {Aws::Utils::Logging::LogLevel::Warn, {DB::LogsLevel::debug, Poco::Message::PRIO_DEBUG}},
         {Aws::Utils::Logging::LogLevel::Info, {DB::LogsLevel::debug, Poco::Message::PRIO_DEBUG}},
         {Aws::Utils::Logging::LogLevel::Debug, {DB::LogsLevel::debug, Poco::Message::PRIO_TEST}},
         {Aws::Utils::Logging::LogLevel::Trace, {DB::LogsLevel::trace, Poco::Message::PRIO_TEST}},

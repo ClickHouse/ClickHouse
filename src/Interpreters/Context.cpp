@@ -241,6 +241,8 @@ namespace Setting
     extern const SettingsUInt64 prefetch_buffer_size;
     extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
     extern const SettingsBool read_from_page_cache_if_exists_otherwise_bypass_cache;
+    extern const SettingsUInt64 page_cache_block_size;
+    extern const SettingsUInt64 page_cache_lookahead_blocks;
     extern const SettingsInt64 read_priority;
     extern const SettingsUInt64 restore_threads;
     extern const SettingsString remote_filesystem_read_method;
@@ -1038,6 +1040,7 @@ ContextData::ContextData(const ContextData &o) :
     parallel_replicas_group_uuid(o.parallel_replicas_group_uuid),
     is_under_restore(o.is_under_restore),
     client_protocol_version(o.client_protocol_version),
+    partition_id_to_max_block(o.partition_id_to_max_block),
     query_access_info(std::make_shared<QueryAccessInfo>(*o.query_access_info)),
     query_factories_info(o.query_factories_info),
     query_privileges_info(o.query_privileges_info),
@@ -3349,8 +3352,7 @@ void Context::clearUncompressedCache() const
         cache->clear();
 }
 
-void Context::setPageCache(
-    size_t default_block_size, size_t default_lookahead_blocks, std::chrono::milliseconds history_window,
+void Context::setPageCache(std::chrono::milliseconds history_window,
     const String & cache_policy, double size_ratio, size_t min_size_in_bytes, size_t max_size_in_bytes,
     double free_memory_ratio, size_t num_shards)
 {
@@ -3360,7 +3362,7 @@ void Context::setPageCache(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Page cache has been already created.");
 
     shared->page_cache = std::make_shared<PageCache>(
-        default_block_size, default_lookahead_blocks, history_window, cache_policy, size_ratio,
+        history_window, cache_policy, size_ratio,
         min_size_in_bytes, max_size_in_bytes, free_memory_ratio, num_shards);
 }
 
@@ -6283,6 +6285,8 @@ ReadSettings Context::getReadSettings() const
     res.use_page_cache_with_distributed_cache = settings_ref[Setting::use_page_cache_with_distributed_cache];
     res.read_from_page_cache_if_exists_otherwise_bypass_cache = settings_ref[Setting::read_from_page_cache_if_exists_otherwise_bypass_cache];
     res.page_cache_inject_eviction = settings_ref[Setting::page_cache_inject_eviction];
+    res.page_cache_block_size = settings_ref[Setting::page_cache_block_size];
+    res.page_cache_lookahead_blocks = settings_ref[Setting::page_cache_lookahead_blocks];
 
     res.remote_read_min_bytes_for_seek = getSettingsRef()[Setting::remote_read_min_bytes_for_seek];
 
@@ -6442,6 +6446,16 @@ UInt64 Context::getClientProtocolVersion() const
 void Context::setClientProtocolVersion(UInt64 version)
 {
     client_protocol_version = version;
+}
+
+void Context::setPartitionIdToMaxBlock(PartitionIdToMaxBlockPtr partitions)
+{
+    partition_id_to_max_block = std::move(partitions);
+}
+
+PartitionIdToMaxBlockPtr Context::getPartitionIdToMaxBlock() const
+{
+    return partition_id_to_max_block;
 }
 
 const ServerSettings & Context::getServerSettings() const

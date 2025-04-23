@@ -243,6 +243,8 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateAndGetCurrentSchema is not supported by storage {}", getEngineName());
     }
 
+    virtual void modifyFormatSettings(FormatSettings &) const {}
+
     virtual ReadFromFormatInfo prepareReadingFromFormat(
         ObjectStoragePtr object_storage,
         const Strings & requested_columns,
