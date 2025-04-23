@@ -4,8 +4,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/stringBytes.h>
 #include <Functions/IFunction.h>
+#include <Functions/stringBytes.h>
 #include <Common/BitHelpers.h>
 #include <Common/PODArray.h>
 
@@ -13,43 +13,6 @@
 
 namespace DB
 {
-
-class ByteCounters
-{
-private:
-    static constexpr size_t COUNTERS_SIZE = 256;
-    UInt32 counters[COUNTERS_SIZE] = {0};
-    UInt32 current_generation = 0;
-    UInt32 generation_mask = 0x80000000;
-    size_t total_count = 0;
-
-public:
-    void add(UInt8 byte)
-    {
-        UInt32 & counter = counters[byte];
-        if ((counter & generation_mask) != current_generation)
-            counter = current_generation;
-        ++counter;
-        ++total_count;
-    }
-
-    void nextString()
-    {
-        current_generation = current_generation ? 0 : generation_mask;
-        total_count = 0;
-    }
-
-    UInt32 get(UInt8 byte) const
-    {
-        UInt32 counter = counters[byte];
-        if ((counter & generation_mask) != current_generation)
-            return 0;
-        return counter & ~generation_mask;
-    }
-
-    size_t getTotalCount() const { return total_count; }
-};
-
 
 struct StringBytesEntropyImpl
 {
@@ -60,21 +23,20 @@ struct StringBytesEntropyImpl
         if (size == 0)
             return 0;
 
-        ByteCounters counters;
+        std::array<UInt32, 256> counters{};
         const UInt8 * end = data + size;
 
         for (; data < end; ++data)
-            counters.add(*data);
+            counters[*data]++;
 
         Float64 entropy = 0.0;
-        size_t total = counters.getTotalCount();
 
         for (size_t byte = 0; byte < 256; ++byte)
         {
-            UInt32 count = counters.get(byte);
+            UInt32 count = counters[byte];
             if (count > 0)
             {
-                Float64 p = static_cast<Float64>(count) / total;
+                Float64 p = static_cast<Float64>(count) / size;
                 entropy -= p * std::log2(p);
             }
         }
