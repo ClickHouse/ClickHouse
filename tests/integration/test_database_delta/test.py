@@ -229,5 +229,5 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
     assert complex_data[3] == "{7:'v7',5:'v5'}"
     assert complex_data[4] == "(34,'hello')"
 
-    if use_delta_kernel:
+    if use_delta_kernel == "1":
         assert node1.contains_in_log(f"DeltaLakeMetadata: Initializing snapshot")
