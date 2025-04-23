@@ -14,8 +14,8 @@ QueryPlanResourceHolder & QueryPlanResourceHolder::append(QueryPlanResourceHolde
                                rhs.interpreter_context.begin(), rhs.interpreter_context.end());
     query_id_holders.insert(query_id_holders.end(), rhs.query_id_holders.begin(), rhs.query_id_holders.end());
 
-    if (insert_dependencies_holder)
-        chassert(!rhs.insert_dependencies_holder);
+    if (insert_dependencies_holder && rhs.insert_dependencies_holder)
+        chassert(insert_dependencies_holder == rhs.insert_dependencies_holder);
 
     insert_dependencies_holder = std::move(rhs.insert_dependencies_holder);
 

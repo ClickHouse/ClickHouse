@@ -1137,32 +1137,18 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDPrivate view_id) const
         adding_missing_defaults_dag.getRequiredColumnsNames(),
         insert_context);
 
-    auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(adding_missing_defaults_dag)));
-
-    /// Actually we don't know structure of input blocks from query/table,
-    /// because some clients break insertion protocol (columns != header)
-    result.addSink(std::make_shared<ConvertingTransform>(input_headers.at(view_id), adding_missing_defaults_actions));
+    auto actions = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(adding_missing_defaults_dag));
 
     auto converting = ActionsDAG::makeConvertingActions(
-        result.getOutputHeader().getColumnsWithTypeAndName(),
+        actions.getResultColumns(),
         output_header.getColumnsWithTypeAndName(),
         ActionsDAG::MatchColumnsMode::Name);
 
-    auto convert_action = std::make_shared<ExpressionActions>(std::move(converting));
+    actions = ActionsDAG::merge(std::move(actions), std::move(converting));
 
-    inner_metadata->check(result.getOutputHeader().getColumnsWithTypeAndName());
-
-    /// Checking constraints. It must be done after calculation of all defaults, so we can check them on calculated columns.
-    /// Add implicit sign constraint for Collapsing and VersionedCollapsing tables.
-    auto constraints = buildConstraints(inner_metadata, storages.at(inner_table_id));
-    if (!constraints.empty())
-        result.addSink(std::make_shared<CheckConstraintsTransform>(inner_table_id, output_header, constraints, insert_context));
-
-    /// Add transform to check if the sizes of arrays - elements of nested data structures doesn't match.
-    /// We have to make this assertion before writing to table, because storage engine may assume that they have equal sizes.
-    /// NOTE It'd better to do this check in serialization of nested structures (in place when this assumption is required),
-    /// but currently we don't have methods for serialization of nested structures "as a whole".
-    result.addSink(std::make_shared<NestedElementsValidationTransform>(output_header));
+    /// Actually we don't know structure of input blocks from query/table,
+    /// because some clients break insertion protocol (columns != header)
+    result.addSink(std::make_shared<ConvertingTransform>(input_headers.at(view_id), std::make_shared<ExpressionActions>(std::move(actions))));
 
     return result;
 }
@@ -1170,13 +1156,27 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDPrivate view_id) const
 
 Chain InsertDependenciesBuilder::createSink(StorageIDPrivate view_id) const
 {
-    Chain result;
 
     const auto & inner_table_id = inner_tables.at(view_id);
     const auto & inner_storage = storages.at(inner_table_id);
+    const auto & inner_metadata = metadata_snapshots.at(inner_table_id);
     const auto & insert_context = insert_contexts.at(view_id);
+    const auto & header = output_headers.at(view_id);
 
+    inner_metadata->check(header.getColumnsWithTypeAndName());
     IInterpreter::checkStorageSupportsTransactionsIfNeeded(inner_storage, insert_context);
+
+    Chain result;
+
+    /// Add transform to check if the sizes of arrays - elements of nested data structures doesn't match.
+    /// We have to make this assertion before writing to table, because storage engine may assume that they have equal sizes.
+    /// NOTE It'd better to do this check in serialization of nested structures (in place when this assumption is required),
+    /// but currently we don't have methods for serialization of nested structures "as a whole".
+    result.addSink(std::make_shared<NestedElementsValidationTransform>(header));
+
+    auto constraints = buildConstraints(inner_metadata, storages.at(inner_table_id));
+    if (!constraints.empty())
+        result.addSink(std::make_shared<CheckConstraintsTransform>(inner_table_id, header, constraints, insert_context));
 
     if (auto * live_view = dynamic_cast<StorageLiveView *>(inner_storage.get()))
     {

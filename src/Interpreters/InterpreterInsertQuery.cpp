@@ -13,13 +13,11 @@
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
-#include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/processColumnTransformers.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTIdentifier.h>
