@@ -1,6 +1,7 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Processors/Port.h>
+#include "Processors/Formats/Impl/JSONEachRowRowOutputFormat.h"
 
 
 namespace DB
@@ -95,5 +96,98 @@ void IRowOutputFormat::writeTotals(const DB::Columns & columns, size_t row_num)
 {
     write(columns, row_num);
 }
+
+
+class SSEFormat : public IOutputFormat
+{
+public:
+    SSEFormat(WriteBuffer & out_, const Block & header_)
+        : IOutputFormat(header_, out_) {}
+
+    String getName() const override { return "SSE"; }
+
+    void consume(Chunk chunk) override
+    {
+        if (!chunk)
+            return;
+
+        WriteBufferFromOwnString json_buffer;
+        JSONEachRowRowOutputFormat json_format(json_buffer, getPort(IOutputFormat::PortKind::Main).getHeader(), {});
+        json_format.consume(std::move(chunk));
+        json_format.finalize();
+
+        out.write("data: ", 6);
+        out.write(json_buffer.str().data(), json_buffer.str().size());
+        out.write("\n\n", 2);
+        out.next();
+    }
+
+    void finalizeImpl() override 
+    {
+        out.write("event: end\n", 11);
+        out.write("data: {}\n\n", 10);
+        out.next();
+    }
+
+    std::string getContentType() const override
+    {
+        return "text/event-stream";
+    }
+
+    void flushImpl() override
+    {
+        out.next();
+    }
+
+    void resetFormatterImpl() override
+    {
+        out.write("event: reset\n", 12);
+        out.write("data: {}\n\n", 10);
+        out.next();
+    }
+
+    void setRowsBeforeLimit(size_t rows) override
+    {
+        WriteBufferFromOwnString json_buffer;
+        json_buffer.write("{\"rows_before_limit\":", 20);
+        writeIntText(rows, json_buffer);
+        json_buffer.write("}", 1);
+        json_buffer.finalize();
+
+        out.write("event: limit\n", 12);
+        out.write("data: ", 6);
+        out.write(json_buffer.str().data(), json_buffer.str().size());
+        out.write("\n\n", 2);
+        out.next();
+    }
+
+    void onProgress(const Progress & progress) override
+    {
+        WriteBufferFromOwnString json_buffer;
+        progress.writeJSON(json_buffer);
+        json_buffer.finalize();
+
+        out.write("event: progress\n", 15);
+        out.write("data: ", 6);
+        out.write(json_buffer.str().data(), json_buffer.str().size());
+        out.write("\n\n", 2);
+        out.next();
+    }
+
+    void setException(const String & message) override
+    {
+        WriteBufferFromOwnString json_buffer;
+        json_buffer.write(R"({"error":")", 10);
+        json_buffer.write(message.data(), message.size());
+        json_buffer.write("\"}", 2);
+        json_buffer.finalize();
+
+        out.write("event: error\n", 12);
+        out.write("data: ", 6);
+        out.write(json_buffer.str().data(), json_buffer.str().size());
+        out.write("\n\n", 2);
+        out.next();
+    }
+};
 
 }
