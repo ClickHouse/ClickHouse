@@ -57,6 +57,7 @@ public:
     bool nestedColumnIsNullable() const override { return is_nullable; }
     void nestedToNullable() override;
     void nestedRemoveNullable() override;
+    bool nestedCanBeInsideNullable() const override { return getNestedColumn()->canBeInsideNullable(); }
 
     size_t uniqueInsert(const Field & x) override;
     bool tryUniqueInsert(const Field & x, size_t & index) override;
@@ -71,6 +72,8 @@ public:
     size_t getNullValueIndex() const override;
     size_t getNestedTypeDefaultValueIndex() const override { return is_nullable ? 1 : 0; }
     bool canContainNulls() const override { return is_nullable; }
+
+    bool isCollationSupported() const override { return getNestedColumn()->isCollationSupported(); }
 
     Field operator[](size_t n) const override { return (*getNestedColumn())[n]; }
     void get(size_t n, Field & res) const override { getNestedColumn()->get(n, res); }

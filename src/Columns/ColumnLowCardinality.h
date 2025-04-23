@@ -6,7 +6,6 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
-
 namespace DB
 {
 
@@ -46,7 +45,7 @@ public:
         return Base::create(std::move(column_unique), std::move(indexes), is_shared);
     }
 
-    std::string getName() const override { return "LowCardinality(" + getDictionary().getNestedColumn()->getName() + ")"; }
+    std::string getName() const override { return "LowCardinality(" + getDictionary().getName() + ")"; }
     const char * getFamilyName() const override { return "LowCardinality"; }
     TypeIndex getDataType() const override { return TypeIndex::LowCardinality; }
 
@@ -270,8 +269,8 @@ public:
      * Checks if the dictionary column is Nullable(T).
      * So LC(Nullable(T)) would return true, LC(U) -- false.
      */
-    bool nestedIsNullable() const { return isColumnNullable(*dictionary.getColumnUnique().getNestedColumn()); }
-    bool nestedCanBeInsideNullable() const { return dictionary.getColumnUnique().getNestedColumn()->canBeInsideNullable(); }
+    bool nestedIsNullable() const { return dictionary.getColumnUnique().nestedColumnIsNullable(); }
+    bool nestedCanBeInsideNullable() const { return dictionary.getColumnUnique().nestedCanBeInsideNullable(); }
     void nestedToNullable() { dictionary.getColumnUnique().nestedToNullable(); }
     void nestedRemoveNullable() { dictionary.getColumnUnique().nestedRemoveNullable(); }
     MutableColumnPtr cloneNullable() const;

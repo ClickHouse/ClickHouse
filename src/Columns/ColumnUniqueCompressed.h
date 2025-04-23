@@ -46,6 +46,9 @@ public:
     bool nestedColumnIsNullable() const override { return is_nullable; }
     void nestedToNullable() override { is_nullable = true; }
     void nestedRemoveNullable() override { is_nullable = false; }
+    bool nestedCanBeInsideNullable() const override { return true; }
+
+    bool isCollationSupported() const override { return true; }
 
     size_t uniqueInsert(const Field & x) override;
     bool tryUniqueInsert(const Field & x, size_t & index) override;
