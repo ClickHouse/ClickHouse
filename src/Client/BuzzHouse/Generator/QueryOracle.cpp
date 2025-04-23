@@ -246,7 +246,7 @@ void QueryOracle::generateExportQuery(
     if (!can_test_query_success && rg.nextSmallNumber() < 3)
     {
         /// Sometimes generate a not matching structure
-        gen.addRandomRelation(rg, std::nullopt, gen.entries.size(), true, expr);
+        gen.addRandomRelation(rg, std::nullopt, gen.entries.size(), false, expr);
     }
     else
     {
@@ -260,7 +260,7 @@ void QueryOracle::generateExportQuery(
                 first ? "" : ", ",
                 entry.getBottomName(),
                 entry.path.size() > 1 ? "Array(" : "",
-                entry.getBottomType()->typeName(true),
+                entry.getBottomType()->typeName(false),
                 entry.path.size() > 1 ? ")" : "",
                 (entry.path.size() == 1 && entry.nullable.has_value()) ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
             first = false;

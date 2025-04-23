@@ -208,27 +208,21 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
             }
         }
     }
+    else if (noption < 301)
+    {
+        const SQLType * tp;
+
+        std::tie(tp, std::ignore) = randomDateType(rg, std::numeric_limits<uint32_t>::max());
+        lv->set_no_quote_str(
+            fmt::format("'{}'{}{}", tp->appendRandomRawValue(rg, *this), complex ? "::" : "", complex ? tp->typeName(false) : ""));
+        delete tp;
+    }
     else if (noption < 401)
     {
-        String ret;
-
-        if (noption < 251)
-        {
-            ret = fmt::format("'{}'{}", rg.nextDate(), complex ? "::Date" : "");
-        }
-        else if (noption < 301)
-        {
-            ret = fmt::format("'{}'{}", rg.nextDate32(), complex ? "::Date32" : "");
-        }
-        else if (noption < 351)
-        {
-            ret = fmt::format("'{}'{}", rg.nextDateTime(rg.nextBool()), complex ? "::DateTime" : "");
-        }
-        else
-        {
-            ret = fmt::format("'{}'{}", rg.nextDateTime64(rg.nextBool()), complex ? "::DateTime64" : "");
-        }
-        lv->set_no_quote_str(ret);
+        const SQLType * tp = randomDateTimeType(rg, std::numeric_limits<uint32_t>::max(), nullptr);
+        lv->set_no_quote_str(
+            fmt::format("'{}'{}{}", tp->appendRandomRawValue(rg, *this), complex ? "::" : "", complex ? tp->typeName(false) : ""));
+        delete tp;
     }
     else if (noption < 501)
     {
@@ -244,27 +238,9 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
     }
     else if (complex && this->allow_not_deterministic && noption < 551)
     {
-        String ret;
-        const uint32_t nlen = rg.nextLargeNumber();
-        const uint32_t noption2 = rg.nextSmallNumber();
+        static const DB::Strings & funcs = {"randomString", "randomFixedString", "randomPrintableASCII", "randomStringUTF8"};
 
-        if (noption2 < 3)
-        {
-            ret = "randomString";
-        }
-        else if (noption2 < 5)
-        {
-            ret = "randomFixedString";
-        }
-        else if (noption2 < 7)
-        {
-            ret = "randomPrintableASCII";
-        }
-        else
-        {
-            ret = "randomStringUTF8";
-        }
-        lv->set_no_quote_str(fmt::format("{}({})", ret, nlen));
+        lv->set_no_quote_str(fmt::format("{}({})", rg.pickRandomly(funcs), rg.nextLargeNumber()));
     }
     else if (noption < 601)
     {
