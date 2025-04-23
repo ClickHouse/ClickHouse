@@ -459,6 +459,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     };
 
     if (glue_chunks
+        && port_kind == PortKind::Main
         && (!format_settings.pretty.row_numbers || row_number_width == prev_row_number_width)
         && name_widths == prev_chunk_name_widths)
     {
