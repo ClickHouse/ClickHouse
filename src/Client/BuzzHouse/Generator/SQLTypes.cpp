@@ -297,7 +297,7 @@ SQLType * DateTimeType::typeDeepCopy() const
 
 String DateTimeType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
 {
-    return "'" + (extended ? rg.nextDateTime64() : rg.nextDateTime()) + "'";
+    return "'" + (extended ? rg.nextDateTime64(rg.nextSmallNumber() < 8) : rg.nextDateTime(precision.has_value())) + "'";
 }
 
 String DecimalType::typeName(const bool) const
@@ -2011,11 +2011,11 @@ String strBuildJSONElement(RandomGenerator & rg)
             break;
         case 16:
             /// Datetime
-            ret = '"' + rg.nextDateTime() + '"';
+            ret = '"' + rg.nextDateTime(rg.nextSmallNumber() < 8) + '"';
             break;
         case 17:
             /// Datetime64
-            ret = '"' + rg.nextDateTime64() + '"';
+            ret = '"' + rg.nextDateTime64(rg.nextSmallNumber() < 8) + '"';
             break;
         case 18:
             /// UUID

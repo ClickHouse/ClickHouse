@@ -222,11 +222,11 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         }
         else if (noption < 351)
         {
-            ret = fmt::format("'{}'{}", rg.nextDateTime(), complex ? "::DateTime" : "");
+            ret = fmt::format("'{}'{}", rg.nextDateTime(rg.nextBool()), complex ? "::DateTime" : "");
         }
         else
         {
-            ret = fmt::format("'{}'{}", rg.nextDateTime64(), complex ? "::DateTime64" : "");
+            ret = fmt::format("'{}'{}", rg.nextDateTime64(rg.nextBool()), complex ? "::DateTime64" : "");
         }
         lv->set_no_quote_str(ret);
     }
