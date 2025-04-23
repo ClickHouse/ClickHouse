@@ -458,7 +458,7 @@ Possible values:
 See more details [here](/integrations/s3#inserting-data).
 )", 0) \
     DECLARE(Bool, s3_skip_empty_files, true, R"(
-Enables or disables skipping empty files in [S3](/some/nonsense/link.md) engine tables.
+Enables or disables skipping empty files in [S3](../../engines/table-engines/integrations/s3.md) engine tables.
 
 Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
