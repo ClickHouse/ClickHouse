@@ -140,7 +140,12 @@ def test_distributed_ddl_rubbish(started_cluster):
 
     # Ensure that data is visible via system.distributed_ddl_queue
     assert (
-        int(node1.query(f"SELECT count(1) FROM system.distributed_ddl_queue WHERE entry='{new_query}' AND IsNull(cluster)")) == 4
+        int(
+            node1.query(
+                f"SELECT count(1) FROM system.distributed_ddl_queue WHERE entry='{new_query}' AND IsNull(cluster)"
+            )
+        )
+        == 4
     )
 
     node1.query(
