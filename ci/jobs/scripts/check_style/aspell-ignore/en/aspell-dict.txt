@@ -33,7 +33,6 @@ Approximative
 ArrayJoin
 ArrowCompression
 ArrowStream
-aspell
 AsyncInsertCacheSize
 AsynchronousHeavyMetricsCalculationTimeSpent
 AsynchronousHeavyMetricsUpdateInterval
@@ -130,7 +129,6 @@ CMPLNT
 CMake
 CMakeLists
 CODECS
-codespell
 CORS
 COVID
 CPUFrequencyMHz
@@ -661,7 +659,6 @@ Multiqueries
 Multithreading
 Multiword
 MurmurHash
-mypy
 MySQLConnection
 MySQLDataTypesSupport
 MySQLDump
@@ -1352,6 +1349,7 @@ arrayZipUnaligned
 ascii
 asin
 asinh
+aspell
 assumeNotNull
 async
 asynch
@@ -1532,6 +1530,7 @@ codec
 codecs
 codepoint
 codepoints
+codespell
 collapsingmergetree
 combinator
 combinators
@@ -2006,6 +2005,7 @@ http
 https
 hudi
 hudiCluster
+hyperparameter
 hyperscan
 hypot
 hyvor
@@ -2322,6 +2322,7 @@ musqldump
 mutex
 mydb
 myfilter
+mypy
 mysql
 mysqldump
 mysqljs
