@@ -948,11 +948,10 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
     }
 
     Values selected_highest_value;
-    std::vector<std::vector<bool>> part_selected_ranges(ranges_in_data_parts.size(), std::vector<bool>());
+    std::vector<std::set<size_t>> part_selected_ranges(ranges_in_data_parts.size(), std::set<size_t>());
     for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
     {
         const auto & index_granularity = ranges_in_data_parts[part_index].data_part->index_granularity;
-        part_selected_ranges[part_index] = std::vector<bool>(index_granularity->getMarksCountWithoutFinal(), false);
         for (const auto & range : ranges_in_data_parts[part_index].ranges)
         {
             const bool value_is_defined_at_end_mark = range.end < index_granularity->getMarksCount();
@@ -962,14 +961,15 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
             }
 
             selected_ranges.push_back(
-                {index_access.getValue(part_index, range.begin), false, range, part_index, PartsRangesIterator::EventType::RangeStart, true});
+                {index_access.getValue(part_index, range.begin), false, range, part_index,
+                    PartsRangesIterator::EventType::RangeStart, true});
 
             const auto range_end_value = index_access.getValue(part_index, range.end);
             if (selected_highest_value.empty() || (compareValues(range_end_value, selected_highest_value, false) > 0))
                 selected_highest_value = range_end_value;
 
-            for (auto i = range.begin; i < range.end;i++)
-               part_selected_ranges[part_index][i] = true;
+            for (auto i = range.begin; i < range.end; ++i)
+               part_selected_ranges[part_index].insert(i);
         }
     }
 
@@ -980,13 +980,14 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
 
     const PartsRangesIterator selected_lower_bound = selected_ranges[0];
     /// highest value is important, range & part can be any
-    const PartsRangesIterator selected_upper_bound{selected_highest_value, false, MarkRange{0, 1}, 0, PartsRangesIterator::EventType::RangeStart, true};
+    const PartsRangesIterator selected_upper_bound{selected_highest_value, false, MarkRange{0, 1}, 0,
+                                                        PartsRangesIterator::EventType::RangeStart, true};
 
     for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
     {
         std::vector<PartsRangesIterator> part_candidate_ranges;
         const auto & index_granularity = ranges_in_data_parts[part_index].data_part->index_granularity;
-        for (size_t range_begin = 0; range_begin < part_selected_ranges[part_index].size(); range_begin++)
+        for (size_t range_begin = 0; range_begin < index_granularity->getMarksCountWithoutFinal(); range_begin++)
         {
             const bool value_is_defined_at_end_mark = ((range_begin + 1) < index_granularity->getMarksCount());
             if (!value_is_defined_at_end_mark)
@@ -994,16 +995,18 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
                 return skip_and_return_all_part_ranges();
             }
 
-            if (part_selected_ranges[part_index][range_begin])
+            if (part_selected_ranges[part_index].find(range_begin) != part_selected_ranges[part_index].end())
                 continue;
             MarkRange rejected_range(range_begin, range_begin + 1);
             part_candidate_ranges.push_back(
-                {index_access.getValue(part_index, rejected_range.begin), false, rejected_range, part_index, PartsRangesIterator::EventType::RangeStart, false});
+                {index_access.getValue(part_index, rejected_range.begin), false, rejected_range, part_index,
+                    PartsRangesIterator::EventType::RangeStart, false});
         }
         /// add the key of the final mark for setting the right upper bound of the part
-        MarkRange final_range(part_selected_ranges[part_index].size(), part_selected_ranges[part_index].size() + 1);
+        MarkRange final_range(index_granularity->getMarksCountWithoutFinal(), index_granularity->getMarksCountWithoutFinal() + 1);
         part_candidate_ranges.push_back(
-            {index_access.getValue(part_index, final_range.begin), false, final_range, part_index, PartsRangesIterator::EventType::RangeStart, false});
+            {index_access.getValue(part_index, final_range.begin), false, final_range, part_index,
+                PartsRangesIterator::EventType::RangeStart, false});
 
         /// Optimization - We don't add all ranges of the part, but only the ranges inside the feasible
         /// intersection boundary. We skip the entire part if intersection not possible.
