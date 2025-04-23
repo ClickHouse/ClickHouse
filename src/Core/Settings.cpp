@@ -6640,6 +6640,33 @@ Enable PRQL - an alternative to SQL.
     DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
 Trigger processor to spill data into external storage adpatively. grace join is supported at present.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_delta_kernel_rs, false, R"(
+Allow experimental delta-kernel-rs implementation.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, make_distributed_plan, false, R"(
+Make distributed query plan.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, execute_distributed_plan_locally, false, R"(
+Run all tasks of a distributed query plan locally. Useful for testing and debugging.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, default_shuffle_join_bucket_count, 8, R"(
+Default number of buckets for distributed shuffle-hash-join.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, default_reader_bucket_count, 8, R"(
+Default number of tasks for parallel reading in distributed query. Tasks are spread across between replicas.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, optimize_exchanges, false, R"(
+Removes unnecessary exchanges in distributed query plan. Disable it for debugging.
+)", EXPERIMENTAL) \
+    DECLARE(String, force_exchange_kind, "", R"(
+Force specified kind of Exchange operators between distributed query stages.
+
+Possible values:
+
+ - '' - do not force any kind of Exchange operators, let the optimizer choose,
+ - 'Persisted' - use temporary files in object storage,
+ - 'Streaming' - stream exchange data over network.
+)", EXPERIMENTAL) \
     \
     /** Experimental tsToGrid aggregate function. */ \
     DECLARE(Bool, allow_experimental_ts_to_grid_aggregate_function, false, R"(
