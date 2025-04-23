@@ -164,11 +164,6 @@ LoggerPtr KeyMetadata::logger() const
     return cache_metadata->log;
 }
 
-size_t KeyMetadata::getBlockSize() const
-{
-    return cache_metadata->getBlockSize();
-}
-
 size_t KeyMetadata::alignFileSize(size_t file_size) const
 {
     return cache_metadata->alignFileSize(file_size);
@@ -189,11 +184,6 @@ CacheMetadata::CacheMetadata(
     , log(getLogger("CacheMetadata"))
     , download_threads_num(background_download_threads_)
 {
-}
-
-size_t CacheMetadata::getBlockSize() const
-{
-    return path_stat.f_bsize;
 }
 
 size_t CacheMetadata::alignFileSize(size_t file_size) const
