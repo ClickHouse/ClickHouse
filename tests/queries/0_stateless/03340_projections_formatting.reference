@@ -1,4 +1,4 @@
-CREATE TABLE default.test
+CREATE TEMPORARY TABLE test
 (
     `user_id` UInt64,
     `item_id` UInt64,
@@ -11,8 +11,7 @@ CREATE TABLE default.test
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS index_granularity = 8192
-CREATE TABLE default.test
+CREATE TEMPORARY TABLE test
 (
     `user_id` UInt64,
     `item_id` UInt64,
@@ -31,8 +30,7 @@ CREATE TABLE default.test
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS index_granularity = 8192
-CREATE TABLE default.test
+CREATE TEMPORARY TABLE test
 (
     `user_id` UInt64,
     `item_id` UInt64,
@@ -44,8 +42,7 @@ CREATE TABLE default.test
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS index_granularity = 8192
-CREATE TABLE default.test
+CREATE TEMPORARY TABLE test
 (
     `user_id` UInt64,
     `item_id` UInt64,
@@ -59,8 +56,7 @@ CREATE TABLE default.test
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS index_granularity = 8192
-CREATE TABLE default.test
+CREATE TEMPORARY TABLE test
 (
     `user_id` UInt64,
     `item_id` UInt64,
@@ -74,8 +70,7 @@ CREATE TABLE default.test
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS index_granularity = 8192
-CREATE TABLE default.test
+CREATE TEMPORARY TABLE test
 (
     `user_id` UInt64,
     `item_id` UInt64,
@@ -87,8 +82,7 @@ CREATE TABLE default.test
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS index_granularity = 8192
-CREATE TABLE default.test
+CREATE TEMPORARY TABLE test
 (
     `user_id` UInt64,
     `item_id` UInt64,
@@ -104,4 +98,3 @@ CREATE TABLE default.test
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS index_granularity = 8192

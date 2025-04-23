@@ -1,4 +1,4 @@
-CREATE OR REPLACE TABLE test
+CREATE TEMPORARY TABLE test
 (
     `user_id` UInt64,
     `item_id` UInt64,
@@ -10,9 +10,10 @@ CREATE OR REPLACE TABLE test
     )
 )
 ENGINE = MergeTree ORDER BY ();
-SHOW CREATE test FORMAT LineAsString;
+SHOW CREATE TEMPORARY test FORMAT LineAsString;
+DROP TABLE test;
 
-CREATE OR REPLACE TABLE test
+CREATE TEMPORARY TABLE test
 (
     `user_id` UInt64,
     `item_id` UInt64,
@@ -24,9 +25,10 @@ CREATE OR REPLACE TABLE test
     )
 )
 ENGINE = MergeTree ORDER BY ();
-SHOW CREATE test FORMAT LineAsString;
+SHOW CREATE TEMPORARY test FORMAT LineAsString;
+DROP TABLE test;
 
-CREATE OR REPLACE TABLE test
+CREATE TEMPORARY TABLE test
 (
     `user_id` UInt64,
     `item_id` UInt64,
@@ -36,9 +38,10 @@ CREATE OR REPLACE TABLE test
     )
 )
 ENGINE = MergeTree ORDER BY ();
-SHOW CREATE test FORMAT LineAsString;
+SHOW CREATE TEMPORARY test FORMAT LineAsString;
+DROP TABLE test;
 
-CREATE OR REPLACE TABLE test
+CREATE TEMPORARY TABLE test
 (
     `user_id` UInt64,
     `item_id` UInt64,
@@ -48,9 +51,10 @@ CREATE OR REPLACE TABLE test
     )
 )
 ENGINE = MergeTree ORDER BY ();
-SHOW CREATE test FORMAT LineAsString;
+SHOW CREATE TEMPORARY test FORMAT LineAsString;
+DROP TABLE test;
 
-CREATE OR REPLACE TABLE test
+CREATE TEMPORARY TABLE test
 (
     `user_id` UInt64,
     `item_id` UInt64,
@@ -60,9 +64,10 @@ CREATE OR REPLACE TABLE test
     )
 )
 ENGINE = MergeTree ORDER BY ();
-SHOW CREATE test FORMAT LineAsString;
+SHOW CREATE TEMPORARY test FORMAT LineAsString;
+DROP TABLE test;
 
-CREATE OR REPLACE TABLE test
+CREATE TEMPORARY TABLE test
 (
     `user_id` UInt64,
     `item_id` UInt64,
@@ -72,8 +77,10 @@ CREATE OR REPLACE TABLE test
     )
 )
 ENGINE = MergeTree ORDER BY ();
-SHOW CREATE test FORMAT LineAsString;
-CREATE OR REPLACE TABLE test
+SHOW CREATE TEMPORARY test FORMAT LineAsString;
+DROP TABLE test;
+
+CREATE TEMPORARY TABLE test
 (
     `user_id` UInt64,
     `item_id` UInt64,
@@ -83,4 +90,5 @@ CREATE OR REPLACE TABLE test
     )
 )
 ENGINE = MergeTree ORDER BY ();
-SHOW CREATE test FORMAT LineAsString;
+SHOW CREATE TEMPORARY test FORMAT LineAsString;
+DROP TABLE test;
