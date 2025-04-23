@@ -22,5 +22,6 @@ select *, _part_offset + _part_starting_offset from test where _part_offset + _p
 
 -- from fuzzer
 select * from test prewhere 8 = (_part_offset + _part_starting_offset) where 8 = (_part_offset + _part_starting_offset) settings max_rows_to_read = 1;
+select * from test prewhere (8 = (_part_starting_offset * _part_offset)) AND 3 WHERE 8 = (_part_starting_offset + _part_offset);
 
 drop table test;

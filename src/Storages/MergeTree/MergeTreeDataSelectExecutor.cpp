@@ -537,16 +537,9 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(
     const auto * node2
         = &total_offset.addFunction(FunctionFactory::instance().get("plus", context), {part_starting_offset, part_offset}, {});
     auto matches = matchTrees({node1, node2}, *dag, false /* check_monotonicity */);
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> new_inputs;
-    for (const auto & [match, node] : matches)
-    {
-        if (node.node == node1 || node.node == node2)
-            new_inputs.emplace(match, node1); /// Always fold to node1 to avoid generating duplicate inputs
-    }
-
+    auto new_inputs = resolveMatchedInputs(matches, {node1, node2}, dag->getOutputs());
     if (new_inputs.empty())
         return;
-
     dag = ActionsDAG::foldActionsByProjection(new_inputs, dag->getOutputs());
 
     /// total_offset_condition is only valid if _part_offset and _part_starting_offset are used *together*.
