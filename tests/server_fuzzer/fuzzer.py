@@ -7,8 +7,8 @@ import sys
 
 sys.path.append('..')
 from integration.helpers.cluster import ClickHouseCluster
-from .generators import BuzzHouseGenerator
-from .properties import modify_server_settings_with_random_properties
+from generators import BuzzHouseGenerator
+from properties import modify_server_settings_with_random_properties
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-b", "--cbinary", type = pathlib.Path, help = 'Path to client binary')
