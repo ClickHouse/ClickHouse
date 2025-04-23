@@ -380,6 +380,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     const auto configuration = getConfiguration(storage_type);
 
     auto storage_settings = std::make_shared<StorageObjectStorageSettings>();
+    storage_settings->loadFromSettingsChanges(settings.allChanged());
+
     if (auto table_specific_properties = table_metadata.getDataLakeSpecificProperties();
         table_specific_properties.has_value())
     {
