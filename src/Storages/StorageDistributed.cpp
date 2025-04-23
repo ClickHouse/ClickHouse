@@ -538,11 +538,14 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 /// Will skip merging step in the initial server when the following conditions are met:
 /// 1. Sharding key columns should be a subset of expression columns.
 /// 2. Sharding key expression is a deterministic function of col1, ..., coln and expression key is injective functions of these col1, ..., coln.
-bool StorageDistributed::isShardingKeySuitsExpressionKey(const QueryTreeNodePtr & node, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const
+bool StorageDistributed::isShardingKeySuitsExpressionKey(
+    const QueryTreeNodePtr & node, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const
 {
-    ASTPtr node_ast = node->toAST({ .add_cast_for_constants = false, .fully_qualified_identifiers = false, .qualify_indentifiers_with_database = false })->clone();
+    ASTPtr node_ast
+        = node->toAST({.add_cast_for_constants = false, .fully_qualified_identifiers = false, .qualify_indentifiers_with_database = false})
+              ->clone();
     const auto & context = query_info.planner_context->getQueryContext();
-    const auto & syntax_result = TreeRewriter(context).analyze(node_ast, storage_snapshot->getAllColumnsDescription().getAllPhysical()); 
+    const auto & syntax_result = TreeRewriter(context).analyze(node_ast, storage_snapshot->getAllColumnsDescription().getAllPhysical());
     const auto & expression_action = ExpressionAnalyzer(node_ast, syntax_result, context).getActions(false);
     const auto & expression_dag = expression_action->getActionsDAG();
     if (expression_dag.hasArrayJoin() || expression_dag.hasStatefulFunctions() || expression_dag.hasNonDeterministic())
