@@ -12,13 +12,6 @@
 
 using namespace DB;
 
-namespace DB::ErrorCodes
-{
-
-extern const int LOGICAL_ERROR;
-
-}
-
 namespace
 {
 
@@ -27,7 +20,7 @@ struct Frame
     const ActionsDAG::Node * node = nullptr;
     size_t next_child = 0;
 };
-  
+
 /// 0. Partition key columns should be a subset of group by key columns.
 /// 1. Optimization is applicable if partition by expression is a deterministic function of col1, ..., coln and group by key is injective functions of these col1, ..., coln.
 /// 2. To find col1, ..., coln we apply removeInjectiveFunctionsFromResultsRecursively to group by key actions.
