@@ -186,7 +186,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         return Result.from_commands_run(
             name="Check Workflows",
             command=commands,
-            with_info=True,
             fail_fast=True,
         )
 
@@ -269,9 +268,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 name = pre_check.__name__
             else:
                 name = str(pre_check)
-            res_.append(
-                Result.from_commands_run(name=name, command=pre_check, with_info=True)
-            )
+            res_.append(Result.from_commands_run(name=name, command=pre_check))
 
         results.append(
             Result.create_from(name="Pre Hooks", results=res_, stopwatch=sw_)
@@ -428,7 +425,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             Result.from_commands_run(
                 name="Filter not affected jobs",
                 command=check_affected_jobs,
-                with_info=True,
             )
         )
 
@@ -497,9 +493,7 @@ def _finish_workflow(workflow, job_name):
                 name = check.__name__
             else:
                 name = str(check)
-            results_.append(
-                Result.from_commands_run(name=name, command=check, with_info=True)
-            )
+            results_.append(Result.from_commands_run(name=name, command=check))
 
         results.append(
             Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
