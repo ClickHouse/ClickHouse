@@ -1372,12 +1372,13 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
 
         if (rg.nextBool())
         {
-            short_notation = std::optional<DecimalN_DecimalPrecision>(static_cast<DecimalN_DecimalPrecision>(
-                (rg.nextRandomUInt32()
-                 % static_cast<uint32_t>(
-                     (allowed_types & set_no_decimal_limit) ? DecimalN::DecimalPrecision_MAX
-                                                            : DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128))
-                + 1));
+            std::uniform_int_distribution<uint32_t> dec_range(
+                1,
+                static_cast<uint32_t>(
+                    (allowed_types & set_no_decimal_limit) ? DecimalN::DecimalPrecision_MAX
+                                                           : DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128));
+            short_notation = std::optional<DecimalN_DecimalPrecision>(
+                static_cast<DecimalN_DecimalPrecision>(static_cast<DecimalN_DecimalPrecision>(dec_range(rg.generator))));
             switch (short_notation.value())
             {
                 case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D32:
@@ -1766,7 +1767,8 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
         && nopt < (nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + nested_type + geo_type + 1))
     {
         /// Geo
-        const GeoTypes gt = static_cast<GeoTypes>((rg.nextRandomUInt32() % static_cast<uint32_t>(GeoTypes_MAX)) + 1);
+        std::uniform_int_distribution<uint32_t> geo_range(1, static_cast<uint32_t>(GeoTypes_MAX));
+        const GeoTypes gt = static_cast<GeoTypes>(geo_range(rg.generator));
 
         if (tp)
         {

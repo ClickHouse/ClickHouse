@@ -204,7 +204,9 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
             il->set_uint_lit(rg.nextRandomUInt64());
             if (complex && rg.nextSmallNumber() < 9)
             {
-                il->set_integers(static_cast<Integers>((rg.nextRandomUInt32() % static_cast<uint32_t>(Integers_MAX)) + 1));
+                std::uniform_int_distribution<uint32_t> integers_range(1, static_cast<uint32_t>(Integers_MAX));
+
+                il->set_integers(static_cast<Integers>(integers_range(rg.generator)));
             }
         }
     }
@@ -261,7 +263,8 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         }
         else if (nopt < 101)
         {
-            const GeoTypes gt = static_cast<GeoTypes>((rg.nextRandomUInt32() % static_cast<uint32_t>(GeoTypes_MAX)) + 1);
+            std::uniform_int_distribution<uint32_t> geo_range(1, static_cast<uint32_t>(GeoTypes_MAX));
+            const GeoTypes gt = static_cast<GeoTypes>(geo_range(rg.generator));
 
             ret = fmt::format("'{}'{}{}", strAppendGeoValue(rg, gt), complex ? "::" : "", complex ? GeoTypes_Name(gt) : "");
         }
@@ -271,14 +274,12 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         }
         lv->set_no_quote_str(ret);
     }
-    else if (noption < 701)
-    {
-        lv->set_special_val(static_cast<SpecialVal>((rg.nextRandomUInt32() % static_cast<uint32_t>(SpecialVal_MAX)) + 1));
-        nested_prob = 3;
-    }
     else if (noption < 801)
     {
-        lv->set_special_val(rg.nextBool() ? SpecialVal::VAL_ONE : SpecialVal::VAL_ZERO);
+        std::uniform_int_distribution<uint32_t> special_range(1, static_cast<uint32_t>(SpecialVal_MAX));
+
+        lv->set_special_val(static_cast<SpecialVal>(special_range(rg.generator)));
+        nested_prob = 3;
     }
     else if (noption < 951)
     {
@@ -506,10 +507,10 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
         {
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
             ExprLike * elike = cexpr->mutable_expr_like();
+            std::uniform_int_distribution<uint32_t> like_range(1, static_cast<uint32_t>(ExprLike::PossibleKeywords_MAX));
 
+            elike->set_keyword(static_cast<ExprLike_PossibleKeywords>(like_range(rg.generator)));
             elike->set_not_(rg.nextBool());
-            elike->set_keyword(static_cast<ExprLike_PossibleKeywords>(
-                (rg.nextRandomUInt32() % static_cast<uint32_t>(ExprLike::PossibleKeywords_MAX)) + 1));
             this->depth++;
             this->generateExpression(rg, elike->mutable_expr1());
             this->width++;
@@ -592,6 +593,8 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
             = rg.nextSmallNumber() < 4 ? std::min(this->fc.max_width - this->width, (rg.nextSmallNumber() % 3) + 1) : 0;
         const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate;
         const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
+        std::uniform_int_distribution<uint32_t> comb_range(
+            1, static_cast<uint32_t>(this->allow_not_deterministic ? SQLFuncCall::AggregateCombinator_MAX : SQLFuncCall::ArgMax));
 
         /// Most of the times disallow nested aggregates, and window functions inside aggregates
         this->levels[this->current_level].inside_aggregate = rg.nextSmallNumber() < 9;
@@ -638,10 +641,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
 
         for (uint32_t i = 0; i < ncombinators; i++)
         {
-            const SQLFuncCall_AggregateCombinator comb = static_cast<SQLFuncCall_AggregateCombinator>(
-                (rg.nextRandomUInt32()
-                 % static_cast<uint32_t>(this->allow_not_deterministic ? SQLFuncCall::AggregateCombinator_MAX : SQLFuncCall::ArgMax))
-                + 1);
+            const SQLFuncCall_AggregateCombinator comb = static_cast<SQLFuncCall_AggregateCombinator>(comb_range(rg.generator));
 
             switch (comb)
             {
@@ -826,8 +826,8 @@ void StatementGenerator::generateWindowDefinition(RandomGenerator & rg, WindowDe
     {
         ExprFrameSpec * efs = wdef->mutable_frame_spec();
         FrameSpecSubLeftExpr * fssle = efs->mutable_left_expr();
-        const FrameSpecSubLeftExpr_Which fspec = static_cast<FrameSpecSubLeftExpr_Which>(
-            (rg.nextRandomUInt32() % static_cast<uint32_t>(FrameSpecSubLeftExpr_Which_Which_MAX)) + 1);
+        std::uniform_int_distribution<uint32_t> fspec_range1(1, static_cast<uint32_t>(FrameSpecSubLeftExpr_Which_Which_MAX));
+        const FrameSpecSubLeftExpr_Which fspec = static_cast<FrameSpecSubLeftExpr_Which>(fspec_range1(rg.generator));
 
         efs->set_range_rows(rg.nextBool() ? ExprFrameSpec_RangeRows_RANGE : ExprFrameSpec_RangeRows_ROWS);
         fssle->set_which(fspec);
@@ -838,8 +838,8 @@ void StatementGenerator::generateWindowDefinition(RandomGenerator & rg, WindowDe
         if (rg.nextBool())
         {
             FrameSpecSubRightExpr * fsslr = efs->mutable_right_expr();
-            const FrameSpecSubRightExpr_Which fspec2 = static_cast<FrameSpecSubRightExpr_Which>(
-                (rg.nextRandomUInt32() % static_cast<uint32_t>(FrameSpecSubRightExpr_Which_Which_MAX)) + 1);
+            std::uniform_int_distribution<uint32_t> fspec_range2(1, static_cast<uint32_t>(FrameSpecSubRightExpr_Which_Which_MAX));
+            const FrameSpecSubRightExpr_Which fspec2 = static_cast<FrameSpecSubRightExpr_Which>(fspec_range2(rg.generator));
 
             fsslr->set_which(fspec2);
             if (fspec2 > FrameSpecSubRightExpr_Which_UNBOUNDED_FOLLOWING)
@@ -899,10 +899,10 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     else if (noption < 551)
     {
         IntervalExpr * inter = expr->mutable_comp_expr()->mutable_interval();
+        std::uniform_int_distribution<uint32_t> int_range(1, static_cast<uint32_t>(IntervalExpr::Interval_MAX));
 
+        inter->set_interval(static_cast<IntervalExpr_Interval>(int_range(rg.generator)));
         this->depth++;
-        inter->set_interval(
-            static_cast<IntervalExpr_Interval>((rg.nextRandomUInt32() % static_cast<uint32_t>(IntervalExpr::Interval_MAX)) + 1));
         this->generateExpression(rg, inter->mutable_expr());
         this->depth--;
     }
@@ -979,7 +979,9 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         }
         else
         {
-            bexpr->set_op(static_cast<BinaryOperator>((rg.nextRandomUInt32() % static_cast<uint32_t>(BinaryOperator_MAX)) + 1));
+            std::uniform_int_distribution<uint32_t> binop_range(1, static_cast<uint32_t>(BinaryOperator_MAX));
+
+            bexpr->set_op(static_cast<BinaryOperator>(binop_range(rg.generator)));
         }
         this->generateExpression(rg, bexpr->mutable_lhs());
         this->width++;

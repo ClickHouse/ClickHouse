@@ -33,7 +33,9 @@ StatementGenerator::StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations 
 
 void StatementGenerator::generateStorage(RandomGenerator & rg, Storage * store) const
 {
-    store->set_storage(static_cast<Storage_DataStorage>((rg.nextRandomUInt32() % static_cast<uint32_t>(Storage::DataStorage_MAX)) + 1));
+    std::uniform_int_distribution<uint32_t> storage_range(1, static_cast<uint32_t>(Storage::DataStorage_MAX));
+
+    store->set_storage(static_cast<Storage_DataStorage>(storage_range(rg.generator)));
     store->set_storage_name(rg.pickRandomly(fc.disks));
 }
 
@@ -1424,12 +1426,12 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                        + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + 1))
             {
                 RemoveColumnProperty * rcs = ati->mutable_column_remove_property();
+                std::uniform_int_distribution<uint32_t> prop_range(1, static_cast<uint32_t>(RemoveColumnProperty::ColumnProperties_MAX));
 
                 flatTableColumnPath(flat_nested, t.cols, [](const SQLColumn &) { return true; });
                 columnPathRef(rg.pickRandomly(this->entries), rcs->mutable_col());
                 this->entries.clear();
-                rcs->set_property(static_cast<RemoveColumnProperty_ColumnProperties>(
-                    (rg.nextRandomUInt32() % static_cast<uint32_t>(RemoveColumnProperty::ColumnProperties_MAX)) + 1));
+                rcs->set_property(static_cast<RemoveColumnProperty_ColumnProperties>(prop_range(rg.generator)));
             }
             else if (
                 column_modify_setting
@@ -2436,9 +2438,9 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + 1))
     {
         SyncReplica * srep = sc->mutable_sync_replica();
+        std::uniform_int_distribution<uint32_t> sync_range(1, static_cast<uint32_t>(SyncReplica::SyncPolicy_MAX));
 
-        srep->set_policy(
-            static_cast<SyncReplica_SyncPolicy>((rg.nextRandomUInt32() % static_cast<uint32_t>(SyncReplica::SyncPolicy_MAX)) + 1));
+        srep->set_policy(static_cast<SyncReplica_SyncPolicy>(sync_range(rg.generator)));
         cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, srep->mutable_est());
     }
     else if (
@@ -3614,9 +3616,9 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
     eq->set_is_explain(true);
     if (rg.nextSmallNumber() < 9)
     {
-        val = std::optional<ExplainQuery_ExplainValues>(
-            static_cast<ExplainQuery_ExplainValues>((rg.nextRandomUInt32() % static_cast<uint32_t>(ExplainQuery::ExplainValues_MAX)) + 1));
+        std::uniform_int_distribution<uint32_t> exp_range(1, static_cast<uint32_t>(ExplainQuery::ExplainValues_MAX));
 
+        val = std::optional<ExplainQuery_ExplainValues>(static_cast<ExplainQuery_ExplainValues>(exp_range(rg.generator)));
         eq->set_expl(val.value());
     }
     if (rg.nextBool())

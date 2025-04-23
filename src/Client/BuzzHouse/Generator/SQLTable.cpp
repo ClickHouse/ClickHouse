@@ -256,12 +256,12 @@ void StatementGenerator::generateNextStatistics(RandomGenerator & rg, ColumnStat
 void StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl)
 {
     const uint32_t ncodecs = (rg.nextMediumNumber() % UINT32_C(3)) + 1;
+    std::uniform_int_distribution<uint32_t> codec_range(1, static_cast<uint32_t>(CompressionCodec_MAX));
 
     for (uint32_t i = 0; i < ncodecs; i++)
     {
         CodecParam * cp = i == 0 ? cl->mutable_codec() : cl->add_other_codecs();
-        const CompressionCodec cc
-            = static_cast<CompressionCodec>((rg.nextRandomUInt32() % static_cast<uint32_t>(CompressionCodec_MAX)) + 1);
+        const CompressionCodec cc = static_cast<CompressionCodec>(codec_range(rg.generator));
 
         cp->set_codec(cc);
         switch (cc)
@@ -1233,7 +1233,8 @@ void StatementGenerator::addTableColumnInternal(
     if (col.special == ColumnSpecial::NONE && rg.nextSmallNumber() < 2)
     {
         DefaultModifier * def_value = cd->mutable_defaultv();
-        DModifier dmod = static_cast<DModifier>((rg.nextRandomUInt32() % static_cast<uint32_t>(DModifier_MAX)) + 1);
+        std::uniform_int_distribution<uint32_t> dmod_range(1, static_cast<uint32_t>(DModifier_MAX));
+        DModifier dmod = static_cast<DModifier>(dmod_range(rg.generator));
 
         if (is_pk && dmod == DModifier::DEF_EPHEMERAL)
         {
@@ -1345,8 +1346,8 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
     SQLIndex idx;
     const uint32_t iname = t.idx_counter++;
     Expr * expr = idef->mutable_expr();
-    /// Inverted index is deprecated
-    const IndexType itpe = static_cast<IndexType>((rg.nextRandomUInt32() % static_cast<uint32_t>(IndexType_MAX)) + 1);
+    std::uniform_int_distribution<uint32_t> idx_range(1, static_cast<uint32_t>(IndexType_MAX));
+    const IndexType itpe = static_cast<IndexType>(idx_range(rg.generator));
     auto & to_add = staged ? t.staged_idxs : t.idxs;
 
     idx.iname = iname;
@@ -1507,10 +1508,10 @@ void StatementGenerator::addTableConstraint(RandomGenerator & rg, SQLTable & t, 
     const uint32_t crname = t.constr_counter++;
     auto & to_add = staged ? t.staged_constrs : t.constrs;
     const bool prev_allow_in_expression_alias = this->allow_in_expression_alias;
+    std::uniform_int_distribution<uint32_t> constr_range(1, static_cast<uint32_t>(ConstraintDef::ConstraintType_MAX));
 
+    cdef->set_ctype(static_cast<ConstraintDef_ConstraintType>(constr_range(rg.generator)));
     cdef->mutable_constr()->set_constraint("c" + std::to_string(crname));
-    cdef->set_ctype(
-        static_cast<ConstraintDef_ConstraintType>((rg.nextRandomUInt32() % static_cast<uint32_t>(ConstraintDef::ConstraintType_MAX)) + 1));
     addTableRelation(rg, false, "", t);
     this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
     this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
