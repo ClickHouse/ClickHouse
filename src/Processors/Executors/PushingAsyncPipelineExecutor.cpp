@@ -109,11 +109,11 @@ static void threadFunction(
     {
         data.exception = std::current_exception();
         data.has_exception = true;
-
-        /// Finish source in case of exception. Otherwise thread.join() may hung.
-        if (data.source)
-            data.source->finish();
     }
+
+    /// Finish source in case of exception. Otherwise thread.join() may hung.
+    if (data.source)
+        data.source->finish();
 
     data.is_finished = true;
     data.finish_event.set();
@@ -184,12 +184,6 @@ void PushingAsyncPipelineExecutor::push(Chunk chunk)
 {
     if (!started)
         start();
-
-    if (data->is_finished)
-    {
-        data->rethrowExceptionIfHas();
-        throwOnExecutionStatus(data->executor->getExecutionStatus());
-    }
 
     bool is_pushed = pushing_source->setData(std::move(chunk));
     data->rethrowExceptionIfHas();

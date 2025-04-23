@@ -660,9 +660,7 @@ private:
             pipeline.getHeader(),
             std::make_shared<ExpressionActions>(ActionsDAG::merge(std::move(adding_missing_defaults), std::move(converting_types)))));
 
-        auto constraints = buildConstraints(inner_metadata, inner_storage);
-        if (!constraints.empty())
-            pipeline.addTransform(std::make_shared<CheckConstraintsTransform>(inner_id, pipeline.getHeader(), constraints, context));
+        inner_metadata->check(pipeline.getHeader());
 
         /// Squashing is needed here because the materialized view query can generate a lot of blocks
         /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
@@ -1137,18 +1135,13 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDPrivate view_id) const
         adding_missing_defaults_dag.getRequiredColumnsNames(),
         insert_context);
 
-    auto actions = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(adding_missing_defaults_dag));
-
-    auto converting = ActionsDAG::makeConvertingActions(
-        actions.getResultColumns(),
-        output_header.getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name);
-
-    actions = ActionsDAG::merge(std::move(actions), std::move(converting));
+    auto merged_dah = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(adding_missing_defaults_dag));
 
     /// Actually we don't know structure of input blocks from query/table,
     /// because some clients break insertion protocol (columns != header)
-    result.addSink(std::make_shared<ConvertingTransform>(input_headers.at(view_id), std::make_shared<ExpressionActions>(std::move(actions))));
+    result.addSink(std::make_shared<ConvertingTransform>(input_headers.at(view_id), std::make_shared<ExpressionActions>(std::move(merged_dah))));
+
+    inner_metadata->check(result.getOutputHeader().getColumnsWithTypeAndName());
 
     return result;
 }
@@ -1156,14 +1149,12 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDPrivate view_id) const
 
 Chain InsertDependenciesBuilder::createSink(StorageIDPrivate view_id) const
 {
-
     const auto & inner_table_id = inner_tables.at(view_id);
     const auto & inner_storage = storages.at(inner_table_id);
     const auto & inner_metadata = metadata_snapshots.at(inner_table_id);
     const auto & insert_context = insert_contexts.at(view_id);
     const auto & header = output_headers.at(view_id);
 
-    inner_metadata->check(header.getColumnsWithTypeAndName());
     IInterpreter::checkStorageSupportsTransactionsIfNeeded(inner_storage, insert_context);
 
     Chain result;
@@ -1174,7 +1165,7 @@ Chain InsertDependenciesBuilder::createSink(StorageIDPrivate view_id) const
     /// but currently we don't have methods for serialization of nested structures "as a whole".
     result.addSink(std::make_shared<NestedElementsValidationTransform>(header));
 
-    auto constraints = buildConstraints(inner_metadata, storages.at(inner_table_id));
+    auto constraints = buildConstraints(inner_metadata, inner_storage);
     if (!constraints.empty())
         result.addSink(std::make_shared<CheckConstraintsTransform>(inner_table_id, header, constraints, insert_context));
 
@@ -1182,13 +1173,13 @@ Chain InsertDependenciesBuilder::createSink(StorageIDPrivate view_id) const
     {
         auto sink = std::make_shared<PushingToLiveViewSink>(input_headers.at(view_id), *live_view, insert_context);
         sink->setRuntimeData(thread_groups.at(view_id));
-        result.addSource(std::move(sink));
+        result.addSink(std::move(sink));
     }
     else if (auto * window_view = dynamic_cast<StorageWindowView *>(inner_storage.get()))
     {
         auto sink = std::make_shared<PushingToWindowViewSink>(window_view->getInputHeader(), *window_view, insert_context);
         sink->setRuntimeData(thread_groups.at(view_id));
-        result.addSource(std::move(sink));
+        result.addSink(std::move(sink));
     }
     else if (dynamic_cast<StorageMaterializedView *>(inner_storage.get()))
     {
@@ -1199,7 +1190,7 @@ Chain InsertDependenciesBuilder::createSink(StorageIDPrivate view_id) const
     {
         auto sink = inner_storage->write(select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_context, async_insert);
         sink->setRuntimeData(thread_groups.at(view_id));
-        result.addSource(std::move(sink));
+        result.addSink(std::move(sink));
     }
 
     const auto & settings = insert_context->getSettingsRef();
