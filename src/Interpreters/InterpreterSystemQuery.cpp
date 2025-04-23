@@ -1345,6 +1345,7 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
     }
 }
 
+#if USE_XRAY
 void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query)
 {
     // query.handler -- handler to be set for the function
@@ -1354,6 +1355,7 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
     else
         XRayInstrumentationManager::instance().unpatchFunction(query.function); // but if we are just unpatching we don't need handler -- consider this
 }
+#endif
 
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
