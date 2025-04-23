@@ -37,7 +37,7 @@ ALL_DECLARATION_FILES="
     $ROOT_PATH/src/Storages/MySQL/MySQLSettings.cpp
     $ROOT_PATH/src/Storages/NATS/NATSSettings.cpp
     $ROOT_PATH/src/Storages/ObjectStorageQueue/ObjectStorageQueueSettings.cpp
-    $ROOT_PATH/src/Storages/ObjectStorage/StorageObjectStorageSettings.cpp
+    $ROOT_PATH/src/Storages/ObjectStorage/StorageObjectStorageSettings.h
     $ROOT_PATH/src/Storages/PostgreSQL/MaterializedPostgreSQLSettings.cpp
     $ROOT_PATH/src/Storages/RabbitMQ/RabbitMQSettings.cpp
     $ROOT_PATH/src/Storages/RocksDB/RocksDBSettings.cpp
