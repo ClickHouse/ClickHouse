@@ -98,9 +98,14 @@ void OptimizeIfWithConstantConditionVisitorData::visit(ASTFunction & function_no
     if (tryExtractConstValueFromCondition(condition_expr, condition))
     {
         ASTPtr replace_ast = condition ? then_expr : else_expr;
+        bool replacement_supports_alias = replace_ast->as<ASTWithAlias>() != nullptr;
+        String if_alias = ast->tryGetAlias();
+        /// We cannot set the resulting alias if the replace ast does not support it (e.g. ASTAsterisk), so it's better to do nothing
+        if (!if_alias.empty() && !replacement_supports_alias)
+            return;
+
         ASTPtr child_copy = ast;
         String replace_alias = replace_ast->tryGetAlias();
-        String if_alias = ast->tryGetAlias();
 
         if (replace_alias.empty())
         {
