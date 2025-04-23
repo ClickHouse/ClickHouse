@@ -67,7 +67,7 @@ void XRayInstrumentationManager::unpatchFunction(const std::string & function_na
     auto function_id = functionNameToXRayID[function_name]; // if not in a map?
     instrumented_functions.erase(functionIdToInstrumentPoint[function_id]);
     functionIdToInstrumentPoint.erase(function_id);
-    __xray_unpatch(function_id);
+    __xray_unpatch_function(function_id);
     // delete a row "functionId | functionName | handlerName" in system.instrument by functionId
 }
 
