@@ -268,6 +268,10 @@ int main(int argc_, char ** argv_)
     ///
     std::error_code ec;
 
+    /// Checks if client arguments are provided for "ch" and "clickhouse"
+    /// shortcuts and runs clickhouse-client in this case
+    ///
+    /// clickhouse (ch) --host (-h) / --port / --user (-u) / --password
     if (
     main_func == printHelp && !argv.empty() && (std::string_view(argv[0]) == "ch" ||
     std::string_view(argv[0]) == "clickhouse" || endsWith(argv[0], "/ch") ||
