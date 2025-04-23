@@ -3384,9 +3384,10 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
     const uint32_t create_view = 10 * static_cast<uint32_t>(static_cast<uint32_t>(views.size()) < this->fc.max_views);
     const uint32_t drop = 2
         * static_cast<uint32_t>(
-                              collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
-                              || collectionCount<SQLDictionary>(attached_dictionaries) > 3
-                              || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3 || functions.size() > 3);
+                              !in_parallel
+                              && (collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
+                                  || collectionCount<SQLDictionary>(attached_dictionaries) > 3
+                                  || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3 || functions.size() > 3));
     const uint32_t insert = 180 * static_cast<uint32_t>(has_tables);
     const uint32_t light_delete = 6 * static_cast<uint32_t>(has_tables);
     const uint32_t truncate = 2 * static_cast<uint32_t>(has_databases || has_tables);
@@ -3394,28 +3395,32 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
     const uint32_t check_table = 2 * static_cast<uint32_t>(has_tables);
     const uint32_t desc_table = 2;
     const uint32_t exchange = 1
-        * static_cast<uint32_t>(collectionCount<SQLTable>(exchange_table_lambda) > 1 || collectionCount<SQLView>(attached_views) > 1
-                                || collectionCount<SQLDictionary>(attached_dictionaries) > 1);
+        * static_cast<uint32_t>(!in_parallel
+                                && (collectionCount<SQLTable>(exchange_table_lambda) > 1 || collectionCount<SQLView>(attached_views) > 1
+                                    || collectionCount<SQLDictionary>(attached_dictionaries) > 1));
     const uint32_t alter = 6
         * static_cast<uint32_t>(
                                collectionHas<SQLTable>(alter_table_lambda) || collectionHas<SQLView>(attached_views)
                                || collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases));
     const uint32_t set_values = 5;
     const uint32_t attach = 2
-        * static_cast<uint32_t>(collectionHas<SQLTable>(detached_tables) || collectionHas<SQLView>(detached_views)
-                                || collectionHas<SQLDictionary>(detached_dictionaries)
-                                || collectionHas<std::shared_ptr<SQLDatabase>>(detached_databases));
+        * static_cast<uint32_t>(!in_parallel
+                                && (collectionHas<SQLTable>(detached_tables) || collectionHas<SQLView>(detached_views)
+                                    || collectionHas<SQLDictionary>(detached_dictionaries)
+                                    || collectionHas<std::shared_ptr<SQLDatabase>>(detached_databases)));
     const uint32_t detach = 2
-        * static_cast<uint32_t>(collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
-                                || collectionCount<SQLDictionary>(attached_dictionaries) > 3
-                                || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3);
+        * static_cast<uint32_t>(!in_parallel
+                                && (collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
+                                    || collectionCount<SQLDictionary>(attached_dictionaries) > 3
+                                    || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3));
     const uint32_t create_database = 2 * static_cast<uint32_t>(static_cast<uint32_t>(databases.size()) < this->fc.max_databases);
     const uint32_t create_function = 5 * static_cast<uint32_t>(static_cast<uint32_t>(functions.size()) < this->fc.max_functions);
     const uint32_t system_stmt = 1;
     const uint32_t backup_or_restore = 1;
     const uint32_t create_dictionary = 10 * static_cast<uint32_t>(static_cast<uint32_t>(dictionaries.size()) < this->fc.max_dictionaries);
-    const uint32_t rename
-        = 1 * static_cast<uint32_t>(collectionHas<SQLTable>(exchange_table_lambda) || has_views || has_dictionaries || has_databases);
+    const uint32_t rename = 1
+        * static_cast<uint32_t>(!in_parallel
+                                && (collectionHas<SQLTable>(exchange_table_lambda) || has_views || has_dictionaries || has_databases));
     const uint32_t select_query = 800 * static_cast<uint32_t>(!in_parallel);
     const uint32_t prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table
         + desc_table + exchange + alter + set_values + attach + detach + create_database + create_function + system_stmt + backup_or_restore
