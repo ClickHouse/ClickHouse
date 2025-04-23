@@ -1,7 +1,9 @@
 import argparse
 import atexit
+import logging
 import pathlib
 import random
+import tempfile
 import time
 import sys
 
@@ -14,19 +16,25 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-b", "--cbinary", type = pathlib.Path, help = 'Path to client binary')
 parser.add_argument("-c", "--cconfig", type = pathlib.Path, help = 'Path to client configuration file')
 parser.add_argument("-g", "--generator", choices =['buzzhouse'], type = str.lower, required = True, help = 'What generator to use')
+parser.add_argument("-l", "--log", type = pathlib.Path, help = 'Log path')
 parser.add_argument("-m", "--mconfig", type = pathlib.Path, help = 'Path to config.xml file')
 parser.add_argument("-s", "--seed", type = int, default = 0, help = 'Server fuzzer seed')
 parser.add_argument("-u", "--uconfig", type = pathlib.Path, help = 'Path to users.xml file')
 args = parser.parse_args()
 
+log_path = tempfile.NamedTemporaryFile()
+if args.log is not None:
+    log_path = args.log
+logging.basicConfig(filename=args.log, level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Set seed first
-if args.seed == 0:
+seed = args.seed
+if seed == 0:
     import secrets
     seed = secrets.randbits(64) #64 - bit random integer
-    random.seed(seed)
-    print("Using seed: ", seed)
-else:
-    random.seed(args.seed)
+random.seed(seed)
+logger.info("Using seed: ", seed)
 
 # Set generator, at the moment only BuzzHouse is available
 generator = None
@@ -35,7 +43,7 @@ if args.generator == 'buzzhouse':
 
 # Use random server settings sometimes
 server_settings = args.mconfig
-if server_settings is not None and random.randint(1, 2) == 1:
+if server_settings is not None and random.randint(1, 10) < 8:
     server_settings = modify_server_settings_with_random_properties(server_settings)
 
 # Start the cluster
@@ -48,11 +56,11 @@ server = cluster.add_instance("server",
                               user_configs = [args.uconfig] if args.uconfig is not None else[],
                               macros = {"shard" : 1, "replica" : 1 })
 cluster.start()
-print("Starting cluster")
+logger.info("Starting cluster")
 server.wait_start(8)
 
 # Start the load generator
-print("Start load generator")
+logger.info("Start load generator")
 client = generator.run_generator(server)
 def client_cleanup():
     if client.process.poll() is None:
@@ -63,17 +71,17 @@ time.sleep(3)
 # This is the main loop, run while client and server are running
 while True:
     if client.process.poll() is not None:
-        print("Load generator finished")
+        logger.info("Load generator finished")
         break
     try:
         server.query("SELECT 1;")
     except:
-        print("The server is not running")
+        logger.info("The server is not running")
         break
 
     time.sleep(int(random.uniform(10, 20)))
     kill_server = random.randint(1, 2) == 1
-    print("Restart the server with", "kill" if kill_server else "manual shutdown")
+    logger.info("Restart the server with", "kill" if kill_server else "manual shutdown")
     server.restart_clickhouse(stop_start_wait_sec = 10, kill = kill_server)
 
 cluster.shutdown()
