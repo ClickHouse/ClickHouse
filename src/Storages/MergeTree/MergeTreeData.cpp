@@ -9276,9 +9276,11 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
     if (!query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query] || !query_context->hasQueryContext())
         return createStorageSnapshot(metadata_snapshot, query_context, false);
 
-    return query_context->getStorageSnapshotCache()
-        .emplace(this, createStorageSnapshot(metadata_snapshot, query_context, false))
-        .first->second;
+    auto & cache = query_context->getStorageSnapshotCache();
+    auto it = cache.find(this);
+    if (it != cache.end())
+        return it->second;
+    return cache.emplace(this, createStorageSnapshot(metadata_snapshot, query_context, false)).first->second;
 }
 
 StorageSnapshotPtr
