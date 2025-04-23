@@ -151,14 +151,14 @@ namespace
             ColumnPtr default_non_const;
             if (!cache.default_column && arguments.size() == 4)
             {
-                default_non_const = castColumn(arguments[3], result_type);
-                if (in->size() > default_non_const->size())
+                if (arguments[1].column.get()->size() > arguments[3].column.get()->size() || arguments[2].column.get()->size() > arguments[3].column.get()->size())
                 {
                     throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Fourth argument of function {} must be a constant or a column at least as big as the second and third arguments",
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Fourth argument of function {} must be a constant or at least as big as the second and third arguments",
                         getName());
                 }
+                default_non_const = castColumn(arguments[3], result_type);
             }
 
             ColumnPtr in_cast = arguments[0].column;
