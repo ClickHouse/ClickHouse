@@ -150,7 +150,7 @@ void PageCache::autoResize(Int64 memory_usage, size_t memory_limit)
     size_t peak;
     {
         std::lock_guard lock(mutex);
-        size_t usage_excluding_cache = memory_usage - std::min(cache_size, size_t(std::max(memory_usage, 0l)));
+        size_t usage_excluding_cache = memory_usage - std::min(cache_size, size_t(std::max(memory_usage, Int64(0))));
 
         if (history_window.count() <= 0)
         {
