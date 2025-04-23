@@ -3,6 +3,7 @@
 #if USE_XRAY
 
 #include <filesystem>
+#include <print>
 #include <stdexcept>
 #include <thread>
 
@@ -108,26 +109,26 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     for (const auto &[FuncID, Addr] : function_addresses)
     {
         // Create a SectionedAddress structure to hold the function address
-        object::SectionedAddress ModuleAddress;
-        ModuleAddress.Address = Addr;
-        ModuleAddress.SectionIndex = object::SectionedAddress::UndefSection;
+        object::SectionedAddress module_address;
+        module_address.Address = Addr;
+        module_address.SectionIndex = object::SectionedAddress::UndefSection;
 
         // Default function name if symbolization fails
-        std::string FunctionName = "<unknown>";
+        std::string function_name = "<unknown>";
 
         // Attempt to symbolize the function address (resolve its name)
-        if (auto ResOrErr = symbolizer.symbolizeCode(binary_path, ModuleAddress))
+        if (auto res_or_err = symbolizer.symbolizeCode(binary_path, module_address))
         {
-            auto &DI = *ResOrErr;
-            if (DI.FunctionName != DILineInfo::BadString)
-                FunctionName = DI.FunctionName;
+            auto &di = *res_or_err;
+            if (di.FunctionName != DILineInfo::BadString)
+            function_name = di.FunctionName;
         }
 
         // map function ID to its resolved name and vice versa
-        if (FunctionName != "<unknown>")
+        if (function_name != "<unknown>")
         {
-            functionNameToXRayID[FunctionName] = FuncID;
-            xrayIdToFunctionName[FuncID] = FunctionName;
+            functionNameToXRayID[function_name] = FuncID;
+            xrayIdToFunctionName[FuncID] = function_name;
         }
     }
 }
@@ -142,7 +143,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     in_hook = true;
     {
         std::lock_guard<std::mutex> lock(log_mutex);
-        printf("[logEntry] Entered Function ID %d\n", FuncId);
+        std::println("[logEntry] Entered Function ID {}", FuncId);
     }
     in_hook = false;
 }
@@ -158,7 +159,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     in_hook = true;
     {
         std::lock_guard<std::mutex> lock(log_mutex);
-        printf("[logAndSleep] Function ID %d entered. Sleeping...\n", FuncId);
+        std::println("[logAndSleep] Function ID {} entered. Sleeping...", FuncId);
     }
     std::this_thread::sleep_for(std::chrono::seconds(1));
     in_hook = false;
@@ -177,11 +178,11 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
         std::lock_guard<std::mutex> lock(log_mutex);
         if (Type == XRayEntryType::ENTRY)
         {
-            printf("[logEntryExit] Entering Function ID %d\n", FuncId);
+            std::println("[logEntryExit] Entering Function ID {}", FuncId);
         }
         else if (Type == XRayEntryType::EXIT)
         {
-            printf("[logEntryExit] Exiting Function ID %d\n", FuncId);
+            std::println("[logEntryExit] Exiting Function ID {}", FuncId);
         }
     }
     in_hook = false;

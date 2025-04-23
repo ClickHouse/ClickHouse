@@ -31,7 +31,7 @@ public:
     void unpatchFunction(const std::string & function_name);
 
     using InstrumentedFunctions = std::list<InstrumentedFunctionInfo>;
-    InstrumentedFunctions getFunctionToInstrument()
+    InstrumentedFunctions getInstrumentedFunctions()
     {
         std::lock_guard lock(functions_to_instrument_mutex);
         return instrumented_functions;

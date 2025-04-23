@@ -6,6 +6,7 @@
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/XRayInstrumentationManager.h>
 
 #if USE_XRAY
 
@@ -23,27 +24,27 @@ ColumnsDescription SystemStorageInstrumentation::getColumnsDescription()
 }
 
 
-void SystemStorageInstrumentation::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void SystemStorageInstrumentation::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    auto functions_to_instrument = XRayInstrumentationManager::instance().getFunctionsToInstrument();
+    auto functions_to_instrument = XRayInstrumentationManager::instance().getInstrumentedFunctions();
 
     size_t column_index = 0;
     auto & column_function_id = assert_cast<ColumnUInt32 &>(*res_columns[column_index++]).getData();
-    auto & column_function_name = assert_cast<ColumnString &>(*res_columns[column_index++]).getData();
-    auto & column_handler_name = assert_cast<ColumnString &>(*res_columns[column_index++]).getData();
+    auto & column_function_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
+    auto & column_handler_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
 
     auto add_row = [&](UInt32 function_id, const String & function_name, const String & handler_name)
     {
         column_function_id.push_back(function_id);
-        column_function_name.push_back(function_name);
-        column_handler_name.push_back(handler_name);
+        column_function_name.insertData(function_name.data(), function_name.size());
+        column_handler_name.insertData(handler_name.data(), handler_name.size());
     };
 
     for (const auto & function : functions_to_instrument)
     {
-        UInt32 function_id = function->id;
-        const String & function_name = function->function_name;
-        const String & handler_name = function->handler_name;
+        UInt32 function_id = function.function_id;
+        const String & function_name = function.function_name;
+        const String & handler_name = function.handler_name;
         add_row(function_id, function_name, handler_name);
     }
 }
