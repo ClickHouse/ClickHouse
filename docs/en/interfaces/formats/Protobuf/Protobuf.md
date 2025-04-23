@@ -33,7 +33,7 @@ ClickHouse supports:
 Usage examples:
 
 ```sql
-SELECT * FROM test.table FORMAT Protobuf SETTINGS format_schema = 'schemafile:MessageType'
+SELECT * FROM test.table SETTINGS format_schema = 'schemafile:MessageType' FORMAT Protobuf
 ```
 
 ```bash
