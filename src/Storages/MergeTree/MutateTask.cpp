@@ -205,7 +205,7 @@ struct MutationContext
 
     bool checkOperationIsNotCanceled() const
     {
-        if (new_data_part ? merges_blocker->isCancelledForPartition(new_data_part->info.partition_id) : merges_blocker->isCancelled()
+        if (new_data_part ? merges_blocker->isCancelledForPartition(new_data_part->info.getPartitionId()) : merges_blocker->isCancelled()
             || (*mutate_entry)->is_cancelled)
         {
             throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
@@ -2550,7 +2550,7 @@ void MutateTask::processProjectionsWithLightweightDelete(std::vector<MutationCom
 
     auto mutations_snapshot = ctx->data->getMutationsSnapshot(params);
 
-    auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ctx->source_part, mutations_snapshot, ctx->metadata_snapshot, ctx->context);
+    auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ctx->source_part, mutations_snapshot, ctx->context);
 
     auto context_for_reading = Context::createCopy(ctx->context);
     context_for_reading->setSetting("force_index_by_date", false);
