@@ -254,6 +254,9 @@ class SessionTracker;
 
 struct ServerSettings;
 
+struct StorageSnapshot;
+using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
+
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -534,6 +537,9 @@ public:
 protected:
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
+
+    using StorageSnapshotCache = std::unordered_map<const IStorage *, StorageSnapshotPtr>;
+    mutable StorageSnapshotCache storage_snapshot_cache;
 
     PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
     PartUUIDsPtr ignored_part_uuids; /// set of parts' uuids are meant to be excluded from query processing
@@ -1402,6 +1408,7 @@ public:
     void setGoogleProtosPath(const String & path);
 
     SampleBlockCache & getSampleBlockCache() const;
+    StorageSnapshotCache & getStorageSnapshotCache() const;
 
     /// Query parameters for prepared statements.
     bool hasQueryParameters() const;
