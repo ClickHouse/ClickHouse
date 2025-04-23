@@ -57,7 +57,12 @@ struct ThreadStack
     ThreadStack()
     {
         auto page_size = getPageSize();
-        data = aligned_alloc(page_size, getSize());
+        auto size = getSize();
+
+        if constexpr (guardPagesEnabled())
+            size += page_size;
+
+        data = aligned_alloc(page_size, size);
         if (!data)
             throw ErrnoException(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate ThreadStack");
 
@@ -83,14 +88,9 @@ struct ThreadStack
         free(data);
     }
 
-    static size_t getSize()
+    constexpr static size_t getSize()
     {
-        auto size = std::max<size_t>(UNWIND_MINSIGSTKSZ, MINSIGSTKSZ);
-
-        if constexpr (guardPagesEnabled())
-            size += 1;
-
-        return size;
+        return std::max<size_t>(UNWIND_MINSIGSTKSZ, MINSIGSTKSZ);
     }
     void * getData() const { return data; }
 
