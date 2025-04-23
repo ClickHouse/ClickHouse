@@ -4909,7 +4909,7 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
-DECLARE(Bool, enable_shared_storage_snapshot_in_query, false, R"(
+    DECLARE(Bool, enable_shared_storage_snapshot_in_query, false, R"(
 If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
 This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.
 
@@ -4939,6 +4939,14 @@ Possible values:
 
 - 0 - Disabled
 - 1 - Enabled
+)", 0) \
+    DECLARE(UInt64, merge_tree_storage_snapshot_sleep_ms, 0, R"(
+Inject artificial delay (in milliseconds) when creating a storage snapshot for MergeTree tables.
+Used for testing and debugging purposes only.
+
+Possible values:
+- 0 - No delay (default)
+- N - Delay in milliseconds
 )", 0) \
     DECLARE(Bool, optimize_rewrite_sum_if_to_count_if, true, R"(
 Rewrite sumIf() and sum(if()) function countIf() function when logically equivalent

@@ -189,6 +189,7 @@ namespace Setting
     extern const SettingsUInt64 parts_to_delay_insert;
     extern const SettingsUInt64 parts_to_throw_insert;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
+    extern const SettingsUInt64 merge_tree_storage_snapshot_sleep_ms;
 }
 
 namespace MergeTreeSetting
@@ -9266,6 +9267,12 @@ MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapsho
 
 StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
+    /// Inject artificial delay when taking storage snapshot.
+    /// Useful for simulating concurrent mutations during snapshot acquisition.
+    auto merge_tree_storage_snapshot_sleep_ms = query_context->getSettingsRef()[Setting::merge_tree_storage_snapshot_sleep_ms];
+    if (merge_tree_storage_snapshot_sleep_ms > 0)
+        std::this_thread::sleep_for(std::chrono::milliseconds(merge_tree_storage_snapshot_sleep_ms));
+
     if (!query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query] || !query_context->hasQueryContext())
         return createStorageSnapshot(metadata_snapshot, query_context, false);
 
