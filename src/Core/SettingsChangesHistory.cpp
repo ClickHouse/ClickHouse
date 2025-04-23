@@ -727,7 +727,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.5",
         {
-            {"default_compression_codec", "", "", "New setting"},
             {"write_marks_for_substreams_in_compact_parts", false, true, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",
