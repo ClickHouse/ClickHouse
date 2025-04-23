@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/QueryPlan/ScatterExchangeStep.h>
 #include <Processors/QueryPlan/ShuffleExchangeStep.h>
+#include <Processors/QueryPlan/BroadcastExchangeStep.h>
 #include <Processors/QueryPlan/GatherExchangeStep.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
@@ -17,13 +18,16 @@
 namespace DB
 {
 
-namespace DB
+namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
 
 namespace QueryPlanOptimizations
 {
+
+std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node, bool has_filter = false);
+
 
 /// Replaces LogicalJoin step with a subtree like this:
 ///
@@ -56,22 +60,11 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
         return;
     }
 
-    Names join_keys_a;
-    Names join_keys_b;
-
-    /// Only equi-join is supported
-    const auto & join_condition = join_info.expression.condition;
-    for (const auto & predicate : join_condition.predicates)
-    {
-        if (predicate.op != PredicateOperator::Equals)
-            return;
-
-        join_keys_a.push_back(predicate.left_node.getColumnName());
-        join_keys_b.push_back(predicate.right_node.getColumnName());
-    }
-
     QueryPlan::Node * source_a = node.children[0];
     QueryPlan::Node * source_b = node.children[1];
+
+    auto row_count_a = estimateReadRowsCount(*source_a);
+    auto row_count_b = estimateReadRowsCount(*source_b);
 
     /// Extract expressions for calculating join on keys
     /// Move them into separate nodes
@@ -103,24 +96,81 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
         }
     }
 
-    const size_t bucket_count = optimization_settings.default_shuffle_join_bucket_count;    /// TODO: estimate number of buckets based on statistics and available nodes and memory
+    enum DistributedJoinStrategy
+    {
+        Shuffle,
+        Broadcast
+    } strategy = Shuffle;
 
-    /// Add scatter exchange step above read from right source
-    auto & exchange_scatter_a_node = nodes.emplace_back();
-    exchange_scatter_a_node.step = std::make_unique<ScatterExchangeStep>(source_a->step->getOutputHeader(), join_keys_a, bucket_count);
-    exchange_scatter_a_node.step->setStepDescription(fmt::format("by hash([{}])", fmt::join(join_keys_a, ", ")));
-    exchange_scatter_a_node.children = {source_a};
+    /// Check if right table is small enough for broadcast
+    if (row_count_b && row_count_b <= optimization_settings.distributed_plan_max_rows_to_broadcast)
+        strategy = Broadcast;
 
-    /// Add scatter exchange step above read from left source
-    auto & exchange_scatter_b_node = nodes.emplace_back();
-    exchange_scatter_b_node.step = std::make_unique<ScatterExchangeStep>(source_b->step->getOutputHeader(), join_keys_b, bucket_count);
-    exchange_scatter_b_node.step->setStepDescription(fmt::format("by hash([{}])", fmt::join(join_keys_b, ", ")));
-    exchange_scatter_b_node.children = {source_b};
+    QueryPlan::Node * exchange_scatter_a_node = nullptr;
+    QueryPlan::Node * exchange_scatter_b_node = nullptr;
+
+    if (strategy == Broadcast)
+    {
+        LOG_DEBUG(getLogger("tryMakeDistributedJoin"),
+            "Estimated number of rows in left source: {}, right source: {}. Using broadcast join",
+            row_count_a.transform(toString<UInt64>).value_or("unknown"),
+            row_count_b.transform(toString<UInt64>).value_or("unknown"));
+
+            size_t bucket_count = optimization_settings.distributed_plan_default_shuffle_join_bucket_count;
+
+            exchange_scatter_a_node = &nodes.emplace_back();
+            exchange_scatter_b_node = &nodes.emplace_back();
+
+            /// Add scatter exchange step above read from left source
+            exchange_scatter_a_node->step = std::make_unique<ScatterExchangeStep>(source_a->step->getOutputHeader(), Names{}, bucket_count);
+            exchange_scatter_a_node->step->setStepDescription("any scatter");
+
+            /// Add broadcast exchange step above read from right source
+            exchange_scatter_b_node->step = std::make_unique<BroadcastExchangeStep>(source_b->step->getOutputHeader(), bucket_count);
+            exchange_scatter_b_node->step->setStepDescription("");
+        }
+    else
+    {
+        size_t bucket_count = optimization_settings.distributed_plan_default_shuffle_join_bucket_count;
+
+        LOG_DEBUG(getLogger("tryMakeDistributedJoin"),
+            "Estimated number of rows in left source: {}, right source: {}. Using {} buckets for shuffle join",
+            row_count_a.transform(toString<UInt64>).value_or("unknown"),
+            row_count_b.transform(toString<UInt64>).value_or("unknown"),
+            bucket_count);
+
+        Names join_keys_a;
+        Names join_keys_b;
+
+        /// Only equi-join is supported
+        const auto & join_condition = join_info.expression.condition;
+        for (const auto & predicate : join_condition.predicates)
+        {
+            if (predicate.op != PredicateOperator::Equals)
+                return;
+
+            join_keys_a.push_back(predicate.left_node.getColumnName());
+            join_keys_b.push_back(predicate.right_node.getColumnName());
+        }
+
+        /// Add scatter exchange step above read from left source
+        exchange_scatter_a_node = &nodes.emplace_back();
+        exchange_scatter_a_node->step = std::make_unique<ScatterExchangeStep>(source_a->step->getOutputHeader(), join_keys_a, bucket_count);
+        exchange_scatter_a_node->step->setStepDescription(fmt::format("by hash([{}])", fmt::join(join_keys_a, ", ")));
+
+        /// Add scatter exchange step above read from right source
+        exchange_scatter_b_node = &nodes.emplace_back();
+        exchange_scatter_b_node->step = std::make_unique<ScatterExchangeStep>(source_b->step->getOutputHeader(), join_keys_b, bucket_count);
+        exchange_scatter_b_node->step->setStepDescription(fmt::format("by hash([{}])", fmt::join(join_keys_b, ", ")));
+    }
+
+    exchange_scatter_a_node->children = {source_a};
+    exchange_scatter_b_node->children = {source_b};
 
     /// Move join step to a new node
     auto & new_join_node = nodes.emplace_back();
     new_join_node.step = std::move(node.step);
-    new_join_node.children = {&exchange_scatter_a_node, &exchange_scatter_b_node};
+    new_join_node.children = {exchange_scatter_a_node, exchange_scatter_b_node};
 
     /// Add gather exchange step above join
     QueryPlan::Node gather_node;
@@ -225,7 +275,7 @@ void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes,
 ///
 ///   GatherExchange
 ///     (Distributed)ReadFromMergeTree
-void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & /*optimization_settings*/)
+void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Is this a read from MergeTree step?
     auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(node.step.get());
@@ -234,6 +284,12 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 
     /// Should not have children
     if (!node.children.empty())
+        return;
+
+    /// Check if table is big enough for distributed read
+    /// TODO: implement better logic for choosing number of parallel readers
+    auto analysis_result = read_from_merge_tree_step->selectRangesToRead();
+    if (analysis_result && analysis_result->selected_rows <= optimization_settings.distributed_plan_max_rows_to_broadcast)
         return;
 
     /// Move read step to a new node and set it to distributed read
@@ -344,11 +400,22 @@ Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step, const Quer
     return {"0"};   /// One shard by default if read step is not distributed
 }
 
+String dumpQueryPlanShort(const QueryPlan & query_plan)
+{
+    WriteBufferFromOwnString query_plan_buffer;
+    query_plan.explainPlan(query_plan_buffer, ExplainPlanOptions{});
+
+    return query_plan_buffer.str();
+}
+
+
 /// Builds distributed plan by splitting the query plan into multiple stages connected by exchanges.
 /// Exchange steps are split into ExchangeSink and ExchangeSource.
 /// This allows to build a separate plan fragment (a part of the original full plan) for each stage.
 DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings)
 {
+    auto logger = getLogger("makeDistributedPlan");
+
     size_t exchange_id = 0;
 
     DistributedQueryPlan distributed_plan;
@@ -398,8 +465,9 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                 {
                     /// Check that child plan has the same list of shards
                     if (frame.list_of_shards.size() != current_list_of_shards.size())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Different list of shards in child plans {} and {}",
-                            frame.list_of_shards.size(), current_list_of_shards.size());
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Different list of shards in child plans {} and {}, last child plan: \n{}",
+                            frame.list_of_shards.size(), current_list_of_shards.size(),
+                            dumpQueryPlanShort(*frame.child_plans.back()));
 
                     /// Add parameters and temporary files from the child plan
                     for (auto & [shard, task] : current_list_of_shards)
@@ -543,6 +611,9 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
 
             current_stage_depends_on = std::move(frame.depends_on_stages);
             current_list_of_shards = std::move(frame.list_of_shards);
+
+            LOG_TEST(logger, "Current plan:\n{}\nshard count: {}\n",
+                dumpQueryPlanShort(*current_plan), current_list_of_shards.size());
 
             /// On leaving the last node.
             if (stack.size() == 1)
