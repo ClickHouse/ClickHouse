@@ -680,7 +680,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     String new_part_path = fs::path(data.getFullPathOnDisk(disk)) / part_name / "";
     auto entry = data.getContext()->getReplicatedFetchList().insert(
         storage_id.getDatabaseName(), storage_id.getTableName(),
-        part_info.partition_id, part_name, new_part_path,
+        part_info.getPartitionId(), part_name, new_part_path,
         replica_path, uri, to_detached, sum_files_size);
 
     in->setNextCallback(ReplicatedFetchReadCallback(*entry));

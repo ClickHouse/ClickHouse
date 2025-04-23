@@ -352,7 +352,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
 {
     if (parent_part)
     {
-        chassert(parent_part_name.starts_with(parent_part->info.partition_id));     /// Make sure there's no prefix
+        chassert(parent_part_name.starts_with(parent_part->info.getPartitionId()));     /// Make sure there's no prefix
         state = MergeTreeDataPartState::Active;
     }
 
@@ -1317,10 +1317,10 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
 
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     String calculated_partition_id = partition.getID(metadata_snapshot->getPartitionKey().sample_block);
-    if (calculated_partition_id != info.partition_id)
+    if (calculated_partition_id != info.getPartitionId())
         throw Exception(ErrorCodes::CORRUPTED_DATA, "While loading part {}: "
             "calculated partition ID: {} differs from partition ID in part name: {}",
-            getDataPartStorage().getFullPath(), calculated_partition_id, info.partition_id);
+            getDataPartStorage().getFullPath(), calculated_partition_id, info.getPartitionId());
 }
 
 void IMergeTreeDataPart::loadChecksums(bool require)
@@ -2436,13 +2436,13 @@ String IMergeTreeDataPart::getNewPartBlockID(std::string_view token) const
     if (token.empty())
     {
         const auto hash_value = getPartBlockIDHash();
-        return info.partition_id + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
+        return info.getPartitionId() + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
     }
 
     SipHash hash;
     hash.update(token.data(), token.size());
     const auto hash_value = hash.get128();
-    return info.partition_id + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
+    return info.getPartitionId() + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
 }
 
 std::optional<String> IMergeTreeDataPart::getStreamNameOrHash(

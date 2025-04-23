@@ -1,6 +1,6 @@
 # memcpy_jart.S contains position dependent code
 if (ENABLE_POSITION_INDEPENDENT_BINARY OR NOT OS_LINUX OR NOT ARCH_AMD64)
-    message (WARNING "Not building memcpy-bench due to PIC enabled or not Linux or not x86")
+    message (STATUS "Not building memcpy-bench due to PIC enabled or not Linux or not x86")
     return ()
 endif ()
 
