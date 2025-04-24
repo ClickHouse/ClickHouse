@@ -33,34 +33,32 @@ do
         AND query_id='$query_id';
     ")
 
-    [[ $RES -eq 1 ]] && echo "$RES" && break;
+    [[ $RES -eq 1 ]] && echo "DiskConnectionsPreserved $RES" && break;
 done
 
 
 # Test connection pool in ReadWriteBufferFromHTTP
+# we do here `while` because it might be a bad luck that the session is not preserved due to hitting server limits
+# if we change LIMIT 2 to LIMIT 1 then test would fail because
+# query_log collects the metrics before pipeline is destroyed
+# StorageURLSource releases the HTTP session either when all data is fully read or at d-tor
+# with LIMIT 1 the HTTP session is released after query_log is written
 
 while true
 do
     query_id=$(${CLICKHOUSE_CLIENT} -q "
-    create table if not exists mut (n int, m int, k int) engine=ReplicatedMergeTree('/test/02441/{database}/mut', '1') order by n;
-    set insert_keeper_fault_injection_probability=0;
-    set parallel_replicas_for_cluster_engines=0;
-    insert into mut values (1, 2, 3), (10, 20, 30);
+    SELECT queryID() FROM(
+        SELECT sleepEachRow(2)
+        FROM url(
+            'http://localhost:8123/?query=' || encodeURLComponent('select 1'),
+            'LineAsString',
+            's String')
+            -- queryID() will be returned for each row, since the query above doesn't return anything we need to return a fake row
+        ) LIMIT 2 SETTINGS max_threads=1, http_make_head_request=0;
+    ")
 
-    system stop merges mut;
-    alter table mut delete where n = 10;
-
-    select queryID() from(
-        -- a funny way to wait for a MUTATE_PART to be assigned
-        select sleepEachRow(2) from url('http://localhost:8123/?param_tries={1..10}&query=' || encodeURLComponent(
-            'select 1 where ''MUTATE_PART'' not in (select type from system.replication_queue where database=''' || currentDatabase() || ''' and table=''mut'')'
-            ), 'LineAsString', 's String')
-        -- queryID() will be returned for each row, since the query above doesn't return anything we need to return a fake row
-        union all
-        select 1
-    ) limit 1 settings max_threads=1, http_make_head_request=0;
-    " 2>&1)
     ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+
     RES=$(${CLICKHOUSE_CLIENT} -m --query "
     SELECT ProfileEvents['StorageConnectionsPreserved'] > 0
     FROM system.query_log
@@ -69,5 +67,5 @@ do
         AND query_id='$query_id';
     ")
 
-    [[ $RES -eq 1 ]] && echo "$RES" && break;
+    [[ $RES -eq 1 ]] && echo "DiskConnStorageConnectionsPreservedectionsPreserved $RES" && break;
 done
