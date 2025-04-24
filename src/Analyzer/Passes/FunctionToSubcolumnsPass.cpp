@@ -11,28 +11,20 @@
 #include <Functions/FunctionFactory.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
 
-#include <Analyzer/ColumnNode.h>
-#include <Analyzer/ConstantNode.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/Identifier.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/JoinNode.h>
-#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/JoinNode.h>
 
 #include <Core/Settings.h>
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool group_by_use_nulls;
-    extern const SettingsBool join_use_nulls;
-    extern const SettingsBool optimize_functions_to_subcolumns;
-}
 
 namespace
 {
@@ -80,7 +72,7 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
 
     if (value.getType() == Field::Types::String)
     {
-        const auto & name = value.safeGet<String>();
+        const auto & name = value.safeGet<const String &>();
         auto pos = data_type_tuple.tryGetPositionByName(name);
 
         if (!pos)
@@ -107,7 +99,7 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
     if (value.getType() != Field::Types::String)
         return {};
 
-    const auto & name = value.safeGet<String>();
+    const auto & name = value.safeGet<const String &>();
     auto discr = data_type_variant.tryGetVariantDiscriminator(name);
 
     if (!discr)
@@ -295,7 +287,7 @@ public:
 
     void enterImpl(const QueryTreeNodePtr & node)
     {
-        if (!getSettings()[Setting::optimize_functions_to_subcolumns])
+        if (!getSettings().optimize_functions_to_subcolumns)
             return;
 
         if (auto * table_node = node->as<TableNode>())
@@ -317,22 +309,16 @@ public:
             return;
         }
 
-        if (const auto * /*join_node*/ _ = node->as<JoinNode>())
+        if (const auto * join_node = node->as<JoinNode>())
         {
-            can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::join_use_nulls];
-            return;
-        }
-
-        if (const auto * /*cross_join_node*/ _ = node->as<CrossJoinNode>())
-        {
-            can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::join_use_nulls];
+            can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef().join_use_nulls;
             return;
         }
 
         if (const auto * query_node = node->as<QueryNode>())
         {
             if (query_node->isGroupByWithCube() || query_node->isGroupByWithRollup() || query_node->isGroupByWithGroupingSets())
-                can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::group_by_use_nulls];
+                can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef().group_by_use_nulls;
             return;
         }
     }
@@ -466,7 +452,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node) const
     {
-        if (!getSettings()[Setting::optimize_functions_to_subcolumns])
+        if (!getSettings().optimize_functions_to_subcolumns)
             return;
 
         auto [function_node, first_argument_column_node, table_node] = getTypedNodesForOptimization(node, getContext());

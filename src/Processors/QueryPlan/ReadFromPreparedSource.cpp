@@ -1,13 +1,12 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Storages/IStorage.h>
 
 namespace DB
 {
 
 ReadFromPreparedSource::ReadFromPreparedSource(Pipe pipe_)
-    : ISourceStep(pipe_.getHeader())
+    : ISourceStep(DataStream{.header = pipe_.getHeader()})
     , pipe(std::move(pipe_))
 {
 }
@@ -22,15 +21,14 @@ void ReadFromPreparedSource::initializePipeline(QueryPipelineBuilder & pipeline,
 
 ReadFromStorageStep::ReadFromStorageStep(
     Pipe pipe_,
-    StoragePtr storage_,
+    String storage_name,
     ContextPtr context_,
     const SelectQueryInfo & query_info_)
     : ReadFromPreparedSource(std::move(pipe_))
-    , storage(std::move(storage_))
     , context(std::move(context_))
     , query_info(query_info_)
 {
-    setStepDescription(storage->getName());
+    setStepDescription(storage_name);
 
     for (const auto & processor : pipe.getProcessors())
         processor->setStorageLimits(query_info.storage_limits);

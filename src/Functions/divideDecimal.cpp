@@ -16,7 +16,6 @@ namespace
 struct DivideDecimalsImpl
 {
     static constexpr auto name = "divideDecimal";
-    static constexpr auto suitable_for_short_circuit = true;
 
     template <typename FirstType, typename SecondType>
     static Decimal256

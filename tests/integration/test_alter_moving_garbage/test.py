@@ -1,9 +1,9 @@
 import logging
-import random
-import threading
 import time
 
 import pytest
+import threading
+import random
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster

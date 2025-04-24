@@ -79,24 +79,18 @@ std::vector<String> parseRemoteDescription(
             /// Look for the corresponding closing bracket
             for (m = i + 1; m < r; ++m)
             {
-                if (description[m] == '{')
-                    ++cnt;
-                if (description[m] == '}')
-                    --cnt;
-                if (description[m] == '.' && description[m-1] == '.')
-                    last_dot = m;
-                if (description[m] == separator)
-                    have_splitter = true;
-                if (cnt == 0)
-                    break;
+                if (description[m] == '{') ++cnt;
+                if (description[m] == '}') --cnt;
+                if (description[m] == '.' && description[m-1] == '.') last_dot = m;
+                if (description[m] == separator) have_splitter = true;
+                if (cnt == 0) break;
             }
             if (cnt != 0)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}': incorrect brace sequence in first argument", func_name);
             /// The presence of a dot - numeric interval
             if (last_dot != -1)
             {
-                size_t left;
-                size_t right;
+                size_t left, right;
                 if (description[last_dot - 1] != '.')
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
@@ -182,31 +176,15 @@ std::vector<std::pair<String, uint16_t>> parseRemoteDescriptionForExternalDataba
 
     for (const auto & address : addresses)
     {
-        const size_t close_bracket = address.rfind(']');
-        size_t colon;
-        std::string host;
-        if (address.length() > 2 && address[0] == '[' && close_bracket != String::npos)
-        {
-            colon = address.find(':', close_bracket + 1);
-            host = address.substr(1, close_bracket - 1);
-        }
-        else
-        {
-            colon = address.find(':');
-            if (colon == String::npos)
-                host = address;
-            else
-                host = address.substr(0, colon);
-
-        }
+        size_t colon = address.find(':');
         if (colon == String::npos)
         {
             LOG_WARNING(getLogger("ParseRemoteDescription"), "Port is not found for host: {}. Using default port {}", address, default_port);
-            result.emplace_back(std::make_pair(host, default_port));
+            result.emplace_back(std::make_pair(address, default_port));
         }
         else
         {
-            result.emplace_back(std::make_pair(host, DB::parseFromStringWithoutAssertEOF<UInt16>(address.substr(colon + 1))));
+            result.emplace_back(std::make_pair(address.substr(0, colon), parseFromString<UInt16>(address.substr(colon + 1))));
         }
     }
 

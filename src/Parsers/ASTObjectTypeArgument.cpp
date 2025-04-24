@@ -35,27 +35,27 @@ ASTPtr ASTObjectTypeArgument::clone() const
     return res;
 }
 
-void ASTObjectTypeArgument::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTObjectTypeArgument::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     if (path_with_type)
     {
-        path_with_type->format(ostr, settings, state, frame);
+        path_with_type->formatImpl(settings, state, frame);
     }
     else if (parameter)
     {
-        parameter->format(ostr, settings, state, frame);
+        parameter->formatImpl(settings, state, frame);
     }
     else if (skip_path)
     {
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
-        ostr << indent_str << "SKIP" << ' ';
-        skip_path->format(ostr, settings, state, frame);
+        settings.ostr << indent_str << "SKIP" << ' ';
+        skip_path->formatImpl(settings, state, frame);
     }
     else if (skip_path_regexp)
     {
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
-        ostr << indent_str << "SKIP REGEXP" << ' ';
-        skip_path_regexp->format(ostr, settings, state, frame);
+        settings.ostr << indent_str << "SKIP REGEXP" << ' ';
+        skip_path_regexp->formatImpl(settings, state, frame);
     }
 }
 

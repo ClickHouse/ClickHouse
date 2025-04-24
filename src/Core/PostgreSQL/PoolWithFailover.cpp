@@ -1,10 +1,8 @@
 #include "PoolWithFailover.h"
-#include <memory>
 
 #if USE_LIBPQXX
 
 #include "Utils.h"
-#include <Common/ReplicasReconnector.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
@@ -24,76 +22,16 @@ namespace ErrorCodes
 namespace postgres
 {
 
-auto PoolWithFailover::connectionReestablisher(std::weak_ptr<PoolHolder> pool, size_t pool_wait_timeout)
-{
-    return [weak_pool = pool, pool_wait_timeout](UInt64 interval_milliseconds)
-    {
-        auto shared_pool = weak_pool.lock();
-        if (!shared_pool)
-            return false;
-
-        if (!shared_pool->online)
-        {
-            auto logger = getLogger("PostgreSQLConnectionPool");
-
-            ConnectionPtr connection;
-            auto connection_available = shared_pool->pool->tryBorrowObject(connection, []() { return nullptr; }, pool_wait_timeout);
-
-            if (!connection_available)
-            {
-                LOG_WARNING(logger, "Reestablishing connection to {} has failed: unable to fetch connection within the timeout.", connection->getInfoForLog());
-                return true;
-            }
-
-            try
-            {
-                /// Create a new connection or reopen an old connection if it became invalid.
-                if (!connection)
-                    connection = std::make_unique<Connection>(shared_pool->connection_info);
-
-                connection->connect();
-                shared_pool->online = true;
-                LOG_INFO(logger, "Reestablishing connection to {} has succeeded.", connection->getInfoForLog());
-            }
-            catch (const pqxx::broken_connection & pqxx_error)
-            {
-                if (interval_milliseconds >= 1000)
-                    LOG_WARNING(logger, "Reestablishing connection to {} has failed: {}", connection->getInfoForLog(), pqxx_error.what());
-                shared_pool->online = false;
-                shared_pool->pool->returnObject(std::move(connection));
-            }
-            catch (const Poco::Exception & e)
-            {
-                if (interval_milliseconds >= 1000)
-                    LOG_WARNING(logger, "Reestablishing connection to {} has failed: {}", connection->getInfoForLog(), e.displayText());
-                shared_pool->online = false;
-                shared_pool->pool->returnObject(std::move(connection));
-            }
-            catch (...)
-            {
-                if (interval_milliseconds >= 1000)
-                    LOG_WARNING(logger, "Reestablishing connection to {} has failed.", connection->getInfoForLog());
-                shared_pool->online = false;
-                shared_pool->pool->returnObject(std::move(connection));
-            }
-        }
-
-        return true;
-    };
-}
-
 PoolWithFailover::PoolWithFailover(
     const ReplicasConfigurationByPriority & configurations_by_priority,
     size_t pool_size,
     size_t pool_wait_timeout_,
     size_t max_tries_,
     bool auto_close_connection_,
-    size_t connection_attempt_timeout_,
-    bool bg_reconnect_)
+    size_t connection_attempt_timeout_)
     : pool_wait_timeout(pool_wait_timeout_)
     , max_tries(max_tries_)
     , auto_close_connection(auto_close_connection_)
-    , bg_reconnect(bg_reconnect_)
 {
     LOG_TRACE(getLogger("PostgreSQLConnectionPool"), "PostgreSQL connection pool size: {}, connection wait timeout: {}, max failover tries: {}",
               pool_size, pool_wait_timeout, max_tries_);
@@ -109,9 +47,7 @@ PoolWithFailover::PoolWithFailover(
                 replica_configuration.username,
                 replica_configuration.password,
                 connection_attempt_timeout_);
-            replicas_with_priority[priority].emplace_back(std::make_shared<PoolHolder>(connection_info, pool_size));
-            if (bg_reconnect)
-                DB::ReplicasReconnector::instance().add(connectionReestablisher(std::weak_ptr(replicas_with_priority[priority].back()), pool_wait_timeout));
+            replicas_with_priority[priority].emplace_back(connection_info, pool_size);
         }
     }
 }
@@ -122,12 +58,10 @@ PoolWithFailover::PoolWithFailover(
     size_t pool_wait_timeout_,
     size_t max_tries_,
     bool auto_close_connection_,
-    size_t connection_attempt_timeout_,
-    bool bg_reconnect_)
+    size_t connection_attempt_timeout_)
     : pool_wait_timeout(pool_wait_timeout_)
     , max_tries(max_tries_)
     , auto_close_connection(auto_close_connection_)
-    , bg_reconnect(bg_reconnect_)
 {
     LOG_TRACE(getLogger("PostgreSQLConnectionPool"), "PostgreSQL connection pool size: {}, connection wait timeout: {}, max failover tries: {}",
               pool_size, pool_wait_timeout, max_tries_);
@@ -143,9 +77,7 @@ PoolWithFailover::PoolWithFailover(
             configuration.username,
             configuration.password,
             connection_attempt_timeout_);
-        replicas_with_priority[0].emplace_back(std::make_shared<PoolHolder>(connection_string, pool_size));
-        if (bg_reconnect)
-            DB::ReplicasReconnector::instance().add(connectionReestablisher(std::weak_ptr(replicas_with_priority[0].back()), pool_wait_timeout));
+        replicas_with_priority[0].emplace_back(connection_string, pool_size);
     }
 }
 
@@ -166,11 +98,8 @@ ConnectionHolderPtr PoolWithFailover::get()
             {
                 auto & replica = replicas[i];
 
-                if (bg_reconnect && !replica->online)
-                    continue;
-
                 ConnectionPtr connection;
-                auto connection_available = replica->pool->tryBorrowObject(connection, []() { return nullptr; }, pool_wait_timeout);
+                auto connection_available = replica.pool->tryBorrowObject(connection, []() { return nullptr; }, pool_wait_timeout);
 
                 if (!connection_available)
                 {
@@ -183,32 +112,29 @@ ConnectionHolderPtr PoolWithFailover::get()
                     /// Create a new connection or reopen an old connection if it became invalid.
                     if (!connection)
                     {
-                        connection = std::make_unique<Connection>(replica->connection_info);
+                        connection = std::make_unique<Connection>(replica.connection_info);
                         LOG_DEBUG(log, "New connection to {}", connection->getInfoForLog());
                     }
 
                     connection->connect();
-                    replica->online = true;
                 }
                 catch (const pqxx::broken_connection & pqxx_error)
                 {
                     LOG_ERROR(log, "Connection error: {}", pqxx_error.what());
                     error_message = PreformattedMessage::create(
                         "Try {}. Connection to {} failed with error: {}\n",
-                        try_idx + 1, DB::backQuote(replica->connection_info.host_port), pqxx_error.what());
+                        try_idx + 1, DB::backQuote(replica.connection_info.host_port), pqxx_error.what());
 
-                    replica->online = false;
-                    replica->pool->returnObject(std::move(connection));
+                    replica.pool->returnObject(std::move(connection));
                     continue;
                 }
                 catch (...)
                 {
-                    replica->online = false;
-                    replica->pool->returnObject(std::move(connection));
+                    replica.pool->returnObject(std::move(connection));
                     throw;
                 }
 
-                auto connection_holder = std::make_unique<ConnectionHolder>(replica->pool, std::move(connection), auto_close_connection);
+                auto connection_holder = std::make_unique<ConnectionHolder>(replica.pool, std::move(connection), auto_close_connection);
 
                 /// Move all traversed replicas to the end.
                 if (replicas.size() > 1)

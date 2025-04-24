@@ -140,12 +140,7 @@ void SecureStreamSocket::setPeerHostName(const std::string& hostName)
 	static_cast<SecureStreamSocketImpl*>(impl())->setPeerHostName(hostName);
 }
 
-void SecureStreamSocket::bind(const SocketAddress& address, bool reuseAddress)
-{
-       static_cast<SecureStreamSocketImpl*>(impl())->bind(address, reuseAddress);
-}
-
-
+	
 const std::string& SecureStreamSocket::getPeerHostName() const
 {
 	return static_cast<SecureStreamSocketImpl*>(impl())->getPeerHostName();

@@ -76,8 +76,6 @@ public:
 
     const std::string & getFailMessage() const { return fail_message; }
 
-    void resumeConnectionWithForceOption(bool force_connected_) {force_connected = force_connected_; resume();}
-
 private:
     bool checkBeforeTaskResume() override;
 
@@ -127,7 +125,6 @@ private:
 
     bool is_finished = false;
     bool restarted = false;
-    bool force_connected = false;
 };
 
 #endif

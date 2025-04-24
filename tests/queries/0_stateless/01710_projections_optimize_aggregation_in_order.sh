@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -m -q "
+$CLICKHOUSE_CLIENT -nm -q "
     DROP TABLE IF EXISTS in_order_agg_01710;
 
     CREATE TABLE in_order_agg_01710
@@ -45,7 +45,7 @@ function run_query()
     )
     $CLICKHOUSE_CLIENT "${opts[@]}" "$@" -q "$query"
 
-    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS processors_profile_log"
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
 
     echo "Used processors:"
     $CLICKHOUSE_CLIENT --param_query_id "$query_id" -q "SELECT DISTINCT name FROM system.processors_profile_log WHERE query_id = {query_id:String} AND name LIKE 'Aggregating%'"

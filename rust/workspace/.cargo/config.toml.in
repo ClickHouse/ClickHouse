@@ -1,0 +1,26 @@
+[env]
+CFLAGS = "@RUST_CFLAGS@"
+CXXFLAGS = "@RUST_CXXFLAGS@"
+
+[build]
+rustflags = @RUSTFLAGS@
+rustdocflags = @RUSTFLAGS@
+@RUSTCWRAPPER@
+
+[unstable]
+@RUST_CARGO_BUILD_STD@
+
+[source.crates-io]
+registry = 'sparse+https://index.crates.io/'
+replace-with = 'local-registry'
+
+[source."git+https://github.com/azat-rust/tuikit.git?rev=e1994c0e03ff02c49cf1471f0cc3cbf185ce0104"]
+git = "https://github.com/azat-rust/tuikit.git"
+rev = "e1994c0e03ff02c49cf1471f0cc3cbf185ce0104"
+replace-with = "vendored-sources"
+
+[source.local-registry]
+local-registry = "@RUST_VENDOR_DIR@"
+
+[source.vendored-sources]
+directory = "@RUST_VENDOR_DIR@"

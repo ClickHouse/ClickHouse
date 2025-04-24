@@ -45,7 +45,6 @@ TEST(ColumnLowCardinality, Insert)
     testLowCardinalityNumberInsert<Int128>(std::make_shared<DataTypeInt128>());
     testLowCardinalityNumberInsert<Int256>(std::make_shared<DataTypeInt256>());
 
-    testLowCardinalityNumberInsert<BFloat16>(std::make_shared<DataTypeBFloat16>());
     testLowCardinalityNumberInsert<Float32>(std::make_shared<DataTypeFloat32>());
     testLowCardinalityNumberInsert<Float64>(std::make_shared<DataTypeFloat64>());
 }

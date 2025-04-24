@@ -9,7 +9,7 @@ namespace DB
 class OffsetStep : public ITransformingStep
 {
 public:
-    OffsetStep(const Header & input_header_, size_t offset_);
+    OffsetStep(const DataStream & input_stream_, size_t offset_);
 
     String getName() const override { return "Offset"; }
 
@@ -18,15 +18,10 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
-
-    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
-
 private:
-    void updateOutputHeader() override
+    void updateOutputStream() override
     {
-        output_header = input_headers.front();
+        output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
     }
 
     size_t offset;

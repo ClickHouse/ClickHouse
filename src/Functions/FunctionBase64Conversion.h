@@ -2,7 +2,6 @@
 #include "config.h"
 
 #if USE_BASE64
-#    include <base/MemorySanitizer.h>
 #    include <Columns/ColumnFixedString.h>
 #    include <Columns/ColumnString.h>
 #    include <DataTypes/DataTypeString.h>
@@ -10,6 +9,7 @@
 #    include <Functions/IFunction.h>
 #    include <Interpreters/Context_fwd.h>
 #    include <libbase64.h>
+#    include <Common/MemorySanitizer.h>
 
 #    include <cstddef>
 #    include <string_view>
@@ -207,17 +207,12 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & input_column = arguments[0].column;
         if (const auto * src_column_as_fixed_string = checkAndGetColumn<ColumnFixedString>(&*input_column))
             return execute(*src_column_as_fixed_string, input_rows_count);
-        if (const auto * src_column_as_string = checkAndGetColumn<ColumnString>(&*input_column))
+        else if (const auto * src_column_as_string = checkAndGetColumn<ColumnString>(&*input_column))
             return execute(*src_column_as_string, input_rows_count);
 
         throw Exception(

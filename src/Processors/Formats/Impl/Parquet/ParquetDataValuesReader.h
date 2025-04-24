@@ -6,7 +6,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
-#include <Columns/IColumn_fwd.h>
+#include <Columns/IColumn.h>
 #include <Core/Types.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <IO/ReadBuffer.h>
@@ -150,7 +150,7 @@ enum class ParquetReaderTypes
 /**
  * The definition level is RLE or BitPacked encoding, while data is read directly
  */
-template <typename TColumn, typename ParquetType>
+template <typename TColumn, ParquetReaderTypes reader_type = ParquetReaderTypes::Normal>
 class ParquetPlainValuesReader : public ParquetDataValuesReader
 {
 public:
@@ -170,71 +170,6 @@ private:
     Int32 max_def_level;
     std::unique_ptr<RleValuesReader> def_level_reader;
     ParquetDataBuffer plain_data_buffer;
-};
-
-template <typename TColumn>
-class ParquetPlainInt96ValuesReader : public ParquetDataValuesReader
-{
-public:
-
-    ParquetPlainInt96ValuesReader(
-        Int32 max_def_level_,
-        std::unique_ptr<RleValuesReader> def_level_reader_,
-        ParquetDataBuffer data_buffer_)
-        : max_def_level(max_def_level_)
-        , def_level_reader(std::move(def_level_reader_))
-        , plain_data_buffer(std::move(data_buffer_))
-    {}
-
-    void readBatch(MutableColumnPtr & col_ptr, LazyNullMap & null_map, UInt32 num_values) override;
-
-private:
-    Int32 max_def_level;
-    std::unique_ptr<RleValuesReader> def_level_reader;
-    ParquetDataBuffer plain_data_buffer;
-};
-
-template <typename TColumn>
-class ParquetPlainByteArrayValuesReader : public ParquetDataValuesReader
-{
-public:
-
-    ParquetPlainByteArrayValuesReader(
-        Int32 max_def_level_,
-        std::unique_ptr<RleValuesReader> def_level_reader_,
-        ParquetDataBuffer data_buffer_)
-        : max_def_level(max_def_level_)
-        , def_level_reader(std::move(def_level_reader_))
-        , plain_data_buffer(std::move(data_buffer_))
-    {}
-
-    void readBatch(MutableColumnPtr & col_ptr, LazyNullMap & null_map, UInt32 num_values) override;
-
-private:
-    Int32 max_def_level;
-    std::unique_ptr<RleValuesReader> def_level_reader;
-    ParquetDataBuffer plain_data_buffer;
-};
-
-template <typename TColumn>
-class ParquetBitPlainReader : public ParquetDataValuesReader
-{
-public:
-    ParquetBitPlainReader(
-        Int32 max_def_level_,
-        std::unique_ptr<RleValuesReader> def_level_reader_,
-        std::unique_ptr<arrow::bit_util::BitReader> bit_reader_)
-        : max_def_level(max_def_level_)
-        , def_level_reader(std::move(def_level_reader_))
-        , bit_reader(std::move(bit_reader_))
-    {}
-
-    void readBatch(MutableColumnPtr & col_ptr, LazyNullMap & null_map, UInt32 num_values) override;
-
-private:
-    Int32 max_def_level;
-    std::unique_ptr<RleValuesReader> def_level_reader;
-    std::unique_ptr<arrow::bit_util::BitReader> bit_reader;
 };
 
 /**

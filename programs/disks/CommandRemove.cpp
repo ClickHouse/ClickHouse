@@ -1,7 +1,6 @@
 #include <Interpreters/Context.h>
 #include "Common/Exception.h"
 #include "ICommand.h"
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -15,7 +14,7 @@ namespace ErrorCodes
 class CommandRemove final : public ICommand
 {
 public:
-    CommandRemove() : ICommand("CommandRemove")
+    CommandRemove()
     {
         command_name = "remove";
         description = "Remove file or directory. Throws exception if file doesn't exists";
@@ -26,27 +25,28 @@ public:
 
     void executeImpl(const CommandLineOptions & options, DisksClient & client) override
     {
-        const auto & disk = client.getCurrentDiskWithPath();
+        auto disk = client.getCurrentDiskWithPath();
         const String & path = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path"));
         bool recursive = options.count("recursive");
-        if (disk.getDisk()->existsDirectory(path))
+        if (!disk.getDisk()->exists(path))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path {} on disk {} doesn't exist", path, disk.getDisk()->getName());
+        }
+        else if (disk.getDisk()->isDirectory(path))
         {
             if (!recursive)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "cannot remove '{}': Is a directory", path);
             }
-
-            LOG_INFO(log, "Removing directory '{}' at disk '{}'", path, disk.getDisk()->getName());
-
-            disk.getDisk()->removeRecursiveWithLimit(path);
-        }
-        else if (disk.getDisk()->existsFile(path))
-        {
-            LOG_INFO(log, "Removing file '{}' at disk '{}'", path, disk.getDisk()->getName());
-            disk.getDisk()->removeFileIfExists(path);
+            else
+            {
+                disk.getDisk()->removeRecursive(path);
+            }
         }
         else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path {} on disk {} doesn't exist", path, disk.getDisk()->getName());
+        {
+            disk.getDisk()->removeFileIfExists(path);
+        }
     }
 };
 

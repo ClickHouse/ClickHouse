@@ -1,3 +1,4 @@
+-- #########
 select 'Different materialized view insert into one underlayed table equal data.';
 
 DROP TABLE IF EXISTS dst;
@@ -80,6 +81,8 @@ DROP TABLE mv_first;
 DROP TABLE mv_dst;
 DROP TABLE dst;
 
+
+-- #########
 select 'Different insert operations generate the same data after transformation in underlied table of materialized view.';
 
 DROP TABLE IF EXISTS dst;
@@ -148,6 +151,8 @@ ORDER by all;
 DROP TABLE mv_dst;
 DROP TABLE dst;
 
+
+-- #########
 select 'Indentical blocks in insertion with `insert_deduplication_token`';
 
 DROP TABLE IF EXISTS dst;
@@ -212,6 +217,8 @@ ORDER by all;
 
 DROP TABLE dst;
 
+
+-- #########
 select 'Indentical blocks in insertion';
 
 DROP TABLE IF EXISTS dst;
@@ -243,6 +250,8 @@ ORDER by all;
 
 DROP TABLE dst;
 
+
+-- #########
 select 'Indentical blocks after materialised view`s transformation';
 
 DROP TABLE IF EXISTS dst;

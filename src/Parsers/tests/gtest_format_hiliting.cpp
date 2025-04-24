@@ -1,6 +1,5 @@
 #include <unordered_set>
 
-#include <IO/WriteBufferFromString.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
@@ -54,8 +53,8 @@ void compare(const String & expected, const String & query)
     ASTPtr ast = parseQuery(parser, query, 0, 0, 0);
 
     WriteBufferFromOwnString write_buffer;
-    IAST::FormatSettings settings(true, true);
-    ast->format(write_buffer, settings);
+    IAST::FormatSettings settings(write_buffer, true, true);
+    ast->format(settings);
 
     ASSERT_PRED2(HiliteComparator::are_equal_with_hilites_removed, expected, write_buffer.str());
     ASSERT_PRED2(HiliteComparator::are_equal_with_hilites_and_end_without_hilite, expected, write_buffer.str());

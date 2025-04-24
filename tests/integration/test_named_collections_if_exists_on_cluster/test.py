@@ -26,11 +26,9 @@ select * from system.named_collections;
 """
 
 import logging
-from functools import partial
 from json import dumps, loads
-
+from functools import partial
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 
 dumps = partial(dumps, ensure_ascii=False)

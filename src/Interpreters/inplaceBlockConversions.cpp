@@ -1,6 +1,7 @@
 #include "inplaceBlockConversions.h"
 
 #include <Core/Block.h>
+#include <Parsers/queryToString.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -144,7 +145,7 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
         if (!block.has(required_column.name))
             continue;
 
-        const auto & column_in_block = block.getByName(required_column.name);
+        auto column_in_block = block.getByName(required_column.name);
         if (column_in_block.type->equals(*required_column.type))
             continue;
 
@@ -183,7 +184,7 @@ void performRequiredConversions(Block & block, const NamesAndTypesList & require
 
     if (auto dag = createExpressions(block, conversion_expr_list, true, context))
     {
-        auto expression = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(context));
+        auto expression = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings::fromContext(context));
         expression->execute(block);
     }
 }

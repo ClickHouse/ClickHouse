@@ -2,17 +2,21 @@
 
 import datetime
 import fnmatch
-import logging
 import math
 import os
 import time
+
+import logging
 from typing import Literal
 
 import docker
 import pymysql.connections
 import pytest
-
-from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
+from helpers.cluster import (
+    ClickHouseCluster,
+    get_docker_compose_path,
+    run_and_check,
+)
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
@@ -51,7 +55,8 @@ def golang_container():
         DOCKER_COMPOSE_PATH, "docker_compose_mysql_golang_client.yml"
     )
     run_and_check(
-        cluster.compose_cmd(
+        [
+            "docker-compose",
             "-p",
             cluster.project_name,
             "-f",
@@ -60,13 +65,13 @@ def golang_container():
             "--force-recreate",
             "-d",
             "--no-build",
-        )
+        ]
     )
     yield docker.DockerClient(
         base_url="unix:///var/run/docker.sock",
         version=cluster.docker_api_version,
         timeout=600,
-    ).containers.get(cluster.get_instance_docker_id("golang1"))
+    ).containers.get(cluster.project_name + "_golang1_1")
 
 
 @pytest.fixture(scope="module")
@@ -75,22 +80,25 @@ def php_container():
         DOCKER_COMPOSE_PATH, "docker_compose_mysql_php_client.yml"
     )
     run_and_check(
-        cluster.compose_cmd(
+        [
+            "docker-compose",
             "--env-file",
             cluster.instances["node"].env_file,
+            "-p",
+            cluster.project_name,
             "-f",
             docker_compose,
             "up",
             "--force-recreate",
             "-d",
             "--no-build",
-        )
+        ]
     )
     yield docker.DockerClient(
         base_url="unix:///var/run/docker.sock",
         version=cluster.docker_api_version,
         timeout=600,
-    ).containers.get(cluster.get_instance_docker_id("php1"))
+    ).containers.get(cluster.project_name + "_php1_1")
 
 
 @pytest.fixture(scope="module")
@@ -99,22 +107,25 @@ def nodejs_container():
         DOCKER_COMPOSE_PATH, "docker_compose_mysql_js_client.yml"
     )
     run_and_check(
-        cluster.compose_cmd(
+        [
+            "docker-compose",
             "--env-file",
             cluster.instances["node"].env_file,
+            "-p",
+            cluster.project_name,
             "-f",
             docker_compose,
             "up",
             "--force-recreate",
             "-d",
             "--no-build",
-        )
+        ]
     )
     yield docker.DockerClient(
         base_url="unix:///var/run/docker.sock",
         version=cluster.docker_api_version,
         timeout=600,
-    ).containers.get(cluster.get_instance_docker_id("mysqljs1"))
+    ).containers.get(cluster.project_name + "_mysqljs1_1")
 
 
 @pytest.fixture(scope="module")
@@ -123,22 +134,25 @@ def java_container():
         DOCKER_COMPOSE_PATH, "docker_compose_mysql_java_client.yml"
     )
     run_and_check(
-        cluster.compose_cmd(
+        [
+            "docker-compose",
             "--env-file",
             cluster.instances["node"].env_file,
+            "-p",
+            cluster.project_name,
             "-f",
             docker_compose,
             "up",
             "--force-recreate",
             "-d",
             "--no-build",
-        )
+        ]
     )
     yield docker.DockerClient(
         base_url="unix:///var/run/docker.sock",
         version=cluster.docker_api_version,
         timeout=600,
-    ).containers.get(cluster.get_instance_docker_id("java1"))
+    ).containers.get(cluster.project_name + "_java1_1")
 
 
 def test_mysql_client(started_cluster):
@@ -178,7 +192,7 @@ def test_mysql_client(started_cluster):
 
     assert (
         "mysql: [Warning] Using a password on the command line interface can be insecure.\n"
-        "ERROR 516 (HY000): default: Authentication failed: password is incorrect, or there is no user with such name"
+        "ERROR 516 (00000): default: Authentication failed: password is incorrect, or there is no user with such name"
         in stderr.decode()
     )
 
@@ -198,7 +212,7 @@ def test_mysql_client(started_cluster):
     expected_msg = "\n".join(
         [
             "mysql: [Warning] Using a password on the command line interface can be insecure.",
-            "ERROR 81 (HY000) at line 1: Code: 81. DB::Exception: Database system2 does not exist",
+            "ERROR 81 (00000) at line 1: Code: 81. DB::Exception: Database system2 does not exist",
         ]
     )
     assert stderr[: len(expected_msg)].decode() == expected_msg
@@ -242,7 +256,7 @@ def test_mysql_client_exception(started_cluster):
     expected_msg = "\n".join(
         [
             "mysql: [Warning] Using a password on the command line interface can be insecure.",
-            "ERROR 279 (HY000) at line 1: Code: 279. DB::Exception: Connections to mysql failed: default@127.0.0.1:10086 as user default",
+            "ERROR 279 (00000) at line 1: Code: 279. DB::Exception: Connections to mysql failed: default@127.0.0.1:10086 as user default",
         ]
     )
     assert stderr[: len(expected_msg)].decode() == expected_msg
@@ -670,7 +684,6 @@ def test_python_client(started_cluster):
     cursor.execute("INSERT INTO table1 VALUES (1), (4)")
     cursor.execute("SELECT * FROM table1 ORDER BY a")
     assert cursor.fetchall() == [{"a": 1}, {"a": 1}, {"a": 3}, {"a": 4}]
-    cursor.execute("DROP DATABASE x")
 
 
 def test_golang_client(started_cluster, golang_container):

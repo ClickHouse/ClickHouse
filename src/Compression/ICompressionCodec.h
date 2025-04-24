@@ -4,9 +4,9 @@
 #include <boost/noncopyable.hpp>
 #include <Compression/CompressionInfo.h>
 #include <base/types.h>
-#include <Parsers/IAST_fwd.h>
+#include <Parsers/IAST.h>
+#include <Common/SipHash.h>
 
-class SipHash;
 
 namespace DB
 {

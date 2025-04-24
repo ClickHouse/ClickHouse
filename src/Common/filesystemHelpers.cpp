@@ -223,7 +223,7 @@ bool pathStartsWith(const std::filesystem::path & path, const std::filesystem::p
     return absolute_path.starts_with(absolute_prefix_path);
 }
 
-static bool fileOrSymlinkPathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path)
+bool fileOrSymlinkPathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path)
 {
     /// Differs from pathStartsWith in how `path` is normalized before comparison.
     /// Make `path` absolute if it was relative and put it into normalized form: remove

@@ -3,7 +3,7 @@
 #include <vector>
 #include <algorithm>
 
-#include <base/EnumReflection.h>
+#include <magic_enum.hpp>
 
 
 namespace DB
@@ -47,7 +47,6 @@ bool ServerType::shouldStart(Type server_type, const std::string & server_custom
         switch (current_type)
         {
             case Type::TCP:
-            case Type::TCP_SSH:
             case Type::TCP_WITH_PROXY:
             case Type::TCP_SECURE:
             case Type::HTTP:
@@ -110,9 +109,6 @@ bool ServerType::shouldStop(const std::string & port_name) const
 
     else if (port_name == "tcp_port")
         port_type = Type::TCP;
-
-    else if (port_name == "tcp_ssh_port")
-        port_type = Type::TCP_SSH;
 
     else if (port_name == "tcp_with_proxy_port")
         port_type = Type::TCP_WITH_PROXY;

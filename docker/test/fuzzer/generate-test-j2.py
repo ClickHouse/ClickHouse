@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 
-import itertools
-import os
 from argparse import ArgumentParser
-
+import os
 import jinja2
+import itertools
 
 
 def removesuffix(text, suffix):

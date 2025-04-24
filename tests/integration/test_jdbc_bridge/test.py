@@ -1,12 +1,11 @@
 import logging
 import os.path as p
-import uuid
-from string import Template
-
 import pytest
+import uuid
 
 from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.test_tools import TSV
+from string import Template
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(

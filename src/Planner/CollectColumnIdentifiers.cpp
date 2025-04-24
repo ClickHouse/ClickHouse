@@ -5,7 +5,6 @@
 
 #include <Planner/PlannerContext.h>
 
-
 namespace DB
 {
 
@@ -29,7 +28,6 @@ public:
             && child_node_type != QueryTreeNodeType::QUERY
             && child_node_type != QueryTreeNodeType::UNION
             && child_node_type != QueryTreeNodeType::JOIN
-            && child_node_type != QueryTreeNodeType::CROSS_JOIN
             && child_node_type != QueryTreeNodeType::ARRAY_JOIN;
     }
 
@@ -65,3 +63,4 @@ ColumnIdentifierSet collectTopLevelColumnIdentifiers(const QueryTreeNodePtr & no
 }
 
 }
+

@@ -45,9 +45,6 @@ bool insertNullAsDefaultIfNeeded(ColumnWithTypeAndName & input_column, const Col
         if (tuple_input_type.getElements().size() != tuple_header_type.getElements().size())
             return false;
 
-        bool has_explicit_names = tuple_input_type.haveExplicitNames();
-        Names explicit_names = has_explicit_names ? tuple_input_type.getElementNames() : Names{};
-
         Columns nested_input_columns;
         nested_input_columns.reserve(tuple_input_type.getElements().size());
         DataTypes nested_input_types;
@@ -70,9 +67,7 @@ bool insertNullAsDefaultIfNeeded(ColumnWithTypeAndName & input_column, const Col
             return false;
 
         input_column.column = ColumnTuple::create(std::move(nested_input_columns));
-        input_column.type = has_explicit_names
-                            ? std::make_shared<DataTypeTuple>(std::move(nested_input_types), explicit_names)
-                            : std::make_shared<DataTypeTuple>(std::move(nested_input_types));
+        input_column.type = std::make_shared<DataTypeTuple>(std::move(nested_input_types));
         return true;
     }
 

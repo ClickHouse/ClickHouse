@@ -1,16 +1,13 @@
 -- Tags: no-parallel, no-fasttest, long, no-random-settings
 
 SET max_bytes_before_external_sort = 33554432;
-SET max_bytes_ratio_before_external_sort = 0;
-SET min_external_sort_block_bytes = '10Mi';
-SET max_block_size = 1048576;
+set max_block_size = 1048576;
 
 SELECT number FROM (SELECT number FROM numbers(2097152)) ORDER BY number * 1234567890123456789 LIMIT 2097142, 10
 SETTINGS log_comment='02402_external_disk_mertrics/sort'
 FORMAT Null;
 
 SET max_bytes_before_external_group_by = '100M';
-SET max_bytes_ratio_before_external_group_by = 0;
 SET max_memory_usage = '410M';
 SET group_by_two_level_threshold = '100K';
 SET group_by_two_level_threshold_bytes = '50M';
@@ -31,7 +28,7 @@ ORDER BY n
 SETTINGS log_comment='02402_external_disk_mertrics/join'
 FORMAT Null;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT
     if(
@@ -80,8 +77,7 @@ SELECT
         'ok',
         'fail: ' || toString(count()) || ' ' || toString(any(ProfileEvents))
     )
-    FROM system.query_log
-    WHERE current_database = currentDatabase()
+    FROM system.query_log WHERE current_database = currentDatabase()
         AND log_comment = '02402_external_disk_mertrics/join'
         AND query ILIKE 'SELECT%2097152%' AND type = 'QueryFinish';
 

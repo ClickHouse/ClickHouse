@@ -1,3 +1,4 @@
+version: '2.3'
 services:
   golang1:
     image: clickhouse/mysql-golang-client:${DOCKER_MYSQL_GOLANG_CLIENT_TAG:-latest}

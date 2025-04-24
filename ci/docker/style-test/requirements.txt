@@ -1,5 +1,0 @@
-requests==2.32.3
-yamllint==1.26.3
-codespell==2.2.1
-mypy==1.15.0
-pylint==3.1.0

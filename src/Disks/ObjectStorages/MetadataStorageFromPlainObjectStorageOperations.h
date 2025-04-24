@@ -7,7 +7,6 @@
 #include <filesystem>
 #include <map>
 
-
 namespace DB
 {
 
@@ -31,7 +30,6 @@ public:
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
     void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 };
-
 
 class MetadataStorageFromPlainObjectStorageMoveDirectoryOperation final : public IMetadataOperation
 {
@@ -61,7 +59,6 @@ public:
     void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 };
 
-
 class MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation final : public IMetadataOperation
 {
 private:
@@ -71,7 +68,7 @@ private:
     ObjectStoragePtr object_storage;
     const std::string metadata_key_prefix;
 
-    InMemoryDirectoryPathMap::RemotePathInfo info;
+    std::string key_prefix;
     bool remove_attempted = false;
 
 public:
@@ -85,7 +82,6 @@ public:
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
     void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 };
-
 
 class MetadataStorageFromPlainObjectStorageWriteFileOperation final : public IMetadataOperation
 {
@@ -104,7 +100,6 @@ public:
     void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 };
 
-
 class MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation final : public IMetadataOperation
 {
 private:
@@ -118,30 +113,6 @@ private:
 public:
     MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
         std::filesystem::path && path_, InMemoryDirectoryPathMap & path_map_, ObjectStoragePtr object_storage_);
-
-    void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
-    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
-};
-
-/// Throws an exception if path_to_ already exists.
-class MetadataStorageFromPlainObjectStorageCopyFileOperation final : public IMetadataOperation
-{
-private:
-    std::filesystem::path path_from;
-    std::filesystem::path remote_path_from;
-    std::filesystem::path path_to;
-    std::filesystem::path remote_path_to;
-    InMemoryDirectoryPathMap & path_map;
-    ObjectStoragePtr object_storage;
-
-    bool copied = false;
-
-public:
-    MetadataStorageFromPlainObjectStorageCopyFileOperation(
-        std::filesystem::path path_from_,
-        std::filesystem::path path_to_,
-        InMemoryDirectoryPathMap & path_map_,
-        ObjectStoragePtr object_storage_);
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
     void undo(std::unique_lock<SharedMutex> & metadata_lock) override;

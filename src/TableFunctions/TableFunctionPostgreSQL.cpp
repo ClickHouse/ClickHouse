@@ -15,14 +15,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 postgresql_connection_attempt_timeout;
-    extern const SettingsBool postgresql_connection_pool_auto_close_connection;
-    extern const SettingsUInt64 postgresql_connection_pool_retries;
-    extern const SettingsUInt64 postgresql_connection_pool_size;
-    extern const SettingsUInt64 postgresql_connection_pool_wait_timeout;
-}
 
 namespace ErrorCodes
 {
@@ -87,11 +79,11 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
     const auto & settings = context->getSettingsRef();
     connection_pool = std::make_shared<postgres::PoolWithFailover>(
         *configuration,
-        settings[Setting::postgresql_connection_pool_size],
-        settings[Setting::postgresql_connection_pool_wait_timeout],
-        settings[Setting::postgresql_connection_pool_retries],
-        settings[Setting::postgresql_connection_pool_auto_close_connection],
-        settings[Setting::postgresql_connection_attempt_timeout]);
+        settings.postgresql_connection_pool_size,
+        settings.postgresql_connection_pool_wait_timeout,
+        settings.postgresql_connection_pool_retries,
+        settings.postgresql_connection_pool_auto_close_connection,
+        settings.postgresql_connection_attempt_timeout);
 }
 
 }

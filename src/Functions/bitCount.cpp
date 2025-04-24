@@ -49,7 +49,7 @@ using FunctionBitCount = FunctionUnaryArithmetic<BitCountImpl, NameBitCount, fal
 template <> struct FunctionUnaryArithmeticMonotonicity<NameBitCount>
 {
     static bool has() { return false; }
-    static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
+    static IFunction::Monotonicity get(const Field &, const Field &)
     {
         return {};
     }
