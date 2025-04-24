@@ -3,7 +3,7 @@ import time
 import traceback
 
 import requests
-from praktika.secret import Secret
+from praktika.info import Info
 from praktika.settings import Settings
 
 
@@ -13,8 +13,13 @@ class CIDBCluster:
     USER_SECRET = Settings.SECRET_CI_DB_USER
 
     def __init__(self):
-        self.user = ""
-        self.url = ""
+        info = Info()
+        self.user_secret = info.get_secret(self.USER_SECRET)
+        self.url_secret = info.get_secret(self.URL_SECRET)
+        self.pwd_secret = info.get_secret(self.PASSWD_SECRET)
+        self.user = None
+        self.url = None
+        self.pwd = None
         self._session = None
         self._auth = None
 
@@ -24,23 +29,10 @@ class CIDBCluster:
             self._session = None
 
     def is_ready(self):
-        assert self.USER_SECRET
-        assert self.PASSWD_SECRET
-        assert self.USER_SECRET
-
         if not self.url:
-            self.url = Secret.Config(
-                name=self.URL_SECRET,
-                type=Secret.Type.AWS_SSM_VAR,
-            ).get_value()
-            self.user = Secret.Config(
-                name=self.USER_SECRET,
-                type=Secret.Type.AWS_SSM_VAR,
-            ).get_value()
-            passwd = Secret.Config(
-                name=self.PASSWD_SECRET,
-                type=Secret.Type.AWS_SSM_VAR,
-            ).get_value()
+            self.url = self.url_secret.get_value()
+            self.user = self.user_secret.get_value()
+            passwd = self.pwd_secret.get_value()
             if not self.url:
                 print("ERROR: failed to retrive password for LogCluster")
                 return False

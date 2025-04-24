@@ -207,9 +207,9 @@ clickhouse-client --query "CREATE TABLE test.visits (CounterID UInt32,  StartDat
     ENGINE = CollapsingMergeTree(Sign) PARTITION BY toYYYYMM(StartDate) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
     SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='$TEMP_POLICY'"
 
-clickhouse-client --query "INSERT INTO test.hits_s3 SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
-clickhouse-client --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
-clickhouse-client --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits_s3 SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
 
 clickhouse-client --query "DROP TABLE datasets.visits_v1 SYNC"
 clickhouse-client --query "DROP TABLE datasets.hits_v1 SYNC"
@@ -229,7 +229,7 @@ configure
 if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
     # But we still need default disk because some tables loaded only into it
     sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml \
-      | sed "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" \
+      | sed "s|<main><disk>cached_s3</disk></main>|<main><disk>cached_s3</disk></main><default><disk>default</disk></default>|" \
       > /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp
     mv /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
     sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
@@ -237,7 +237,7 @@ if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
 elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
     # But we still need default disk because some tables loaded only into it
     sudo cat /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml \
-      | sed "s|<main><disk>azure</disk></main>|<main><disk>azure</disk></main><default><disk>default</disk></default>|" \
+      | sed "s|<main><disk>cached_azure</disk></main>|<main><disk>cached_azure</disk></main><default><disk>default</disk></default>|" \
       > /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml.tmp
     mv /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml
     sudo chown clickhouse /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml
@@ -258,8 +258,8 @@ if [ "$cache_policy" = "SLRU" ]; then
 fi
 
 # Randomize async_load_databases
-if [ $(( $(date +%-d) % 2 )) -eq 1 ]; then
-    sudo echo "<clickhouse><async_load_databases>true</async_load_databases></clickhouse>" \
+if [ $(( $(date +%-d) % 2 )) -eq 0 ]; then
+    sudo echo "<clickhouse><async_load_databases>false</async_load_databases></clickhouse>" \
         > /etc/clickhouse-server/config.d/enable_async_load_databases.xml
 fi
 
@@ -280,6 +280,10 @@ mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/c
 # NOTE Disable thread fuzzer before server start with data after stress test.
 # In debug build it can take a lot of time.
 unset "${!THREAD_@}"
+# Also disable cannot_allocate_thread_fault_injection_probability, since this
+# will not allow to load tables asynchronously. Anyway the stress tests was
+# running with fault injection.
+rm /etc/clickhouse-server/config.d/cannot_allocate_thread_injection.xml
 
 start_server
 

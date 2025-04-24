@@ -3,12 +3,12 @@ Greater (Ok)
 Greater (Ok)
 Row 1:
 ──────
-type:                         QueryFinish
-elapsed_more_than_one_second: 1
-end_minus_st⋯an_a_second:     1
+type:                               QueryFinish
+elapsed_more_than_one_second:       1
+end_minus_start_more_than_a_second: 1
 
 Row 2:
 ──────
-type:                         QueryFinish
-elapsed_more_than_one_second: 1
-end_minus_st⋯an_a_second:     1
+type:                               QueryFinish
+elapsed_more_than_one_second:       1
+end_minus_start_more_than_a_second: 1

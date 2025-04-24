@@ -1,5 +1,4 @@
 #include <Common/PoolId.h>
-#include <Common/ThreadPool.h>
 #include <Common/thread_local_rng.h>
 
 #include <Parsers/ParserCreateQuery.h>
@@ -18,7 +17,6 @@
 #include <Storages/StorageMaterializedView.h>
 
 #include <IO/ReadBufferFromFile.h>
-#include <IO/ReadHelpers.h>
 
 #include <Core/Settings.h>
 #include <Common/CurrentMetrics.h>
@@ -29,7 +27,10 @@
 
 #include <filesystem>
 
+#include <fmt/ranges.h>
+
 #define ORDINARY_TO_ATOMIC_PREFIX ".tmp_convert."
+
 
 namespace fs = std::filesystem;
 
@@ -102,6 +103,10 @@ static void loadDatabase(
     const String & database_path,
     bool force_restore_data)
 {
+    /// If it is already loaded.
+    if (DatabaseCatalog::instance().isDatabaseExist(database))
+        return;
+
     String database_attach_query;
     String database_metadata_file = database_path + ".sql";
 
@@ -109,11 +114,7 @@ static void loadDatabase(
     if (db_disk->existsFile(fs::path(database_metadata_file)))
     {
         /// There is .sql file with database creation statement.
-        ReadSettings read_settings = getReadSettings();
-        read_settings.local_fs_method = LocalFSReadMethod::read;
-        read_settings.local_fs_buffer_size = 1024;
-        auto in = db_disk->readFile(database_metadata_file, read_settings);
-        readStringUntilEOF(database_attach_query, *in);
+        database_attach_query = readMetadataFile(db_disk, database_metadata_file);
     }
     else
     {
@@ -200,11 +201,14 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
         }
     }
 
-
     auto metadata_dir_path = fs::path("metadata");
 
     /// Loop over databases.
     std::map<String, String> databases;
+
+    /// Some databases don't have an .sql metadata file.
+    std::map<String, String> orphan_directories_and_symlinks;
+
     for (const auto it = db_disk->iterateDirectory(metadata_dir_path); it->isValid(); it->next())
     {
         auto sub_path = fs::path(it->path());
@@ -212,17 +216,22 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
             sub_path = sub_path.parent_path();
 
         if (db_disk->isSymlinkSupported() && db_disk->isSymlink(sub_path))
+        {
+            String db_name = sub_path.filename().string();
+            if (!isSystemOrInformationSchema(db_name))
+                orphan_directories_and_symlinks.emplace(unescapeForFileName(db_name), sub_path);
             continue;
+        }
 
         if (db_disk->existsDirectory(sub_path))
             continue;
 
         const auto current_file = sub_path.filename().string();
 
-        /// TODO: DETACH DATABASE PERMANENTLY ?
         if (fs::path(current_file).extension() == ".sql")
         {
             String db_name = fs::path(current_file).stem();
+            orphan_directories_and_symlinks.erase(db_name);
             if (!isSystemOrInformationSchema(db_name))
                 databases.emplace(unescapeForFileName(db_name), metadata_dir_path / db_name);
         }
@@ -262,7 +271,13 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
         loaded_databases.insert({name, DatabaseCatalog::instance().getDatabase(name)});
     }
 
-    auto mode = getLoadingStrictnessLevel(/* attach */ true, /* force_attach */ true, has_force_restore_data_flag, /*secondary*/ false);
+    for (const auto & [name, db_path] : orphan_directories_and_symlinks)
+    {
+        loadDatabase(context, name, db_path, has_force_restore_data_flag);
+        loaded_databases.insert({name, DatabaseCatalog::instance().getDatabase(name)});
+    }
+
+    auto mode = getLoadingStrictnessLevel(/* attach */ true, /* force_attach */ true, has_force_restore_data_flag, /* secondary */ false);
     TablesLoader loader{context, std::move(loaded_databases), mode};
     auto load_tasks = loader.loadTablesAsync();
     auto startup_tasks = loader.startupTablesAsync();
@@ -294,6 +309,10 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
 
 static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & database_name, const String & default_engine)
 {
+    /// If it is already loaded.
+    if (DatabaseCatalog::instance().isDatabaseExist(database_name))
+        return;
+
     auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
 
     String database_name_escaped = escapeForFileName(database_name);
@@ -524,7 +543,8 @@ void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMu
 
 LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context, bool async_load_system_database)
 {
-    loadSystemDatabaseImpl(context, DatabaseCatalog::SYSTEM_DATABASE, "Atomic");
+    loadSystemDatabaseImpl(context, DatabaseCatalog::SYSTEM_DATABASE,
+        context->getApplicationType() == Context::ApplicationType::SERVER ? "Atomic" : "Memory");
     loadSystemDatabaseImpl(context, DatabaseCatalog::INFORMATION_SCHEMA, "Memory");
     loadSystemDatabaseImpl(context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE, "Memory");
 

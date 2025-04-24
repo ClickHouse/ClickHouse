@@ -3,6 +3,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
@@ -17,6 +18,7 @@
 #include <Common/escapeForFileName.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
@@ -60,7 +62,13 @@ protected:
 
         std::shared_ptr<MergeTreeMarksLoader> marks_loader;
         if (with_marks && isCompactPart(part))
-            marks_loader = createMarksLoader(part, MergeTreeDataPartCompact::DATA_FILE_NAME, part->getColumns().size());
+        {
+            marks_loader = createMarksLoader(
+                part,
+                MergeTreeDataPartCompact::DATA_FILE_NAME,
+                part->index_granularity_info.mark_type.with_substreams ? part->getColumnsSubstreams().getTotalSubstreams()
+                                                                       : part->getColumns().size());
+        }
 
         size_t num_columns = header.columns();
         size_t num_rows = index_granularity->getMarksCount();
@@ -174,11 +182,22 @@ private:
         }
         else if (isCompactPart(part))
         {
-            auto unescaped_name = unescapeForFileName(column_name);
-            if (auto col_idx_opt = part->getColumnPosition(unescaped_name))
+            if (part->index_granularity_info.mark_type.with_substreams)
             {
-                col_idx = *col_idx_opt;
-                has_marks_in_part = true;
+                if (auto col_idx_opt = part->getColumnsSubstreams().tryGetSubstreamPosition(column_name))
+                {
+                    col_idx = *col_idx_opt;
+                    has_marks_in_part = true;
+                }
+            }
+            else
+            {
+                auto unescaped_name = unescapeForFileName(column_name);
+                if (auto col_idx_opt = part->getColumnPosition(unescaped_name))
+                {
+                    col_idx = *col_idx_opt;
+                    has_marks_in_part = true;
+                }
             }
         }
         else

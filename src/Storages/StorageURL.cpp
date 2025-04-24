@@ -28,7 +28,10 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
+#include <Interpreters/ExpressionActions.h>
+
 #include <Common/HTTPHeaderFilter.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadStatus.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/NamedCollections/NamedCollections.h>
@@ -73,21 +76,21 @@ static auto getWriteBodyCallback(const String & body)
 
 namespace Setting
 {
-extern const SettingsBool enable_url_encoding;
-extern const SettingsBool engine_url_skip_empty_files;
-extern const SettingsUInt64 glob_expansion_max_elements;
-extern const SettingsUInt64 max_http_get_redirects;
-extern const SettingsMaxThreads max_parsing_threads;
-extern const SettingsUInt64 max_read_buffer_size;
-extern const SettingsBool optimize_count_from_files;
-extern const SettingsBool schema_inference_cache_require_modification_time_for_url;
-extern const SettingsSchemaInferenceMode schema_inference_mode;
-extern const SettingsBool schema_inference_use_cache_for_url;
-extern const SettingsBool parallelize_output_from_storages;
-extern const SettingsUInt64 output_format_compression_level;
-extern const SettingsUInt64 output_format_compression_zstd_window_log;
-extern const SettingsBool use_cache_for_count_from_files;
-extern const SettingsInt64 zstd_window_log_max;
+    extern const SettingsBool enable_url_encoding;
+    extern const SettingsBool engine_url_skip_empty_files;
+    extern const SettingsUInt64 glob_expansion_max_elements;
+    extern const SettingsUInt64 max_http_get_redirects;
+    extern const SettingsMaxThreads max_parsing_threads;
+    extern const SettingsNonZeroUInt64 max_read_buffer_size;
+    extern const SettingsBool optimize_count_from_files;
+    extern const SettingsBool schema_inference_cache_require_modification_time_for_url;
+    extern const SettingsSchemaInferenceMode schema_inference_mode;
+    extern const SettingsBool schema_inference_use_cache_for_url;
+    extern const SettingsBool parallelize_output_from_storages;
+    extern const SettingsUInt64 output_format_compression_level;
+    extern const SettingsUInt64 output_format_compression_zstd_window_log;
+    extern const SettingsBool use_cache_for_count_from_files;
+    extern const SettingsInt64 zstd_window_log_max;
 }
 
 namespace ErrorCodes

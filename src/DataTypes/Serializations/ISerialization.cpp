@@ -109,7 +109,7 @@ void ISerialization::serializeBinaryBulk(const IColumn & column, WriteBuffer &, 
     throw Exception(ErrorCodes::MULTIPLE_STREAMS_REQUIRED, "Column {} must be serialized with multiple streams", column.getName());
 }
 
-void ISerialization::deserializeBinaryBulk(IColumn & column, ReadBuffer &, size_t, double) const
+void ISerialization::deserializeBinaryBulk(IColumn & column, ReadBuffer &, size_t, size_t, double) const
 {
     throw Exception(ErrorCodes::MULTIPLE_STREAMS_REQUIRED, "Column {} must be deserialized with multiple streams", column.getName());
 }
@@ -129,6 +129,7 @@ void ISerialization::serializeBinaryBulkWithMultipleStreams(
 
 void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & /* state */,
@@ -144,7 +145,7 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {
         auto mutable_column = column->assumeMutable();
-        deserializeBinaryBulk(*mutable_column, *stream, limit, settings.avg_value_size_hint);
+        deserializeBinaryBulk(*mutable_column, *stream, rows_offset, limit, settings.avg_value_size_hint);
         column = std::move(mutable_column);
         addToSubstreamsCache(cache, settings.path, column);
     }
@@ -176,6 +177,8 @@ String getNameForSubstreamPath(
             ++array_level;
         else if (it->type == Substream::DictionaryKeys)
             stream_name += ".dict";
+        else if (it->type == Substream::DictionaryKeysPrefix)
+            stream_name += ".dict_prefix";
         else if (it->type == Substream::SparseOffsets)
             stream_name += ".sparse.idx";
         else if (Substream::named_types.contains(it->type))
@@ -193,6 +196,8 @@ String getNameForSubstreamPath(
         }
         else if (it->type == Substream::VariantDiscriminators)
             stream_name += ".variant_discr";
+        else if (it->type == Substream::VariantDiscriminatorsPrefix)
+            stream_name += ".variant_discr_prefix";
         else if (it->type == Substream::VariantOffsets)
             stream_name += ".variant_offsets";
         else if (it->type == Substream::VariantElement)
@@ -450,6 +455,27 @@ bool ISerialization::isDynamicOrObjectStructureSubcolumn(const DB::ISerializatio
     return path[path.size() - 1].type == SubstreamType::DynamicStructure || path[path.size() - 1].type == SubstreamType::ObjectStructure;
 }
 
+bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path, bool use_specialized_prefixes_substreams)
+{
+    if (path.empty())
+        return false;
+
+    switch (path[path.size() - 1].type)
+    {
+        case SubstreamType::DynamicStructure: [[fallthrough]];
+        case SubstreamType::ObjectStructure: [[fallthrough]];
+        case SubstreamType::DeprecatedObjectStructure: [[fallthrough]];
+        case SubstreamType::DictionaryKeysPrefix: [[fallthrough]];
+        case SubstreamType::VariantDiscriminatorsPrefix:
+            return true;
+        case SubstreamType::DictionaryKeys: [[fallthrough]];
+        case SubstreamType::VariantDiscriminators:
+            return !use_specialized_prefixes_substreams;
+        default:
+            return false;
+    }
+}
+
 ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)
 {
     assert(prefix_len <= path.size());
@@ -463,8 +489,8 @@ ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath
         const auto & creator = path[i].creator;
         if (creator)
         {
+            res.serialization = res.serialization ? creator->create(res.serialization, res.type) : res.serialization;
             res.type = res.type ? creator->create(res.type) : res.type;
-            res.serialization = res.serialization ? creator->create(res.serialization) : res.serialization;
             res.column = res.column ? creator->create(res.column) : res.column;
         }
     }

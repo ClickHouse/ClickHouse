@@ -48,6 +48,13 @@ void SerializationLowCardinality::enumerateStreams(
 {
     const auto * column_lc = data.column ? &getColumnLowCardinality(*data.column) : nullptr;
 
+    if (settings.use_specialized_prefixes_substreams)
+    {
+        settings.path.push_back(Substream::DictionaryKeysPrefix);
+        callback(settings.path);
+        settings.path.pop_back();
+    }
+
     settings.path.push_back(Substream::DictionaryKeys);
     auto dict_data = SubstreamData(dict_inner_serialization)
         .withType(data.type ? dictionary_type : nullptr)
@@ -219,6 +226,11 @@ struct DeserializeStateLowCardinality : public ISerialization::DeserializeBinary
     bool need_update_dictionary = false;
 
     explicit DeserializeStateLowCardinality(UInt64 key_version_) : key_version(key_version_) {}
+
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    {
+        return std::make_shared<DeserializeStateLowCardinality>(*this);
+    }
 };
 
 void SerializationLowCardinality::serializeBinaryBulkStatePrefix(
@@ -226,7 +238,7 @@ void SerializationLowCardinality::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    settings.path.push_back(Substream::DictionaryKeys);
+    settings.path.push_back(settings.use_specialized_prefixes_substreams ? Substream::DictionaryKeysPrefix : Substream::DictionaryKeys);
     auto * stream = settings.getter(settings.path);
     settings.path.pop_back();
 
@@ -271,7 +283,7 @@ void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsDeserializeStatesCache * cache) const
 {
-    settings.path.push_back(Substream::DictionaryKeys);
+    settings.path.push_back(settings.use_specialized_prefixes_substreams ? Substream::DictionaryKeysPrefix : Substream::DictionaryKeys);
 
     if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
     {
@@ -450,16 +462,16 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
     auto & global_dictionary = low_cardinality_state->shared_dictionary;
     KeysSerializationVersion::checkVersion(low_cardinality_state->key_version.value);
 
-    bool need_update_dictionary = global_dictionary == nullptr;
-    if (need_update_dictionary)
-        global_dictionary = DataTypeLowCardinality::createColumnUnique(*dictionary_type);
-
     size_t max_limit = column.size() - offset;
     limit = limit ? std::min(limit, max_limit) : max_limit;
 
     /// Do not write anything for empty column. (May happen while writing empty arrays.)
     if (limit == 0)
         return;
+
+    bool need_update_dictionary = global_dictionary == nullptr;
+    if (need_update_dictionary)
+        global_dictionary = DataTypeLowCardinality::createColumnUnique(*dictionary_type);
 
     auto sub_column = low_cardinality_column.cutAndCompact(offset, limit);
     ColumnPtr positions = sub_column->getIndexesPtr();
@@ -519,6 +531,7 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
 
 void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -558,7 +571,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
 
         auto keys_type = removeNullable(dictionary_type);
         auto global_dict_keys = keys_type->createColumn();
-        dict_inner_serialization->deserializeBinaryBulk(*global_dict_keys, *keys_stream, num_keys, 0);
+        dict_inner_serialization->deserializeBinaryBulk(*global_dict_keys, *keys_stream, 0, num_keys, 0);
 
         auto column_unique = DataTypeLowCardinality::createColumnUnique(*dictionary_type, std::move(global_dict_keys));
         low_cardinality_state->global_dictionary = std::move(column_unique);
@@ -571,7 +584,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
 
         auto keys_type = removeNullable(dictionary_type);
         auto additional_keys = keys_type->createColumn();
-        dict_inner_serialization->deserializeBinaryBulk(*additional_keys, *indexes_stream, num_keys, 0);
+        dict_inner_serialization->deserializeBinaryBulk(*additional_keys, *indexes_stream, 0, num_keys, 0);
         low_cardinality_state->additional_keys = std::move(additional_keys);
 
         if (!low_cardinality_state->index_type.need_global_dictionary && dictionary_type->isNullable())
@@ -584,11 +597,11 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
         }
     };
 
-    auto read_indexes = [this, low_cardinality_state, indexes_stream, &low_cardinality_column](UInt64 num_rows)
+    auto read_indexes = [this, low_cardinality_state, indexes_stream, &low_cardinality_column](UInt64 skipped_rows, UInt64 num_rows)
     {
         auto indexes_type = low_cardinality_state->index_type.getDataType();
         MutableColumnPtr indexes_column = indexes_type->createColumn();
-        indexes_type->getDefaultSerialization()->deserializeBinaryBulk(*indexes_column, *indexes_stream, num_rows, 0);
+        indexes_type->getDefaultSerialization()->deserializeBinaryBulk(*indexes_column, *indexes_stream, skipped_rows, num_rows, 0);
 
         auto & global_dictionary = low_cardinality_state->global_dictionary;
         const auto & additional_keys = low_cardinality_state->additional_keys;
@@ -676,10 +689,18 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
             readBinaryLittleEndian(low_cardinality_state->num_pending_rows, *indexes_stream);
         }
 
-        size_t num_rows_to_read = std::min<UInt64>(limit, low_cardinality_state->num_pending_rows);
-        read_indexes(num_rows_to_read);
+        size_t skipped_rows = 0;
+
+        if (rows_offset)
+        {
+            skipped_rows = std::min<UInt64>(rows_offset, low_cardinality_state->num_pending_rows);
+            rows_offset -= skipped_rows;
+        }
+
+        size_t num_rows_to_read = std::min<UInt64>(limit, low_cardinality_state->num_pending_rows - skipped_rows);
+        read_indexes(skipped_rows, num_rows_to_read);
         limit -= num_rows_to_read;
-        low_cardinality_state->num_pending_rows -= num_rows_to_read;
+        low_cardinality_state->num_pending_rows -= num_rows_to_read + skipped_rows;
     }
 
     column = std::move(mutable_column);

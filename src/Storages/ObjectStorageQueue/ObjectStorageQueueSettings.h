@@ -13,6 +13,7 @@ struct ObjectStorageQueueSettingsImpl;
 struct MutableColumnsAndConstraints;
 class StorageObjectStorageQueue;
 class SettingsChanges;
+struct StorageID;
 
 /// List of available types supported in ObjectStorageQueueSettings object
 #define OBJECT_STORAGE_QUEUE_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
@@ -40,6 +41,7 @@ class SettingsChanges;
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt32) \
     M(CLASS_NAME, UInt64) \
+    M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, URI)
 
@@ -60,7 +62,7 @@ struct ObjectStorageQueueSettings
         const std::string & database_name,
         const StorageObjectStorageQueue & storage) const;
 
-    void loadFromQuery(ASTStorage & storage_def);
+    void loadFromQuery(ASTStorage & storage_def, bool is_attach, const StorageID & storage_id);
 
     void applyChanges(const SettingsChanges & changes);
 

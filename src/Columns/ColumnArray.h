@@ -120,7 +120,7 @@ public:
                                     size_t limit, int nan_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
     void reserve(size_t n) override;
     size_t capacity() const override;
-    void prepareForSquashing(const Columns & source_columns) override;
+    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
     void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
@@ -166,13 +166,27 @@ public:
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
     void rollback(const ColumnCheckpoint & checkpoint) override;
 
-    void forEachSubcolumn(MutableColumnCallback callback) override
+    void forEachMutableSubcolumn(MutableColumnCallback callback) override
     {
         callback(offsets);
         callback(data);
     }
 
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    {
+        callback(*offsets);
+        offsets->forEachMutableSubcolumnRecursively(callback);
+        callback(*data);
+        data->forEachMutableSubcolumnRecursively(callback);
+    }
+
+    void forEachSubcolumn(ColumnCallback callback) const override
+    {
+        callback(offsets);
+        callback(data);
+    }
+
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
     {
         callback(*offsets);
         offsets->forEachSubcolumnRecursively(callback);

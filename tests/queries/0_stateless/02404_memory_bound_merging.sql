@@ -68,12 +68,13 @@ set parallel_replicas_for_non_replicated_merge_tree = 1;
 set max_parallel_replicas = 3;
 set cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 set distributed_aggregation_memory_efficient=1;
+set parallel_replicas_only_with_analyzer = 0;  -- necessary for CI run with disabled analyzer
 
 select count() from pr_t;
 
 -- { echoOn } --
 explain pipeline select a from pr_t group by a order by a limit 5 offset 500 settings parallel_replicas_local_plan=0;
-explain pipeline select a from pr_t group by a order by a limit 5 offset 500 settings allow_experimental_analyzer=1, parallel_replicas_local_plan=1;
+explain pipeline select a from pr_t group by a order by a limit 5 offset 500 SETTINGS enable_analyzer=1, parallel_replicas_local_plan=1;
 
 select a, count() from pr_t group by a order by a limit 5 offset 500;
 select a, count() from pr_t group by a, b order by a limit 5 offset 500;

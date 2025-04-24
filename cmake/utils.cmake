@@ -126,7 +126,7 @@ endfunction()
 # Clang-tidy only requires compilation, linking is superfluous. CMake unfortunately has no way to
 # suppress linking. As a workaround, we set custom launchers clang-tidy builds which create empty
 # files during linking to trick CMake. The only situation where this doesn't work are intermediate
-# code-generating binaries like protoc, llvm-tlbgen and their dependencies. These can be build/linked
+# code-generating binaries like protoc, llvm-tlbgen and their dependencies. These can be built/linked
 # as usual using disable_dummy_launchers_if_needed and enable_dummy_launchers_if_needed.
 
 macro(disable_dummy_launchers_if_needed)

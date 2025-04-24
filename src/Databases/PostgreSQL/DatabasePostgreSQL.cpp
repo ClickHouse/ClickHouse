@@ -6,9 +6,11 @@
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StoragePostgreSQL.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -23,6 +25,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <filesystem>
 
 #include <Disks/IDisk.h>
@@ -394,6 +397,10 @@ void DatabasePostgreSQL::shutdown()
     cleaner_task->deactivate();
 }
 
+void DatabasePostgreSQL::alterDatabaseComment(const AlterCommand & command)
+{
+    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
+}
 
 ASTPtr DatabasePostgreSQL::getCreateDatabaseQuery() const
 {

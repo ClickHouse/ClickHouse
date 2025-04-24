@@ -1,5 +1,6 @@
 #include "HierarchyDictionariesUtils.h"
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 
 

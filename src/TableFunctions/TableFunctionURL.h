@@ -82,12 +82,8 @@ private:
     std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 
     StoragePtr getStorage(
-        const String & source,
-        const String & format_,
-        const ColumnsDescription & columns,
-        ContextPtr global_context,
-        const std::string & table_name,
-        const String & compression_method_) const override;
+        const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
+        const std::string & table_name, const String & compression_method_, bool is_insert_query) const override;
 
     const char * getStorageTypeName() const override { return "URL"; }
 

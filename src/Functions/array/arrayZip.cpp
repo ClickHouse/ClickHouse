@@ -2,6 +2,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -48,7 +49,7 @@ public:
                     "Argument {} of function {} must be array. Found {} instead.",
                     toString(index + 1),
                     getName(),
-                    arguments[0].type->getName());
+                    arguments[index].type->getName());
 
             auto nested_type = array_type->getNestedType();
             if constexpr (allow_unaligned)
