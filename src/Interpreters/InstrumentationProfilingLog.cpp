@@ -19,6 +19,10 @@ namespace DB
 //     };
 // }
 
+ColumnsDescription InstrumentationProfilingLogElement::getColumnsDescription() {
+    return ColumnsDescription{};
+}
+
 NamesAndAliases InstrumentationProfilingLogElement::getNamesAndAliases()
 {
     return {};
