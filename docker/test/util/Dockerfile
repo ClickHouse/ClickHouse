@@ -80,5 +80,5 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-COPY --from=clickhouse/cctools:13cfebfd8f1bbc65ab49 /opt/gdb /opt/gdb
+COPY --from=clickhouse/cctools:a551cc7348883028fb53 /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
