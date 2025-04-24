@@ -839,6 +839,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         if (!isStoredOnReadonlyDisk())
             loadUUID();
         loadColumns(require_columns_checksums);
+        loadColumnsSubstreams();
         loadChecksums(require_columns_checksums);
 
         loadIndexGranularity();
@@ -1088,6 +1089,9 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
 
     if (getDataPartStorage().existsFile(METADATA_VERSION_FILE_NAME))
         result.emplace(METADATA_VERSION_FILE_NAME);
+
+    if (part_type == MergeTreeDataPartType::Compact && index_granularity_info.mark_type.with_substreams)
+        result.emplace("columns_substreams.txt");
 
     return result;
 }
@@ -1667,6 +1671,20 @@ void IMergeTreeDataPart::loadColumns(bool require)
     setColumns(loaded_columns, infos, loaded_metadata_version);
 }
 
+void IMergeTreeDataPart::loadColumnsSubstreams()
+{
+    if (part_type != MergeTreeDataPartType::Compact || !index_granularity_info.mark_type.with_substreams)
+        return;
+
+    String path = fs::path(getDataPartStorage().getRelativePath()) / "columns_substreams.txt";
+
+    auto in = readFileIfExists("columns_substreams.txt");
+    if (!in)
+        throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns_substreams.txt in part {}, expected path {} on drive {}", name, path, getDataPartStorage().getDiskName());
+
+    columns_substreams.readText(*in);
+
+}
 
 bool IMergeTreeDataPart::supportLightweightDeleteMutate() const
 {

@@ -723,7 +723,7 @@ static NameSet collectFilesToSkip(
     const Block & updated_header,
     const std::vector<MergeTreeIndexPtr> & indices_to_skip,
     const String & mrk_extension,
-    const std::set<ProjectionDescriptionRawPtr> & projections_to_skip,
+    const std::vector<ProjectionDescriptionRawPtr> & projections_to_skip,
     const std::set<ColumnStatisticsPartPtr> & stats_to_recalc)
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
@@ -2563,8 +2563,7 @@ bool MutateTask::prepare()
             lightweight_mutation_projection_mode == LightweightMutationProjectionMode::DROP
             || lightweight_mutation_projection_mode == LightweightMutationProjectionMode::THROW;
 
-        std::set<ProjectionDescriptionRawPtr> projections_to_skip_container;
-        auto * projections_to_skip = &projections_to_skip_container;
+        std::vector<ProjectionDescriptionRawPtr> projections_to_skip;
 
         bool should_create_projections = !(lightweight_delete_mode && lightweight_delete_drops_projections);
         /// Under lightweight delete mode, if option is drop, projections_to_recalc should be empty.
@@ -2575,12 +2574,12 @@ bool MutateTask::prepare()
                 ctx->metadata_snapshot,
                 ctx->materialized_projections);
 
-            projections_to_skip = &ctx->projections_to_recalc;
+            projections_to_skip.assign(ctx->projections_to_recalc.begin(), ctx->projections_to_recalc.end());
         }
         else
         {
             for (const auto & projection : ctx->metadata_snapshot->getProjections())
-                projections_to_skip->insert(&projection);
+                projections_to_skip.emplace_back(&projection);
         }
 
         ctx->stats_to_recalc = MutationHelpers::getStatisticsToRecalculate(ctx->metadata_snapshot, ctx->materialized_statistics);
@@ -2591,7 +2590,7 @@ bool MutateTask::prepare()
             ctx->updated_header,
             indices_to_skip,
             ctx->mrk_extension,
-            *projections_to_skip,
+            projections_to_skip,
             ctx->stats_to_recalc);
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
