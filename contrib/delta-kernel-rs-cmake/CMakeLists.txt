@@ -24,8 +24,10 @@ endif()
 # * default-engine: Needed for its s3 client (we can't pass our own s3 client via ffi)
 # * delta_kernel/cloud: s3 client
 clickhouse_import_crate(
-        MANIFEST_PATH "${DELTA_KERNEL_RS_SOURCE_DIR}/ffi/Cargo.toml"
-        FEATURES "default-engine, delta_kernel/cloud")
+    MANIFEST_PATH "${DELTA_KERNEL_RS_SOURCE_DIR}/ffi/Cargo.toml"
+    FEATURES "default-engine, delta_kernel/cloud"
+    LOCKED
+)
 clickhouse_config_crate_flags(delta_kernel_ffi)
 
 # We use our own OpenSSL headers and libs
