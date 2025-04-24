@@ -153,6 +153,8 @@ class JobConfigs:
             BuildTypes.AMD_BINARY,
             BuildTypes.ARM_RELEASE,
             BuildTypes.ARM_ASAN,
+            BuildTypes.ARM_COVERAGE,
+            BuildTypes.ARM_BINARY,
         ],
         provides=[
             [
@@ -198,6 +200,8 @@ class JobConfigs:
                 ArtifactNames.CH_ARM_ASAN,
                 ArtifactNames.DEB_ARM_ASAN,
             ],
+            [ArtifactNames.DEB_COV, ArtifactNames.CH_COV_BIN],
+            [ArtifactNames.CH_ARM_BIN],
         ],
         runs_on=[
             RunnerLabels.BUILDER_AMD,
@@ -207,6 +211,8 @@ class JobConfigs:
             RunnerLabels.BUILDER_AMD,
             RunnerLabels.BUILDER_AMD,
             RunnerLabels.BUILDER_AMD,
+            RunnerLabels.BUILDER_ARM,
+            RunnerLabels.BUILDER_ARM,
             RunnerLabels.BUILDER_ARM,
             RunnerLabels.BUILDER_ARM,
         ],
@@ -236,8 +242,6 @@ class JobConfigs:
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/build_post_hook.py"],
     ).parametrize(
         parameter=[
-            BuildTypes.ARM_COVERAGE,
-            BuildTypes.ARM_BINARY,
             BuildTypes.AMD_DARWIN,
             BuildTypes.ARM_DARWIN,
             BuildTypes.ARM_V80COMPAT,
@@ -251,8 +255,6 @@ class JobConfigs:
             BuildTypes.FUZZERS,
         ],
         provides=[
-            [ArtifactNames.DEB_COV, ArtifactNames.CH_COV_BIN],
-            [ArtifactNames.CH_ARM_BIN],
             [ArtifactNames.CH_AMD_DARWIN_BIN],
             [ArtifactNames.CH_ARM_DARWIN_BIN],
             [ArtifactNames.CH_ARM_V80COMPAT],
@@ -266,8 +268,6 @@ class JobConfigs:
             [],  # no need for fuzzers artifacts in normal pr run [ArtifactNames.FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         ],
         runs_on=[
-            RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_COVERAGE
-            RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_BINARY
             RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_DARWIN,
             RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_DARWIN,
             RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_V80COMPAT,
