@@ -23,7 +23,6 @@ RUN git clone https://github.com/tpoechtrager/cctools-port.git --branch 986-ld64
     && apt-get update \
     && apt-get install --yes \
         make \
-    && apt-get clean \
     && cd cctools-port/cctools \
     && ./configure --prefix=/cctools --with-libtapi=/cctools \
         --target=x86_64-apple-darwin \
@@ -48,8 +47,6 @@ RUN apt-get update \
     && apt-get install --yes \
         libgmp-dev \
         libmpfr-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 RUN wget https://sourceware.org/pub/gdb/releases/gdb-$GDB_VERSION.tar.gz \
     && tar -xvf gdb-$GDB_VERSION.tar.gz \
     && cd gdb-$GDB_VERSION \
@@ -80,7 +77,6 @@ RUN /opt/gdb/bin/gdb --version
 # and can produce a fips.so provider module.
 # Provider can be loaded by any OpenSSL version >= 3.1.
 # https://openssl-library.org/post/2025-03-11-fips-140-3/
-ENV PREFIX=/opt/openssl-fips
 ENV OPENSSL_VERSION=3.1.2
 
 RUN apt-get update && apt-get install -y \
@@ -90,20 +86,21 @@ RUN apt-get update && apt-get install -y \
     python3 \
     make \
     git \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    ca-certificates
 
 WORKDIR /tmp
 RUN wget https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz && \
     tar xzf openssl-${OPENSSL_VERSION}.tar.gz && \
     cd openssl-${OPENSSL_VERSION} && \
-    ./Configure enable-fips --prefix=${PREFIX} && \
+    ./Configure enable-fips && \
     make -j$(nproc) && \
-    mv "${PREFIX}/apps/openssl.cnf" "${PREFIX}/ssl/openssl.cnf" && \
-    mv "${PREFIX}/providers/fips.so" "${PREFIX}/ssl/fips.so"
+    mkdir -p /opt/openssl-fips && \
+    mv "apps/openssl.cnf" "/opt/openssl-fips/openssl.cnf" && \
+    mv "providers/fips.so" "/opt/openssl-fips/fips.so" && \
+    mv "providers/fipsmodule.cnf" "/opt/openssl-fips/fipsmodule.cnf"
 
 # Patching fipsmodule.cnf with a custom module location.
-RUN cat >> ${PREFIX}/ssl/fipsmodule.cnf <<EOF
+RUN cat >> /opt/openssl-fips/fipsmodule.cnf <<EOF
 install-version = 1
 module = /etc/ssl/fips.so
 EOF
@@ -114,7 +111,7 @@ EOF
 # for any OpenSSL usage in system (things will break).
 #
 # We will put fipsmodule.cnf to /etc/ssl in target containers
-RUN cat >> ${PREFIX}/ssl/openssl.cnf <<EOF
+RUN cat >> /opt/openssl-fips/openssl.cnf <<EOF
 
 .include /etc/ssl/fipsmodule.cnf
 
