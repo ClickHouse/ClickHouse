@@ -67,6 +67,8 @@ def create_tables(table_name, populate_count, skip_last_replica):
         pytest.param("test_1_shard_3_replicas", 3, True, 3),
         pytest.param("test_1_shard_3_replicas_1_unavailable", 3, False, 3),
         pytest.param("test_1_shard_3_replicas_1_unavailable", 3, True, 2),
+        pytest.param("test_1_shard_3_replicas_1_unavailable", 2, False, 2),
+        pytest.param("test_1_shard_3_replicas_1_unavailable", 2, True, 2),
     ],
 )
 def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local_pipeline, executed_queries):
@@ -104,14 +106,18 @@ def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local
     )
 
     execute_on_cluster(f"SYSTEM FLUSH LOGS query_log")
-
-    assert (
-        node1.query(
+    number_of_queries = node1.query(
             f"""SELECT count() FROM clusterAllReplicas({cluster_name}, system.query_log) WHERE current_database = currentDatabase() AND log_comment = '{log_comment}' AND type = 'QueryFinish' AND query_kind = 'Insert'
                 settings skip_unavailable_shards=1"""
         )
-        == f"{executed_queries}\n"
-    )
+
+    if max_parallel_replicas < 3:
+        if local_pipeline:
+            assert(number_of_queries == f"{executed_queries}\n" or number_of_queries == f"{executed_queries-1}\n")
+        else:
+            assert(number_of_queries == f"{executed_queries+1}\n" or number_of_queries == f"{executed_queries}\n")
+    else:
+        assert(number_of_queries == f"{executed_queries}\n")
 
 
 # TODO: Change protocol so we can check if all tables are present on a node
@@ -151,7 +157,7 @@ def test_insert_select_no_table(start_cluster, cluster_name, max_parallel_replic
 
 
 @pytest.mark.parametrize(
-    "cluster_name,max_parallel_replicas,local_pipeline,executed_queries",
+    "cluster_name,max_parallel_replicas,local_pipeline",
     [
         pytest.param("test_1_shard_3_replicas", 3, False),
         pytest.param("test_1_shard_3_replicas", 3, True),
