@@ -9,7 +9,7 @@ title: 'SummingMergeTree'
 
 # SummingMergeTree
 
-The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree). The difference is that when merging data parts for `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with one row which contains summarized values for the columns with the numeric data type. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
+The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree). The difference is that when merging data parts for `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with one row which contains summed values for the columns with the numeric data type. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
 
 We recommend using the engine together with `MergeTree`. Store complete data in `MergeTree` table, and use `SummingMergeTree` for aggregated data storing, for example, when preparing reports. Such an approach will prevent you from losing valuable data due to an incorrectly composed primary key.
 
@@ -34,7 +34,7 @@ For a description of request parameters, see [request description](../../../sql-
 
 #### columns {#columns}
 
-`columns` - a tuple with the names of columns where values will be summarized. Optional parameter.
+`columns` - a tuple with the names of columns where values will be summed. Optional parameter.
     The columns must be of a numeric type and must not be in the partition or sorting key.
 
  If `columns` is not specified, ClickHouse summarizes the values in all columns with a numeric data type that are not in the sorting key.
@@ -62,7 +62,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 All of the parameters excepting `columns` have the same meaning as in `MergeTree`.
 
-- `columns` — tuple with names of columns values of which will be summarized. Optional parameter. For a description, see the text above.
+- `columns` — tuple with names of columns values of which will be summed. Optional parameter. For a description, see the text above.
 
 </details>
 
@@ -107,13 +107,13 @@ ClickHouse can merge the data parts so that different resulting parts of data ca
 
 ### Common Rules for Summation {#common-rules-for-summation}
 
-The values in the columns with the numeric data type are summarized. The set of columns is defined by the parameter `columns`.
+The values in the columns with the numeric data type are summed. The set of columns is defined by the parameter `columns`.
 
 If the values were 0 in all of the columns for summation, the row is deleted.
 
-If column is not in the primary key and is not summarized, an arbitrary value is selected from the existing ones.
+If column is not in the primary key and is not summed, an arbitrary value is selected from the existing ones.
 
-The values are not summarized for columns in the primary key.
+The values are not summed for columns in the primary key.
 
 ### The Summation in the Aggregatefunction Columns {#the-summation-in-the-aggregatefunction-columns}
 
