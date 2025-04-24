@@ -27,6 +27,11 @@ class ExecutorTasks
     /// Stores processors need to be prepared. Preparing status is already set for them.
     TaskQueue<ExecutingGraph::Node> task_queue;
 
+    /// Async tasks should be processed with higher priority, but also require task stealing logic.
+    /// So we have a separate queue specifically for them.
+    TaskQueue<ExecutingGraph::Node> fast_task_queue;
+    std::atomic_bool has_fast_tasks = false; // Required only to enable local task optimization
+
     /// Queue which stores tasks where processors returned Async status after prepare.
     /// If multiple threads are used, main thread will wait for async tasks.
     /// For single thread, will wait for async tasks only when task_queue is empty.
@@ -40,10 +45,6 @@ class ExecutorTasks
 
     /// Number of idle threads, changed with threads_queue.size().
     std::atomic_size_t idle_threads = 0;
-
-    /// This is the total number of waited async tasks which are not executed yet.
-    /// sum(executor_contexts[i].async_tasks.size())
-    size_t num_waiting_async_tasks = 0;
 
     /// A set of currently waiting threads.
     ThreadsQueue threads_queue;
@@ -64,14 +65,16 @@ public:
     void rethrowFirstThreadException();
 
     void tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & self, std::unique_lock<std::mutex> & lock);
+    void tryWakeUpAnyOtherThreadWithTasksInQueue(ExecutionThreadContext & self, TaskQueue<ExecutingGraph::Node> & queue, std::unique_lock<std::mutex> & lock);
     
     /// It sets the task for specified thread `context`.
     /// If task was succeessfully found, one thread is woken up to process the remaining tasks.
     /// If there is no ready task yet, it blocks.
     /// If there are no more tasks, it finishes execution.
     /// Task priorities:
-    ///   1. Ready tasks from async_task_queue 
-    ///   2. Async tasks from thread's async_tasks (for num_threads == 1 we also check async_task_queue directly)
+    ///   0. For num_threads == 1 we check async_task_queue directly
+    ///   1. Async tasks from fast_task_queue for specified thread
+    ///   2. Async tasks from fast_task_queue for other threads
     ///   3. Regular tasks from task_queue for specified thread
     ///   4. Regular tasks from task_queue for other threads
     void tryGetTask(ExecutionThreadContext & context);

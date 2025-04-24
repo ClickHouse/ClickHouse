@@ -11,7 +11,7 @@ namespace ErrorCodes
 }
 
 /// A set of task queues for multithreaded processing.
-/// Every threads has its dedicated queue and preferable uses it.
+/// Every threads has its dedicated queue and uses it preferably.
 /// When there are no tasks left in dedicated queue it steals tasks from other threads
 template <typename Task>
 class TaskQueue
@@ -46,7 +46,7 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "TaskQueue is empty");
     }
 
-    /// Pop a task from the specified queue
+    /// Pop a task from the specified queue or steal from others
     Task * pop(size_t thread_num)
     {
         auto thread_with_tasks = getAnyThreadWithTasks(thread_num);
