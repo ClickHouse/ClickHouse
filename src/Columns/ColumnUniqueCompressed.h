@@ -12,9 +12,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int NOT_IMPLEMENTED;
-extern const int ILLEGAL_COLUMN;
-extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+    extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 /// String compressed dictionary.
@@ -168,8 +168,11 @@ private:
     /// Value will be at this pos if inserted alone
     size_t getPosToInsert(StringRef value) const;
 
+    /// Returns a string column containing the decompressed values
+    MutableColumnPtr getDecompressedValues(size_t start, size_t length) const;
+
     /// Returns a string column containing all the decompressed values
-    MutableColumnPtr getDecompressedColumn() const;
+    MutableColumnPtr getDecompressedAll() const;
 
     /// It's useful when mutating the column as data_column and prefix lengths recalculations are needed
     void recalculateForNewData(const ColumnPtr & string_column);

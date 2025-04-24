@@ -102,13 +102,15 @@ TEST(ColumnUniqueCompressed, RangeInsertFCBlockDF)
     }
 
     auto unique_compressed_column = getNotEmptyColumnUniqueCompressedFCBlockDF();
-    auto indexes = unique_compressed_column->uniqueInsertRangeFrom(*strings_column, 0, 5);
+    auto other_unique_compressed_column = ColumnUniqueFCBlockDF::create(std::move(strings_column), 3, false);
+    auto indexes = unique_compressed_column->uniqueInsertRangeFrom(*other_unique_compressed_column, 0, 6);
 
     for (size_t i = 0; i < indexes->size(); ++i)
     {
         const size_t index = (*indexes)[i].safeGet<size_t>();
         const auto field = (*unique_compressed_column)[index];
-        EXPECT_EQ(data[i], field.safeGet<String>());
+        const auto other_field = (*other_unique_compressed_column)[i];
+        EXPECT_EQ(other_field.safeGet<String>(), field.safeGet<String>());
     }
 
     for (const auto & str : data)
@@ -137,9 +139,10 @@ TEST(ColumnUniqueCompressed, RangeInsertWithOverflowFCBlockDF)
     }
 
     auto unique_compressed_column = getNotEmptyColumnUniqueCompressedFCBlockDF();
+    auto other_unique_compressed_column = ColumnUniqueFCBlockDF::create(std::move(strings_column), 4, false);
     const size_t to_add = 2;
     const size_t max_dict_size = unique_compressed_column->size() + to_add;
-    const auto res_with_overflow = unique_compressed_column->uniqueInsertRangeWithOverflow(*strings_column, 0, 5, max_dict_size);
+    const auto res_with_overflow = unique_compressed_column->uniqueInsertRangeWithOverflow(*other_unique_compressed_column, 0, 6, max_dict_size);
 
     for (size_t i = 0; i < to_add; ++i)
     {
@@ -148,12 +151,12 @@ TEST(ColumnUniqueCompressed, RangeInsertWithOverflowFCBlockDF)
         EXPECT_EQ((*res_with_overflow.indexes)[i].safeGet<size_t>(), index.value());
     }
 
-    EXPECT_EQ(res_with_overflow.overflowed_keys->size(), strings_column->size() - to_add);
+    EXPECT_EQ(res_with_overflow.overflowed_keys->size(), data.size() - to_add);
     for (size_t i = 0; i < res_with_overflow.overflowed_keys->size(); ++i)
     {
         const auto index = unique_compressed_column->getOrFindValueIndex(res_with_overflow.overflowed_keys->getDataAt(i));
         EXPECT_FALSE(index.has_value());
-        EXPECT_EQ(res_with_overflow.overflowed_keys->getDataAt(i), strings_column->getDataAt(i + to_add)); /// as data is sorted
+        EXPECT_EQ(res_with_overflow.overflowed_keys->getDataAt(i), data[i + to_add]); /// as data is sorted
     }
 }
 

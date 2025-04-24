@@ -63,16 +63,22 @@ size_t ColumnUniqueFCBlockDF::getSizeAt(size_t pos) const
     return data_column->getDataAt(pos).size + common_prefix_lengths[pos];
 }
 
-MutableColumnPtr ColumnUniqueFCBlockDF::getDecompressedColumn() const
+MutableColumnPtr ColumnUniqueFCBlockDF::getDecompressedValues(size_t start, size_t length) const
 {
+    chassert(start + length <= size());
     auto output_column = ColumnString::create();
-    output_column->reserve(data_column->size());
-    for (size_t i = 0; i < data_column->size(); ++i)
+    output_column->reserve(length);
+    for (size_t i = start; i < start + length; ++i)
     {
         String decompressed_value = getDecompressedAt(i);
         output_column->insert(std::move(decompressed_value));
     }
     return output_column;
+}
+
+MutableColumnPtr ColumnUniqueFCBlockDF::getDecompressedAll() const
+{
+    return getDecompressedValues(0, size());
 }
 
 ColumnUniqueFCBlockDF::ColumnUniqueFCBlockDF(const ColumnPtr & string_column, size_t block_size_, bool is_nullable_)
@@ -219,7 +225,8 @@ std::optional<UInt64> ColumnUniqueFCBlockDF::getOrFindValueIndex(StringRef value
 
 MutableColumnPtr ColumnUniqueFCBlockDF::cloneEmpty() const
 {
-    return ColumnUniqueFCBlockDF::create(ColumnString::create(), block_size, is_nullable);
+    /// the column always contains default value
+    return ColumnUniqueFCBlockDF::create(data_column->cloneResized(1), block_size, is_nullable);
 }
 
 size_t ColumnUniqueFCBlockDF::uniqueInsert(const Field & x)
@@ -246,15 +253,22 @@ bool ColumnUniqueFCBlockDF::tryUniqueInsert(const Field & x, size_t & index)
 
 MutableColumnPtr ColumnUniqueFCBlockDF::uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    auto temp_column = getDecompressedColumn();
-    temp_column->insertRangeFrom(src, start, length);
+    const auto * unique_src = typeid_cast<const ColumnUniqueFCBlockDF *>(&src);
+    if (!unique_src)
+    {
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnUniqueFCBlockDF, got {}", src.getName());
+    }
 
-    recalculateForNewData(std::move(temp_column));
+    auto values = getDecompressedAll();
+    auto other_values = unique_src->getDecompressedValues(start, length);
+    values->insertRangeFrom(*other_values, start, length);
+
+    recalculateForNewData(std::move(values));
 
     auto positions = ColumnVector<UInt64>::create();
-    for (size_t i = start; i < start + length; ++i)
+    for (size_t i = 0; i < length; ++i)
     {
-        const StringRef data = src.getDataAt(i);
+        const StringRef data = other_values->getDataAt(i);
         const UInt64 pos = getPosToInsert(data);
         positions->insert(pos);
     }
@@ -266,7 +280,7 @@ size_t ColumnUniqueFCBlockDF::uniqueInsertData(const char * pos, size_t length)
     const size_t output = getPosToInsert(StringRef{pos, length});
     auto single_value_column = ColumnString::create();
     single_value_column->insertData(pos, length);
-    auto temp_strings_column = getDecompressedColumn();
+    auto temp_strings_column = getDecompressedAll();
     temp_strings_column->insertRangeFrom(*single_value_column, 0, single_value_column->size());
     recalculateForNewData(std::move(temp_strings_column));
     return output;
@@ -302,24 +316,65 @@ size_t ColumnUniqueFCBlockDF::uniqueInsertFrom(const IColumn & src, size_t n)
 IColumnUnique::IndexesWithOverflow
 ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t start, size_t length, size_t max_dictionary_size)
 {
-    const size_t limit = max_dictionary_size >= data_column->size() ? max_dictionary_size - data_column->size() : 0;
+    const auto * unique_src = typeid_cast<const ColumnUniqueFCBlockDF *>(&src);
+    if (!unique_src)
+    {
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnUniqueFCBlockDF, got {}", src.getName());
+    }
 
-    auto extracted_values_column = ColumnString::create();
-    extracted_values_column->insertRangeFrom(src, start, length);
+    auto src_values = unique_src->getDecompressedValues(start, length);
+    auto our_values = getDecompressedAll();
 
-    IColumn::Permutation sorted_permutation;
-    extracted_values_column->getPermutation(
-        IColumn::PermutationSortDirection::Ascending,
-        IColumn::PermutationSortStability::Unstable,
-        0, /* limit */
-        1, /* nan_direction_hint */
-        sorted_permutation);
-    auto sorted_column = extracted_values_column->permute(sorted_permutation, 0);
+    /// src_values and our_values are both sorted:
+    size_t our_ptr = 0;
+    size_t src_ptr = 0;
+    PaddedPODArray<size_t> added;
+    const size_t initial_size = our_values->size(); /// always at least 1 because of default value
+    while (our_ptr < initial_size && src_ptr < src_values->size())
+    {
+        const StringRef our_value = our_values->getDataAt(our_ptr);
+        const StringRef src_value = src_values->getDataAt(src_ptr);
+        if (our_value < src_value)
+        {
+            ++our_ptr;
+        }
+        else if (our_value > src_value)
+        {
+            added.push_back(src_ptr);
+            our_values->insertData(src_value.data, src_value.size);
+            ++src_ptr;
+        }
+        else
+        {
+            ++src_ptr;
+        }
 
-    auto indexes = uniqueInsertRangeFrom(*sorted_column, 0, limit);
+        if (initial_size + added.size() >= max_dictionary_size)
+        {
+            break;
+        }
+    }
+    while (src_ptr < src_values->size() && initial_size + added.size() < max_dictionary_size)
+    {
+        const StringRef value = src_values->getDataAt(src_ptr);
+        if (value > our_values->getDataAt(initial_size - 1))
+        {
+            added.push_back(src_ptr);
+            ++src_ptr;
+            our_values->insertData(value.data, value.size);
+        }
+    }
 
-    auto overflow = sorted_column->cloneEmpty();
-    overflow->insertRangeFrom(*sorted_column, limit, sorted_column->size() - limit);
+    recalculateForNewData(std::move(our_values));
+
+    auto indexes = ColumnVector<UInt64>::create();
+    for (const auto pos : added)
+    {
+        indexes->insert(getPosToInsert(src_values->getDataAt(pos)));
+    }
+
+    auto overflow = src_values->cloneEmpty();
+    overflow->insertRangeFrom(*src_values, src_ptr, src_values->size() - src_ptr);
 
     return IndexesWithOverflow{std::move(indexes), std::move(overflow)};
 }
