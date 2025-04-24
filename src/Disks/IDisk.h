@@ -442,6 +442,8 @@ public:
 
     virtual bool isReadOnly() const { return false; }
 
+    virtual bool isPlain() const { return false; }
+
     virtual bool isWriteOnce() const { return false; }
 
     virtual bool supportsHardLinks() const { return true; }

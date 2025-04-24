@@ -205,7 +205,7 @@ public:
     /// with static files, so only read-only operations are allowed for this storage.
     bool isReadOnly() const override;
 
-    bool isPlain() const;
+    bool isPlain() const override;
 
     /// Is object write-once?
     /// For example: S3PlainObjectStorage is write once, this means that it
