@@ -7,6 +7,7 @@
 #include <fmt/ranges.h>
 #include <wasmtime.hh>
 #include "Common/ElapsedTimeProfileEventIncrement.h"
+#include "Common/logger_useful.h"
 #include <Common/Exception.h>
 #include "Interpreters/WebAssembly/HostApi.h"
 #include "Interpreters/WebAssembly/WasmEngine.h"
@@ -66,7 +67,7 @@ WasmVal fromWasmTimeValue(const wasmtime::Val & wasm_val)
     switch (wasm_val.kind())
     {
         case wasmtime::ValKind::I32:
-            return wasm_val.i32();
+            return static_cast<uint32_t>(wasm_val.i32());
         case wasmtime::ValKind::I64:
             return wasm_val.i64();
         case wasmtime::ValKind::F32:
@@ -81,24 +82,24 @@ WasmVal fromWasmTimeValue(const wasmtime::Val & wasm_val)
 wasmtime::Val toWasmTimeValue(WasmVal val)
 {
     return std::visit(
-        [](WasmVal && arg) -> wasmtime::Val
+        [](auto && arg) -> wasmtime::Val
         {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<uint32_t, T>)
             {
-                return wasmtime::Val(static_cast<int32_t>(std::get<uint32_t>(arg)));
+                return wasmtime::Val(static_cast<int32_t>(arg));
             }
             else if constexpr (std::is_same_v<int64_t, T>)
             {
-                return wasmtime::Val(std::get<int64_t>(arg));
+                return wasmtime::Val(arg);
             }
             else if constexpr (std::is_same_v<float, T>)
             {
-                return wasmtime::Val(std::get<float>(arg));
+                return wasmtime::Val(arg);
             }
             else if constexpr (std::is_same_v<double, T>)
             {
-                return wasmtime::Val(std::get<double>(arg));
+                return wasmtime::Val(arg);
             }
             else
             {
@@ -137,27 +138,34 @@ WasmTimeRuntime::WasmTimeRuntime()
 
 void WasmTimeRuntime::setLogLevel(LogsLevel)
 {
-    // hello123
 }
 
 class WasmTimeCompartment : public WasmCompartment
 {
 public:
-    explicit WasmTimeCompartment(
-        wasmtime::Engine && wasm_engine,
-        wasmtime::Store && wasm_store,
-        wasmtime::Module && wasm_module,
-        wasmtime::Instance && wasm_instance)
-        : engine(std::move(wasm_engine)), store(std::move(wasm_store)), module(std::move(wasm_module)), instance(std::move(wasm_instance))
+    explicit WasmTimeCompartment(wasmtime::Engine && wasm_engine, wasmtime::Store && wasm_store, wasmtime::Module && wasm_module)
+        : engine(std::move(wasm_engine))
+        , store(std::move(wasm_store))
+        , module(std::move(wasm_module))
     {
     }
 
-    // hello123 do something with last exception
+    void instantiate(wasmtime::Linker && linker_)
+    {
+        linker = std::move(linker_);
+        auto instantination_result = linker.value().instantiate(store, module);
+        if (!instantination_result)
+        {
+            throw Exception(ErrorCodes::WASM_ERROR, "Failed to instantiate wasm module: {}", instantination_result.err().message());
+        }
+        instance = std::move(instantination_result.ok());
+    }
+
     void setLastException(Exception e) { last_exception = std::move(e); }
 
     uint8_t * getMemory(WasmPtr ptr, WasmSizeT size) override
     {
-        auto memory_result = instance.get(store, "memory");
+        auto memory_result = instance.value().get(store, "memory");
         if (!memory_result)
         {
             throw Exception(ErrorCodes::WASM_ERROR, "cannot get memory from wasm instance");
@@ -179,7 +187,7 @@ public:
 
     uint32_t growMemory(uint32_t num_pages) override
     {
-        auto memory_result = instance.get(store, "memory");
+        auto memory_result = instance.value().get(store, "memory");
         if (!memory_result)
         {
             throw Exception(ErrorCodes::WASM_ERROR, "cannot get memory from wasm instance");
@@ -195,7 +203,7 @@ public:
 
     WasmSizeT getMemorySize() override
     {
-        auto memory_result = instance.get(store, "memory");
+        auto memory_result = instance.value().get(store, "memory");
         if (!memory_result)
         {
             throw Exception(ErrorCodes::WASM_ERROR, "cannot get memory from wasm instance");
@@ -206,7 +214,7 @@ public:
 
     void invoke(std::string_view function_name, const std::vector<WasmVal> & params, std::vector<WasmVal> & returns) override
     {
-        auto get_function_result = instance.get(store, "run");
+        auto get_function_result = instance.value().get(store, function_name);
         if (!get_function_result.has_value())
         {
             throw Exception(ErrorCodes::WASM_ERROR, "Function '{}' is not found in compartment", function_name);
@@ -215,7 +223,6 @@ public:
         auto run = std::get<wasmtime::Func>(get_function_result.value());
 
         size_t params_count = run.type(store)->params().size();
-        size_t returns_count = run.type(store)->results().size();
 
         if (params_count != params.size())
             throw Exception(
@@ -226,22 +233,12 @@ public:
                 params.size(),
                 params_count);
 
-        if (returns_count != returns.size())
-            throw Exception(
-                ErrorCodes::WASM_ERROR,
-                "Function {} invoked with wrong number of return values {}, "
-                "expected {}",
-                function_name,
-                returns.size(),
-                returns_count);
-
         std::vector<wasmtime::Val> params_values;
         params_values.reserve(params.size());
         for (auto param : params)
             params_values.emplace_back(toWasmTimeValue(param));
 
         std::vector<wasmtime::Val> returns_values;
-        returns_values.reserve(returns.size());
         {
             last_exception.reset();
 
@@ -255,18 +252,24 @@ public:
             {
                 throw Exception(ErrorCodes::WASM_ERROR, "Failed to execute {} function: {}", function_name, call_results.err().message());
             }
+            returns_values = std::move(call_results.ok());
         }
 
         returns.clear();
         std::transform(returns_values.begin(), returns_values.end(), std::back_inserter(returns), fromWasmTimeValue);
+        LOG_DEBUG(log, "Function {} invocation ended", function_name);
     }
 
 private:
     wasmtime::Engine engine;
     wasmtime::Store store;
     wasmtime::Module module;
-    wasmtime::Instance instance;
+    std::optional<wasmtime::Instance> instance;
+    std::optional<wasmtime::Linker> linker;
+
     std::optional<Exception> last_exception;
+
+    LoggerPtr log = getLogger("WasmTimeCompartment");
 };
 
 namespace
@@ -302,7 +305,6 @@ wasmtime::Result<std::monostate, wasmtime::Trap> callHostFunction(
             args[i] = fromWasmTimeValue(params[i]);
         }
 
-        // hello123 make WasmTimeCompartment not abstract class
         auto result_val = (*host_function_ptr)(compartment, args);
         if (result_val)
         {
@@ -332,20 +334,20 @@ wasmtime::Result<std::monostate, wasmtime::Trap> callHostFunction(
 
 WasmFunctionDeclarationPtr buildFunctionDeclaration(std::string_view function_name, wasmtime::FuncType::Ref function_info)
 {
-    if (function_info.params().size() > 1)
+    if (function_info.results().size() > 1)
         throw Exception(ErrorCodes::WASM_ERROR, "Function '{}' has more than one return value", function_name);
 
     std::optional<WasmValKind> return_type;
-    if (function_info.params().size() == 1)
+    if (function_info.results().size() == 1)
     {
-        return_type = fromWasmTimeValKind(function_info.params().begin()->kind());
+        return_type = fromWasmTimeValKind(function_info.results().begin()->kind());
     }
 
     std::vector<WasmValKind> argument_types;
     argument_types.reserve(function_info.params().size());
     for (auto function_argument : function_info.params())
     {
-        fromWasmTimeValKind(function_argument.kind());
+        argument_types.emplace_back(fromWasmTimeValKind(function_argument.kind()));
     }
 
     return std::make_unique<WasmFunctionDeclaration>(function_name, std::move(argument_types), return_type);
@@ -355,10 +357,14 @@ class WasmTimeModule : public WasmModule
 {
 public:
     explicit WasmTimeModule(std::span<uint8_t> original_code_bytes, wasmtime::Engine && wasm_engine, wasmtime::Module && wasm_module)
-        : code_bytes(original_code_bytes), engine(std::move(wasm_engine)), store(engine), module(std::move(wasm_module))
+        : code_bytes(original_code_bytes.begin(), original_code_bytes.end())
+        , engine(std::move(wasm_engine))
+        , store(engine)
+        , module(std::move(wasm_module))
     {
         // Compiled module stored before instantiation only to inspect it
-        // (i.e inspect imports/exports). During instanciation it will be compiled again
+        // (i.e inspect imports/exports). During instantiation it will be compiled again,
+        // because we don't know compilation settings beofre instantiation
 
         all_exports_list = module.exports();
         if (all_exports_list.size() >= 512)
@@ -411,7 +417,8 @@ public:
             }
         }
 
-        auto compilation_result = wasmtime::Module::compile(engine_for_instance, code_bytes);
+        std::span<uint8_t> code_bytes_span(reinterpret_cast<uint8_t *>(const_cast<unsigned char *>(code_bytes.data())), code_bytes.size());
+        auto compilation_result = wasmtime::Module::compile(engine_for_instance, code_bytes_span);
         if (!compilation_result)
         {
             throw Exception(ErrorCodes::WASM_ERROR, "Failed to compile wasm code: {}", compilation_result.err().message());
@@ -419,16 +426,8 @@ public:
         auto module_for_instance = compilation_result.ok();
 
 
-        auto instantination_result = linker_for_instance.instantiate(store_for_instance, module_for_instance);
-        if (!instantination_result)
-        {
-            throw Exception(ErrorCodes::WASM_ERROR, "Failed to instantiate wasm module: {}", instantination_result.err().message());
-        }
-        auto instance = instantination_result.ok();
-
-
         auto compartment = std::make_unique<WasmTimeCompartment>(
-            std::move(engine_for_instance), std::move(store_for_instance), std::move(module_for_instance), std::move(instance));
+            std::move(engine_for_instance), std::move(store_for_instance), std::move(module_for_instance));
 
         for (const auto & host_function_ptr : host_functions)
         {
@@ -450,7 +449,9 @@ public:
             }
         }
 
-        // hello123 make WasmTimeCompartment not abstract class
+        compartment->instantiate(std::move(linker_for_instance));
+
+
         return compartment;
     }
 
@@ -482,7 +483,10 @@ public:
     }
 
 private:
-    std::span<uint8_t> code_bytes;
+    // Source code is explicitly stored to compile it again during instantiation,
+    // with known compilation settings
+    std::vector<uint8_t> code_bytes;
+    // We need to store these objects to inspect imports/exports before instantiation
     wasmtime::Engine engine;
     wasmtime::Store store;
     wasmtime::Module module;
@@ -500,7 +504,7 @@ std::unique_ptr<WasmModule> WasmTimeRuntime::createModule(std::string_view wasm_
 {
     std::span<uint8_t> bytes(reinterpret_cast<uint8_t *>(const_cast<char *>(wasm_code.data())), wasm_code.size());
     wasmtime::Engine engine;
-    auto compilation_result = wasmtime::Module::compile(engine, wasm_code);
+    auto compilation_result = wasmtime::Module::compile(engine, bytes);
     if (!compilation_result)
     {
         throw Exception(ErrorCodes::WASM_ERROR, "Failed to compile wasm code: {}", compilation_result.err().message());

@@ -273,7 +273,8 @@ class HostFunctionAdapter : private boost::noncopyable
 {
 public:
     HostFunctionAdapter(WasmEdgeCompartment * compartment_, const WasmHostFunction * func_)
-        : compartment(compartment_), host_function_ptr(func_)
+        : compartment(compartment_)
+        , host_function_ptr(func_)
     {
     }
 
@@ -518,13 +519,15 @@ void WasmEdgeCompartment::invoke(std::string_view function_name, const std::vect
 
     returns.clear();
     std::transform(returns_values.begin(), returns_values.end(), std::back_inserter(returns), fromWasmEdgeValue<>);
+    LOG_DEBUG(log, "Function {} invocation ended", function_name);
 }
 
 
 class WasmEdgeModule : public WasmModule
 {
 public:
-    explicit WasmEdgeModule(WasmEdge_ASTModuleContext * ast_module_ptr) : ast_module(ast_module_ptr)
+    explicit WasmEdgeModule(WasmEdge_ASTModuleContext * ast_module_ptr)
+        : ast_module(ast_module_ptr)
     {
         auto exports_length = WasmEdge_ASTModuleListExportsLength(ast_module.get());
         if (exports_length >= 512)

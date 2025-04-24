@@ -2,10 +2,9 @@
 #include <Common/Exception.h>
 
 
-
 namespace DB::ErrorCodes
 {
-    extern const int WASM_ERROR;
+extern const int WASM_ERROR;
 }
 
 namespace DB::WebAssembly
@@ -39,11 +38,23 @@ ResultType WasmCompartment::invoke(std::string_view function_name, const std::ve
     }
     else
     {
+        if (returns.size() != 1)
+        {
+            throw Exception(
+                ErrorCodes::WASM_ERROR,
+                "Unexpected return values count from wasm function '{}', got {} values, expected single value",
+                function_name,
+                returns.size());
+        }
         if (std::holds_alternative<ResultType>(returns[0]))
             return std::get<ResultType>(returns[0]);
 
-        throw Exception(ErrorCodes::WASM_ERROR, "Unexpected return value from wasm function '{}', expected: {}, got {}",
-            function_name, WasmValTypeToKind<ResultType>::value, getWasmValKind(returns[0]));
+        throw Exception(
+            ErrorCodes::WASM_ERROR,
+            "Unexpected return value from wasm function '{}', expected: {}, got {}",
+            function_name,
+            WasmValTypeToKind<ResultType>::value,
+            getWasmValKind(returns[0]));
     }
 }
 

@@ -1,45 +1,48 @@
 #include <Interpreters/WasmModuleManager.h>
-#include <Interpreters/WebAssembly/WasmEdgeRuntime.h>
 #include <Interpreters/WebAssembly/HostApi.h>
+#include <Interpreters/WebAssembly/WasmEdgeRuntime.h>
+#include <Interpreters/WebAssembly/WasmTimeRuntime.h>
 
 #include <Interpreters/Context.h>
 
-#include <IO/copyData.h>
-#include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/WriteHelpers.h>
 #include <Disks/DiskLocal.h>
+#include <IO/Operators.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <IO/copyData.h>
 
 #include <Common/OpenSSLHelpers.h>
-#include <Common/escapeForFileName.h>
 #include <Common/StringUtils.h>
+#include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 
 namespace DB
 {
 
+// hello123
+// using WebAssembly::WasmEdgeRuntime;
+using WebAssembly::WasmTimeRuntime;
 using WebAssembly::WasmModule;
-using WebAssembly::WasmEdgeRuntime;
 
 namespace ErrorCodes
 {
-    extern const int RESOURCE_NOT_FOUND;
-    extern const int WASM_ERROR;
-    extern const int FILE_ALREADY_EXISTS;
-    extern const int FUNCTION_ALREADY_EXISTS;
-    extern const int CANNOT_DROP_FUNCTION;
-    extern const int TYPE_MISMATCH;
-    extern const int SUPPORT_IS_DISABLED;
-    extern const int INCORRECT_DATA;
+extern const int RESOURCE_NOT_FOUND;
+extern const int WASM_ERROR;
+extern const int FILE_ALREADY_EXISTS;
+extern const int FUNCTION_ALREADY_EXISTS;
+extern const int CANNOT_DROP_FUNCTION;
+extern const int TYPE_MISMATCH;
+extern const int SUPPORT_IS_DISABLED;
+extern const int INCORRECT_DATA;
 }
 
 constexpr auto FILE_EXTENSION = ".wasm";
 
-template <typename ResultType, typename ... Args>
-ResultType onError(int error_code [[ maybe_unused ]], FormatStringHelper<Args...> fmt [[ maybe_unused ]], Args &&... args [[ maybe_unused ]])
+template <typename ResultType, typename... Args>
+ResultType onError(int error_code [[maybe_unused]], FormatStringHelper<Args...> fmt [[maybe_unused]], Args &&... args [[maybe_unused]])
 {
     if constexpr (std::is_same_v<ResultType, void>)
         throw Exception(error_code, std::move(fmt), std::forward<Args>(args)...);
@@ -83,9 +86,10 @@ std::string hashToHex(const UInt256 & hash)
 template <typename ResultType>
 ResultType checkValidWasmCode(std::string_view name, std::string_view wasm_code)
 {
-    if (name.size() < 1 || 128 < name.size()|| !std::all_of(name.data(), name.data() + name.size(), isWordCharASCII))
+    if (name.size() < 1 || 128 < name.size() || !std::all_of(name.data(), name.data() + name.size(), isWordCharASCII))
     {
-        return onError<ResultType>(ErrorCodes::INCORRECT_DATA,
+        return onError<ResultType>(
+            ErrorCodes::INCORRECT_DATA,
             "Name of a WebAssembly module must be a non-empty string of length at most 128 consisting of word characters only, got '{}'",
             trimAndEscape(name));
     }
@@ -98,7 +102,8 @@ ResultType checkValidWasmCode(std::string_view name, std::string_view wasm_code)
         return onError<ResultType>(
             ErrorCodes::INCORRECT_DATA,
             "Cannot read magic number for WebAssembly module '{}', binary module version 0x1 is expected, got '{}'",
-            name, trimAndEscape(wasm_code, 16));
+            name,
+            trimAndEscape(wasm_code, 16));
     }
 
     return ResultType(true);
@@ -107,7 +112,9 @@ ResultType checkValidWasmCode(std::string_view name, std::string_view wasm_code)
 WasmModuleManager::WasmModuleManager(DiskPtr user_sciptrs_disk_, fs::path user_sciptrs_path_)
     : user_scripts_disk(std::move(user_sciptrs_disk_))
     , user_scripts_path(std::move(user_sciptrs_path_))
-    , engine(std::make_unique<WasmEdgeRuntime>())
+    // hello123 here engine is chosen
+    // , engine(std::make_unique<WasmEdgeRuntime>())
+    , engine(std::make_unique<WasmTimeRuntime>())
 {
     registerExistingModules();
 }
@@ -120,8 +127,12 @@ void WasmModuleManager::saveModule(std::string_view module_name, std::string_vie
 
     UInt256 actual_hash = caclculateHash(wasm_code);
     if (expected_hash && actual_hash != expected_hash)
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Hash mismatch for WebAssembly module '{}', expected {}, got {}", module_name, hashToHex(expected_hash), hashToHex(actual_hash));
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Hash mismatch for WebAssembly module '{}', expected {}, got {}",
+            module_name,
+            hashToHex(expected_hash),
+            hashToHex(actual_hash));
 
     {
         std::unique_lock lock(modules_mutex);
@@ -219,9 +230,11 @@ void WasmModuleManager::deleteModuleIfExists(std::string_view module_name)
         return;
 
     if (!it->second.ptr.expired())
-        throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION,
+        throw Exception(
+            ErrorCodes::CANNOT_DROP_FUNCTION,
             "Cannot delete WebAssembly module '{}' while it is in use. "
-            "Drop all functions referring to it first", module_name);
+            "Drop all functions referring to it first",
+            module_name);
 
     modules.erase(it);
     user_scripts_disk->removeFileIfExists(getFilePath(module_name));
@@ -230,7 +243,12 @@ void WasmModuleManager::deleteModuleIfExists(std::string_view module_name)
 void WasmModuleManager::registerExistingModules()
 {
     std::unique_lock lock(modules_mutex);
-    LOG_DEBUG(log, "Loading WASM modules from '{}/{}' at disk '{}'", user_scripts_disk->getPath(), user_scripts_path, user_scripts_disk->getName());
+    LOG_DEBUG(
+        log,
+        "Loading WASM modules from '{}/{}' at disk '{}'",
+        user_scripts_disk->getPath(),
+        user_scripts_path,
+        user_scripts_disk->getName());
 
     auto files_it = user_scripts_disk->iterateDirectory(user_scripts_path);
     for (; files_it->isValid(); files_it->next())
