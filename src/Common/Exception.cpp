@@ -290,6 +290,16 @@ static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string 
     catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
+
+    /// Mark the exception as logged.
+    try
+    {
+        throw;
+    }
+    catch (Exception & e)
+    {
+        e.markAsLogged();
+    }
 }
 
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message, LogsLevel level)
