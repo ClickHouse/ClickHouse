@@ -2675,7 +2675,7 @@ Result:
 ```text
 ┌─smashSimilarity('Hello World', 'hello wrld')─┐
 │                                        0.825 │
-└────────────────────────────────────────────┘
+└──────────────────────────────────────────────┘
 ```
 
 ## smashSimilarityUTF8 {#smashsimilarityutf8}
@@ -2708,5 +2708,65 @@ Result:
 ```text
 ┌─smashSimilarityUTF8('Привет мир', 'привет мр')─┐
 │                                          0.850 │
-└──────────────────────────────────────────────┘
+└────────────────────────────────────────────────┘
+```
+
+## affineGap
+
+Calculates the affine gap distance between two byte-strings.
+
+**Syntax**
+
+```sql
+affineGap(string1, string2)
+```
+
+**Parameters**
+
+- `string1` — First string to compare. [String](../../sql-reference/data-types/string.md).
+- `string2` — Second string to compare. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+- Affine gap distance between the strings. [Float64](../../sql-reference/data-types/float.md).
+
+**Example**
+
+```sql
+SELECT affineGap('hello', 'helo');
+```
+
+Result:
+```
+0.7
+```
+
+## affineGapUTF8
+
+Calculates the affine gap distance between two UTF-8 strings.
+
+**Syntax**
+
+```sql
+affineGapUTF8(string1, string2 [, gap_open, gap_extend, mismatch])
+```
+
+**Parameters**
+
+- `string1` — First UTF-8 string to compare. [String](../../sql-reference/data-types/string.md).
+- `string2` — Second UTF-8 string to compare. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+- Affine gap distance between the UTF-8 strings. [Float64](../../sql-reference/data-types/float.md).
+
+**Example**
+
+```sql
+SELECT affineGapUTF8('привет', 'привт');
+```
+
+Result:
+```
+0.7
 ```
