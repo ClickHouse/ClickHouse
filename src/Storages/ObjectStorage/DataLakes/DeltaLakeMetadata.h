@@ -65,14 +65,18 @@ public:
     {
 #if USE_DELTA_KERNEL_RS
         auto configuration_ptr = configuration.lock();
+
         const auto & storage_settings_ref = configuration_ptr->getSettingsRef();
         const auto & query_settings_ref = local_context->getSettingsRef();
+
+        const auto storage_type = configuration_ptr->getType();
+        const bool supports_delta_kernel = storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Local;
 
         bool enable_delta_kernel = storage_settings_ref[StorageObjectStorageSetting::allow_experimental_delta_kernel_rs];
         if (query_settings_ref[Setting::allow_experimental_delta_kernel_rs].changed)
             enable_delta_kernel = query_settings_ref[Setting::allow_experimental_delta_kernel_rs].value;
 
-        if (enable_delta_kernel)
+        if (supports_delta_kernel && enable_delta_kernel)
         {
             return std::make_unique<DeltaLakeMetadataDeltaKernel>(
                 object_storage,
