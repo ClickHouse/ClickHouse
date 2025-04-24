@@ -283,7 +283,11 @@ Exception::~Exception()
         || error_code == ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR
     )
     {
-        chassert(logged);
+        if (!logged)
+        {
+            LOG_FATAL(getLogger("~Exception"), "Important exception was caught and not logged: {}", getExceptionMessage(*this, /* with_stacktrace= */true));
+            std::terminate();
+        }
     }
 #endif
 }
