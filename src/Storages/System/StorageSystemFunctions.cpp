@@ -97,15 +97,6 @@ std::vector<std::pair<String, Int8>> getOriginEnumsValues()
     };
 }
 
-template <typename Type>
-DataTypeEnum8::Values getTypeEnumValues()
-{
-    DataTypeEnum8::Values enum_values;
-    for (auto value : magic_enum::enum_values<Type>())
-        enum_values.emplace_back(magic_enum::enum_name(value), magic_enum::enum_integer(value));
-    return enum_values;
-}
-
 ColumnsDescription StorageSystemFunctions::getColumnsDescription()
 {
     return ColumnsDescription
