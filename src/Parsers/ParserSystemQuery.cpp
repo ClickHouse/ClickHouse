@@ -751,10 +751,11 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             }
             res->handler_name = std::move(handler_name);
 
+            res->parameters.emplace();
             do
             {
                 ASTPtr params_ast;
-                if (!ParserStringLiteral{}.parse(pos, params_ast, expected))
+                if (!ParserLiteral{}.parse(pos, params_ast, expected))
                     return false;
                 const auto & value = params_ast->as<ASTLiteral &>().value;
                 if (value.getType() == Field::Types::String)
