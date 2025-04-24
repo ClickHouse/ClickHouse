@@ -1,11 +1,11 @@
 #pragma once
 
-#include <TableFunctions/ITableFunctionFileLike.h>
-#include <Storages/StorageURL.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
-#include <Storages/NamedCollectionsHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/StorageURL.h>
+#include <TableFunctions/ITableFunctionFileLike.h>
 
 
 namespace DB
@@ -25,19 +25,14 @@ public:
                                       " - uri, format, structure, compression_method\n"
                                       "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
 
-    String getName() const override
-    {
-        return name;
-    }
+    String getName() const override { return name; }
 
-    String getSignature() const override
-    {
-        return signature;
-    }
+    String getSignature() const override { return signature; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
-    static void updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure_, const String & format_, const ContextPtr & context, bool with_structure)
+    static void updateStructureAndFormatArgumentsIfNeeded(
+        ASTs & args, const String & structure_, const String & format_, const ContextPtr & context, bool with_structure)
     {
         if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
         {
@@ -60,7 +55,8 @@ public:
         {
             /// If arguments contain headers, just remove it and add to the end of arguments later.
             HTTPHeaderEntries tmp_headers;
-            size_t count = StorageURL::evalArgsAndCollectHeaders(args, tmp_headers, context);
+            std::string tmp_body; //TODO: something weird happends here
+            size_t count = StorageURL::evalArgsAndCollectHeaders(args, tmp_headers, tmp_body, context);
             ASTPtr headers_ast;
             if (count != args.size())
             {
@@ -86,8 +82,12 @@ private:
     std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 
     StoragePtr getStorage(
-        const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
-        const std::string & table_name, const String & compression_method_) const override;
+        const String & source,
+        const String & format_,
+        const ColumnsDescription & columns,
+        ContextPtr global_context,
+        const std::string & table_name,
+        const String & compression_method_) const override;
 
     const char * getStorageTypeName() const override { return "URL"; }
 

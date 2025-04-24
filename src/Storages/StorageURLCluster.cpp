@@ -32,12 +32,12 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsUInt64 glob_expansion_max_elements;
+extern const SettingsUInt64 glob_expansion_max_elements;
 }
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
 StorageURLCluster::StorageURLCluster(
@@ -63,10 +63,21 @@ StorageURLCluster::StorageURLCluster(
         ColumnsDescription columns;
         if (format_name == "auto")
             std::tie(columns, format_name) = StorageURL::getTableStructureAndFormatFromData(
-                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), configuration_.headers, std::nullopt, context);
+                uri,
+                chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method),
+                configuration_.headers,
+                configuration_.body,
+                std::nullopt,
+                context);
         else
             columns = StorageURL::getTableStructureFromData(
-                format_, uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), configuration_.headers, std::nullopt, context);
+                format_,
+                uri,
+                chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method),
+                configuration_.headers,
+                configuration_.body,
+                std::nullopt,
+                context);
 
         storage_metadata.setColumns(columns);
     }
@@ -74,7 +85,13 @@ StorageURLCluster::StorageURLCluster(
     {
         if (format_name == "auto")
             format_name = StorageURL::getTableStructureAndFormatFromData(
-                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), configuration_.headers, std::nullopt, context).second;
+                              uri,
+                              chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method),
+                              configuration_.headers,
+                              configuration_.body,
+                              std::nullopt,
+                              context)
+                              .second;
 
         storage_metadata.setColumns(columns_);
     }

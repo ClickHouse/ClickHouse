@@ -192,7 +192,8 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
 
 void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
-    size_t count = StorageURL::evalArgsAndCollectHeaders(args, headers_from_ast, context);
+    std::string tmp_body;
+    size_t count = StorageURL::evalArgsAndCollectHeaders(args, headers_from_ast, tmp_body, context);
 
     if (count == 0 || count > getMaxNumberOfArguments(with_structure))
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -418,7 +419,8 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
     else
     {
         HTTPHeaderEntries tmp_headers;
-        size_t count = StorageURL::evalArgsAndCollectHeaders(args, tmp_headers, context);
+        std::string tmp_body;
+        size_t count = StorageURL::evalArgsAndCollectHeaders(args, tmp_headers, tmp_body, context);
 
         if (count == 0 || count > getMaxNumberOfArguments())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function s3, got {}", getMaxNumberOfArguments(), count);
