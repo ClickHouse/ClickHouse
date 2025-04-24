@@ -7,6 +7,7 @@ function wait_for_mutation()
     local database=$3
     database=${database:="${CLICKHOUSE_DATABASE}"}
 
+    local i
     for i in {1..100}
     do
         sleep 0.1
@@ -27,6 +28,7 @@ function wait_for_all_mutations()
     local database=$2
     database=${database:="${CLICKHOUSE_DATABASE}"}
 
+    local i
     for i in {1..200}
     do
         if [[ $(${CLICKHOUSE_CLIENT} --query="SELECT coalesce(minOrNull(is_done), 1) FROM system.mutations WHERE database='$database' AND table like '$table'") -eq 1 ]]; then
