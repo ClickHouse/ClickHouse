@@ -3,6 +3,7 @@ import uuid
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
 
@@ -25,11 +26,14 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
+def execute_on_cluster(query):
+    node1.query(query)
+    node2.query(query)
+    node3.query(query)
 
-def create_tables(table_name, populate, skip_last_replica):
-    node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
-    node2.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
-    node3.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+
+def create_tables(table_name, populate_count, skip_last_replica):
+    execute_on_cluster(f"DROP TABLE IF EXISTS {table_name} SYNC")
 
     node1.query(
         f"CREATE TABLE {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r1') ORDER BY (key) settings index_granularity=10"
@@ -42,12 +46,12 @@ def create_tables(table_name, populate, skip_last_replica):
             f"CREATE TABLE {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r3') ORDER BY (key) settings index_granularity=10"
         )
 
-    if not populate:
+    if populate_count == 0:
         return
 
     # populate data
     node1.query(
-        f"INSERT INTO {table_name} SELECT number, toString(number) FROM numbers(1_000_000)"
+        f"INSERT INTO {table_name} SELECT number, toString(number) FROM numbers({populate_count})"
     )
     node2.query(f"SYSTEM SYNC REPLICA {table_name}")
     if not skip_last_replica:
@@ -66,10 +70,12 @@ def create_tables(table_name, populate, skip_last_replica):
     ],
 )
 def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local_pipeline, executed_queries):
+    populate_count = 1000000
+
     source_table = "t_source"
-    create_tables(source_table, populate=True, skip_last_replica=False)
+    create_tables(source_table, populate_count=populate_count, skip_last_replica=False)
     target_table = "t_target"
-    create_tables(target_table, populate=False, skip_last_replica=False)
+    create_tables(target_table, populate_count=0, skip_last_replica=False)
 
     log_comment = uuid.uuid4()
     node1.query(
@@ -81,14 +87,14 @@ def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local
             "cluster_for_parallel_replicas": cluster_name,
             "log_comment": log_comment,
             "parallel_replicas_insert_select_local_pipeline": local_pipeline,
+            "enable_analyzer": 1,
         },
     )
-    expected_count = 1000000
     assert (
         node1.query(
             f"select count() from {target_table}"
         )
-        == f"{expected_count}\n"
+        == f"{populate_count}\n"
     )
     assert (
         node1.query(
@@ -97,9 +103,7 @@ def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local
         == ""
     )
 
-    node1.query(f"SYSTEM FLUSH LOGS query_log")
-    node2.query(f"SYSTEM FLUSH LOGS query_log")
-    node3.query(f"SYSTEM FLUSH LOGS query_log")
+    execute_on_cluster(f"SYSTEM FLUSH LOGS query_log")
 
     assert (
         node1.query(
@@ -108,3 +112,71 @@ def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local
         )
         == f"{executed_queries}\n"
     )
+
+
+# TODO: Change protocol so we can check if all tables are present on a node
+#       If not, then we can skip such nodes
+#       Currently, we'll just fail
+
+@pytest.mark.parametrize(
+    "cluster_name,max_parallel_replicas,local_pipeline",
+    [
+        pytest.param("test_1_shard_3_replicas", 3, False),
+        pytest.param("test_1_shard_3_replicas", 3, True),
+    ],
+)
+def test_insert_select_no_table(start_cluster, cluster_name, max_parallel_replicas, local_pipeline):
+    populate_count = 100
+
+    source_table = "t_source"
+    create_tables(source_table, populate_count=populate_count, skip_last_replica=True)
+    target_table = "t_target"
+    create_tables(target_table, populate_count=0, skip_last_replica=False)
+
+    log_comment = uuid.uuid4()
+    with pytest.raises(QueryRuntimeException) as e:
+        node1.query(
+            f"INSERT INTO {target_table} SELECT * FROM {source_table}",
+            settings={
+                "parallel_distributed_insert_select": 2,
+                "enable_parallel_replicas": 2,
+                "max_parallel_replicas": max_parallel_replicas,
+                "cluster_for_parallel_replicas": cluster_name,
+                "log_comment": log_comment,
+                "parallel_replicas_insert_select_local_pipeline": local_pipeline,
+                "enable_analyzer": 1,
+            },
+        )
+    assert(e.value.returncode == 60) # UNKNOWN_TABLE
+
+
+@pytest.mark.parametrize(
+    "cluster_name,max_parallel_replicas,local_pipeline,executed_queries",
+    [
+        pytest.param("test_1_shard_3_replicas", 3, False),
+        pytest.param("test_1_shard_3_replicas", 3, True),
+    ],
+)
+def test_insert_select_no_target_table(start_cluster, cluster_name, max_parallel_replicas, local_pipeline):
+    populate_count = 100
+
+    source_table = "t_source"
+    create_tables(source_table, populate_count=populate_count, skip_last_replica=False)
+    target_table = "t_target"
+    create_tables(target_table, populate_count=0, skip_last_replica=True)
+
+    log_comment = uuid.uuid4()
+    with pytest.raises(QueryRuntimeException) as e:
+        node1.query(
+            f"INSERT INTO {target_table} SELECT * FROM {source_table}",
+            settings={
+                "parallel_distributed_insert_select": 2,
+                "enable_parallel_replicas": 2,
+                "max_parallel_replicas": max_parallel_replicas,
+                "cluster_for_parallel_replicas": cluster_name,
+                "log_comment": log_comment,
+                "parallel_replicas_insert_select_local_pipeline": local_pipeline,
+                "enable_analyzer": 1,
+            },
+        )
+    assert(e.value.returncode == 60) # UNKNOWN_TABLE
