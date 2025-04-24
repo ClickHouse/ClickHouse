@@ -9231,6 +9231,20 @@ Int64 MergeTreeData::getMinMetadataVersion(const DataPartsVector & parts)
     return version;
 }
 
+StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr() const
+{
+    auto query_context = CurrentThread::get().getQueryContext();
+    if (!query_context || !query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query])
+        return IStorage::getInMemoryMetadataPtr();
+
+    auto & cache = query_context->getStorageMetadataCache();
+    auto it = cache.find(this);
+    if (it != cache.end())
+        return it->second;
+
+    return cache.emplace(this, IStorage::getInMemoryMetadataPtr()).first->second;
+}
+
 StorageSnapshotPtr
 MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const
 {

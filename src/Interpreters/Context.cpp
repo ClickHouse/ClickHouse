@@ -5555,6 +5555,12 @@ std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> Context::ge
     return std::make_pair(&getQueryContext()->sample_block_cache, std::unique_lock(getQueryContext()->sample_block_cache_mutex));
 }
 
+Context::StorageMetadataCache & Context::getStorageMetadataCache() const
+{
+    chassert(hasQueryContext());
+    return getQueryContext()->storage_metadata_cache;
+}
+
 Context::StorageSnapshotCache & Context::getStorageSnapshotCache() const
 {
     chassert(hasQueryContext());
