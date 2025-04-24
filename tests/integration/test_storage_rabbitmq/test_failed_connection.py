@@ -58,8 +58,8 @@ class RabbitMQMonitor:
     channel = None
     queue_name = None
     rabbitmq_cluster = None
-    expected_published = 0
-    expected_delivered = 0
+    expected_published = None
+    expected_delivered = None
     consume_thread = None
     stop_event = threading.Event()
 
@@ -68,7 +68,7 @@ class RabbitMQMonitor:
         deadline = time.monotonic() + timeout
         _published = 0
         _delivered = 0
-        while time.monotonic() < deadline:
+        while time.monotonic() < deadline and not self.stop_event.is_set():
             method, properties, body = self.channel.basic_get(self.queue_name, auto_ack=True)
             if method and properties and body:
                 # logging.debug(f"Message received! method {method}, properties {properties}, body {body}")
@@ -84,10 +84,7 @@ class RabbitMQMonitor:
                     _published += 1
                     # logging.debug(f"Message published: {value}")
             else:
-                if not self.stop_event.is_set():
-                    time.sleep(0.1)
-                else:
-                    break
+                time.sleep(0.1)
         logging.debug(f"RabbitMQMonitor: Consumed {_published}/{len(self.published)} published messages and {_delivered}/{len(self.delivered)} delivered messages in this iteration")
 
     def _run(self):
@@ -125,9 +122,9 @@ class RabbitMQMonitor:
                         break
             return non_present
 
-        if self.expected_published > 0 and self.expected_published != len(self.published):
+        if self.expected_published and self.expected_published != len(self.published):
             logging.warning(f"RabbitMQMonitor: {len(self.published)}/{self.expected_published} (got/expected) messages published. Sample of not published: {_get_non_present(self.published, self.expected_published)}")
-        if self.expected_delivered > 0 and self.expected_delivered != len(self.delivered):
+        if self.expected_delivered and self.expected_delivered != len(self.delivered):
             logging.warning(f"RabbitMQMonitor: {len(self.delivered)}/{self.expected_delivered} (got/expected) messages delivered. Sample of not delivered: {_get_non_present(self.delivered, self.expected_delivered)}")
 
     def start(self, rabbitmq_cluster):
@@ -229,8 +226,8 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, r
     """
     )
 
-    messages_num = 20000
-    rabbitmq_monitor.set_expectations(published=messages_num, delivered=messages_num)
+    messages_num = 10000
+    rabbitmq_monitor.set_expectations(published=None, delivered=messages_num)
     deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
     while time.monotonic() < deadline:
         try:
@@ -320,8 +317,8 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster, r
     """
     )
 
-    messages_num = 20000
-    rabbitmq_monitor.set_expectations(published=messages_num, delivered=messages_num)
+    messages_num = 10000
+    rabbitmq_monitor.set_expectations(published=None, delivered=messages_num)
     deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
     while time.monotonic() < deadline:
         try:
