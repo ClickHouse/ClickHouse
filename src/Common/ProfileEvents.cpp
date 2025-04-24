@@ -829,7 +829,6 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCachePrecomputeRangesMicroseconds, "Distributed Cache read buffer event. Time spent to precompute read ranges", ValueType::Microseconds) \
     M(DistrCacheNextImplMicroseconds, "Distributed Cache read buffer event. Time spend in ReadBufferFromDistributedCache::nextImpl", ValueType::Microseconds) \
     M(DistrCacheStartRangeMicroseconds, "Distributed Cache read buffer event. Time spent to start a new read range with distributed cache", ValueType::Microseconds) \
-    M(DistrCacheIgnoredBytesWhileWaitingProfileEvents, "Distributed Cache read buffer event. Ignored bytes while waiting for profile events in distributed cache", ValueType::Number) \
     M(DistrCacheRangeChange, "Distributed Cache read buffer event. Number of times we changed read range because of seek/last_position change", ValueType::Number) \
     M(DistrCacheRangeResetBackward, "Distributed Cache read buffer event. Number of times we reset read range because of seek/last_position change", ValueType::Number) \
     M(DistrCacheRangeResetForward, "Distributed Cache read buffer event. Number of times we reset read range because of seek/last_position change", ValueType::Number) \
@@ -842,9 +841,9 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheReceiveResponseErrors, "Distributed Cache client event. Number of distributed cache errors when receiving response a request", ValueType::Number) \
     \
     M(DistrCachePackets, "Distributed Cache client event. Total number of packets received from distributed cache", ValueType::Number) \
-    M(DistrCachePacketsBytes, "Distributed Cache client event. The number of bytes in Data packets which were not ignored", ValueType::Bytes) \
+    M(DistrCacheDataPacketsBytes, "Distributed Cache client event. The number of bytes in Data packets which were not ignored", ValueType::Bytes) \
     M(DistrCacheUnusedPackets, "Distributed Cache client event. Number of skipped unused packets from distributed cache", ValueType::Number) \
-    M(DistrCacheUnusedPacketsBytes, "Distributed Cache client event. The number of bytes in Data packets which were ignored", ValueType::Bytes) \
+    M(DistrCacheUnusedDataPacketsBytes, "Distributed Cache client event. The number of bytes in Data packets which were ignored", ValueType::Bytes) \
     M(DistrCacheUnusedPacketsBufferAllocations, "Distributed Cache client event. The number of extra buffer allocations in case we could not reuse existing buffer", ValueType::Number) \
     \
     M(DistrCacheLockRegistryMicroseconds, "Distributed Cache registry event. Time spent to take DistributedCacheRegistry lock", ValueType::Microseconds) \
@@ -852,7 +851,6 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheRegistryUpdates, "Distributed Cache registry event. Number of distributed cache registry updates", ValueType::Number) \
     M(DistrCacheHashRingRebuilds, "Distributed Cache registry event. Number of distributed cache hash ring rebuilds", ValueType::Number) \
     \
-    M(DistrCacheReadBytesFromCache, "Distributed Cache read buffer event. Bytes read from distributed cache", ValueType::Bytes) \
     M(DistrCacheReadBytesFromFallbackBuffer, "Distributed Cache read buffer event. Bytes read from fallback buffer", ValueType::Number) \
     \
     M(DistrCacheOpenedConnections, "Distributed Cache connection event. The number of open connections to distributed cache", ValueType::Number) \
