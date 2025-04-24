@@ -759,7 +759,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
     {
         auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
 
-        const Settings & settings = getContext()->getSettingsRef();
+        const Settings & settings = select_context->getSettingsRef();
         if (settings[Setting::allow_experimental_analyzer])
         {
             InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_context, select_query_options);
