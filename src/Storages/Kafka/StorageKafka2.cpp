@@ -121,7 +121,7 @@ extern const int REPLICA_IS_ALREADY_ACTIVE;
 namespace
 {
 constexpr auto MAX_FAILED_POLL_ATTEMPTS = 10;
-constexpr auto MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS = 15000;
+// constexpr auto MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS = 15000;
 constexpr auto TMP_LOCKS_REFRESH_POLLS = 15;
 }
 
@@ -1102,16 +1102,13 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
         }
 
         if (!consumer.hasMorePolledMessages()
-            && (total_rows >= getMaxBlockSize() || !check_time_limit() || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS
-                || consumer.needsOffsetUpdate()))
+            && (total_rows >= getMaxBlockSize() || !check_time_limit() || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS))
         {
             LOG_TRACE(
                 log,
-                "Stopped collecting message for current batch. There are {} failed polled attempts, {} total rows and consumer needs "
-                "offset update is {}",
+                "Stopped collecting message for current batch. There are {} failed polled attempts, {} total rows",
                 failed_poll_attempts,
-                total_rows,
-                consumer.needsOffsetUpdate());
+                total_rows);
             break;
         }
     }
@@ -1208,37 +1205,37 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
     consumer_info.watch.restart();
     auto & consumer = consumer_info.consumer;
     // In case the initial subscribe in startup failed, let's subscribe now
-    consumer->subscribeIfNotSubscribedYet();
+    // consumer->subscribeIfNotSubscribedYet();
 
-    // To keep the consumer alive
-    const auto wait_for_assignment = consumer_info.locks.empty();
-    LOG_TRACE(log, "Polling consumer {} for events", idx);
-    consumer->pollEvents();
+    // // To keep the consumer alive
+    // const auto wait_for_assignment = consumer_info.locks.empty();
+    // LOG_TRACE(log, "Polling consumer {} for events", idx);
+    // consumer->pollEvents();
 
-    if (wait_for_assignment)
-    {
-        while (nullptr == consumer->getKafkaAssignment() && consumer_info.watch.elapsedMilliseconds() < MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS)
-            consumer->pollEvents();
-        LOG_INFO(log, "Consumer has assignment: {}", nullptr == consumer->getKafkaAssignment());
-    }
+    // if (wait_for_assignment)
+    // {
+    //     while (nullptr == consumer->getKafkaAssignment() && consumer_info.watch.elapsedMilliseconds() < MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS)
+    //         consumer->pollEvents();
+    //     LOG_INFO(log, "Consumer has assignment: {}", nullptr == consumer->getKafkaAssignment());
+    // }
 
     try
     {
-        if (consumer->needsOffsetUpdate() || consumer_info.locks.empty())
+        if (consumer_info.locks.empty())
         {
             LOG_TRACE(log, "Consumer needs update offset");
             // First release the locks so let other consumers acquire them ASAP
             consumer_info.locks.clear();
             consumer_info.topic_partitions.clear();
 
-            const auto * current_assignment = consumer->getKafkaAssignment();
-            if (current_assignment == nullptr)
-            {
-                // The consumer lost its assignment and haven't received a new one.
-                // By returning true this function reports the current consumer as a "stalled" stream, which
-                LOG_TRACE(log, "No assignment");
-                return StallReason::NoAssignment;
-            }
+            // const auto * current_assignment = consumer->getKafkaAssignment();
+            // if (current_assignment == nullptr)
+            // {
+            //     // The consumer lost its assignment and haven't received a new one.
+            //     // By returning true this function reports the current consumer as a "stalled" stream, which
+            //     LOG_TRACE(log, "No assignment");
+            //     return StallReason::NoAssignment;
+            // }
             consumer_info.consume_from_topic_partition_index = 0;
 
             if (consumer_info.keeper->expired())
@@ -1265,11 +1262,10 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
             for (size_t i = 0; locks_it != consumer_info.locks.end(); ++i, ++locks_it)
                 new_assigment[i] = locks_it->first;
             consumer->updateAssigmentAfterRebalance(new_assigment);
-            current_assignment = consumer->getKafkaAssignment();
 
-            consumer_info.topic_partitions.reserve(current_assignment->size());
+            consumer_info.topic_partitions.reserve(new_assigment.size());
 
-            for (const auto & topic_partition : *current_assignment)
+            for (const auto & topic_partition : new_assigment)
             {
                 TopicPartition topic_partition_copy{topic_partition};
                 if (const auto & maybe_committed_offset = consumer_info.locks.at(topic_partition).committed_offset;
@@ -1281,7 +1277,6 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
 
                 consumer_info.topic_partitions.push_back(std::move(topic_partition_copy));
             }
-            consumer_info.consumer->updateOffsets(consumer_info.topic_partitions);
         }
 
         if (consumer_info.topic_partitions.empty())
@@ -1350,12 +1345,12 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
     consumer_info.consume_from_topic_partition_index
         = (consumer_info.consume_from_topic_partition_index + 1) % consumer_info.topic_partitions.size();
 
-    bool needs_offset_reset = true;
-    SCOPE_EXIT({
-        if (!needs_offset_reset)
-            return;
-        consumer_info.consumer->updateOffsets(consumer_info.topic_partitions);
-    });
+    // bool needs_offset_reset = true;
+    // SCOPE_EXIT({
+    //     if (!needs_offset_reset)
+    //         return;
+    //     consumer_info.consumer->updateOffsets(consumer_info.topic_partitions);
+    // });
 
     auto & keeper_to_use = *consumer_info.keeper;
     ++consumer_info.poll_count;
@@ -1370,7 +1365,7 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
     if (blocks.empty())
     {
         LOG_TRACE(log, "Didn't get any messages");
-        needs_offset_reset = false;
+        // needs_offset_reset = false;
         return std::nullopt;
     }
 
@@ -1403,7 +1398,7 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
     saveCommittedOffset(keeper_to_use, topic_partition);
     consumer_info.consumer->commit(topic_partition);
     lock_info.intent_size.reset();
-    needs_offset_reset = false;
+    // needs_offset_reset = false;
 
     return rows;
 }

@@ -87,12 +87,12 @@ public:
 
     // Returns the topic partitions that the consumer got from rebalancing the consumer group. If the consumer received
     // no topic partitions or all of them were revoked, it returns a null pointer.
-    TopicPartitions const * getKafkaAssignment() const;
+    // TopicPartitions const * getKafkaAssignment() const;
 
     // As the main source of offsets is not Kafka, the offsets needs to be pushed to the consumer from outside
     // Returns true if it received new assignment and internal state should be updated by updateOffsets
-    bool needsOffsetUpdate() const { return needs_offset_update; }
-    void updateOffsets(const TopicPartitions & topic_partitions);
+    // bool needsOffsetUpdate() const { return needs_offset_update; }
+    // void updateOffsets(const TopicPartitions & topic_partitions);
 
     /// Polls batch of messages from the given topic-partition and returns read buffer containing the next message or
     /// nullptr when there are no messages to process.
@@ -142,8 +142,8 @@ private:
     Messages::const_iterator current;
 
     // order is important, need to be destructed before consumer
-    std::optional<TopicPartitions> assignment;
-    bool needs_offset_update{false};
+    // std::optional<TopicPartitions> assignment;
+    // bool needs_offset_update{false};
     std::unordered_map<TopicPartition, cppkafka::Queue, OnlyTopicNameAndPartitionIdHash, OnlyTopicNameAndPartitionIdEquality> queues;
     const Names topics;
 
