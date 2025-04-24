@@ -1,4 +1,5 @@
 #include <Processors/Sources/NativeCompressedSource.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 #include <Core/ProtocolDefines.h>
 #include <IO/ReadHelpers.h>
 
@@ -27,7 +28,17 @@ Chunk NativeCompressedSource::generate()
         }
         Block block = reader->read();
 
-        return Chunk(block.getColumns(), block.rows());
+        LOG_TEST(log, "Read chunk with {} rows from stream {}", block.rows(), stream_name);
+
+        Chunk result(block.getColumns(), block.rows());
+        /// TODO: is this enough for passing chunk infos?
+        {
+            auto info = std::make_shared<AggregatedChunkInfo>();
+            info->bucket_num = block.info.bucket_num;
+            info->is_overflows = block.info.is_overflows;
+            result.getChunkInfos().add(std::move(info));
+        }
+        return result;
     }
 }
 

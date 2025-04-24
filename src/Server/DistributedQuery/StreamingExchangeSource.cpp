@@ -1,5 +1,6 @@
 #include <Server/DistributedQuery/StreamingExchangeSource.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Formats/NativeReader.h>
 #include <Core/ProtocolDefines.h>
@@ -99,7 +100,15 @@ Chunk StreamingExchangeSource::generate()
         auto compressed_buf = std::make_unique<CompressedReadBuffer>(in);
         auto reader = std::make_unique<NativeReader>(*compressed_buf, output.getHeader(), DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS);
         Block block = reader->read();
+
         result = Chunk(block.getColumns(), num_rows);
+        /// TODO: is this enough for passing chunk infos?
+        {
+            auto info = std::make_shared<AggregatedChunkInfo>();
+            info->bucket_num = block.info.bucket_num;
+            info->is_overflows = block.info.is_overflows;
+            result->getChunkInfos().add(std::move(info));
+        }
         rows_read += num_rows;
 
         LOG_TEST(log, "Received chunk with {} rows from exchange stream {}", num_rows, stream_name);
