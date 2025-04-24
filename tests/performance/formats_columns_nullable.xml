@@ -75,23 +75,24 @@
         if(number % 20 = 0, NULL, toDecimal128(number % 1000000, 20)) AS col_decimal128,
         [if(number % 3 = 0, NULL, number % 10000), if(number % 5 = 0, NULL, (number % 10000)+1), if(number % 7 = 0, NULL, (number % 10000)+2)] AS col_array,
         if(number % 22 = 0, NULL, concat('LC', toString(number % 1000))) AS col_low_cardinality
-        FROM numbers(10000000)
+        FROM numbers(1000000)
     </fill_query>
 
     <create_query>CREATE TABLE IF NOT EXISTS table_{format}_with_nullable_columns ENGINE = File({format}) AS SELECT * FROM source_table</create_query>
 
     <fill_query>INSERT INTO table_{format}_with_nullable_columns SELECT * FROM source_table</fill_query>
 
+    <query>SELECT * FROM table_{format}_with_nullable_columns LIMIT 1000 FORMAT Null</query>
     <query>SELECT count() FROM table_{format}_with_nullable_columns FORMAT Null</query>
-    <query>SELECT count() FROM table_{format}_with_nullable_columns WHERE col_int8 IS NULL FORMAT Null</query>
-    <query>SELECT count() FROM table_{format}_with_nullable_columns WHERE col_string IS NULL FORMAT Null</query>
-    <query>SELECT count() FROM table_{format}_with_nullable_columns WHERE col_decimal64 IS NULL FORMAT Null</query>
-    <query>SELECT count() FROM table_{format}_with_nullable_columns WHERE col_float32 IS NULL FORMAT Null</query>
-    <query>SELECT count() FROM table_{format}_with_nullable_columns WHERE col_datetime IS NULL FORMAT Null</query>
-    <query>SELECT count() FROM table_{format}_with_nullable_columns WHERE arrayExists(x -> x IS NULL, col_array) FORMAT Null</query>
-    <query>SELECT count() FROM table_{format}_with_nullable_columns WHERE col_low_cardinality IS NULL FORMAT Null</query>
-    <query>SELECT sum(ifNull(col_int32, 0)) FROM table_{format}_with_nullable_columns FORMAT Null</query>
-    <query>SELECT max(ifNull(col_float64, 0)) FROM table_{format}_with_nullable_columns FORMAT Null</query>
+    <query>SELECT avg(col_int32) FROM table_{format}_with_nullable_columns FORMAT Null</query>
+    <query>SELECT sum(if(col_int8 IS NULL, 1, 0)) FROM table_{format}_with_nullable_columns FORMAT Null</query>
+    <query>SELECT length(arrayFilter(x -> x IS NOT NULL, groupArray(100)(col_string))) FROM table_{format}_with_nullable_columns GROUP BY intDiv(id, 100000) FORMAT Null</query>
+    <query>SELECT countIf(isNull(col_decimal64)) FROM table_{format}_with_nullable_columns FORMAT Null</query>
+    <query>SELECT min(if(isNull(col_float32), 0, col_float32)), max(if(isNull(col_float32), 0, col_float32)) FROM table_{format}_with_nullable_columns FORMAT Null</query>
+    <query>SELECT toYear(if(isNull(col_datetime), toDateTime('2000-01-01'), col_datetime)) FROM table_{format}_with_nullable_columns FORMAT Null</query>
+    <query>SELECT count() FROM table_{format}_with_nullable_columns WHERE length(arrayFilter(x -> x IS NULL, col_array)) > 0 FORMAT Null</query>
+    <query>SELECT count(DISTINCT col_low_cardinality) FROM table_{format}_with_nullable_columns FORMAT Null</query>
+    <query>SELECT sum(ifNull(col_int32, 0)), avg(ifNull(col_float64, 0)) FROM table_{format}_with_nullable_columns GROUP BY intDiv(id, 1000000) FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS table_{format}_with_nullable_columns</drop_query>
     <drop_query>DROP TABLE IF EXISTS source_table</drop_query>
