@@ -777,11 +777,17 @@ private:
         if constexpr (utf8_enabled)
         {
             size_t code_point_idx = pos / sizeof(UInt32);
-            return code_point_idx < codepoints.size() && codepoints[code_point_idx] == ' ';
+            if (code_point_idx >= codepoints.size())
+                return false;
+                
+            UInt32 code_point = codepoints[code_point_idx];
+            return code_point == ' ' || code_point == '\t' || code_point == '\n' || 
+                   code_point == '\r' || code_point == '\v' || code_point == '\f';
         }
         else
         {
-            return str[pos] == ' ';
+            unsigned char c = static_cast<unsigned char>(str[pos]);
+            return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f';
         }
     }
 
