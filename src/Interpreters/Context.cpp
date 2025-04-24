@@ -5528,6 +5528,12 @@ Context::SampleBlockCache & Context::getSampleBlockCache() const
     return getQueryContext()->sample_block_cache;
 }
 
+Context::StorageMetadataCache & Context::getStorageMetadataCache() const
+{
+    chassert(hasQueryContext());
+    return getQueryContext()->storage_metadata_cache;
+}
+
 Context::StorageSnapshotCache & Context::getStorageSnapshotCache() const
 {
     chassert(hasQueryContext());

@@ -975,6 +975,8 @@ public:
         return storage_settings.get();
     }
 
+    StorageMetadataPtr getInMemoryMetadataPtr() const override;
+
     String getRelativeDataPath() const { return relative_data_path; }
 
     /// Get table path on disk

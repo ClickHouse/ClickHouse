@@ -254,6 +254,9 @@ class SessionTracker;
 
 struct ServerSettings;
 
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
@@ -537,6 +540,9 @@ public:
 protected:
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
+
+    using StorageMetadataCache = std::unordered_map<const IStorage *, StorageMetadataPtr>;
+    mutable StorageMetadataCache storage_metadata_cache;
 
     using StorageSnapshotCache = std::unordered_map<const IStorage *, StorageSnapshotPtr>;
     mutable StorageSnapshotCache storage_snapshot_cache;
@@ -1408,6 +1414,7 @@ public:
     void setGoogleProtosPath(const String & path);
 
     SampleBlockCache & getSampleBlockCache() const;
+    StorageMetadataCache & getStorageMetadataCache() const;
     StorageSnapshotCache & getStorageSnapshotCache() const;
 
     /// Query parameters for prepared statements.
