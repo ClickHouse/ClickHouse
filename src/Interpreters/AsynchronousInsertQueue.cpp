@@ -980,8 +980,8 @@ try
 
         if (chunk.getNumRows() == 0)
         {
+            pipeline.cancel(); // this just cancels the processors
             finish_entries(std::move(pipeline), /*num_rows=*/ 0, /*num_bytes=*/ 0);
-            // pipeline.cancel();
             return;
         }
 
