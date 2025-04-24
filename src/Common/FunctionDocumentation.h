@@ -74,6 +74,7 @@ struct FunctionDocumentation
         Conditional,
         DateAndTime,
         Dictionary,
+        Dynamic,
         Distance,
         EmbeddedDictionary,
         Geo,
@@ -105,6 +106,7 @@ struct FunctionDocumentation
         URL,
         UUID,
         UniqTheta,
+        Variant,
         // Table functions
         TableFunction
     };
@@ -118,7 +120,6 @@ struct FunctionDocumentation
     ReturnedValue returned_value {};       /// E.g. "Starting position in bytes and counting from 1, if the substring was found."
     Examples examples {};                  ///
     Category category;   /// E.g. Category::DatesAndTimes
-    Related related;
 
     std::string argumentsAsString() const;
     std::string categoryAsString() const;
