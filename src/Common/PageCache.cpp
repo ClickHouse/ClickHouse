@@ -140,17 +140,18 @@ void PageCache::Shard::onRemoveOverflowWeightLoss(size_t weight_loss)
     ProfileEvents::increment(ProfileEvents::PageCacheWeightLost, weight_loss);
 }
 
-void PageCache::autoResize(Int64 memory_usage, size_t memory_limit)
+void PageCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
 {
     /// Avoid recursion when called from MemoryTracker.
     MemoryTrackerBlockerInThread blocker(VariableContext::Global);
 
     size_t cache_size = sizeInBytes();
+    size_t memory_usage = size_t(std::max(memory_usage_signed, Int64(0)));
 
     size_t peak;
     {
         std::lock_guard lock(mutex);
-        size_t usage_excluding_cache = memory_usage - std::min(cache_size, size_t(std::max(memory_usage, Int64(0))));
+        size_t usage_excluding_cache = memory_usage - std::min(cache_size, memory_usage);
 
         if (history_window.count() <= 0)
         {
