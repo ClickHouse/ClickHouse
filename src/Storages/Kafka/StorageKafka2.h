@@ -134,6 +134,8 @@ private:
         TopicPartitionLocks locks{};
         Stopwatch watch{CLOCK_MONOTONIC_COARSE};
         size_t poll_count = 0;
+        TopicPartitionLocks permanent_locks{};
+        TopicPartitionLocks tmp_locks{};
     };
 
     struct PolledBatchInfo
@@ -240,12 +242,11 @@ private:
     TopicPartitions getAvailableTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & all_topic_partitions);
     UInt32 active_replica_count;
     std::optional<LockedTopicPartitionInfo> createLocksInfo(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & partition_to_lock);
-    TopicPartitionLocks permanent_locks;
-    TopicPartitionLocks tmp_locks;
 
     // Takes lock over topic partitions and sets the committed offset in topic_partitions.
-    std::optional<TopicPartitionLocks> lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions);
-    void updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions);
+    TopicPartitionLocks lockTopicPartitions(const TopicPartitionLocks & permanent_locks, const TopicPartitionLocks & tmp_locks);
+    void updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & tmp_locks);
+    void updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & permanent_locks);
     void saveCommittedOffset(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition);
     void saveIntent(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition, int64_t intent);
 
