@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNullable.h>
 #include <Common/Arena.h>
 
 namespace DB
@@ -79,6 +80,18 @@ MutableColumnPtr ColumnUniqueFCBlockDF::getDecompressedValues(size_t start, size
 MutableColumnPtr ColumnUniqueFCBlockDF::getDecompressedAll() const
 {
     return getDecompressedValues(0, size());
+}
+
+ColumnPtr ColumnUniqueFCBlockDF::getNestedColumn() const
+{
+    if (!is_nullable)
+    {
+        return getDecompressedAll();
+    }
+
+    ColumnUInt8::MutablePtr null_mask = ColumnUInt8::create(size(), UInt8(0));
+    null_mask->getData()[getNullValueIndex()] = 1;
+    return ColumnNullable::create(getDecompressedAll(), std::move(null_mask));
 }
 
 ColumnUniqueFCBlockDF::ColumnUniqueFCBlockDF(const ColumnPtr & string_column, size_t block_size_, bool is_nullable_)

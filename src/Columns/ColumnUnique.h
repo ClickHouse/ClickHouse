@@ -52,8 +52,8 @@ public:
 
     MutableColumnPtr cloneEmpty() const override;
 
-    const ColumnPtr & getNestedColumn() const override;
-    const ColumnPtr & getNestedNotNullableColumn() const override { return column_holder; }
+    ColumnPtr getNestedColumn() const override;
+    ColumnPtr getNestedNotNullableColumn() const override { return column_holder; }
     bool nestedColumnIsNullable() const override { return is_nullable; }
     void nestedToNullable() override;
     void nestedRemoveNullable() override;
@@ -317,7 +317,7 @@ void ColumnUnique<ColumnType>::nestedRemoveNullable()
 }
 
 template <typename ColumnType>
-const ColumnPtr & ColumnUnique<ColumnType>::getNestedColumn() const
+ColumnPtr ColumnUnique<ColumnType>::getNestedColumn() const
 {
     if (is_nullable)
         return nested_column_nullable;

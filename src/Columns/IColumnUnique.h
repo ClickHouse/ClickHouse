@@ -17,11 +17,17 @@ public:
     using ColumnUniquePtr = IColumn::template immutable_ptr<IColumnUnique>;
     using MutableColumnUniquePtr = IColumn::template mutable_ptr<IColumnUnique>;
 
+    /// Returns a column containing the dictionary mapping [(0 -> value0), (1 -> value1), ...]
+    /// as a column [value0, value1, ...]. This method can be very inefficient due to creation
+    /// of such a column (especially in cases of compressed dictionaries, see ColumnUniqueCompressed).
+    /// So this method should be avoided whenever possible. Use IColumnUnique interface methods instead.
     /// Column always contains Null if it's Nullable and empty string if it's String or Nullable(String).
     /// So, size may be greater than the number of inserted unique values.
-    virtual const ColumnPtr & getNestedColumn() const = 0;
+    virtual ColumnPtr getNestedColumn() const = 0;
     /// The same as getNestedColumn, but removes null map if nested column is nullable.
-    virtual const ColumnPtr & getNestedNotNullableColumn() const = 0;
+    virtual ColumnPtr getNestedNotNullableColumn() const = 0;
+
+
 
     virtual bool nestedColumnIsNullable() const = 0;
     virtual void nestedToNullable() = 0;

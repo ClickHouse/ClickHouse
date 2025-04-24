@@ -41,8 +41,8 @@ public:
     MutableColumnPtr cloneEmpty() const override;
 
     /// Nested column is compressed
-    const ColumnPtr & getNestedColumn() const override { return data_column; }
-    const ColumnPtr & getNestedNotNullableColumn() const override { return data_column; }
+    ColumnPtr getNestedColumn() const override;
+    ColumnPtr getNestedNotNullableColumn() const override { return getDecompressedAll(); }
     bool nestedColumnIsNullable() const override { return is_nullable; }
     void nestedToNullable() override { is_nullable = true; }
     void nestedRemoveNullable() override { is_nullable = false; }
