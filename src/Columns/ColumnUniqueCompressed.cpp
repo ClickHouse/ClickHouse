@@ -253,22 +253,15 @@ bool ColumnUniqueFCBlockDF::tryUniqueInsert(const Field & x, size_t & index)
 
 MutableColumnPtr ColumnUniqueFCBlockDF::uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    const auto * unique_src = typeid_cast<const ColumnUniqueFCBlockDF *>(&src);
-    if (!unique_src)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnUniqueFCBlockDF, got {}", src.getName());
-    }
-
     auto values = getDecompressedAll();
-    auto other_values = unique_src->getDecompressedValues(start, length);
-    values->insertRangeFrom(*other_values, start, length);
+    values->insertRangeFrom(src, start, length);
 
     recalculateForNewData(std::move(values));
 
     auto positions = ColumnVector<UInt64>::create();
     for (size_t i = 0; i < length; ++i)
     {
-        const StringRef data = other_values->getDataAt(i);
+        const StringRef data = src.getDataAt(i);
         const UInt64 pos = getPosToInsert(data);
         positions->insert(pos);
     }
@@ -316,13 +309,17 @@ size_t ColumnUniqueFCBlockDF::uniqueInsertFrom(const IColumn & src, size_t n)
 IColumnUnique::IndexesWithOverflow
 ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t start, size_t length, size_t max_dictionary_size)
 {
-    const auto * unique_src = typeid_cast<const ColumnUniqueFCBlockDF *>(&src);
-    if (!unique_src)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnUniqueFCBlockDF, got {}", src.getName());
-    }
+    auto extracted_values_column = ColumnString::create();
+    extracted_values_column->insertRangeFrom(src, start, length);
 
-    auto src_values = unique_src->getDecompressedValues(start, length);
+    IColumn::Permutation sorted_permutation;
+    extracted_values_column->getPermutation(
+        IColumn::PermutationSortDirection::Ascending,
+        IColumn::PermutationSortStability::Unstable,
+        0, /* limit */
+        -1, /* nan_direction_hint */
+        sorted_permutation);
+    auto src_values = extracted_values_column->permute(sorted_permutation, 0);
     auto our_values = getDecompressedAll();
 
     /// src_values and our_values are both sorted:
