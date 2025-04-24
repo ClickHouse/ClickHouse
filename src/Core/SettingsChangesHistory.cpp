@@ -72,7 +72,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"secondary_indices_enable_bulk_filtering", false, true, "A new algorithm for filtering by data skipping indices"},
             {"implicit_table_at_top_level", "", "", "A new setting, used in clickhouse-local"},
             {"use_skip_indexes_if_final_exact_mode", 0, 0, "This setting was introduced to help FINAL query return correct results with skip indexes"},
-            {"input_format_max_block_size_bytes", 0, DEFAULT_INSERT_BLOCK_SIZE * 256, "New setting to limit bytes size if blocks created by input format"}
+            {"input_format_max_block_size_bytes", 0, DEFAULT_INSERT_BLOCK_SIZE * 256, "New setting to limit bytes size if blocks created by input format"},
             {"page_cache_block_size", 1048576, 1048576, "Made this setting adjustable on a per-query level."},
             {"page_cache_lookahead_blocks", 16, 16, "Made this setting adjustable on a per-query level."},
             {"output_format_pretty_glue_chunks", "0", "auto", "A new setting to make Pretty formats prettier."},
