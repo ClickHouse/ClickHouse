@@ -1348,12 +1348,12 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
 #if USE_XRAY
 void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query)
 {
-    // query.handler -- handler to be set for the function
-    // query.function -- name of the function to be patched - rename in query to function name
+    // query.handler_name -- handler to be set for the function
+    // query.function_name -- name of the function to be patched - rename in query to function name
     if (add)
-        XRayInstrumentationManager::instance().setHandlerAndPatch(query.function, query.handler); // there may be exceptions -- need to consider all cases
+        XRayInstrumentationManager::instance().setHandlerAndPatch(query.function_name, query.handler_name); // there may be exceptions -- need to consider all cases
     else
-        XRayInstrumentationManager::instance().unpatchFunction(query.function); // but if we are just unpatching we don't need handler -- consider this
+        XRayInstrumentationManager::instance().unpatchFunction(query.function_name); // but if we are just unpatching we don't need handler -- consider this
 }
 #endif
 
