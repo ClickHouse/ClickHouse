@@ -99,10 +99,8 @@ RUN wget https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz && \
     cd openssl-${OPENSSL_VERSION} && \
     ./Configure enable-fips --prefix=${PREFIX} && \
     make -j$(nproc) && \
-    make install_sw && \
-    make install_ssldirs && \
-    make install_fips && \
-    mv "${PREFIX}/ssl/openssl.cnf.dist" "${PREFIX}/ssl/openssl.cnf"
+    mv "${PREFIX}/apps/openssl.cnf" "${PREFIX}/ssl/openssl.cnf" && \
+    mv "${PREFIX}/providers/fips.so" "${PREFIX}/ssl/fips.so"
 
 # Patching fipsmodule.cnf with a custom module location.
 RUN cat >> ${PREFIX}/ssl/fipsmodule.cnf <<EOF
