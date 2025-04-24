@@ -43,6 +43,21 @@ Features:
 
 [ChartDB Source Code](https://github.com/chartdb/chartdb).
 
+### ClickHouse Schema Flow Visualizer {#clickhouse-schemaflow-visualizer}
+
+A powerful web application for visualizing ClickHouse table relationships using Mermaid.js diagrams.
+
+Features:
+
+- 🔍 Browse ClickHouse databases and tables with an intuitive interface
+- 📊 Visualize table relationships with Mermaid.js diagrams
+- ↔️ View direction of data flow between tables
+- 💾 Export diagrams as standalone HTML files
+- 🔒 Secure connection to ClickHouse with TLS support
+- 📱 Responsive web interface for all devices
+
+[ClickHouse Schema Flow Visualizer - sorce code](https://github.com/FulgerX2007/clickhouse-schemaflow-visualizer)
+
 ### Tabix {#tabix}
 
 Web interface for ClickHouse in the [Tabix](https://github.com/tabixio/tabix) project.
