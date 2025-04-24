@@ -9,7 +9,6 @@
 #include <base/types.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
-#include "Interpreters/NotJoinedSingleSlot.h"
 #include <Interpreters/TableJoin.h>
 #include <atomic>
 
