@@ -19,7 +19,7 @@ INSERT INTO test_s3 SELECT number, number FROM numbers_mt(1e7);
 # (due to random time difference between the queries and random activity in parallel)
 # but should happen most of the time.
 
-while true
+for _ in {0..9}
 do
     query="SELECT a, b FROM test_s3"
     query_id=$(${CLICKHOUSE_CLIENT} --query "select queryID() from ($query) limit 1" 2>&1)
@@ -38,23 +38,23 @@ done
 
 
 # Test connection pool in ReadWriteBufferFromHTTP
-# we do here `while` because it might be a bad luck that the session is not preserved due to hitting server limits
-# if we change LIMIT 2 to LIMIT 1 then test would fail because
-# query_log collects the metrics before pipeline is destroyed
-# StorageURLSource releases the HTTP session either when all data is fully read or at d-tor
-# with LIMIT 1 the HTTP session is released after query_log is written
 
-while true
+# LIMIT 1 here is important part
+# processor StorageURLSource releases the HTTP session either when all data is fully read in the last generate call or at d-tor of the processor instance
+# with LIMIT 1 the HTTP session is released at pipeline d-tor because not all the data is read from HTTP connection inside StorageURLSource processor
+# this tests covers the case when profile events have to be gathered and logged to the query_log only after pipeline is destroyed
+
+for _ in {0..9}
 do
     query_id=$(${CLICKHOUSE_CLIENT} -q "
     SELECT queryID() FROM(
-        SELECT sleepEachRow(2)
+        SELECT *
         FROM url(
             'http://localhost:8123/?query=' || encodeURLComponent('select 1'),
             'LineAsString',
             's String')
             -- queryID() will be returned for each row, since the query above doesn't return anything we need to return a fake row
-        ) LIMIT 2 SETTINGS max_threads=1, http_make_head_request=0;
+        ) LIMIT 1 SETTINGS max_threads=1, http_make_head_request=0;
     ")
 
     ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
@@ -67,5 +67,5 @@ do
         AND query_id='$query_id';
     ")
 
-    [[ $RES -eq 1 ]] && echo "DiskConnStorageConnectionsPreservedectionsPreserved $RES" && break;
+    [[ $RES -eq 1 ]] && echo "StorageConnectionsPreserved $RES" && break;
 done
