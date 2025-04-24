@@ -27,17 +27,6 @@ using LoggerRawPtr = Poco::Logger *;
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-    extern const int POTENTIALLY_BROKEN_DATA_PART;
-    extern const int REPLICA_ALREADY_EXISTS;
-    extern const int NOT_ENOUGH_SPACE;
-    extern const int CORRUPTED_DATA;
-    extern const int CHECKSUM_DOESNT_MATCH;
-    extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
-}
-
 class AtomicLogger;
 
 /// This flag can be set for testing purposes - to check that no exceptions are thrown.
@@ -73,25 +62,7 @@ public:
         message_format_string_args = msg.format_string_args;
     }
 
-    ~Exception() override
-    {
-#ifdef DEBUG_OR_SANITIZER_BUILD
-        const int error_code = code();
-        if (
-            error_code == ErrorCodes::LOGICAL_ERROR
-            || error_code == ErrorCodes::POTENTIALLY_BROKEN_DATA_PART
-            || error_code == ErrorCodes::REPLICA_ALREADY_EXISTS
-            || error_code == ErrorCodes::NOT_ENOUGH_SPACE
-            || error_code == ErrorCodes::CORRUPTED_DATA
-            || error_code == ErrorCodes::CHECKSUM_DOESNT_MATCH
-            || error_code == ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR
-        )
-        {
-            chassert(logged);
-        }
-#endif
-    }
-
+    ~Exception() override;
     Exception(const Exception &) = default;
     Exception & operator=(const Exception &) = default;
     Exception(Exception &&) = default;

@@ -37,6 +37,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_MREMAP;
+    extern const int POTENTIALLY_BROKEN_DATA_PART;
+    extern const int REPLICA_ALREADY_EXISTS;
+    extern const int NOT_ENOUGH_SPACE;
+    extern const int CORRUPTED_DATA;
+    extern const int CHECKSUM_DOESNT_MATCH;
+    extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
 }
 
 void abortOnFailedAssertion(const String & description, void * const * trace, size_t trace_offset, size_t trace_size)
@@ -261,6 +267,25 @@ void Exception::clearThreadFramePointers()
 {
     if (can_use_thread_frame_pointers)
         thread_frame_pointers.frame_pointers.clear();
+}
+
+Exception::~Exception()
+{
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    const int error_code = code();
+    if (
+        error_code == ErrorCodes::LOGICAL_ERROR
+        || error_code == ErrorCodes::POTENTIALLY_BROKEN_DATA_PART
+        || error_code == ErrorCodes::REPLICA_ALREADY_EXISTS
+        || error_code == ErrorCodes::NOT_ENOUGH_SPACE
+        || error_code == ErrorCodes::CORRUPTED_DATA
+        || error_code == ErrorCodes::CHECKSUM_DOESNT_MATCH
+        || error_code == ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR
+    )
+    {
+        chassert(logged);
+    }
+#endif
 }
 
 static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message, LogsLevel level)
