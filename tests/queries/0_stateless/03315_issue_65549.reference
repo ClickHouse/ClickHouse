@@ -1,2 +1,2 @@
-/usr/bin/clickhouse-client --send_logs_level=warning --database=test --query SELECT * FROM s3('http://localhost:9000/test/hello.csv', '', '', 'CSV', 'value String');
-/usr/bin/clickhouse-client --send_logs_level=warning --database=test --query=SELECT * FROM s3('http://localhost:9000/test/hello.csv', '', '', 'CSV', 'value String');
+/usr/bin/clickhouse-client --send_logs_level=warning --database=test --query SELECT * FROM s3('s3://test/hello.csv', '', '');
+/usr/bin/clickhouse-client --send_logs_level=warning --database=test --query=SELECT * FROM s3('s3://test/hello.csv', '', '');
