@@ -90,7 +90,7 @@ COPY --from=clickhouse/cctools:4670e95dde3de689f103 /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
 
 ARG TARGETARCH
-COPY --from=clickhouse/cctools:a0b654d08b8d0b2c71ac \
+COPY --from=clickhouse/cctools:f312dbe8e0992a0a492d \
   /opt/openssl-fips/ /tmp/openssl-fips
 RUN fips_so=$(find /tmp/openssl-fips -name fips.so -type f | head -n1) \
  && [ -n "$fips_so" ] || { echo "fips.so not found!" >&2; exit 1; } \
