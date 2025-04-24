@@ -1,5 +1,6 @@
 #include <Storages/StorageMergeTree.h>
 
+#include <cstdint>
 #include <optional>
 #include <ranges>
 
@@ -20,9 +21,11 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTPartition.h>
 #include <Planner/Utils.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/LimitTransform.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
@@ -39,6 +42,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/buildQueryTreeForShard.h>
+#include <Storages/StorageMemory.h>
 #include <fmt/core.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
@@ -46,6 +50,13 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
+#include "Core/ColumnsWithTypeAndName.h"
+#include "Core/Names.h"
+#include "QueryPipeline/QueryPipelineBuilder.h"
+#include "Storages/MergeTree/Hypothesis/CheckerSink.hpp"
+#include <Storages/MergeTree/MarkRange.h>
+#include <Storages/MergeTree/Hypothesis/Deducer.hpp>
+#include <IO/SharedThreadPools.h>
 #include "Core/BackgroundSchedulePool.h"
 #include "Core/Names.h"
 
@@ -1734,6 +1745,91 @@ bool StorageMergeTree::optimize(
     }
 
     return true;
+}
+
+std::vector<std::pair<std::string, std::string>> StorageMergeTree::deduce(
+    const ASTPtr &,
+    const std::string& col_to_deduce,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr local_context)
+{
+    LOG_INFO(log, "Okay deduce for {}", col_to_deduce);
+    std::vector<std::pair<std::string, std::string>> result;
+    DataPartsVector data_parts = getVisibleDataPartsVector(local_context);
+    for (const auto& data_part: data_parts) {
+        auto sample_block = metadata_snapshot->getSampleBlock();
+        if (!sample_block.has(col_to_deduce)) {
+            continue;
+        }
+        auto names = sample_block.getNames();
+        auto names_and_types_list = sample_block.getNamesAndTypesList();
+
+        auto get_data_part_read_plan = [this, &data_part, names, local_context, &metadata_snapshot]() -> QueryPlan {
+            SelectQueryInfo query_info;
+            auto dummy_query = std::make_shared<ASTSelectQuery>();
+            query_info.query = dummy_query;
+            auto reader_plan = this->reader.readFromParts({data_part}, this->getMutationsSnapshot(IMutationsSnapshot::Params()), names, getStorageSnapshot(metadata_snapshot, local_context), query_info, local_context, UINT64_MAX, /*num_streams=*/ 2);
+
+            QueryPlan plan;
+            plan.addStep(std::move(reader_plan));
+            return plan;
+        };
+
+        auto build_and_execute_plan = [local_context](QueryPlan plan, std::shared_ptr<SinkToStorage> sink) {
+            auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(local_context), BuildQueryPipelineSettings(local_context));
+            auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder.release()));
+            pipeline.complete(sink);
+            CompletedPipelineExecutor executor(pipeline);
+            executor.execute();
+        };
+
+        // deduce pipeline
+        const size_t deduce_sample_size = 10;
+        auto alter_conversions = AlterConversionsPtr(new AlterConversions());
+        auto data_part_reader = data_part->getReader(names_and_types_list, getStorageSnapshot(metadata_snapshot, local_context), {MarkRange(0, 1)}, IMergeTreeDataPart::VirtualFields(),
+                            /*uncompressed_cache=*/ nullptr, /*mark_cache=*/ nullptr, /*alter_conversions*/ alter_conversions,
+                            MergeTreeReaderSettings(), IMergeTreeDataPart::ValueSizeMap(), ReadBufferFromFileBase::ProfileCallback());
+        Columns sample_columns(sample_block.columns());
+
+        data_part_reader->readRows(/*from_mark=*/0, /*current_task_last_mark=*/0, /*continue_reading=*/false, deduce_sample_size, sample_columns);
+        Block deduce_block(sample_block);
+        deduce_block.setColumns(sample_columns);
+        deduce_block = deduce_block.cloneWithCutColumns(/*start=*/0, deduce_sample_size);
+        Hypothesis::Deducer deducer(std::move(deduce_block));
+        auto hypothesis_vec = deducer.deduceColumn(col_to_deduce);
+
+        // checker pipeline
+        auto mutation_snapshot = this->getMutationsSnapshot(IMutationsSnapshot::Params());
+        auto snapshot = getStorageSnapshot(metadata_snapshot, local_context);
+        SelectQueryInfo query_info;
+        auto dummy_query = std::make_shared<ASTSelectQuery>();
+        query_info.query = dummy_query;
+        auto reader_plan = this->reader.readFromParts({data_part}, mutation_snapshot, names, snapshot, query_info, local_context, UINT64_MAX, /*num_streams=*/ 2);
+
+        auto checker = std::make_shared<Hypothesis::CheckerSink>(reader_plan->getOutputHeader(), std::move(hypothesis_vec));
+        QueryPlan plan;
+        plan.addStep(std::move(reader_plan));
+        auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(local_context), BuildQueryPipelineSettings(local_context));
+        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder.release()));
+        pipeline.complete(static_pointer_cast<SinkToStorage>(checker));
+        CompletedPipelineExecutor executor(pipeline);
+        executor.execute();
+        LOG_INFO(log, "Rows checked {}", checker->getRowsChecked());
+        if (checker->hypothesisVerifiedCount() == 0) {
+            result.emplace_back(data_part->getNameWithState(), "None");
+        } else {
+            hypothesis_vec = checker->getVerifiedHypothesis();
+            std::string hypothesis_str;
+            for (size_t i = 0; i < hypothesis_vec.size(); ++i) {
+                if (i != 0) {
+                    hypothesis_str += " ; ";
+                }
+                hypothesis_str += hypothesis_vec[i].toString();
+            }
+            result.emplace_back(data_part->getNameWithState(), hypothesis_str);
+        }
+    }
+    return result;
 }
 
 namespace
