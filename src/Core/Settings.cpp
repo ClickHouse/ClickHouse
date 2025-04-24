@@ -4723,6 +4723,11 @@ The probability of a fault injection during table creation after creating metada
     \
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
 If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
 )", 0) \
     \
     DECLARE(Bool, use_query_cache, false, R"(
@@ -6639,6 +6644,9 @@ Enable PRQL - an alternative to SQL.
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
 Trigger processor to spill data into external storage adpatively. grace join is supported at present.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_delta_kernel_rs, false, R"(
+Allow experimental delta-kernel-rs implementation.
 )", EXPERIMENTAL) \
     DECLARE(Bool, make_distributed_plan, false, R"(
 Make distributed query plan.

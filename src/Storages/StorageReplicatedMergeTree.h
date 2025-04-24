@@ -359,7 +359,7 @@ public:
     std::optional<bool> hasMetadataInZooKeeper () { return has_metadata_in_zookeeper; }
 
     /// Get a sequential consistent view of current parts.
-    ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;
+    PartitionIdToMaxBlock getMaxAddedBlocks() const;
 
     void addLastSentPart(const MergeTreePartInfo & info);
 
