@@ -1250,7 +1250,7 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
             updatePermanentLocks(*consumer_info.keeper, consumer->getAllTopicPartitions(), consumer_info.permanent_locks);
             auto maybe_locks = lockTopicPartitions(consumer_info.permanent_locks, consumer_info.tmp_locks);
 
-            // Now we always have some assigment
+            // Now we always have some assignment
             // if (!maybe_locks.has_value())
             // {
             //     // We couldn't acquire locks, probably some other consumers are still holding them.
