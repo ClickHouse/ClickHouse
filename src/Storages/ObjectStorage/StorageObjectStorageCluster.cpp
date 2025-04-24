@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Parsers/ASTSetQuery.h>
 
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -38,6 +39,7 @@ String StorageObjectStorageCluster::getPathSample(StorageInMemoryMetadata metada
         false, // distributed_processing
         context,
         {}, // predicate
+        {},
         metadata.getColumns().getAll(), // virtual_columns
         nullptr, // read_keys
         {} // file_progress_callback
@@ -117,6 +119,19 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
 
     ASTPtr object_storage_type_arg;
     configuration->extractDynamicStorageType(args, context, &object_storage_type_arg);
+
+    ASTPtr settings_temporary_storage = nullptr;
+    for (auto * it = args.begin(); it != args.end(); ++it)
+    {
+        ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
+        if (settings_ast)
+        {
+            settings_temporary_storage = std::move(*it);
+            args.erase(it);
+            break;
+        }
+    }
+
     if (!endsWith(table_function->name, "Cluster"))
         configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
     else
@@ -128,6 +143,10 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     }
     if (object_storage_type_arg)
         args.insert(args.end(), object_storage_type_arg);
+    if (settings_temporary_storage)
+    {
+        args.insert(args.end(), std::move(settings_temporary_storage));
+    }
 }
 
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
@@ -135,7 +154,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(local_context), object_storage, /* distributed_processing */false,
-        local_context, predicate, virtual_columns, nullptr, local_context->getFileProgressCallback(), /*ignore_archive_globs=*/true, /*skip_object_metadata=*/true);
+        local_context, predicate, {}, virtual_columns, nullptr, local_context->getFileProgressCallback(), /*ignore_archive_globs=*/true, /*skip_object_metadata=*/true);
 
     auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String
     {
