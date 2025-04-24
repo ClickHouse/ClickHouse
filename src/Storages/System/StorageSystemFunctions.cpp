@@ -112,7 +112,7 @@ ColumnsDescription StorageSystemFunctions::getColumnsDescription()
         {"arguments", std::make_shared<DataTypeString>(), "What arguments does the function take."},
         {"returned_value", std::make_shared<DataTypeString>(), "What does the function return."},
         {"examples", std::make_shared<DataTypeString>(), "Usage example."},
-        {"categories", std::make_shared<DataTypeString>(), "The category of the function."}
+        {"categories", std::make_shared<DataTypeEnum8>(getOriginEnumsAndValues()), "The category of the function."}
     };
 }
 
