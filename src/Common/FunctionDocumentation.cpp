@@ -40,7 +40,7 @@ std::string FunctionDocumentation::examplesAsString() const
 std::string FunctionDocumentation::categoryAsString() const
 {
     static const std::unordered_map<Category, std::string> category_to_string = {
-        {Category::Unknown, ""},
+        {Category::Unknown, ""}, /// Default enum value for default-constructed FunctionDocumentation objects. Be consistent with other default fields (empty).
         {Category::Arithmetic, "Arithmetic"},
         {Category::Array, "Arrays"},
         {Category::Bit, "Bit"},

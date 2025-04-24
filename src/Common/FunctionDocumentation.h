@@ -65,6 +65,7 @@ struct FunctionDocumentation
 
     enum class Category : uint8_t
     {
+        /// Default category
         Unknown,
 
         /// Regular functions
