@@ -1,7 +1,7 @@
 #include <cstring>
 #include <string_view>
-#include <Common/clearPasswordFromCommandLine.h>
 #include <vector>
+#include <Common/clearPasswordFromCommandLine.h>
 
 using namespace std::literals;
 
@@ -14,20 +14,19 @@ struct SecretRule
     std::vector<size_t> secret_pos;
 };
 
-static const SecretRule rules[] =
-{
-    {"s3"sv,              {1, 2}},
-    {"s3Cluster"sv,       {2, 3}},
-    {"remote"sv,          {4}},
-    {"remoteSecure"sv,    {4}},
-    {"mysql"sv,           {4}},
-    {"postgresql"sv,      {4}},
-    {"mongodb"sv,         {4}},
+static const SecretRule rules[] = {
+    {"s3"sv, {1, 2}},
+    {"s3Cluster"sv, {2, 3}},
+    {"remote"sv, {4}},
+    {"remoteSecure"sv, {4}},
+    {"mysql"sv, {4}},
+    {"postgresql"sv, {4}},
+    {"mongodb"sv, {4}},
 };
 
 bool isIdentChar(char c)
 {
-    return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; 
+    return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
 }
 
 char * mask(char * begin, char * end)
@@ -36,26 +35,27 @@ char * mask(char * begin, char * end)
     return begin;
 }
 
-void shrederSecretInQuery(char* query)
+void shrederSecretInQuery(char * query)
 {
-    char* cur = query;
-    const std::size_t original_len = std::strlen(query); 
+    char * cur = query;
+    const std::size_t original_len = std::strlen(query);
 
     while (*cur)
     {
         while (std::isspace(static_cast<unsigned char>(*cur)))
             ++cur;
-        char* id_begin = cur;
+        char * id_begin = cur;
         if (!isIdentChar(*cur))
         {
             ++cur;
             continue;
         }
-        while (isIdentChar(*cur)) ++cur;
+        while (isIdentChar(*cur))
+            ++cur;
         std::string_view ident{id_begin, static_cast<size_t>(cur - id_begin)};
 
         std::vector<size_t> secret;
-        for (const auto& r : rules)
+        for (const auto & r : rules)
             if (ident == r.func)
             {
                 secret = r.secret_pos;
@@ -72,9 +72,9 @@ void shrederSecretInQuery(char* query)
             continue;
         ++cur;
 
-        bool   in_quote = false;
-        size_t arg_idx  = 0;
-        char*  quote_beg = nullptr;
+        bool in_quote = false;
+        size_t arg_idx = 0;
+        char * quote_beg = nullptr;
         size_t secret_index = 0;
 
         for (; *cur; ++cur)
@@ -85,7 +85,7 @@ void shrederSecretInQuery(char* query)
             {
                 if (ch == '\'')
                 {
-                    in_quote  = true;
+                    in_quote = true;
                     quote_beg = cur + 1;
                 }
                 else if (ch == ',')
