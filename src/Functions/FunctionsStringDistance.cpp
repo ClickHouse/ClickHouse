@@ -9,8 +9,8 @@
 #include <Common/iota.h>
 
 #include <algorithm>
-#include <iomanip>
-#include <iostream>
+#include <cstdint>
+#include <chrono>
 
 #ifdef __SSE4_2__
 #    include <nmmintrin.h>
@@ -477,10 +477,11 @@ struct ByteAffineGapDistanceImpl
     using ResultType = Float64;
     
     static constexpr size_t max_string_size = 1000000; // 1MB safety limit
+    static constexpr long double max_complexity = 1e9;
     static constexpr double default_gap_open = 1.0;    // Default penalty for opening a gap
     static constexpr double default_gap_extend = 0.5;  // Default penalty for extending a gap
     static constexpr double default_mismatch = 1.0;    // Default penalty for substitution
-    static constexpr double big_value = 1e10; // Large but not infinity to avoid overflow
+    static constexpr double big_value = std::numeric_limits<double>::infinity(); // Large but not infinity to avoid overflow
 
     static ResultType process(
         const char * __restrict haystack, size_t haystack_size,
@@ -490,11 +491,19 @@ struct ByteAffineGapDistanceImpl
         double mismatch = default_mismatch)
     {
         /// Safety threshold against DoS
-        if (haystack_size > max_string_size || needle_size > max_string_size)
+        if (haystack_size > max_string_size || needle_size > max_string_size) {
             throw Exception(
                 ErrorCodes::TOO_LARGE_STRING_SIZE,
                 "The string size is too big for function affineGap, should be at most {}", max_string_size);
-                
+        }
+
+        if (static_cast<long double>(haystack_size) * static_cast<long double>(needle_size) > max_complexity) {
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                "Complexity of the operation is too high, should be at most {}", max_complexity);
+        }
+
+
         /// Shortcuts:
         if (haystack_size == 0)
             return needle_size * gap_open;
@@ -591,8 +600,9 @@ template <bool utf8_enabled>
 struct ByteSmashSimilarityImpl
 {
     using ResultType = Float64;
-    static constexpr size_t max_string_size = 1000000; // 1MB safety limit
-    static constexpr double big_value = 1e10; // Large but not infinity to avoid overflow
+    static constexpr double big_value = std::numeric_limits<double>::infinity();
+    static constexpr long double max_complexity = 1e10;
+    static constexpr size_t max_string_size = 100000;
 
     static ResultType process(
         const char* __restrict haystack, size_t haystack_size,
@@ -680,21 +690,43 @@ private:
             }
         }
 
-        const int m = words.size();
-        const int n = short_str.size();
+        const int64_t m = words.size();
+        const int64_t n = short_str.size();
+
+        size_t max_word_length = 0;
+        for (const auto& word : words) {
+            max_word_length = std::max(max_word_length, word.size());
+        }
+
+        long double smash_complexity = static_cast<long double>(m) * static_cast<long double>(n) * static_cast<long double>(n - 1) / 2;
+        if (smash_complexity > max_complexity) {
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                "String size too large for smashSimilarity");
+        }
+
 
         if (m == 0 || n == 0)
             return 0.0;
 
-        std::vector<std::vector<double>> dp(m + 1, std::vector<double>(n + 1, big_value));
+        std::vector<std::vector<double>> dp(m + 1, std::vector<double>(n + 1, std::numeric_limits<double>::infinity()));
         dp[0][0] = 0.0;
 
-        for (int i = 1; i <= m; ++i)
-        {
-            for (int j = 1; j <= n; ++j)
+        auto start_time = std::chrono::steady_clock::now();
+        const auto timeout = std::chrono::seconds(5);
+
+        for (int64_t i = 1; i <= m; ++i)
+        {  
+            for (int64_t j = 1; j <= n; ++j)
             {
-                for (int k = i - 1; k < j; ++k)
+                for (int64_t k = i - 1; k < j; ++k)
                 {
+                    auto current_time = std::chrono::steady_clock::now();
+                    if (std::chrono::duration_cast<std::chrono::seconds>(current_time - start_time) > timeout) {
+                        throw Exception(
+                            ErrorCodes::TOO_LARGE_STRING_SIZE,
+                            "Operation timeout: SMASH similarity calculation took more than 5 seconds");
+                    }
                     auto current_word = words[i - 1];
                     auto substring = short_str.substr(k, j - k);
 

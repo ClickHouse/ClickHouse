@@ -40,3 +40,9 @@ SELECT smashSimilarity('assistant ark manager', 'aspmng') AS smash;
 SELECT smashSimilarity('text with tyypo', 'text with rypo') AS smash;
 SELECT smashSimilarity('deputy marshall', 'dptymrsl') AS smash;
 SELECT smashSimilarity('united nations', 'un') AS smash;
+
+-- Close to the limit or hit the limit
+SELECT smashSimilarity(repeat('a', 1), repeat('a', 100000)) AS smash;
+-- SELECT smashSimilarity(repeat('a', 1000), repeat('b', 1000)) AS smash_timeout;
+-- SELECT smashSimilarity(repeat('a', 1000000), repeat('abba', 2000)) AS smash_timeout;
+SELECT smashSimilarity(repeat('a', 1000), repeat('a', 2000)) AS smash_timeout;
