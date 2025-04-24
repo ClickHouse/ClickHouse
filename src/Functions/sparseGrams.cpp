@@ -31,7 +31,7 @@ namespace
 
 #ifdef __SSE4_2__
 
-struct BigramCRC32Hasher
+struct CRC32CHasher
 {
     size_t operator()(const char* data, size_t length) const
     {
@@ -44,7 +44,7 @@ struct BigramCRC32Hasher
 
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
 
-struct BigramCRC32Hasher
+struct CRC32CHasher
 {
     size_t operator()(const char* data, size_t length) const
     {
@@ -57,7 +57,7 @@ struct BigramCRC32Hasher
 
 #elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 
-struct BigramCRC32Hasher
+struct CRC32CHasher
 {
     size_t operator()(const char* data, size_t length) const
     {
@@ -70,7 +70,7 @@ struct BigramCRC32Hasher
 #else
 
 /// On other platforms we do not use CRC32. NOTE This can be confusing.
-struct BigramCRC32Hasher 
+struct CRC32CHasher
 {
     size_t operator()(const char* data, size_t length) const
     {
@@ -86,7 +86,7 @@ template <bool is_utf8>
 class SparseGramsImpl
 {
 private:
-    BigramCRC32Hasher hasher;
+    CRC32CHasher hasher;
 
     Pos pos;
     Pos end;
@@ -157,6 +157,7 @@ private:
     /// [{position:1, hash:5}, {position:3, hash:4}, {position:4,hash:1}]
     /// Assuming that hashes are uniformly distributed, the expected size of convex_hull is N^{1/3}, 
     /// where N is the length of the string.
+    /// Proof: https://math.stackexchange.com/questions/3469295/expected-number-of-vertices-in-a-convex-hull
     std::vector<PositionAndHash> convex_hull;
     NGramSymbolIterator symbol_iterator;
 
@@ -310,7 +311,7 @@ public:
         SparseGramsImpl<is_utf8> impl;
         impl.init(arguments, false);
 
-        BigramCRC32Hasher hasher;
+        CRC32CHasher hasher;
 
         auto col_res = ColumnUInt32::create();
         auto & res_data = col_res->getData();
