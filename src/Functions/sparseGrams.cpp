@@ -93,7 +93,7 @@ private:
     UInt64 min_ngram_length = 3;
     UInt64 max_ngram_length = 100;
 
-    /// Current batch of answers. The size of result can not be greater than `convex_hull`..
+    /// Current batch of answers. The size of result can not be greater than `convex_hull`.
     /// The size of `convex_hull` should not be large, see comment to `convex_hull` for more details.
     std::vector<std::pair<size_t, size_t>> result;
     size_t iter_result = 0;
