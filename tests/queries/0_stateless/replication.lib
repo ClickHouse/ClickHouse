@@ -17,7 +17,7 @@ function try_sync_replicas()
             WHERE (database = currentDatabase()) AND (table LIKE '$table_name_prefix%')
         ))")
     local tables_arr
-    readarray -t tables_arr < <(${CLICKHOUSE_CLIENT} -q "SELECT name FROM system.tables WHERE database=currentDatabase() AND name like '$table_name_prefix%' AND engine like '%Replicated%'")
+    readarray -t tables_arr < <(${CLICKHOUSE_CLIENT} -q "SELECT name FROM system.tables WHERE database=currentDatabase() AND name like '$table_name_prefix%' AND (engine like '%Replicated%' or engine like '%Shared%')")
 
     local t
     for t in "${tables_arr[@]}"
