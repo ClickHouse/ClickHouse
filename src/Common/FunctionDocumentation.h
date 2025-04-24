@@ -63,9 +63,11 @@ struct FunctionDocumentation
     };
     using Examples = std::vector<Example>;
 
-    enum class Category
+    enum class Category : uint8_t
     {
-        // Regular functions
+        Unknown,
+
+        /// Regular functions
         Arithmetic,
         Array,
         Bit,
@@ -107,23 +109,24 @@ struct FunctionDocumentation
         UUID,
         UniqTheta,
         Variant,
-        // Table functions
+
+        /// Table functions
         TableFunction
     };
 
     using Related = std::vector<std::string>;
 
-    /// TODO Fields with {} initialization are optional.
-    Description description {};               /// E.g. "Returns the position (in bytes, starting at 1) of a substring needle in a string haystack."
-    Syntax syntax {};                      /// E.g. "position(haystack, needle)"
-    Arguments arguments {};                /// E.g. ["haystack — String in which the search is performed. String.", "needle — Substring to be searched. String."]
-    ReturnedValue returned_value {};       /// E.g. "Starting position in bytes and counting from 1, if the substring was found."
-    Examples examples {};                  ///
-    Category category;   /// E.g. Category::DatesAndTimes
+    /// TODO Fields with {} initialization are optional. We should make all fields non-optional.
+    Description description;                /// E.g. "Returns the position (in bytes, starting at 1) of a substring needle in a string haystack."
+    Syntax syntax {};                       /// E.g. "position(haystack, needle)"
+    Arguments arguments {};                 /// E.g. ["haystack — String in which the search is performed. String.", "needle — Substring to be searched. String."]
+    ReturnedValue returned_value {};        /// E.g. "Starting position in bytes and counting from 1, if the substring was found."
+    Examples examples {};                   ///
+    Category category;                      /// E.g. Category::DatesAndTimes
 
     std::string argumentsAsString() const;
-    std::string categoryAsString() const;
     std::string examplesAsString() const;
+    std::string categoryAsString() const;
 };
 
 }

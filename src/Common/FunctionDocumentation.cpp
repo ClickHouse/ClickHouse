@@ -40,6 +40,7 @@ std::string FunctionDocumentation::examplesAsString() const
 std::string FunctionDocumentation::categoryAsString() const
 {
     static const std::unordered_map<Category, std::string> category_to_string = {
+        {Category::Unknown, ""},
         {Category::Arithmetic, "Arithmetic"},
         {Category::Array, "Arrays"},
         {Category::Bit, "Bit"},
