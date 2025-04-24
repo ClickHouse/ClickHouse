@@ -80,6 +80,7 @@
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
+#include <Functions/UserDefined/ExternalUserDefinedDriversLoader.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/IUserDefinedDriversStorage.h>
@@ -351,6 +352,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::mutex embedded_dictionaries_mutex;
     mutable std::mutex external_dictionaries_mutex;
     mutable std::mutex external_user_defined_executable_functions_mutex;
+    mutable std::mutex external_user_defined_drivers_mutex;
     /// Separate mutex for storage policies. During server startup we may
     /// initialize some important storages (system logs with MergeTree engine)
     /// under context lock.
@@ -404,6 +406,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> external_user_defined_executable_functions_loader TSA_GUARDED_BY(external_user_defined_executable_functions_mutex);
     ExternalLoaderXMLConfigRepository * user_defined_executable_functions_config_repository TSA_GUARDED_BY(external_user_defined_executable_functions_mutex) = nullptr;
     scope_guard user_defined_executable_functions_xmls TSA_GUARDED_BY(external_user_defined_executable_functions_mutex);
+
+    mutable std::unique_ptr<ExternalUserDefinedDriversLoader> external_user_defined_drivers_loader TSA_GUARDED_BY(external_user_defined_drivers_mutex);
 
     mutable OnceFlag user_defined_sql_objects_storage_initialized;
     mutable std::unique_ptr<IUserDefinedSQLObjectsStorage> user_defined_sql_objects_storage;
@@ -3102,6 +3106,25 @@ Context::getExternalUserDefinedExecutableFunctionsLoaderWithLock(const std::lock
         shared->external_user_defined_executable_functions_loader =
             std::make_unique<ExternalUserDefinedExecutableFunctionsLoader>(getGlobalContext());
     return *shared->external_user_defined_executable_functions_loader;
+}
+
+const ExternalUserDefinedDriversLoader & Context::getExternalUserDefinedDriversLoader() const
+{
+    return const_cast<Context *>(this)->getExternalUserDefinedDriversLoader();
+}
+
+ExternalUserDefinedDriversLoader & Context::getExternalUserDefinedDriversLoader()
+{
+    std::lock_guard lock(shared->external_user_defined_drivers_mutex);
+    return getExternalUserDefinedDriversLoaderWithLock(lock);
+}
+
+ExternalUserDefinedDriversLoader &
+Context::getExternalUserDefinedDriversLoaderWithLock(const std::lock_guard<std::mutex> &) TSA_REQUIRES(shared->external_user_defined_drivers_mutex)
+{
+    if (!shared->external_user_defined_drivers_loader)
+        shared->external_user_defined_drivers_loader = std::make_unique<ExternalUserDefinedDriversLoader>(getGlobalContext());
+    return *shared->external_user_defined_drivers_loader;
 }
 
 EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_error) const
