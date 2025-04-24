@@ -45,8 +45,10 @@ public:
     void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
 
     void enableMemoryBoundMerging();
-    void enforceAggregationInOrder();
+    void enforceAggregationInOrder(const SortDescription & sort_description);
     void setIsRemoteFunction(bool is_remote_function_ = true) { is_remote_function = is_remote_function_; }
+
+    bool hasSerializedPlan() const;
 
 private:
     ClusterProxy::SelectStreamFactory::Shards shards;
@@ -97,9 +99,10 @@ public:
     void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
 
     void enableMemoryBoundMerging();
-    void enforceAggregationInOrder();
+    void enforceAggregationInOrder(const SortDescription & sort_description);
 
     StorageID getStorageID() const { return storage_id; }
+    ParallelReplicasReadingCoordinatorPtr getCoordinator() const { return coordinator; }
 
 private:
     Pipes addPipes(ASTPtr ast, const Header & out_header);

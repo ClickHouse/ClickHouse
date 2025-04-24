@@ -1,5 +1,6 @@
 import json
 import os
+import traceback
 import urllib
 from pathlib import Path
 from typing import Optional
@@ -190,6 +191,14 @@ class Info:
         if key:
             return custom_data.get(key, None)
         return custom_data
+
+    def get_changed_files(self):
+        custom_data = RunConfig.from_fs(self.env.WORKFLOW_NAME).custom_data
+        return custom_data.get("changed_files", None)
+
+    def store_traceback(self):
+        self.env.TRACEBACKS.append(traceback.format_exc())
+        self.env.dump()
 
     def is_workflow_ok(self):
         """

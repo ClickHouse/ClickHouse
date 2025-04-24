@@ -4,6 +4,7 @@
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
 #include <Disks/ObjectStorages/StaticDirectoryIterator.h>
 #include <Disks/ObjectStorages/StoredObject.h>
+#include <Storages/PartitionCommands.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -107,6 +108,11 @@ std::optional<Poco::Timestamp> MetadataStorageFromPlainObjectStorage::getLastMod
     if (existsFileOrDirectory(path))
         return Poco::Timestamp{};
     return std::nullopt;
+}
+
+bool MetadataStorageFromPlainObjectStorage::supportsPartitionCommand(const PartitionCommand & /*command*/) const
+{
+    return false;
 }
 
 std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(const std::string & path) const
@@ -213,6 +219,26 @@ void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std
         addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation>(
             normalizeDirectoryPath(path), *metadata_storage.getPathMap(), object_storage, metadata_storage.getMetadataKeyPrefix()));
     }
+}
+
+void MetadataStorageFromPlainObjectStorageTransaction::createHardLink(const std::string & path_from, const std::string & path_to)
+{
+    if (metadata_storage.object_storage->isWriteOnce())
+        throwNotImplemented();
+
+    addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCopyFileOperation>(
+        path_from, path_to, *metadata_storage.getPathMap(), object_storage));
+}
+
+void MetadataStorageFromPlainObjectStorageTransaction::moveFile(const std::string & path_from, const std::string & path_to)
+{
+    if (metadata_storage.object_storage->isWriteOnce())
+        throwNotImplemented();
+
+    if (metadata_storage.existsDirectory(path_from))
+        moveDirectory(path_from, path_to);
+    else
+        throwNotImplemented();
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::createEmptyMetadataFile(const std::string & path)

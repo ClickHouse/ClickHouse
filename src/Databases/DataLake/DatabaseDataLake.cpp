@@ -1,4 +1,5 @@
 #include <Databases/DataLake/DatabaseDataLake.h>
+#include "Storages/ObjectStorage/StorageObjectStorageSettings.h"
 
 #if USE_AVRO && USE_PARQUET
 
@@ -56,6 +57,7 @@ namespace Setting
 namespace StorageObjectStorageSetting
 {
     extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
+    extern const StorageObjectStorageSettingsBool iceberg_use_version_hint;
 }
 
 namespace ErrorCodes
@@ -378,6 +380,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     const auto configuration = getConfiguration(storage_type);
 
     auto storage_settings = std::make_shared<StorageObjectStorageSettings>();
+    storage_settings->loadFromSettingsChanges(settings.allChanged());
+
     if (auto table_specific_properties = table_metadata.getDataLakeSpecificProperties();
         table_specific_properties.has_value())
     {
