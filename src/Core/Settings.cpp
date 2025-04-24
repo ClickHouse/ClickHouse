@@ -4723,6 +4723,11 @@ The probability of a fault injection during table creation after creating metada
     \
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
 If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
 )", 0) \
     \
     DECLARE(Bool, use_query_cache, false, R"(
