@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Core/Settings.h>
+#include "IO/WriteHelpers.h"
 
 
 namespace DB
@@ -360,6 +361,11 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     {
         new_part->getColumns().writeText(buffer);
     });
+
+    if (const auto & hypothesis_list = new_part->getHypothesisList(); !hypothesis_list.empty())
+    {
+        write_plain_file("hypothesis.txt", [&hypothesis_list](auto & buffer) { hypothesis_list.writeText(buffer); });
+    }
 
     write_plain_file(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, [&](auto & buffer)
     {

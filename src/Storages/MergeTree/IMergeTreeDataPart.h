@@ -10,6 +10,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/Hypothesis/Hypothesis.hpp>
 #include <Storages/MergeTree/MergeTreeDataPartState.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
@@ -155,6 +156,9 @@ public:
     SerializationPtr tryGetSerialization(const String & column_name) const;
 
     void remove();
+
+    const Hypothesis::HypothesisList & getHypothesisList() const;
+    void setHypothesisList(Hypothesis::HypothesisList);
 
     ColumnsStatistics loadStatistics() const;
 
@@ -687,6 +691,9 @@ private:
     /// The same as above but after call of Nested::collect().
     /// It is used while reading from wide parts.
     ColumnsDescription columns_description_with_collected_nested;
+
+    /// List of hypothesis for hypothesis.txt
+    Hypothesis::HypothesisList hypothesis_list;
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();

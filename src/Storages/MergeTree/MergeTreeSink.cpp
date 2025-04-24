@@ -71,6 +71,7 @@ void MergeTreeSink::onFinish()
 
 void MergeTreeSink::consume(Chunk & chunk)
 {
+    LOG_INFO(storage.log, "Consuming chunk of size {}", chunk.getNumRows());
     if (num_blocks_processed > 0)
         storage.delayInsertOrThrowIfNeeded(nullptr, context, false);
 
@@ -108,7 +109,7 @@ void MergeTreeSink::consume(Chunk & chunk)
 
         {
             ProfileEventsScope scoped_attach(&part_counters);
-
+            LOG_INFO(storage.log, "Calling temp part creation for block of size {}", current_block.block.rows());
             Stopwatch watch;
             temp_part = writeNewTempPart(current_block);
             elapsed_ns = watch.elapsed();

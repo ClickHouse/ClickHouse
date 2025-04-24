@@ -4,19 +4,21 @@
 #include <numeric>
 #include "Common/Logger.h"
 #include "Common/logger_useful.h"
+#include "Columns/IColumn.h"
 #include "Storages/MergeTree/Hypothesis/Token.hpp"
+
 
 namespace DB::Hypothesis
 {
 
 
-CheckerSink::CheckerSink(Block header_, HypothesisVec hypothesis_vec_)
-    : SinkToStorage(header_)
-    , hypothesis_vec(std::move(hypothesis_vec_))
+CheckerSink::CheckerSink(const Block & block_, HypothesisList hypothesis_list_)
+    : SinkToStorage(block_)
+    , hypothesis_list(std::move(hypothesis_list_))
 {
-    verified.assign(hypothesis_vec.size(), true);
+    verified.assign(hypothesis_list.size(), true);
     log = getLogger("HypothesisChecker");
-    LOG_DEBUG(log, "Got {} hypothesis to verify", hypothesis_vec.size());
+    LOG_DEBUG(log, "Got {} hypothesis to verify", hypothesis_list.size());
 }
 
 void CheckerSink::consume(Chunk & block)
@@ -24,13 +26,14 @@ void CheckerSink::consume(Chunk & block)
     std::lock_guard guard{mutex};
     const auto & header = input.getHeader();
     rows_checked += block.getNumRows();
-    for (size_t i = 0; i < hypothesis_vec.size(); ++i)
+    size_t idx = 0;
+    for (const auto & hypothesis : hypothesis_list)
     {
-        if (!verified[i])
+        if (!verified[idx])
         {
+            ++idx;
             continue;
         }
-        const auto & hypothesis = hypothesis_vec[i];
         bool is_ok = true;
         for (size_t row = 0; row < block.getNumRows() && is_ok; ++row)
         {
@@ -70,19 +73,22 @@ void CheckerSink::consume(Chunk & block)
         }
         if (!is_ok)
         {
-            verified[i] = false;
+            verified[idx] = false;
         }
+        ++idx;
     }
 }
-HypothesisVec CheckerSink::getVerifiedHypothesis() const
+HypothesisList CheckerSink::getVerifiedHypothesis() const
 {
-    HypothesisVec result;
-    for (size_t i = 0; i < verified.size(); ++i)
+    HypothesisList result;
+    size_t idx = 0;
+    for (const auto & hypothesis : hypothesis_list)
     {
-        if (verified[i])
+        if (verified[idx])
         {
-            result.push_back(hypothesis_vec[i]);
+            result.push_back(hypothesis);
         }
+        ++idx;
     }
     LOG_DEBUG(log, "After verification {} hypothesis left", result.size());
     return result;

@@ -1937,6 +1937,15 @@ void IMergeTreeDataPart::initializeIndexGranularityInfo()
     index_granularity = std::make_unique<MergeTreeIndexGranularityAdaptive>();
 }
 
+const Hypothesis::HypothesisList & IMergeTreeDataPart::getHypothesisList() const
+{
+    return hypothesis_list;
+}
+
+void IMergeTreeDataPart::setHypothesisList(Hypothesis::HypothesisList hypothesis_list_) {
+    this->hypothesis_list = std::move(hypothesis_list_);
+}
+
 void IMergeTreeDataPart::remove()
 {
     assert(assertHasValidVersionMetadata());

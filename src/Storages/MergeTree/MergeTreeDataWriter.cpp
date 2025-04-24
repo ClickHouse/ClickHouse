@@ -13,6 +13,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/Hypothesis/Deducer.hpp>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -24,6 +25,11 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/typeid_cast.h>
+#include "Core/TypeId.h"
+#include "Processors/Executors/CompletedPipelineExecutor.h"
+#include "QueryPipeline/Chain.h"
+#include "QueryPipeline/Pipe.h"
+#include "Storages/MergeTree/Hypothesis/CheckerSink.hpp"
 #include <Core/Settings.h>
 
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
@@ -67,6 +73,7 @@ namespace Setting
     extern const SettingsBool throw_on_max_partitions_per_insert_block;
     extern const SettingsUInt64 min_free_disk_bytes_to_perform_insert;
     extern const SettingsFloat min_free_disk_ratio_to_perform_insert;
+    extern const SettingsBool enable_hypothesis_deduction;
 }
 
 namespace MergeTreeSetting
@@ -498,6 +505,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     Block & block = block_with_partition.block;
+    LOG_DEBUG(log, "Block rows: {}", block.rows());
     MergeTreePartition & partition = block_with_partition.partition;
 
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
@@ -601,6 +609,24 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterMergingBlocksMicroseconds);
         block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, data.merging_params);
     }
+    Hypothesis::HypothesisList hypothesis_list;
+    if (context->getSettingsRef()[Setting::enable_hypothesis_deduction])
+    {
+        LOG_INFO(log, "Writing deduced hypothesis for new data_part {}", part_name);
+        Hypothesis::Deducer deducer(block.cloneWithCutColumns(0, std::min(block.rows(), static_cast<size_t>(10))));
+        for (const auto& col: block.getColumnsWithTypeAndName()) {
+            if (col.type->getTypeId() == TypeIndex::String) {
+                hypothesis_list.splice(hypothesis_list.end(), deducer.deduceColumn(col.name));
+            }
+        }
+        auto checker = std::make_shared<Hypothesis::CheckerSink>(block, std::move(hypothesis_list));
+        auto source = std::make_shared<SourceFromSingleChunk>(block.cloneWithColumns(block.getColumns()));
+        QueryPipeline pipeline(source);
+        pipeline.complete(checker);
+        CompletedPipelineExecutor executor(pipeline);
+        executor.execute();
+        hypothesis_list = checker->getVerifiedHypothesis();
+    }
 
     /// Size of part would not be greater than block.bytes() + epsilon
     size_t expected_size = block.bytes();
@@ -678,6 +704,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     }
 
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
+    new_data_part->setHypothesisList(std::move(hypothesis_list));
     new_data_part->rows_count = block.rows();
     new_data_part->existing_rows_count = block.rows();
     new_data_part->partition = std::move(partition);

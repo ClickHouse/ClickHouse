@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Hypothesis.h"
+#include "Hypothesis.hpp"
 
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
@@ -15,7 +15,7 @@ class Deducer
 public:
     explicit Deducer(Block block_);
 
-    HypothesisVec deduceColumn(std::string_view name);
+    HypothesisList deduceColumn(std::string_view name);
 
 
 private:

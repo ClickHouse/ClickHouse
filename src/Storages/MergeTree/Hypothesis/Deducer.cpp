@@ -37,9 +37,9 @@ public:
 
     void sortEntries()
     {
-        for (auto & entrie : entries)
+        for (auto & entry : entries)
         {
-            std::sort(entrie.begin(), entrie.end(), [](const auto & lhs, const auto & rhs) { return lhs.col_idx < rhs.col_idx; });
+            std::sort(entry.begin(), entry.end(), [](const auto & lhs, const auto & rhs) { return lhs.col_idx < rhs.col_idx; });
         }
     }
 
@@ -107,7 +107,7 @@ void traverseColumnEntriesImpl(
     HypothesisBuilder state_builder,
     DB::ColumnPtr deduction_col,
     const std::vector<ColumnEntries> & columns_entries,
-    HypothesisVec & hypothesis_vec,
+    HypothesisList & hypothesis_list,
     IdentityToken::IndexMapper index_mapper,
     LoggerPtr log)
 {
@@ -120,7 +120,7 @@ void traverseColumnEntriesImpl(
         }
         if (finished)
         {
-            hypothesis_vec.emplace_back(std::move(state_builder).constuctHypothesis());
+            hypothesis_list.emplace_back(std::move(state_builder).constuctHypothesis());
             return;
         }
     }
@@ -165,7 +165,7 @@ void traverseColumnEntriesImpl(
                     const auto & row_entries = columns_entries[row].at(indices[row]);
                     new_indices[row] = indices[row] + row_entries[entry_indices[row]].length;
                 }
-                traverseColumnEntriesImpl(new_indices, derived, deduction_col, columns_entries, hypothesis_vec, index_mapper, log);
+                traverseColumnEntriesImpl(new_indices, derived, deduction_col, columns_entries, hypothesis_list, index_mapper, log);
                 ++current_max_col_idx;
             }
         }
@@ -183,7 +183,7 @@ void traverseColumnEntriesImpl(
             {
                 new_indices[row] = indices[row] + len;
             }
-            traverseColumnEntriesImpl(new_indices, derived, deduction_col, columns_entries, hypothesis_vec, index_mapper, log);
+            traverseColumnEntriesImpl(new_indices, derived, deduction_col, columns_entries, hypothesis_list, index_mapper, log);
         }
     }
 }
@@ -191,7 +191,7 @@ void traverseColumnEntriesImpl(
 void traverseColumnEntries(
     const std::vector<ColumnEntries> & columns_entries,
     DB::ColumnPtr deduction_col,
-    HypothesisVec & hypothesis_vec,
+    HypothesisList & hypothesis_list,
     IdentityToken::IndexMapper index_mapper,
     std::string_view col_to_deduce_name,
     LoggerPtr log)
@@ -202,7 +202,7 @@ void traverseColumnEntries(
     std::vector<size_t> indices(rows_cnt, 0);
     auto builder = HypothesisBuilder();
     builder.setTargetColumn(col_to_deduce_name);
-    traverseColumnEntriesImpl(indices, builder, deduction_col, columns_entries, hypothesis_vec, index_mapper, log);
+    traverseColumnEntriesImpl(indices, builder, deduction_col, columns_entries, hypothesis_list, index_mapper, log);
 }
 
 }
@@ -232,7 +232,7 @@ Deducer::Deducer(Block block_)
     }
 }
 
-HypothesisVec Deducer::deduceColumn(std::string_view name)
+HypothesisList Deducer::deduceColumn(std::string_view name)
 {
     int col_idx = -1;
     auto index_mapper = block.getNames();
@@ -245,7 +245,8 @@ HypothesisVec Deducer::deduceColumn(std::string_view name)
     }
     if (col_idx == -1)
     {
-        throw std::runtime_error(std::format("No column with name {}", name));
+        LOG_WARNING(log, "Column {} was not found in hypothesis block", name);
+        return {};
     }
     size_t rows_cnt = block.rows();
     std::vector<ColumnEntries> columns_entries(rows_cnt);
@@ -253,16 +254,16 @@ HypothesisVec Deducer::deduceColumn(std::string_view name)
     {
         fillColumnsEntries(block, col_idx, i, columns_entries[i], log);
     }
-    HypothesisVec hypothesis_vec;
+    HypothesisList hypothesis_list;
     traverseColumnEntries(
         columns_entries,
         block.getByPosition(col_idx).column,
-        hypothesis_vec,
+        hypothesis_list,
         std::make_shared<const std::vector<std::string>>(std::move(index_mapper)),
         name,
         log);
-    LOG_DEBUG(log, "Deduced {} hypothesis", hypothesis_vec.size());
-    return hypothesis_vec;
+    LOG_DEBUG(log, "Deduced {} hypothesis", hypothesis_list.size());
+    return hypothesis_list;
 }
 
 }
