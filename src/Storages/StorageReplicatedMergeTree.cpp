@@ -6630,6 +6630,13 @@ bool StorageReplicatedMergeTree::existsNodeCached(const ZooKeeperWithFaultInject
     return res;
 }
 
+void StorageReplicatedMergeTree::tryRemoveNodeCache(const std::string & path) const
+{
+    std::lock_guard lock(existing_nodes_cache_mutex);
+    if (existing_nodes_cache.contains(path))
+        existing_nodes_cache.erase(path);
+}
+
 std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBlockNumber(
     const String & partition_id,
     const zkutil::ZooKeeperPtr & zookeeper,
@@ -7349,6 +7356,8 @@ void StorageReplicatedMergeTree::forgetPartition(const ASTPtr & partition, Conte
         throw Exception(ErrorCodes::CANNOT_FORGET_PARTITION, "Partition {} is unknown", partition_id);
     else
         throw zkutil::KeeperException::fromPath(error_code, partition_path);
+
+    tryRemoveNodeCache(partition_path);
 }
 
 
