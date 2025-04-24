@@ -89,17 +89,12 @@ COPY misc/ /misc/
 COPY --from=clickhouse/cctools:4670e95dde3de689f103 /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
 
-ARG TARGETARCH
 COPY --from=clickhouse/cctools:f312dbe8e0992a0a492d \
-  /opt/openssl-fips/ /tmp/openssl-fips
-RUN fips_so=$(find /tmp/openssl-fips -name fips.so -type f | head -n1) \
- && [ -n "$fips_so" ] || { echo "fips.so not found!" >&2; exit 1; } \
- && mkdir -p /usr/local/lib/ossl-modules \
- && cp "$fips_so" /usr/local/lib/ossl-modules/fips.so \
- && mkdir -p /etc/ssl \
- && cp /tmp/openssl-fips/ssl/openssl.cnf /etc/ssl/openssl.cnf \
- && cp /tmp/openssl-fips/ssl/fipsmodule.cnf /etc/ssl/fipsmodule.cnf \
- && rm -rf /tmp/openssl-fips
+  /opt/openssl-fips/openssl.cnf \
+  /opt/openssl-fips/fipsmodule.cnf \
+  /opt/openssl-fips/fips.so \
+  \
+  /etc/ssl/
 
 # Same options as in test/base/Dockerfile
 # (in case you need to override them in tests)
