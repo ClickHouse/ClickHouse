@@ -1,7 +1,15 @@
 from praktika import Artifact, Docker, Job, Secret
 from praktika.utils import MetaClasses, Utils
 
-TEMP_DIR = f"{Utils.cwd()}/ci/tmp"  # == Settings.TEMP_DIR
+# i.e. "ClickHouse/ci/tmp"
+TEMP_DIR = f"{Utils.cwd()}/ci/tmp"  # == _Settings.TEMP_DIR != env_helper.TEMP_PATH
+
+SYNC = "CH Inc sync"
+
+S3_BUCKET_NAME = "clickhouse-builds"
+S3_REPORT_BUCKET_NAME = "clickhouse-test-reports"
+S3_BUCKET_HTTP_ENDPOINT = "clickhouse-builds.s3.amazonaws.com"
+S3_REPORT_BUCKET_HTTP_ENDPOINT = "s3.amazonaws.com/clickhouse-test-reports"
 
 
 class RunnerLabels:
@@ -45,14 +53,6 @@ SECRETS = [
         type=Secret.Type.AWS_SSM_VAR,
     ),
     azure_secret,
-    # Secret.Config(
-    #     name="clickhouse_github_secret_key.clickhouse-app-id",
-    #     type=Secret.Type.AWS_SSM_SECRET,
-    # ),
-    # Secret.Config(
-    #     name="clickhouse_github_secret_key.clickhouse-app-key",
-    #     type=Secret.Type.AWS_SSM_SECRET,
-    # ),
     Secret.Config(
         name="woolenwolf_gh_app.clickhouse-app-id",
         type=Secret.Type.AWS_SSM_SECRET,
@@ -65,17 +65,23 @@ SECRETS = [
 
 DOCKERS = [
     Docker.Config(
+        name="clickhouse/style-test",
+        path="./ci/docker/style-test",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/fasttest",
+        path="./ci/docker/fasttest",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
         name="clickhouse/binary-builder",
         path="./ci/docker/binary-builder",
         platforms=Docker.Platforms.arm_amd,
         depends_on=["clickhouse/fasttest"],
     ),
-    # Docker.Config(
-    #     name="clickhouse/cctools",
-    #     path="./ci/docker/packager/cctools",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=[],
-    # ),
     Docker.Config(
         name="clickhouse/test-old-centos",
         path="./ci/docker/compatibility/centos",
@@ -88,70 +94,88 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
+    # new images
     # Docker.Config(
-    #     name="clickhouse/test-util",
-    #     path="./ci/docker/test/util",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=[],
-    # ),
-    # Docker.Config(
-    #     name="clickhouse/fuzzer",
-    #     path="./ci/docker/test/fuzzer",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/test-base"],
-    # ),
-    # Docker.Config(
-    #     name="clickhouse/performance-comparison",
-    #     path="./ci/docker/test/performance-comparison",
+    #     name="clickhouse/stateless-test",
+    #     path="./ci/docker/stateless-test",
     #     platforms=Docker.Platforms.arm_amd,
     #     depends_on=[],
     # ),
     Docker.Config(
-        name="clickhouse/fasttest",
-        path="./ci/docker/fasttest",
+        name="clickhouse/cctools",
+        path="./docker/packager/cctools",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/fasttest"],
+    ),
+    Docker.Config(
+        name="clickhouse/test-util",
+        path="./docker/test/util",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
-    # Docker.Config(
-    #     name="clickhouse/keeper-jepsen-test",
-    #     path="./ci/docker/test/keeper-jepsen",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/test-base"],
-    # ),
-    # Docker.Config(
-    #     name="clickhouse/server-jepsen-test",
-    #     path="./ci/docker/test/server-jepsen",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/test-base"],
-    # ),
-    # Docker.Config(
-    #     name="clickhouse/sqllogic-test",
-    #     path="./ci/docker/test/sqllogic",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/test-base"],
-    # ),
+    Docker.Config(
+        name="clickhouse/test-base",
+        path="./docker/test/base",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/test-util"],
+    ),
     Docker.Config(
         name="clickhouse/stateless-test",
-        path="./ci/docker/stateless-test",
+        path="./docker/test/stateless",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
+        depends_on=["clickhouse/test-base"],
     ),
     Docker.Config(
-        name="clickhouse/stateful-test",
-        path="./ci/docker/stateful-test",
+        name="clickhouse/stress-test",
+        path="./docker/test/stress",
         platforms=Docker.Platforms.arm_amd,
         depends_on=["clickhouse/stateless-test"],
     ),
     Docker.Config(
-        name="clickhouse/integration-test",
-        path="./ci/docker/integration/integration-test",
+        name="clickhouse/fuzzer",
+        path="./docker/test/fuzzer",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
+        depends_on=["clickhouse/test-base"],
     ),
-    # TODO: move images into ./ci
+    Docker.Config(
+        name="clickhouse/performance-comparison",
+        path="./docker/test/performance-comparison",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/test-base"],
+    ),
+    Docker.Config(
+        name="clickhouse/keeper-jepsen-test",
+        path="./docker/test/keeper-jepsen",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/test-base"],
+    ),
+    Docker.Config(
+        name="clickhouse/server-jepsen-test",
+        path="./docker/test/server-jepsen",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/test-base"],
+    ),
+    Docker.Config(
+        name="clickhouse/integration-test",
+        path="./docker/test/integration/base",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/test-base"],
+    ),
+    # Docker.Config(
+    #     name="clickhouse/integration-test",
+    #     path="./ci/docker/integration/integration-test",
+    #     platforms=Docker.Platforms.arm_amd,
+    #     depends_on=[],
+    # ),
     Docker.Config(
         name="clickhouse/integration-tests-runner",
         path="./docker/test/integration/runner",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/integration-test-with-unity-catalog",
+        path="docker/test/integration/clickhouse_with_unity_catalog",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
@@ -176,9 +200,7 @@ DOCKERS = [
     Docker.Config(
         name="clickhouse/mysql-java-client",
         path="./docker/test/integration/mysql_java_client",
-        # TODO: amd image on arm runner hangs on "RUN javac MySQLJavaClientTest.java"
-        #  fix and enable for both platforms
-        platforms=[Docker.Platforms.AMD],
+        platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
@@ -224,15 +246,9 @@ DOCKERS = [
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/style-test",
-        path="./ci/docker/style-test",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
-    Docker.Config(
         name="clickhouse/docs-builder",
-        path="./docker/docs/builder",
-        platforms=[Docker.Platforms.AMD],
+        path="./ci/docker/docs-builder",
+        platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
@@ -255,20 +271,6 @@ DOCKERS = [
     ),
 ]
 
-# TODO:
-# "docker/test/sqlancer": {
-#     "name": "clickhouse/sqlancer-test",
-#     "dependent": []
-# },
-# "docker/test/install/deb": {
-#     "name": "clickhouse/install-deb-test",
-#     "dependent": []
-# },
-# "docker/test/install/rpm": {
-#     "name": "clickhouse/install-rpm-test",
-#     "dependent": []
-# },
-
 
 class BuildTypes(metaclass=MetaClasses.WithIter):
     AMD_DEBUG = "amd_debug"
@@ -281,9 +283,10 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     ARM_RELEASE = "arm_release"
     ARM_ASAN = "arm_asan"
 
-    AMD_COVERAGE = "amd_coverage"
+    ARM_COVERAGE = "arm_coverage"
     ARM_BINARY = "arm_binary"
     AMD_TIDY = "amd_tidy"
+    ARM_TIDY = "arm_tidy"
     AMD_DARWIN = "amd_darwin"
     ARM_DARWIN = "arm_darwin"
     ARM_V80COMPAT = "arm_v80compat"
@@ -344,7 +347,7 @@ class ArtifactNames:
     CH_ARM_RELEASE = "CH_ARM_RELEASE"
     CH_ARM_ASAN = "CH_ARM_ASAN"
 
-    CH_AMD_COV_BIN = "CH_AMDCOV_BIN"
+    CH_COV_BIN = "CH_COV_BIN"
     CH_ARM_BIN = "CH_ARM_BIN"
     CH_TIDY_BIN = "CH_TIDY_BIN"
     CH_AMD_DARWIN_BIN = "CH_AMD_DARWIN_BIN"
@@ -363,11 +366,10 @@ class ArtifactNames:
     UNITTEST_AMD_TSAN = "UNITTEST_AMD_TSAN"
     UNITTEST_AMD_MSAN = "UNITTEST_AMD_MSAN"
     UNITTEST_AMD_UBSAN = "UNITTEST_AMD_UBSAN"
-    UNITTEST_AMD_BINARY = "UNITTEST_AMD_BINARY"
 
     DEB_AMD_DEBUG = "DEB_AMD_DEBUG"
     DEB_AMD_RELEASE = "DEB_AMD_RELEASE"
-    DEB_AMD_COV = "DEB_AMD_COV"
+    DEB_COV = "DEB_COV"
     DEB_AMD_ASAN = "DEB_AMD_ASAN"
     DEB_AMD_TSAN = "DEB_AMD_TSAN"
     DEB_AMD_MSAM = "DEB_AMD_MSAM"
@@ -380,16 +382,19 @@ class ArtifactNames:
 
     TGZ_AMD_RELEASE = "TGZ_AMD_RELEASE"
     TGZ_ARM_RELEASE = "TGZ_ARM_RELEASE"
-    PERFORMANCE_PACKAGE_AMD = "PERFORMANCE_PACKAGE_AMD"
-    PERFORMANCE_PACKAGE_ARM = "PERFORMANCE_PACKAGE_ARM"
 
     FUZZERS = "FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
 
-    PERF_REPORTS_AMD_1_2 = "PERF_REPORTS_AMD_1_2"
-    PERF_REPORTS_AMD_2_2 = "PERF_REPORTS_AMD_2_2"
-    PERF_REPORTS_AMD_1_2_WITH_RELEASE = "PERF_REPORTS_AMD_1_2_WITH_RELEASE"
-    PERF_REPORTS_AMD_2_2_WITH_RELEASE = "PERF_REPORTS_AMD_2_2_WITH_RELEASE"
+    PERF_REPORTS_AMD_1 = "PERF_REPORTS_AMD_1"
+    PERF_REPORTS_AMD_2 = "PERF_REPORTS_AMD_2"
+    PERF_REPORTS_AMD_3 = "PERF_REPORTS_AMD_3"
+    PERF_REPORTS_ARM_1 = "PERF_REPORTS_ARM_1"
+    PERF_REPORTS_ARM_2 = "PERF_REPORTS_ARM_2"
+    PERF_REPORTS_ARM_3 = "PERF_REPORTS_ARM_3"
+    PERF_REPORTS_AMD_1_WITH_RELEASE = "PERF_REPORTS_AMD_1_WITH_RELEASE"
+    PERF_REPORTS_AMD_2_WITH_RELEASE = "PERF_REPORTS_AMD_2_WITH_RELEASE"
+    PERF_REPORTS_AMD_3_WITH_RELEASE = "PERF_REPORTS_AMD_3_WITH_RELEASE"
 
     PERF_REPORTS_ARM = "PERF_REPORTS_ARM"
 
@@ -398,7 +403,7 @@ class ArtifactConfigs:
     clickhouse_binaries = Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/clickhouse",
+        path=f"{TEMP_DIR}/build/programs/self-extracting/clickhouse",
     ).parametrize(
         names=[
             ArtifactNames.CH_AMD_DEBUG,
@@ -410,7 +415,7 @@ class ArtifactConfigs:
             ArtifactNames.CH_AMD_BINARY,
             ArtifactNames.CH_ARM_RELEASE,
             ArtifactNames.CH_ARM_ASAN,
-            ArtifactNames.CH_AMD_COV_BIN,
+            ArtifactNames.CH_COV_BIN,
             ArtifactNames.CH_ARM_BIN,
             ArtifactNames.CH_TIDY_BIN,
             ArtifactNames.CH_AMD_DARWIN_BIN,
@@ -428,7 +433,7 @@ class ArtifactConfigs:
     clickhouse_debians = Artifact.Config(
         name="*",
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/*.deb",
+        path=f"{TEMP_DIR}/*.deb",
     ).parametrize(
         names=[
             ArtifactNames.DEB_AMD_RELEASE,
@@ -437,7 +442,7 @@ class ArtifactConfigs:
             ArtifactNames.DEB_AMD_TSAN,
             ArtifactNames.DEB_AMD_MSAM,
             ArtifactNames.DEB_AMD_UBSAN,
-            ArtifactNames.DEB_AMD_COV,
+            ArtifactNames.DEB_COV,
             ArtifactNames.DEB_ARM_RELEASE,
             ArtifactNames.DEB_ARM_ASAN,
         ]
@@ -445,7 +450,7 @@ class ArtifactConfigs:
     clickhouse_rpms = Artifact.Config(
         name="*",
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/*.rpm",
+        path=f"{TEMP_DIR}/*.rpm",
     ).parametrize(
         names=[
             ArtifactNames.RPM_AMD_RELEASE,
@@ -455,7 +460,7 @@ class ArtifactConfigs:
     clickhouse_tgzs = Artifact.Config(
         name="*",
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/*64.tgz*",
+        path=f"{TEMP_DIR}/*64.tgz*",
     ).parametrize(
         names=[
             ArtifactNames.TGZ_AMD_RELEASE,
@@ -465,20 +470,15 @@ class ArtifactConfigs:
     unittests_binaries = Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/unit_tests_dbms",
+        path=f"{TEMP_DIR}/build/src/unit_tests_dbms",
+        compress_zst=True,
     ).parametrize(
         names=[
             ArtifactNames.UNITTEST_AMD_ASAN,
             ArtifactNames.UNITTEST_AMD_TSAN,
             ArtifactNames.UNITTEST_AMD_MSAN,
             ArtifactNames.UNITTEST_AMD_UBSAN,
-            ArtifactNames.UNITTEST_AMD_BINARY,
         ]
-    )
-    fast_test = Artifact.Config(
-        name=ArtifactNames.FAST_TEST,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/*",
     )
     fuzzers = Artifact.Config(
         name=ArtifactNames.FUZZERS,
@@ -494,191 +494,26 @@ class ArtifactConfigs:
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/programs/*_seed_corpus.zip",
     )
-    performance_packages = Artifact.Config(
-        name="*",
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/performance.tar.zst",
-    ).parametrize(
-        names=[
-            ArtifactNames.PERFORMANCE_PACKAGE_AMD,
-            ArtifactNames.PERFORMANCE_PACKAGE_ARM,
-        ]
-    )
     performance_reports = Artifact.Config(
         name="*",
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/perf_wd/*.html",
     ).parametrize(
         names=[
-            ArtifactNames.PERF_REPORTS_AMD_1_2,
-            ArtifactNames.PERF_REPORTS_AMD_2_2,
-            ArtifactNames.PERF_REPORTS_AMD_1_2_WITH_RELEASE,
-            ArtifactNames.PERF_REPORTS_AMD_2_2_WITH_RELEASE,
+            ArtifactNames.PERF_REPORTS_AMD_1,
+            ArtifactNames.PERF_REPORTS_AMD_2,
+            ArtifactNames.PERF_REPORTS_AMD_3,
+            ArtifactNames.PERF_REPORTS_ARM_1,
+            ArtifactNames.PERF_REPORTS_ARM_2,
+            ArtifactNames.PERF_REPORTS_ARM_3,
+            ArtifactNames.PERF_REPORTS_AMD_1_WITH_RELEASE,
+            ArtifactNames.PERF_REPORTS_AMD_2_WITH_RELEASE,
+            ArtifactNames.PERF_REPORTS_AMD_3_WITH_RELEASE,
         ]
     )
 
 
 class Jobs:
-    style_check_job = Job.Config(
-        name=JobNames.STYLE_CHECK,
-        runs_on=RunnerLabels.STYLE_CHECK_ARM,
-        command="python3 ./ci/jobs/check_style.py",
-        run_in_docker="clickhouse/style-test",
-    )
-
-    fast_test_job = Job.Config(
-        name=JobNames.FAST_TEST,
-        runs_on=RunnerLabels.BUILDER_AMD,
-        command="python3 ./ci/jobs/fast_test.py",
-        run_in_docker="clickhouse/fasttest",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/fast_test.py",
-                "./tests/queries/0_stateless/",
-                "./src",
-            ],
-        ),
-        provides=[ArtifactNames.FAST_TEST],
-    )
-
-    build_jobs = Job.Config(
-        name=JobNames.BUILD,
-        runs_on=["...from params..."],
-        requires=[],
-        command="python3 ./ci/jobs/build_clickhouse.py --build-type {PARAMETER}",
-        run_in_docker="clickhouse/binary-builder+--network=host",
-        timeout=3600 * 2,
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./src",
-                "./contrib/",
-                "./CMakeLists.txt",
-                "./PreLoad.cmake",
-                "./cmake",
-                "./base",
-                "./programs",
-                "./docker/packager/packager",
-                "./rust",
-                "./tests/ci/version_helper.py",
-                "./ci/jobs/build_clickhouse.py",
-            ],
-        ),
-    ).parametrize(
-        parameter=[
-            BuildTypes.AMD_DEBUG,
-            BuildTypes.AMD_RELEASE,
-            BuildTypes.AMD_ASAN,
-            BuildTypes.AMD_TSAN,
-            BuildTypes.AMD_MSAN,
-            BuildTypes.AMD_UBSAN,
-            BuildTypes.AMD_BINARY,
-            BuildTypes.ARM_RELEASE,
-            BuildTypes.ARM_ASAN,
-            # special builds
-            BuildTypes.AMD_COVERAGE,
-            BuildTypes.ARM_BINARY,
-            BuildTypes.AMD_TIDY,
-            BuildTypes.AMD_DARWIN,
-            BuildTypes.ARM_DARWIN,
-            BuildTypes.ARM_V80COMPAT,
-            BuildTypes.AMD_FREEBSD,
-            BuildTypes.PPC64LE,
-            BuildTypes.AMD_COMPAT,
-            BuildTypes.AMD_MUSL,
-            BuildTypes.RISCV64,
-            BuildTypes.S390X,
-            BuildTypes.LOONGARCH64,
-            BuildTypes.FUZZERS,
-        ],
-        provides=[
-            [
-                ArtifactNames.CH_AMD_DEBUG,
-                ArtifactNames.DEB_AMD_DEBUG,
-            ],
-            [
-                ArtifactNames.CH_AMD_RELEASE,
-                ArtifactNames.DEB_AMD_RELEASE,
-                ArtifactNames.RPM_AMD_RELEASE,
-                ArtifactNames.TGZ_AMD_RELEASE,
-            ],
-            [
-                ArtifactNames.CH_AMD_ASAN,
-                ArtifactNames.DEB_AMD_ASAN,
-                ArtifactNames.UNITTEST_AMD_ASAN,
-            ],
-            [
-                ArtifactNames.CH_AMD_TSAN,
-                ArtifactNames.DEB_AMD_TSAN,
-                ArtifactNames.UNITTEST_AMD_TSAN,
-            ],
-            [
-                ArtifactNames.CH_AMD_MSAN,
-                ArtifactNames.DEB_AMD_MSAM,
-                ArtifactNames.UNITTEST_AMD_MSAN,
-            ],
-            [
-                ArtifactNames.CH_AMD_UBSAN,
-                ArtifactNames.DEB_AMD_UBSAN,
-                ArtifactNames.UNITTEST_AMD_UBSAN,
-            ],
-            [
-                ArtifactNames.CH_AMD_BINARY,
-                ArtifactNames.UNITTEST_AMD_BINARY,
-            ],
-            [
-                ArtifactNames.CH_ARM_RELEASE,
-                ArtifactNames.DEB_ARM_RELEASE,
-                ArtifactNames.RPM_ARM_RELEASE,
-                ArtifactNames.TGZ_ARM_RELEASE,
-            ],
-            [
-                ArtifactNames.CH_ARM_ASAN,
-                ArtifactNames.DEB_ARM_ASAN,
-            ],
-            # special builds
-            [ArtifactNames.CH_AMD_COV_BIN],
-            [ArtifactNames.CH_ARM_BIN],
-            [ArtifactNames.CH_TIDY_BIN],
-            [ArtifactNames.CH_AMD_DARWIN_BIN],
-            [ArtifactNames.CH_ARM_DARWIN_BIN],
-            [ArtifactNames.CH_ARM_V80COMPAT],
-            [ArtifactNames.CH_AMD_FREEBSD],
-            [ArtifactNames.CH_PPC64LE],
-            [ArtifactNames.CH_AMD_COMPAT],
-            [ArtifactNames.CH_AMD_MUSL],
-            [ArtifactNames.CH_RISCV64],
-            [ArtifactNames.CH_S390X],
-            [ArtifactNames.CH_LOONGARCH64],
-            [ArtifactNames.FUZZERS, ArtifactNames.FUZZERS_CORPUS],
-        ],
-        runs_on=[
-            RunnerLabels.BUILDER_AMD,
-            RunnerLabels.BUILDER_AMD,
-            RunnerLabels.BUILDER_AMD,
-            RunnerLabels.BUILDER_AMD,
-            RunnerLabels.BUILDER_AMD,
-            RunnerLabels.BUILDER_AMD,
-            RunnerLabels.BUILDER_AMD,
-            RunnerLabels.BUILDER_ARM,
-            RunnerLabels.BUILDER_ARM,
-            # special builds
-            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_COVERAGE
-            RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_BINARY
-            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_TIDY,
-            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_DARWIN,
-            RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_DARWIN,
-            RunnerLabels.BUILDER_AMD,  # BuildTypes.ARM_V80COMPAT,
-            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_FREEBSD,
-            RunnerLabels.BUILDER_ARM,  # BuildTypes.PPC64LE,
-            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_COMPAT,
-            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_MUSL,
-            RunnerLabels.BUILDER_ARM,  # BuildTypes.RISCV64,
-            RunnerLabels.BUILDER_AMD,  # BuildTypes.S390X,
-            RunnerLabels.BUILDER_ARM,  # BuildTypes.LOONGARCH64
-            RunnerLabels.BUILDER_ARM,  # BuildTypes.FUZZERS
-        ],
-    )
-
     stateless_tests_jobs = Job.Config(
         name=JobNames.STATELESS,
         runs_on=["..params.."],
@@ -826,51 +661,6 @@ class Jobs:
         ],
     )
 
-    # UPGRADE_TEST = JobConfig(
-    #     job_name_keyword="upgrade",
-    #     digest=DigestConfig(
-    #         include_paths=["./tests/ci/upgrade_check.py", "./tests/docker_scripts/"],
-    #         exclude_files=[".md"],
-    #         docker=["clickhouse/stress-test"],
-    #     ),
-    #     run_command="upgrade_check.py",
-    #     runner_type=Runners.FUNC_TESTER,
-    #     timeout=3600,
-    # )
-
-    performance_comparison_head_jobs = Job.Config(
-        name=JobNames.PERFORMANCE,
-        runs_on=["#from param"],
-        command="python3 ./ci/jobs/performance_tests.py --test-options {PARAMETER}",
-        run_in_docker="clickhouse/stateless-test",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./tests/performance/",
-                "./ci/jobs/scripts/perf/",
-                "./ci/jobs/performance_tests.py",
-            ],
-        ),
-        timeout=2 * 3600,
-    ).parametrize(
-        parameter=[
-            "amd_release,head_master,1/2",
-            "amd_release,head_master,2/2",
-        ],
-        # "arm_release,1/3"],
-        runs_on=[
-            RunnerLabels.FUNC_TESTER_AMD
-            for _ in range(2)
-            # RunnerLabels.FUNC_TESTER_ARM,
-        ],
-        requires=[[ArtifactNames.CH_AMD_RELEASE] for _ in range(2)],
-        # [ArtifactNames.CH_ARM_RELEASE]],
-        provides=[
-            [ArtifactNames.PERF_REPORTS_AMD_1_2],
-            [ArtifactNames.PERF_REPORTS_AMD_2_2],
-        ],
-        # [ArtifactNames.PERF_REPORTS_ARM]],
-    )
-
     performance_comparison_release_jobs = Job.Config(
         name=JobNames.PERFORMANCE,
         runs_on=["#from param"],
@@ -898,8 +688,8 @@ class Jobs:
         requires=[[ArtifactNames.CH_AMD_RELEASE] for _ in range(2)],
         # [ArtifactNames.CH_ARM_RELEASE]],
         provides=[
-            [ArtifactNames.PERF_REPORTS_AMD_1_2_WITH_RELEASE],
-            [ArtifactNames.PERF_REPORTS_AMD_2_2_WITH_RELEASE],
+            [ArtifactNames.PERF_REPORTS_AMD_1_WITH_RELEASE],
+            [ArtifactNames.PERF_REPORTS_AMD_2_WITH_RELEASE],
         ],
         # [ArtifactNames.PERF_REPORTS_ARM]],
     )
@@ -953,18 +743,7 @@ class Jobs:
             [ArtifactNames.CH_ARM_RELEASE],
         ],
     )
-    # docker_job = Job.Config(
-    #     name=JobNames.DOCKER_SERVER,
-    #     runs_on=RunnerLabels.STYLE_CHECK_ARM,
-    #     command="python3 ./ci/jobs/docker_server_job.py --from-binary",
-    #     digest_config=Job.CacheDigestConfig(
-    #         include_paths=[
-    #             "./ci/jobs/docker_server_from_binary.py",
-    #             "./ci/docker/clickhouse-server",
-    #         ],
-    #     ),
-    #     requires=[ArtifactNames.CH_AMD_RELEASE, ArtifactNames.CH_ARM_RELEASE],
-    # )
+
     docker_job = Job.Config(
         name=JobNames.DOCKER_SERVER,
         # on ARM clickhouse-local call in docker build for amd leads to an error: Instruction check fail. The CPU does not support SSSE3 instruction set
@@ -978,32 +757,7 @@ class Jobs:
         ),
         requires=[ArtifactNames.DEB_AMD_RELEASE, ArtifactNames.DEB_ARM_RELEASE],
     )
-    # TODO: make it release only
-    sqltest_job = Job.Config(
-        name=JobNames.SQL_TEST,
-        # on ARM clickhouse-local call in docker build for amd leads to an error: Instruction check fail. The CPU does not support SSSE3 instruction set
-        runs_on=RunnerLabels.FUNC_TESTER_ARM,
-        command="python3 ./ci/jobs/sqltest_job.py",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/sqltest_job.py",
-            ],
-        ),
-        requires=[ArtifactNames.CH_ARM_RELEASE],
-        run_in_docker="clickhouse/stateless-test",
-        timeout=10800,
-    )
-    sqlancer_job = Job.Config(
-        name=JobNames.SQLANCER,
-        runs_on=RunnerLabels.FUNC_TESTER_ARM,
-        command="./ci/jobs/sqlancer_job.sh",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/sqlancer_job.sh"],
-        ),
-        run_in_docker="clickhouse/sqlancer-test",
-        requires=[ArtifactNames.CH_ARM_RELEASE],
-        timeout=3600,
-    )
+
     # TODO: add tgz and rpm
     install_check_job = Job.Config(
         name=JobNames.INSTALL_TEST,

@@ -29,8 +29,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/formatAST.h>
-#include <Parsers/queryToString.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <DataTypes/NestedUtils.h>
@@ -190,7 +188,7 @@ bool isStorageTouchedByMutations(
             if (command.partition)
             {
                 const String partition_id = storage_from_part->getPartitionIDFromQuery(command.partition, context);
-                if (partition_id == source_part->info.partition_id)
+                if (partition_id == source_part->info.getPartitionId())
                     all_commands_can_be_skipped = false;
             }
             else
@@ -294,7 +292,7 @@ MutationCommand createCommandToApplyDeletedMask(const MutationCommand & command)
 
     auto mutation_command = MutationCommand::parse(alter_command.get());
     if (!mutation_command)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse command {}. It's a bug", queryToString(alter_command));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse command {}. It's a bug", alter_command->formatForErrorMessage());
 
     return *mutation_command;
 }
@@ -1287,6 +1285,8 @@ void MutationsInterpreter::Source::read(
             storage_snapshot,
             part,
             alter_conversions,
+            nullptr,
+            0,
             required_columns,
             nullptr,
             apply_deleted_mask_,

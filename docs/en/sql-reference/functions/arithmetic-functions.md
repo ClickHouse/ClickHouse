@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/arithmetic-functions
+description: 'Documentation for Arithmetic Functions'
+sidebar_label: 'Arithmetic'
 sidebar_position: 5
-sidebar_label: Arithmetic
+slug: /sql-reference/functions/arithmetic-functions
+title: 'Arithmetic Functions'
 ---
 
 # Arithmetic Functions
@@ -23,11 +25,11 @@ type.
 
 Example:
 
-``` sql
+```sql
 SELECT toTypeName(0), toTypeName(0 + 0), toTypeName(0 + 0 + 0), toTypeName(0 + 0 + 0 + 0)
 ```
 
-``` text
+```text
 ┌─toTypeName(0)─┬─toTypeName(plus(0, 0))─┬─toTypeName(plus(plus(0, 0), 0))─┬─toTypeName(plus(plus(plus(0, 0), 0), 0))─┐
 │ UInt8         │ UInt16                 │ UInt32                          │ UInt64                                   │
 └───────────────┴────────────────────────┴─────────────────────────────────┴──────────────────────────────────────────┘
@@ -91,6 +93,16 @@ divide(a, b)
 
 Alias: `a / b` (operator)
 
+## divideOrNull {#divideornull}
+
+Like [divide](#divide) but returns null when the divisor is zero.
+
+**Syntax**
+
+```sql
+divideOrNull(a, b)
+```
+
 ## intDiv {#intdiv}
 
 Performs an integer division of two values `a` by `b`, i.e. computes the quotient rounded down to the next smallest integer.
@@ -140,6 +152,16 @@ Same as `intDiv` but returns zero when dividing by zero or when dividing a minim
 
 ```sql
 intDivOrZero(a, b)
+```
+
+## intDivOrNull {#intdivornull}
+
+Like [intDiv](#intdiv) but returns null when the divisor is zero.
+
+**Syntax**
+
+```sql
+intDivOrNull(a, b)
 ```
 
 ## isFinite {#isfinite}
@@ -234,6 +256,16 @@ Like [modulo](#modulo) but returns zero when the divisor is zero.
 moduloOrZero(a, b)
 ```
 
+## moduloOrNull {#moduloornull}
+
+Like [modulo](#modulo) but returns null when the divisor is zero.
+
+**Syntax**
+
+```sql
+moduloOrNull(a, b)
+```
+
 ## positiveModulo(a, b) {#positivemoduloa-b}
 
 Like [modulo](#modulo) but always returns a non-negative number.
@@ -264,6 +296,16 @@ Result:
 ┌─positiveModulo(-1, 10)─┐
 │                      9 │
 └────────────────────────┘
+```
+
+## positiveModuloOrNull(a, b) {#positivemoduloornulla-b}
+
+Like [positiveModulo](#positivemoduloa-b) but returns null when the divisor is zero.
+
+**Syntax**
+
+```sql
+positiveModuloOrNull(a, b)
 ```
 
 ## negate {#negate}

@@ -1,10 +1,11 @@
 ---
-title: JSONCompactColumns
-slug: /interfaces/formats/JSONCompactColumns
-keywords: [JSONCompactColumns]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the JSONCompactColumns format'
+input_format: true
+keywords: ['JSONCompactColumns']
+output_format: true
+slug: /interfaces/formats/JSONCompactColumns
+title: 'JSONCompactColumns'
 ---
 
 | Input | Output | Alias |
@@ -23,9 +24,9 @@ The `JSONCompactColumns` output format buffers all data in memory to output it a
 
 ```json
 [
-	[42, 43, 44],
-	["hello", "hello", "hello"],
-	[[0,1], [0,1,2], [0,1,2,3]]
+    [42, 43, 44],
+    ["hello", "hello", "hello"],
+    [[0,1], [0,1,2], [0,1,2,3]]
 ]
 ```
 

@@ -20,6 +20,7 @@ namespace DB
     \
     DECLARE(UInt64, prefer_external_sort_block_bytes, DEFAULT_BLOCK_SIZE * 256, "Prefer maximum block bytes for external sort, reduce the memory usage during merging.", 0) \
     DECLARE(UInt64, max_bytes_before_external_sort, 0, "If memory usage during ORDER BY operation is exceeding this threshold in bytes, activate the 'external sorting' mode (spill data to disk). Recommended value is half of available system memory.", 0) \
+    DECLARE(UInt64, min_external_sort_block_bytes, "100Mi", "Minimal block size in bytes for external sort that will be dumped to disk, to avoid too many files.", 0) \
     DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, "In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.", 0) \
     DECLARE(Float, remerge_sort_lowered_memory_bytes_ratio, 2., "If memory usage after remerge does not reduced by this ratio, remerge will be disabled.", 0) \
     DECLARE(UInt64, min_free_disk_space_for_temporary_data, 0, "The minimum disk space to keep while writing temporary data used in external sorting and aggregation.", 0) \
@@ -65,8 +66,8 @@ namespace DB
     DECLARE(UInt64, partial_merge_join_rows_in_right_blocks, 65536, "Limits sizes of right-hand join data blocks in partial merge join algorithm for [JOIN](../../sql-reference/statements/select/join.md) queries.", 0) \
     DECLARE(UInt64, join_on_disk_max_files_to_merge, 64, "Limits the number of files allowed for parallel sorting in MergeJoin operations when they are executed on disk.", 0) \
     \
-    DECLARE(UInt64, grace_hash_join_initial_buckets, 1, "Initial number of grace hash join buckets", 0) \
-    DECLARE(UInt64, grace_hash_join_max_buckets, 1024, "Limit on the number of grace hash join buckets", 0) \
+    DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, "Initial number of grace hash join buckets", 0) \
+    DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, "Limit on the number of grace hash join buckets", 0) \
     \
     DECLARE(UInt64, max_rows_in_set_to_optimize_join, 0, "Maximal size of the set to filter joined tables by each other's row sets before joining.", 0) \
     DECLARE(String, temporary_files_codec, "LZ4", "Sets compression codec for temporary files used in sorting and joining operations on disk.", 0) \
@@ -89,11 +90,11 @@ struct QueryPlanSerializationSettingsImpl : public BaseSettings<QueryPlanSeriali
 };
 
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) QueryPlanSerializationSettings##TYPE NAME = &QueryPlanSerializationSettingsImpl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) QueryPlanSerializationSettings##TYPE NAME = &QueryPlanSerializationSettingsImpl ::NAME;
 
 namespace QueryPlanSerializationSetting
 {
-PLAN_SERIALIZATION_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
+PLAN_SERIALIZATION_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
 }
 
 #undef INITIALIZE_SETTING_EXTERN

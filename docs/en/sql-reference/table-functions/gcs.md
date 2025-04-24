@@ -1,10 +1,11 @@
 ---
-slug: /sql-reference/table-functions/gcs
+description: 'Provides a table-like interface to `SELECT` and `INSERT` data from Google
+  Cloud Storage. Requires the `Storage Object User` IAM role.'
+keywords: ['gcs', 'bucket']
+sidebar_label: 'gcs'
 sidebar_position: 70
-sidebar_label: gcs
-keywords: [gcs, bucket]
-title: "gcs"
-description: "Provides a table-like interface to `SELECT` and `INSERT` data from Google Cloud Storage. Requires the `Storage Object User` IAM role."
+slug: /sql-reference/table-functions/gcs
+title: 'gcs'
 ---
 
 # gcs Table Function
@@ -17,7 +18,7 @@ If you have multiple replicas in your cluster, you can use the [s3Cluster functi
 
 **Syntax**
 
-``` sql
+```sql
 gcs(url [, NOSIGN | hmac_key, hmac_secret] [,format] [,structure] [,compression_method])
 gcs(named_collection[, option=value [,..]])
 ```
@@ -61,13 +62,13 @@ A table with the specified structure for reading or writing data in the specifie
 
 Selecting the first two rows from the table from GCS file `https://storage.googleapis.com/my-test-bucket-768/data.csv`:
 
-``` sql
+```sql
 SELECT *
 FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/data.csv.gz', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 LIMIT 2;
 ```
 
-``` text
+```text
 ┌─column1─┬─column2─┬─column3─┐
 │       1 │       2 │       3 │
 │       3 │       2 │       1 │
@@ -76,13 +77,13 @@ LIMIT 2;
 
 The similar but from file with `gzip` compression method:
 
-``` sql
+```sql
 SELECT *
 FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/data.csv.gz', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32', 'gzip')
 LIMIT 2;
 ```
 
-``` text
+```text
 ┌─column1─┬─column2─┬─column3─┐
 │       1 │       2 │       3 │
 │       3 │       2 │       1 │
@@ -104,12 +105,12 @@ Suppose that we have several files with following URIs on GCS:
 
 Count the amount of rows in files ending with numbers from 1 to 3:
 
-``` sql
+```sql
 SELECT count(*)
 FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 ```
 
-``` text
+```text
 ┌─count()─┐
 │      18 │
 └─────────┘
@@ -117,12 +118,12 @@ FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-buck
 
 Count the total amount of rows in all files in these two directories:
 
-``` sql
+```sql
 SELECT count(*)
 FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/{some,another}_prefix/*', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 ```
 
-``` text
+```text
 ┌─count()─┐
 │      24 │
 └─────────┘
@@ -134,12 +135,12 @@ If your listing of files contains number ranges with leading zeros, use the cons
 
 Count the total amount of rows in files named `file-000.csv`, `file-001.csv`, ... , `file-999.csv`:
 
-``` sql
+```sql
 SELECT count(*)
 FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/big_prefix/file-{000..999}.csv', 'CSV', 'name String, value UInt32');
 ```
 
-``` text
+```text
 ┌─count()─┐
 │      12 │
 └─────────┘
@@ -147,32 +148,32 @@ FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-buck
 
 Insert data into file `test-data.csv.gz`:
 
-``` sql
+```sql
 INSERT INTO FUNCTION gcs('https://storage.googleapis.com/my-test-bucket-768/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip')
 VALUES ('test-data', 1), ('test-data-2', 2);
 ```
 
 Insert data into file `test-data.csv.gz` from existing table:
 
-``` sql
+```sql
 INSERT INTO FUNCTION gcs('https://storage.googleapis.com/my-test-bucket-768/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip')
 SELECT name, value FROM existing_table;
 ```
 
 Glob ** can be used for recursive directory traversal. Consider the below example, it will fetch all files from `my-test-bucket-768` directory recursively:
 
-``` sql
+```sql
 SELECT * FROM gcs('https://storage.googleapis.com/my-test-bucket-768/**', 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
 The below get data from all `test-data.csv.gz` files from any folder inside `my-test-bucket` directory recursively:
 
-``` sql
+```sql
 SELECT * FROM gcs('https://storage.googleapis.com/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
 For production use cases it is recommended to use [named collections](operations/named-collections.md). Here is the example:
-``` sql
+```sql
 
 CREATE NAMED COLLECTION creds AS
         access_key_id = '***',

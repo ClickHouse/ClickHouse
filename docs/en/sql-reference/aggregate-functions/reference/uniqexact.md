@@ -1,15 +1,15 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/uniqexact
+description: 'Calculates the exact number of different argument values.'
 sidebar_position: 207
-title: "uniqExact"
-description: "Calculates the exact number of different argument values."
+slug: /sql-reference/aggregate-functions/reference/uniqexact
+title: 'uniqExact'
 ---
 
 # uniqExact
 
 Calculates the exact number of different argument values.
 
-``` sql
+```sql
 uniqExact(x[, ...])
 ```
 

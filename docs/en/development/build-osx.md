@@ -1,7 +1,9 @@
 ---
-slug: /development/build-osx
+description: 'Guide for building ClickHouse from source on macOS systems'
+sidebar_label: 'Build on macOS for macOS'
 sidebar_position: 15
-sidebar_label: Build on macOS for macOS
+slug: /development/build-osx
+title: 'Build on macOS for macOS'
 ---
 
 # How to Build ClickHouse on macOS for macOS
@@ -16,11 +18,13 @@ As compiler, only Clang from homebrew is supported.
 
 ## Install Prerequisites {#install-prerequisites}
 
-First install [Homebrew](https://brew.sh/).
+First, see the generic [prerequisites documentation](developer-instruction.md).
 
-Next, run:
+Next, install [Homebrew](https://brew.sh/) and run
 
-``` bash
+Then run:
+
+```bash
 brew update
 brew install ccache cmake ninja libtool gettext llvm binutils grep findutils nasm
 ```
@@ -34,7 +38,7 @@ For serious development on macOS, make sure that the source code is stored on a 
 
 To build you must use Homebrew's Clang compiler:
 
-``` bash
+```bash
 cd ClickHouse
 mkdir build
 export PATH=$(brew --prefix llvm)/bin:$PATH
@@ -53,7 +57,7 @@ You'll need to use sudo.
 
 To do so, create the `/Library/LaunchDaemons/limit.maxfiles.plist` file with the following content:
 
-``` xml
+```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
         "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -79,19 +83,19 @@ To do so, create the `/Library/LaunchDaemons/limit.maxfiles.plist` file with the
 
 Give the file correct permissions:
 
-``` bash
+```bash
 sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
 ```
 
 Validate that the file is correct:
 
-``` bash
+```bash
 plutil /Library/LaunchDaemons/limit.maxfiles.plist
 ```
 
 Load the file (or reboot):
 
-``` bash
+```bash
 sudo launchctl load -w /Library/LaunchDaemons/limit.maxfiles.plist
 ```
 

@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/statements/
+description: 'Documentation for ClickHouse SQL Statements'
+sidebar_label: 'List of statements'
 sidebar_position: 1
-sidebar_label: List of statements
+slug: /sql-reference/statements/
+title: 'ClickHouse SQL Statements'
 ---
 
 # ClickHouse SQL Statements

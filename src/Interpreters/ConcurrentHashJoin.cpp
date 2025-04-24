@@ -152,6 +152,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
     bool any_take_last_row_)
     : table_join(table_join_)
     , slots(toPowerOfTwo(std::min<UInt32>(static_cast<UInt32>(slots_), 256)))
+    , any_take_last_row(any_take_last_row_)
     , pool(std::make_unique<ThreadPool>(
           CurrentMetrics::ConcurrentHashJoinPoolThreads,
           CurrentMetrics::ConcurrentHashJoinPoolThreadsActive,
@@ -250,7 +251,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     size_t blocks_left = 0;
     for (const auto & block : dispatched_blocks)
     {
-        if (block)
+        if (block.rows())
         {
             ++blocks_left;
         }
@@ -264,7 +265,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
             auto & hash_join = hash_joins[i];
             auto & dispatched_block = dispatched_blocks[i];
 
-            if (dispatched_block)
+            if (dispatched_block.rows())
             {
                 /// if current hash_join is already processed by another thread, skip it and try later
                 std::unique_lock<std::mutex> lock(hash_join->mutex, std::try_to_lock);
@@ -578,7 +579,11 @@ IQueryTreeNode::HashState preCalculateCacheKey(const QueryTreeNodePtr & right_ta
 
 UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode::HashState hash)
 {
-    chassert(table_join && table_join->oneDisjunct());
+    // This condition is always true for ConcurrentHashJoin (see `TableJoin::allowParallelHashJoin()`),
+    // but this method is called from generic code.
+    if (!table_join || !table_join->oneDisjunct())
+        return 0;
+
     const auto keys
         = NameOrderedSet{table_join->getClauses().at(0).key_names_right.begin(), table_join->getClauses().at(0).key_names_right.end()};
     for (const auto & name : keys)

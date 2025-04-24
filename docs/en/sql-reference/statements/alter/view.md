@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/statements/alter/view
+description: 'Documentation for ALTER TABLE ... MODIFY QUERY Statement'
+sidebar_label: 'VIEW'
 sidebar_position: 50
-sidebar_label: VIEW
+slug: /sql-reference/statements/alter/view
+title: 'ALTER TABLE ... MODIFY QUERY Statement'
 ---
 
 # ALTER TABLE ... MODIFY QUERY Statement
@@ -193,7 +195,7 @@ SELECT * FROM mv;
 
 ## ALTER LIVE VIEW Statement {#alter-live-view-statement}
 
-`ALTER LIVE VIEW ... REFRESH` statement refreshes a [Live view](../create/view.md#live-view). See [Force Live View Refresh](../create/view.md#live-view-alter-refresh).
+`ALTER LIVE VIEW ... REFRESH` statement refreshes a [Live view](/sql-reference/statements/create/view#live-view). See [Force Live View Refresh](/sql-reference/statements/create/view#live-view).
 
 ## ALTER TABLE ... MODIFY REFRESH Statement {#alter-table--modify-refresh-statement}
 

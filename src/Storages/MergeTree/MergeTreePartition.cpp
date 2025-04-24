@@ -2,8 +2,10 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <IO/HashingWriteBuffer.h>
+#include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
@@ -11,7 +13,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/FieldVisitorHash.h>
 #include <Common/typeid_cast.h>
 #include <base/hex.h>
 #include <Core/Block.h>
@@ -416,9 +417,12 @@ void MergeTreePartition::load(const IMergeTreeDataPart & part)
     const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, part.storage.getContext()).sample_block;
 
     auto file = part.readFile("partition.dat");
+    FormatSettings settings;
+    /// For compatibility we should read values of Bool data type as 0/1 int Field, not as bool true/false Field.
+    settings.binary.read_bool_field_as_int = true;
     value.resize(partition_key_sample.columns());
     for (size_t i = 0; i < partition_key_sample.columns(); ++i)
-        partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(value[i], *file, {});
+        partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(value[i], *file, settings);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(

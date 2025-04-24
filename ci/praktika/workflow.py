@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from . import Artifact, Job
 from .docker import Docker
@@ -30,6 +30,7 @@ class Workflow:
         artifacts: List[Artifact.Config] = field(default_factory=list)
         dockers: List[Docker.Config] = field(default_factory=list)
         secrets: List[Secret.Config] = field(default_factory=list)
+        enable_job_filtering_by_changes: bool = False
         enable_cache: bool = False
         enable_report: bool = False
         enable_merge_ready_status: bool = False
@@ -38,9 +39,13 @@ class Workflow:
         enable_merge_commit: bool = False
         cron_schedules: List[str] = field(default_factory=list)
         inputs: List["Workflow.Config.InputConfig"] = field(default_factory=list)
-        pre_hooks: List[str] = field(default_factory=list)
+        pre_hooks: List[Union[str, callable]] = field(default_factory=list)
         workflow_filter_hooks: List[callable] = field(default_factory=list)
         post_hooks: List[str] = field(default_factory=list)
+        # If the Docker images specified in .dockers are intended to be built in a different workflow,
+        #   their build process in this workflow can be disabled by setting this to True.
+        disable_dockers_build: bool = False
+        set_latest_in_dockers_build: bool = False
 
         def is_event_pull_request(self):
             return self.event == Workflow.Event.PULL_REQUEST

@@ -1,8 +1,9 @@
 #pragma once
 
 #include <base/memcmpSmall.h>
-#include <Common/assert_cast.h>
 #include <Common/TargetSpecific.h>
+#include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
@@ -777,6 +778,8 @@ private:
 
     ColumnPtr executeString(const IColumn * c0, const IColumn * c1) const
     {
+        checkStackSize();
+
         const ColumnString * c0_string = checkAndGetColumn<ColumnString>(c0);
         const ColumnString * c1_string = checkAndGetColumn<ColumnString>(c1);
         const ColumnFixedString * c0_fixed_string = checkAndGetColumn<ColumnFixedString>(c0);
@@ -889,6 +892,8 @@ private:
             const DataTypePtr & result_type, const IColumn * col_left_untyped, const IColumn * col_right_untyped,
             const DataTypePtr & left_type, const DataTypePtr & right_type, size_t input_rows_count) const
     {
+        checkStackSize();
+
         /// To compare something with const string, we cast constant to appropriate type and compare as usual.
         /// It is ok to throw exception if value is not convertible.
         /// We should deal with possible overflows, e.g. toUInt8(1) = '257' should return false.
@@ -1216,19 +1221,25 @@ public:
                     " of function {}", arguments[0]->getName(), arguments[1]->getName(), getName());
         }
 
-        if (left_tuple && right_tuple)
+        bool both_tuples = left_tuple && right_tuple;
+        if (both_tuples || (left_tuple && right.isStringOrFixedString()) || (left.isStringOrFixedString() && right_tuple))
         {
             auto func = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionComparison<Op, Name>>(params));
 
             bool has_nullable = false;
             bool has_null = false;
 
-            size_t size = left_tuple->getElements().size();
+            const DataTypeTuple * any_tuple = left_tuple ? left_tuple : right_tuple;
+            size_t size = any_tuple->getElements().size();
             for (size_t i = 0; i < size; ++i)
             {
-                ColumnsWithTypeAndName args = {{nullptr, left_tuple->getElements()[i], ""},
-                                               {nullptr, right_tuple->getElements()[i], ""}};
-                auto element_type = func->build(args)->getResultType();
+                DataTypePtr element_type = any_tuple->getElement(i);
+                if (both_tuples)
+                {
+                    ColumnsWithTypeAndName args = {{nullptr, left_tuple->getElements()[i], ""},
+                                                   {nullptr, right_tuple->getElements()[i], ""}};
+                    element_type = func->build(args)->getResultType();
+                }
                 has_nullable = has_nullable || element_type->isNullable();
                 has_null = has_null || element_type->onlyNull();
             }
@@ -1251,6 +1262,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        checkStackSize();
+
         const auto & col_with_type_and_name_left = arguments[0];
         const auto & col_with_type_and_name_right = arguments[1];
         const IColumn * col_left_untyped = col_with_type_and_name_left.column.get();

@@ -6,36 +6,30 @@ ExpressionTransform × 16
   (Aggregating)
   Resize 16 → 16
     AggregatingTransform × 16
-      Resize × 16 16 → 1
-        ScatterByPartitionTransform × 16 1 → 16
-          (Expression)
-          ExpressionTransform × 16
-            (Aggregating)
-            Resize 1 → 16
-              AggregatingTransform
-                (Expression)
-                ExpressionTransform
-                  (ReadFromSystemNumbers)
-                  NumbersRange 0 → 1
+      (Expression)
+      ExpressionTransform × 16
+        (Aggregating)
+        Resize 1 → 16
+          AggregatingTransform
+            (Expression)
+            ExpressionTransform
+              (ReadFromSystemNumbers)
+              NumbersRange 0 → 1
 explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number settings max_rows_to_read = 0;
 (Expression)
 ExpressionTransform × 16
   (Aggregating)
   Resize 16 → 16
     AggregatingTransform × 16
-      Resize × 16 16 → 1
-        ScatterByPartitionTransform × 16 1 → 16
-          (Expression)
-          ExpressionTransform × 16
-            (Aggregating)
-            Resize 16 → 16
-              AggregatingTransform × 16
-                Resize × 16 16 → 1
-                  ScatterByPartitionTransform × 16 1 → 16
-                    (Expression)
-                    ExpressionTransform × 16
-                      (ReadFromSystemNumbers)
-                      NumbersRange × 16 0 → 1
+      (Expression)
+      ExpressionTransform × 16
+        (Aggregating)
+        Resize 16 → 16
+          AggregatingTransform × 16
+            (Expression)
+            ExpressionTransform × 16
+              (ReadFromSystemNumbers)
+              NumbersRange × 16 0 → 1
 explain pipeline select * from (select * from numbers_mt(1e8) group by number) order by number settings max_rows_to_read = 0;
 (Expression)
 ExpressionTransform
@@ -149,11 +143,9 @@ ExpressionTransform × 2
                         (Aggregating)
                         Resize 2 → 1
                           AggregatingTransform × 2
-                            Resize × 2 2 → 1
-                              ScatterByPartitionTransform × 2 1 → 2
-                                (Expression)
-                                ExpressionTransform × 2
-                                  (ReadFromMergeTree)
-                                  MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
+                            (Expression)
+                            ExpressionTransform × 2
+                              (ReadFromMergeTree)
+                              MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
                         (ReadFromRemote)
               (ReadFromRemote)

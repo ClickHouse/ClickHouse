@@ -1,15 +1,15 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/uniqcombined
+description: 'Calculates the approximate number of different argument values.'
 sidebar_position: 205
-title: "uniqCombined"
-description: "Calculates the approximate number of different argument values."
+slug: /sql-reference/aggregate-functions/reference/uniqcombined
+title: 'uniqCombined'
 ---
 
 # uniqCombined
 
 Calculates the approximate number of different argument values.
 
-``` sql
+```sql
 uniqCombined(HLL_precision)(x[, ...])
 ```
 

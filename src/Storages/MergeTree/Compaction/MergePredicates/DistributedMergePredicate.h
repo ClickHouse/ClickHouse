@@ -23,8 +23,8 @@ class DistributedMergePredicate : public IMergePredicate
         if (prev_virtual_parts_ptr && prev_virtual_parts_ptr->getContainingPart(info).empty())
             return std::unexpected(PreformattedMessage::create("Part {} does not contain in snapshot of previous virtual parts", name));
 
-        if (partition_ids_hint && !partition_ids_hint->contains(info.partition_id))
-            return std::unexpected(PreformattedMessage::create("Uncommitted blocks were not loaded for partition {}", info.partition_id));
+        if (partition_ids_hint && !partition_ids_hint->contains(info.getPartitionId()))
+            return std::unexpected(PreformattedMessage::create("Uncommitted blocks were not loaded for partition {}", info.getPartitionId()));
 
         return {};
     }
@@ -73,7 +73,7 @@ public:
         chassert(left.name != right.name);
         chassert(checkCanMergePartsPreconditions(left.name, left.info) && checkCanMergePartsPreconditions(right.name, right.info));
 
-        if (left.info.partition_id != right.info.partition_id)
+        if (left.info.getPartitionId() != right.info.getPartitionId())
             return std::unexpected(PreformattedMessage::create("Parts {} and {} belong to different partitions", left.name, right.name));
 
         int64_t left_max_block = left.info.max_block;
@@ -82,7 +82,7 @@ public:
 
         if (committing_blocks_ptr && left_max_block + 1 < right_min_block)
         {
-            auto committing_blocks_ptrin_partition = committing_blocks_ptr->find(left.info.partition_id);
+            auto committing_blocks_ptrin_partition = committing_blocks_ptr->find(left.info.getPartitionId());
             if (committing_blocks_ptrin_partition != committing_blocks_ptr->end())
             {
                 const std::set<Int64> & block_numbers = committing_blocks_ptrin_partition->second;
@@ -97,7 +97,7 @@ public:
         {
             /// Fake part which will appear as merge result
             MergeTreePartInfo gap_part_info(
-                left.info.partition_id, left_max_block + 1, right_min_block - 1,
+                left.info.getPartitionId(), left_max_block + 1, right_min_block - 1,
                 MergeTreePartInfo::MAX_LEVEL, MergeTreePartInfo::MAX_BLOCK_NUMBER);
 
             /// We don't select parts if any smaller part covered by our merge must exist after
@@ -112,10 +112,10 @@ public:
         if (mutations_state_ptr)
         {
             Int64 left_mutation_version = mutations_state_ptr->getCurrentMutationVersion(
-                left.info.partition_id, left.info.getDataVersion());
+                left.info.getPartitionId(), left.info.getDataVersion());
 
             Int64 right_mutation_version = mutations_state_ptr->getCurrentMutationVersion(
-                left.info.partition_id, right.info.getDataVersion());
+                left.info.getPartitionId(), right.info.getDataVersion());
 
             if (left_mutation_version != right_mutation_version)
                 return std::unexpected(PreformattedMessage::create(

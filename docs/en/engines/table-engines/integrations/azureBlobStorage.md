@@ -1,9 +1,9 @@
 ---
-slug: /engines/table-engines/integrations/azureBlobStorage
+description: 'This engine provides an integration with Azure Blob Storage ecosystem.'
+sidebar_label: 'Azure Blob Storage'
 sidebar_position: 10
-sidebar_label: Azure Blob Storage
-title: "AzureBlobStorage Table Engine"
-description: "This engine provides an integration with Azure Blob Storage ecosystem."
+slug: /engines/table-engines/integrations/azureBlobStorage
+title: 'AzureBlobStorage Table Engine'
 ---
 
 # AzureBlobStorage Table Engine
@@ -12,7 +12,7 @@ This engine provides an integration with [Azure Blob Storage](https://azure.micr
 
 ## Create Table {#create-table}
 
-``` sql
+```sql
 CREATE TABLE azure_blob_storage_table (name String, value UInt32)
     ENGINE = AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
     [PARTITION BY expr]
@@ -36,7 +36,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 Users can use the Azurite emulator for local Azure Storage development. Further details [here](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage). If using a local instance of Azurite, users may need to substitute `http://localhost:10000` for `http://azurite1:10000` in the commands below, where we assume Azurite is available at host `azurite1`.
 
 
-``` sql
+```sql
 CREATE TABLE test_table (key UInt64, data String)
     ENGINE = AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;', 'testcontainer', 'test_table', 'CSV');
 
@@ -83,7 +83,7 @@ SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
 
 1. add the following section to clickhouse configuration file:
 
-``` xml
+```xml
 <clickhouse>
     <filesystem_caches>
         <cache_for_azure>

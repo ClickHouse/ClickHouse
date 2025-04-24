@@ -22,6 +22,7 @@
 #include <Core/AccurateComparison.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/NaNUtils.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
@@ -243,6 +244,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return convertNumericType<Int128>(src, type);
         if (which_type.isInt256())
             return convertNumericType<Int256>(src, type);
+        if (which_type.isBFloat16())
+            return convertNumericType<BFloat16>(src, type);
         if (which_type.isFloat32())
             return convertNumericType<Float32>(src, type);
         if (which_type.isFloat64())

@@ -18,11 +18,12 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -131,18 +132,16 @@ std::pair<String, StoragePtr> createTableFromAST(
         }
     }
 
-    return
-    {
-        ast_create_query.getTable(),
-        StorageFactory::instance().get(
-            ast_create_query,
-            table_data_path_relative,
-            context,
-            context->getGlobalContext(),
-            columns,
-            constraints,
-            mode)
-    };
+    /// Before 24.10 it was possible for query settings to be stored with the .sql definition with some engines, which would ignore them
+    /// Later (breaking) changes to table storages made the engines throw, which now prevents attaching old definitions which include
+    /// those query settings
+    /// In order to ignore them now we call `applySettingsFromQuery` which will move the settings from engine to query level
+    auto ast = std::make_shared<ASTCreateQuery>(std::move(ast_create_query));
+    InterpreterSetQuery::applySettingsFromQuery(ast, context);
+
+    return {
+        ast->getTable(),
+        StorageFactory::instance().get(*ast, table_data_path_relative, context, context->getGlobalContext(), columns, constraints, mode)};
 }
 
 
@@ -152,7 +151,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     auto * create = query_clone->as<ASTCreateQuery>();
 
     if (!create)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", serializeAST(*query));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", query->formatForErrorMessage());
 
     /// Clean the query from temporary flags.
     cleanupObjectDefinitionFromTemporaryFlags(*create);
@@ -168,7 +167,8 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
         create->setTable(TABLE_WITH_UUID_NAME_PLACEHOLDER);
 
     WriteBufferFromOwnString statement_buf;
-    formatAST(*create, statement_buf, false);
+    IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite*/false);
+    create->format(statement_buf, format_settings);
     writeChar('\n', statement_buf);
     return statement_buf.str();
 }
@@ -362,6 +362,8 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
             table->drop();
             table->is_dropped = true;
         }
+        std::lock_guard lock(mutex);
+        snapshot_detached_tables.erase(table_name);
     }
     catch (...)
     {
@@ -891,7 +893,8 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     create->if_not_exists = false;
 
     WriteBufferFromOwnString statement_buf;
-    formatAST(*create, statement_buf, false);
+    IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite*/false);
+    create->format(statement_buf, format_settings);
     writeChar('\n', statement_buf);
     String statement = statement_buf.str();
 
@@ -904,4 +907,11 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
 
     db_disk->replaceFile(metadata_file_tmp_path, metadata_file_path);
 }
+
+void DatabaseOnDisk::alterDatabaseComment(const AlterCommand & command)
+{
+    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
+}
+
+
 }
