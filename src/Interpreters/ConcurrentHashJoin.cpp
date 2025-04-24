@@ -462,7 +462,7 @@ bool ConcurrentHashJoin::isUsedByAnotherAlgorithm() const
 
 bool ConcurrentHashJoin::canRemoveColumnsFromLeftBlock() const
 {
-    return table_join->enableEnalyzer() && !table_join->hasUsing() && !isUsedByAnotherAlgorithm() && table_join->strictness() != JoinStrictness::RightAny;
+    return table_join->enableAnalyzer() && !table_join->hasUsing() && !isUsedByAnotherAlgorithm() && table_join->strictness() != JoinStrictness::RightAny;
 }
 
 bool ConcurrentHashJoin::needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const
