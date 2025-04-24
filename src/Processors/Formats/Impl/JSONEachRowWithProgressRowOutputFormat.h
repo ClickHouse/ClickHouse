@@ -11,6 +11,7 @@ class JSONEachRowWithProgressRowOutputFormat final : public JSONEachRowRowOutput
 public:
     using JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat;
 
+    friend class SSEFormat;
 private:
     bool supportTotals() const override { return true; }
     bool supportExtremes() const override { return true; }

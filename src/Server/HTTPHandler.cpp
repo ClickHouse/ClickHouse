@@ -301,23 +301,23 @@ void HTTPHandler::processQuery(
     Int64 http_zlib_compression_level
         = params.getParsed<Int64>("http_zlib_compression_level", context->getSettingsRef()[Setting::http_zlib_compression_level]);
 
+    // IS EVENT STREAM ENABLED
     bool is_event_stream_enabled = isEventStreamRequest(request);
     LOG_DEBUG(log, "Is event stream enabled: {}", is_event_stream_enabled);
         
+
+    // LOG_DEBUG(log, "Params FORMAT before: {}", params.get("format"));
     used_output.out_holder =
     std::make_shared<WriteBufferFromHTTPServerResponse>(
         response,
         request.getMethod() == HTTPRequest::HTTP_HEAD,
-        write_event,
-        is_event_stream_enabled);
+        write_event);
 
     if (is_event_stream_enabled) {
         writeEventStreamHeader(response);
-        // Set SSE format if not specified
-        if (!params.has("format"))
-            params.set("format", "SSE");
     }
-        
+
+    // LOG_DEBUG(log, "Params FORMAT after: {}", params.get("format"));
 
     used_output.out_maybe_compressed = used_output.out_holder;
     used_output.out = used_output.out_holder;
