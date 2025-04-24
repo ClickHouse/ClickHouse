@@ -122,6 +122,7 @@ namespace
 {
 constexpr auto MAX_FAILED_POLL_ATTEMPTS = 10;
 constexpr auto MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS = 15000;
+constexpr auto TMP_LOCKS_REFRESH_POLLS = 15;
 }
 
 StorageKafka2::StorageKafka2(
@@ -750,7 +751,7 @@ void StorageKafka2::dropReplica()
 
 /// We go through all the replicas, count the number of live replicas,
 /// and see which partitions are already locked by other replicas
-StorageKafka2::TopicPartitionSet StorageKafka2::lookupReplicaState(zkutil::ZooKeeper & keeper_to_use)
+StorageKafka2::TopicPartitionSet StorageKafka2::getLockedTopicPartitions(zkutil::ZooKeeper & keeper_to_use)
 {
     LOG_TRACE(log, "Starting to lookup replica's state");
     Strings replicas;
@@ -789,9 +790,41 @@ StorageKafka2::TopicPartitionSet StorageKafka2::lookupReplicaState(zkutil::ZooKe
         locked_partitions.insert(topic_partition);
     }
 
+    Strings already_locked_partitions_str;
+    already_locked_partitions_str.reserve(locked_partitions.size());
+    for (const auto & already_locks : locked_partitions)
+        already_locked_partitions_str.push_back("[" + already_locks.topic + ":" + std::to_string(already_locks.partition_id) + "]");
+    LOG_INFO(
+        log,
+        "Already locked topic partitions are {}",
+        boost::algorithm::join(already_locked_partitions_str, ", ")
+    );
+
     return locked_partitions;
 }
 
+StorageKafka2::TopicPartitions StorageKafka2::getAvailableTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & all_topic_partitions)
+{
+    const auto already_locked_partitions = getLockedTopicPartitions(keeper_to_use);
+    TopicPartitions available_topic_partitions;
+    available_topic_partitions.reserve(all_topic_partitions.size());
+    for (const auto & partition : all_topic_partitions)
+    {
+        if (!already_locked_partitions.contains(partition))
+            available_topic_partitions.push_back(partition);
+    }
+    Strings available_topic_partitions_str;
+    available_topic_partitions_str.reserve(available_topic_partitions.size());
+    for (const auto & available_partition : available_topic_partitions)
+        available_topic_partitions_str.push_back("[" + available_partition.topic + ":" + std::to_string(available_partition.partition_id) + "]");
+    LOG_INFO(
+        log,
+        "Topic partitions {} are available",
+        boost::algorithm::join(available_topic_partitions_str, ", ")
+    );
+
+    return  available_topic_partitions;
+}
 
 std::optional<StorageKafka2::LockedTopicPartitionInfo> StorageKafka2::createLocksInfo(zkutil::ZooKeeper & keeper_to_use, const TopicPartition& partition_to_lock)
 {
@@ -831,39 +864,9 @@ std::optional<StorageKafka2::LockedTopicPartitionInfo> StorageKafka2::createLock
 std::optional<StorageKafka2::TopicPartitionLocks>
 StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions)
 {
-
-    const auto already_locked_partitions = lookupReplicaState(keeper_to_use);
-    Strings already_locked_partitions_str;
-    already_locked_partitions_str.reserve(already_locked_partitions.size());
-    for (const auto & already_locks : already_locked_partitions)
-        already_locked_partitions_str.push_back("[" + already_locks.topic + ":" + std::to_string(already_locks.partition_id) + "]");
-    LOG_INFO(
-        log,
-        "Already locked topic partitions are {}",
-        boost::algorithm::join(already_locked_partitions_str, ", ")
-    );
-
-    tmp_locks.clear();
-
     size_t can_lock_partitions = static_cast<size_t>(std::ceil(static_cast<double>(topic_partitions.size()) / active_replica_count));
 
-    TopicPartitions available_topic_partitions;
-    available_topic_partitions.reserve(topic_partitions.size());
-    for (const auto & partition : topic_partitions)
-    {
-        if (!already_locked_partitions.contains(partition))
-            available_topic_partitions.push_back(partition);
-    }
-    Strings available_topic_partitions_str;
-    available_topic_partitions_str.reserve(available_topic_partitions.size());
-    for (const auto & available_partition : available_topic_partitions)
-        available_topic_partitions_str.push_back("[" + available_partition.topic + ":" + std::to_string(available_partition.partition_id) + "]");
-    LOG_INFO(
-        log,
-        "Topic partitions {} are available",
-        boost::algorithm::join(available_topic_partitions_str, ", ")
-    );
-
+    auto available_topic_partitions = getAvailableTopicPartitions(keeper_to_use, topic_partitions);
     auto available_topics_it = available_topic_partitions.begin();
     if (can_lock_partitions <  permanent_locks.size())
     {
@@ -885,17 +888,6 @@ StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const Topi
         }
     }
 
-    size_t can_lock_tmp_partitions = can_lock_partitions;
-    for (; available_topics_it != available_topic_partitions.end(); ++available_topics_it)
-    {
-        if (tmp_locks.size() >= can_lock_tmp_partitions)
-            break;
-        auto maybe_lock = createLocksInfo(keeper_to_use, *available_topics_it);
-        if (!maybe_lock.has_value())
-            continue;
-        tmp_locks.emplace(TopicPartition(*available_topics_it), std::move(*maybe_lock));
-    }
-
     TopicPartitionLocks locks;
     locks.insert(permanent_locks.begin(), permanent_locks.end());
     locks.insert(tmp_locks.begin(), tmp_locks.end());
@@ -903,6 +895,23 @@ StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const Topi
     return locks;
 }
 
+void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions)
+{
+    size_t can_lock_partitions = static_cast<size_t>(std::ceil(static_cast<double>(topic_partitions.size()) / active_replica_count));
+    auto available_topic_partitions = getAvailableTopicPartitions(keeper_to_use, topic_partitions);
+
+    tmp_locks.clear(); // to maintain order: looked at the old state, updated the state, committed the new state
+    auto available_topics_it = available_topic_partitions.begin();
+    for (; available_topics_it != available_topic_partitions.end(); ++available_topics_it)
+    {
+        if (tmp_locks.size() >= can_lock_partitions)
+            break;
+        auto maybe_lock = createLocksInfo(keeper_to_use, *available_topics_it);
+        if (!maybe_lock.has_value())
+            continue;
+        tmp_locks.emplace(TopicPartition(*available_topics_it), std::move(*maybe_lock));
+    }
+}
 
 void StorageKafka2::saveCommittedOffset(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition)
 {
@@ -1344,6 +1353,14 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
             return;
         consumer_info.consumer->updateOffsets(consumer_info.topic_partitions);
     });
+
+    auto & keeper_to_use = *consumer_info.keeper;
+    ++consumer_info.poll_count;
+    if (consumer_info.poll_count >= TMP_LOCKS_REFRESH_POLLS)
+    {
+        updateTemporaryLocks(keeper_to_use, consumer_info.consumer->getAllTopicPartitions());
+        consumer_info.poll_count = 0;
+    }
     auto [blocks, last_read_offset] = pollConsumer(
         *consumer_info.consumer, topic_partition, consumer_info.locks[topic_partition].intent_size, consumer_info.watch, kafka_context);
 
@@ -1367,7 +1384,6 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
     // We can't cancel during copyData, as it's not aware of commits and other kafka-related stuff.
     // It will be cancelled on underlying layer (kafka buffer)
 
-    auto & keeper_to_use = *consumer_info.keeper;
     auto & lock_info = consumer_info.locks.at(topic_partition);
     lock_info.intent_size = last_read_offset - lock_info.committed_offset.value_or(0);
     saveIntent(keeper_to_use, topic_partition, *lock_info.intent_size);
