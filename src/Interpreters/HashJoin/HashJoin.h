@@ -435,12 +435,16 @@ public:
     void tryRerangeRightTableData() override;
     size_t getAndSetRightTableKeys() const;
 
+    bool hasNonJoinedRows() const;
+    void updateNonJoinedRowsStatus() const;
+
     const std::vector<Sizes> & getKeySizes() const { return key_sizes; }
 
     std::shared_ptr<JoinStuff::JoinUsedFlags> getUsedFlags() const { return used_flags; }
 
 private:
     friend class NotJoinedHash;
+    friend class NotJoinedSingleSlot;
 
     friend class JoinSource;
 
@@ -450,6 +454,9 @@ private:
     std::shared_ptr<TableJoin> table_join;
     const JoinKind kind;
     const JoinStrictness strictness;
+
+    mutable std::atomic<bool> has_non_joined_rows_checked{false};
+    mutable std::atomic<bool> has_non_joined_rows{false};
 
     /// This join was created from StorageJoin and it is already filled.
     bool from_storage_join = false;

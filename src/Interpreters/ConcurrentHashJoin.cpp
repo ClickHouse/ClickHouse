@@ -9,6 +9,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
+#include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/createBlockSelector.h>
@@ -141,6 +142,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
+    extern const int UNSUPPORTED_JOIN_KEYS;
 }
 
 
@@ -152,7 +154,6 @@ ConcurrentHashJoin::ConcurrentHashJoin(
     bool any_take_last_row_)
     : table_join(table_join_)
     , slots(toPowerOfTwo(std::min<UInt32>(static_cast<UInt32>(slots_), 256)))
-    , any_take_last_row(any_take_last_row_)
     , pool(std::make_unique<ThreadPool>(
           CurrentMetrics::ConcurrentHashJoinPoolThreads,
           CurrentMetrics::ConcurrentHashJoinPoolThreadsActive,
@@ -251,7 +252,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     size_t blocks_left = 0;
     for (const auto & block : dispatched_blocks)
     {
-        if (block)
+        if (block.rows())
         {
             ++blocks_left;
         }
@@ -265,7 +266,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
             auto & hash_join = hash_joins[i];
             auto & dispatched_block = dispatched_blocks[i];
 
-            if (dispatched_block)
+            if (dispatched_block.rows())
             {
                 /// if current hash_join is already processed by another thread, skip it and try later
                 std::unique_lock<std::mutex> lock(hash_join->mutex, std::try_to_lock);
@@ -408,6 +409,52 @@ bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
     return true;
 }
 
+bool ConcurrentHashJoin::hasNonJoinedRows() const
+{
+    if (has_non_joined_rows_checked.load(std::memory_order_acquire))
+        return has_non_joined_rows.load(std::memory_order_acquire);
+
+    // Only valid for RIGHT JOIN
+    if (!isRight(table_join->kind()))
+        return false;
+
+    // Check if any shard has non-joined rows
+    bool found_non_joined = false;
+    for (const auto & hash_join_ptr : hash_joins)
+    {
+        std::lock_guard lock(hash_join_ptr->mutex);
+        if (hash_join_ptr->data->hasNonJoinedRows())
+        {
+            found_non_joined = true;
+            break;
+        }
+    }
+
+    has_non_joined_rows.store(found_non_joined, std::memory_order_release);
+    has_non_joined_rows_checked.store(true, std::memory_order_release);
+    return found_non_joined;
+}
+
+bool ConcurrentHashJoin::slotHasNonJoinedRows(size_t slot_index) const
+{
+    if (slot_index >= hash_joins.size())
+        return false;
+        
+    // Check if the specific slot has non-joined rows
+    const auto & hash_join_ptr = hash_joins[slot_index];
+    std::lock_guard lock(hash_join_ptr->mutex);
+    return hash_join_ptr->data->hasNonJoinedRows();
+}
+
+void ConcurrentHashJoin::markSlotHasNonJoinedRows(size_t slot_index)
+{
+    if (slot_index >= hash_joins.size())
+        return;
+        
+    has_non_joined_rows.store(true, std::memory_order_release);
+    has_non_joined_rows_checked.store(true, std::memory_order_release);
+}
+
 bool ConcurrentHashJoin::isUsedByAnotherAlgorithm() const
 {
     return table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO) || table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH);
@@ -418,31 +465,120 @@ bool ConcurrentHashJoin::canRemoveColumnsFromLeftBlock() const
     return table_join->enableEnalyzer() && !table_join->hasUsing() && !isUsedByAnotherAlgorithm() && table_join->strictness() != JoinStrictness::RightAny;
 }
 
+bool ConcurrentHashJoin::needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const
+{
+    if (!table_join_->oneDisjunct())
+        return true;
+    /// If it'a a all right join with inequal conditions, we need to mark each row
+    if (table_join_->getMixedJoinExpression() && isRightOrFull(table_join_->kind()))
+        return true;
+    return false;
+}
+
+/// A simple stream that concatenates multiple child IBlocksStreams
+/// (blocks of not-joined data) into one sequential stream.
+class ConcatNotJoinedStreams final : public IBlocksStream
+{
+public:
+    /// The constructor takes a list of child streams.
+    explicit ConcatNotJoinedStreams(std::vector<IBlocksStreamPtr> children_)
+        : children(std::move(children_))
+    {
+    }
+
+    /// The required override for nextImpl() (pure virtual in IBlocksStream).
+    Block nextImpl() override
+    {
+        /// If the current child is exhausted, move to the next child, etc.
+        while (current_child < children.size())
+        {
+            IBlocksStreamPtr & child = children[current_child];
+            if (!child)
+            {
+                ++current_child;
+                continue;
+            }
+
+            Block block = child->next();
+            if (block) // got a non-empty block
+                return block;
+
+            /// child is done
+            ++current_child;
+        }
+
+        /// All children are done
+        return {};
+    }
+
+private:
+    std::vector<IBlocksStreamPtr> children;
+    size_t current_child = 0;
+};
+
 IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
-    const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const
+    const Block & left_sample_block,
+    const Block & result_sample_block,
+    UInt64 max_block_size) const
 {
     if (!JoinCommon::hasNonJoinedBlocks(*table_join))
         return {};
 
+    if (!hasNonJoinedRows())
+        return {};
+
     if (table_join->kind() == JoinKind::Right || table_join->kind() == JoinKind::Full)
     {
-        // We'll read unmatched rows only from slot 0
-        // ignoring the other concurrency slots entirely
-        bool flag_per_row = needUsedFlagsForPerLeftTableRow(table_join);
-
-        // Create our single-slot filler
-        auto filler = std::make_unique<NotJoinedSingleSlot>(0, *this, max_block_size, flag_per_row);
-
-        // figure out how many "build side" columns
-        size_t left_columns_count = left_sample_block.columns();
-        if (canRemoveColumnsFromLeftBlock())
-            left_columns_count = table_join->getOutputColumns(JoinTableSide::Left).size();
-
-        return std::make_unique<NotJoinedBlocks>(
-            std::move(filler),
-            result_sample_block,
-            left_columns_count,
-            *table_join);
+        if (hash_joins[0]->data->twoLevelMapIsUsed())
+        {
+            // For two-level map, all slots share the same hash map structure
+            // So we can just use slot 0 to process all non-joined rows
+            const auto & hash_join = hash_joins[0];
+            std::lock_guard lock(hash_join->mutex);
+            
+            // Skip if no non-joined rows
+            if (!hash_join->data->hasNonJoinedRows())
+                return {};
+                
+            return hash_join->data->getNonJoinedBlocks(
+                left_sample_block, result_sample_block, max_block_size);
+        }
+        else
+        {
+            // For single-level map, we need to gather non-joined rows from all slots
+            // since each slot may contain different data
+            std::vector<IBlocksStreamPtr> child_streams;
+            child_streams.reserve(hash_joins.size());
+            
+            // First pass: check for non-joined rows in each slot
+            for (size_t i = 0; i < hash_joins.size(); ++i)
+            {
+                const auto & hash_join = hash_joins[i];
+                std::lock_guard lock(hash_join->mutex);
+                
+                // Skip if this slot has no non-joined rows
+                if (!hash_join->data->hasNonJoinedRows())
+                    continue;
+                    
+                // Get non-joined blocks from this slot
+                IBlocksStreamPtr child = hash_join->data->getNonJoinedBlocks(
+                    left_sample_block, result_sample_block, max_block_size);
+                    
+                if (child)
+                    child_streams.push_back(std::move(child));
+            }
+            
+            // If no streams, return empty
+            if (child_streams.empty())
+                return {};
+                
+            // If only one stream, return it directly
+            if (child_streams.size() == 1)
+                return child_streams[0];
+                
+            // If multiple streams, concatenate them
+            return std::make_shared<ConcatNotJoinedStreams>(std::move(child_streams));
+        }
     }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid join type. join kind: {}, strictness: {}",
@@ -610,11 +746,7 @@ IQueryTreeNode::HashState preCalculateCacheKey(const QueryTreeNodePtr & right_ta
 
 UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode::HashState hash)
 {
-    // This condition is always true for ConcurrentHashJoin (see `TableJoin::allowParallelHashJoin()`),
-    // but this method is called from generic code.
-    if (!table_join || !table_join->oneDisjunct())
-        return 0;
-
+    chassert(table_join && table_join->oneDisjunct());
     const auto keys
         = NameOrderedSet{table_join->getClauses().at(0).key_names_right.begin(), table_join->getClauses().at(0).key_names_right.end()};
     for (const auto & name : keys)
@@ -625,11 +757,10 @@ UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode
 
 void ConcurrentHashJoin::onBuildPhaseFinish()
 {
+    // If a two-level map, merge each slot's partial buckets into slot 0's map
     if (hash_joins[0]->data->twoLevelMapIsUsed())
     {
-        // At this point, the build phase is finished. We need to build a shared common hash map to be used in the probe phase.
-        // It is done in two steps:
-        //     1. Merge hash maps into a single one. For that, we iterate over all sub-maps and move buckets from the current `HashJoin` instance to the common map.
+        // 1) Move sub-buckets from slot i => slot 0
         for (size_t i = 1; i < slots; ++i)
         {
             auto move_buckets = [&](auto & lhs_maps, HashJoin::Type type, auto & rhs_maps, size_t idx)
@@ -644,35 +775,87 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                         for (size_t j = idx; j < lhs_map.NUM_BUCKETS; j += slots)
                         {
                             if (!lhs_map.impls[j].empty())
-                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected non-empty map");
+                                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                    "Unexpected non-empty map while merging buckets");
                             lhs_map.impls[j] = std::move(rhs_map.impls[j]);
                         }
                     })
             };
 
             std::visit(
-                [&](auto & lhs_map)
+                [&](auto & lhs_maps)
                 {
-                    using T = std::decay_t<decltype(lhs_map)>;
-                    move_buckets(lhs_map, getData(hash_joins[0])->type, std::get<T>(getData(hash_joins[i])->maps.at(0)), i);
+                    using T = std::decay_t<decltype(lhs_maps)>;
+                    move_buckets(lhs_maps,
+                                 getData(hash_joins[0])->type,
+                                 std::get<T>(getData(hash_joins[i])->maps.at(0)),
+                                 i);
                 },
                 getData(hash_joins[0])->maps.at(0));
         }
+
+        // 2) Merge usage flags from all slots into slot 0 by OR
+        // auto & slot0_flags_map = hash_joins[0]->data->getUsedFlags()->getFlagsMap();
+        // for (size_t i = 1; i < slots; ++i)
+        // {
+        //     auto & slot_i_flags_map = hash_joins[i]->data->getUsedFlags()->getFlagsMap();
+        //     for (auto & [block_ptr_i, flags_vec_i] : slot_i_flags_map)
+        //     {
+        //         auto & flags_vec_0 = slot0_flags_map[block_ptr_i];
+        //         while (flags_vec_0.size() < flags_vec_i.size())
+        //             flags_vec_0.emplace_back(); // default false
+
+        //         // OR them
+        //         for (size_t row = 0; row < flags_vec_i.size(); ++row)
+        //         {
+        //             bool old_val = flags_vec_0[row].value.load(std::memory_order_relaxed);
+        //             bool new_val = flags_vec_i[row].value.load(std::memory_order_relaxed);
+        //             flags_vec_0[row].value.store(old_val || new_val, std::memory_order_relaxed);
+        //         }
+        //     }
+        // }
     }
+    // else
+    // {
+    //     // Single-level concurrency: no bucket merge needed.  Just unify usage flags.
+    //     auto & slot0_flags_map = hash_joins[0]->data->getUsedFlags()->getFlagsMap();
+    //     for (size_t i = 1; i < slots; ++i)
+    //     {
+    //         auto & slot_i_flags_map = hash_joins[i]->data->getUsedFlags()->getFlagsMap();
+    //         for (auto & [block_ptr_i, flags_vec_i] : slot_i_flags_map)
+    //         {
+    //             auto & flags_vec_0 = slot0_flags_map[block_ptr_i];
+    //             while (flags_vec_0.size() < flags_vec_i.size())
+    //                 flags_vec_0.emplace_back();
 
-    // `onBuildPhaseFinish` cannot be called concurrently with other IJoin methods, so we don't need a lock to access internal joins.
-    // The following calls must be done after the final common map is constructed, otherwise we will incorrectly initialize `used_flags`.
-    for (const auto & hash_join : hash_joins)
-        hash_join->data->onBuildPhaseFinish();
+    //             for (size_t row = 0; row < flags_vec_i.size(); ++row)
+    //             {
+    //                 bool old_val = flags_vec_0[row].value.load(std::memory_order_relaxed);
+    //                 bool new_val = flags_vec_i[row].value.load(std::memory_order_relaxed);
+    //                 flags_vec_0[row].value.store(old_val || new_val, std::memory_order_relaxed);
+    //             }
+    //         }
+    //     }
+    // }
 
+    // 3) Let each slot finalize
+    for (auto & slot : hash_joins)
+        slot->data->onBuildPhaseFinish();
+
+    // 4) If two-level, copy final single map in slot 0 => all other slots
     if (hash_joins[0]->data->twoLevelMapIsUsed())
     {
-        //     2. Copy this common map to all the `HashJoin` instances along with the `used_flags` data structure.
         for (size_t i = 1; i < slots; ++i)
         {
             getData(hash_joins[i])->maps = getData(hash_joins[0])->maps;
             hash_joins[i]->data->getUsedFlags() = hash_joins[0]->data->getUsedFlags();
         }
+    }
+    else
+    {
+        // Single-level: just copy final usedFlags pointer
+        for (size_t i = 1; i < slots; ++i)
+            hash_joins[i]->data->getUsedFlags() = hash_joins[0]->data->getUsedFlags();
     }
 }
 }

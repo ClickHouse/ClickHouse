@@ -4,13 +4,14 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
-#include <Interpreters/NotJoinedSingleSlot.h>
-#include <Interpreters/TableJoin.h>
 #include <Interpreters/IJoin.h>
 #include <base/defines.h>
 #include <base/types.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
+#include "Interpreters/NotJoinedSingleSlot.h"
+#include <Interpreters/TableJoin.h>
+#include <atomic>
 
 namespace DB
 {
@@ -43,6 +44,11 @@ class ConcurrentHashJoin : public IJoin
 {
 
 public:
+    using Creator = std::function<std::shared_ptr<HashJoin>(size_t)>;
+    using Slot = size_t;
+    static inline constexpr Slot NO_SLOT = std::numeric_limits<Slot>::max();
+    using LockedSlot = std::tuple<std::shared_ptr<HashJoin>, Slot>;
+
     explicit ConcurrentHashJoin(
         std::shared_ptr<TableJoin> table_join_,
         size_t slots_,
@@ -70,6 +76,19 @@ public:
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
+    bool isCloneSupported() const override
+    {
+        return !getTotals() && getTotalRowCount() == 0;
+    }
+
+    bool hasNonJoinedRows() const;
+
+    /// New method to check if a specific slot has non-joined rows during preprocessing
+    bool slotHasNonJoinedRows(size_t slot_index) const;
+
+    /// Mark a slot as having non-joined rows during preprocessing
+    void markSlotHasNonJoinedRows(size_t slot_index);
+
     static bool canProcessNonJoinedBlocks(const TableJoin & table_join_)
     {
         return isRight(table_join_.kind());
@@ -81,19 +100,9 @@ public:
         return table_join->strictness() != JoinStrictness::Semi && table_join->strictness() != JoinStrictness::Asof;
     }
 
-    bool isCloneSupported() const override
-    {
-        return !getTotals() && getTotalRowCount() == 0;
-    }
-
     std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_, const Block &, const Block & right_sample_block_) const override
     {
         return std::make_shared<ConcurrentHashJoin>(table_join_, slots, right_sample_block_, stats_collecting_params);
-    }
-
-    std::shared_ptr<IJoin> cloneNoParallel(const std::shared_ptr<TableJoin> & table_join_, const Block &, const Block & right_sample_block_) const override
-    {
-        return std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row);
     }
 
     void onBuildPhaseFinish() override;
@@ -103,14 +112,14 @@ public:
         std::mutex mutex;
         std::unique_ptr<HashJoin> data;
         bool space_was_preallocated = false;
+        std::atomic<bool> has_non_joined_rows{false};
     };
 
-    friend class NotJoinedSingleSlot;
+    friend class NotJoinedHash;
 
 private:
     std::shared_ptr<TableJoin> table_join;
     size_t slots;
-    bool any_take_last_row;
     std::unique_ptr<ThreadPool> pool;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
 
@@ -119,13 +128,17 @@ private:
     std::mutex totals_mutex;
     Block totals;
 
+    // Atomically set if non-joined rows are detected in any slot
+    mutable std::atomic<bool> has_non_joined_rows{false};
+    mutable std::atomic<bool> has_non_joined_rows_checked{false};
+
     ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
 
     bool isUsedByAnotherAlgorithm() const;
     bool canRemoveColumnsFromLeftBlock() const;
+    bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
 };
 
-// The following two methods are deprecated and hopefully will be removed in the future.
 IQueryTreeNode::HashState preCalculateCacheKey(const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info);
 UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode::HashState hash);
 }
