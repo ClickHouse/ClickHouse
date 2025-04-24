@@ -3,6 +3,7 @@
 #include <csignal>
 #include <iostream>
 #include <iomanip>
+#include <mutex>
 #include <optional>
 #include <random>
 #include <string_view>
@@ -239,6 +240,7 @@ private:
     std::atomic<size_t> queries_executed{0};
 
     std::vector<size_t> queries_per_connection;
+    std::mutex connection_counts_mutex;
 
     struct Stats
     {
@@ -473,14 +475,18 @@ private:
     {
         Stopwatch watch;
 
-        ConnectionPool::Entry entry = connections[connection_index]->get(
-            ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings));
+        ConnectionPool::Entry entry = connections[connection_index]->get(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings));
 
-        if (reconnect > 0 && (++queries_per_connection[connection_index] % reconnect == 0))
+        bool should_reconnect = false;
+        {
+            std::lock_guard<std::mutex> lock(connection_counts_mutex);
+            should_reconnect = reconnect > 0 && (++queries_per_connection[connection_index] % reconnect == 0);
+        }
+
+        if (should_reconnect)
             entry->disconnect();
 
-        RemoteQueryExecutor executor(
-            *entry, query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
+        RemoteQueryExecutor executor(*entry, query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
 
         if (!query_id.empty())
             executor.setQueryId(query_id);
