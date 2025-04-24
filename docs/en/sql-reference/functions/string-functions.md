@@ -2642,6 +2642,10 @@ Result:
 
 Calculates the SMASH (Smart String Similarity) between two strings. This function is designed to handle word-based string comparisons with intelligent gap handling and subsequence matching.
 
+**When to use:**
+
+For matching manually entered strings (acronyms, abbreviations, typos), e.g., police rosters, medical records, location names. Suitable for integration into tools for non-technical users.
+
 **Syntax**
 
 ```sql
@@ -2657,9 +2661,14 @@ smashSimilarity(haystack, needle)
 
 - Returns a value between 0 and 1, where 1 indicates identical strings and 0 indicates completely different strings. [Float64](../data-types/float.md).
 
+**Complexity**
+
+- Time complexity: O(m * n^3 * l) where m is the number of words in the longer string and n is the length of the shorter string, l is size of the largest word.
+- Space complexity: O(m * n) for the dynamic programming matrix.
+
 The algorithm:
 - Splits the longer string into words
-- Compares each word with substrings of the shorter string
+- Compares each word with substrings of the shorter string using affineGap algorithm
 - Uses affine gap penalties for better alignment
 - Handles subsequence matching for partial word matches
 - Normalizes the result to [0,1] range
@@ -2682,6 +2691,10 @@ Result:
 
 Calculates the SMASH similarity between two UTF-8 encoded strings. This is the UTF-8 aware version of smashSimilarity that correctly handles multi-byte characters.
 
+**When to use:**
+
+For matching manually entered strings (acronyms, abbreviations, typos), e.g., police rosters, medical records, location names. Suitable for integration into tools for non-technical users.
+
 **Syntax**
 
 ```sql
@@ -2696,6 +2709,11 @@ smashSimilarityUTF8(haystack, needle)
 **Returned value**
 
 - Returns a value between 0 and 1, where 1 indicates identical strings and 0 indicates completely different strings. [Float64](../data-types/float.md).
+
+**Complexity**
+
+- Time complexity: O(m * n^3 * l) where m is the number of words in the longer string and n is the length of the shorter string, l is size of the largest word.
+- Space complexity: O(m * n) for the dynamic programming matrix.
 
 **Example**
 
@@ -2730,6 +2748,11 @@ affineGap(string1, string2)
 
 - Affine gap distance between the strings. [Float64](../../sql-reference/data-types/float.md).
 
+**Complexity**
+
+- Time complexity: O(m * n) where m and n are the lengths of the input strings.
+- Space complexity: O(m * n) for the three dynamic programming matrices.
+
 **Example**
 
 ```sql
@@ -2759,6 +2782,11 @@ affineGapUTF8(string1, string2 [, gap_open, gap_extend, mismatch])
 **Returned value**
 
 - Affine gap distance between the UTF-8 strings. [Float64](../../sql-reference/data-types/float.md).
+
+**Complexity**
+
+- Time complexity: O(m * n) where m and n are the lengths of the input strings (in code points).
+- Space complexity: O(m * n) for the three dynamic programming matrices.
 
 **Example**
 
