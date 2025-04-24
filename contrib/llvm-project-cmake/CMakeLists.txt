@@ -96,6 +96,10 @@ else()
     elseif (ARCH_RISCV64)
         list(APPEND REQUIRED_LLVM_LIBRARIES LLVMRISCVInfo LLVMRISCVDesc LLVMRISCVCodeGen)
     endif ()
+
+    if (ENABLE_XRAY)
+        list(APPEND REQUIRED_LLVM_LIBRARIES LLVMXRay)
+    endif ()
 endif()
 
 
