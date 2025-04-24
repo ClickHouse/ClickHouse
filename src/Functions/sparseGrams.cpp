@@ -155,7 +155,7 @@ private:
     /// For example, if we have n-gram hashes like [1,5,2,4,1,3] and current right position is 4 (the last one)
     /// than our convex hull will consists of elements:
     /// [{position:1, hash:5}, {position:3, hash:4}, {position:4,hash:1}]
-    /// Assuming that hashes are uniformly distributed, the expected size of convex_hull is N^{1/3}, 
+    /// Assuming that hashes are uniformly distributed, the expected size of convex_hull is N^{1/3},
     /// where N is the length of the string.
     /// Proof: https://math.stackexchange.com/questions/3469295/expected-number-of-vertices-in-a-convex-hull
     std::vector<PositionAndHash> convex_hull;
@@ -212,7 +212,7 @@ private:
             if (!consume())
                 return std::nullopt;
 
-            return getNextIndices();            
+            return getNextIndices();
         }
 
         return result[iter_result++];
