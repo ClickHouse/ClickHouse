@@ -532,58 +532,77 @@ struct ByteAffineGapDistanceImpl
             needle_size = needle_codepoints.size();
         }
         
-        /// Three dynamic programming matrices:
-        /// m_matrix: represents match/mismatch
-        /// x_matrix: represents gap in sequence 1 (haystack)
-        /// y_matrix: represents gap in sequence 2 (needle)
-        
-        /// Initialize matrices
+        /// Three dynamic programming matrices for affine gap alignment:
+        /// This algorithm uses three matrices to track different alignment states:
+        /// 1. m_matrix[i][j]: Represents the optimal score when aligning positions i and j
+        ///    with a match/mismatch (no gap). This is the main alignment matrix.
+        /// 2. x_matrix[i][j]: Represents the optimal score when aligning position i with a gap
+        ///    in the second sequence (needle). This tracks deletions in the first sequence.
+        /// 3. y_matrix[i][j]: Represents the optimal score when aligning position j with a gap
+        ///    in the first sequence (haystack). This tracks insertions in the second sequence.
+
         std::vector<std::vector<double>> m_matrix(haystack_size + 1, std::vector<double>(needle_size + 1, big_value));
         std::vector<std::vector<double>> x_matrix(haystack_size + 1, std::vector<double>(needle_size + 1, big_value));
         std::vector<std::vector<double>> y_matrix(haystack_size + 1, std::vector<double>(needle_size + 1, big_value));
         
-        /// Initialize matrices with safe values
         m_matrix[0][0] = 0.0;
         x_matrix[0][0] = gap_open;
         y_matrix[0][0] = gap_open;
         
+        /// Initialize first column: represents aligning haystack with empty needle
+        /// For each position i, the cost is gap_open + (i-1)*gap_extend
         for (size_t i = 1; i <= haystack_size; ++i)
         {
-            m_matrix[i][0] = big_value;      // Invalid transition
-            x_matrix[i][0] = gap_open + gap_extend * (i - 1);
+            m_matrix[i][0] = big_value;      // Invalid transition - can't match with empty string
+            x_matrix[i][0] = gap_open + gap_extend * (i - 1);  // Cost of i-1 gap extensions
             y_matrix[i][0] = big_value;      // Invalid transition
         }
         
+        /// Initialize first row: represents aligning needle with empty haystack
+        /// For each position j, the cost is gap_open + (j-1)*gap_extend
         for (size_t j = 1; j <= needle_size; ++j)
         {
-            m_matrix[0][j] = big_value;      // Invalid transition
+            m_matrix[0][j] = big_value;      // Invalid transition - can't match with empty string
             x_matrix[0][j] = big_value;      // Invalid transition
-            y_matrix[0][j] = gap_open + gap_extend * (j - 1);
+            y_matrix[0][j] = gap_open + gap_extend * (j - 1);  // Cost of j-1 gap extensions
         }
         
-        /// Fill in the matrices
+        /// Fill in the matrices using dynamic programming
+        /// For each position (i,j), we consider three possible alignments:
+        /// 1. Match/mismatch: align characters at positions i and j
+        /// 2. Deletion: align character at i with a gap in needle
+        /// 3. Insertion: align character at j with a gap in haystack
         for (size_t i = 1; i <= haystack_size; ++i)
         {
             for (size_t j = 1; j <= needle_size; ++j)
             {
+                /// Check if characters at positions i-1 and j-1 match
                 bool match;
                 if constexpr (is_utf8)
                     match = haystack_codepoints[i-1] == needle_codepoints[j-1];
                 else
                     match = haystack[i-1] == needle[j-1];
                 
+                /// Cost of match/mismatch: 0 for match, mismatch penalty for mismatch
                 double match_cost = match ? 0.0 : mismatch;
                 
-                /// Match or mismatch
+                /// Update match/mismatch matrix (m_matrix):
+                /// 1. Extend previous match/mismatch
+                /// 2. Extend previous deletion with a match/mismatch
+                /// 3. Extend previous insertion with a match/mismatch
                 m_matrix[i][j] = m_matrix[i-1][j-1] + match_cost;
                 m_matrix[i][j] = std::min(m_matrix[i][j], x_matrix[i-1][j-1] + match_cost);
                 m_matrix[i][j] = std::min(m_matrix[i][j], y_matrix[i-1][j-1] + match_cost);
                 
-                /// Gap in haystack (deletion)
+                /// Update deletion matrix (x_matrix):
+                /// 1. Start a new deletion from a match/mismatch
+                /// 2. Extend an existing deletion
                 x_matrix[i][j] = m_matrix[i-1][j] + gap_open;
                 x_matrix[i][j] = std::min(x_matrix[i][j], x_matrix[i-1][j] + gap_extend);
                 
-                /// Gap in needle (insertion)
+                /// Update insertion matrix (y_matrix):
+                /// 1. Start a new insertion from a match/mismatch
+                /// 2. Extend an existing insertion
                 y_matrix[i][j] = m_matrix[i][j-1] + gap_open;
                 y_matrix[i][j] = std::min(y_matrix[i][j], y_matrix[i][j-1] + gap_extend);
             }
@@ -709,6 +728,10 @@ private:
         if (m == 0 || n == 0)
             return 0.0;
 
+        /// Dynamic programming matrix for SMASH similarity:
+        /// dp[i][j] represents the minimum distance to match the first i words
+        /// with the first j characters of the short string.
+
         std::vector<std::vector<double>> dp(m + 1, std::vector<double>(n + 1, std::numeric_limits<double>::infinity()));
         dp[0][0] = 0.0;
 
@@ -727,10 +750,17 @@ private:
                             ErrorCodes::TOO_LARGE_STRING_SIZE,
                             "Operation timeout: SMASH similarity calculation took more than 5 seconds");
                     }
+                    
+                    /// Get the current word and the substring to compare it with
                     auto current_word = words[i - 1];
                     auto substring = short_str.substr(k, j - k);
 
+                    /// Calculate the distance between the word and substring
+                    /// using affine gap distance for more accurate comparison
                     double dist = calculateDistance(current_word, substring);
+                    
+                    /// Update the dp matrix with the new distance
+                    /// dp[i][j] = min(dp[i][j], dp[i-1][k] + dist)
                     double new_dist = dp[i - 1][k] + dist;
                     dp[i][j] = std::min(new_dist, dp[i][j]);
                 }
