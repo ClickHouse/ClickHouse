@@ -47,7 +47,7 @@ RUN apt-get update \
     && apt-get install --yes \
         libgmp-dev \
         libmpfr-dev \
-RUN wget https://sourceware.org/pub/gdb/releases/gdb-$GDB_VERSION.tar.gz \
+    && wget https://sourceware.org/pub/gdb/releases/gdb-$GDB_VERSION.tar.gz \
     && tar -xvf gdb-$GDB_VERSION.tar.gz \
     && cd gdb-$GDB_VERSION \
     && ./configure --prefix=/opt/gdb --with-separate-debug-dir=/usr/lib/debug \
