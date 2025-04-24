@@ -36,7 +36,7 @@ public:
     /// Writes progress in repeating HTTP headers.
     void onProgress(const Progress & progress);
 
-    // void onProgressSSE(const Progress & progress);
+    void onProgressSSE(const Progress & progress);
 
     /// Turn CORS on or off.
     /// The setting has any effect only if HTTP headers haven't been sent yet.

@@ -306,7 +306,6 @@ void HTTPHandler::processQuery(
     LOG_DEBUG(log, "Is event stream enabled: {}", is_event_stream_enabled);
         
 
-    // LOG_DEBUG(log, "Params FORMAT before: {}", params.get("format"));
     used_output.out_holder =
     std::make_shared<WriteBufferFromHTTPServerResponse>(
         response,
@@ -317,7 +316,6 @@ void HTTPHandler::processQuery(
         writeEventStreamHeader(response);
     }
 
-    // LOG_DEBUG(log, "Params FORMAT after: {}", params.get("format"));
 
     used_output.out_maybe_compressed = used_output.out_holder;
     used_output.out = used_output.out_holder;
