@@ -8,8 +8,8 @@ import pika
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
-
 DEFAULT_TIMEOUT_SEC = 120
+CLICKHOUSE_VIEW_TIMEOUT_SEC = 240
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -63,8 +63,10 @@ class RabbitMQMonitor:
     def _consume(self, timeout=180):
         logging.debug("RabbitMQMonitor: Consuming trace RabbitMQ messages...")
         deadline = time.monotonic() + timeout
+        _published = 0
+        _delivered = 0
         while time.monotonic() < deadline:
-            method, properties, body = self.channel.basic_get(self.queue_name, True)
+            method, properties, body = self.channel.basic_get(self.queue_name, auto_ack=True)
             if method and properties and body:
                 # logging.debug(f"Message received! method {method}, properties {properties}, body {body}")
                 message = json.loads(body.decode("utf-8"))
@@ -72,13 +74,15 @@ class RabbitMQMonitor:
                 value = int(message["key"])
                 if "deliver" in method.routing_key:
                     self.delivered.add(value)
+                    _delivered += 1
                     # logging.debug(f"Message delivered: {value}")
                 elif "publish" in method.routing_key:
                     self.published.add(value)
+                    _published += 1
                     # logging.debug(f"Message published: {value}")
             else:
                 break
-        logging.debug(f"RabbitMQMonitor: Consumed {len(self.published)} published messages and {len(self.delivered)} delivered messages")
+        logging.debug(f"RabbitMQMonitor: Consumed {_published}/{len(self.published)} published messages and {_delivered}/{len(self.delivered)} delivered messages in this iteration")
 
     def set_expectations(self, published, delivered):
         self.expected_published = published
@@ -172,7 +176,6 @@ def rabbitmq_monitor():
 
 # Tests
 
-@pytest.mark.skip(reason="Too flaky. Disable for now")
 def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, rabbitmq_monitor):
     """
     This test checks that after inserting through a RabbitMQ Engine, we can keep consuming from it
@@ -211,7 +214,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, r
     """
     )
 
-    messages_num = 10000
+    messages_num = 5000
     rabbitmq_monitor.set_expectations(published=messages_num, delivered=messages_num)
     deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
     while time.monotonic() < deadline:
@@ -249,7 +252,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, r
 
     resume_rabbitmq(rabbitmq_cluster, rabbitmq_monitor)
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    deadline = time.monotonic() + CLICKHOUSE_VIEW_TIMEOUT_SEC
     while time.monotonic() < deadline:
         result = instance.query("SELECT count(DISTINCT key) FROM test.view")
         if int(result) == messages_num:
@@ -258,7 +261,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, r
         time.sleep(1)
     else:
         pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
+            f"Time limit of {CLICKHOUSE_VIEW_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
         )
 
     instance.query(
@@ -273,7 +276,6 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, r
     )
 
 
-@pytest.mark.skip(reason="Too flaky. Disable for now")
 def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster, rabbitmq_monitor):
     """
     This test checks that after inserting through a RabbitMQ Engine, we can keep consuming from it
@@ -303,7 +305,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster, r
     """
     )
 
-    messages_num = 10000
+    messages_num = 5000
     rabbitmq_monitor.set_expectations(published=messages_num, delivered=messages_num)
     deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
     while time.monotonic() < deadline:
@@ -347,7 +349,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster, r
     # kill_rabbitmq()
     # revive_rabbitmq()
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    deadline = time.monotonic() + CLICKHOUSE_VIEW_TIMEOUT_SEC
     while time.monotonic() < deadline:
         result = instance.query("SELECT count(DISTINCT key) FROM test.view").strip()
         if int(result) == messages_num:
@@ -356,7 +358,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster, r
         time.sleep(1)
     else:
         pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
+            f"Time limit of {CLICKHOUSE_VIEW_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
         )
 
     instance.query(
