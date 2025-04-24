@@ -1,8 +1,12 @@
+import logging
 import random
+import threading
 import time
+from multiprocessing.dummy import Pool
 
 import pytest
 
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
@@ -18,6 +22,7 @@ node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/config.xml"],
     dictionaries=DICTIONARY_FILES,
+    with_zookeeper=True,
     stay_alive=True,
 )
 
@@ -27,6 +32,7 @@ node2 = cluster.add_instance(
         "configs/async_load_system_database.xml",
     ],
     dictionaries=DICTIONARY_FILES,
+    with_zookeeper=True,
     stay_alive=True,
 )
 
@@ -36,13 +42,18 @@ def started_cluster():
     try:
         cluster.start()
 
+        nodenum = 1
         for node in [node1, node2]:
             node.query(
-                """
+                f"""
                 CREATE DATABASE IF NOT EXISTS dict ENGINE=Dictionary;
                 CREATE DATABASE IF NOT EXISTS test;
+                CREATE TABLE test_table_src(date Date, id UInt32, dummy UInt32)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_table', '{nodenum}')
+                PARTITION BY date ORDER BY id
                 """
             )
+            nodenum += 1
 
         yield cluster
 
@@ -242,3 +253,179 @@ def test_async_load_system_database(started_cluster):
     for i in range(id - 1):
         node2.query(f"drop table if exists system.text_log_{i + 1}_test")
         node2.query(f"drop table if exists system.query_log_{i + 1}_test")
+
+
+def test_materialized_views(started_cluster):
+    query = node1.query
+    query("create database test_mv")
+    query("create table test_mv.t (Id UInt64) engine=MergeTree order by Id")
+    query("create table test_mv.a (Id UInt64) engine=MergeTree order by Id")
+    query("create table test_mv.z (Id UInt64) engine=MergeTree order by Id")
+    query("create materialized view t_to_a to test_mv.a as select Id from test_mv.t")
+    query("create materialized view t_to_z to test_mv.z as select Id from test_mv.t")
+
+    node1.restart_clickhouse()
+    query("insert into test_mv.t values(42)")
+    assert query("select * from test_mv.a Format CSV") == "42\n"
+    assert query("select * from test_mv.z Format CSV") == "42\n"
+
+    query("drop view t_to_a")
+    query("drop view t_to_z")
+    query("drop table test_mv.t")
+    query("drop table test_mv.a")
+    query("drop table test_mv.z")
+    query("drop database test_mv")
+
+
+def test_materialized_views_cascaded(started_cluster):
+    query = node1.query
+    query("create database test_mv")
+    query("create table test_mv.t (Id UInt64) engine=MergeTree order by Id")
+    query("create table test_mv.a (Id UInt64) engine=MergeTree order by Id")
+    query("create table test_mv.z (Id UInt64) engine=MergeTree order by Id")
+    query("create materialized view t_to_a to test_mv.a as select Id from test_mv.t")
+    query("create materialized view a_to_z to test_mv.z as select Id from test_mv.a")
+
+    node1.restart_clickhouse()
+    query("insert into test_mv.t values(42)")
+    assert query("select * from test_mv.a Format CSV") == "42\n"
+    assert query("select * from test_mv.z Format CSV") == "42\n"
+
+    query("drop view t_to_a")
+    query("drop view a_to_z")
+    query("drop table test_mv.t")
+    query("drop table test_mv.a")
+    query("drop table test_mv.z")
+    query("drop database test_mv")
+
+
+def test_materialized_views_cascaded_multiple(started_cluster):
+    query = node1.query
+    query("create database test_mv")
+    query("create table test_mv.t (Id UInt64) engine=MergeTree order by Id")
+    query("create table test_mv.a (Id UInt64) engine=MergeTree order by Id")
+    query("create table test_mv.x (IdText String) engine=MergeTree order by IdText")
+    query(
+        "create table to_join (Id UInt64, IdBy100 UInt64) engine=MergeTree order by Id"
+    )  # default DB
+    query(
+        "create table test_mv.z (Id UInt64, IdTextLength UInt64) engine=MergeTree order by Id"
+    )
+    query(
+        "create table test_mv.zz (Id UInt64, IdBy100 UInt64) engine=MergeTree order by Id"
+    )
+    query(
+        "create materialized view t_to_a to test_mv.a as select Id from test_mv.t"
+    )  # default DB
+    query(
+        "create materialized view t_to_x to test_mv.x as select toString(Id) as IdText from test_mv.t"
+    )
+    query(
+        "create materialized view ax_to_z to test_mv.z as select Id, (select max(length(IdText)) from test_mv.x) as IdTextLength from test_mv.a"
+    )
+    query(
+        "create materialized view test_mv.join_to_zz to test_mv.zz as select Id, IdBy100 from test_mv.t INNER JOIN to_join USING(Id);"
+    )
+
+    query("insert into to_join values(42, 4200)")
+
+    node1.restart_clickhouse()
+    query("insert into test_mv.t values(42)")
+    assert query("select * from test_mv.a Format CSV") == "42\n"
+    assert query("select * from test_mv.x Format CSV") == '"42"\n'
+    assert query("select * from test_mv.z Format CSV") == "42,2\n"
+    assert query("select * from test_mv.zz Format CSV") == "42,4200\n"
+
+    query("drop view t_to_a sync")
+    query("drop view t_to_x sync")
+    query("drop view ax_to_z sync")
+    query("drop view test_mv.join_to_zz")
+    query("drop table test_mv.t sync")
+    query("drop table test_mv.a sync")
+    query("drop table test_mv.x sync")
+    query("drop table test_mv.z sync")
+    query("drop table test_mv.zz sync")
+    query("drop table to_join sync")
+    query("drop database test_mv sync")
+
+
+def test_materialized_views_replicated(started_cluster):
+    nodenum = 1
+    for node in [node1, node2]:
+        node.query(
+            f"""
+            CREATE DATABASE test_mv;
+            CREATE TABLE test_mv.test_table_H(id UInt32)
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_table_H', '{nodenum}')
+            ORDER BY id;
+            CREATE TABLE test_mv.test_table_S(id UInt32)
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_table_S', '{nodenum}')
+            ORDER BY id;
+            CREATE MATERIALIZED VIEW test_mv.test_mv TO test_mv.test_table_S
+            AS SELECT id FROM test_mv.test_table_H;
+            """
+        )
+        nodenum += 1
+
+    for i in range(100):
+        node1.query(
+            f"INSERT INTO test_mv.test_table_H VALUES({i}) "
+        )
+
+    node1.stop_clickhouse()
+
+    disconnect_event = threading.Event()
+    p = Pool(1)
+
+    def reload_node(node, event):
+        node.restart_clickhouse()
+        logging.debug("CH started, setting event")
+        event.set()
+    job = p.apply_async(
+        reload_node,
+        (
+            node1,
+            disconnect_event,
+        )
+    )
+
+    # start INSERTS when CH is not started yet
+    for i in range(100, 130):
+        try:
+            node1.query(
+                f"INSERT INTO test_mv.test_table_H VALUES({i})"
+            )
+            logging.debug(f"{i} inserted")
+        except QueryRuntimeException as e:
+            # CH is not started yet
+            logging.debug(f"{i} is not inserted - skip")
+            time.sleep(0.2)
+
+
+    disconnect_event.wait(90)
+
+    for i in range(2000, 2100):
+        node1.query(
+            f"INSERT INTO test_mv.test_table_H VALUES({i})"
+        )
+
+    src_rows = node1.query("select count(*) from test_mv.test_table_H Format CSV")
+    logging.debug(f"{src_rows} are found in test_mv.test_table_H (src)")
+
+    job.wait()
+    p.close()
+    p.join()
+
+    assert (
+        node1.query("select count(*) from test_mv.test_table_S Format CSV") == src_rows
+    )
+
+    for node in [node1, node2]:
+        node.query(
+            f"""
+            DROP TABLE test_mv.test_table_H SYNC;
+            DROP TABLE test_mv.test_table_S SYNC;
+            DROP VIEW test_mv.test_mv SYNC;
+            DROP DATABASE test_mv SYNC;
+            """
+        )
