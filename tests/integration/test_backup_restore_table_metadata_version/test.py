@@ -20,38 +20,45 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
+
+backup_id_counter = 0
+
+def new_backup_name():
+    global backup_id_counter
+    backup_id_counter += 1
+    return f"Disk('backups', '{backup_id_counter}/')"
+
 # based on https://github.com/ClickHouse/ClickHouse/issues/67457
 
 def test_restore_table_metadata_version(start_cluster):
     node.query("CREATE DATABASE IF NOT EXISTS test_db;")
-    node.query("DROP TABLE IF EXISTS test_db.t")
+    node.query("DROP TABLE IF EXISTS test_db.t1 SYNC")
+    node.query("DROP TABLE IF EXISTS test_db.t2 SYNC")
 
-    create_table_query = """
-        CREATE TABLE test_db.t (
-            id UInt64,
-            name Nullable(String)
-        ) ENGINE = ReplicatedReplacingMergeTree(
-              '/clickhouse/tables/test_db/t', '{replica}'
-        ) 
-        PRIMARY KEY id
-        ORDER BY id;
-    """
-    node.query(create_table_query)
+    for table_name in ["t1", "t2"]:
+        create_table_query = f"""
+            CREATE TABLE test_db.{table_name} (
+                id UInt64,
+                name Nullable(String)
+            ) ENGINE = ReplicatedReplacingMergeTree(
+                  '/clickhouse/tables/test_db/{table_name}', '{{replica}}'
+            ) 
+            PRIMARY KEY id
+            ORDER BY id;
+        """
+        node.query(create_table_query)
 
-
-    node.query("INSERT INTO test_db.t SELECT number, toString(number) FROM numbers(30);")
+    node.query("INSERT INTO test_db.t1 SELECT number, toString(number) FROM numbers(30);")
 
     # Modify table (add column) so that metadata version is incremented
-    node.query("ALTER TABLE test_db.t ADD COLUMN `surname` Nullable(String) after `name` SETTINGS alter_sync = 2")
+    node.query("ALTER TABLE test_db.t1 ADD COLUMN `surname` Nullable(String) after `name` SETTINGS alter_sync = 2")
 
-    node.query("SYSTEM SYNC REPLICA test_db.t")
-
-    # backup, drop, restore
-    node.query("BACKUP TABLE test_db.t TO Disk('backups', 'bkp1') SETTINGS structure_only=true")
-
-    node.query("DROP TABLE test_db.t SYNC;")
-
-    node.query("RESTORE TABLE test_db.t FROM Disk('backups', 'bkp1') SETTINGS structure_only=true")
+    backup_name = new_backup_name()
+    node.query(f"BACKUP TABLE test_db.t1 TO {backup_name} SETTINGS structure_only=true")
+    node.query("DROP TABLE test_db.t1 SYNC;")
+    node.query(f"RESTORE TABLE test_db.t1 AS test_db.t2 FROM {backup_name} SETTINGS structure_only=true, allow_different_table_def=true")
 
 
-    assert node.query("select metadata_version from system.tables where database='test_db' and name='t';") == "1\n"
+    assert node.query("select metadata_version from system.tables where database='test_db' and name='t2';") == "1\n"
+    node.query("DROP TABLE IF EXISTS test_db.t1 SYNC")
+    node.query("DROP TABLE IF EXISTS test_db.t2 SYNC")
