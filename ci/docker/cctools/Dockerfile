@@ -104,13 +104,21 @@ RUN wget https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz && \
     make install_fips && \
     mv "${PREFIX}/ssl/openssl.cnf.dist" "${PREFIX}/ssl/openssl.cnf"
 
-# We will put fipsmodule.cnf to /etc/ssl in target containers
-RUN echo ".include /etc/ssl/fipsmodule.cnf" >> ${PREFIX}/ssl/openssl.cnf
+# Patching fipsmodule.cnf with a custom module location.
+RUN cat >> ${PREFIX}/ssl/fipsmodule.cnf <<EOF
+install-version = 1
+module = /etc/ssl/fips.so
+EOF
 
 # Patching openssl.cnf to enable FIPS provider.
 # Although documentation mentions setting "default_properties = fips=yes",
-# we don't want to set it, as it will enable FIPS mode for each and every application (they will break).
+# we don't want to set it, as it will force FIPS mode
+# for any OpenSSL usage in system (things will break).
+#
+# We will put fipsmodule.cnf to /etc/ssl in target containers
 RUN cat >> ${PREFIX}/ssl/openssl.cnf <<EOF
+
+.include /etc/ssl/fipsmodule.cnf
 
 [openssl_init]
 providers = provider_sect
