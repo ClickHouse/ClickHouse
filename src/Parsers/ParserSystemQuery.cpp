@@ -736,27 +736,43 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::INSTRUMENT_ADD:
         case Type::INSTRUMENT_REMOVE:
         {
-            String handler;
-            ASTPtr temporary_string_literal;
-            if (ParserStringLiteral{}.parse(pos, temporary_string_literal, expected))
-            {
-                handler = temporary_string_literal->as<ASTLiteral &>().value.safeGet<String>();
-            }
-            res->handler = std::move(handler);
+            String function_name;
+            ASTPtr temporary_identifier;
+            if (ParserIdentifier{}.parse(pos, temporary_identifier, expected))
+                function_name = temporary_identifier->as<ASTIdentifier &>().name();
+            else
+                return false;
+            res->function_name = std::move(function_name);
 
-            String function;
-            if (ParserStringLiteral{}.parse(pos, temporary_string_literal, expected))
+            String handler_name;
+            if (ParserIdentifier{}.parse(pos, temporary_identifier, expected))
             {
-                function = temporary_string_literal->as<ASTLiteral &>().value.safeGet<String>();
+                handler_name = temporary_identifier->as<ASTIdentifier &>().name();
             }
-            res->function = std::move(function);
+            res->handler_name = std::move(handler_name);
 
             do
             {
-                ASTPtr params;
-                if (!ParserStringLiteral{}.parse(pos, params, expected))
+                ASTPtr params_ast;
+                if (!ParserStringLiteral{}.parse(pos, params_ast, expected))
                     return false;
-                res->parameters.emplace_back(params->as<ASTLiteral &>().value.safeGet<String>());
+                const auto & value = params_ast->as<ASTLiteral &>().value;
+                if (value.getType() == Field::Types::String)
+                {
+                    res->parameters->emplace_back(value.safeGet<String>());
+                }
+                else if (value.getType() == Field::Types::Int64)
+                {
+                    res->parameters->emplace_back(value.safeGet<Int64>());
+                }
+                else if (value.getType() == Field::Types::UInt64)
+                {
+                    res->parameters->emplace_back(static_cast<Int64>(value.safeGet<UInt64>()));
+                }
+                else if (value.getType() == Field::Types::Float64)
+                {
+                    res->parameters->emplace_back(value.safeGet<Float64>());
+                }
             } while (ParserToken{TokenType::Comma}.ignore(pos, expected));
 
             break;
