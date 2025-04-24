@@ -343,7 +343,7 @@ void AzureObjectStorage::applyNewSettings(
     ContextPtr context,
     const ApplyNewSettingsOptions & options)
 {
-    auto new_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context);
+    auto new_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
     settings.set(std::move(new_settings));
 
     if (!options.allow_client_change)
@@ -369,7 +369,7 @@ std::unique_ptr<IObjectStorage> AzureObjectStorage::cloneObjectStorage(
     const std::string & config_prefix,
     ContextPtr context)
 {
-    auto new_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context);
+    auto new_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
     bool is_client_for_disk = client.get()->IsClientForDisk();
 
     AzureBlobStorage::ConnectionParams params

@@ -155,10 +155,27 @@ BlobClientOptions getClientOptions(const RequestSettings & settings, bool for_di
 AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
 std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_settings);
-std::unique_ptr<RequestSettings> getRequestSettingsForBackup(const Settings & query_settings, bool use_native_copy);
-std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context);
+std::unique_ptr<RequestSettings> getRequestSettingsForBackup(ContextPtr context, String endpoint, bool use_native_copy);
+std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Settings & settings_ref);
 
 }
+
+class AzureSettingsByEndpoint
+{
+public:
+    void loadFromConfig(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        const DB::Settings & settings);
+
+    std::optional<AzureBlobStorage::RequestSettings> getSettings(
+        const std::string & endpoint) const;
+
+private:
+    mutable std::mutex mutex;
+    std::map<const String, const AzureBlobStorage::RequestSettings> azure_settings;
+};
+
 
 }
 

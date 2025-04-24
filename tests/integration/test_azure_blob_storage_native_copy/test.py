@@ -34,11 +34,9 @@ def generate_config(port):
                         <metadata_type>local</metadata_type>
                         <type>object_storage</type>
                         <object_storage_type>azure_blob_storage</object_storage_type>
-                        <storage_account_url>http://azurite1:{port}/devstoreaccount1/</storage_account_url>
+                        <connection_string>DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:{port}/devstoreaccount1;</connection_string>
                         <container_name>cont</container_name>
                         <skip_access_check>false</skip_access_check>
-                        <account_name>devstoreaccount1</account_name>
-                        <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
                         <use_native_copy>true</use_native_copy>
                     </disk_azure>
                     <disk_azure_other_bucket>
@@ -244,7 +242,7 @@ def test_backup_restore_on_merge_tree_native_copy_async(cluster):
 
     azure_query(
         node3,
-        f"RESTORE TABLE test_simple_merge_tree_async AS test_simple_merge_tree_async_restored FROM {backup_destination};",
+        f"RESTORE TABLE test_simple_merge_tree_async AS test_simple_merge_tree_async_restored FROM {backup_destination} SETTINGS allow_azure_native_copy=0;",
         settings={"azure_max_single_part_copy_size": 0},
     )
     assert (

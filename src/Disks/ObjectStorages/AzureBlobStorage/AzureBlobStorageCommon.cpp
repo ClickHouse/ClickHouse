@@ -12,6 +12,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
 #include <filesystem>
+#include <Common/logger_useful.h>
 
 namespace ProfileEvents
 {
@@ -428,17 +429,25 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_setti
     return settings;
 }
 
-std::unique_ptr<RequestSettings> getRequestSettingsForBackup(const Settings & query_settings, bool use_native_copy)
+std::unique_ptr<RequestSettings> getRequestSettingsForBackup(ContextPtr context, String endpoint, bool use_native_copy)
 {
-    auto settings = getRequestSettings(query_settings);
-    settings->use_native_copy = use_native_copy;
+    auto settings = getRequestSettings(context->getSettingsRef());
+
+    if (use_native_copy)
+        settings->use_native_copy = use_native_copy;
+    else
+    {
+        auto endpoint_settings = context->getStorageAzureSettings().getSettings(endpoint);
+        if (endpoint_settings)
+            settings->use_native_copy = endpoint_settings->use_native_copy;
+    }
+
     return settings;
 }
 
-std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
+std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Settings & settings_ref)
 {
     auto settings = std::make_unique<RequestSettings>();
-    const auto & settings_ref = context->getSettingsRef();
 
     settings->min_bytes_for_seek = config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024);
     settings->use_native_copy = config.getBool(config_prefix + ".use_native_copy", false);
@@ -480,6 +489,73 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractCo
 }
 
 }
+
+
+void AzureSettingsByEndpoint::loadFromConfig(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    const DB::Settings & settings)
+{
+    std::lock_guard lock(mutex);
+    azure_settings.clear();
+    if (!config.has(config_prefix))
+        return;
+
+
+    Poco::Util::AbstractConfiguration::Keys config_keys;
+    config.keys(config_prefix, config_keys);
+
+    for (const String & key : config_keys)
+    {
+        const auto key_path = config_prefix + "." + key;
+        String endpoint_path = key_path + ".connection_string";
+
+        if (!config.has(endpoint_path))
+        {
+            endpoint_path = key_path + ".storage_account_url";
+
+            if (!config.has(endpoint_path))
+            {
+                endpoint_path = key_path + ".endpoint";
+
+                if (!config.has(endpoint_path))
+                {
+                    /// Error, shouldnt hit this todo:: throw error
+                    continue;
+                }
+            }
+        }
+
+        auto request_settings = AzureBlobStorage::getRequestSettings(config, key_path, settings);
+
+        azure_settings.emplace(
+                config.getString(endpoint_path),
+                std::move(*request_settings.get()));
+
+    }
+}
+
+std::optional<AzureBlobStorage::RequestSettings> AzureSettingsByEndpoint::getSettings(
+    const String & endpoint) const
+{
+    std::lock_guard lock(mutex);
+    auto next_prefix_setting = azure_settings.upper_bound(endpoint);
+
+    /// Linear time algorithm may be replaced with logarithmic with prefix tree map.
+    for (auto possible_prefix_setting = next_prefix_setting; possible_prefix_setting != azure_settings.begin();)
+    {
+        std::advance(possible_prefix_setting, -1);
+        const auto & [endpoint_prefix, settings] = *possible_prefix_setting;
+        if (endpoint.starts_with(endpoint_prefix))
+            return possible_prefix_setting->second;
+    }
+
+    return {};
+}
+
+
+
+
 
 }
 

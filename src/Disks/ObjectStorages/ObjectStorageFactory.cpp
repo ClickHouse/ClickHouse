@@ -296,7 +296,7 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
-        auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context);
+        auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
 
         AzureBlobStorage::ConnectionParams params
         {
