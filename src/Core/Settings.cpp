@@ -6642,7 +6642,7 @@ Trigger processor to spill data into external storage adpatively. grace join is 
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_delta_kernel_rs, true, R"(
 Allow experimental delta-kernel-rs implementation.
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(Bool, make_distributed_plan, false, R"(
 Make distributed query plan.
 )", EXPERIMENTAL) \
