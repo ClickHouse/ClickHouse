@@ -10,6 +10,7 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/UserDefinedFunction.h>
+#include <Functions/UserDefined/UserDefinedDriverFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
@@ -84,114 +85,6 @@ UserDefinedDriverFunctionFactory & UserDefinedDriverFunctionFactory::instance()
     return result;
 }
 
-void UserDefinedDriverFunctionFactory::checkCanBeRegistered(const String & function_name, const ASTPtr & query) const
-{
-    if (FunctionFactory::instance().hasNameOrAlias(function_name))
-        throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The function '{}' already exists", function_name);
-
-    if (AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
-        throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The aggregate function '{}' already exists", function_name);
-
-    if (UserDefinedSQLFunctionFactory::instance().has(function_name))
-        throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined SQL function '{}' already exists", function_name);
-
-    if (UserDefinedExecutableFunctionFactory::instance().has(function_name, global_context)) /// NOLINT(readability-static-accessed-through-instance)
-        throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined executable function '{}' already exists", function_name);
-
-    checkDriverExists(query);
-}
-
-void UserDefinedDriverFunctionFactory::checkCanBeUnregistered(const String & function_name)
-{
-    if (FunctionFactory::instance().hasNameOrAlias(function_name) ||
-        AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
-        throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop system function '{}'", function_name);
-
-    if (UserDefinedSQLFunctionFactory::instance().has(function_name))
-        throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop user defined SQL function '{}'", function_name);
-
-    if (UserDefinedExecutableFunctionFactory::instance().has(function_name, global_context)) /// NOLINT(readability-static-accessed-through-instance)
-        throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop user defined executable function '{}'", function_name);
-}
-
-void UserDefinedDriverFunctionFactory::checkDriverExists(const ASTPtr & query) const
-{
-    auto create_driver_function = query->as<ASTCreateDriverFunctionQuery &>();
-    auto engine_name = create_driver_function.getEngineName();
-
-    if (!global_context->getUserDefinedDriversStorage().has(engine_name))
-        throw Exception(ErrorCodes::UNSUPPORTED_DRIVER, "Cannot find a driver with engine name '{}'", engine_name);
-}
-
-UserDefinedExecutableFunctionPtr UserDefinedDriverFunctionFactory::createUserDefinedFunction(const ASTCreateDriverFunctionQuery & query, const DriverConfigurationPtr & driver) const
-{
-    String command = driver->command;
-
-    if (driver->is_file)
-    {
-        auto user_scripts_path = global_context->getUserScriptsPath();
-        auto path_to_file = user_scripts_path + "/" + driver->file_name;
-        if (!FS::exists(path_to_file))
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Executable file {} does not exist inside user scripts folder {}",
-                command,
-                user_scripts_path);
-
-        command += " " + path_to_file;
-    }
-    else
-    {
-        auto code = query.getFunctionBody();
-        boost::algorithm::replace_all(command, "\'", "\\\'");
-        command += " \'" + code + "\'";
-    }
-
-    if (!driver->container_command.empty())
-    {
-        boost::algorithm::replace_all(command, "\"", "\\\"");
-        command = driver->container_command + " \"" + command + "\"";
-    }
-
-    std::vector<UserDefinedExecutableFunctionArgument> arguments;
-    for (auto & child : query.function_params->children)
-    {
-        auto * column = child->as<ASTNameTypePair>();
-        arguments.emplace_back(DataTypeFactory::instance().get(column->type), column->name);
-    }
-
-    auto result_type = DataTypeFactory::instance().get(query.function_return_type->as<ASTDataType>()->name);
-
-    UserDefinedExecutableFunctionConfiguration configuration
-    {
-        .name = query.getFunctionName(),
-        .command = std::move(command),
-        .command_arguments = {},
-        .arguments = std::move(arguments),
-        .parameters = {},
-        .result_type = result_type,
-        .result_name = "result",
-        .is_deterministic = false
-    };
-
-    ShellCommandSourceCoordinator::Configuration shell_command_coordinator_configration
-    {
-        .format = driver->format,
-        .command_termination_timeout_seconds = 10,
-        .command_read_timeout_milliseconds = 10000,
-        .command_write_timeout_milliseconds = 10000,
-        .stderr_reaction = parseExternalCommandStderrReaction("none"),
-        .check_exit_code = true,
-        .pool_size = 0,
-        .max_command_execution_time_seconds = 0,
-        .is_executable_pool = false,
-        .send_chunk_header = false,
-        .execute_direct = false
-    };
-
-    auto coordinator = std::make_shared<ShellCommandSourceCoordinator>(shell_command_coordinator_configration);
-    return std::make_shared<UserDefinedExecutableFunction>(std::move(configuration), std::move(coordinator));
-}
-
 bool UserDefinedDriverFunctionFactory::registerFunction(const ContextMutablePtr & context, const String & function_name, ASTPtr create_function_query, bool throw_if_exists, bool replace_if_exists)
 {
     checkCanBeRegistered(function_name, create_function_query);
@@ -254,11 +147,11 @@ FunctionOverloadResolverPtr UserDefinedDriverFunctionFactory::get(const String &
     auto create_query = ptr->as<ASTCreateDriverFunctionQuery &>();
 
     auto driver_name = create_query.getEngineName();
-    auto driver = global_context->getUserDefinedDriversStorage().get(driver_name);
+    auto driver = UserDefinedDriverFactory::instance().get(driver_name, global_context); /// NOLINT(readability-static-accessed-through-instance)
 
     auto executable_function = createUserDefinedFunction(create_query, driver);
-    Array parameters;
 
+    Array parameters;
     auto function = std::make_shared<UserDefinedFunction>(std::move(executable_function), global_context, parameters);
     return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(function));
 }
@@ -272,7 +165,7 @@ FunctionOverloadResolverPtr UserDefinedDriverFunctionFactory::tryGet(const Strin
     auto create_query = ptr->as<ASTCreateDriverFunctionQuery &>();
 
     auto driver_name = create_query.getEngineName();
-    auto driver = global_context->getUserDefinedDriversStorage().tryGet(driver_name);
+    auto driver = UserDefinedDriverFactory::instance().tryGet(driver_name, global_context); /// NOLINT(readability-static-accessed-through-instance)
     if (!driver)
         return nullptr;
 
@@ -298,4 +191,99 @@ bool UserDefinedDriverFunctionFactory::empty() const
     return global_context->getUserDefinedSQLObjectsStorage().empty(UserDefinedSQLObjectType::DriverFunction);
 }
 
+void UserDefinedDriverFunctionFactory::checkCanBeRegistered(const String & function_name, const ASTPtr & query) const
+{
+    if (FunctionFactory::instance().hasNameOrAlias(function_name))
+        throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The function '{}' already exists", function_name);
+
+    if (AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
+        throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The aggregate function '{}' already exists", function_name);
+
+    if (UserDefinedSQLFunctionFactory::instance().has(function_name))
+        throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined SQL function '{}' already exists", function_name);
+
+    if (UserDefinedExecutableFunctionFactory::instance().has(
+            function_name, global_context)) /// NOLINT(readability-static-accessed-through-instance)
+        throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined executable function '{}' already exists", function_name);
+
+    checkDriverExists(query);
+}
+
+void UserDefinedDriverFunctionFactory::checkCanBeUnregistered(const String & function_name)
+{
+    if (FunctionFactory::instance().hasNameOrAlias(function_name) || AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
+        throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop system function '{}'", function_name);
+
+    if (UserDefinedSQLFunctionFactory::instance().has(function_name))
+        throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop user defined SQL function '{}'", function_name);
+
+    if (UserDefinedExecutableFunctionFactory::instance().has(
+            function_name, global_context)) /// NOLINT(readability-static-accessed-through-instance)
+        throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop user defined executable function '{}'", function_name);
+}
+
+void UserDefinedDriverFunctionFactory::checkDriverExists(const ASTPtr & query) const
+{
+    auto create_driver_function = query->as<ASTCreateDriverFunctionQuery &>();
+    auto engine_name = create_driver_function.getEngineName();
+
+    auto names = UserDefinedDriverFactory::instance().getRegisteredNames(global_context); /// NOLINT(readability-static-accessed-through-instance)
+
+    if (!UserDefinedDriverFactory::instance().has(engine_name, global_context)) /// NOLINT(readability-static-accessed-through-instance)
+        throw Exception(ErrorCodes::UNSUPPORTED_DRIVER, "Cannot find a driver with engine name '{}', drivers size = {}", engine_name, names.size());
+}
+
+UserDefinedExecutableFunctionPtr UserDefinedDriverFunctionFactory::createUserDefinedFunction(
+    const ASTCreateDriverFunctionQuery & query, const UserDefinedDriverPtr & driver) const
+{
+    const auto & configuration = driver->getConfiguration();
+
+    std::vector<UserDefinedExecutableFunctionArgument> arguments;
+    for (auto & child : query.function_params->children)
+    {
+        auto * column = child->as<ASTNameTypePair>();
+        arguments.emplace_back(DataTypeFactory::instance().get(column->type), column->name);
+    }
+
+    auto result_type = DataTypeFactory::instance().get(query.function_return_type->as<ASTDataType>()->name);
+
+    auto command = configuration.command;
+    auto command_arguments = configuration.command_arguments;
+
+    const auto & code = query.getFunctionBody();
+    if (command_arguments.empty())
+    {
+        command += "\'" + code + "\'";
+    }
+    else
+    {
+        command_arguments.push_back("\'" + code + "\'");
+    }
+
+    UserDefinedExecutableFunctionConfiguration func_configuration{
+        .name = query.getFunctionName(),
+        .command = command,
+        .command_arguments = command_arguments,
+        .arguments = std::move(arguments),
+        .parameters = {},
+        .result_type = result_type,
+        .result_name = "result",
+        .is_deterministic = false};
+
+    ShellCommandSourceCoordinator::Configuration shell_command_coordinator_configration{
+        .format = configuration.format,
+        .command_termination_timeout_seconds = configuration.command_termination_timeout_seconds,
+        .command_read_timeout_milliseconds = configuration.command_read_timeout_milliseconds,
+        .command_write_timeout_milliseconds = configuration.command_write_timeout_milliseconds,
+        .stderr_reaction = configuration.stderr_reaction,
+        .check_exit_code = configuration.check_exit_code,
+        .pool_size = configuration.pool_size,
+        .max_command_execution_time_seconds = configuration.max_command_execution_time_seconds,
+        .is_executable_pool = configuration.is_executable_pool,
+        .send_chunk_header = configuration.send_chunk_header,
+        .execute_direct = configuration.execute_direct};
+
+    auto coordinator = std::make_shared<ShellCommandSourceCoordinator>(shell_command_coordinator_configration);
+    return std::make_shared<UserDefinedExecutableFunction>(std::move(func_configuration), std::move(coordinator));
+}
 }

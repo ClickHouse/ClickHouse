@@ -63,7 +63,7 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedDriversLoader::createObjec
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Wrong user defined driver type expected 'executable' or 'executable_pool' actual {}", type);
 
-    bool execute_direct = config.getBool(key_in_config + ".execute_direct", true);
+    bool execute_direct = config.getBool(key_in_config + ".execute_direct", false);
 
     String command_value = config.getString(key_in_config + ".command");
 

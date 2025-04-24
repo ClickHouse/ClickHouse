@@ -1,12 +1,9 @@
 #pragma once
 
-#include <string>
-#include <unordered_map>
-
 #include <Core/Field.h>
 #include <DataTypes/IDataType.h>
+#include <Functions/UserDefined/UserDefinedDriver.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunction.h>
-#include <Functions/UserDefined/UserDefinedDriversStorage.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateDriverFunctionQuery.h>
 
@@ -37,7 +34,7 @@ private:
     void checkCanBeRegistered(const String & function_name, const ASTPtr & query) const;
     void checkCanBeUnregistered(const String & function_name);
     void checkDriverExists(const ASTPtr & query) const;
-    UserDefinedExecutableFunctionPtr createUserDefinedFunction(const ASTCreateDriverFunctionQuery & query, const DriverConfigurationPtr & driver) const;
+    UserDefinedExecutableFunctionPtr createUserDefinedFunction(const ASTCreateDriverFunctionQuery & query, const UserDefinedDriverPtr & driver) const;
 
     ContextPtr global_context = Context::getGlobalContextInstance();
 };

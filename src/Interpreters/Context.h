@@ -973,6 +973,7 @@ public:
     IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage();
     void setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObjectsStorage> storage);
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
+    void loadOrReloadUserDefinedDrivers(const Poco::Util::AbstractConfiguration & config);
     const IUserDefinedDriversStorage & getUserDefinedDriversStorage() const;
     void setUserDefinedDriversStorage(std::unique_ptr<IUserDefinedDriversStorage> storage);
 
