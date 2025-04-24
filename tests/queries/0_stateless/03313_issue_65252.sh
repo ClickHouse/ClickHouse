@@ -1,18 +1,24 @@
 #!/usr/bin/env bash
-echo "----CLICKHOUSE SHORTCUT CHECKS-----"
-../../../build/programs/clickhouse --version
-../../../build/programs/clickhouse --host sdfsadf --version
-../../../build/programs/clickhouse -h sdfsadf --version
-../../../build/programs/clickhouse --port 9000 --version
-../../../build/programs/clickhouse --user qwr --version
-../../../build/programs/clickhouse -u qwr --version
-../../../build/programs/clickhouse --password secret --version
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
 
+
+echo "----CLICKHOUSE SHORTCUT CHECKS-----"
+$CLICKHOUSE_BINARY --version
+$CLICKHOUSE_BINARY --host sdfsadf --version
+$CLICKHOUSE_BINARY -h sdfsadf --version
+$CLICKHOUSE_BINARY --port 9000 --version
+$CLICKHOUSE_BINARY --user qwr --version
+$CLICKHOUSE_BINARY -u qwr --version
+$CLICKHOUSE_BINARY --password secret --version
+
+export CH_TMP="${CLICKHOUSE_BINARY%clickhouse}ch"
 echo "----CH SHORTCUT CHECKS-----"
-../../../build/programs/ch --version
-../../../build/programs/ch --host sdfsadf --version
-../../../build/programs/ch -h sdfsadf --version
-../../../build/programs/ch --port 9000 --version
-../../../build/programs/ch --user qwr --version
-../../../build/programs/ch -u qwr --version
-../../../build/programs/ch --password secret --version
+$CH_TMP --version
+$CH_TMP --host sdfsadf --version
+$CH_TMP -h sdfsadf --version
+$CH_TMP --port 9000 --version
+$CH_TMP --user qwr --version
+$CH_TMP -u qwr --version
+$CH_TMP --password secret --version

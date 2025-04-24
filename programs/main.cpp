@@ -71,14 +71,13 @@ int mainEntryClickHouseRestart(int argc, char ** argv);
 namespace
 {
 
-using MainFunc = int (*)(int, char**);
+using MainFunc = int (*)(int, char **);
 
 /// Add an item here to register new application.
 /// This list has a "priority" - e.g. we need to disambiguate clickhouse --format being
 /// either clickouse-format or clickhouse-{local, client} --format.
 /// Currently we will prefer the latter option.
-std::pair<std::string_view, MainFunc> clickhouse_applications[] =
-{
+std::pair<std::string_view, MainFunc> clickhouse_applications[] = {
     {"local", mainEntryClickHouseLocal},
     {"client", mainEntryClickHouseClient},
     {"benchmark", mainEntryClickHouseBenchmark},
@@ -97,7 +96,7 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"zookeeper-dump-tree", mainEntryClickHouseZooKeeperDumpTree},
     {"zookeeper-remove-by-list", mainEntryClickHouseZooKeeperRemoveByList},
 
-    // keeper
+// keeper
 #if ENABLE_CLICKHOUSE_KEEPER
     {"keeper", mainEntryClickHouseKeeper},
 #endif
@@ -130,27 +129,19 @@ int printHelp(int, char **)
 }
 
 /// Add an item here to register a new short name
-std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
-{
+std::pair<std::string_view, std::string_view> clickhouse_short_names[] = {
     {"chl", "local"},
     {"chc", "client"},
 };
 
-std::pair<std::string_view, std::string_view> clickhouse_client_args[] =
-{
-    {"h", "host"},
-    {"", "port"},
-    {"u", "user"},
-    {"", "password"}
-};
+std::pair<std::string_view, std::string_view> clickhouse_client_args[] = {{"h", "host"}, {"", "port"}, {"u", "user"}, {"", "password"}};
 
 }
 
 bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
 {
     for (const auto & [alias, name] : clickhouse_short_names)
-        if (app_suffix == name
-            && !argv.empty() && (alias == argv[0] || endsWith(argv[0], "/" + std::string(alias))))
+        if (app_suffix == name && !argv.empty() && (alias == argv[0] || endsWith(argv[0], "/" + std::string(alias))))
             return true;
 
     /// Use app if the first arg 'app' is passed (the arg should be quietly removed)
@@ -179,27 +170,26 @@ bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
 /// because it is insane.
 
 #if !defined(USE_MUSL)
-extern "C"
+extern "C" {
+void * dlopen(const char *, int)
 {
-    void * dlopen(const char *, int)
-    {
-        return nullptr;
-    }
+    return nullptr;
+}
 
-    void * dlmopen(long, const char *, int) // NOLINT
-    {
-        return nullptr;
-    }
+void * dlmopen(long, const char *, int) // NOLINT
+{
+    return nullptr;
+}
 
-    int dlclose(void *)
-    {
-        return 0;
-    }
+int dlclose(void *)
+{
+    return 0;
+}
 
-    const char * dlerror()
-    {
-        return "ClickHouse does not allow dynamic library loading";
-    }
+const char * dlerror()
+{
+    return "ClickHouse does not allow dynamic library loading";
+}
 }
 #endif
 
@@ -207,8 +197,11 @@ extern "C"
 /// Some of these messages are non-actionable for the users, such as:
 /// <jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.
 #if USE_JEMALLOC && defined(NDEBUG) && !defined(SANITIZER)
-extern "C" void (*malloc_message)(void *, const char *s);
-__attribute__((constructor(0))) void init_je_malloc_message() { malloc_message = [](void *, const char *){}; }
+extern "C" void (*malloc_message)(void *, const char * s);
+__attribute__((constructor(0))) void init_je_malloc_message()
+{
+    malloc_message = [](void *, const char *) {};
+}
 #endif
 
 /// This allows to implement assert to forbid initialization of a class in static constructors.
@@ -272,10 +265,9 @@ int main(int argc_, char ** argv_)
     /// shortcuts and runs clickhouse-client in this case
     ///
     /// clickhouse (ch) --host (-h) / --port / --user (-u) / --password
-    if (
-    main_func == printHelp && !argv.empty() && (std::string_view(argv[0]) == "ch" ||
-    std::string_view(argv[0]) == "clickhouse" || endsWith(argv[0], "/ch") ||
-    endsWith(argv[0], "/clickhouse")))
+    if (main_func == printHelp && !argv.empty()
+        && (std::string_view(argv[0]) == "ch" || std::string_view(argv[0]) == "clickhouse" || endsWith(argv[0], "/ch")
+            || endsWith(argv[0], "/clickhouse")))
     {
         for (int i = 1; i < argc_; ++i)
         {
@@ -301,7 +293,7 @@ int main(int argc_, char ** argv_)
 
             if (main_func == mainEntryClickHouseClient)
                 break;
-            
+
             if (std::string_view(argv[i]).starts_with("clickhouse:"))
             {
                 main_func = mainEntryClickHouseClient;
