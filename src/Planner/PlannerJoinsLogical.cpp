@@ -40,7 +40,9 @@
 
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
+#include <Planner/PlannerCorrelatedSubqueries.h>
 #include <Planner/Utils.h>
+
 #include <Processors/QueryPlan/JoinStepLogical.h>
 
 #include <Core/Settings.h>
@@ -57,6 +59,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int INVALID_JOIN_ON_EXPRESSION;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace Setting
@@ -71,8 +74,11 @@ const ActionsDAG::Node * appendExpression(
     const QueryTreeNodePtr & expression,
     const PlannerContextPtr & planner_context)
 {
-    PlannerActionsVisitor join_expression_visitor(planner_context);
-    auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(dag, expression);
+    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+    PlannerActionsVisitor join_expression_visitor(planner_context, empty_correlated_columns_set);
+    auto [join_expression_dag_node_raw_pointers, correlated_subtrees] = join_expression_visitor.visit(dag, expression);
+    correlated_subtrees.assertEmpty("in join expression");
+
     if (join_expression_dag_node_raw_pointers.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Expression {} expected be a single node, got {}",
@@ -99,11 +105,25 @@ struct JoinInfoBuildContext
             {
                 auto & column_node = join_using_node->as<ColumnNode &>();
                 auto & column_node_sources = column_node.getExpressionOrThrow()->as<ListNode &>();
+
+                const auto column_left = column_node_sources.getNodes().at(0);
+                if (!column_left->as<ColumnNode>())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "JOIN USING clause expected column identifier. Actual {}",
+                        column_left->formatASTForErrorMessage());
+
                 changed_types.emplace(
-                    planner_context_->getColumnNodeIdentifierOrThrow(column_node_sources.getNodes().at(0)),
+                    planner_context_->getColumnNodeIdentifierOrThrow(column_left),
                     column_node.getColumnType());
+
+                const auto column_right = column_node_sources.getNodes().at(1);
+                if (!column_right->as<ColumnNode>())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "JOIN USING clause expected column identifier. Actual {}",
+                        column_right->formatASTForErrorMessage());
+
                 changed_types.emplace(
-                    planner_context_->getColumnNodeIdentifierOrThrow(column_node_sources.getNodes().at(1)),
+                    planner_context_->getColumnNodeIdentifierOrThrow(column_right),
                     column_node.getColumnType());
             }
         }
