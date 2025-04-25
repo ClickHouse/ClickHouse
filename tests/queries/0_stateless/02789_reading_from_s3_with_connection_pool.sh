@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings, no-replicated-database, no-distributed-cache
+# Tags: no-fasttest, no-random-settings, no-replicated-database, no-distributed-cache, no-parallel-replicas
+
+# no-fasttest -- test uses s3_dick
+# no-parallel-replicas -- do not run url functions as StorageURLCluster
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -12,7 +15,7 @@ CREATE TABLE test_s3 (a UInt64, b UInt64)
 ENGINE = MergeTree ORDER BY a
 SETTINGS disk = 's3_disk', min_bytes_for_wide_part = 0;
 
-INSERT INTO test_s3 SELECT number, number FROM numbers_mt(1e7);
+INSERT INTO test_s3 SELECT number, number FROM numbers_mt(1);
 "
 
 # This (reusing connections from the pool) is not guaranteed to always happen,
@@ -53,7 +56,6 @@ do
             'http://localhost:8123/?query=' || encodeURLComponent('select 1'),
             'LineAsString',
             's String')
-            -- queryID() will be returned for each row, since the query above doesn't return anything we need to return a fake row
         ) LIMIT 1 SETTINGS max_threads=1, http_make_head_request=0;
     ")
 
