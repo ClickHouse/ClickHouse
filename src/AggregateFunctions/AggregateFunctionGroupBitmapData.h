@@ -681,8 +681,7 @@ public:
             int idx = roaring::internal::ra_get_index(ra, container_id);
             if (idx < 0)
                 return 0;
-            UInt16 num_added = roaring::internal::container_to_uint32_array(res.data(), ra->containers[idx], ra->typecodes[idx], base);
-            return num_added;
+            return roaring::internal::container_to_uint32_array(res.data(), ra->containers[idx], ra->typecodes[idx], base);
         }
     }
 
