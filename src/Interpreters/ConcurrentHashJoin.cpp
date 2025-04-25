@@ -142,7 +142,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
-    extern const int UNSUPPORTED_JOIN_KEYS;
 }
 
 
@@ -438,7 +437,7 @@ bool ConcurrentHashJoin::slotHasNonJoinedRows(size_t slot_index) const
 {
     if (slot_index >= hash_joins.size())
         return false;
-        
+
     // Check if the specific slot has non-joined rows
     const auto & hash_join_ptr = hash_joins[slot_index];
     std::lock_guard lock(hash_join_ptr->mutex);
@@ -449,7 +448,7 @@ void ConcurrentHashJoin::markSlotHasNonJoinedRows(size_t slot_index)
 {
     if (slot_index >= hash_joins.size())
         return;
-        
+
     // Set both global flag and slot-specific flag
     has_non_joined_rows.store(true, std::memory_order_release);
     has_non_joined_rows_checked.store(true, std::memory_order_release);
@@ -463,7 +462,7 @@ bool ConcurrentHashJoin::isUsedByAnotherAlgorithm() const
 
 bool ConcurrentHashJoin::canRemoveColumnsFromLeftBlock() const
 {
-    return table_join->enableEnalyzer() && !table_join->hasUsing() && !isUsedByAnotherAlgorithm() && table_join->strictness() != JoinStrictness::RightAny;
+    return table_join->enableAnalyzer() && !table_join->hasUsing() && !isUsedByAnotherAlgorithm() && table_join->strictness() != JoinStrictness::RightAny;
 }
 
 bool ConcurrentHashJoin::needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const
@@ -536,11 +535,11 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
             // So we can just use slot 0 to process all non-joined rows
             const auto & hash_join = hash_joins[0];
             std::lock_guard lock(hash_join->mutex);
-            
+
             // Skip if no non-joined rows
             if (!hash_join->data->hasNonJoinedRows() && !hash_join->has_non_joined_rows.load(std::memory_order_relaxed))
                 return {};
-                
+
             return hash_join->data->getNonJoinedBlocks(
                 left_sample_block, result_sample_block, max_block_size);
         }
@@ -550,33 +549,33 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
             // since each slot may contain different data
             std::vector<IBlocksStreamPtr> child_streams;
             child_streams.reserve(hash_joins.size());
-            
+
             // First pass: check for non-joined rows in each slot
             for (size_t i = 0; i < hash_joins.size(); ++i)
             {
                 const auto & hash_join = hash_joins[i];
                 std::lock_guard lock(hash_join->mutex);
-                
+
                 // Skip if this slot has no non-joined rows
                 if (!hash_join->data->hasNonJoinedRows() && !hash_join->has_non_joined_rows.load(std::memory_order_relaxed))
                     continue;
-                    
+
                 // Get non-joined blocks from this slot
                 IBlocksStreamPtr child = hash_join->data->getNonJoinedBlocks(
                     left_sample_block, result_sample_block, max_block_size);
-                    
+
                 if (child)
                     child_streams.push_back(std::move(child));
             }
-            
+
             // If no streams, return empty
             if (child_streams.empty())
                 return {};
-                
+
             // If only one stream, return it directly
             if (child_streams.size() == 1)
                 return child_streams[0];
-                
+
             // If multiple streams, concatenate them
             return std::make_shared<ConcatNotJoinedStreams>(std::move(child_streams));
         }
@@ -818,7 +817,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 }
             }
         }
-        
+
         // Also propagate non-joined rows information from all slots to slot 0
         bool has_non_joined = false;
         for (const auto & hash_join : hash_joins)
@@ -830,7 +829,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 break;
             }
         }
-        
+
         if (has_non_joined)
             hash_joins[0]->has_non_joined_rows.store(true, std::memory_order_release);
     }
@@ -855,10 +854,10 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 }
             }
         }
-        
+
         // Also propagate non-joined rows information in single-level mode
         bool has_non_joined = false;
-        for (const auto & hash_join : hash_joins) 
+        for (const auto & hash_join : hash_joins)
         {
             std::lock_guard lock(hash_join->mutex);
             if (hash_join->has_non_joined_rows.load(std::memory_order_relaxed))
@@ -867,7 +866,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 break;
             }
         }
-        
+
         if (has_non_joined)
             hash_joins[0]->has_non_joined_rows.store(true, std::memory_order_release);
     }
