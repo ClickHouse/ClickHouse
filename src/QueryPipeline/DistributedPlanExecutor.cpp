@@ -539,7 +539,7 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
             executor.setCancelCallback(is_cancelled, 100);
         executor.execute();
 
-        logQueryFinish(query_log_elem, context, ast_stub, pipeline, false,
+        logQueryFinish(query_log_elem, context, ast_stub, std::move(pipeline), false,
             query_span, QueryResultCacheUsage::None, false);
     }
     catch (...)
