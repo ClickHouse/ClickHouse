@@ -19,15 +19,22 @@ spec:
       args:
         - 99d
       env:
+        - name: DOCKER_HOST
+          value: tcp://localhost:2375
+      resources:
+        requests:
+          memory: "55Gi"
+          cpu: "31000m"
+    - name: dind-daemon
+      image: docker:23.0.5-dind
+      securityContext:
+        privileged: true
+      env:
         - name: DOCKER_TLS_CERTDIR
           value: ''
       volumeMounts:
         - name: docker-graph-storage
           mountPath: /var/lib/docker
-      resources:
-        requests:
-          memory: "55Gi"
-          cpu: "31000m"
   imagePullSecrets:
   - name: regcred
   terminationGracePeriodSeconds: 0

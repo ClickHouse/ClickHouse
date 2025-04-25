@@ -40,12 +40,28 @@ pipeline {
     }
 
     stage('Deploy') {
-      steps {
-        script {
-          withCredentials([string(credentialsId: 'STAGING_BUCKET', variable: 'S3_BUCKET')]) {
-            sh "ci/cribl/scripts/deploy.sh"
+      parallel {
+
+        stage('Copy Binary to S3') {
+          steps {
+            script {
+              withCredentials([string(credentialsId: 'STAGING_BUCKET', variable: 'S3_BUCKET')]) {
+                sh "ci/cribl/scripts/deploy.sh"
+              }
+            }
           }
         }
+
+        stage('Build & Push Container Images') {
+          steps {
+            script {
+              withCredentials([string(credentialsId: 'SAAS_OPS_ACCOUNT', variable: 'SAAS_OPS_ACCOUNT')]) {
+                sh "ci/cribl/scripts/build-and-deploy-container-image.sh ${BUILD_DIR}/programs/clickhouse"
+              }
+            }
+          }
+        }
+
       }
     }
   }
