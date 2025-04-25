@@ -6,6 +6,7 @@
 #include <Common/Arena.h>
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
+#include <Common/logger_useful.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <DataTypes/Native.h>
@@ -1314,6 +1315,7 @@ bool SingleValueDataString::setIfGreater(const SingleValueDataBase & other, Aren
 
 void SingleValueDataGeneric::insertResultInto(IColumn & to, const DataTypePtr & type) const
 {
+    LOG_DEBUG(getLogger("SingleValueDataGeneric"), "Insert to {} from {}", to.getName(), value ? value->getName() : "None");
     if (has())
         to.insertFrom(*value, 0);
     else
@@ -1377,7 +1379,7 @@ void SingleValueDataGeneric::set(const IColumn & column, size_t row_num, Arena *
 {
     auto new_value = column.cloneEmpty();
     new_value->insertFrom(column, row_num);
-    value = std::move(new_value);
+    value = recursiveRemoveSparse(std::move(new_value));
 }
 
 void SingleValueDataGeneric::set(const SingleValueDataBase & other, Arena *)
