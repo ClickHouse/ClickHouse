@@ -39,7 +39,7 @@ class ExecutorTasks
     size_t use_threads = 0;
 
     /// Number of idle threads, changed with threads_queue.size().
-    std::atomic_size_t idle_threads = 0;
+    size_t idle_threads = 0;
 
     /// This is the total number of waited async tasks which are not executed yet.
     /// sum(executor_contexts[i].async_tasks.size())
@@ -52,6 +52,12 @@ class ExecutorTasks
     const static size_t TOO_MANY_IDLE_THRESHOLD = 4;
 
 public:
+    enum SpawnStatus
+    {
+        DO_NOT_SPAWN,
+        SHOULD_SPAWN,
+    };
+
     using Stack = std::stack<UInt64>;
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new
@@ -63,17 +69,15 @@ public:
 
     void rethrowFirstThreadException();
 
-    void tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & self, std::unique_lock<std::mutex> & lock);
+    SpawnStatus tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & self, std::unique_lock<std::mutex> & lock);
     void tryGetTask(ExecutionThreadContext & context);
-    void pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
+    SpawnStatus pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
 
     void init(size_t num_threads_, size_t use_threads_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback);
     void fill(Queue & queue, Queue & async_queue);
-    void upscale(size_t use_threads_);
+    SpawnStatus upscale(size_t use_threads_);
 
     void processAsyncTasks();
-
-    bool shouldSpawn() const { return idle_threads <= TOO_MANY_IDLE_THRESHOLD; }
 
     ExecutionThreadContext & getThreadContext(size_t thread_num) { return *executor_contexts[thread_num]; }
 };
