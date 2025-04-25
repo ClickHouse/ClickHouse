@@ -778,7 +778,7 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 {
     const auto & parent = path.parent(1);
     const auto & current = path.current();
-    LOG_TEST(logger, "collectPath: {}", path.debugString());
+    LOG_TEST(logger, "observePath: {}", path.debugString());
 
     auto storage = current == init_table_id ? init_storage : DatabaseCatalog::instance().tryGetTable(current, init_context);
     auto lock = storage ? storage->tryLockForShare(init_context->getInitialQueryId(), init_context->getSettingsRef()[Setting::lock_acquire_timeout]) : nullptr;
@@ -859,7 +859,7 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 
         select_queries[current] = metadata->getSelectQuery().inner_query;
         input_headers[current] = output_headers.at(path.parent(2));
-        // output_headers is filled at next call collectPath(inner_table)
+        // output_headers is filled at next call observePath(inner_table)
 
         std::tie(select_contexts[current], insert_contexts[current]) = createSelectInsertContext(path);
 

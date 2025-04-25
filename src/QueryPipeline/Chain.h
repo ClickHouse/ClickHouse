@@ -59,8 +59,7 @@ public:
     void addInterpreterContext(ContextPtr context) { holder.interpreter_context.emplace_back(std::move(context)); }
     void addInsertDependenciesBuilder(InsertDependenciesBuilderConstPtr insert_dependencies)
     {
-        chassert(!holder.insert_dependencies_holder);
-        holder.insert_dependencies_holder = insert_dependencies;
+        holder.insert_dependencies_holders.push_back(insert_dependencies);
     }
 
 

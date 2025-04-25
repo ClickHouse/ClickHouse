@@ -35,7 +35,7 @@ struct QueryPlanResourceHolder
     std::vector<StoragePtr> storage_holders;
     std::vector<TableLockHolder> table_locks;
     std::vector<std::shared_ptr<QueryIdHolder>> query_id_holders;
-    InsertDependenciesBuilderConstPtr insert_dependencies_holder;
+    std::vector<InsertDependenciesBuilderConstPtr> insert_dependencies_holders;
 };
 
 }

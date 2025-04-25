@@ -13,11 +13,7 @@ QueryPlanResourceHolder & QueryPlanResourceHolder::append(QueryPlanResourceHolde
     interpreter_context.insert(interpreter_context.end(),
                                rhs.interpreter_context.begin(), rhs.interpreter_context.end());
     query_id_holders.insert(query_id_holders.end(), rhs.query_id_holders.begin(), rhs.query_id_holders.end());
-
-    if (insert_dependencies_holder && rhs.insert_dependencies_holder)
-        chassert(insert_dependencies_holder == rhs.insert_dependencies_holder);
-
-    insert_dependencies_holder = std::move(rhs.insert_dependencies_holder);
+    insert_dependencies_holders.insert(insert_dependencies_holders.end(), rhs.insert_dependencies_holders.begin(), rhs.insert_dependencies_holders.end());
 
     return *this;
 }
