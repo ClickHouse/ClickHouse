@@ -37,6 +37,7 @@
 #include <Analyzer/Passes/OptimizeGroupByFunctionKeysPass.h>
 #include <Analyzer/Passes/OptimizeGroupByInjectiveFunctionsPass.h>
 #include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
+#include <Analyzer/Passes/OptimizeTrivialGroupByLimitPass.h>
 #include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
 #include <Analyzer/Passes/OrderByTupleEliminationPass.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
@@ -311,6 +312,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<ShardNumColumnToFunctionPass>());
 
     manager.addPass(std::make_unique<OptimizeDateOrDateTimeConverterWithPreimagePass>());
+    manager.addPass(std::make_unique<OptimizeTrivialGroupByLimitPass>());
 }
 
 }

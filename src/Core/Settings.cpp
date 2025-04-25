@@ -4039,6 +4039,14 @@ Possible values:
 - 0 — Optimization disabled.
 - 1 — Optimization enabled.
 )", 0) \
+    DECLARE(Bool, optimize_trivial_group_by_limit_query, true, R"(
+Enables or disables the optimization to trivial query `SELECT agg() FROM table GROUP BY key LIMIT n` using max_rows_to_group_by setting with group_by_overflow_mode = OverflowMode::ANY.
+
+Possible values:
+
+   - 0 — Optimization disabled.
+   - 1 — Optimization enabled.
+)", 0) \
     DECLARE(Bool, use_cache_for_count_from_files, true, R"(
 Enables caching of rows number during count from files in table functions `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
 
