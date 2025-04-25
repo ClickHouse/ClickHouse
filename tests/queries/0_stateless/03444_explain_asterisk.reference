@@ -47,6 +47,8 @@ CROSS JOIN
             b,
             isZeroOrNull(10),
             10,
+            10 AS `10_1`,
+            10 AS `10_2`,
             assumeNotNull(materialize(10)),
             10 IS NOT NULL,
             a AS x

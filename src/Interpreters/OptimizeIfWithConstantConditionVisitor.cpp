@@ -98,7 +98,7 @@ void OptimizeIfWithConstantConditionVisitorData::visit(ASTFunction & function_no
     if (tryExtractConstValueFromCondition(condition_expr, condition))
     {
         ASTPtr replace_ast = condition ? then_expr : else_expr;
-        bool replacement_supports_alias = replace_ast->as<ASTWithAlias>() != nullptr;
+        bool replacement_supports_alias = dynamic_cast<ASTWithAlias *>(replace_ast.get());
         String if_alias = ast->tryGetAlias();
         /// We cannot set the resulting alias if the replace ast does not support it (e.g. ASTAsterisk), so it's better to do nothing
         if (!if_alias.empty() && !replacement_supports_alias)
