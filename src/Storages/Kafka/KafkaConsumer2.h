@@ -92,7 +92,7 @@ public:
     // As the main source of offsets is not Kafka, the offsets needs to be pushed to the consumer from outside
     // Returns true if it received new assignment and internal state should be updated by updateOffsets
     // bool needsOffsetUpdate() const { return needs_offset_update; }
-    // void updateOffsets(const TopicPartitions & topic_partitions);
+    void updateOffsets(const TopicPartitions & topic_partitions);
 
     /// Polls batch of messages from the given topic-partition and returns read buffer containing the next message or
     /// nullptr when there are no messages to process.
@@ -111,7 +111,6 @@ public:
 
     void subscribeIfNotSubscribedYet();
 
-    void updateAssigmentAfterRebalance(const TopicPartitions& new_assigment);
     TopicPartitions getAllTopicPartitions() const;
 
 private:
@@ -143,7 +142,7 @@ private:
 
     // order is important, need to be destructed before consumer
     // std::optional<TopicPartitions> assignment;
-    // bool needs_offset_update{false};
+    bool needs_offset_update{false};
     std::unordered_map<TopicPartition, cppkafka::Queue, OnlyTopicNameAndPartitionIdHash, OnlyTopicNameAndPartitionIdEquality> queues;
     const Names topics;
 

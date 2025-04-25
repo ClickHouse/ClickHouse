@@ -162,22 +162,22 @@ bool KafkaConsumer2::polledDataUnusable(const TopicPartition & topic_partition) 
 //     return nullptr;
 // }
 
-// void KafkaConsumer2::updateOffsets(const TopicPartitions & topic_partitions)
-// {
-//     cppkafka::TopicPartitionList original_topic_partitions;
-//     original_topic_partitions.reserve(topic_partitions.size());
-//     std::transform(
-//         topic_partitions.begin(),
-//         topic_partitions.end(),
-//         std::back_inserter(original_topic_partitions),
-//         [](const TopicPartition & tp)
-//         {
-//             return cppkafka::TopicPartition{tp.topic, tp.partition_id, tp.offset};
-//         });
-//     initializeQueues(original_topic_partitions);
-//     needs_offset_update = false;
-//     stalled_status = StalledStatus::NOT_STALLED;
-// }
+void KafkaConsumer2::updateOffsets(const TopicPartitions & topic_partitions)
+{
+    cppkafka::TopicPartitionList original_topic_partitions;
+    original_topic_partitions.reserve(topic_partitions.size());
+    std::transform(
+        topic_partitions.begin(),
+        topic_partitions.end(),
+        std::back_inserter(original_topic_partitions),
+        [](const TopicPartition & tp)
+        {
+            return cppkafka::TopicPartition{tp.topic, tp.partition_id, tp.offset};
+        });
+    initializeQueues(original_topic_partitions);
+    needs_offset_update = false;
+    stalled_status = StalledStatus::NOT_STALLED;
+}
 
 void KafkaConsumer2::initializeQueues(const cppkafka::TopicPartitionList & topic_partitions)
 {
@@ -319,20 +319,6 @@ void KafkaConsumer2::subscribeIfNotSubscribedYet()
     consumer->subscribe(topics);
     is_subscribed = true;
     LOG_DEBUG(log, "Subscribed.");
-}
-
-void KafkaConsumer2::updateAssigmentAfterRebalance(const TopicPartitions& new_assigment)
-{
-    cppkafka::TopicPartitionList topic_partition_list;
-    topic_partition_list.reserve(new_assigment.size());
-    for (const auto & tp : new_assigment)
-        topic_partition_list.push_back(cppkafka::TopicPartition{
-            tp.topic,
-            tp.partition_id,
-            tp.offset
-        });
-
-    consumer->assign(topic_partition_list);
 }
 
 KafkaConsumer2::TopicPartitions KafkaConsumer2::getAllTopicPartitions() const

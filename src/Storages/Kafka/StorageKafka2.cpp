@@ -1261,7 +1261,7 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
             auto locks_it = consumer_info.locks.begin();
             for (size_t i = 0; locks_it != consumer_info.locks.end(); ++i, ++locks_it)
                 new_assigment[i] = locks_it->first;
-            consumer->updateAssigmentAfterRebalance(new_assigment);
+            // consumer->updateAssigmentAfterRebalance(new_assigment);
 
             consumer_info.topic_partitions.reserve(new_assigment.size());
 
@@ -1277,6 +1277,8 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
 
                 consumer_info.topic_partitions.push_back(std::move(topic_partition_copy));
             }
+
+            consumer->updateOffsets(consumer_info.topic_partitions);
         }
 
         if (consumer_info.topic_partitions.empty())
@@ -1345,12 +1347,12 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
     consumer_info.consume_from_topic_partition_index
         = (consumer_info.consume_from_topic_partition_index + 1) % consumer_info.topic_partitions.size();
 
-    // bool needs_offset_reset = true;
-    // SCOPE_EXIT({
-    //     if (!needs_offset_reset)
-    //         return;
-    //     consumer_info.consumer->updateOffsets(consumer_info.topic_partitions);
-    // });
+    bool needs_offset_reset = true;
+    SCOPE_EXIT({
+        if (!needs_offset_reset)
+            return;
+        consumer_info.consumer->updateOffsets(consumer_info.topic_partitions);
+    });
 
     auto & keeper_to_use = *consumer_info.keeper;
     ++consumer_info.poll_count;
@@ -1359,13 +1361,14 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
         updateTemporaryLocks(keeper_to_use, consumer_info.consumer->getAllTopicPartitions(), consumer_info.tmp_locks);
         consumer_info.poll_count = 0;
     }
+
     auto [blocks, last_read_offset] = pollConsumer(
         *consumer_info.consumer, topic_partition, consumer_info.locks[topic_partition].intent_size, consumer_info.watch, kafka_context);
 
     if (blocks.empty())
     {
         LOG_TRACE(log, "Didn't get any messages");
-        // needs_offset_reset = false;
+        needs_offset_reset = false;
         return std::nullopt;
     }
 
@@ -1398,7 +1401,7 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
     saveCommittedOffset(keeper_to_use, topic_partition);
     consumer_info.consumer->commit(topic_partition);
     lock_info.intent_size.reset();
-    // needs_offset_reset = false;
+    needs_offset_reset = false;
 
     return rows;
 }
