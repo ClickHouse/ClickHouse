@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/ColumnsHashingImpl.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -248,7 +249,7 @@ struct HashMethodKeysFixed
     static constexpr bool has_low_cardinality = has_low_cardinality_;
 
     static constexpr bool has_cheap_key_calculation = true;
-    static constexpr bool has_pre_computed_hashes = false;
+    static constexpr bool has_pre_computed_hashes = sizeof(Key) >= 16;
 
     LowCardinalityKeys<has_low_cardinality> low_cardinality_keys;
     Sizes key_sizes;
@@ -261,6 +262,9 @@ struct HashMethodKeysFixed
 #endif
 
     PaddedPODArray<Key> prepared_keys;
+    WeakHash32 hashes{0};
+    std::unique_ptr<PrefetchingHelper> prefetching;
+    size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
 
     static bool usePreparedKeys(const Sizes & key_sizes)
     {
@@ -298,6 +302,23 @@ struct HashMethodKeysFixed
         if (usePreparedKeys(key_sizes))
         {
             packFixedBatch(keys_size, Base::getActualColumns(), key_sizes, prepared_keys);
+            if constexpr (has_pre_computed_hashes)
+            {
+                auto s = prepared_keys.size();
+                hashes.reset(s);
+                const Key * begin = prepared_keys.data();
+                const Key * end = begin + s;
+                UInt32 * hash_data = hashes.getData().data();
+
+                while (begin < end)
+                {
+                    *hash_data = static_cast<UInt32>(hashCRC32(*begin, *hash_data));
+                    ++begin;
+                    ++hash_data;
+                }
+
+                prefetching = std::make_unique<PrefetchingHelper>();
+            }
         }
 
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
