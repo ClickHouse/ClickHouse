@@ -66,7 +66,7 @@ public:
 
     void tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & self, std::unique_lock<std::mutex> & lock);
     void tryWakeUpAnyOtherThreadWithTasksInQueue(ExecutionThreadContext & self, TaskQueue<ExecutingGraph::Node> & queue, std::unique_lock<std::mutex> & lock);
-    
+
     /// It sets the task for specified thread `context`.
     /// If task was succeessfully found, one thread is woken up to process the remaining tasks.
     /// If there is no ready task yet, it blocks.
@@ -82,7 +82,7 @@ public:
     // Adds regular tasks from `queue` and async tasks from `async_queue` into queues for specified thread `context`.
     // Local task optimization: the first regular task could be placed directly into thread to be executed next.
     // For async tasks proessor->schedule() is called.
-    // If non-local tasks were added, wake up one thread to process them. 
+    // If non-local tasks were added, wake up one thread to process them.
     void pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
 
     void init(size_t num_threads_, size_t use_threads_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback);

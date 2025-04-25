@@ -27,7 +27,7 @@ public:
     }
 
     /// Returns thread number to pop task from.
-    /// First it check dedicated queue, and only if it is empty, it steal from other threads 
+    /// First it check dedicated queue, and only if it is empty, it steal from other threads
     size_t getAnyThreadWithTasks(size_t from_thread = 0)
     {
         if (num_tasks == 0)

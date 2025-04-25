@@ -249,16 +249,16 @@ void ExecutorTasks::processAsyncTasks()
             if (!threads_queue.empty() && !finished)
             {
                 auto thread_to_wake = fast_task_queue.getAnyThreadWithTasks(task.thread_num);
-        
+
                 if (threads_queue.has(thread_to_wake))
                     threads_queue.pop(thread_to_wake);
                 else
                     thread_to_wake = threads_queue.popAny();
-        
+
                 idle_threads--;
                 if (thread_to_wake >= use_threads)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-empty queue without allocated thread");
-        
+
                 executor_contexts[thread_to_wake]->wakeUp();
             }
         }
