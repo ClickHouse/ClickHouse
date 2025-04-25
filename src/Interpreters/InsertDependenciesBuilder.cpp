@@ -1006,7 +1006,7 @@ void InsertDependenciesBuilder::collectAllDependencies()
             return;
         }
 
-        if (isView(id)) // StorageMaterializedView, StorageLiveView, StorageWindowView have some id in inner_tables
+        if (isView(id))
         {
             auto inner_table = inner_tables.at(id);
             if (!inner_table.empty() && inner_table != id)
@@ -1135,11 +1135,11 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDPrivate view_id) const
         adding_missing_defaults_dag.getRequiredColumnsNames(),
         insert_context);
 
-    auto merged_dah = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(adding_missing_defaults_dag));
+    auto merged_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(adding_missing_defaults_dag));
 
     /// Actually we don't know structure of input blocks from query/table,
     /// because some clients break insertion protocol (columns != header)
-    result.addSink(std::make_shared<ConvertingTransform>(input_headers.at(view_id), std::make_shared<ExpressionActions>(std::move(merged_dah))));
+    result.addSink(std::make_shared<ConvertingTransform>(input_headers.at(view_id), std::make_shared<ExpressionActions>(std::move(merged_dag))));
 
     inner_metadata->check(result.getOutputHeader().getColumnsWithTypeAndName());
 

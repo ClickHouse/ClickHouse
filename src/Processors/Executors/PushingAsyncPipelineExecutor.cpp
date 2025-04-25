@@ -111,7 +111,6 @@ static void threadFunction(
         data.has_exception = true;
     }
 
-    /// Finish source in case of exception. Otherwise thread.join() may hung.
     if (data.source)
         data.source->finish();
 
