@@ -3,6 +3,8 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include "Formats/MarkInCompressedFile.h"
+#include <Common/logger_useful.h>
+#include <IO/NullWriteBuffer.h>
 
 namespace DB
 {
@@ -97,7 +99,11 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
         compressed_streams.emplace(stream_name, stream);
     };
 
-    getSerialization(name_and_type.name)->enumerateStreams(callback, name_and_type.type, column);
+    ISerialization::EnumerateStreamsSettings enumerate_settings;
+    enumerate_settings.use_specialized_prefixes_substreams = true;
+    auto serialization = getSerialization(name_and_type.name);
+    auto substream_data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(column);
+    getSerialization(name_and_type.name)->enumerateStreams(enumerate_settings, callback, substream_data);
 }
 
 namespace
@@ -158,6 +164,7 @@ void writeColumnSingleGranule(
     serialize_settings.use_compact_variant_discriminators_serialization = settings.use_compact_variant_discriminators_serialization;
     serialize_settings.use_v1_object_and_dynamic_serialization = settings.use_v1_object_and_dynamic_serialization;
     serialize_settings.object_and_dynamic_write_statistics = ISerialization::SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::PREFIX;
+    serialize_settings.use_specialized_prefixes_substreams = true;
 
     serialization->serializeBinaryBulkStatePrefix(*column.column, serialize_settings, state);
     serialization->serializeBinaryBulkWithMultipleStreams(*column.column, from_row, number_of_rows, serialize_settings, state);
@@ -175,6 +182,8 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
     /// In this case we use dynamic structure of the column from the first written block and adjust columns from
     /// the next blocks so they match this dynamic structure.
     initOrAdjustDynamicStructureIfNeeded(result_block);
+
+    initColumnsSubstreamsIfNeeded(result_block);
 
     /// Fill index granularity for this block
     /// if it's unknown (in case of insert data or horizontal merge,
@@ -248,17 +257,23 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                     prev_stream->hashing_buf.next();
                 }
 
+                /// We have 2 types of marks in Compact part. With or without substreams.
+                /// In format without substreams we write single mark per column (here once on the first requested substream).
+                /// In format with substreams we write a mark for each column substream.
+                if (!prev_stream || index_granularity_info.mark_type.with_substreams)
+                {
+                    MarkInCompressedFile mark{plain_hashing.count(), result_stream->hashing_buf.offset()};
+                    writeBinaryLittleEndian(mark.offset_in_compressed_file, marks_out);
+                    writeBinaryLittleEndian(mark.offset_in_decompressed_block, marks_out);
+
+                    if (!cached_marks.empty())
+                        cached_marks.begin()->second->push_back(mark);
+                }
+
                 prev_stream = result_stream;
 
                 return &result_stream->hashing_buf;
             };
-
-            MarkInCompressedFile mark{plain_hashing.count(), static_cast<UInt64>(0)};
-            writeBinaryLittleEndian(mark.offset_in_compressed_file, marks_out);
-            writeBinaryLittleEndian(mark.offset_in_decompressed_block, marks_out);
-
-             if (!cached_marks.empty())
-                cached_marks.begin()->second->push_back(mark);
 
             writeColumnSingleGranule(
                 block.getByName(name_and_type->name), getSerialization(name_and_type->name),
@@ -286,6 +301,15 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(MergeTreeDataPartChecksum
         writeDataBlockPrimaryIndexAndSkipIndices(block, granules_to_write);
     }
 
+    /// If there was no data written, we still need to initialize columns substreams for marks with substreams.
+    if (index_granularity_info.mark_type.with_substreams && !data_written)
+    {
+        Block sample;
+        for (const auto & [name, type] : columns_list)
+            sample.insert(ColumnWithTypeAndName(type->createColumn(), type, name));
+        initColumnsSubstreamsIfNeeded(sample);
+    }
+
 #ifndef NDEBUG
     /// Offsets should be 0, because compressed block is written for every granule.
     for (const auto & [_, stream] : streams_by_codec)
@@ -297,8 +321,8 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(MergeTreeDataPartChecksum
     if (with_final_mark && data_written)
     {
         MarkInCompressedFile mark{plain_hashing.count(), 0};
-
-        for (size_t i = 0; i < columns_list.size(); ++i)
+        size_t num_marks = index_granularity_info.mark_type.with_substreams ? columns_substreams.getTotalSubstreams() : columns_list.size();
+        for (size_t i = 0; i < num_marks; ++i)
         {
             writeBinaryLittleEndian(mark.offset_in_compressed_file, marks_out);
             writeBinaryLittleEndian(mark.offset_in_decompressed_block, marks_out);
@@ -331,6 +355,25 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(MergeTreeDataPartChecksum
 
     plain_file->preFinalize();
     marks_file->preFinalize();
+}
+
+void MergeTreeDataPartWriterCompact::initColumnsSubstreamsIfNeeded(const Block & sample)
+{
+    if (!index_granularity_info.mark_type.with_substreams || columns_substreams.getTotalSubstreams())
+        return;
+
+    NullWriteBuffer buf;
+    for (const auto & name_and_type : columns_list)
+    {
+        columns_substreams.addColumn(name_and_type.name);
+        auto buffer_getter = [&](const ISerialization::SubstreamPath & substream_path)
+        {
+            columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForStream(name_and_type, substream_path));
+            return &buf;
+        };
+
+        writeColumnSingleGranule(sample.getByName(name_and_type.name), getSerialization(name_and_type.name), buffer_getter, 0, 0, settings);
+    }
 }
 
 void MergeTreeDataPartWriterCompact::finishDataSerialization(bool sync)

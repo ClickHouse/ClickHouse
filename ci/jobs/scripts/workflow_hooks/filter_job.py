@@ -1,7 +1,7 @@
 from ci.defs.defs import JobNames
+from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.pr_description import Labels
 from ci.praktika.info import Info
-from ci.defs.job_configs import JobConfigs
 
 
 def only_docs(changed_files):
@@ -84,7 +84,8 @@ def should_skip_job(job_name):
         )
 
     if Labels.CI_INTEGRATION in _info_cache.pr_labels and not (
-        job_name.startswith(JobNames.INTEGRATION) or job_name in JobConfigs.builds_for_tests
+        job_name.startswith(JobNames.INTEGRATION)
+        or job_name in JobConfigs.builds_for_tests
     ):
         return (
             True,
