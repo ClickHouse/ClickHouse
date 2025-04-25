@@ -81,6 +81,7 @@ namespace Setting
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsInt64 zstd_window_log_max;
+    extern const SettingsBool enable_url_encoding;
 }
 
 namespace ErrorCodes
@@ -555,6 +556,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
                            .withHostFilter(&context_->getRemoteHostFilter())
                            .withBufSize(settings[Setting::max_read_buffer_size])
                            .withRedirects(settings[Setting::max_http_get_redirects])
+                           .withEnableUrlEncoding(settings[Setting::enable_url_encoding])
                            .withOutCallback(callback)
                            .withSkipNotFound(skip_url_not_found_error)
                            .withHeaders(headers)
