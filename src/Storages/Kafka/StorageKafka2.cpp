@@ -121,7 +121,6 @@ extern const int REPLICA_IS_ALREADY_ACTIVE;
 namespace
 {
 constexpr auto MAX_FAILED_POLL_ATTEMPTS = 10;
-// constexpr auto MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS = 15000;
 constexpr auto TMP_LOCKS_REFRESH_POLLS = 15;
 }
 

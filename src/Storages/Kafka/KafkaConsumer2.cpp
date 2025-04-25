@@ -18,17 +18,8 @@
 #include <algorithm>
 
 
-namespace CurrentMetrics
-{
-extern const Metric KafkaAssignedPartitions;
-extern const Metric KafkaConsumersWithAssignment;
-}
-
 namespace ProfileEvents
 {
-extern const Event KafkaRebalanceRevocations;
-extern const Event KafkaRebalanceAssignments;
-extern const Event KafkaRebalanceErrors;
 extern const Event KafkaMessagesPolled;
 extern const Event KafkaCommitFailures;
 extern const Event KafkaCommits;
