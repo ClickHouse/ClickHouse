@@ -757,8 +757,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithPrimaryKey);
                 ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithPrimaryKeyMicroseconds);
 
+                size_t total_marks_count = ranges.data_part->index_granularity->getMarksCountWithoutFinal();
                 pk_stat.total_parts.fetch_add(1, std::memory_order_relaxed);
-                pk_stat.total_granules.fetch_add(total_marks_count, std::memory_order_relaxed);
+                pk_stat.total_granules.fetch_add(ranges.data_part->index_granularity->getMarksCountWithoutFinal(), std::memory_order_relaxed);
 
                 ranges.ranges = markRangesFromPKRange(
                     ranges,
