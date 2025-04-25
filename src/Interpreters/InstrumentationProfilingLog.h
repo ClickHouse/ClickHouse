@@ -1,6 +1,11 @@
 #pragma once
 
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/SystemLog.h>
+#include <Common/QueryProfiler.h>
+#include <Common/ProfileEvents.h>
+#include <Common/TraceSender.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Storages/ColumnsDescription.h>
@@ -14,7 +19,6 @@ struct InstrumentationProfilingLogElement
     UInt64 event_time_microseconds{};
     UUID query_id;
     UInt64 thread_id{};
-    UInt64 trace_type{};
     Int32 function_id{};
     String function_name;
     String handler_name;
@@ -23,7 +27,7 @@ struct InstrumentationProfilingLogElement
 
     static ColumnsDescription getColumnsDescription();
 
-    // static NamesAndTypesList getNamesAndTypes();
+    static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases();
     static const char * getTableName() { return "instrumentation_profiling_log"; }
 
