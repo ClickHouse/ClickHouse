@@ -51,7 +51,7 @@ def start_cluster():
         cluster.shutdown()
 
 
-def test():
+def test_alter_partition_after_table_rotation():
     node1 = cluster.instances["node1"]
 
     def create_insert(node, table_name, insert_values):
