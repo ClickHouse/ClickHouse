@@ -12,9 +12,11 @@
 #include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
+#include <Storages/PartitionCommands.h>
 #include <Poco/Timestamp.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
@@ -23,6 +25,11 @@
 #    include <azure/storage/common/storage_exception.hpp>
 #endif
 
+
+namespace ProfileEvents
+{
+extern const Event DiskPlainRewritableLegacyLayoutDiskCount;
+}
 
 namespace DB
 {
@@ -46,7 +53,7 @@ constexpr auto METADATA_PATH_TOKEN = "__meta/";
 }
 
 
-void MetadataStorageFromPlainRewritableObjectStorage::load()
+void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
 {
     ThreadPool & pool = getIOThreadPool().get();
     ThreadPoolCallbackRunnerLocal<void> runner(pool, "PlainRWMetaLoad");
@@ -75,6 +82,8 @@ void MetadataStorageFromPlainRewritableObjectStorage::load()
     /// 2. Checking the value of `prefix.path` for every new directory and adding it to the state in memory.
     ///    There is (?) a race condition, leading to the possibility to add a directory that was just deleted.
     ///    This race condition can be ignored for MergeTree tables.
+    /// 3. Checking if the value of `prefix.path` changed for any already existing directory
+    ///    and apply the corresponding rename.
 
     size_t num_dirs_found = 0;
     size_t num_dirs_added = 0;
@@ -82,17 +91,34 @@ void MetadataStorageFromPlainRewritableObjectStorage::load()
 
     std::set<std::string> set_of_remote_paths;
 
-    if (!object_storage->existsOrHasAnyChild(metadata_key_prefix))
+    bool has_metadata = object_storage->existsOrHasAnyChild(metadata_key_prefix);
+
+    if (is_initial_load)
     {
-        LOG_DEBUG(log, "Loaded metadata (empty)");
-        return;
+        /// Use iteration to determine if the disk contains data.
+        /// LocalObjectStorage creates an empty top-level directory even when no data is stored,
+        /// unlike blob storage, which has no concept of directories, therefore existsOrHasAnyChild
+        /// is not applicable.
+        auto common_key_prefix = fs::path(object_storage->getCommonKeyPrefix()) / "";
+        bool has_data = object_storage->isRemote() ? object_storage->existsOrHasAnyChild(common_key_prefix) : object_storage->iterate(common_key_prefix, 0)->isValid();
+        /// No metadata directory: legacy layout is likely in use.
+        if (has_data && !has_metadata)
+        {
+            ProfileEvents::increment(ProfileEvents::DiskPlainRewritableLegacyLayoutDiskCount, 1);
+            LOG_WARNING(log, "Legacy layout is likely used for disk '{}'", object_storage->getCommonKeyPrefix());
+        }
+
+        if (!has_metadata)
+        {
+            LOG_DEBUG(log, "Loaded metadata (empty)");
+            return;
+        }
     }
 
     try
     {
         for (auto iterator = object_storage->iterate(metadata_key_prefix, 0); iterator->isValid(); iterator->next())
         {
-            ++num_dirs_found;
             auto file = iterator->current();
             String path = file->getPath();
 
@@ -112,48 +138,48 @@ void MetadataStorageFromPlainRewritableObjectStorage::load()
             auto remote_path = rel_path.parent_path();
             set_of_remote_paths.insert(remote_path);
 
-            if (path_map->existsRemotePath(remote_path))
+            ++num_dirs_found;
+            if (path_map->existsRemotePathUnchanged(remote_path, file->metadata->etag))
             {
                 /// Already loaded.
                 continue;
             }
 
             ++num_dirs_added;
-            runner([remote_metadata_path, remote_path, path, &log, &settings, this]
+            runner([remote_metadata_path, remote_path, path, metadata = file->metadata, &log, &settings, this]
             {
                 setThreadName("PlainRWMetaLoad");
 
                 StoredObject object{path};
                 String local_path;
-                Poco::Timestamp last_modified{};
+                /// Assuming that local and the object storage clocks are synchronized.
+                Poco::Timestamp last_modified = metadata->last_modified;
                 InMemoryDirectoryPathMap::FileNames files;
 
                 try
                 {
                     auto read_buf = object_storage->readObject(object, settings);
                     readStringUntilEOF(local_path, *read_buf);
-                    auto object_metadata = object_storage->tryGetObjectMetadata(path);
 
-                    /// It ok if a directory was removed just now.
-                    /// We support attaching a filesystem that is concurrently modified by someone else.
-                    if (!object_metadata)
-                        return;
-
-                    /// Assuming that local and the object storage clocks are synchronized.
-                    last_modified = object_metadata->last_modified;
-
-                    /// Load the list of files inside the directory
+                    /// Load the list of files inside the directory.
                     fs::path full_remote_path = object_storage->getCommonKeyPrefix() / remote_path;
-                    size_t prefix_length = remote_path.string().size() + 1; /// randomlygenerated/
+                    size_t full_prefix_length = full_remote_path.string().size() + 1; /// common/key/prefix/randomlygenerated/
                     for (auto dir_iterator = object_storage->iterate(full_remote_path, 0); dir_iterator->isValid(); dir_iterator->next())
                     {
                         auto remote_file = dir_iterator->current();
                         String remote_file_path = remote_file->getPath();
                         chassert(remote_file_path.starts_with(full_remote_path.string()));
                         auto filename = fs::path(remote_file_path).filename();
+                        /// Skip metadata files.
+                        if (filename == PREFIX_PATH_FILE_NAME)
+                        {
+                            LOG_WARNING(log, "Legacy layout is in use, ignoring '{}'", remote_file_path);
+                            continue;
+                        }
 
                         /// Check that the file is a direct child.
-                        if (remote_file_path.substr(prefix_length) == filename)
+                        chassert(full_prefix_length < remote_file_path.size());
+                        if (std::string_view(remote_file_path.data() + full_prefix_length) == filename)
                             files.insert(std::move(filename));
                     }
 
@@ -191,21 +217,9 @@ void MetadataStorageFromPlainRewritableObjectStorage::load()
                     throw;
                 }
 
-                auto added = path_map->addPathIfNotExists(
+                path_map->addOrReplacePath(
                     fs::path(local_path).parent_path(),
-                    InMemoryDirectoryPathMap::RemotePathInfo{remote_path, last_modified.epochTime(), std::move(files)});
-
-                /// This can happen if table replication is enabled, then the same local path is written
-                /// in `prefix.path` of each replica.
-                if (!added.second)
-                {
-                    LOG_WARNING(
-                        log,
-                        "The local path '{}' is already mapped to a remote path '{}', ignoring: '{}'",
-                        local_path,
-                        added.first->second.path,
-                        remote_path);
-                }
+                    InMemoryDirectoryPathMap::RemotePathInfo{remote_path, metadata->etag, last_modified.epochTime(), std::move(files)});
             });
         }
     }
@@ -224,11 +238,18 @@ void MetadataStorageFromPlainRewritableObjectStorage::load()
 
     LOG_DEBUG(log, "Loaded metadata for {} directories ({} currently, {} added, {} removed)",
         num_dirs_found, num_dirs_in_memory, num_dirs_added, num_dirs_removed);
+
+    previous_refresh.restart();
 }
 
-void MetadataStorageFromPlainRewritableObjectStorage::refresh()
+void MetadataStorageFromPlainRewritableObjectStorage::refresh(UInt64 not_sooner_than_milliseconds)
 {
-    load();
+    if (!previous_refresh.compareAndRestart(0.001 * not_sooner_than_milliseconds))
+        return;
+
+    std::unique_lock lock(load_mutex, std::defer_lock);
+    if (lock.try_lock())
+        load(/*is_initial_load*/ false);
 }
 
 MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewritableObjectStorage(
@@ -245,7 +266,7 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
             "MetadataStorageFromPlainRewritableObjectStorage is not compatible with write-once storage '{}'",
             object_storage->getName());
 
-    load();
+    load(/*is_initial_load*/ true);
 
     /// Use flat directory structure if the metadata is stored separately from the table data.
     auto keys_gen = std::make_shared<FlatDirectoryStructureKeyGenerator>(object_storage->getCommonKeyPrefix(), path_map);
@@ -258,6 +279,13 @@ bool MetadataStorageFromPlainRewritableObjectStorage::existsFileOrDirectory(cons
         return true;
 
     return getObjectMetadataEntryWithCache(path) != nullptr;
+}
+
+bool MetadataStorageFromPlainRewritableObjectStorage::supportsPartitionCommand(const PartitionCommand & command) const
+{
+    return command.type == PartitionCommand::DROP_PARTITION || command.type == PartitionCommand::DROP_DETACHED_PARTITION
+        || command.type == PartitionCommand::ATTACH_PARTITION || command.type == PartitionCommand::MOVE_PARTITION
+        || command.type == PartitionCommand::REPLACE_PARTITION;
 }
 
 bool MetadataStorageFromPlainRewritableObjectStorage::existsFile(const std::string & path) const

@@ -21,7 +21,7 @@ public:
         /// List of columns to be summed. If empty, all numeric columns that are not in the description are taken.
         const Names & column_names_to_sum,
         /// List of partition key columns. They have to be excluded.
-        const Names & partition_key_columns,
+        const Names & partition_and_sorting_required_columns,
         size_t max_block_size_rows,
         size_t max_block_size_bytes);
 
@@ -44,6 +44,11 @@ public:
         ColumnsDefinition(); /// Is needed because destructor is defined.
         ColumnsDefinition(ColumnsDefinition &&) noexcept; /// Is needed because destructor is defined.
         ~ColumnsDefinition(); /// Is needed because otherwise std::vector's destructor uses incomplete types.
+
+        /// Memory pool for SimpleAggregateFunction
+        /// (only when allocates_memory_in_arena == true).
+        std::unique_ptr<Arena> arena;
+        size_t arena_size = 0;
 
         /// Columns with which values should not be aggregated.
         ColumnNumbers column_numbers_not_to_aggregate;
@@ -81,11 +86,6 @@ public:
 
     private:
         ColumnsDefinition & def;
-
-        /// Memory pool for SimpleAggregateFunction
-        /// (only when allocates_memory_in_arena == true).
-        std::unique_ptr<Arena> arena;
-        size_t arena_size = 0;
 
         bool is_group_started = false;
 

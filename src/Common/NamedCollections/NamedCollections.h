@@ -1,6 +1,9 @@
 #pragma once
 #include <Interpreters/Context.h>
 #include <Common/NamedCollections/NamedCollections_fwd.h>
+#include <Parsers/ASTCreateNamedCollectionQuery.h>
+#include <Parsers/ASTAlterNamedCollectionQuery.h>
+
 
 namespace Poco { namespace Util { class AbstractConfiguration; } }
 
@@ -24,18 +27,12 @@ public:
     using Keys = std::set<Key, std::less<>>;
     enum class SourceId : uint8_t
     {
+        /// None source_id is possible only if the object is a
+        /// duplicate of some named collection. See `duplicate` method.
         NONE = 0,
         CONFIG = 1,
         SQL = 2,
     };
-
-    static MutableNamedCollectionPtr create(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & collection_name,
-        const std::string & collection_path,
-        const Keys & keys,
-        SourceId source_id_,
-        bool is_mutable_);
 
     bool has(const Key & key) const;
 
@@ -61,6 +58,7 @@ public:
 
     template <bool locked = false> void remove(const Key & key);
 
+    /// Creates mutable, with NONE source id full copy.
     MutableNamedCollectionPtr duplicate() const;
 
     Keys getKeys(ssize_t depth = -1, const std::string & prefix = "") const;
@@ -76,25 +74,72 @@ public:
 
     bool isMutable() const { return is_mutable; }
 
-    SourceId getSourceId() const { return source_id; }
+    virtual SourceId getSourceId() const { return SourceId::NONE; }
 
-private:
+    virtual String getCreateStatement(bool /*show_secrects*/) { return  {}; }
+
+    virtual void update(const ASTAlterNamedCollectionQuery & query);
+
+    virtual ~NamedCollection();
+
+protected:
     class Impl;
     using ImplPtr = std::unique_ptr<Impl>;
-
     NamedCollection(
         ImplPtr pimpl_,
         const std::string & collection_name,
-        SourceId source_id,
-        bool is_mutable);
+        bool is_mutable_
+    );
 
     void assertMutable() const;
 
+
     ImplPtr pimpl;
     const std::string collection_name;
-    const SourceId source_id;
     const bool is_mutable;
     mutable std::mutex mutex;
+};
+
+class NamedCollectionFromSQL final : public NamedCollection
+{
+public:
+    static MutableNamedCollectionPtr create(const ASTCreateNamedCollectionQuery & query);
+
+    String getCreateStatement(bool show_secrects) override;
+
+    void update(const ASTAlterNamedCollectionQuery & query) override;
+
+    NamedCollection::SourceId getSourceId() const override { return SourceId::SQL; }
+
+private:
+    explicit NamedCollectionFromSQL(const ASTCreateNamedCollectionQuery & query_);
+
+    ASTCreateNamedCollectionQuery create_query_ptr;
+};
+
+class NamedCollectionFromConfig final : public NamedCollection
+{
+public:
+
+    static MutableNamedCollectionPtr create(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & collection_name,
+        const std::string & collection_path,
+        const Keys & keys);
+
+    String getCreateStatement(bool /*show_secrects*/) override { return {}; }
+
+    void update(const ASTAlterNamedCollectionQuery & /*query*/) override { NamedCollection::assertMutable(); }
+
+    NamedCollection::SourceId getSourceId() const override { return SourceId::CONFIG; }
+
+private:
+
+    NamedCollectionFromConfig(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & collection_name,
+        const std::string & collection_path,
+        const Keys & keys);
 };
 
 }

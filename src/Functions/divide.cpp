@@ -33,12 +33,23 @@ struct DivideFloatingImpl
 #endif
 };
 
+template <typename A, typename B>
+struct DivideFloatingOrNullImpl : DivideFloatingImpl<A, B>{};
+
 struct NameDivide { static constexpr auto name = "divide"; };
 using FunctionDivide = BinaryArithmeticOverloadResolver<DivideFloatingImpl, NameDivide>;
 
 REGISTER_FUNCTION(Divide)
 {
     factory.registerFunction<FunctionDivide>();
+}
+
+struct NameDivideOrNull { static constexpr auto name = "divideOrNull"; };
+using FunctionDivideOrNull = BinaryArithmeticOverloadResolver<DivideFloatingOrNullImpl, NameDivideOrNull>;
+
+REGISTER_FUNCTION(DivideOrNull)
+{
+    factory.registerFunction<FunctionDivideOrNull>();
 }
 
 }
