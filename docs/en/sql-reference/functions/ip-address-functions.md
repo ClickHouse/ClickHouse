@@ -248,17 +248,20 @@ SELECT IPv6CIDRToRange(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32);
 
 ## toIPv4 {#toipv4}
 
-Like [`IPv4StringToNum`](#IPv4StringToNum) but takes a string form of IPv4 address and returns value of [IPv4](../data-types/ipv4.md) type.
+Converts a string or a UInt32 form of IPv4 address to [IPv4](../data-types/ipv4.md) type.
+Similar to [`IPv4StringToNum`](#IPv4StringToNum) and [IPv4StringToNum](#IPv4StringToNum) functions but it supports both string and unsigned integer data types as input arguments.
 
 **Syntax**
 
 ```sql
+toIPv4(UInt32)
 toIPv4(string)
 ```
 
 **Arguments**
 
 - `string` — IPv4 address. [String](../data-types/string.md).
+- `UInt32` — IPv4 address. [UInt32](../data-types/int-uint.md).
 
 **Returned value**
 
@@ -296,6 +299,21 @@ Result:
 ┌─hex(IPv4StringToNum(IPv4_string))─┬─hex(toIPv4(IPv4_string))─┐
 │ ABE1822D                          │ ABE1822D                 │
 └───────────────────────────────────┴──────────────────────────┘
+```
+
+
+Query:
+
+```sql
+SELECT toIPv4(2130706433);
+```
+
+Result:
+
+```text
+┌─toIPv4(2130706433)─┐
+│ 127.0.0.1          │
+└────────────────────┘
 ```
 
 ## toIPv4OrDefault {#toipv4ordefault}
@@ -412,7 +430,7 @@ Result:
 ## toIPv6 {#toipv6}
 
 Converts a string or a UInt128 form of IPv6 address to [IPv6](../data-types/ipv6.md) type. For strings, if the IPv6 address has an invalid format, returns an empty value.
-Similar to [IPv6StringToNum](#ipv6stringtonum) function, which converts IPv6 address to binary format.
+Similar to [IPv6StringToNum](#ipv6stringtonum) and [IPv6NumToString](#ipv6numtostringx) functions, which converts IPv6 address to and from binary format (i.e. `FixedString(16)`).
 
 If the input string contains a valid IPv4 address, then the IPv6 equivalent of the IPv4 address is returned.
 
