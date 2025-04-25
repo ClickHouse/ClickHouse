@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <Processors/Formats/Impl/JSONObjectEachRowRowInputFormat.h>
 #include <Formats/JSONUtils.h>
 #include <Formats/FormatFactory.h>

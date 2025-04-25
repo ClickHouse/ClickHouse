@@ -15,7 +15,7 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 
 ${CLICKHOUSE_CLIENT} --query "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS part_log;
     SELECT
         if(count(DISTINCT query_id) == 1, 'Ok', 'Error: ' || toString(count(DISTINCT query_id))),
         if(count() == 512 / 64, 'Ok', 'Error: ' || toString(count())), -- 512 rows inserted, 64 rows per block
@@ -32,7 +32,7 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --query "OPTIMIZE TABLE test FINAL;"
 
 ${CLICKHOUSE_CLIENT} --query "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS part_log;
     SELECT
         if(count() > 2, 'Ok', 'Error: ' || toString(count())),
         if(SUM(ProfileEvents['MergedRows']) >= 512, 'Ok', 'Error: ' || toString(SUM(ProfileEvents['MergedRows'])))
@@ -49,7 +49,7 @@ ${CLICKHOUSE_CLIENT} --query "
 # The mutation query may return before the entry is added to the system.part_log table.
 # Retry SYSTEM FLUSH LOGS until all entries are fully flushed.
 for _ in {1..10}; do
-    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS"
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS part_log"
     res=$(${CLICKHOUSE_CLIENT} --query "
         SELECT count() FROM system.part_log
         WHERE event_time > now() - INTERVAL 10 MINUTE

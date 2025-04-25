@@ -23,6 +23,7 @@ limitations under the License. */
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Processors/Transforms/SquashingTransform.h>
+#include <QueryPipeline/Chain.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Common/logger_useful.h>
@@ -240,8 +241,6 @@ StorageLiveView::StorageLiveView(
 
     auto select_query_clone = query.select->clone();
     select_query_description = buildSelectQueryDescription(select_query_clone, getContext());
-
-    DatabaseCatalog::instance().addViewDependency(select_query_description.select_table_id, table_id_);
 
     blocks_ptr = std::make_shared<BlocksPtr>();
     blocks_metadata_ptr = std::make_shared<BlocksMetadataPtr>();

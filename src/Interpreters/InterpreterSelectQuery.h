@@ -5,7 +5,6 @@
 
 #include <Access/EnabledRowPolicies.h>
 #include <Core/QueryProcessingStage.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
 #include <Interpreters/PreparedSets.h>

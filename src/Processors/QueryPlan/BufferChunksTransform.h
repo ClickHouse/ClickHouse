@@ -1,9 +1,13 @@
 #pragma once
+
+#include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
+
 #include <queue>
 
 namespace DB
 {
+class Block;
 
 /// Transform that buffers chunks from the input
 /// up to the certain limit  and pushes chunks to

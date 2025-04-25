@@ -1,18 +1,27 @@
 #pragma once
 
-#include <Core/NamesAndTypes.h>
-
 #include <Storages/IStorage_fwd.h>
 
 #include <Interpreters/Context_fwd.h>
 
 #include <Analyzer/IQueryTreeNode.h>
 
+#include <Core/Field.h>
+#include <Core/Names.h>
+
+#include <Columns/IColumn_fwd.h>
+
 namespace DB
 {
 
 class FunctionNode;
+class ColumnNode;
+using ColumnNodePtr = std::shared_ptr<ColumnNode>;
+
 struct IdentifierResolveScope;
+
+struct NameAndTypePair;
+using NamesAndTypes = std::vector<NameAndTypePair>;
 
 /// Returns true if node part of root tree, false otherwise
 bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root);
@@ -35,16 +44,38 @@ std::string getGlobalInFunctionNameForLocalInFunctionName(const std::string & fu
 /// Add unique suffix to names of duplicate columns in block
 void makeUniqueColumnNamesInBlock(Block & block);
 
+/// Returns true, if node is allowed to be a part of expression
+bool isExpressionNodeType(QueryTreeNodeType node_type);
+
+/// Returns true, if node is LAMBDA
+bool isFunctionExpressionNodeType(QueryTreeNodeType node_type);
+
+/// Returns true, if node is either QUERY or UNION
+bool isSubqueryNodeType(QueryTreeNodeType node_type);
+
+/// Returns true, if node is TABLE, TABLE_FUNCTION, QUERY or UNION
+bool isTableExpressionNodeType(QueryTreeNodeType node_type);
+
 /// Returns true, if node has type QUERY or UNION
 bool isQueryOrUnionNode(const IQueryTreeNode * node);
 
 /// Returns true, if node has type QUERY or UNION
 bool isQueryOrUnionNode(const QueryTreeNodePtr & node);
 
-/* Returns true, if coulmn source is not registered in scopes that appear
+/// Returns true, if node has type QUERY or UNION and uses any columns from outer scope
+bool isCorrelatedQueryOrUnionNode(const QueryTreeNodePtr & node);
+
+/* Checks, if column source is not registered in scopes that appear
  * before nearest query scope.
+ * If column appears to be correlated in the scope than it be registered
+ * in corresponding QueryNode or UnionNode.
  */
-bool isDependentColumn(IdentifierResolveScope * scope_to_check, const QueryTreeNodePtr & column_source);
+bool checkCorrelatedColumn(
+    IdentifierResolveScope * scope_to_check,
+    const ColumnNodePtr & column
+);
+
+DataTypePtr getExpressionNodeResultTypeOrNull(const QueryTreeNodePtr & query_tree_node);
 
 /** Build cast function that cast expression into type.
   * If resolve = true, then result cast function is resolved during build, otherwise
@@ -182,5 +213,7 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
     const QueryTreeNodePtr & replacement_table_expression,
     const ContextPtr & context);
 
+
+Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type);
 
 }

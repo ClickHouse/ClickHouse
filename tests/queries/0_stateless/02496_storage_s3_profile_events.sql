@@ -9,8 +9,9 @@ PARTITION BY a;
 INSERT INTO t_s3_events_02496 SELECT number FROM numbers(10) SETTINGS s3_truncate_on_insert=1;
 
 SET max_threads = 1;
+SET parallel_replicas_for_cluster_engines = 0;
 SELECT count() FROM s3(s3_conn, filename = 'test_02496_*', format = Parquet, structure = 'a UInt64');
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT
     ProfileEvents['S3HeadObject'],

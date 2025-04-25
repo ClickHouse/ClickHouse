@@ -11,7 +11,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
 #include <base/chrono_io.h>
@@ -673,9 +672,9 @@ bool BackupEntriesCollector::compareWithPrevious(String & mismatch_description)
     tables_metadata.reserve(table_infos.size());
 
     for (const auto & [database_name, database_info] : database_infos)
-        databases_metadata.emplace_back(database_name, database_info.create_database_query ? serializeAST(*database_info.create_database_query) : "");
+        databases_metadata.emplace_back(database_name, database_info.create_database_query ? database_info.create_database_query->formatWithSecretsOneLine() : "");
     for (const auto & [table_name, table_info] : table_infos)
-        tables_metadata.emplace_back(table_name, serializeAST(*table_info.create_table_query));
+        tables_metadata.emplace_back(table_name, table_info.create_table_query->formatWithSecretsOneLine());
 
     /// We need to sort the lists to make the comparison below correct.
     ::sort(databases_metadata.begin(), databases_metadata.end());
@@ -763,7 +762,7 @@ void BackupEntriesCollector::makeBackupEntriesForDatabasesDefs()
         renameDatabaseAndTableNameInCreateQuery(new_create_query, renaming_map, context->getGlobalContext());
 
         const String & metadata_path_in_backup = database_info.metadata_path_in_backup;
-        backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(serializeAST(*new_create_query)));
+        backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(new_create_query->formatWithSecretsOneLine()));
     }
 }
 
@@ -781,7 +780,7 @@ void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
         renameDatabaseAndTableNameInCreateQuery(new_create_query, renaming_map, context->getGlobalContext());
 
         const String & metadata_path_in_backup = table_info.metadata_path_in_backup;
-        backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(serializeAST(*new_create_query)));
+        backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(new_create_query->formatWithSecretsOneLine()));
     }
 }
 

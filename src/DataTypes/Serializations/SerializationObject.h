@@ -78,6 +78,7 @@ public:
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -106,6 +107,11 @@ private:
         ColumnObject::StatisticsPtr statistics;
 
         explicit DeserializeBinaryBulkStateObjectStructure(UInt64 serialization_version_) : serialization_version(serialization_version_) {}
+
+        DeserializeBinaryBulkStatePtr clone() const override
+        {
+            return std::make_shared<DeserializeBinaryBulkStateObjectStructure>(*this);
+        }
     };
 
     static DeserializeBinaryBulkStatePtr deserializeObjectStructureStatePrefix(

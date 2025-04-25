@@ -11,7 +11,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/RowRefs.h>
 
-#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -374,6 +374,10 @@ public:
         Type type = Type::EMPTY;
         bool empty = true;
 
+        /// tab1 join tab2 on t1.x = t2.x or t1.y = t2.y
+        /// =>
+        /// tab1 join tab2 on t1.x = t2.x
+        /// join tab2 on [not_joined(t1.x = t2.x)] and t1.y = t2.y
         std::vector<MapsVariant> maps;
         Block sample_block; /// Block as it would appear in the BlockList
         ScatteredBlocksList blocks; /// Blocks of "right" table.

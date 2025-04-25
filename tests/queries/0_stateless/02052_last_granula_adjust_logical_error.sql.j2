@@ -12,7 +12,7 @@ as select number, repeat(toString(number), 5) from numbers({{ rows_in_table }});
 
 -- avoid any optimizations with ignore(*)
 select * apply max from data_02052_{{ rows_in_table }}_wide{{ wide }} settings max_read_buffer_size=1, max_threads=1;
-select * apply max from data_02052_{{ rows_in_table }}_wide{{ wide }} settings max_read_buffer_size=0, max_threads=1; -- { serverError INVALID_SETTING_VALUE }
+select * apply max from data_02052_{{ rows_in_table }}_wide{{ wide }} settings max_read_buffer_size=0, max_threads=1; -- { clientError BAD_ARGUMENTS }
 
 drop table data_02052_{{ rows_in_table }}_wide{{ wide }};
 {% endfor %}

@@ -51,7 +51,7 @@ UInt32 CompressionCodecZSTDQAT::doCompressData(const char * source, UInt32 sourc
         if (qat_state == QZSTD_OK)
             LOG_DEBUG(log, "Initialization of hardware-assissted ZSTD_QAT codec successful");
         else
-            LOG_WARNING(log, "Initialization of hardware-assisted ZSTD_QAT codec failed, falling back to software ZSTD codec -> status: {}", qat_state);
+            LOG_WARNING(log, "Initialization of hardware-assisted ZSTD_QAT codec failed, falling back to software ZSTD codec -> status: {}", qat_state.load());
     }
 
     ZSTD_CCtx * cctx = ZSTD_createCCtx();

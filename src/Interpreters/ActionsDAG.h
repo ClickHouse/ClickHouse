@@ -4,6 +4,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
+#include <Common/SipHash.h>
 #include <Interpreters/Context_fwd.h>
 
 #include "config.h"
@@ -62,6 +63,8 @@ public:
         /// Function arrayJoin. Specially separated because it changes the number of rows.
         ARRAY_JOIN,
         FUNCTION,
+        /// Placeholder node for correlated column
+        PLACEHOLDER,
     };
 
     struct Node;
@@ -93,6 +96,8 @@ public:
         /// If result of this not is deterministic. Checks only this node, not a subtree.
         bool isDeterministic() const;
         void toTree(JSONBuilder::JSONMap & map) const;
+        size_t getHash() const;
+        void updateHash(SipHash & hash_state) const;
     };
 
     /// NOTE: std::list is an implementation detail.
@@ -151,6 +156,7 @@ public:
         NodeRawConstPtrs children,
         std::string result_name);
     const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name);
+    const Node & addPlaceholder(std::string name, DataTypePtr type);
 
     /// Find first column by name in output nodes. This search is linear.
     const Node & findInOutputs(const std::string & name) const;
@@ -253,9 +259,10 @@ public:
         const std::unordered_map<const Node *, const Node *> & new_inputs,
         const NodeRawConstPtrs & required_outputs);
 
-    bool hasArrayJoin() const;
+    bool hasCorrelatedColumns() const noexcept;
+    bool hasArrayJoin() const noexcept;
     bool hasStatefulFunctions() const;
-    bool trivial() const; /// If actions has no functions or array join.
+    bool trivial() const noexcept; /// If actions has no functions or array join.
     void assertDeterministic() const; /// Throw if not isDeterministic.
     bool hasNonDeterministic() const;
 
@@ -282,6 +289,9 @@ public:
         const NodeRawConstPtrs & outputs,
         size_t input_rows_count,
         bool throw_on_error);
+
+    /// Replace all PLACEHOLDER nodes with INPUT nodes
+    void decorrelate() noexcept;
 
     /// For apply materialize() function for every output.
     /// Also add aliases so the result names remain unchanged.
@@ -443,6 +453,9 @@ public:
     static NodeRawConstPtrs filterNodesByAllowedInputs(
         NodeRawConstPtrs nodes,
         const std::unordered_set<const Node *> & allowed_inputs);
+
+    UInt64 getHash() const;
+    void updateHash(SipHash & hash_state) const;
 
 private:
     NodeRawConstPtrs getParents(const Node * target) const;

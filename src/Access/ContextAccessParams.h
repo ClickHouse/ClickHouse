@@ -6,6 +6,11 @@
 #include <vector>
 
 
+namespace Poco::Net
+{
+    class IPAddress;
+}
+
 namespace DB
 {
 struct Settings;
@@ -42,7 +47,7 @@ public:
 
     const ClientInfo::Interface interface;
     const ClientInfo::HTTPMethod http_method;
-    const Poco::Net::IPAddress address;
+    const std::shared_ptr<Poco::Net::IPAddress> address;
 
     /// The last entry from comma separated list of X-Forwarded-For addresses.
     /// Only the last proxy can be trusted (if any).

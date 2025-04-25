@@ -46,7 +46,7 @@ WHERE (test_id > 50)
     AND (test_id < 150)
 GROUP BY test_string;"
 
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS;"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log;"
 
 $CLICKHOUSE_CLIENT -q "
 SELECT projections
@@ -69,7 +69,7 @@ WHERE (test_id > 50)
     AND (test_id < 150)
 GROUP BY test_string;"
 
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS;"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log;"
 
 $CLICKHOUSE_CLIENT -q "
 SELECT projections
@@ -92,7 +92,7 @@ WHERE (test_id > 50)
     AND (test_id < 150)
 GROUP BY test_string;"
 
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS;"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log;"
 
 $CLICKHOUSE_CLIENT -q "
 SELECT projections

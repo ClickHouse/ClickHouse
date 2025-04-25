@@ -1,5 +1,6 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/TTL/TTLAggregationAlgorithm.h>
 
 namespace DB
@@ -207,7 +208,7 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
 {
     if (!aggregation_result.empty())
     {
-        auto aggregated_res = aggregator->convertToBlocks(aggregation_result, true, 1);
+        auto aggregated_res = aggregator->convertToBlocks(aggregation_result, true);
 
         for (auto & agg_block : aggregated_res)
         {

@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <Core/MySQL/IMySQLWritePacket.h>
 #include <IO/MySQLPacketPayloadWriteBuffer.h>
 

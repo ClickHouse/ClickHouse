@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <Processors/Formats/Impl/JSONColumnsBlockOutputFormatBase.h>
 
 namespace DB

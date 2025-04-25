@@ -1,8 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <allow_experimental_database_materialized_postgresql>1</allow_experimental_database_materialized_postgresql>
-            <postgresql_fault_injection_probability>0.1</postgresql_fault_injection_probability>
-        </default>
-    </profiles>
-</clickhouse>

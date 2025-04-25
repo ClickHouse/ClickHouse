@@ -1,7 +1,9 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/maxintersectionsposition
+description: 'Aggregate function that calculates the positions of the occurrences
+  of the maxIntersections function.'
 sidebar_position: 164
-title: maxIntersectionsPosition
+slug: /sql-reference/aggregate-functions/reference/maxintersectionsposition
+title: 'maxIntersectionsPosition'
 ---
 
 # maxIntersectionsPosition

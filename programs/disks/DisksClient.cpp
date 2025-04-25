@@ -31,6 +31,18 @@ DiskWithPath::DiskWithPath(DiskPtr disk_, std::optional<String> path_) : disk(di
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Initializing path {} is not absolute", path_.value());
         }
         path = path_.value();
+
+        String relative_path = normalizePathAndGetAsRelative(path);
+        if (disk->existsDirectory(relative_path) || (relative_path.empty() && (disk->existsDirectory("/"))))
+        {
+            return;
+        }
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Initializing path {} (normalized path: {}) at disk {} is not a directory",
+            path,
+            relative_path,
+            disk->getName());
     }
     else
     {
@@ -38,7 +50,7 @@ DiskWithPath::DiskWithPath(DiskPtr disk_, std::optional<String> path_) : disk(di
     }
 
     String relative_path = normalizePathAndGetAsRelative(path);
-    if (disk->existsDirectory(relative_path) || (relative_path.empty() && (disk->existsDirectory("/"))))
+    if (disk->existsDirectory(relative_path) || relative_path.empty())
     {
         return;
     }

@@ -1,12 +1,11 @@
 #pragma once
 
-#include <exception>
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
-
+#include <Common/threadPoolCallbackRunner.h>
 
 namespace DB
 {
@@ -65,14 +64,7 @@ public:
                 auto data_vec_atomic_index = std::make_shared<std::atomic_uint32_t>(0);
                 auto thread_func = [data_vec, data_vec_atomic_index, &is_cancelled, thread_group = CurrentThread::getGroup()]()
                 {
-                    SCOPE_EXIT_SAFE(
-                        if (thread_group)
-                            CurrentThread::detachFromGroupIfNotDetached();
-                    );
-                    if (thread_group)
-                        CurrentThread::attachToGroupIfDetached(thread_group);
-
-                    setThreadName("UniqExaConvert");
+                    ThreadGroupSwitcher switcher(thread_group, "UniqExaConvert");
 
                     while (true)
                     {
@@ -101,13 +93,6 @@ public:
 
     auto merge(const UniqExactSet & other, ThreadPool * thread_pool = nullptr, std::atomic<bool> * is_cancelled = nullptr)
     {
-        /// If the size is large, we may convert the singleLevelHash to twoLevelHash and merge in parallel.
-        if (other.size() > 40000)
-        {
-            if (isSingleLevel())
-                convertToTwoLevel();
-        }
-
         if (isSingleLevel() && other.isTwoLevel())
             convertToTwoLevel();
 
@@ -129,23 +114,16 @@ public:
             }
             else
             {
+                ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, "UniqExactMerger");
                 try
                 {
                     auto next_bucket_to_merge = std::make_shared<std::atomic_uint32_t>(0);
 
                     auto thread_func = [&lhs, &rhs, next_bucket_to_merge, is_cancelled, thread_group = CurrentThread::getGroup()]()
                     {
-                        SCOPE_EXIT_SAFE(
-                            if (thread_group)
-                                CurrentThread::detachFromGroupIfNotDetached();
-                        );
-                        if (thread_group)
-                            CurrentThread::attachToGroupIfDetached(thread_group);
-                        setThreadName("UniqExactMerger");
-
                         while (true)
                         {
-                            if (is_cancelled->load(std::memory_order_seq_cst))
+                            if (is_cancelled->load())
                                 return;
 
                             const auto bucket = next_bucket_to_merge->fetch_add(1);
@@ -156,13 +134,13 @@ public:
                     };
 
                     for (size_t i = 0; i < std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS); ++i)
-                        thread_pool->scheduleOrThrowOnError(thread_func);
-                    thread_pool->wait();
+                        runner(thread_func, Priority{});
+                    runner.waitForAllToFinishAndRethrowFirstError();
                 }
                 catch (...)
                 {
-                    thread_pool->wait();
-                    throw;
+                    is_cancelled->store(true);
+                    runner.waitForAllToFinishAndRethrowFirstError();
                 }
             }
         }

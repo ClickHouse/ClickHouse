@@ -1,4 +1,3 @@
-#include <atomic>
 #include <Common/logger_useful.h>
 #include <Common/LatencyBuckets.h>
 

@@ -63,7 +63,7 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM RELOAD ASYNCHRONOUS METRICS;
     SELECT metric, value FROM system.asynchronous_metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'MarkCacheFiles') ORDER BY metric;
 
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS query_log;
 
     SELECT
         ProfileEvents['LoadedMarksFiles'],

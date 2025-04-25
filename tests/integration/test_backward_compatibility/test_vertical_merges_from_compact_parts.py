@@ -14,6 +14,7 @@ node_old = cluster.add_instance(
 )
 node_new = cluster.add_instance(
     "node2",
+    user_configs=["configs/user_config.xml"],
     main_configs=[
         "configs/no_compress_marks.xml",
         "configs/no_allow_vertical_merges_from_compact_to_wide_parts.xml",
@@ -123,3 +124,6 @@ def test_vertical_merges_from_compact_parts(start_cluster):
 
     assert node_new.query(check_query.format("all_0_3_3")) == "Vertical\tWide\n"
     assert node_old.query(check_query.format("all_0_3_3")) == "Vertical\tWide\n"
+
+    for i, node in enumerate([node_old, node_new]):
+        node.query("DROP TABLE t_vertical_merges")

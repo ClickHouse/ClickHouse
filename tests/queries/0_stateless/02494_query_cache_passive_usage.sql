@@ -27,7 +27,7 @@ SELECT '-----';
 SELECT 1 SETTINGS use_query_cache = true, enable_writes_to_query_cache = false;
 SELECT COUNT(*) FROM system.query_cache;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['QueryCacheHits'], ProfileEvents['QueryCacheMisses']
 FROM system.query_log
 WHERE type = 'QueryFinish'

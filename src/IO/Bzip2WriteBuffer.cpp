@@ -4,7 +4,6 @@
 #    include <IO/Bzip2WriteBuffer.h>
 #    include <bzlib.h>
 
-#include <Common/MemoryTracker.h>
 
 namespace DB
 {

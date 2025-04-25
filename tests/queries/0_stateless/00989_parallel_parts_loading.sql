@@ -6,7 +6,7 @@ CREATE TABLE mt (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS parts_to_delay
 
 SYSTEM STOP MERGES mt;
 
-SET max_block_size = 1, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
+SET max_block_size = 1, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, max_execution_time = 600;
 INSERT INTO mt SELECT * FROM numbers(1000);
 SET max_block_size = 65536;
 

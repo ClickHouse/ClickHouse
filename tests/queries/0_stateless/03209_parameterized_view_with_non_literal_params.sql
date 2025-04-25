@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 select 'Test with Date parameter';
 
 drop table if exists date_table_pv;

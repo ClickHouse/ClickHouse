@@ -2,7 +2,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/BlockIO.h>
 #include <DataTypes/DataTypeString.h>
-#include <Parsers/queryToString.h>
+#include <Columns/IColumn.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <TableFunctions/ITableFunction.h>
@@ -222,7 +222,7 @@ void InterpreterDescribeQuery::addColumn(const ColumnDescription & column, bool 
         if (column.default_desc.expression)
         {
             res_columns[i++]->insert(toString(column.default_desc.kind));
-            res_columns[i++]->insert(queryToString(column.default_desc.expression));
+            res_columns[i++]->insert(column.default_desc.expression->formatForLogging());
         }
         else
         {
@@ -233,12 +233,12 @@ void InterpreterDescribeQuery::addColumn(const ColumnDescription & column, bool 
         res_columns[i++]->insert(column.comment);
 
         if (column.codec)
-            res_columns[i++]->insert(queryToString(column.codec->as<ASTFunction>()->arguments));
+            res_columns[i++]->insert(column.codec->as<ASTFunction>()->arguments->formatForLogging());
         else
             res_columns[i++]->insertDefault();
 
         if (column.ttl)
-            res_columns[i++]->insert(queryToString(column.ttl));
+            res_columns[i++]->insert(column.ttl->formatForLogging());
         else
             res_columns[i++]->insertDefault();
     }
@@ -273,12 +273,12 @@ void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, b
             res_columns[i++]->insert(column.comment);
 
             if (column.codec && ISerialization::isSpecialCompressionAllowed(path))
-                res_columns[i++]->insert(queryToString(column.codec->as<ASTFunction>()->arguments));
+                res_columns[i++]->insert(column.codec->as<ASTFunction>()->arguments->formatForLogging());
             else
                 res_columns[i++]->insertDefault();
 
             if (column.ttl)
-                res_columns[i++]->insert(queryToString(column.ttl));
+                res_columns[i++]->insert(column.ttl->formatForLogging());
             else
                 res_columns[i++]->insertDefault();
         }

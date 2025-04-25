@@ -12,7 +12,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
-#include <Parsers/queryToString.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/NullSource.h>
@@ -188,7 +187,7 @@ protected:
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(toString(column.default_desc.kind));
                     if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(queryToString(column.default_desc.expression));
+                        res_columns[res_index++]->insert(column.default_desc.expression->formatForLogging());
                 }
                 else
                 {
@@ -242,7 +241,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (column.codec)
-                        res_columns[res_index++]->insert(queryToString(column.codec));
+                        res_columns[res_index++]->insert(column.codec->formatForLogging());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -476,7 +475,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
             else
             {
                 const DatabasePtr & database = databases.at(database_name);
-                for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+                for (auto iterator = database->getLightweightTablesIterator(context); iterator->isValid(); iterator->next())
                 {
                     if (const auto & table = iterator->table())
                     {

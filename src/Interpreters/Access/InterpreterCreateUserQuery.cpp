@@ -196,7 +196,7 @@ BlockIO InterpreterCreateUserQuery::execute()
     for (const auto & name : *query.names)
         access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER, name->toString());
 
-    if (query.new_name)
+    if (query.new_name && !query.alter)
         access->checkAccess(AccessType::CREATE_USER, *query.new_name);
 
     bool implicit_no_password_allowed = access_control.isImplicitNoPasswordAllowed();

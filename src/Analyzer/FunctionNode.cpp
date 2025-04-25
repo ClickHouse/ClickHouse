@@ -83,6 +83,13 @@ ColumnsWithTypeAndName FunctionNode::getArgumentColumns() const
     return argument_columns;
 }
 
+AggregateFunctionPtr  FunctionNode::getAggregateFunction() const
+{
+    if (kind == FunctionKind::UNKNOWN || kind == FunctionKind::ORDINARY)
+        return {};
+    return std::static_pointer_cast<const IAggregateFunction>(function);
+}
+
 void FunctionNode::resolveAsFunction(FunctionBasePtr function_value)
 {
     function_name = function_value->getName();

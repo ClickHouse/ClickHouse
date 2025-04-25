@@ -8,7 +8,7 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE floats (v Float64) Engine=MergeTree() ORDER 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE target_1 (v Float64) Engine=MergeTree() ORDER BY tuple() SETTINGS ratio_of_defaults_for_sparse_serialization = 1.0;"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE target_2 (v Float64) Engine=MergeTree() ORDER BY tuple() SETTINGS ratio_of_defaults_for_sparse_serialization = 1.0;"
 $CLICKHOUSE_CLIENT -q "CREATE MATERIALIZED VIEW floats_to_target TO target_1 AS SELECT * FROM floats"
-$CLICKHOUSE_CLIENT -q "CREATE MATERIALIZED VIEW floats_to_target_2 TO target_2 AS SELECT * FROM floats, numbers(2) n"
+$CLICKHOUSE_CLIENT -q "CREATE MATERIALIZED VIEW floats_to_target_2 TO target_2 AS SELECT v FROM floats, numbers(2) n"
 
 # Insertions into table without MVs
 $CLICKHOUSE_CLIENT -q "INSERT into target_1 FORMAT CSV 1.0"
@@ -20,7 +20,7 @@ $CLICKHOUSE_CLIENT -q "INSERT into floats FORMAT CSV 1.0"
 $CLICKHOUSE_LOCAL -q "SELECT number::Float64 AS v FROM numbers(10)" --format Native | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+floats+FORMAT+Native" --data-binary @-
 $CLICKHOUSE_LOCAL -q "SELECT number::Float64 AS v FROM numbers(10)" --format RowBinary | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+floats+FORMAT+RowBinary" --data-binary @-
 
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log, query_views_log"
 $CLICKHOUSE_CLIENT -q \
   "SELECT
     read_rows,

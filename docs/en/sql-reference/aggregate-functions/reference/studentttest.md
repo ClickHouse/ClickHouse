@@ -1,7 +1,9 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/studentttest
+description: 'Applies the student t-test to samples from two populations.'
+sidebar_label: 'studentTTest'
 sidebar_position: 194
-sidebar_label: studentTTest
+slug: /sql-reference/aggregate-functions/reference/studentttest
+title: 'studentTTest'
 ---
 
 # studentTTest
@@ -10,7 +12,7 @@ Applies Student's t-test to samples from two populations.
 
 **Syntax**
 
-``` sql
+```sql
 studentTTest([confidence_level])(sample_data, sample_index)
 ```
 
@@ -41,7 +43,7 @@ The null hypothesis is that means of populations are equal. Normal distribution 
 
 Input table:
 
-``` text
+```text
 ┌─sample_data─┬─sample_index─┐
 │        20.3 │            0 │
 │        21.1 │            0 │
@@ -54,13 +56,13 @@ Input table:
 
 Query:
 
-``` sql
+```sql
 SELECT studentTTest(sample_data, sample_index) FROM student_ttest;
 ```
 
 Result:
 
-``` text
+```text
 ┌─studentTTest(sample_data, sample_index)───┐
 │ (-0.21739130434783777,0.8385421208415731) │
 └───────────────────────────────────────────┘
@@ -69,4 +71,4 @@ Result:
 **See Also**
 
 - [Student's t-test](https://en.wikipedia.org/wiki/Student%27s_t-test)
-- [welchTTest function](welchttest.md#welchttest)
+- [welchTTest function](/sql-reference/aggregate-functions/reference/welchttest)

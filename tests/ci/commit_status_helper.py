@@ -14,10 +14,11 @@ from github.Commit import Commit
 from github.CommitStatus import CommitStatus
 from github.GithubException import GithubException
 from github.GithubObject import NotSet
+from github.IssueComment import IssueComment
 from github.Repository import Repository
 
 from ci_config import CI
-from env_helper import GITHUB_REPOSITORY, TEMP_PATH
+from env_helper import GITHUB_REPOSITORY, GITHUB_UPSTREAM_REPOSITORY, TEMP_PATH
 from pr_info import PRInfo
 from report import (
     ERROR,
@@ -150,14 +151,14 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
     one, so the method does nothing for simple pushes and pull requests with
     `release`/`release-lts` labels"""
 
-    if pr_info.is_merge_queue:
-        # skip report creation for the MQ
+    if GITHUB_REPOSITORY == GITHUB_UPSTREAM_REPOSITORY or pr_info.is_merge_queue:
+        # CI Running status is deprecated for ClickHouse repo
         return
 
     # to reduce number of parameters, the Github is constructed on the fly
     gh = Github()
     gh.__requester = commit._requester  # type:ignore #pylint:disable=protected-access
-    # repo = get_repo(gh)
+    repo = get_repo(gh)
     statuses = sorted(get_commit_filtered_statuses(commit), key=lambda x: x.context)
     statuses = [
         status
@@ -187,28 +188,27 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
 
     # We update the report in generate_status_comment function, so do it each
     # run, even in the release PRs and normal pushes
-    # TODO: uncomment if needed
-    # comment_body = generate_status_comment(pr_info, statuses)
-    # # We post the comment only to normal and backport PRs
-    # if pr_info.number == 0 or pr_info.labels.intersection({"release", "release-lts"}):
-    #     return
-    #
-    # comment_service_header = comment_body.split("\n", 1)[0]
-    # comment = None  # type: Optional[IssueComment]
-    # pr = repo.get_pull(pr_info.number)
-    # for ic in pr.get_issue_comments():
-    #     if ic.body.startswith(comment_service_header):
-    #         comment = ic
-    #         break
-    #
-    # if comment is None:
-    #     pr.create_issue_comment(comment_body)
-    #     return
-    #
-    # if comment.body == comment_body:
-    #     logging.info("The status comment is already updated, no needs to change it")
-    #     return
-    # comment.edit(comment_body)
+    comment_body = generate_status_comment(pr_info, statuses)
+    # We post the comment only to normal and backport PRs
+    if pr_info.number == 0 or pr_info.labels.intersection({"release", "release-lts"}):
+        return
+
+    comment_service_header = comment_body.split("\n", 1)[0]
+    comment = None  # type: Optional[IssueComment]
+    pr = repo.get_pull(pr_info.number)
+    for ic in pr.get_issue_comments():
+        if ic.body.startswith(comment_service_header):
+            comment = ic
+            break
+
+    if comment is None:
+        pr.create_issue_comment(comment_body)
+        return
+
+    if comment.body == comment_body:
+        logging.info("The status comment is already updated, no needs to change it")
+        return
+    comment.edit(comment_body)
 
 
 def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
@@ -585,7 +585,7 @@ CHECK_DESCRIPTIONS = [
         "information to fix the error, but you might have to reproduce the failure "
         "locally. The <b>cmake</b> options can be found in the build log, grepping for "
         '<b>cmake</b>. Use these options and follow the <a href="'
-        'https://clickhouse.com/docs/en/development/build">general build process</a>',
+        'https://clickhouse.com/docs/development/build">general build process</a>',
         lambda x: x.startswith("ClickHouse") and x.endswith("build check"),
     ),
     CheckDescription(
@@ -612,11 +612,11 @@ CHECK_DESCRIPTIONS = [
     CheckDescription(
         CI.JobNames.FAST_TEST,
         "Normally this is the first check that is ran for a PR. It builds ClickHouse "
-        'and runs most of <a href="https://clickhouse.com/docs/en/development/tests'
+        'and runs most of <a href="https://clickhouse.com/docs/development/tests'
         '#functional-tests">stateless functional tests</a>, '
         "omitting some. If it fails, further checks are not started until it is fixed. "
         "Look at the report to see which tests fail, then reproduce the failure "
-        'locally as described <a href="https://clickhouse.com/docs/en/development/'
+        'locally as described <a href="https://clickhouse.com/docs/development/'
         'tests#functional-test-locally">here</a>',
         lambda x: x == CI.JobNames.FAST_TEST,
     ),

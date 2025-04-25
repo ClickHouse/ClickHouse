@@ -1,5 +1,6 @@
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Core/Block.h>
+#include <Core/Field.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/FunctionFactory.h>

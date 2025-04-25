@@ -75,7 +75,7 @@ print_border() {
 expected_results=()
 
 check_expectations() {
-  $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+  $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
   for i in "${!expected_results[@]}"; do
     read -a args <<< "${expected_results[$i]}"

@@ -13,7 +13,7 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t; CREATE TABLE t (x UInt64) 
 seq 1 1000 | pv --quiet --rate-limit 400 | ${CLICKHOUSE_CLIENT} --query "INSERT INTO t FORMAT TSV"
 
 # We check that the value of NetworkReceiveElapsedMicroseconds correctly includes the time spent waiting data from the client.
-result=$(${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS;
+result=$(${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log;
     WITH ProfileEvents['NetworkReceiveElapsedMicroseconds'] AS elapsed_us
     SELECT elapsed_us FROM system.query_log
     WHERE current_database = currentDatabase() AND query_kind = 'Insert' AND event_date >= yesterday() AND type = 'QueryFinish'

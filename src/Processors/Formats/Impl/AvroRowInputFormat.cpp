@@ -7,7 +7,6 @@
 
 #include <Common/CacheBase.h>
 
-#include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBufferFromString.h>
@@ -34,7 +33,6 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
@@ -938,6 +936,31 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     {
         return AvroDeserializer::Action(createSkipFn(node));
     }
+}
+
+
+AvroDeserializer::AvroDeserializer(DataTypePtr data_type, const std::string & column_name, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_)
+    : null_as_default(null_as_default_), settings(settings_)
+{
+    const auto & schema_root = schema.root();
+    if (schema_root->type() != avro::AVRO_RECORD)
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Root schema must be a record");
+
+    Block header;
+    header.insert({data_type->createColumn(), data_type, column_name});
+
+    column_found.resize(header.columns());
+    row_action = createAction(header, schema_root, column_name);
+    // fail on missing fields when allow_missing_fields = false
+    if (!allow_missing_fields)
+    {
+        for (size_t i = 0; i < header.columns(); ++i)
+        {
+            if (!column_found[i])
+                throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Field {} not found in Avro schema", header.getByPosition(i).name);
+        }
+    }
+
 }
 
 AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_)

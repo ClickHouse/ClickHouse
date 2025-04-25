@@ -7,7 +7,6 @@
 #include <Common/quoteString.h>
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
 
@@ -579,6 +578,13 @@ bool ASTCreateQuery::isParameterizedView() const
     return false;
 }
 
+NameToNameMap ASTCreateQuery::getQueryParameters() const
+{
+    if (!select || !isParameterizedView())
+        return {};
+
+    return select->getQueryParameters();
+}
 
 void ASTCreateQuery::generateRandomUUIDs()
 {

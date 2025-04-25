@@ -143,7 +143,7 @@ void ColumnPartStatistics::serialize(WriteBuffer & buf)
 
     UInt64 stat_types_mask = 0;
     for (const auto & [type, _]: stats)
-        stat_types_mask |= 1 << UInt8(type);
+        stat_types_mask |= 1LL << UInt8(type);
     writeIntBinary(stat_types_mask, buf);
 
     /// as the column row count is always useful, save it in any case
@@ -168,7 +168,7 @@ void ColumnPartStatistics::deserialize(ReadBuffer &buf)
 
     for (auto it = stats.begin(); it != stats.end();)
     {
-        if (!(stat_types_mask & 1 << UInt8(it->first)))
+        if (!(stat_types_mask & 1LL << UInt8(it->first)))
         {
             stats.erase(it++);
         }

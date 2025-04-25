@@ -1,7 +1,7 @@
 # rebuild in #33610
 # docker build -t clickhouse/stress-test .
 ARG FROM_TAG=latest
-FROM clickhouse/stateful-test:$FROM_TAG
+FROM clickhouse/stateless-test:$FROM_TAG
 
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
@@ -23,4 +23,3 @@ RUN apt-get update -y \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 ENV EXPORT_S3_STORAGE_POLICIES=1
-

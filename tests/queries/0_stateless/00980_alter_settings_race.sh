@@ -13,8 +13,8 @@ n=0
 while [ "$n" -lt 50 ];
 do
     n=$(( n + 1 ))
-    $CLICKHOUSE_CLIENT --query="INSERT INTO table_for_concurrent_alter VALUES(1, 'Hello')" > /dev/null 2> /dev/null &
-    $CLICKHOUSE_CLIENT --query="OPTIMIZE TABLE table_for_concurrent_alter FINAL" > /dev/null 2> /dev/null &
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "INSERT INTO table_for_concurrent_alter VALUES(1, 'Hello')" > /dev/null 2> /dev/null &
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "OPTIMIZE TABLE table_for_concurrent_alter FINAL" > /dev/null 2> /dev/null &
 done &
 
 
@@ -23,7 +23,7 @@ while [ "$q" -lt 50 ];
 do
     q=$(( q + 1 ))
     counter=$(( 100 + q ))
-    $CLICKHOUSE_CLIENT --query="ALTER TABLE table_for_concurrent_alter MODIFY SETTING parts_to_throw_insert = $counter, parts_to_delay_insert = $counter, min_merge_bytes_to_use_direct_io = $counter" > /dev/null 2> /dev/null &
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "ALTER TABLE table_for_concurrent_alter MODIFY SETTING parts_to_throw_insert = $counter, parts_to_delay_insert = $counter, min_merge_bytes_to_use_direct_io = $counter" > /dev/null 2> /dev/null &
 done &
 
 sleep 4
@@ -37,3 +37,5 @@ done
 $CLICKHOUSE_CLIENT --query "SELECT 1"
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS table_for_concurrent_alter"
+
+wait

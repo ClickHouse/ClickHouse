@@ -4,6 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/LocalDateTime.h>
 #include <Common/logger_useful.h>
 #include <Core/DecimalFunctions.h>

@@ -1,7 +1,9 @@
 ---
-slug: /en/sql-reference/functions/url-functions
+description: 'Documentation for Functions for Working with URLs'
+sidebar_label: 'URLs'
 sidebar_position: 200
-sidebar_label: URLs
+slug: /sql-reference/functions/url-functions
+title: 'Functions for Working with URLs'
 ---
 
 # Functions for Working with URLs
@@ -34,23 +36,23 @@ The table below details which symbols in a URL can (`✔`) or cannot (`✗`) be 
 
 symbols marked `*` are sub-delimiters in RFC 3986 and allowed for user info following the `@` symbol.
 
-## Functions that Extract Parts of a URL
+## Functions that Extract Parts of a URL {#functions-that-extract-parts-of-a-url}
 
-If the relevant part isn’t present in a URL, an empty string is returned.
+If the relevant part isn't present in a URL, an empty string is returned.
 
-### protocol
+### protocol {#protocol}
 
 Extracts the protocol from a URL.
 
 Examples of typical returned values: http, https, ftp, mailto, tel, magnet.
 
-### domain
+### domain {#domain}
 
 Extracts the hostname from a URL.
 
 **Syntax**
 
-``` sql
+```sql
 domain(url)
 ```
 
@@ -60,7 +62,7 @@ domain(url)
 
 The URL can be specified with or without a protocol. Examples:
 
-``` text
+```text
 svn+ssh://some.svn-hosting.com:80/repo/trunk
 some.svn-hosting.com:80/repo/trunk
 https://clickhouse.com/time/
@@ -68,7 +70,7 @@ https://clickhouse.com/time/
 
 For these examples, the `domain` function returns the following results:
 
-``` text
+```text
 some.svn-hosting.com
 some.svn-hosting.com
 clickhouse.com
@@ -80,23 +82,23 @@ clickhouse.com
 
 **Example**
 
-``` sql
+```sql
 SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk');
 ```
 
-``` text
+```text
 ┌─domain('svn+ssh://some.svn-hosting.com:80/repo/trunk')─┐
 │ some.svn-hosting.com                                   │
 └────────────────────────────────────────────────────────┘
 ```
 
-### domainRFC
+### domainRFC {#domainrfc}
 
 Extracts the hostname from a URL. Similar to [domain](#domain), but RFC 3986 conformant.
 
 **Syntax**
 
-``` sql
+```sql
 domainRFC(url)
 ```
 
@@ -110,19 +112,19 @@ domainRFC(url)
 
 **Example**
 
-``` sql
+```sql
 SELECT
     domain('http://user:password@example.com:8080/path?query=value#fragment'),
     domainRFC('http://user:password@example.com:8080/path?query=value#fragment');
 ```
 
-``` text
+```text
 ┌─domain('http://user:password@example.com:8080/path?query=value#fragment')─┬─domainRFC('http://user:password@example.com:8080/path?query=value#fragment')─┐
 │                                                                           │ example.com                                                                  │
 └───────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### domainWithoutWWW
+### domainWithoutWWW {#domainwithoutwww}
 
 Returns the domain without leading `www.` if present.
 
@@ -142,17 +144,17 @@ domainWithoutWWW(url)
 
 **Example**
 
-``` sql
+```sql
 SELECT domainWithoutWWW('http://paul@www.example.com:80/');
 ```
 
-``` text
+```text
 ┌─domainWithoutWWW('http://paul@www.example.com:80/')─┐
 │ example.com                                         │
 └─────────────────────────────────────────────────────┘
 ```
 
-### domainWithoutWWWRFC
+### domainWithoutWWWRFC {#domainwithoutwwwrfc}
 
 Returns the domain without leading `www.` if present. Similar to [domainWithoutWWW](#domainwithoutwww) but conforms to RFC 3986.
 
@@ -188,11 +190,11 @@ Result:
 └─────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### topLevelDomain
+### topLevelDomain {#topleveldomain}
 
 Extracts the the top-level domain from a URL.
 
-``` sql
+```sql
 topLevelDomain(url)
 ```
 
@@ -203,7 +205,7 @@ topLevelDomain(url)
 :::note
 The URL can be specified with or without a protocol. Examples:
 
-``` text
+```text
 svn+ssh://some.svn-hosting.com:80/repo/trunk
 some.svn-hosting.com:80/repo/trunk
 https://clickhouse.com/time/
@@ -218,24 +220,24 @@ https://clickhouse.com/time/
 
 Query:
 
-``` sql
+```sql
 SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk');
 ```
 
 Result:
 
-``` text
+```text
 ┌─topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')─┐
 │ com                                                                │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-### topLevelDomainRFC
+### topLevelDomainRFC {#topleveldomainrfc}
 
 Extracts the the top-level domain from a URL.
 Similar to [topLevelDomain](#topleveldomain), but conforms to RFC 3986.
 
-``` sql
+```sql
 topLevelDomainRFC(url)
 ```
 
@@ -246,7 +248,7 @@ topLevelDomainRFC(url)
 :::note
 The URL can be specified with or without a protocol. Examples:
 
-``` text
+```text
 svn+ssh://some.svn-hosting.com:80/repo/trunk
 some.svn-hosting.com:80/repo/trunk
 https://clickhouse.com/time/
@@ -261,23 +263,23 @@ https://clickhouse.com/time/
 
 Query:
 
-``` sql
+```sql
 SELECT topLevelDomain('http://foo:foo%41bar@foo.com'), topLevelDomainRFC('http://foo:foo%41bar@foo.com');
 ```
 
 Result:
 
-``` text
+```text
 ┌─topLevelDomain('http://foo:foo%41bar@foo.com')─┬─topLevelDomainRFC('http://foo:foo%41bar@foo.com')─┐
 │                                                │ com                                               │
 └────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
 ```
 
-### firstSignificantSubdomain
+### firstSignificantSubdomain {#firstsignificantsubdomain}
 
 Returns the "first significant subdomain".
 The first significant subdomain is a second-level domain for `com`, `net`, `org`, or `co`, otherwise it is a third-level domain.
-For example, `firstSignificantSubdomain ('https://news.clickhouse.com/’) = 'clickhouse’, firstSignificantSubdomain ('https://news.clickhouse.com.tr/’) = 'clickhouse’`.
+For example, `firstSignificantSubdomain ('https://news.clickhouse.com/') = 'clickhouse', firstSignificantSubdomain ('https://news.clickhouse.com.tr/') = 'clickhouse'`.
 The list of "insignificant" second-level domains and other implementation details may change in the future.
 
 **Syntax**
@@ -310,11 +312,11 @@ Result:
 └───────────────────────────────────────────────────────────────┘
 ```
 
-### firstSignificantSubdomainRFC
+### firstSignificantSubdomainRFC {#firstsignificantsubdomainrfc}
 
 Returns the "first significant subdomain".
 The first significant subdomain is a second-level domain for `com`, `net`, `org`, or `co`, otherwise it is a third-level domain.
-For example, `firstSignificantSubdomain ('https://news.clickhouse.com/’) = 'clickhouse’, firstSignificantSubdomain ('https://news.clickhouse.com.tr/’) = 'clickhouse’`.
+For example, `firstSignificantSubdomain ('https://news.clickhouse.com/') = 'clickhouse', firstSignificantSubdomain ('https://news.clickhouse.com.tr/') = 'clickhouse'`.
 The list of "insignificant" second-level domains and other implementation details may change in the future.
 Similar to [firstSignficantSubdomain](#firstsignificantsubdomain) but conforms to RFC 1034.
 
@@ -350,7 +352,7 @@ Result:
 └──────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### cutToFirstSignificantSubdomain
+### cutToFirstSignificantSubdomain {#cuttofirstsignificantsubdomain}
 
 Returns the part of the domain that includes top-level subdomains up to the ["first significant subdomain"](#firstsignificantsubdomain).
 
@@ -387,7 +389,7 @@ Result:
 └───────────────────────────────────────────────────────────────────┴──────────────────────────────────────────┴──────────────────────────────────────┘
 ```
 
-### cutToFirstSignificantSubdomainRFC
+### cutToFirstSignificantSubdomainRFC {#cuttofirstsignificantsubdomainrfc}
 
 Returns the part of the domain that includes top-level subdomains up to the ["first significant subdomain"](#firstsignificantsubdomain).
 Similar to [cutToFirstSignificantSubdomain](#cuttofirstsignificantsubdomain) but conforms to RFC 3986.
@@ -425,7 +427,7 @@ Result:
 ```
 
 
-### cutToFirstSignificantSubdomainWithWWW
+### cutToFirstSignificantSubdomainWithWWW {#cuttofirstsignificantsubdomainwithwww}
 
 Returns the part of the domain that includes top-level subdomains up to the "first significant subdomain", without stripping `www`.
 
@@ -462,7 +464,7 @@ Result:
 └──────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────┴─────────────────────────────────────────────┘
 ```
 
-### cutToFirstSignificantSubdomainWithWWWRFC
+### cutToFirstSignificantSubdomainWithWWWRFC {#cuttofirstsignificantsubdomainwithwwwrfc}
 
 Returns the part of the domain that includes top-level subdomains up to the "first significant subdomain", without stripping `www`.
 Similar to [cutToFirstSignificantSubdomainWithWWW](#cuttofirstsignificantsubdomaincustomwithwww) but conforms to RFC 3986.
@@ -499,7 +501,7 @@ Result:
 └───────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### cutToFirstSignificantSubdomainCustom
+### cutToFirstSignificantSubdomainCustom {#cuttofirstsignificantsubdomaincustom}
 
 Returns the part of the domain that includes top-level subdomains up to the first significant subdomain.
 Accepts custom [TLD list](https://en.wikipedia.org/wiki/List_of_Internet_top-level_domains) name.
@@ -518,7 +520,7 @@ This function can be useful if you need a fresh TLD list or if you have a custom
 
 **Syntax**
 
-``` sql
+```sql
 cutToFirstSignificantSubdomain(url, tld)
 ```
 
@@ -551,7 +553,7 @@ Result:
 
 - [firstSignificantSubdomain](#firstsignificantsubdomain).
 
-### cutToFirstSignificantSubdomainCustomRFC
+### cutToFirstSignificantSubdomainCustomRFC {#cuttofirstsignificantsubdomaincustomrfc}
 
 Returns the part of the domain that includes top-level subdomains up to the first significant subdomain.
 Accepts custom [TLD list](https://en.wikipedia.org/wiki/List_of_Internet_top-level_domains) name.
@@ -560,7 +562,7 @@ Similar to [cutToFirstSignificantSubdomainCustom](#cuttofirstsignificantsubdomai
 
 **Syntax**
 
-``` sql
+```sql
 cutToFirstSignificantSubdomainRFC(url, tld)
 ```
 
@@ -577,7 +579,7 @@ cutToFirstSignificantSubdomainRFC(url, tld)
 
 - [firstSignificantSubdomain](#firstsignificantsubdomain).
 
-### cutToFirstSignificantSubdomainCustomWithWWW
+### cutToFirstSignificantSubdomainCustomWithWWW {#cuttofirstsignificantsubdomaincustomwithwww}
 
 Returns the part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`.
 Accepts custom TLD list name.
@@ -628,8 +630,9 @@ Result:
 **See Also**
 
 - [firstSignificantSubdomain](#firstsignificantsubdomain).
+- [top_level_domains_list](../../operations/server-configuration-parameters/settings.md/#top_level_domains_list)
 
-### cutToFirstSignificantSubdomainCustomWithWWWRFC
+### cutToFirstSignificantSubdomainCustomWithWWWRFC {#cuttofirstsignificantsubdomaincustomwithwwwrfc}
 
 Returns the part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`.
 Accepts custom TLD list name.
@@ -654,8 +657,9 @@ cutToFirstSignificantSubdomainCustomWithWWWRFC(url, tld)
 **See Also**
 
 - [firstSignificantSubdomain](#firstsignificantsubdomain).
+- [top_level_domains_list](../../operations/server-configuration-parameters/settings.md/#top_level_domains_list)
 
-### firstSignificantSubdomainCustom
+### firstSignificantSubdomainCustom {#firstsignificantsubdomaincustom}
 
 Returns the first significant subdomain.
 Accepts customs TLD list name.
@@ -706,8 +710,9 @@ Result:
 **See Also**
 
 - [firstSignificantSubdomain](#firstsignificantsubdomain).
+- [top_level_domains_list](../../operations/server-configuration-parameters/settings.md/#top_level_domains_list)
 
-### firstSignificantSubdomainCustomRFC
+### firstSignificantSubdomainCustomRFC {#firstsignificantsubdomaincustomrfc}
 
 Returns the first significant subdomain.
 Accepts customs TLD list name.
@@ -732,8 +737,9 @@ firstSignificantSubdomainCustomRFC(url, tld)
 **See Also**
 
 - [firstSignificantSubdomain](#firstsignificantsubdomain).
+- [top_level_domains_list](../../operations/server-configuration-parameters/settings.md/#top_level_domains_list)
 
-### port
+### port {#port}
 
 Returns the port or `default_port` if the URL contains no port or cannot be parsed.
 
@@ -768,7 +774,7 @@ Result:
 └─────────────────────────────────────────┘
 ```
 
-### portRFC
+### portRFC {#portrfc}
 
 Returns the port or `default_port` if the URL contains no port or cannot be parsed.
 Similar to [port](#port), but RFC 3986 conformant.
@@ -806,19 +812,19 @@ Result:
 └───────────────────────────────────────────────┴──────────────────────────────────────────────────┘
 ```
 
-### path
+### path {#path}
 
 Returns the path without query string.
 
 Example: `/top/news.html`.
 
-### pathFull
+### pathFull {#pathfull}
 
 The same as above, but including query string and fragment.
 
 Example: `/top/news.html?page=2#comments`.
 
-### protocol
+### protocol {#protocol-1}
 
 Extracts the protocol from a URL. 
 
@@ -852,49 +858,49 @@ Result:
 └─────────────────────────────────────┘
 ```
 
-### queryString
+### queryString {#querystring}
 
 Returns the query string without the initial question mark, `#` and everything after `#`.
 
 Example: `page=1&lr=213`.
 
-### fragment
+### fragment {#fragment}
 
 Returns the fragment identifier without the initial hash symbol.
 
-### queryStringAndFragment
+### queryStringAndFragment {#querystringandfragment}
 
 Returns the query string and fragment identifier.
 
 Example: `page=1#29390`.
 
-### extractURLParameter(url, name)
+### extractURLParameter(url, name) {#extracturlparameterurl-name}
 
 Returns the value of the `name` parameter in the URL, if present, otherwise an empty string is returned.
 If there are multiple parameters with this name, the first occurrence is returned.
 The function assumes that the parameter in the `url` parameter is encoded in the same way as in the `name` argument.
 
-### extractURLParameters(url)
+### extractURLParameters(url) {#extracturlparametersurl}
 
 Returns an array of `name=value` strings corresponding to the URL parameters.
 The values are not decoded.
 
-### extractURLParameterNames(url)
+### extractURLParameterNames(url) {#extracturlparameternamesurl}
 
 Returns an array of name strings corresponding to the names of URL parameters.
 The values are not decoded.
 
-### URLHierarchy(url)
+### URLHierarchy(url) {#urlhierarchyurl}
 
 Returns an array containing the URL, truncated at the end by the symbols /,? in the path and query-string.
 Consecutive separator characters are counted as one.
 The cut is made in the position after all the consecutive separator characters.
 
-### URLPathHierarchy(url)
+### URLPathHierarchy(url) {#urlpathhierarchyurl}
 
 The same as above, but without the protocol and host in the result. The / element (root) is not included.
 
-``` text
+```text
 URLPathHierarchy('https://example.com/browse/CONV-6788') =
 [
     '/browse/',
@@ -902,77 +908,77 @@ URLPathHierarchy('https://example.com/browse/CONV-6788') =
 ]
 ```
 
-### encodeURLComponent(url)
+### encodeURLComponent(url) {#encodeurlcomponenturl}
 
 Returns the encoded URL.
 
 Example:
 
-``` sql
+```sql
 SELECT encodeURLComponent('http://127.0.0.1:8123/?query=SELECT 1;') AS EncodedURL;
 ```
 
-``` text
+```text
 ┌─EncodedURL───────────────────────────────────────────────┐
 │ http%3A%2F%2F127.0.0.1%3A8123%2F%3Fquery%3DSELECT%201%3B │
 └──────────────────────────────────────────────────────────┘
 ```
 
-### decodeURLComponent(url)
+### decodeURLComponent(url) {#decodeurlcomponenturl}
 
 Returns the decoded URL.
 
 Example:
 
-``` sql
+```sql
 SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS DecodedURL;
 ```
 
-``` text
+```text
 ┌─DecodedURL─────────────────────────────┐
 │ http://127.0.0.1:8123/?query=SELECT 1; │
 └────────────────────────────────────────┘
 ```
 
-### encodeURLFormComponent(url)
+### encodeURLFormComponent(url) {#encodeurlformcomponenturl}
 
 Returns the encoded URL. Follows rfc-1866, space(` `) is encoded as plus(`+`).
 
 Example:
 
-``` sql
+```sql
 SELECT encodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT 1 2+3') AS EncodedURL;
 ```
 
-``` text
+```text
 ┌─EncodedURL────────────────────────────────────────────────┐
 │ http%3A%2F%2F127.0.0.1%3A8123%2F%3Fquery%3DSELECT+1+2%2B3 │
 └───────────────────────────────────────────────────────────┘
 ```
 
-### decodeURLFormComponent(url)
+### decodeURLFormComponent(url) {#decodeurlformcomponenturl}
 
 Returns the decoded URL. Follows rfc-1866, plain plus(`+`) is decoded as space(` `).
 
 Example:
 
-``` sql
+```sql
 SELECT decodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT%201+2%2B3') AS DecodedURL;
 ```
 
-``` text
+```text
 ┌─DecodedURL────────────────────────────────┐
 │ http://127.0.0.1:8123/?query=SELECT 1 2+3 │
 └───────────────────────────────────────────┘
 ```
 
-### netloc
+### netloc {#netloc}
 
 Extracts network locality (`username:password@host:port`) from a URL.
 
 **Syntax**
 
-``` sql
+```sql
 netloc(url)
 ```
 
@@ -988,46 +994,46 @@ netloc(url)
 
 Query:
 
-``` sql
+```sql
 SELECT netloc('http://paul@www.example.com:80/');
 ```
 
 Result:
 
-``` text
+```text
 ┌─netloc('http://paul@www.example.com:80/')─┐
 │ paul@www.example.com:80                   │
 └───────────────────────────────────────────┘
 ```
 
-## Functions that remove part of a URL
+## Functions that remove part of a URL {#functions-that-remove-part-of-a-url}
 
 If the URL does not have anything similar, the URL remains unchanged.
 
-### cutWWW
+### cutWWW {#cutwww}
 
-Removes leading `www.` (if present) from the URL’s domain.
+Removes leading `www.` (if present) from the URL's domain.
 
-### cutQueryString
+### cutQueryString {#cutquerystring}
 
 Removes query string, including the question mark.
 
-### cutFragment
+### cutFragment {#cutfragment}
 
 Removes the fragment identifier, including the number sign.
 
-### cutQueryStringAndFragment
+### cutQueryStringAndFragment {#cutquerystringandfragment}
 
 Removes the query string and fragment identifier, including the question mark and number sign.
 
-### cutURLParameter(url, name)
+### cutURLParameter(url, name) {#cuturlparameterurl-name}
 
 Removes the `name` parameter from a URL, if present.
 This function does not encode or decode characters in parameter names, e.g. `Client ID` and `Client%20ID` are treated as different parameter names.
 
 **Syntax**
 
-``` sql
+```sql
 cutURLParameter(url, name)
 ```
 
@@ -1044,7 +1050,7 @@ cutURLParameter(url, name)
 
 Query:
 
-``` sql
+```sql
 SELECT
     cutURLParameter('http://bigmir.net/?a=b&c=d&e=f#g', 'a') as url_without_a,
     cutURLParameter('http://bigmir.net/?a=b&c=d&e=f#g', ['c', 'e']) as url_without_c_and_e;
@@ -1052,7 +1058,7 @@ SELECT
 
 Result:
 
-``` text
+```text
 ┌─url_without_a────────────────┬─url_without_c_and_e──────┐
 │ http://bigmir.net/?c=d&e=f#g │ http://bigmir.net/?a=b#g │
 └──────────────────────────────┴──────────────────────────┘

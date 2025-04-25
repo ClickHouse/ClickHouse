@@ -46,7 +46,7 @@ SELECT x, count(), countIf(x IS NULL) FROM t_nullable_keys_6 GROUP BY x ORDER BY
 
 DROP TABLE t_nullable_keys_6;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT
     splitByChar('.', tables[1])[2] AS table,

@@ -9,7 +9,6 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTSubquery.h>
-#include <Parsers/queryToString.h>
 #include <Planner/PlannerJoinTree.h>
 #include <Planner/Utils.h>
 #include <Planner/findQueryForParallelReplicas.h>

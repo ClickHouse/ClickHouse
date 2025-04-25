@@ -1,11 +1,12 @@
 #pragma once
 
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
-#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Core/StreamingHandleErrorMode.h>
 #include <Core/Types.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer2.h>
+#include <Storages/Kafka/Kafka_fwd.h>
 #include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ThreadStatus.h>
@@ -66,7 +67,7 @@ public:
 
     ~StorageKafka2() override;
 
-    std::string getName() const override { return "Kafka"; }
+    std::string getName() const override { return Kafka::TABLE_ENGINE_NAME; }
 
     bool noPushingToViews() const override { return true; }
 
@@ -93,6 +94,11 @@ public:
     const auto & getFormatName() const { return format_name; }
 
     StreamingHandleErrorMode getHandleKafkaErrorMode() const;
+
+    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsSubcolumns() const override { return true; }
+
+    const KafkaSettings & getKafkaSettings() const { return *kafka_settings; }
 
 private:
     using TopicPartition = KafkaConsumer2::TopicPartition;
@@ -145,7 +151,8 @@ private:
     // Configuration and state
     mutable std::mutex keeper_mutex;
     zkutil::ZooKeeperPtr keeper;
-    String keeper_path;
+    const String keeper_path;
+    const std::filesystem::path fs_keeper_path;
     String replica_path;
     std::unique_ptr<KafkaSettings> kafka_settings;
     Macros::MacroExpansionInfo macros_info;

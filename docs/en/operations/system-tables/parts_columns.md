@@ -1,7 +1,12 @@
 ---
-slug: /en/operations/system-tables/parts_columns
+description: 'System table containing information about parts and columns of MergeTree
+  tables.'
+keywords: ['system table', 'parts_columns']
+slug: /operations/system-tables/parts_columns
+title: 'system.parts_columns'
 ---
-# parts_columns
+
+# system.parts_columns
 
 Contains information about parts and columns of [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 
@@ -9,7 +14,7 @@ Each row describes one data part.
 
 Columns:
 
-- `partition` ([String](../../sql-reference/data-types/string.md)) — The partition name. To learn what a partition is, see the description of the [ALTER](../../sql-reference/statements/alter/index.md#query_language_queries_alter) query.
+- `partition` ([String](../../sql-reference/data-types/string.md)) — The partition name. To learn what a partition is, see the description of the [ALTER](/sql-reference/statements/alter) query.
 
     Formats:
 
@@ -99,11 +104,11 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.parts_columns LIMIT 1 FORMAT Vertical;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 partition:                             tuple()

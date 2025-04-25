@@ -1,7 +1,6 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterShowAccessQuery.h>
 
-#include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Access/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/Access/InterpreterShowGrantsQuery.h>

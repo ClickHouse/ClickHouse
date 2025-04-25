@@ -1,4 +1,5 @@
 #include <Interpreters/Context.h>
+#include <Core/Field.h>
 
 namespace DB
 {
@@ -29,6 +30,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_map_type", 1);
     context->setSetting("allow_experimental_bigint_types", 1);
     context->setSetting("allow_experimental_bfloat16_type", 1);
+    context->setSetting("allow_experimental_correlated_subqueries", 1);
     context->setSetting("allow_deprecated_error_prone_window_functions", 1);
 
     context->setSetting("allow_suspicious_low_cardinality_types", 1);
@@ -43,12 +45,17 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_suspicious_primary_key", 1);
     context->setSetting("allow_suspicious_ttl_expressions", 1);
     context->setSetting("allow_suspicious_variant_types", 1);
+    context->setSetting("enable_deflate_qpl_codec", 1);
     context->setSetting("enable_zstd_qat_codec", 1);
     context->setSetting("allow_create_index_without_type", 1);
     context->setSetting("allow_experimental_s3queue", 1);
     context->setSetting("allow_experimental_database_iceberg", 1);
+    context->setSetting("allow_experimental_database_hms_catalog", 1);
     context->setSetting("allow_not_comparable_types_in_comparison_functions", 1);
     context->setSetting("allow_not_comparable_types_in_order_by", 1);
+    context->setSetting("allow_experimental_database_unity_catalog", 1);
+    context->setSetting("allow_experimental_database_glue_catalog", 1);
+    context->setSetting("allow_experimental_delta_kernel_rs", 1);
 
     /// clickhouse-private settings
     context->setSetting("allow_experimental_shared_set_join", 1);

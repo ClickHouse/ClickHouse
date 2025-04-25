@@ -17,6 +17,7 @@ class ProtobufWriter;
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
+using Strings = std::vector<String>;
 class WriteBuffer;
 
 /// Utility class, does all the work for serialization in the Protobuf format.

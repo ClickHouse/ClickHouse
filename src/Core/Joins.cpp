@@ -1,7 +1,14 @@
 #include <Core/Joins.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
 
 const char * toString(JoinKind kind)
 {
@@ -85,6 +92,59 @@ JoinKind reverseJoinKind(JoinKind kind)
     if (kind == JoinKind::Left)
         return JoinKind::Right;
     return kind;
+}
+
+void serializeJoinKind(JoinKind kind, WriteBuffer & out)
+{
+    uint8_t val = uint8_t(kind);
+    chassert(val <= JoinKindMax);
+    writeIntBinary(val, out);
+}
+
+JoinKind deserializeJoinKind(ReadBuffer & in)
+{
+    uint8_t val;
+    readIntBinary(val, in);
+
+    if (val > JoinKindMax)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot convert {} to JoinKind", val);
+
+    return static_cast<JoinKind>(val);
+}
+
+void serializeJoinStrictness(JoinStrictness strictness, WriteBuffer & out)
+{
+    uint8_t val = uint8_t(strictness);
+    chassert(val <= JoinStrictnessMax);
+    writeIntBinary(val, out);
+}
+
+JoinStrictness deserializeJoinStrictness(ReadBuffer & in)
+{
+    uint8_t val;
+    readIntBinary(val, in);
+
+    if (val > JoinStrictnessMax)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot convert {} to JoinStrictness", val);
+
+    return static_cast<JoinStrictness>(val);
+}
+
+void serializeJoinLocality(JoinLocality locality, WriteBuffer & out)
+{
+    uint8_t val = uint8_t(locality);
+    chassert(val <= JoinLocalityMax);
+    writeIntBinary(val, out);
+}
+JoinLocality deserializeJoinLocality(ReadBuffer & in)
+{
+    uint8_t val;
+    readIntBinary(val, in);
+
+    if (val > JoinLocalityMax)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot convert {} to JoinLocality", UInt16(val));
+
+    return static_cast<JoinLocality>(val);
 }
 
 }

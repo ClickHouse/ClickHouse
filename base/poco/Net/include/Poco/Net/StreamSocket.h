@@ -72,6 +72,9 @@ namespace Net
         /// attaches the SocketImpl from the other socket and
         /// increments the reference count of the SocketImpl.
 
+        void bind(const SocketAddress& address, bool reuseAddress);
+        /// Binds the socket to the given address
+
         void connect(const SocketAddress & address);
         /// Initializes the socket and establishes a connection to
         /// the TCP server at the given address.

@@ -17,6 +17,8 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/WeakHash.h>
 
+#include <Core/BlockNameMap.h>
+
 #include <base/FnTraits.h>
 #include <ranges>
 
@@ -692,7 +694,7 @@ NotJoinedBlocks::NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
 
     /// `saved_block_sample` may contains non unique column names, get any of them
     /// (e.g. in case of `... JOIN (SELECT a, a, b FROM table) as t2`)
-    for (const auto & [right_name, right_pos] : saved_block_sample.getNamesToIndexesMap())
+    for (const auto & [right_name, right_pos] : getNamesToIndexesMap(saved_block_sample))
     {
         String column_name(right_name);
         if (table_join.getStorageJoin())

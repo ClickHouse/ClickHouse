@@ -24,7 +24,7 @@ FORMAT Null; -- { serverError MEMORY_LIMIT_EXCEEDED }
 
 SELECT '';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT arraySort(used_aggregate_functions)
 FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND (query LIKE '%toDate(\'2000-12-05\')%')
@@ -61,16 +61,16 @@ SELECT '';
 DROP database IF EXISTS test_query_log_factories_info1;
 CREATE database test_query_log_factories_info1 ENGINE=Atomic;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT used_database_engines
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type == 'QueryFinish' AND (query LIKE '%database test_query_log_factories_info%')
 ORDER BY query_start_time DESC LIMIT 1 FORMAT TabSeparatedWithNames;
 SELECT '';
 
-CREATE OR REPLACE TABLE test_query_log_factories_info1.memory_table (id BIGINT, date DATETIME) ENGINE=Memory();
+CREATE OR REPLACE TABLE test_query_log_factories_info1.memory_table (id BIGINT, date DATETIME, date2 DateTime) ENGINE=Memory();
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT arraySort(used_data_type_families), used_storages
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type == 'QueryFinish' AND (query LIKE '%TABLE test%')

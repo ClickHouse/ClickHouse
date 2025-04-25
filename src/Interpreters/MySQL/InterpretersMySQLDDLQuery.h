@@ -7,7 +7,6 @@
 #include <Parsers/MySQL/ASTAlterQuery.h>
 #include <Parsers/MySQL/ASTCreateQuery.h>
 #include <Parsers/MySQL/ASTDropQuery.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ASTExpressionList.h>
 
 namespace DB
@@ -75,7 +74,7 @@ public:
         ASTs rewritten_queries = InterpreterImpl::getRewrittenQueries(query, getContext(), mapped_to_database, mysql_database);
 
         for (const auto & rewritten_query : rewritten_queries)
-            executeQuery("/* Rewritten MySQL DDL Query */ " + queryToString(rewritten_query), getContext(), QueryFlags{ .internal = true });
+            executeQuery("/* Rewritten MySQL DDL Query */ " + rewritten_query->formatWithSecretsOneLine(), getContext(), QueryFlags{ .internal = true });
 
         return BlockIO{};
     }

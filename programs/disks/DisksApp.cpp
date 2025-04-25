@@ -1,9 +1,10 @@
 #include "DisksApp.h"
 #include <Client/ClientBase.h>
 #include <Client/ReplxxLineReader.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 #include "Common/filesystemHelpers.h"
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/Macros.h>
 #include "DisksClient.h"
 #include "ICommand.h"
 #include "ICommand_fwd.h"
@@ -26,6 +27,8 @@
 #include "config.h"
 
 #include "Utils.h"
+#include <Server/CloudPlacementInfo.h>
+#include <IO/SharedThreadPools.h>
 
 namespace DB
 {
@@ -254,16 +257,19 @@ bool DisksApp::processQueryText(const String & text)
 
 void DisksApp::runInteractiveReplxx()
 {
-    ReplxxLineReader lr(
-        suggest,
-        history_file,
-        history_max_entries,
-        /* multiline= */ false,
-        /* ignore_shell_suspend= */ false,
-        query_extenders,
-        query_delimiters,
-        word_break_characters.c_str(),
-        /* highlighter_= */ {});
+    auto reader_options = ReplxxLineReader::Options
+    {
+        .suggest = suggest,
+        .history_file_path = history_file,
+        .history_max_entries = history_max_entries,
+        .multiline = false,
+        .ignore_shell_suspend = false,
+        .extenders = query_extenders,
+        .delimiters = query_delimiters,
+        .word_break_characters = word_break_characters,
+        .highlighter = {},
+    };
+    ReplxxLineReader lr(std::move(reader_options));
     lr.enableBracketedPaste();
 
     while (true)
@@ -279,6 +285,8 @@ void DisksApp::runInteractiveReplxx()
         if (!processQueryText(input))
             break;
     }
+
+    std::cout << std::endl;
 }
 
 void DisksApp::parseAndCheckOptions(
@@ -501,6 +509,13 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         Poco::Logger::root().setLevel(Poco::Logger::parseLevel(log_level));
     }
 
+    PlacementInfo::PlacementInfo::instance().initialize(config());
+
+    getIOThreadPool().initialize(
+        /*max_io_thread_pool_size*/ 100,
+        /*max_io_thread_pool_free_size*/ 0,
+        /*io_thread_pool_queue_size*/ 10000);
+
     registerCommands();
 
     registerDisks(/* global_skip_access_check= */ true);
@@ -511,6 +526,9 @@ int DisksApp::main(const std::vector<String> & /*args*/)
 
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::DISKS);
+
+    if (config().has("macros"))
+        global_context->setMacros(std::make_unique<Macros>(config(), "macros", &logger()));
 
     String path = config().getString("path", DBMS_DEFAULT_PATH);
 

@@ -1,12 +1,16 @@
 #pragma once
 
-#include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <Columns/IColumn_fwd.h>
-#include <Core/Block.h>
 #include <DataTypes/IDataType.h>
-#include <Common/PODArray.h>
 #include <IO/CompressionMethod.h>
+#include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <generated/parquet_types.h>
+#include <Common/PODArray.h>
+
+namespace DB
+{
+class Block;
+}
 
 namespace DB::Parquet
 {

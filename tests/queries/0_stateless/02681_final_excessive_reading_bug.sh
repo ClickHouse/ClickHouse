@@ -15,7 +15,7 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO sample_final SELECT number / (8192 * 4), toDa
 query_id="${CLICKHOUSE_DATABASE}_final_excessive_reading_bug_$RANDOM"
 $CLICKHOUSE_CLIENT --query_id="$query_id" -q "select * from sample_final FINAL SAMPLE 1/2 OFFSET 1/2 format Null settings max_threads=16"
 
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT --param_query_id="$query_id" -q "
 SELECT ProfileEvents['SelectedRows'] < 1_000_000
   FROM system.query_log

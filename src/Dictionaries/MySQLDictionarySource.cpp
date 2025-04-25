@@ -10,6 +10,7 @@
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
 #include <Core/Settings.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/RemoteHostFilter.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/Pipe.h>
@@ -136,6 +137,9 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                     addresses,
                     named_collection->getAnyOrDefault<String>({"user", "username"}, ""),
                     named_collection->getOrDefault<String>("password", ""),
+                    named_collection->getOrDefault<String>("ssl_ca", ""),
+                    named_collection->getOrDefault<String>("ssl_cert", ""),
+                    named_collection->getOrDefault<String>("ssl_key", ""),
                     mysql_settings));
         }
         else

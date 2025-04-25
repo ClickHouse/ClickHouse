@@ -80,6 +80,7 @@ public:
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -131,6 +132,11 @@ private:
         explicit DeserializeBinaryBulkStateDynamicStructure(UInt64 structure_version_)
             : structure_version(structure_version_)
         {
+        }
+
+        ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+        {
+            return std::make_shared<DeserializeBinaryBulkStateDynamicStructure>(*this);
         }
     };
 

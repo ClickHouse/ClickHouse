@@ -553,7 +553,7 @@ let default_params = {
 let params = default_params;
 
 /// Palette generation for charts
-function generatePalette(numColors) {
+function generateColor(l, c, h) {
     // oklch() does not work in firefox<=125 inside <canvas> element so we convert it back to rgb for now.
     // Based on https://github.com/color-js/color.js/blob/main/src/spaces/oklch.js
     const multiplyMatrices = (A, B) => {
@@ -598,13 +598,17 @@ function generatePalette(numColors) {
         ], xyz)
     }
 
-    const oklch2rgb = lch =>  srgbLinear2rgb(xyz2rgbLinear(oklab2xyz(oklch2oklab(lch))))
+    const oklch2rgb = lch => srgbLinear2rgb(xyz2rgbLinear(oklab2xyz(oklch2oklab(lch))))
+
+    let rgb = oklch2rgb([l, c, h]);
+    return `rgb(${rgb[0] * 255}, ${rgb[1] * 255}, ${rgb[2] * 255})`;
+}
+
+function generatePalette(numColors) {
 
     palette = [];
     for (let i = 0; i < numColors; i++) {
-        //palette.push(`oklch(${theme != 'dark' ? 0.75 : 0.5}, 0.15, ${360 * i / numColors})`);
-        let rgb = oklch2rgb([theme != 'dark' ? 0.75 : 0.5, 0.15, 360 * i / numColors]);
-        palette.push(`rgb(${rgb[0] * 255}, ${rgb[1] * 255}, ${rgb[2] * 255})`);
+        palette.push(generateColor(theme != 'dark' ? 0.75 : 0.5, 0.15, 360 * i / numColors));
     }
     return palette;
 }
@@ -1146,6 +1150,15 @@ async function doFetch(query, url_params = '') {
     return {reply, error};
 }
 
+function stringHash(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+        hash = hash & hash;
+    }
+    return hash;
+}
+
 async function draw(idx, chart, url_params, query) {
     if (plots[idx]) {
         plots[idx].destroy();
@@ -1238,9 +1251,12 @@ async function draw(idx, chart, url_params, query) {
         title_div.style.display = 'block';
     }
 
-    const [line_color, fill_color, grid_color, axes_color] = theme != 'dark'
-        ? ["#ff8888", "#ffeeee", "#eeeedd", "#2c3235"]
-        : ["#886644", "#004455", "#2c3235", "#c7d0d9"];
+    const color_rotate = Math.abs(stringHash(query));
+
+    const line_color = theme != 'dark' ? generateColor(0.75, 0.14, (21 + color_rotate) % 360) : generateColor(0.53, 0.07, (56 + color_rotate) % 360);
+    const fill_color = theme != 'dark' ? generateColor(0.96, 0.02, (21 + color_rotate) % 360) : generateColor(0.36, 0.07, (56 + color_rotate) % 360);
+    const grid_color = theme != 'dark' ? "#eeeedd" : "#2c3235";
+    const axes_color = theme != 'dark' ? "#2c3235" : "#c7d0d9";
 
     let sync = uPlot.sync("sync");
 

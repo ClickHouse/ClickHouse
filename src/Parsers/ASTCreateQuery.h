@@ -156,6 +156,8 @@ public:
 
     bool isParameterizedView() const;
 
+    NameToNameMap getQueryParameters() const;
+
     bool supportSQLSecurity() const { return is_ordinary_view || is_materialized_view; }
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }

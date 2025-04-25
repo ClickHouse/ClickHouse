@@ -7,10 +7,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Functions/Regexps.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>

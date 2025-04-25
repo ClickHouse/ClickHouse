@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>

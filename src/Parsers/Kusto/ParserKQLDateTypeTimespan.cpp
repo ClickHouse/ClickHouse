@@ -1,12 +1,14 @@
 #include <cmath>
 #include <cstdlib>
-#include <format>
+
 #include <unordered_map>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Common/StringUtils.h>
+
+#include <fmt/format.h>
 
 namespace DB
 {

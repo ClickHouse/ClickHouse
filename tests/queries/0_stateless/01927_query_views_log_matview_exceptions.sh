@@ -43,7 +43,7 @@ function test()
         ORDER BY name ASC
         FORMAT TSV";
 
-    ${CLICKHOUSE_CLIENT} -q 'SYSTEM FLUSH LOGS';
+    ${CLICKHOUSE_CLIENT} -q 'SYSTEM FLUSH LOGS query_log, query_views_log';
 
     ${CLICKHOUSE_CLIENT} -q "
         SELECT

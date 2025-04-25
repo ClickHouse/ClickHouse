@@ -25,7 +25,7 @@ public:
         , parts({part_})
         , mutations_snapshot(mutations_snapshot_)
         , storage(part_->storage)
-        , partition_id(part_->info.partition_id)
+        , partition_id(part_->info.getPartitionId())
     {
         setInMemoryMetadata(storage.getInMemoryMetadata());
         setVirtuals(*storage.getVirtualsPtr());

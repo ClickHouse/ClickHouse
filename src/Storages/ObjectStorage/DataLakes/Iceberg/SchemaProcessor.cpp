@@ -117,6 +117,7 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
             auto type = getFieldType(field, "type", required, current_full_name, true);
             clickhouse_schema->push_back(NameAndTypePair{name, type});
             clickhouse_types_by_source_ids[{schema_id, field->getValue<Int32>("id")}] = NameAndTypePair{current_full_name, type};
+            clickhouse_ids_by_source_names[{schema_id, current_full_name}] = field->getValue<Int32>("id");
         }
         clickhouse_table_schemas_by_ids[schema_id] = clickhouse_schema;
     }
@@ -139,6 +140,14 @@ std::optional<NameAndTypePair> IcebergSchemaProcessor::tryGetFieldCharacteristic
     return it->second;
 }
 
+std::optional<Int32> IcebergSchemaProcessor::tryGetColumnIDByName(Int32 schema_id, const std::string & name) const
+{
+    auto it = clickhouse_ids_by_source_names.find({schema_id, name});
+    if (it == clickhouse_ids_by_source_names.end())
+        return {};
+    return it->second;
+}
+
 NamesAndTypesList IcebergSchemaProcessor::tryGetFieldsCharacteristics(Int32 schema_id, const std::vector<Int32> & source_ids) const
 {
     NamesAndTypesList fields;
@@ -157,7 +166,7 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name)
         return DataTypeFactory::instance().get("Bool");
     if (type_name == "int")
         return std::make_shared<DataTypeInt32>();
-    if (type_name == "long")
+    if (type_name == "long" || type_name == "bigint")
         return std::make_shared<DataTypeInt64>();
     if (type_name == "float")
         return std::make_shared<DataTypeFloat32>();
@@ -232,6 +241,8 @@ IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr &
                 element_types.push_back(getFieldType(field, "type", required, current_full_name, true));
                 clickhouse_types_by_source_ids[{current_schema_id.value(), field->getValue<Int32>("id")}]
                     = NameAndTypePair{current_full_name, element_types.back()};
+
+                clickhouse_ids_by_source_names[{current_schema_id.value(), current_full_name}] = field->getValue<Int32>("id");
             }
             else
             {
@@ -423,4 +434,8 @@ std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSch
     return it->second;
 }
 
+bool IcebergSchemaProcessor::hasClickhouseTableSchemaById(Int32 id) const
+{
+    return clickhouse_table_schemas_by_ids.find(id) != clickhouse_table_schemas_by_ids.end();
+}
 }

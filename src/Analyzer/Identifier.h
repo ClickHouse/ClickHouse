@@ -195,6 +195,11 @@ public:
         return parts_end_it - parts_start_it;
     }
 
+    size_t getLength() const
+    {
+        return full_name_view.length();
+    }
+
     bool empty() const
     {
         return parts_start_it == parts_end_it;

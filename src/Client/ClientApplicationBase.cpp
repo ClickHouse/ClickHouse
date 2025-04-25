@@ -30,6 +30,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static ClientInfo::QueryKind parseQueryKind(const String & query_kind)
@@ -74,6 +75,11 @@ ClientApplicationBase::ClientApplicationBase() : ClientBase(STDIN_FILENO, STDOUT
 ClientApplicationBase & ClientApplicationBase::getInstance()
 {
     return dynamic_cast<ClientApplicationBase&>(Poco::Util::Application::instance());
+}
+
+bool ClientApplicationBase::isEmbeeddedClient() const
+{
+    return false;
 }
 
 void ClientApplicationBase::setupSignalHandler()
@@ -240,8 +246,12 @@ void ClientApplicationBase::init(int argc, char ** argv)
     fatal_channel_ptr = new Poco::SplitterChannel;
     fatal_console_channel_ptr = new Poco::ConsoleChannel;
     fatal_channel_ptr->addChannel(fatal_console_channel_ptr);
+
     if (options.count("client_logs_file"))
     {
+        if (isEmbeeddedClient())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Writing logs to a file is disabled in an embedded mode.");
+
         fatal_file_channel_ptr = new Poco::SimpleFileChannel(options["client_logs_file"].as<std::string>());
         fatal_channel_ptr->addChannel(fatal_file_channel_ptr);
     }

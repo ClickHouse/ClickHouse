@@ -1,9 +1,14 @@
 ---
-slug: /en/operations/system-tables/trace_log
+description: 'System table containing stack traces collected by the sampling query
+  profiler.'
+keywords: ['system table', 'trace_log']
+slug: /operations/system-tables/trace_log
+title: 'system.trace_log'
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
 
-# trace_log
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.trace_log
 
 <SystemTableCloud/>
 
@@ -33,7 +38,7 @@ Columns:
     - `MemoryPeak` represents collecting updates of peak memory usage.
     - `ProfileEvent` represents collecting of increments of profile events.
 - `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Thread identifier.
-- `query_id` ([String](../../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query_log](/docs/en/operations/system-tables/query_log) system table.
+- `query_id` ([String](../../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query_log](/operations/system-tables/query_log) system table.
 - `trace` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
 - `size` ([Int64](../../sql-reference/data-types/int-uint.md)) - For trace types `Memory`, `MemorySample` or `MemoryPeak` is the amount of memory allocated, for other trace types is 0.
 - `event` ([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md)) - For trace type `ProfileEvent` is the name of updated profile event, for other trace types is an empty string.
@@ -45,11 +50,11 @@ The symbolization can be enabled or disabled in the `symbolize` under `trace_log
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.trace_log LIMIT 1 \G
 ```
 
-``` text
+```text
 Row 1:
 ──────
 hostname:                clickhouse.eu-central1.internal

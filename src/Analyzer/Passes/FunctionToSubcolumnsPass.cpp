@@ -11,6 +11,7 @@
 #include <Functions/FunctionFactory.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -79,7 +80,7 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
 
     if (value.getType() == Field::Types::String)
     {
-        const auto & name = value.safeGet<const String &>();
+        const auto & name = value.safeGet<String>();
         auto pos = data_type_tuple.tryGetPositionByName(name);
 
         if (!pos)
@@ -106,7 +107,7 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
     if (value.getType() != Field::Types::String)
         return {};
 
-    const auto & name = value.safeGet<const String &>();
+    const auto & name = value.safeGet<String>();
     auto discr = data_type_variant.tryGetVariantDiscriminator(name);
 
     if (!discr)

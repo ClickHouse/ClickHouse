@@ -325,17 +325,19 @@ void KeeperClient::runInteractiveReplxx()
     LineReader::Patterns query_delimiters = {};
     char word_break_characters[] = " \t\v\f\a\b\r\n/";
 
-    ReplxxLineReader lr(
-        suggest,
-        history_file,
-        history_max_entries,
-        /* multiline= */ false,
-        /* ignore_shell_suspend= */ false,
-        query_extenders,
-        query_delimiters,
-        word_break_characters,
-        /* highlighter_= */ {}
-    );
+    auto reader_options = ReplxxLineReader::Options
+    {
+        .suggest = suggest,
+        .history_file_path = history_file,
+        .history_max_entries = history_max_entries,
+        .multiline = false,
+        .ignore_shell_suspend = false,
+        .extenders = query_extenders,
+        .delimiters = query_delimiters,
+        .word_break_characters = word_break_characters,
+        .highlighter = {},
+    };
+    ReplxxLineReader lr(std::move(reader_options));
     lr.enableBracketedPaste();
 
     while (true)
@@ -353,6 +355,8 @@ void KeeperClient::runInteractiveReplxx()
         if (!processQueryText(input))
             break;
     }
+
+    std::cout << std::endl;
 }
 
 void KeeperClient::runInteractiveInputStream()
@@ -439,6 +443,10 @@ int KeeperClient::main(const std::vector<String> & /* args */)
     }
     else
         runInteractive();
+
+    /// Suppress "Finalizing session {}" message.
+    getLogger("ZooKeeperClient")->setLevel("error");
+    zookeeper.reset();
 
     return 0;
 }

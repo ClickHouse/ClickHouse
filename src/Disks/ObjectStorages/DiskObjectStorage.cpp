@@ -28,6 +28,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DISK_INDEX;
+    extern const int LOGICAL_ERROR;
+    extern const int CANNOT_RMDIR;
 }
 
 
@@ -122,16 +124,18 @@ DiskObjectStorage::DiskObjectStorage(
                             {
                                 switch (mode)
                                 {
-                                    case ASTCreateResourceQuery::AccessMode::Read: new_read_resource_name_from_sql_any.insert(resource_name); break;
-                                    case ASTCreateResourceQuery::AccessMode::Write: new_write_resource_name_from_sql_any.insert(resource_name); break;
+                                    case ASTCreateResourceQuery::AccessMode::DiskRead: new_read_resource_name_from_sql_any.insert(resource_name); break;
+                                    case ASTCreateResourceQuery::AccessMode::DiskWrite: new_write_resource_name_from_sql_any.insert(resource_name); break;
+                                    default: break;
                                 }
                             }
                             else if (*disk == name)
                             {
                                 switch (mode)
                                 {
-                                    case ASTCreateResourceQuery::AccessMode::Read: new_read_resource_name_from_sql.insert(resource_name); break;
-                                    case ASTCreateResourceQuery::AccessMode::Write: new_write_resource_name_from_sql.insert(resource_name); break;
+                                    case ASTCreateResourceQuery::AccessMode::DiskRead: new_read_resource_name_from_sql.insert(resource_name); break;
+                                    case ASTCreateResourceQuery::AccessMode::DiskWrite: new_write_resource_name_from_sql.insert(resource_name); break;
+                                    default: break;
                                 }
                             }
                         }
@@ -284,6 +288,27 @@ void DiskObjectStorage::replaceFile(const String & from_path, const String & to_
         moveFile(from_path, to_path);
 }
 
+void DiskObjectStorage::renameExchange(const std::string & old_path, const std::string & new_path)
+{
+    if (existsFile(new_path))
+    {
+        auto temp_old_path = old_path + "_tmp_rename_exchange";
+        auto transaction = createObjectStorageTransaction();
+        transaction->moveFile(old_path, temp_old_path);
+        transaction->moveFile(new_path, old_path);
+        transaction->moveFile(temp_old_path, new_path);
+        transaction->commit();
+    }
+    else
+        moveFile(old_path, new_path);
+}
+
+bool DiskObjectStorage::renameExchangeIfSupported(const std::string &, const std::string &)
+{
+    return false;
+}
+
+
 void DiskObjectStorage::removeSharedFile(const String & path, bool delete_metadata_only)
 {
     auto transaction = createObjectStorageTransaction();
@@ -383,17 +408,30 @@ void DiskObjectStorage::clearDirectory(const String & path)
 
 void DiskObjectStorage::removeDirectory(const String & path)
 {
+    if (!isDirectoryEmpty(path))
+        throw Exception(ErrorCodes::CANNOT_RMDIR, "Unable to remove directory '{}', the directory is not empty", path);
+
     auto transaction = createObjectStorageTransaction();
     transaction->removeDirectory(path);
     transaction->commit();
 }
 
+void DiskObjectStorage::removeDirectoryIfExists(const String & path)
+{
+    if (!existsDirectory(path))
+        return;
+    removeDirectory(path);
+}
 
 DirectoryIteratorPtr DiskObjectStorage::iterateDirectory(const String & path) const
 {
     return metadata_storage->iterateDirectory(path);
 }
 
+bool DiskObjectStorage::isDirectoryEmpty(const String & path) const
+{
+    return metadata_storage->isDirectoryEmpty(path);
+}
 
 void DiskObjectStorage::listFiles(const String & path, std::vector<String> & file_names) const
 {
@@ -607,6 +645,11 @@ bool DiskObjectStorage::supportsHardLinks() const
     return !isWriteOnce() && !object_storage->isPlain();
 }
 
+bool DiskObjectStorage::supportsPartitionCommand(const PartitionCommand & command) const
+{
+    return !isWriteOnce() && metadata_storage->supportsPartitionCommand(command);
+}
+
 DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
 {
     const auto config_prefix = "storage_configuration.disks." + name;
@@ -673,42 +716,55 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     const auto storage_objects = metadata_storage->getStorageObjects(path);
     auto global_context = Context::getGlobalContextInstance();
 
-    const bool file_can_be_empty = !file_size.has_value() || *file_size == 0;
-    if (storage_objects.empty() && file_can_be_empty)
+    if (storage_objects.empty())
+    {
+        if (file_size.has_value() && *file_size != 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Empty list of objects for nonempty file on disk {} at {}", name, path);
         return std::make_unique<ReadBufferFromEmptyFile>();
+    }
+
+    /// Matryoshka of read buffers:
+    ///
+    /// [AsynchronousBoundedReadBuffer] (if use_async_buffer)
+    ///   [CachedInMemoryReadBufferFromFile] (if use_page_cache)
+    ///     ReadBufferFromRemoteFSGather
+    ///       [CachedOnDiskReadBufferFromFile] (if fs cache is enabled)
+    ///         ReadBufferFromS3 or similar
+    ///
+    /// Some of them have special requirements:
+    ///  * use_external_buffer = true is required for the buffer nested directly inside
+    ///    AsynchronousBoundedReadBuffer, CachedInMemoryReadBufferFromFile, and
+    ///    ReadBufferFromRemoteFSGather.
+    ///  * The buffer directly inside CachedInMemoryReadBufferFromFile must be freely seekable.
+    ///    I.e. either remote_read_buffer_restrict_seek = false or buffer implementation that
+    ///    ignores that setting.
+    ///    Note: ReadBufferFromRemoteFSGather ignores this setting.
 
     auto read_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
     /// We wrap read buffer from object storage (read_buf = object_storage->readObject())
     /// inside ReadBufferFromRemoteFSGather, so add nested buffer setting.
     read_settings = read_settings.withNestedBuffer();
 
+    const bool use_async_buffer = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
+    const bool use_page_cache =
+        (!object_storage->supportsCache() || !read_settings.enable_filesystem_cache)
+        && read_settings.page_cache && read_settings.use_page_cache_for_disks_without_file_cache;
+
+    const bool use_external_buffer_for_gather = use_async_buffer || use_page_cache;
+
     auto read_buffer_creator =
         [this, read_settings, read_hint, file_size]
         (bool restricted_seek, const StoredObject & object_) mutable -> std::unique_ptr<ReadBufferFromFileBase>
     {
         read_settings.remote_read_buffer_restrict_seek = restricted_seek;
-        auto impl = object_storage->readObject(object_, read_settings, read_hint, file_size);
-
-        if ((!object_storage->supportsCache() || !read_settings.enable_filesystem_cache)
-            && read_settings.page_cache && read_settings.use_page_cache_for_disks_without_file_cache)
-        {
-            /// Can't wrap CachedOnDiskReadBufferFromFile in CachedInMemoryReadBufferFromFile because the
-            /// former doesn't support seeks.
-            auto cache_path_prefix = fmt::format("{}:", magic_enum::enum_name(object_storage->getType()));
-            const auto object_namespace = object_storage->getObjectsNamespace();
-            if (!object_namespace.empty())
-                cache_path_prefix += object_namespace + "/";
-
-            const auto cache_key = FileChunkAddress { .path = cache_path_prefix + object_.remote_path };
-
-            impl = std::make_unique<CachedInMemoryReadBufferFromFile>(
-                cache_key, read_settings.page_cache, std::move(impl), read_settings);
-        }
-        return impl;
+        return object_storage->readObject(object_, read_settings, read_hint, file_size);
     };
 
-    /// Avoid cache fragmentation by choosing bigger buffer size.
+    /// Avoid cache fragmentation by choosing a bigger buffer size.
+    /// But don't use it if the cache is used passively (only for reading if data is already cached, such as during merges).
     bool prefer_bigger_buffer_size = read_settings.filesystem_cache_prefer_bigger_buffer_size
+        && !read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
         && object_storage->supportsCache()
         && read_settings.enable_filesystem_cache;
 
@@ -720,14 +776,27 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     if (total_objects_size)
         buffer_size = std::min(buffer_size, total_objects_size);
 
-    const bool use_async_buffer = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
-    auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
+    std::unique_ptr<ReadBufferFromFileBase> impl;
+    impl = std::make_unique<ReadBufferFromRemoteFSGather>(
         std::move(read_buffer_creator),
         storage_objects,
         read_settings,
-        global_context->getFilesystemCacheLog(),
-        /* use_external_buffer */use_async_buffer,
-        /* buffer_size */use_async_buffer ? 0 : buffer_size);
+        use_external_buffer_for_gather,
+        /* buffer_size */use_external_buffer_for_gather ? 0 : buffer_size);
+
+    if (use_page_cache)
+    {
+        /// We identify the file by its first object, with the assumption that an object can't
+        /// belong to more than one file.
+        auto cache_path_prefix = fmt::format("{}:{}:", /*disk*/ name, magic_enum::enum_name(object_storage->getType()));
+        const auto object_namespace = object_storage->getObjectsNamespace();
+        if (!object_namespace.empty())
+            cache_path_prefix += object_namespace + "/";
+        const auto cache_key = PageCacheKey { .path = cache_path_prefix + storage_objects.at(0).remote_path };
+
+        impl = std::make_unique<CachedInMemoryReadBufferFromFile>(
+            cache_key, read_settings.page_cache, std::move(impl), read_settings);
+    }
 
     if (use_async_buffer)
     {

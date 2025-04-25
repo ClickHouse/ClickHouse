@@ -14,7 +14,7 @@
 #include <Parsers/IAST.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
-#include <Common/LockGuard.h>
+#include <Common/UniqueLock.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -41,7 +41,6 @@ struct ProcessListForUser;
 class QueryStatus;
 class ThreadStatus;
 class ProcessListEntry;
-
 
 enum CancelReason
 {
@@ -231,7 +230,7 @@ public:
         progress_in.incrementPiecewiseAtomically(value);
 
         if (priority_handle)
-            priority_handle->waitIfNeed(std::chrono::seconds(1));        /// NOTE Could make timeout customizable.
+            priority_handle->waitIfNeed();
 
         return !is_killed.load(std::memory_order_relaxed);
     }
@@ -375,7 +374,7 @@ public:
 
     using Mutex = std::mutex;
     using Lock = std::unique_lock<Mutex>;
-    using LockAndBlocker = LockAndOverCommitTrackerBlocker<LockGuard, Mutex>;
+    using LockAndBlocker = LockAndOverCommitTrackerBlocker<UniqueLock, Mutex>;
 
 protected:
     friend class ProcessListEntry;
@@ -416,6 +415,9 @@ protected:
 
     /// limit for select. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
     size_t max_select_queries_amount = 0;
+
+    /// timeout in millisecond for low priority query to wait
+    size_t low_priority_query_wait_time_ms = 0;
 
     /// amount of queries by query kind.
     QueryKindAmounts query_kind_amounts;
@@ -484,6 +486,18 @@ public:
     {
         Lock lock(mutex);
         return max_insert_queries_amount;
+    }
+
+    void setLowPriorityQueryWaitTimeMs(size_t low_priority_query_wait_time_ms_)
+    {
+        Lock lock(mutex);
+        low_priority_query_wait_time_ms = low_priority_query_wait_time_ms_;
+    }
+
+    size_t getLowPriorityQueryWaitTimeMs() const
+    {
+        Lock lock(mutex);
+        return low_priority_query_wait_time_ms;
     }
 
     void setMaxSelectQueriesAmount(size_t max_select_queries_amount_)

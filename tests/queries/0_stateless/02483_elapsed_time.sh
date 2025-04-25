@@ -24,7 +24,7 @@ EXCEPTION_BEFORE_START_QUERY="WITH
 QUERY_ID="${CLICKHOUSE_DATABASE}_$(date +%s)_02883_q1"
 ${CLICKHOUSE_CLIENT} -m --query "$EXCEPTION_BEFORE_START_QUERY" --query_id="$QUERY_ID" >/dev/null 2>&1
 
-${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS"
+${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} --query "SELECT type == 'ExceptionBeforeStart' as expected_type, query_duration_ms <= 1000 as elapsed_more_than_one_second FROM system.query_log WHERE current_database = '$CLICKHOUSE_DATABASE' AND query_id='$QUERY_ID'"
 
 # Now we test with a query that will take 1+ seconds. The CLI should show that as part of the output format
@@ -58,7 +58,7 @@ SETTINGS enable_global_with_statement = 1"
 QUERY_ID_3="${CLICKHOUSE_DATABASE}_$(date +%s)_02883_q3"
 ${CLICKHOUSE_CLIENT} --query "$OK_QUERY_XML" --query_id="${QUERY_ID_3}" | grep elapsed | awk  -F '[<>]' '{ if($3 >= 1.0) { print "Greater (Ok)" } else { print "Smaller than expected: " $3 } }'
 
-${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS"
+${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} --query "
   SELECT
     type,

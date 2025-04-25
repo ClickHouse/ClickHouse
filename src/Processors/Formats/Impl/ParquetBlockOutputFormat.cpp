@@ -5,6 +5,8 @@
 #include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromVector.h>
+#include <Processors/Port.h>
+
 #include <parquet/arrow/writer.h>
 #include "ArrowBufferedStreams.h"
 #include "CHColumnToArrowColumn.h"
@@ -79,6 +81,9 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Blo
 {
     if (format_settings.parquet.use_custom_encoder)
     {
+        if (format_settings.parquet.output_version < FormatSettings::ParquetVersion::V2_6)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Custom parquet encoder doesn't support parquet versions < 2.6. Use output_format_parquet_use_custom_encoder = 0.");
+
         if (format_settings.parquet.parallel_encoding && format_settings.max_threads > 1)
             pool = std::make_unique<ThreadPool>(
                 CurrentMetrics::ParquetEncoderThreads,
@@ -471,13 +476,9 @@ void ParquetBlockOutputFormat::startMoreThreadsIfNeeded(const std::unique_lock<s
     {
         auto job = [this, thread_group = CurrentThread::getGroup()]()
         {
-            if (thread_group)
-                CurrentThread::attachToGroupIfDetached(thread_group);
-            SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
-
             try
             {
-                setThreadName("ParquetEncoder");
+                ThreadGroupSwitcher switcher(thread_group, "ParquetEncoder");
 
                 threadFunction();
             }

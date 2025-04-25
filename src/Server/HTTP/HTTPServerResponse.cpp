@@ -1,6 +1,8 @@
 #include <Server/HTTP/HTTPServerResponse.h>
-#include <Server/HTTP/HTTPServerRequest.h>
+
+#include <IO/AutoFinalizedWriteBuffer.h>
 #include <IO/WriteBuffer.h>
+#include <Server/HTTP/HTTPServerRequest.h>
 #include <Poco/DateTimeFormat.h>
 #include <Poco/DateTimeFormatter.h>
 #include <Poco/Net/HTTPChunkedStream.h>

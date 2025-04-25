@@ -4,11 +4,11 @@
 #include <Interpreters/Context.h>
 #include <Core/ServerSettings.h>
 
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+#include <IO/Operators_pcg_random.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
+#include <IO/WriteHelpers.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
@@ -785,7 +785,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
-        if ((type == Field::Types::Int64 && parameters[0].safeGet<Int64>() < 0) ||
+        if ((type == Field::Types::Int64 && parameters[0].safeGet<Int64>() <= 0) ||
             (type == Field::Types::UInt64 && parameters[0].safeGet<UInt64>() == 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
@@ -821,7 +821,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArraySample(
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
-        if ((type == Field::Types::Int64 && parameters[i].safeGet<Int64>() < 0) ||
+        if ((type == Field::Types::Int64 && parameters[i].safeGet<Int64>() <= 0) ||
                 (type == Field::Types::UInt64 && parameters[i].safeGet<UInt64>() == 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 

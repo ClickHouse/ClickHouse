@@ -42,7 +42,7 @@ EXPLAIN indexes = 1 SELECT count() FROM tab WHERE a >= 110 AND a < 130 AND b = 2
 
 SELECT database, table, name, data_compressed_bytes FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT count(), sum(ProfileEvents['MergeTreeDataWriterSkipIndicesCalculationMicroseconds'])
 FROM system.query_log
 WHERE current_database = currentDatabase()

@@ -1,7 +1,10 @@
 ---
-slug: /en/engines/table-engines/mergetree-family/versionedcollapsingmergetree
+description: 'Allows for quick writing of object states that are continually changing,
+  and deleting old object states in the background.'
+sidebar_label: 'VersionedCollapsingMergeTree'
 sidebar_position: 80
-sidebar_label:  VersionedCollapsingMergeTree
+slug: /engines/table-engines/mergetree-family/versionedcollapsingmergetree
+title: 'VersionedCollapsingMergeTree'
 ---
 
 # VersionedCollapsingMergeTree
@@ -13,11 +16,11 @@ This engine:
 
 See the section [Collapsing](#table_engines_versionedcollapsingmergetree) for details.
 
-The engine inherits from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) and adds the logic for collapsing rows to the algorithm for merging data parts. `VersionedCollapsingMergeTree` serves the same purpose as [CollapsingMergeTree](../../../engines/table-engines/mergetree-family/collapsingmergetree.md) but uses a different collapsing algorithm that allows inserting the data in any order with multiple threads. In particular, the `Version` column helps to collapse the rows properly even if they are inserted in the wrong order. In contrast, `CollapsingMergeTree` allows only strictly consecutive insertion.
+The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree) and adds the logic for collapsing rows to the algorithm for merging data parts. `VersionedCollapsingMergeTree` serves the same purpose as [CollapsingMergeTree](../../../engines/table-engines/mergetree-family/collapsingmergetree.md) but uses a different collapsing algorithm that allows inserting the data in any order with multiple threads. In particular, the `Version` column helps to collapse the rows properly even if they are inserted in the wrong order. In contrast, `CollapsingMergeTree` allows only strictly consecutive insertion.
 
 ## Creating a Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -32,18 +35,18 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 For a description of query parameters, see the [query description](../../../sql-reference/statements/create/table.md).
 
-### Engine Parameters
+### Engine Parameters {#engine-parameters}
 
-``` sql
+```sql
 VersionedCollapsingMergeTree(sign, version)
 ```
 
 | Parameter | Description                                                                            | Type                                                                                                                                                                                                                                                                                    |
 |-----------|----------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `sign`    | Name of the column with the type of row: `1` is a "state" row, `-1` is a "cancel" row. | [`Int8`](/docs/en/sql-reference/data-types/int-uint)                                                                                                                                                                                                                                    |
-| `version` | Name of the column with the version of the object state.                               | [`Int*`](/docs/en/sql-reference/data-types/int-uint), [`UInt*`](/docs/en/sql-reference/data-types/int-uint), [`Date`](/docs/en/sql-reference/data-types/date), [`Date32`](/docs/en/sql-reference/data-types/date32), [`DateTime`](/docs/en/sql-reference/data-types/datetime) or [`DateTime64`](/docs/en/sql-reference/data-types/datetime64) |
+| `sign`    | Name of the column with the type of row: `1` is a "state" row, `-1` is a "cancel" row. | [`Int8`](/sql-reference/data-types/int-uint)                                                                                                                                                                                                                                    |
+| `version` | Name of the column with the version of the object state.                               | [`Int*`](/sql-reference/data-types/int-uint), [`UInt*`](/sql-reference/data-types/int-uint), [`Date`](/sql-reference/data-types/date), [`Date32`](/sql-reference/data-types/date32), [`DateTime`](/sql-reference/data-types/datetime) or [`DateTime64`](/sql-reference/data-types/datetime64) |
 
-### Query Clauses
+### Query Clauses {#query-clauses}
 
 When creating a `VersionedCollapsingMergeTree` table, the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required as when creating a `MergeTree` table.
 
@@ -55,7 +58,7 @@ When creating a `VersionedCollapsingMergeTree` table, the same [clauses](../../.
 Do not use this method in new projects. If possible, switch old projects to the method described above.
 :::
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -86,7 +89,7 @@ Use the `Sign` column when writing the row. If `Sign = 1` it means that the row 
 
 For example, we want to calculate how many pages users visited on some site and how long they were there. At some point in time we write the following row with the state of user activity:
 
-``` text
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
 │ 4324182021466249494 │         5 │      146 │    1 │       1 |
 └─────────────────────┴───────────┴──────────┴──────┴─────────┘
@@ -94,7 +97,7 @@ For example, we want to calculate how many pages users visited on some site and 
 
 At some point later we register the change of user activity and write it with the following two rows.
 
-``` text
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
 │ 4324182021466249494 │         5 │      146 │   -1 │       1 |
 │ 4324182021466249494 │         6 │      185 │    1 │       2 |
@@ -107,7 +110,7 @@ The second row contains the current state.
 
 Because we need only the last state of user activity, the rows
 
-``` text
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
 │ 4324182021466249494 │         5 │      146 │    1 │       1 |
 │ 4324182021466249494 │         5 │      146 │   -1 │       1 |
@@ -144,7 +147,7 @@ If you need to extract the data with "collapsing" but without aggregation (for e
 
 Example data:
 
-``` text
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
 │ 4324182021466249494 │         5 │      146 │    1 │       1 |
 │ 4324182021466249494 │         5 │      146 │   -1 │       1 |
@@ -154,7 +157,7 @@ Example data:
 
 Creating the table:
 
-``` sql
+```sql
 CREATE TABLE UAct
 (
     UserID UInt64,
@@ -169,11 +172,11 @@ ORDER BY UserID
 
 Inserting the data:
 
-``` sql
+```sql
 INSERT INTO UAct VALUES (4324182021466249494, 5, 146, 1, 1)
 ```
 
-``` sql
+```sql
 INSERT INTO UAct VALUES (4324182021466249494, 5, 146, -1, 1),(4324182021466249494, 6, 185, 1, 2)
 ```
 
@@ -181,11 +184,11 @@ We use two `INSERT` queries to create two different data parts. If we insert the
 
 Getting the data:
 
-``` sql
+```sql
 SELECT * FROM UAct
 ```
 
-``` text
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
 │ 4324182021466249494 │         5 │      146 │    1 │       1 │
 └─────────────────────┴───────────┴──────────┴──────┴─────────┘
@@ -201,7 +204,7 @@ Collapsing did not occur because the data parts have not been merged yet. ClickH
 
 This is why we need aggregation:
 
-``` sql
+```sql
 SELECT
     UserID,
     sum(PageViews * Sign) AS PageViews,
@@ -212,7 +215,7 @@ GROUP BY UserID, Version
 HAVING sum(Sign) > 0
 ```
 
-``` text
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Version─┐
 │ 4324182021466249494 │         6 │      185 │       2 │
 └─────────────────────┴───────────┴──────────┴─────────┘
@@ -220,11 +223,11 @@ HAVING sum(Sign) > 0
 
 If we do not need aggregation and want to force collapsing, we can use the `FINAL` modifier for the `FROM` clause.
 
-``` sql
+```sql
 SELECT * FROM UAct FINAL
 ```
 
-``` text
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
 │ 4324182021466249494 │         6 │      185 │    1 │       2 │
 └─────────────────────┴───────────┴──────────┴──────┴─────────┘

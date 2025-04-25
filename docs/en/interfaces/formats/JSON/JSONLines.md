@@ -1,11 +1,12 @@
 ---
-title : JSONLines
-slug : /en/interfaces/formats/JSONLines
-keywords : [JSONLines]
+description: 'Documentation for the JSONLines format'
+keywords: ['JSONLines']
+slug: /interfaces/formats/JSONLines
+title: 'JSONLines'
 ---
 
-## Description
+## Description {#description}
 
-## Example Usage
+## Example Usage {#example-usage}
 
-## Format Settings
+## Format Settings {#format-settings}

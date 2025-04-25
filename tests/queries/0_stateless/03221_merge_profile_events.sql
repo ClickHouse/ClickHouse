@@ -10,7 +10,7 @@ INSERT INTO t_merge_profile_events_1 SELECT number, number, number FROM numbers(
 INSERT INTO t_merge_profile_events_1 SELECT number, number, number FROM numbers(10000);
 
 OPTIMIZE TABLE t_merge_profile_events_1 FINAL;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 SELECT
     merge_algorithm,
@@ -37,7 +37,7 @@ INSERT INTO t_merge_profile_events_2 SELECT number, number, number FROM numbers(
 INSERT INTO t_merge_profile_events_2 SELECT number, number, number FROM numbers(10000);
 
 OPTIMIZE TABLE t_merge_profile_events_2 FINAL;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 SELECT
     merge_algorithm,
@@ -66,7 +66,7 @@ INSERT INTO t_merge_profile_events_3 SELECT number, number, number FROM numbers(
 INSERT INTO t_merge_profile_events_3 SELECT number, number, number FROM numbers(100000);
 
 OPTIMIZE TABLE t_merge_profile_events_3 FINAL;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 SELECT
     merge_algorithm,

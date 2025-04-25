@@ -1,17 +1,17 @@
 #pragma once
 
-#include <Access/Common/AuthenticationType.h>
-#include <Access/Common/HTTPAuthenticationScheme.h>
-#include <Access/Common/SSLCertificateSubjects.h>
-#include <Common/SSHWrapper.h>
-#include <Interpreters/Context_fwd.h>
-#include <Parsers/Access/ASTAuthenticationData.h>
+#include "config.h"
 
 #include <vector>
 #include <base/types.h>
 
+#include <Access/Common/AuthenticationType.h>
+#include <Access/Common/HTTPAuthenticationScheme.h>
+#include <Common/SSHWrapper.h>
+#include <Common/Crypto/X509Certificate.h>
+#include <Interpreters/Context_fwd.h>
+#include <Parsers/Access/ASTAuthenticationData.h>
 
-#include "config.h"
 
 namespace DB
 {
@@ -59,9 +59,11 @@ public:
     const String & getKerberosRealm() const { return kerberos_realm; }
     void setKerberosRealm(const String & realm) { kerberos_realm = realm; }
 
-    const SSLCertificateSubjects & getSSLCertificateSubjects() const { return ssl_certificate_subjects; }
-    void setSSLCertificateSubjects(SSLCertificateSubjects && ssl_certificate_subjects_);
-    void addSSLCertificateSubject(SSLCertificateSubjects::Type type_, String && subject_);
+#if USE_SSL
+    const X509Certificate::Subjects & getSSLCertificateSubjects() const { return ssl_certificate_subjects; }
+    void setSSLCertificateSubjects(X509Certificate::Subjects && ssl_certificate_subjects_);
+    void addSSLCertificateSubject(X509Certificate::Subjects::Type type_, String && subject_);
+#endif
 
 #if USE_SSH
     const std::vector<SSHKey> & getSSHKeys() const { return ssh_keys; }
@@ -88,6 +90,7 @@ public:
         static String digestToString(const Digest & text) { return String(text.data(), text.data() + text.size()); }
         static Digest stringToDigest(std::string_view text) { return Digest(text.data(), text.data() + text.size()); }
         static Digest encodeSHA256(std::string_view text);
+        static Digest encodeScramSHA256(std::string_view password, std::string_view salt);
         static Digest encodeSHA1(std::string_view text);
         static Digest encodeSHA1(const Digest & text) { return encodeSHA1(std::string_view{reinterpret_cast<const char *>(text.data()), text.size()}); }
         static Digest encodeDoubleSHA1(std::string_view text) { return encodeSHA1(encodeSHA1(text)); }
@@ -101,8 +104,12 @@ private:
     Digest password_hash;
     String ldap_server_name;
     String kerberos_realm;
-    SSLCertificateSubjects ssl_certificate_subjects;
+#if USE_SSL
+    X509Certificate::Subjects ssl_certificate_subjects;
+#endif
+
     String salt;
+
 #if USE_SSH
     std::vector<SSHKey> ssh_keys;
 #endif

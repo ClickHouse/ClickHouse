@@ -1,5 +1,6 @@
 #include <unordered_set>
 
+#include <IO/WriteBufferFromString.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>

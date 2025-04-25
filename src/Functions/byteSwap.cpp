@@ -30,7 +30,7 @@ T byteSwap(T x)
 template <typename T>
 T byteSwap(T)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "byteSwap() is not implemented for {} datatype", demangle(typeid(T).name()));
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "byteSwap is not implemented for {} datatype", demangle(typeid(T).name()));
 }
 
 template <typename T>
@@ -57,7 +57,7 @@ template <>
 struct FunctionUnaryArithmeticMonotonicity<NameByteSwap>
 {
     static bool has() { return false; }
-    static IFunction::Monotonicity get(const Field &, const Field &) { return {}; }
+    static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &) { return {}; }
 };
 
 REGISTER_FUNCTION(ByteSwap)

@@ -281,6 +281,7 @@
     M(LogWarning) \
     M(LogError) \
     M(LogFatal) \
+    M(LoggerElapsedNanoseconds) \
 \
     M(InterfaceHTTPSendBytes) \
     M(InterfaceHTTPReceiveBytes) \
