@@ -264,7 +264,7 @@ toIPv4(UInt32)
 
 **Returned value**
 
-- `string` converted to the IPv4 address. [IPv4](../data-types/ipv4.md).
+- IPv4 address. [IPv4](../data-types/ipv4.md).
 
 **Examples**
 
