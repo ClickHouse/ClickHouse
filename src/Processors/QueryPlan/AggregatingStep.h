@@ -85,6 +85,10 @@ public:
 
     void enableMemoryBoundMerging() { memory_bound_merging_of_aggregation_results_enabled = true; }
 
+    /// AggregatingStep does not contain any ActionDAGs.
+    /// All the expressions used in the AggregatingStep must be evaluated before that.
+    bool hasCorrelatedExpressions() const override { return false; }
+
 private:
     void updateOutputHeader() override;
 

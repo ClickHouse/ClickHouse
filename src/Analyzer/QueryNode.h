@@ -647,6 +647,8 @@ public:
 
     void addCorrelatedColumn(const QueryTreeNodePtr & correlated_column);
 
+    DataTypePtr getResultType() const override;
+
     QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::QUERY;
