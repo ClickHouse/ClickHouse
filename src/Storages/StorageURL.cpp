@@ -81,7 +81,6 @@ namespace Setting
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsInt64 zstd_window_log_max;
-    extern const SettingsBool enable_url_encoding;
 }
 
 namespace ErrorCodes
