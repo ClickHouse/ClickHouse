@@ -524,65 +524,34 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
     if (!JoinCommon::hasNonJoinedBlocks(*table_join))
         return {};
 
-    if (!hasNonJoinedRows())
-        return {};
+    // Only for RIGHT or FULL joins
+    if (table_join->kind() != JoinKind::Right && table_join->kind() != JoinKind::Full)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Invalid join type. join kind: {}, strictness: {}",
+            table_join->kind(), table_join->strictness());
 
-    if (table_join->kind() == JoinKind::Right || table_join->kind() == JoinKind::Full)
+    std::vector<IBlocksStreamPtr> child_streams;
+    child_streams.reserve(hash_joins.size());
+
+    // Collect non-joined blocks from each slot
+    for (size_t i = 0; i < hash_joins.size(); ++i)
     {
-        if (hash_joins[0]->data->twoLevelMapIsUsed())
-        {
-            // For two-level map, all slots share the same hash map structure
-            // So we can just use slot 0 to process all non-joined rows
-            const auto & hash_join = hash_joins[0];
-            std::lock_guard lock(hash_join->mutex);
-
-            // Skip if no non-joined rows
-            if (!hash_join->data->hasNonJoinedRows() && !hash_join->has_non_joined_rows.load(std::memory_order_relaxed))
-                return {};
-
-            return hash_join->data->getNonJoinedBlocks(
-                left_sample_block, result_sample_block, max_block_size);
-        }
-        else
-        {
-            // For single-level map, we need to gather non-joined rows from all slots
-            // since each slot may contain different data
-            std::vector<IBlocksStreamPtr> child_streams;
-            child_streams.reserve(hash_joins.size());
-
-            // First pass: check for non-joined rows in each slot
-            for (size_t i = 0; i < hash_joins.size(); ++i)
-            {
-                const auto & hash_join = hash_joins[i];
-                std::lock_guard lock(hash_join->mutex);
-
-                // Skip if this slot has no non-joined rows
-                if (!hash_join->data->hasNonJoinedRows() && !hash_join->has_non_joined_rows.load(std::memory_order_relaxed))
-                    continue;
-
-                // Get non-joined blocks from this slot
-                IBlocksStreamPtr child = hash_join->data->getNonJoinedBlocks(
-                    left_sample_block, result_sample_block, max_block_size);
-
-                if (child)
-                    child_streams.push_back(std::move(child));
-            }
-
-            // If no streams, return empty
-            if (child_streams.empty())
-                return {};
-
-            // If only one stream, return it directly
-            if (child_streams.size() == 1)
-                return child_streams[0];
-
-            // If multiple streams, concatenate them
-            return std::make_shared<ConcatNotJoinedStreams>(std::move(child_streams));
-        }
+        const auto & slot = hash_joins[i];
+        std::lock_guard lock(slot->mutex);
+        // Check if this slot has any non-joined rows
+        if (!slot->data->hasNonJoinedRows() && !slot->has_non_joined_rows.load(std::memory_order_relaxed))
+            continue;
+        auto stream = slot->data->getNonJoinedBlocks(
+            left_sample_block, result_sample_block, max_block_size);
+        if (stream)
+            child_streams.push_back(std::move(stream));
     }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid join type. join kind: {}, strictness: {}",
-                    table_join->kind(), table_join->strictness());
+    if (child_streams.empty())
+        return {};
+    if (child_streams.size() == 1)
+        return child_streams[0];
+    return std::make_shared<ConcatNotJoinedStreams>(std::move(child_streams));
 }
 
 template <typename HashTable>
