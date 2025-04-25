@@ -1,0 +1,6 @@
+all_1_1_0 (state Active)	CACHED: $"val2"$"val1"$"val3" ; $"val2"$"val1"c".com" ; c"https://"$"val1"$"val3" ; c"https://"$"val1"c".com"
+all_2_2_0 (state Active)	CACHED: $"val2"$"val1"$"val3" ; $"val2"$"val1"c".com" ; c"https://"$"val1"$"val3" ; c"https://"$"val1"c".com"
+all_1_2_1 (state Active)	CACHED: $"val2"$"val1"c".com" ; $"val2"$"val1"$"val3" ; c"https://"$"val1"$"val3" ; c"https://"$"val1"c".com"
+all_1_1_0 (state Active)	CACHED: $"val1"$"val2" ; $"val1"$"val5"$"val6" ; $"val3"$"val4"$"val2" ; $"val3"$"val4"$"val5"$"val6"
+all_2_2_0 (state Active)	CACHED: $"val1"$"val2"
+all_1_2_1 (state Active)	CACHED: $"val1"$"val2"

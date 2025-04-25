@@ -27,7 +27,7 @@ private:
     HypothesisList hypothesis_list;
     std::vector<bool> verified; // Guarded by mutex
     uint64_t rows_checked = 0;
-    std::mutex mutex;
+    mutable std::mutex mutex;
     LoggerPtr log = nullptr;
 };
 

@@ -1762,14 +1762,6 @@ std::vector<std::pair<std::string, std::string>> StorageMergeTree::deduce(
         }
         auto names = sample_block.getNames();
         auto names_and_types_list = sample_block.getNamesAndTypesList();
-
-        if (data_part->getDataPartStorage().existsFile("prikol.txt"))
-        {
-            std::string content(1024, '\0');
-            auto buffer = data_part->readFileIfExists("prikol.txt");
-            content.resize(buffer->read(content.data(), 1024));
-            LOG_DEBUG(log, "Prikol Content {}", content);
-        }
         if (data_part->getDataPartStorage().existsFile("hypothesis.txt"))
         {
             auto buffer = data_part->readFileIfExists("hypothesis.txt");
@@ -1784,12 +1776,13 @@ std::vector<std::pair<std::string, std::string>> StorageMergeTree::deduce(
                 for (const auto & hypothesis : hypothesis_list)
                 {
                     result_str += hypothesis.toString();
-                    if (idx + 1 != hypothesis_list.size()) {
+                    if (idx + 1 != hypothesis_list.size())
+                    {
                         result_str += " ; ";
                     }
                     ++idx;
                 }
-                result.emplace_back(data_part->getNameWithState(), result_str);
+                result.emplace_back(data_part->getNameWithState(), "CACHED: " + result_str);
                 continue;
             }
         }

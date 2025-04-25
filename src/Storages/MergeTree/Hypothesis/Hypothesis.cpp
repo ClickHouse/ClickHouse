@@ -71,6 +71,25 @@ void Hypothesis::writeText(WriteBuffer & buf) const
     }
 }
 
+bool Hypothesis::operator==(const Hypothesis & other) const
+{
+    if (getName() != other.getName()) {
+        return false;
+    }
+    if (tokens.size() != other.tokens.size())
+    {
+        return false;
+    }
+    for (size_t i = 0; i < tokens.size(); ++i)
+    {
+        if (*tokens[i] != *other.tokens[i])
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 Hypothesis HypothesisBuilder::constuctHypothesis() &&
 {
     Hypothesis hypothesis;

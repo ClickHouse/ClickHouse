@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergedPartOffsets.h>
 
 #include <memory>
+#include <unordered_map>
 #include <fmt/format.h>
 
 #include <Common/Exception.h>
@@ -48,6 +49,7 @@
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#include "IO/WriteBufferFromString.h"
 #include "config.h"
 
 #ifndef NDEBUG
@@ -92,6 +94,7 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_sort_description;
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsBool enable_hypothesis_deduction;
 }
 
 namespace MergeTreeSetting
@@ -604,6 +607,41 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 global_ctx->storage_columns,
                 part_serialization_infos,
                 global_ctx->metadata_snapshot->getMetadataVersion());
+        }
+    }
+
+    // FIXME later, for some reason the param is absent
+    if (true)
+    {
+        LOG_DEBUG(ctx->log, "Try getting hypothesis for {} from old_parts", global_ctx->future_part->name);
+        bool everyone_has_hypothesis = true;
+        for (const auto & data_part : global_ctx->future_part->parts)
+        {
+            everyone_has_hypothesis &= data_part->getDataPartStorage().existsFile("hypothesis.txt");
+        }
+        if (everyone_has_hypothesis)
+        {
+            std::unordered_map<Hypothesis::Hypothesis, size_t> common_hypothesis;
+            for (const auto & data_part : global_ctx->future_part->parts)
+            {
+                Hypothesis::HypothesisList hypothesis_list;
+                auto buf = data_part->readFile("hypothesis.txt");
+                hypothesis_list.readText(*buf);
+                for (const auto & hypothesis : hypothesis_list)
+                {
+                    common_hypothesis[hypothesis] += 1;
+                }
+            }
+            Hypothesis::HypothesisList result;
+            for (const auto & [hypothesis, occurence_cnt] : common_hypothesis)
+            {
+                if (occurence_cnt == global_ctx->future_part->parts.size())
+                {
+                    result.push_back(hypothesis);
+                }
+            }
+            LOG_DEBUG(ctx->log, "Got {} hypothesis from child dataparts", result.size());
+            global_ctx->new_data_part->setHypothesisList(result);
         }
     }
 

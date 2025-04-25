@@ -1,6 +1,8 @@
 
 
 #include "Token.hpp"
+#include <string>
+#include <variant>
 
 namespace DB::Hypothesis
 {
@@ -27,6 +29,48 @@ const std::string & IdentityToken::getName() const
     }
     return std::get<1>(nameOrIdx);
 }
+size_t IdentityToken::getHash() const
+{
+    size_t h = static_cast<size_t>(getType());
+    if (std::holds_alternative<size_t>(nameOrIdx))
+    {
+        h ^= std::get<0>(nameOrIdx);
+        h ^= std::hash<std::string>{}((*names)[std::get<0>(nameOrIdx)]);
+    }
+    else
+    {
+        h ^= std::hash<std::string>{}(std::get<1>(nameOrIdx));
+    }
+    return h;
+}
+bool IdentityToken::operator==(const IToken & other) const
+{
+    if (other.getType() != getType())
+    {
+        return false;
+    }
+    const auto * identity = dynamic_cast<const IdentityToken *>(&other);
+    if (identity->nameOrIdx != nameOrIdx)
+    {
+        return false;
+    }
+    if (std::holds_alternative<size_t>(nameOrIdx))
+    {
+        auto idx = std::get<0>(nameOrIdx);
+        if (identity->names->at(idx) != this->names->at(idx))
+        {
+            return false;
+        }
+    }
+    else
+    {
+        if (std::get<1>(nameOrIdx) != std::get<1>(identity->nameOrIdx))
+        {
+            return false;
+        }
+    }
+    return true;
+}
 
 ConstToken::ConstToken(std::string value_)
     : IToken(TokenType::Const)
@@ -37,6 +81,25 @@ ConstToken::ConstToken(std::string value_)
 const std::string & ConstToken::getValue() const
 {
     return value;
+}
+
+size_t ConstToken::getHash() const
+{
+    return static_cast<size_t>(getType()) ^ std::hash<std::string>{}(value);
+}
+
+bool ConstToken::operator==(const IToken & other) const
+{
+    if (other.getType() != getType())
+    {
+        return false;
+    }
+    const auto * const_token = dynamic_cast<const ConstToken *>(&other);
+    if (value != const_token->value)
+    {
+        return false;
+    }
+    return true;
 }
 
 TokenPtr createIdentityToken(std::string column_name)

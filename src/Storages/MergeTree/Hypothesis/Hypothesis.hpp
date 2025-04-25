@@ -33,6 +33,8 @@ public:
     void readText(ReadBuffer & buf);
     void writeText(WriteBuffer & buf) const;
 
+    bool operator==(const Hypothesis & other) const;
+
 private:
     std::shared_ptr<const std::string> name = nullptr;
     std::vector<TokenPtr> tokens;
@@ -77,5 +79,19 @@ public:
     HypothesisList filterColumnName(std::string_view col_name) const;
     std::vector<std::pair<std::string, HypothesisList>> groupByColumnName() const;
 };
-
 }
+
+template <>
+struct std::hash<DB::Hypothesis::Hypothesis>
+{
+    size_t operator()(const DB::Hypothesis::Hypothesis & hypothesis) const noexcept
+    {
+        size_t h = std::hash<std::string>{}(hypothesis.getName());
+        h ^= hypothesis.getSize();
+        for (size_t i = 0; i < hypothesis.getSize(); ++i)
+        {
+            h ^= std::hash<DB::Hypothesis::IToken>{}(*hypothesis.getToken(i));
+        }
+        return h;
+    }
+};

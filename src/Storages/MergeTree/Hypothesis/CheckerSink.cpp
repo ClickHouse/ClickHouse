@@ -80,6 +80,7 @@ void CheckerSink::consume(Chunk & block)
 }
 HypothesisList CheckerSink::getVerifiedHypothesis() const
 {
+    std::lock_guard guard{mutex};
     HypothesisList result;
     size_t idx = 0;
     for (const auto & hypothesis : hypothesis_list)
@@ -96,6 +97,7 @@ HypothesisList CheckerSink::getVerifiedHypothesis() const
 
 size_t CheckerSink::hypothesisVerifiedCount() const
 {
+    std::lock_guard guard{mutex};
     return std::accumulate(verified.begin(), verified.end(), 0);
 }
 
