@@ -1,3 +1,5 @@
+--Tags: no-cpu-aarch64, no-cpu-s390x
+
 SELECT '--- Regular calls';
 SELECT sparseGrams('');
 SELECT sparseGrams('ab');
