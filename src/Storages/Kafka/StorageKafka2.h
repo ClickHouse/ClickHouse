@@ -7,7 +7,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer2.h>
 #include <Storages/Kafka/Kafka_fwd.h>
-#include <Storages/Kafka/ReplicaState.h>
 #include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ThreadStatus.h>
@@ -131,11 +130,19 @@ private:
         size_t consume_from_topic_partition_index{0};
         TopicPartitions topic_partitions{};
         zkutil::ZooKeeperPtr keeper;
-        TopicPartitionLocks locks{};
         Stopwatch watch{CLOCK_MONOTONIC_COARSE};
         size_t poll_count = 0;
         TopicPartitionLocks permanent_locks{};
         TopicPartitionLocks tmp_locks{};
+
+        // Locks = permanent_locks + tmp_locks
+        TopicPartitionLocks getAllTopicPartitionLocks()
+        {
+            TopicPartitionLocks locks;
+            locks.insert(permanent_locks.begin(), permanent_locks.end());
+            locks.insert(tmp_locks.begin(), tmp_locks.end());
+            return locks;
+        }
     };
 
     struct PolledBatchInfo

@@ -858,15 +858,6 @@ std::optional<StorageKafka2::LockedTopicPartitionInfo> StorageKafka2::createLock
     return lock_info;
 }
 
-/// Locks = permanent_locks + tmp_locks
-StorageKafka2::TopicPartitionLocks StorageKafka2::lockTopicPartitions(const TopicPartitionLocks & permanent_locks, const TopicPartitionLocks & tmp_locks)
-{
-    TopicPartitionLocks locks;
-    locks.insert(permanent_locks.begin(), permanent_locks.end());
-    locks.insert(tmp_locks.begin(), tmp_locks.end());
-    return locks;
-}
-
 /// First we delete all current temporary locks,
 /// then we create new locks from free partitions
 void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & tmp_locks)
@@ -1204,38 +1195,15 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
     auto & consumer_info = consumers[idx];
     consumer_info.watch.restart();
     auto & consumer = consumer_info.consumer;
-    // In case the initial subscribe in startup failed, let's subscribe now
-    // consumer->subscribeIfNotSubscribedYet();
-
-    // // To keep the consumer alive
-    // const auto wait_for_assignment = consumer_info.locks.empty();
-    // LOG_TRACE(log, "Polling consumer {} for events", idx);
-    // consumer->pollEvents();
-
-    // if (wait_for_assignment)
-    // {
-    //     while (nullptr == consumer->getKafkaAssignment() && consumer_info.watch.elapsedMilliseconds() < MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS)
-    //         consumer->pollEvents();
-    //     LOG_INFO(log, "Consumer has assignment: {}", nullptr == consumer->getKafkaAssignment());
-    // }
 
     try
     {
-        if (consumer_info.locks.empty())
+        if (consumer_info.getAllTopicPartitionLocks().empty())
         {
             LOG_TRACE(log, "Consumer needs update offset");
             // First release the locks so let other consumers acquire them ASAP
-            consumer_info.locks.clear();
             consumer_info.topic_partitions.clear();
 
-            // const auto * current_assignment = consumer->getKafkaAssignment();
-            // if (current_assignment == nullptr)
-            // {
-            //     // The consumer lost its assignment and haven't received a new one.
-            //     // By returning true this function reports the current consumer as a "stalled" stream, which
-            //     LOG_TRACE(log, "No assignment");
-            //     return StallReason::NoAssignment;
-            // }
             consumer_info.consume_from_topic_partition_index = 0;
 
             if (consumer_info.keeper->expired())
@@ -1245,30 +1213,18 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
             }
 
             updatePermanentLocks(*consumer_info.keeper, consumer->getAllTopicPartitions(), consumer_info.permanent_locks);
-            auto maybe_locks = lockTopicPartitions(consumer_info.permanent_locks, consumer_info.tmp_locks);
-
             // Now we always have some assignment
-            // if (!maybe_locks.has_value())
-            // {
-            //     // We couldn't acquire locks, probably some other consumers are still holding them.
-            //     LOG_TRACE(log, "Couldn't acquire locks");
-            //     return StallReason::CouldNotAcquireLocks;
-            // }
-
-            consumer_info.locks = std::move(maybe_locks);
-
-            TopicPartitions new_assigment(consumer_info.locks.size());
-            auto locks_it = consumer_info.locks.begin();
-            for (size_t i = 0; locks_it != consumer_info.locks.end(); ++i, ++locks_it)
+            auto current_locks = consumer_info.getAllTopicPartitionLocks();
+            auto locks_it = current_locks.begin();
+            TopicPartitions new_assigment(current_locks.size());
+            for (size_t i = 0; locks_it != current_locks.end(); ++i, ++locks_it)
                 new_assigment[i] = locks_it->first;
-            // consumer->updateAssigmentAfterRebalance(new_assigment);
-
             consumer_info.topic_partitions.reserve(new_assigment.size());
 
             for (const auto & topic_partition : new_assigment)
             {
                 TopicPartition topic_partition_copy{topic_partition};
-                if (const auto & maybe_committed_offset = consumer_info.locks.at(topic_partition).committed_offset;
+                if (const auto & maybe_committed_offset = current_locks.at(topic_partition).committed_offset;
                     maybe_committed_offset.has_value())
                 {
                     topic_partition_copy.offset = *maybe_committed_offset;
@@ -1305,7 +1261,8 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
         if (Coordination::isHardwareError(e.code))
         {
             LOG_INFO(log, "Cleaning up topic-partitions locks because of exception: {}", e.displayText());
-            consumer_info.locks.clear();
+            consumer_info.tmp_locks.clear();
+            consumer_info.permanent_locks.clear();
             activating_task->schedule();
             return StallReason::KeeperSessionEnded;
         }
@@ -1361,9 +1318,10 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
         updateTemporaryLocks(keeper_to_use, consumer_info.consumer->getAllTopicPartitions(), consumer_info.tmp_locks);
         consumer_info.poll_count = 0;
     }
+    auto current_locks = consumer_info.getAllTopicPartitionLocks();
 
     auto [blocks, last_read_offset] = pollConsumer(
-        *consumer_info.consumer, topic_partition, consumer_info.locks[topic_partition].intent_size, consumer_info.watch, kafka_context);
+        *consumer_info.consumer, topic_partition, current_locks[topic_partition].intent_size, consumer_info.watch, kafka_context);
 
     if (blocks.empty())
     {
@@ -1385,7 +1343,7 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
     // We can't cancel during copyData, as it's not aware of commits and other kafka-related stuff.
     // It will be cancelled on underlying layer (kafka buffer)
 
-    auto & lock_info = consumer_info.locks.at(topic_partition);
+    auto & lock_info = current_locks.at(topic_partition);
     lock_info.intent_size = last_read_offset - lock_info.committed_offset.value_or(0);
     saveIntent(keeper_to_use, topic_partition, *lock_info.intent_size);
     std::atomic_size_t rows = 0;

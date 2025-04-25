@@ -63,65 +63,6 @@ KafkaConsumer2::KafkaConsumer2(
     , current(messages.begin())
     , topics(topics_)
 {
-    // called (synchronously, during poll) when we enter the consumer group
-    // consumer->set_assignment_callback(
-    //     [this](const cppkafka::TopicPartitionList & topic_partitions)
-    //     {
-    //         CurrentMetrics::add(CurrentMetrics::KafkaAssignedPartitions, topic_partitions.size());
-    //         ProfileEvents::increment(ProfileEvents::KafkaRebalanceAssignments);
-
-    //         if (topic_partitions.empty())
-    //         {
-    //             LOG_INFO(log, "Got empty assignment: Not enough partitions in the topic for all consumers?");
-    //         }
-    //         else
-    //         {
-    //             LOG_TRACE(log, "Topics/partitions assigned: {}", topic_partitions);
-    //             CurrentMetrics::add(CurrentMetrics::KafkaConsumersWithAssignment, 1);
-    //         }
-
-    //         chassert(!assignment.has_value());
-
-    //         assignment.emplace();
-    //         assignment->reserve(topic_partitions.size());
-    //         needs_offset_update = true;
-    //         for (const auto & topic_partition : topic_partitions)
-    //         {
-    //             assignment->push_back(
-    //                 TopicPartition{topic_partition.get_topic(), topic_partition.get_partition(), topic_partition.get_offset()});
-    //         }
-
-    //         // We need to initialize the queues here in order to detach them from the consumer queue. Otherwise `pollEvents` might eventually poll actual messages also.
-    //         initializeQueues(topic_partitions);
-    //     });
-
-    // called (synchronously, during poll) when we leave the consumer group
-    // consumer->set_revocation_callback(
-    //     [this](const cppkafka::TopicPartitionList & topic_partitions)
-    //     {
-    //         CurrentMetrics::sub(CurrentMetrics::KafkaAssignedPartitions, topic_partitions.size());
-    //         ProfileEvents::increment(ProfileEvents::KafkaRebalanceRevocations);
-
-    //         // Rebalance is happening now, and now we have a chance to finish the work
-    //         // with topics/partitions we were working with before rebalance
-    //         LOG_TRACE(log, "Rebalance initiated. Revoking partitions: {}", topic_partitions);
-
-    //         if (!topic_partitions.empty())
-    //         {
-    //             CurrentMetrics::sub(CurrentMetrics::KafkaConsumersWithAssignment, 1);
-    //         }
-
-    //         assignment.reset();
-    //         queues.clear();
-    //         needs_offset_update = true;
-    //     });
-
-    // consumer->set_rebalance_error_callback(
-    //     [this](cppkafka::Error err)
-    //     {
-    //         LOG_ERROR(log, "Rebalance error: {}", err);
-    //         ProfileEvents::increment(ProfileEvents::KafkaRebalanceErrors);
-    //     });
 }
 
 KafkaConsumer2::~KafkaConsumer2()
@@ -151,16 +92,6 @@ bool KafkaConsumer2::polledDataUnusable(const TopicPartition & topic_partition) 
         : (current->get_topic() != topic_partition.topic || current->get_partition() != topic_partition.partition_id);
     return different_topic_partition;
 }
-
-// KafkaConsumer2::TopicPartitions const * KafkaConsumer2::getKafkaAssignment() const
-// {
-//     if (assignment.has_value())
-//     {
-//         return &*assignment;
-//     }
-
-//     return nullptr;
-// }
 
 void KafkaConsumer2::updateOffsets(const TopicPartitions & topic_partitions)
 {
