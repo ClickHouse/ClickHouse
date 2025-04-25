@@ -338,6 +338,13 @@ void SerializationArray::serializeBinaryBulkWithMultipleStreams(
 
     if (limit == 0 || nested_limit)
         nested->serializeBinaryBulkWithMultipleStreams(column_array.getData(), nested_offset, nested_limit, settings, state);
+    /// Even if there is no data to write, we still have to call nested serialization,
+    /// because we might need to call the stream getter for all existing substreams even
+    /// if nothing is written there. It's needed in Compact parts when we write
+    /// marks per substreams inside the stream getter.
+    else
+        nested->serializeBinaryBulkWithMultipleStreams(column_array.getData(), column_array.getData().size(), 0, settings, state);
+
     settings.path.pop_back();
 }
 

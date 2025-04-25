@@ -175,7 +175,6 @@ def main():
                 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_THINLTO=0 -DENABLE_NURAFT=1 -DENABLE_SIMDJSON=1 \
                 -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DCOMPILER_CACHE=sccache",
                 workdir=build_dir,
-                with_log=True,
             )
         )
         res = results[-1].is_ok()
@@ -187,7 +186,6 @@ def main():
                 name="Build ClickHouse",
                 command="ninja clickhouse-bundle clickhouse-stripped",
                 workdir=build_dir,
-                with_log=True,
             )
         )
         Shell.check("sccache --show-stats")
@@ -205,7 +203,6 @@ def main():
                 name="Check and Compress binary",
                 command=commands,
                 workdir=build_dir,
-                with_log=True,
             )
         )
         res = results[-1].is_ok()
@@ -223,7 +220,6 @@ def main():
             Result.from_commands_run(
                 name="Install ClickHouse Config",
                 command=commands,
-                with_log=True,
             )
         )
         res = results[-1].is_ok()

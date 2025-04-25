@@ -46,6 +46,7 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
+
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
 #include <ranges>
@@ -241,8 +242,21 @@ bool isQueryOrUnionNode(const QueryTreeNodePtr & node)
     return isQueryOrUnionNode(node.get());
 }
 
-bool isDependentColumn(IdentifierResolveScope * scope_to_check, const QueryTreeNodePtr & column_source)
+bool isCorrelatedQueryOrUnionNode(const QueryTreeNodePtr & node)
 {
+    auto * query_node = node->as<QueryNode>();
+    auto * union_node = node->as<UnionNode>();
+
+    return (query_node != nullptr && query_node->isCorrelated()) || (union_node != nullptr && union_node->isCorrelated());
+}
+
+bool checkCorrelatedColumn(
+    IdentifierResolveScope * scope_to_check,
+    const ColumnNodePtr & column
+)
+{
+    auto column_source = column->getColumnSource();
+
     /// The case of lambda argument. Example:
     /// arrayMap(X -> X + Y, [0])
     ///
@@ -251,15 +265,27 @@ bool isDependentColumn(IdentifierResolveScope * scope_to_check, const QueryTreeN
     if (column_source->getNodeType() == QueryTreeNodeType::LAMBDA)
         return false;
 
+    bool is_correlated = false;
+
     while (scope_to_check != nullptr)
     {
         if (scope_to_check->registered_table_expression_nodes.contains(column_source))
-            return false;
+            break;
+
         if (isQueryOrUnionNode(scope_to_check->scope_node))
-            return true;
+        {
+            is_correlated = true;
+            if (auto * query_node = scope_to_check->scope_node->as<QueryNode>())
+                query_node->addCorrelatedColumn(column);
+            else if (auto * union_node = scope_to_check->scope_node->as<UnionNode>())
+                union_node->addCorrelatedColumn(column);
+        }
         scope_to_check = scope_to_check->parent_scope;
     }
-    return true;
+    if (!scope_to_check)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find the original scope of the column");
+
+    return is_correlated;
 }
 
 DataTypePtr getExpressionNodeResultTypeOrNull(const QueryTreeNodePtr & query_tree_node)
