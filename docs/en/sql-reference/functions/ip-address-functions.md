@@ -260,8 +260,7 @@ toIPv4(UInt32)
 
 **Arguments**
 
-- `string` — IPv4 address. [String](../data-types/string.md).
-- `UInt32`, `UInt16`, or `UInt8` — IPv4 address. [UInt32, UInt16, UInt8](../data-types/int-uint.md).
+- `string`, `UInt32`, `UInt16`, or `UInt8` — IPv4 address. [String](../data-types/string.md) or [UInt](../data-types/int-uint.md).
 
 **Returned value**
 
@@ -443,7 +442,7 @@ toIPv6(UInt128)
 
 **Argument**
 
-- `string` or `UInt128` — IP address. [String](../data-types/string.md).
+- `string` or `UInt128` — IP address. [String](../data-types/string.md) or [UInt128](../data-types/int-uint.md).
 
 **Returned value**
 
