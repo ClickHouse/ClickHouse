@@ -14,7 +14,7 @@
 
 # 2025 Changelog
 
-### <a id="254"></a> ClickHouse release 25.4 LTS, 2025-04-22
+### <a id="254"></a> ClickHouse release 25.4, 2025-04-22
 
 #### Backward Incompatible Change
 * Check if all columns in a materialized view match the target table when `allow_materialized_view_with_bad_select` is `false`. [#74481](https://github.com/ClickHouse/ClickHouse/pull/74481) ([Christoph Wurm](https://github.com/cwurm)).
