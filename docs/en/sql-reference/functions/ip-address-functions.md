@@ -254,14 +254,14 @@ Similar to [`IPv4StringToNum`](#IPv4StringToNum) and [IPv4StringToNum](#IPv4Stri
 **Syntax**
 
 ```sql
-toIPv4(UInt32)
 toIPv4(string)
+toIPv4(UInt32)
 ```
 
 **Arguments**
 
 - `string` — IPv4 address. [String](../data-types/string.md).
-- `UInt32` — IPv4 address. [UInt32](../data-types/int-uint.md).
+- `UInt32`, `UInt16`, or `UInt8` — IPv4 address. [UInt32](../data-types/int-uint.md).
 
 **Returned value**
 
@@ -430,7 +430,7 @@ Result:
 ## toIPv6 {#toipv6}
 
 Converts a string or a UInt128 form of IPv6 address to [IPv6](../data-types/ipv6.md) type. For strings, if the IPv6 address has an invalid format, returns an empty value.
-Similar to [IPv6StringToNum](#ipv6stringtonum) and [IPv6NumToString](#ipv6numtostringx) functions, which converts IPv6 address to and from binary format (i.e. `FixedString(16)`).
+Similar to [IPv6StringToNum](#ipv6stringtonum) and [IPv6NumToString](#ipv6numtostringx) functions, which convert IPv6 address to and from binary format (i.e. `FixedString(16)`).
 
 If the input string contains a valid IPv4 address, then the IPv6 equivalent of the IPv4 address is returned.
 
