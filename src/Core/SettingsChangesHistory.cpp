@@ -76,6 +76,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"page_cache_block_size", 1048576, 1048576, "Made this setting adjustable on a per-query level."},
             {"page_cache_lookahead_blocks", 16, 16, "Made this setting adjustable on a per-query level."},
             {"output_format_pretty_glue_chunks", "0", "auto", "A new setting to make Pretty formats prettier."},
+            {"parallel_hash_join_threshold", 0, 100'000, "New setting"},
             {"make_distributed_plan", 0, 0, "New experimental setting."},
             {"execute_distributed_plan_locally", 0, 0, "New experimental setting."},
             {"default_shuffle_join_bucket_count", 8, 8, "New experimental setting."},
