@@ -4723,6 +4723,11 @@ The probability of a fault injection during table creation after creating metada
     \
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
 If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
 )", 0) \
     \
     DECLARE(Bool, use_query_cache, false, R"(
@@ -6338,7 +6343,7 @@ Index analysis done only on replica-coordinator and skipped on other replicas. E
     DECLARE(Bool, parallel_replicas_only_with_analyzer, true, R"(
 The analyzer should be enabled to use parallel replicas. With disabled analyzer query execution fallbacks to local execution, even if parallel reading from replicas is enabled. Using parallel replicas without the analyzer enabled is not supported
 )", BETA) \
-    DECLARE(Bool, parallel_replicas_insert_select_local_pipeline, false, R"(
+    DECLARE(Bool, parallel_replicas_insert_select_local_pipeline, true, R"(
 Use local pipeline during distributed INSERT SELECT with parallel replicas
 )", BETA) \
     DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
@@ -6630,6 +6635,9 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_glue_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_database_hms_catalog, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'hms'
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_kusto_dialect, false, R"(
 Enable Kusto Query Language (KQL) - an alternative to SQL.

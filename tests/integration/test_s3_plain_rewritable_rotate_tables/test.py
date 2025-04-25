@@ -91,7 +91,7 @@ def start_cluster():
     ],
 )
 @pytest.mark.parametrize("partition_ops_on_same_disk", [1, 0])
-def test(start_cluster, storage_policy, partition_ops_on_same_disk):
+def test_alter_partition_after_table_rotation(start_cluster, storage_policy, partition_ops_on_same_disk):
     node1 = cluster.instances["node1"]
 
     def create_insert(node, table_name, insert_values):
