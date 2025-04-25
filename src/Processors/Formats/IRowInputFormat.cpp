@@ -170,8 +170,13 @@ Chunk IRowInputFormat::read()
 
                 if (params.max_block_size_bytes)
                 {
-                    for (const auto & column : columns)
-                        total_bytes += column->byteSizeAt(column->size() - 1);
+                    for (size_t i = 0; i != columns.size(); ++i)
+                    {
+                        /// Column of a deprecated Object type will throw inside byteSizeAt because it's not finalized.
+                        /// It's ok to ignore deprecated type here.
+                        if (!header.getByPosition(i).type->hasDynamicSubcolumnsDeprecated())
+                            total_bytes += columns[i]->byteSizeAt(columns[i]->size() - 1);
+                    }
                 }
             }
             catch (Exception & e)
