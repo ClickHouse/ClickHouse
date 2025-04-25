@@ -89,7 +89,7 @@ COPY misc/ /misc/
 COPY --from=clickhouse/cctools:4670e95dde3de689f103 /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
 
-COPY --from=clickhouse/cctools:f312dbe8e0992a0a492d \
+COPY --from=clickhouse/cctools:8b9f34a4131ff05d16b7 \
   /opt/openssl-fips/openssl.cnf \
   /opt/openssl-fips/fipsmodule.cnf \
   /opt/openssl-fips/fips.so \
