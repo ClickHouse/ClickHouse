@@ -1571,7 +1571,7 @@ class TestCase:
                 stderr += str(stdfd.read(), errors="replace", encoding="utf-8")
 
         if debug_log:
-            debug_log = "\n".join(debug_log.splitlines()[:100])
+            debug_log = "\n".join(debug_log.splitlines()[-100:])
 
         if proc:
             if proc.returncode is None:
