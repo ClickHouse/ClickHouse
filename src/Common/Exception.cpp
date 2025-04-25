@@ -17,6 +17,7 @@
 #include <Common/logger_useful.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -273,22 +274,17 @@ Exception::~Exception()
 {
 #ifdef DEBUG_OR_SANITIZER_BUILD
     const int error_code = code();
-    if (
-        error_code == ErrorCodes::LOGICAL_ERROR
+    const bool is_error_important = error_code == ErrorCodes::LOGICAL_ERROR
         || error_code == ErrorCodes::POTENTIALLY_BROKEN_DATA_PART
         || error_code == ErrorCodes::REPLICA_ALREADY_EXISTS
         || error_code == ErrorCodes::NOT_ENOUGH_SPACE
         || error_code == ErrorCodes::CORRUPTED_DATA
         || error_code == ErrorCodes::CHECKSUM_DOESNT_MATCH
-        || error_code == ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR
-    )
-    {
-        if (!logged)
-        {
-            LOG_FATAL(getLogger("~Exception"), "Important exception was caught and not logged: {}", getExceptionMessage(*this, /* with_stacktrace= */true));
-            std::terminate();
-        }
-    }
+        || error_code == ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR;
+    chassert(
+        !is_error_important || logged->load(std::memory_order_relaxed),
+        fmt::format("Important exception was caught and not logged: {}", getExceptionMessage(*this, /* with_stacktrace= */true))
+    );
 #endif
 }
 

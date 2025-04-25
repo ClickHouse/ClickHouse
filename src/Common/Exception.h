@@ -6,6 +6,7 @@
 #include <Common/StackTrace.h>
 #include <Core/LogsLevel.h>
 
+#include <atomic>
 #include <cerrno>
 #include <exception>
 #include <vector>
@@ -172,14 +173,14 @@ public:
 
     std::vector<std::string> getMessageFormatStringArgs() const { return message_format_string_args; }
 
-    void markAsLogged() { logged = true; }
+    void markAsLogged() { logged->store(true, std::memory_order_relaxed); }
 
 private:
 #ifndef STD_EXCEPTION_HAS_STACK_TRACE
     StackTrace trace;
 #endif
     bool remote = false;
-    bool logged = false;
+    std::shared_ptr<std::atomic<bool>> logged = std::make_shared<std::atomic<bool>>(false);
 
     /// Number of this error among other errors with the same code and the same `remote` flag since the program startup.
     size_t error_index = static_cast<size_t>(-1);
