@@ -76,7 +76,6 @@ namespace ErrorCodes
     extern const int FUNCTION_ALREADY_EXISTS;
     extern const int CANNOT_DROP_FUNCTION;
     extern const int UNSUPPORTED_DRIVER;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 UserDefinedDriverFunctionFactory & UserDefinedDriverFunctionFactory::instance()
@@ -202,8 +201,7 @@ void UserDefinedDriverFunctionFactory::checkCanBeRegistered(const String & funct
     if (UserDefinedSQLFunctionFactory::instance().has(function_name))
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined SQL function '{}' already exists", function_name);
 
-    if (UserDefinedExecutableFunctionFactory::instance().has(
-            function_name, global_context)) /// NOLINT(readability-static-accessed-through-instance)
+    if (UserDefinedExecutableFunctionFactory::instance().has(function_name, global_context)) /// NOLINT(readability-static-accessed-through-instance)
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined executable function '{}' already exists", function_name);
 
     checkDriverExists(query);
@@ -217,8 +215,7 @@ void UserDefinedDriverFunctionFactory::checkCanBeUnregistered(const String & fun
     if (UserDefinedSQLFunctionFactory::instance().has(function_name))
         throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop user defined SQL function '{}'", function_name);
 
-    if (UserDefinedExecutableFunctionFactory::instance().has(
-            function_name, global_context)) /// NOLINT(readability-static-accessed-through-instance)
+    if (UserDefinedExecutableFunctionFactory::instance().has(function_name, global_context)) /// NOLINT(readability-static-accessed-through-instance)
         throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop user defined executable function '{}'", function_name);
 }
 
