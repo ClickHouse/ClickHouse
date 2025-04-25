@@ -128,11 +128,7 @@ static std::vector<std::string> extactFromConfigAccordingToGlobs(DB::Configurati
 }
 
 
-<<<<<<< HEAD
-static DB::ConfigurationPtr get_configuration(const std::string & config_path, bool process_zk_includes, bool throw_on_bad_include_from)
-=======
-static DB::XMLDocumentPtr getXMLconfiguration(const std::string & config_path, bool process_zk_includes)
->>>>>>> 19c7432a0c0 (Add support for handling non-scalar values)
+static DB::XMLDocumentPtr getXMLconfiguration(const std::string & config_path, bool process_zk_includes, bool throw_on_bad_include_from)
 {
     DB::ConfigProcessor processor(config_path,
         /* throw_on_bad_incl = */ false,
@@ -156,52 +152,27 @@ static DB::XMLDocumentPtr getXMLconfiguration(const std::string & config_path, b
     return config_xml;
 }
 
-static DB::XMLDocumentPtr getUsersXMLConfiguration(DB::XMLDocumentPtr configuration_xml, const std::string & config_path, bool try_get)
+static DB::XMLDocumentPtr getUsersXMLConfiguration(DB::XMLDocumentPtr configuration_xml, const std::string & config_path, bool ignore_errors)
 {
     DB::ConfigurationPtr configuration = DB::ConfigurationPtr(new Poco::Util::XMLConfiguration(configuration_xml));
     bool has_user_directories = configuration->has("user_directories");
-    if (!has_user_directories && !try_get)
+    if (!has_user_directories && !ignore_errors)
         throw DB::Exception(DB::ErrorCodes::CANNOT_LOAD_CONFIG, "Can't load config for users");
 
     std::string users_config_path = configuration->getString("user_directories.users_xml.path");
     const auto config_dir = fs::path{config_path}.remove_filename().string();
     if (fs::path(users_config_path).is_relative() && fs::exists(fs::path(config_dir) / users_config_path))
         users_config_path = fs::path(config_dir) / users_config_path;
-    return getXMLconfiguration(users_config_path, false);
+    return getXMLconfiguration(users_config_path, false, !ignore_errors);
 }
 
 static std::vector<std::string> extractFromConfig(const std::string & config_path, const std::string & key, bool process_zk_includes, bool ignore_errors, bool get_users)
 {
-<<<<<<< HEAD
-    DB::ConfigurationPtr configuration = get_configuration(config_path, process_zk_includes, !ignore_errors);
-=======
-    DB::XMLDocumentPtr configuration_xml = getXMLconfiguration(config_path, process_zk_includes);
-<<<<<<< HEAD
-    DB::ConfigurationPtr configuration = DB::ConfigurationPtr(new Poco::Util::XMLConfiguration(configuration_xml));
->>>>>>> 19c7432a0c0 (Add support for handling non-scalar values)
 
+    DB::XMLDocumentPtr configuration_xml = getXMLconfiguration(config_path, process_zk_includes, !ignore_errors);
     if (get_users)
-    {
-        bool has_user_directories = configuration->has("user_directories");
-        if (!has_user_directories && !ignore_errors)
-            throw DB::Exception(DB::ErrorCodes::CANNOT_LOAD_CONFIG, "Can't load config for users");
-
-        std::string users_config_path = configuration->getString("user_directories.users_xml.path");
-        const auto config_dir = fs::path{config_path}.remove_filename().string();
-        if (fs::path(users_config_path).is_relative() && fs::exists(fs::path(config_dir) / users_config_path))
-            users_config_path = fs::path(config_dir) / users_config_path;
-<<<<<<< HEAD
-        configuration = get_configuration(users_config_path, process_zk_includes, !ignore_errors);
-=======
-        configuration_xml = getXMLconfiguration(users_config_path, process_zk_includes);
-        configuration = DB::ConfigurationPtr(new Poco::Util::XMLConfiguration(configuration_xml));
->>>>>>> 19c7432a0c0 (Add support for handling non-scalar values)
-    }
-=======
-    if (get_users)
-        configuration_xml = getUsersXMLConfiguration(configuration_xml, config_path, try_get);
+        configuration_xml = getUsersXMLConfiguration(configuration_xml, config_path, ignore_errors);
     DB::ConfigurationPtr configuration = DB::ConfigurationPtr(new Poco::Util::XMLConfiguration(configuration_xml));
->>>>>>> b09b26d2e01 (Add support for outputting entire tree if key is not specified)
 
     // Check if this key has a non-scalar value by looking for subkeys
     Poco::Util::XMLConfiguration::Keys keys;
@@ -216,13 +187,8 @@ static std::vector<std::string> extractFromConfig(const std::string & config_pat
     if (key.find_first_of("*?{") != std::string::npos)
         return extactFromConfigAccordingToGlobs(configuration, key, ignore_errors);
 
-<<<<<<< HEAD
     /// Do not throw exception if not found.
     if (ignore_errors)
-=======
-    // Do not throw exception if not found.
-    if (try_get)
->>>>>>> 19c7432a0c0 (Add support for handling non-scalar values)
         return {configuration->getString(key, "")};
     return {configuration->getString(key)};
 }
@@ -278,10 +244,6 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
         po::notify(options);
 
         setupLogging(log_level);
-<<<<<<< HEAD
-        for (const auto & value : extractFromConfig(config_path, key, process_zk_includes, ignore_errors, get_users))
-            std::cout << value << std::endl;
-=======
 
         std::ostream* output_stream = &std::cout;
         std::unique_ptr<std::ofstream> file_stream;
@@ -298,24 +260,19 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
         if (key.empty())
         {
             // If no key provided, print the entire configuration tree
-            DB::XMLDocumentPtr configuration_xml = getXMLconfiguration(config_path, process_zk_includes);
+            DB::XMLDocumentPtr configuration_xml = getXMLconfiguration(config_path, process_zk_includes, !ignore_errors);
             if (get_users)
-                configuration_xml = getUsersXMLConfiguration(configuration_xml, config_path, try_get);
+                configuration_xml = getUsersXMLConfiguration(configuration_xml, config_path, ignore_errors);
             *output_stream << getXMLSubTreeAsString(configuration_xml, "") << std::endl;
         }
         else
         {
-            for (const auto & value : extractFromConfig(config_path, key, process_zk_includes, try_get, get_users))
+            for (const auto & value : extractFromConfig(config_path, key, process_zk_includes, ignore_errors, get_users))
                 *output_stream << value << std::endl;
         }
 
-<<<<<<< HEAD
->>>>>>> b09b26d2e01 (Add support for outputting entire tree if key is not specified)
-=======
         if (file_stream)
             file_stream->close();
-
->>>>>>> 1138f06c5a0 (Add support for --output to specify output file)
     }
     catch (...)
     {
