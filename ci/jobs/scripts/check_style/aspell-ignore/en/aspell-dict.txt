@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3238 
+personal_ws-1.1 en 3267 
 AArch
 ACLs
 ALTERs
@@ -1241,6 +1241,9 @@ addressToLine
 addressToLineWithInlines
 addressToSymbol
 adviced
+affine
+affineGap
+affineGapUTF
 agg
 aggThrow
 aggregatefunction
@@ -2777,6 +2780,8 @@ skewpop
 skewsamp
 skippingerrors
 sleepEachRow
+smashSimilarity
+smashSimilarityUTF
 snowflakeIDToDateTime
 snowflakeToDateTime
 socketcache

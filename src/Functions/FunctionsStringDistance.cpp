@@ -491,13 +491,15 @@ struct ByteAffineGapDistanceImpl
         double mismatch = default_mismatch)
     {
         /// Safety threshold against DoS
-        if (haystack_size > max_string_size || needle_size > max_string_size) {
+        if (haystack_size > max_string_size || needle_size > max_string_size)
+        {
             throw Exception(
                 ErrorCodes::TOO_LARGE_STRING_SIZE,
                 "The string size is too big for function affineGap, should be at most {}", max_string_size);
         }
 
-        if (static_cast<long double>(haystack_size) * static_cast<long double>(needle_size) > max_complexity) {
+        if (static_cast<long double>(haystack_size) * static_cast<long double>(needle_size) > max_complexity)
+        {
             throw Exception(
                 ErrorCodes::TOO_LARGE_STRING_SIZE,
                 "Complexity of the operation is too high, should be at most {}", max_complexity);
@@ -609,8 +611,8 @@ struct ByteAffineGapDistanceImpl
         }
         
         /// Return minimum of the three matrices at the bottom-right corner
-        return std::min({m_matrix[haystack_size][needle_size], 
-                         x_matrix[haystack_size][needle_size], 
+        return std::min({m_matrix[haystack_size][needle_size],
+                         x_matrix[haystack_size][needle_size],
                          y_matrix[haystack_size][needle_size]});
     }
 };
@@ -638,7 +640,7 @@ struct ByteSmashSimilarityImpl
         
         if constexpr (utf8_enabled)
         {
-            try 
+            try
             {
                 parseUTF8String(haystack, haystack_size, [&](UInt32 code_point) {
                     haystack_codepoints.push_back(code_point);
@@ -648,7 +650,7 @@ struct ByteSmashSimilarityImpl
                 });
                 
                 // Create string views from code points
-                std::string_view long_str(reinterpret_cast<const char*>(haystack_codepoints.data()), 
+                std::string_view long_str(reinterpret_cast<const char*>(haystack_codepoints.data()),
                                        haystack_codepoints.size() * sizeof(UInt32));
                 std::string_view short_str(reinterpret_cast<const char*>(needle_codepoints.data()),
                                         needle_codepoints.size() * sizeof(UInt32));
@@ -656,7 +658,8 @@ struct ByteSmashSimilarityImpl
                 std::vector<UInt32> long_codepoints = haystack_codepoints;
                 std::vector<UInt32> short_codepoints = needle_codepoints;
                 
-                if (long_str.size() < short_str.size()) {
+                if (long_str.size() < short_str.size())
+                {
                     std::swap(long_str, short_str);
                     std::swap(long_codepoints, short_codepoints);
                 }
@@ -719,12 +722,14 @@ private:
         const int64_t n = short_str.size();
 
         size_t max_word_length = 0;
-        for (const auto& word : words) {
+        for (const auto& word : words)
+        {
             max_word_length = std::max(max_word_length, word.size());
         }
 
         long double smash_complexity = static_cast<long double>(m) * static_cast<long double>(n) * static_cast<long double>(n - 1) / 2;
-        if (smash_complexity > max_complexity) {
+        if (smash_complexity > max_complexity)
+        {
             throw Exception(
                 ErrorCodes::TOO_LARGE_STRING_SIZE,
                 "String size too large for smashSimilarity");
@@ -745,13 +750,14 @@ private:
         const auto timeout = std::chrono::seconds(5);
 
         for (int64_t i = 1; i <= m; ++i)
-        {  
+        {
             for (int64_t j = 1; j <= n; ++j)
             {
                 for (int64_t k = i - 1; k < j; ++k)
                 {
                     auto current_time = std::chrono::steady_clock::now();
-                    if (std::chrono::duration_cast<std::chrono::seconds>(current_time - start_time) > timeout) {
+                    if (std::chrono::duration_cast<std::chrono::seconds>(current_time - start_time) > timeout)
+                    {
                         throw Exception(
                             ErrorCodes::TOO_LARGE_STRING_SIZE,
                             "Operation timeout: SMASH similarity calculation took more than 5 seconds");
@@ -787,7 +793,7 @@ private:
                 return false;
                 
             UInt32 code_point = codepoints[code_point_idx];
-            return code_point == ' ' || code_point == '\t' || code_point == '\n' || 
+            return code_point == ' ' || code_point == '\t' || code_point == '\n' ||
                    code_point == '\r' || code_point == '\v' || code_point == '\f';
         }
         else
@@ -799,7 +805,8 @@ private:
 
     static double calculateDistance(std::string_view word, std::string_view substr)
     {
-        auto is_subsequence = [](std::string_view shorter, std::string_view longer) {
+        auto is_subsequence = [](std::string_view shorter, std::string_view longer)
+        {
             if (shorter.empty()) return true;
             if (longer.empty()) return false;
             
@@ -820,8 +827,8 @@ private:
             return ByteAffineGapDistanceImpl<true>::process(
                 word.data(), word.size(),
                 substr.data(), substr.size(),
-                0.7, // gap_open
-                0.3, // gap_extend
+                0.7, // gap_open - reduced to be less punitive for typos
+                0.3, // gap_extend - reduced to be less punitive for typos
                 1.0  // mismatch
             );
         }
@@ -830,8 +837,8 @@ private:
             return ByteAffineGapDistanceImpl<false>::process(
                 word.data(), word.size(),
                 substr.data(), substr.size(),
-                0.7, // gap_open
-                0.3, // gap_extend
+                0.7, // gap_open - reduced to be less punitive for typos
+                0.3, // gap_extend - reduced to be less punitive for typos
                 1.0  // mismatch
             );
         }
