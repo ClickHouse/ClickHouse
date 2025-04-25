@@ -35,7 +35,6 @@ public:
 
         size_t getSize() const;
         void setSize(size_t size_);
-        bool use_real_disk_size = false;
 
         void increaseSize(size_t size_);
         void decreaseSize(size_t size_);
@@ -70,6 +69,7 @@ public:
         }
 
     private:
+        bool use_real_disk_size = false;
         std::atomic<size_t> size;
         std::atomic<size_t> aligned_size;
         mutable std::atomic<bool> evicting = false;
