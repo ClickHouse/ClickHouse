@@ -239,8 +239,8 @@ private:
 
     std::atomic<size_t> queries_executed{0};
 
-    std::vector<size_t> queries_per_connection;
-    std::mutex connection_counts_mutex;
+    std::mutex queries_per_connection_mutex;
+    std::vector<size_t> queries_per_connection TSA_GUARDED_BY(queries_per_connection_mutex);
 
     struct Stats
     {
@@ -479,7 +479,7 @@ private:
 
         bool should_reconnect = false;
         {
-            std::lock_guard<std::mutex> lock(connection_counts_mutex);
+            std::lock_guard lock(queries_per_connection_mutex);
             should_reconnect = reconnect > 0 && (++queries_per_connection[connection_index] % reconnect == 0);
         }
 
