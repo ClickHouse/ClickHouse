@@ -652,10 +652,16 @@ struct ByteSmashSimilarityImpl
                                        haystack_codepoints.size() * sizeof(UInt32));
                 std::string_view short_str(reinterpret_cast<const char*>(needle_codepoints.data()),
                                         needle_codepoints.size() * sizeof(UInt32));
-                if (long_str.size() < short_str.size())
-                    std::swap(long_str, short_str);
                 
-                return processStrings(long_str, short_str, haystack_codepoints);
+                std::vector<UInt32> long_codepoints = haystack_codepoints;
+                std::vector<UInt32> short_codepoints = needle_codepoints;
+                
+                if (long_str.size() < short_str.size()) {
+                    std::swap(long_str, short_str);
+                    std::swap(long_codepoints, short_codepoints);
+                }
+                
+                return processStrings(long_str, short_str, long_codepoints);
             }
             catch (const Exception & e)
             {
