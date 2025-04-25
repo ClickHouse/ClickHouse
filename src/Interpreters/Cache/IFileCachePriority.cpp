@@ -59,8 +59,8 @@ size_t IFileCachePriority::Entry::getSize() const
 
 void IFileCachePriority::Entry::setSize(size_t size_)
 {
-    aligned_size.store(size_);
     size.store(size_);
+    aligned_size.store(key_metadata->alignFileSize(size.load()));
 }
 
 void IFileCachePriority::Entry::increaseSize(size_t size_)
