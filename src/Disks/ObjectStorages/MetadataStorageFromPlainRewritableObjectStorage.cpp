@@ -178,7 +178,8 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
                         }
 
                         /// Check that the file is a direct child.
-                        if (remote_file_path.substr(full_prefix_length) == filename)
+                        chassert(full_prefix_length < remote_file_path.size());
+                        if (std::string_view(remote_file_path.data() + full_prefix_length) == filename)
                             files.insert(std::move(filename));
                     }
 
