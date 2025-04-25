@@ -8,10 +8,8 @@
 #include <Common/Logger.h>
 #include <Storages/IStorage.h>
 #include <Interpreters/ExpressionActionsSettings.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/StoragePolicy.h>
 #include <Processors/Merges/Algorithms/Graphite.h>
@@ -29,7 +27,6 @@
 #include <Storages/MergeTree/TemporaryParts.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/AlterConversions.h>
-#include <Storages/DataDestinationType.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MarkCache.h>
@@ -182,11 +179,26 @@ public:
     /// Auxiliary structure for index comparison
     struct DataPartStateAndPartitionID
     {
+        DataPartStateAndPartitionID(DataPartState state_, const String & partition_id_)
+            : state(state_), kind(MergeTreePartInfo::getKind(partition_id_)), partition_id(partition_id_)
+        {
+        }
+
         DataPartState state;
+        MergeTreePartInfo::Kind kind;
         String partition_id;
     };
 
-    STRONG_TYPEDEF(String, PartitionID)
+    struct PartitionID
+    {
+        explicit PartitionID(const String & partition_id_)
+            : kind(MergeTreePartInfo::getKind(partition_id_)), partition_id(partition_id_)
+        {
+        }
+
+        MergeTreePartInfo::Kind kind;
+        String partition_id;
+    };
 
     struct LessDataPart
     {
@@ -195,8 +207,16 @@ public:
         bool operator()(const DataPartPtr & lhs, const MergeTreePartInfo & rhs) const { return lhs->info < rhs; }
         bool operator()(const MergeTreePartInfo & lhs, const DataPartPtr & rhs) const { return lhs < rhs->info; }
         bool operator()(const DataPartPtr & lhs, const DataPartPtr & rhs) const { return lhs->info < rhs->info; }
-        bool operator()(const MergeTreePartInfo & lhs, const PartitionID & rhs) const { return lhs.partition_id < rhs.toUnderType(); }
-        bool operator()(const PartitionID & lhs, const MergeTreePartInfo & rhs) const { return lhs.toUnderType() < rhs.partition_id; }
+
+        bool operator()(const MergeTreePartInfo & lhs, const PartitionID & rhs) const
+        {
+            return std::forward_as_tuple(lhs.getKind(), lhs.getPartitionId()) < std::forward_as_tuple(rhs.kind, rhs.partition_id);
+        }
+
+        bool operator()(const PartitionID & lhs, const MergeTreePartInfo & rhs) const
+        {
+            return std::forward_as_tuple(lhs.kind, lhs.partition_id) < std::forward_as_tuple(rhs.getKind(), rhs.getPartitionId());
+        }
     };
 
     struct LessStateDataPart
@@ -221,14 +241,14 @@ public:
 
         bool operator() (const DataPartStateAndInfo & lhs, const DataPartStateAndPartitionID & rhs) const
         {
-            return std::forward_as_tuple(static_cast<UInt8>(lhs.state), lhs.info.partition_id)
-                   < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.partition_id);
+            return std::forward_as_tuple(static_cast<UInt8>(lhs.state), lhs.info.getKind(), lhs.info.getPartitionId())
+                   < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.kind, rhs.partition_id);
         }
 
         bool operator() (const DataPartStateAndPartitionID & lhs, const DataPartStateAndInfo & rhs) const
         {
-            return std::forward_as_tuple(static_cast<UInt8>(lhs.state), lhs.partition_id)
-                   < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.info.partition_id);
+            return std::forward_as_tuple(static_cast<UInt8>(lhs.state), lhs.kind, lhs.partition_id)
+                   < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.info.getKind(), rhs.info.getPartitionId());
         }
     };
 
@@ -514,6 +534,10 @@ public:
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
+
+    /// Check the set of data parts on disk and load if needed, assuming the data on disk can change under the hood.
+    /// This method allows read-only replicas of tables on a shared storage.
+    void refreshDataParts(UInt64 interval_milliseconds);
 
     /// Returns a pointer to primary index cache if it is enabled.
     PrimaryIndexCachePtr getPrimaryIndexCache() const;
@@ -1179,6 +1203,10 @@ public:
     bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) override;
 
     static VirtualColumnsDescription createVirtuals(const StorageInMemoryMetadata & metadata);
+    static VirtualColumnsDescription createProjectionVirtuals(const StorageInMemoryMetadata & metadata);
+
+    /// Similar to IStorage::getVirtuals but returns only virtual columns valid in projection.
+    VirtualsDescriptionPtr getProjectionVirtualsPtr() const { return projection_virtuals.get(); }
 
     /// Load/unload primary keys of all data parts
     void loadPrimaryKeys() const;
@@ -1315,16 +1343,12 @@ protected:
 
     boost::iterator_range<DataPartIteratorByStateAndInfo> getDataPartsStateRange(DataPartState state) const
     {
-        auto begin = data_parts_by_state_and_info.lower_bound(state, LessStateDataPart());
-        auto end = data_parts_by_state_and_info.upper_bound(state, LessStateDataPart());
-        return {begin, end};
+        return data_parts_by_state_and_info.equal_range(state, LessStateDataPart());
     }
 
     boost::iterator_range<DataPartIteratorByInfo> getDataPartsPartitionRange(const String & partition_id) const
     {
-        auto begin = data_parts_by_info.lower_bound(PartitionID(partition_id), LessDataPart());
-        auto end = data_parts_by_info.upper_bound(PartitionID(partition_id), LessDataPart());
-        return {begin, end};
+        return data_parts_by_info.equal_range(PartitionID(partition_id), LessDataPart());
     }
 
     /// Creates description of columns of data type Object from the range of data parts.
@@ -1607,6 +1631,8 @@ protected:
     void startOutdatedAndUnexpectedDataPartsLoadingTask();
     void stopOutdatedAndUnexpectedDataPartsLoadingTask();
 
+    BackgroundSchedulePoolTaskHolder refresh_parts_task;
+
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);
 
@@ -1720,6 +1746,8 @@ private:
     static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 
     mutable TemporaryParts temporary_parts;
+
+    MultiVersionVirtualsDescriptionPtr projection_virtuals;
 
     /// Estimate the number of marks to read to make a decision whether to enable parallel replicas (distributed processing) or not
     /// Note: it could be very rough.

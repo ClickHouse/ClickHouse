@@ -15,8 +15,6 @@ namespace DB
 struct LazilyReadInfo;
 using LazilyReadInfoPtr = std::shared_ptr<LazilyReadInfo>;
 
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
-
 class Pipe;
 
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
@@ -71,6 +69,7 @@ public:
         Partition,
         PrimaryKey,
         Skip,
+        PrimaryKeyExpand,
     };
 
     /// This is a struct with information about applied indexes.
@@ -123,13 +122,16 @@ public:
         const ContextPtr & context_,
         size_t max_block_size_,
         size_t num_streams_,
-        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
+        PartitionIdToMaxBlockPtr max_block_numbers_to_read_,
         LoggerPtr log_,
         AnalysisResultPtr analyzed_result_ptr_,
         bool enable_parallel_reading_,
         std::optional<MergeTreeAllRangesCallback> all_ranges_callback_ = std::nullopt,
         std::optional<MergeTreeReadTaskCallback> read_task_callback_ = std::nullopt,
         std::optional<size_t> number_of_current_replica_ = std::nullopt);
+
+    ReadFromMergeTree(const ReadFromMergeTree &) = default;
+    ReadFromMergeTree(ReadFromMergeTree &&) = default;
 
     std::unique_ptr<ReadFromMergeTree> createLocalParallelReplicasReadingStep(
         AnalysisResultPtr analyzed_result_ptr_,
@@ -139,6 +141,8 @@ public:
 
     static constexpr auto name = "ReadFromMergeTree";
     String getName() const override { return name; }
+
+    QueryPlanStepPtr clone() const override;
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
@@ -179,7 +183,7 @@ public:
         const SelectQueryInfo & query_info,
         ContextPtr context,
         size_t num_streams,
-        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
+        PartitionIdToMaxBlockPtr max_block_numbers_to_read,
         const MergeTreeData & data,
         const Names & all_column_names,
         LoggerPtr log,
@@ -244,7 +248,7 @@ private:
     /// Used for aggregation optimization (see DB::QueryPlanOptimizations::tryAggregateEachPartitionIndependently).
     bool output_each_partition_through_separate_port = false;
 
-    std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read;
+    PartitionIdToMaxBlockPtr max_block_numbers_to_read;
 
     /// Pre-computed value, needed to trigger sets creating for PK
     mutable std::optional<Indexes> indexes;

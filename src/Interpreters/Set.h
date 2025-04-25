@@ -35,9 +35,8 @@ public:
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
     Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_)
-        : log(getLogger("Set")),
-        limits(limits_), max_elements_to_fill(max_elements_to_fill_), transform_null_in(transform_null_in_),
-        cast_cache(std::make_unique<InternalCastFunctionCache>())
+        :  limits(limits_), transform_null_in(transform_null_in_), max_elements_to_fill(max_elements_to_fill_)
+        , log(getLogger("Set")), cast_cache(std::make_unique<InternalCastFunctionCache>())
     {}
 
     /** Set can be created either from AST or from a stream of data (subquery result).
@@ -90,6 +89,14 @@ public:
 
     static DataTypes getElementTypes(DataTypes types, bool transform_null_in);
 
+    /// Limitations on the maximum size of the set
+    const SizeLimits limits;
+
+    /// If true, insert NULL values to set.
+    const bool transform_null_in;
+
+    const size_t max_elements_to_fill;
+
 private:
     size_t keys_size = 0;
     Sizes key_sizes;
@@ -121,15 +128,8 @@ private:
 
     LoggerPtr log;
 
-    /// Limitations on the maximum size of the set
-    SizeLimits limits;
-
     /// Do we need to additionally store all elements of the set in explicit form for subsequent use for index.
     bool fill_set_elements = false;
-    size_t max_elements_to_fill;
-
-    /// If true, insert NULL values to set.
-    bool transform_null_in;
 
     /// Check if set contains all the data.
     std::atomic<bool> is_created = false;
