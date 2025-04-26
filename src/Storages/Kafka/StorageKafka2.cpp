@@ -1222,7 +1222,7 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
             {
                 // If our permanent locks just changed, we clear and re-acquire temprorary locks immediately
                 // so we never mix old temporary work with the new permanent locks set.
-                updateTemporaryLocks(*consumer_info.keeper, consumer_info.consumer->getAllTopicPartitions(), consumer_info.tmp_locks);
+                updateTemporaryLocks(*consumer_info.keeper, consumer->getAllTopicPartitions(), consumer_info.tmp_locks);
                 consumer_info.permanent_locks_changed = false;
             }
 
@@ -1246,7 +1246,6 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
 
                 consumer_info.topic_partitions.push_back(std::move(topic_partition_copy));
             }
-
             consumer->updateOffsets(consumer_info.topic_partitions);
         }
 
