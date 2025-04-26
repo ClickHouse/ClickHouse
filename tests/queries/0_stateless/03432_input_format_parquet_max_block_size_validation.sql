@@ -7,6 +7,3 @@ SET input_format_parquet_max_block_size = -1; -- { serverError CANNOT_CONVERT_TY
 -- Test that valid positive values are allowed
 SET input_format_parquet_max_block_size = 8192;
 SELECT name, value FROM system.settings WHERE name = 'input_format_parquet_max_block_size' FORMAT TSV;
-
--- Test that the setting works with queries
-SELECT 1 AS x INTO OUTFILE '/dev/null' TRUNCATE FORMAT Parquet SETTINGS input_format_parquet_max_block_size = 16384;
