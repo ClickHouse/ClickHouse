@@ -2,30 +2,44 @@
 #include <memory>
 #include <mutex>
 #include <numeric>
+#include <DataTypes/DataTypeString.h>
 #include "Common/Logger.h"
 #include "Common/logger_useful.h"
 #include "Columns/IColumn.h"
-#include "Storages/MergeTree/Hypothesis/Token.hpp"
+#include "Interpreters/ExpressionAnalyzer.h"
+#include "Interpreters/InterpreterSelectQuery.h"
+#include "Interpreters/TreeRewriter.h"
+#include "Parsers/IParser.h"
+#include "Parsers/ParserQuery.h"
+#include "Parsers/TokenIterator.h"
+#include "Processors/Executors/PullingPipelineExecutor.h"
+#include "Processors/Executors/PushingPipelineExecutor.h"
+#include "Processors/QueryPlan/QueryPlan.h"
+#include "Processors/QueryPlan/ReadFromMemoryStorageStep.h"
+#include "Processors/Sources/SourceFromSingleChunk.h"
+#include "QueryPipeline/QueryPipeline.h"
+#include "QueryPipeline/QueryPipelineBuilder.h"
 
 
 namespace DB::Hypothesis
 {
 
 
-CheckerSink::CheckerSink(const Block & block_, HypothesisList hypothesis_list_)
+CheckerSink::CheckerSink(const Block & block_, HypothesisList hypothesis_list_, ContextPtr local_context)
     : SinkToStorage(block_)
     , hypothesis_list(std::move(hypothesis_list_))
+    , context(local_context)
 {
     verified.assign(hypothesis_list.size(), true);
     log = getLogger("HypothesisChecker");
     LOG_DEBUG(log, "Got {} hypothesis to verify", hypothesis_list.size());
 }
 
-void CheckerSink::consume(Chunk & block)
+void CheckerSink::consume(Chunk & chunk)
 {
     std::lock_guard guard{mutex};
     const auto & header = input.getHeader();
-    rows_checked += block.getNumRows();
+    rows_checked += chunk.getNumRows();
     size_t idx = 0;
     for (const auto & hypothesis : hypothesis_list)
     {
@@ -35,41 +49,34 @@ void CheckerSink::consume(Chunk & block)
             continue;
         }
         bool is_ok = true;
-        for (size_t row = 0; row < block.getNumRows() && is_ok; ++row)
+
         {
-            auto deducable_value = block.getColumns()[header.getPositionByName(hypothesis.getName())]->getDataAt(row);
-            size_t prefix = 0;
-            for (size_t token_idx = 0; token_idx < hypothesis.getSize() && is_ok; ++token_idx)
+            // Some testing
+            std::string query_text = fmt::format("sum({} = {})", hypothesis.toString(), hypothesis.getName());
+            Tokens tokens(query_text.data(), query_text.data() + query_text.size());
+            IParser::Pos token_iterator(tokens, 100, 100);
+            ParserQuery parser(query_text.data() + query_text.size(), false, true);
+            ASTPtr query;
+            Expected expected;
+            if (!parser.parse(token_iterator, query, expected))
             {
-                auto token_ptr = hypothesis.getToken(token_idx);
-                switch (token_ptr->getType())
-                {
-                    case TokenType::Identity: {
-                        auto identity = std::static_pointer_cast<const IdentityToken>(token_ptr);
-                        const auto & name = identity->getName();
-                        auto pos = header.getPositionByName(name);
-                        auto value = block.getColumns()[pos]->getDataAt(row);
-                        if (deducable_value.size - prefix < value.size
-                            || deducable_value.toView().substr(prefix, value.size) != value.toView())
-                        {
-                            is_ok = false;
-                            break;
-                        }
-                        prefix += value.size;
-                    }
-                    break;
-                    case TokenType::Const: {
-                        auto const_token = std::static_pointer_cast<const ConstToken>(token_ptr);
-                        const auto & value = const_token->getValue();
-                        if (deducable_value.size - prefix < value.size() || deducable_value.toView().substr(prefix, value.size()) != value)
-                        {
-                            is_ok = false;
-                            break;
-                        }
-                        prefix += value.size();
-                    }
-                }
+                LOG_ERROR(log, "Couldn't parse hypothesis expr");
+                return;
             }
+            Block block(header.cloneWithoutColumns());
+            block.setColumns(chunk.getColumns());
+            Pipe input(std::make_shared<SourceFromSingleChunk>(std::move(block)));
+            InterpreterSelectQuery select(query, context, std::move(input), SelectQueryOptions());
+            auto pipeline_builder = select.buildQueryPipeline();
+            auto pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
+            PullingPipelineExecutor executor(pipeline);
+            Block res;
+            if (!executor.pull(res))
+            {
+                LOG_ERROR(log, "Hypothesis pipeline is broken");
+                return;
+            }
+            is_ok = res.getColumns()[0]->getUInt(0) == chunk.getNumRows();
         }
         if (!is_ok)
         {
@@ -100,5 +107,4 @@ size_t CheckerSink::hypothesisVerifiedCount() const
     std::lock_guard guard{mutex};
     return std::accumulate(verified.begin(), verified.end(), 0);
 }
-
 }

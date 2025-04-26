@@ -1826,7 +1826,7 @@ std::vector<std::pair<std::string, std::string>> StorageMergeTree::deduce(
         auto reader_plan = this->reader.readFromParts(
             {data_part}, mutation_snapshot, names, snapshot, query_info, local_context, UINT64_MAX, /*num_streams=*/2);
 
-        auto checker = std::make_shared<Hypothesis::CheckerSink>(reader_plan->getOutputHeader(), std::move(hypothesis_list));
+        auto checker = std::make_shared<Hypothesis::CheckerSink>(reader_plan->getOutputHeader(), std::move(hypothesis_list), local_context);
         QueryPlan plan;
         plan.addStep(std::move(reader_plan));
         auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(local_context), BuildQueryPipelineSettings(local_context));

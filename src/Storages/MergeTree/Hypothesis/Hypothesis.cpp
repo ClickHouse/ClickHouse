@@ -18,62 +18,67 @@ std::string Hypothesis::toString() const
 
 void Hypothesis::readText(ReadBuffer & buf)
 {
-    char next = ' ';
-    bool finish = false;
-    while (!finish && buf.peek(next))
+    assertString("concat(", buf);
+    while (true)
     {
-        switch (next)
+        char next;
+        buf.peek(next);
+        if (next == '\'')
         {
-            case '$': {
-                assertChar('$', buf);
-                std::string res;
-                readDoubleQuotedString(res, buf);
-                this->tokens.emplace_back(new IdentityToken(std::move(res)));
-                break;
-            }
-            case 'c': {
-                assertChar('c', buf);
-                std::string res;
-                readDoubleQuotedString(res, buf);
-                this->tokens.emplace_back(new ConstToken(std::move(res)));
-                break;
-            }
-            case 'T':
-                assertChar('T', buf);
-                throw std::runtime_error("Transformers are not yet implemented in hypothesis");
-            default: {
-                finish = true;
-                break;
-            }
+            std::string res;
+            readQuotedString(res, buf);
+            this->tokens.emplace_back(new ConstToken(std::move(res)));
         }
+        else
+        {
+            std::string res;
+            readStringUntilWhitespace(res, buf);
+            this->tokens.emplace_back(new IdentityToken(std::move(res)));
+        }
+        assertChar(' ', buf);
+        if (!buf.peek(next) || next == ')')
+        {
+            break;
+        }
+        assertChar(',', buf);
     }
+    assertChar(')', buf);
 }
 
 void Hypothesis::writeText(WriteBuffer & buf) const
 {
+    writeString("concat(", buf);
+    size_t idx = 0;
     for (const auto & token : tokens)
     {
         switch (token->getType())
         {
             case TokenType::Identity: {
-                writeChar('$', buf);
                 auto identity = static_pointer_cast<const IdentityToken>(token);
-                writeDoubleQuotedString(identity->getName(), buf);
+                writeString(identity->getName(), buf);
             }
             break;
             case TokenType::Const: {
                 auto const_token = static_pointer_cast<const ConstToken>(token);
-                writeChar('c', buf);
-                writeDoubleQuotedString(const_token->getValue(), buf);
+                writeQuotedString(const_token->getValue(), buf);
             }
             break;
         }
+        if (idx + 1 != tokens.size())
+        {
+            writeChar(' ', buf);
+            writeChar(',', buf);
+        }
+        ++idx;
     }
+    writeChar(' ', buf);
+    writeChar(')', buf);
 }
 
 bool Hypothesis::operator==(const Hypothesis & other) const
 {
-    if (getName() != other.getName()) {
+    if (getName() != other.getName())
+    {
         return false;
     }
     if (tokens.size() != other.tokens.size())

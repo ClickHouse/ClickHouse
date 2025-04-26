@@ -3,6 +3,7 @@
 
 #include <Core/NamesAndTypes.h>
 #include <base/StringRef.h>
+#include <Poco/Exception.h>
 #include "Common/Logger.h"
 #include "Common/logger_useful.h"
 #include "Columns/IColumn.h"
@@ -214,8 +215,10 @@ namespace DB::Hypothesis
 Deducer::Deducer(Block block_)
     : block(std::move(block_))
 {
-    assert(block.rows() > 0);
-    assert(block.columns() > 0);
+    if (block.rows() == 0 || block.columns() == 0)
+    {
+        throw Poco::Exception("Invalid input block");
+    }
     log = getLogger("HypothesisDeducer");
     std::vector<size_t> inds_to_delete;
     for (size_t i = 0; i < block.columns(); ++i)
@@ -262,7 +265,7 @@ HypothesisList Deducer::deduceColumn(std::string_view name)
         std::make_shared<const std::vector<std::string>>(std::move(index_mapper)),
         name,
         log);
-    LOG_DEBUG(log, "Deduced {} hypothesis", hypothesis_list.size());
+    LOG_DEBUG(log, "Deduced {} hypothesis for {}", hypothesis_list.size(), name);
     return hypothesis_list;
 }
 

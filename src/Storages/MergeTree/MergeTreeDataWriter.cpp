@@ -619,7 +619,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
                 hypothesis_list.splice(hypothesis_list.end(), deducer.deduceColumn(col.name));
             }
         }
-        auto checker = std::make_shared<Hypothesis::CheckerSink>(block, std::move(hypothesis_list));
+        auto checker = std::make_shared<Hypothesis::CheckerSink>(block, std::move(hypothesis_list), context);
         auto source = std::make_shared<SourceFromSingleChunk>(block.cloneWithColumns(block.getColumns()));
         QueryPipeline pipeline(source);
         pipeline.complete(checker);
