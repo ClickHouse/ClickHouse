@@ -3,25 +3,28 @@
 #include "Token.hpp"
 #include <string>
 #include <variant>
+#include <fmt/format.h>
 
 namespace DB::Hypothesis
 {
 
-IdentityToken::IdentityToken(std::string name_)
-    : IToken(TokenType::Identity)
+TransformerToken::TransformerToken(std::string transformer_name_, std::string col_name)
+    : IToken(TokenType::Transformer)
+    , transformer_name(std::move(transformer_name_))
 {
-    nameOrIdx = std::move(name_);
+    nameOrIdx = std::move(col_name);
 }
 
-IdentityToken::IdentityToken(size_t idx_, IndexMapper names_)
-    : IToken(TokenType::Identity)
+TransformerToken::TransformerToken(std::string transformer_name_, size_t idx, IndexMapper index_mapper)
+    : IToken(TokenType::Transformer)
+    , transformer_name(std::move(transformer_name_))
 {
     assert(idx_ < names_->size());
-    nameOrIdx = idx_;
-    names = names_;
+    nameOrIdx = idx;
+    names = index_mapper;
 }
 
-const std::string & IdentityToken::getName() const
+const std::string & TransformerToken::getColumnName() const
 {
     if (names)
     {
@@ -29,9 +32,21 @@ const std::string & IdentityToken::getName() const
     }
     return std::get<1>(nameOrIdx);
 }
-size_t IdentityToken::getHash() const
+
+const std::string & TransformerToken::getTransformerName() const
+{
+    return transformer_name;
+}
+
+std::string TransformerToken::toString() const
+{
+    return fmt::format("{}({})", getTransformerName(), getColumnName());
+}
+
+size_t TransformerToken::getHash() const
 {
     size_t h = static_cast<size_t>(getType());
+    h ^= std::hash<std::string>{}(transformer_name);
     if (std::holds_alternative<size_t>(nameOrIdx))
     {
         h ^= std::get<0>(nameOrIdx);
@@ -43,15 +58,18 @@ size_t IdentityToken::getHash() const
     }
     return h;
 }
-bool IdentityToken::operator==(const IToken & other) const
+bool TransformerToken::operator==(const IToken & other) const
 {
     if (other.getType() != getType())
     {
         return false;
     }
-    const auto * identity = dynamic_cast<const IdentityToken *>(&other);
+    const auto * identity = dynamic_cast<const TransformerToken *>(&other);
     if (identity->nameOrIdx != nameOrIdx)
     {
+        return false;
+    }
+    if (transformer_name != identity->transformer_name) {
         return false;
     }
     if (std::holds_alternative<size_t>(nameOrIdx))
@@ -102,13 +120,13 @@ bool ConstToken::operator==(const IToken & other) const
     return true;
 }
 
-TokenPtr createIdentityToken(std::string column_name)
+TokenPtr createTransformerToken(std::string transformer_name, std::string column_name)
 {
-    return std::make_shared<IdentityToken>(column_name);
+    return std::make_shared<TransformerToken>(std::move(transformer_name), std::move(column_name));
 }
-TokenPtr createIdentityToken(size_t idx, IdentityToken::IndexMapper index_mapper)
+TokenPtr createTransformerToken(std::string transformer_name, size_t idx, TransformerToken::IndexMapper index_mapper)
 {
-    return std::make_shared<IdentityToken>(idx, index_mapper);
+    return std::make_shared<TransformerToken>(std::move(transformer_name), idx, index_mapper);
 }
 
 TokenPtr createConstToken(std::string value)

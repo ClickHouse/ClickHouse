@@ -10,10 +10,8 @@ namespace DB::Hypothesis
 
 enum class TokenType
 {
-    Identity = 0,
+    Transformer = 0,
     Const = 1,
-    // TODO:
-    // Transformer = 2
 };
 
 class IToken
@@ -39,30 +37,35 @@ private:
 using TokenPtr = std::shared_ptr<const IToken>;
 using MutableTokenPtr = std::shared_ptr<IToken>;
 
-class IdentityToken : public IToken
+class TransformerToken : public IToken
 {
 public:
     using IndexMapper = std::shared_ptr<const std::vector<std::string>>;
 
-    explicit IdentityToken(std::string name_);
+    TransformerToken(std::string transformer_name_, std::string col_name);
 
-    IdentityToken(size_t idx_, IndexMapper names_);
+    TransformerToken(std::string transformer_name_, size_t idx, IndexMapper index_mapper);
 
-    const std::string & getName() const;
+    const std::string & getColumnName() const;
+
+    const std::string & getTransformerName() const;
+
+    std::string toString() const;
 
     bool operator==(const IToken & other) const override;
 
     size_t getHash() const override;
 
 private:
+    std::string transformer_name;
     std::variant<size_t, std::string> nameOrIdx;
     std::shared_ptr<const std::vector<std::string>> names;
 };
 
-using IdentityTokenPtr = std::shared_ptr<const IdentityToken>;
+using TransformerTokenPtr = std::shared_ptr<const TransformerToken>;
 
-TokenPtr createIdentityToken(std::string column_name);
-TokenPtr createIdentityToken(size_t idx, IdentityToken::IndexMapper index_mapper);
+TokenPtr createTransformerToken(std::string transformer_name, std::string column_name);
+TokenPtr createTransformerToken(std::string transformer_name, size_t idx, TransformerToken::IndexMapper index_mapper);
 
 class ConstToken : public IToken
 {

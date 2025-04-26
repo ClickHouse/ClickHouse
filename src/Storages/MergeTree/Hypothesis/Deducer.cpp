@@ -1,17 +1,30 @@
 #include "Deducer.hpp"
 #include <iterator>
 
+#include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <base/StringRef.h>
 #include <Poco/Exception.h>
 #include "Common/Logger.h"
 #include "Common/logger_useful.h"
 #include "Columns/IColumn.h"
-#include "Core/Block.h"
+#include "Columns/IColumn_fwd.h"
+#include "Core/ColumnWithTypeAndName.h"
+#include "Interpreters/Context.h"
+#include "Interpreters/InterpreterSelectQuery.h"
+#include "Parsers/ParserQuery.h"
+#include "Parsers/TokenIterator.h"
+#include "Processors/Executors/PullingPipelineExecutor.h"
+#include "Processors/Sources/SourceFromSingleChunk.h"
+#include "QueryPipeline/Pipe.h"
+#include "QueryPipeline/QueryPipelineBuilder.h"
 #include "Storages/MergeTree/Hypothesis/Token.hpp"
 
 namespace
 {
+
+const std::vector<std::string> transformers = {"identity", "base64Encode", "lower", "upper", "trimBoth"};
+
 using namespace DB::Hypothesis;
 class ColumnEntries
 {
@@ -23,6 +36,7 @@ public:
     {
         size_t length;
         size_t col_idx;
+        size_t transformer_idx;
     };
 
     ColumnEntries() = default;
@@ -52,31 +66,115 @@ private:
     std::vector<std::vector<ColumnEntry>> entries;
 };
 
-void fillColumnsEntries(const DB::Block & block, size_t col_idx, size_t row_idx, ColumnEntries & column_entries, LoggerPtr)
+DB::Block executeQuery(std::string_view query_text, const DB::Block & input, DB::ContextPtr context)
 {
-    // TODO(azakarka) aho corasick
-    auto get_ref = [&block, row_idx](size_t idx) { return block.getByPosition(idx).column->getDataAt(row_idx); };
-    for (size_t i = 0; i < block.columns(); ++i)
+    DB::Tokens tokens(query_text.data(), query_text.data() + query_text.size());
+    DB::IParser::Pos token_iterator(tokens, 100, 100);
+    DB::ParserQuery parser(query_text.data() + query_text.size(), false, true);
+    DB::ASTPtr query;
+    DB::Expected expected;
+    if (!parser.parse(token_iterator, query, expected))
     {
-        if (i == col_idx)
+        throw Poco::Exception(fmt::format("Bad query: {}", query_text));
+    }
+    DB::Block block(input.cloneWithoutColumns());
+    block.setColumns(input.getColumns());
+    DB::Pipe pipe(std::make_shared<DB::SourceFromSingleChunk>(std::move(block)));
+    DB::InterpreterSelectQuery select(query, context, std::move(pipe), DB::SelectQueryOptions());
+    auto pipeline_builder = select.buildQueryPipeline();
+    auto pipeline = DB::QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
+    DB::PullingPipelineExecutor executor(pipeline);
+    DB::Block res;
+    if (!executor.pull(res))
+    {
+        throw Poco::Exception("Hypothesis pipeline is broken");
+    }
+    if (executor.pull(res))
+    {
+        throw Poco::Exception("More data is not expected");
+    }
+    return res;
+}
+
+void fillColumnsEntries(const DB::Block & block, size_t deduce_col_idx, std::vector<ColumnEntries> & column_entries_vec, LoggerPtr)
+{
+    auto deduce_col_name = block.getByPosition(deduce_col_idx).name;
+    DB::ContextPtr context = DB::Context::getGlobalContextInstance();
+    // TODO(azakarka) aho corasick
+    for (size_t col = 0; col < block.columns(); ++col)
+    {
+        if (col == deduce_col_idx)
         {
             continue;
         }
-        size_t n = get_ref(col_idx).size;
-        size_t m = get_ref(i).size;
-        if (n <= m)
+        auto col_name = block.getByPosition(col).name;
+
+        // multisearch stage
+        std::string multisearch_query;
+        for (size_t i = 0; i < transformers.size(); ++i)
         {
-            continue;
+            multisearch_query += fmt::format("{}({})", transformers[i], block.getByPosition(col).name);
+            if (i + 1 != transformers.size())
+                multisearch_query += ", ";
         }
-        for (size_t j = 0; j <= n - m; ++j)
+        multisearch_query = fmt::format("multiSearchAllPositions({}, [{}]) as __inds", deduce_col_name, multisearch_query);
+        auto multisearch_res = executeQuery(multisearch_query, block, context);
+        for (size_t transformer_idx = 0; transformer_idx < transformers.size(); ++transformer_idx)
         {
-            if (get_ref(col_idx).toView().substr(j, m) == get_ref(i).toView())
+            // collect indexes
+
+            DB::ColumnWithTypeAndName occurence_col;
             {
-                column_entries.addEntry(ColumnEntries::ColumnEntry{.length = m, .col_idx = i}, j);
+                auto tmp_res
+                    = executeQuery(fmt::format("arrayElement(__inds, {}) as __idx", transformer_idx + 1), multisearch_res, context);
+                occurence_col = tmp_res.getByPosition(0);
+            }
+            // check if all have occurence
+            {
+                auto tmp_res = executeQuery("sum(__idx = 0) > 0 as __should_skip", DB::Block({occurence_col}), context);
+                if (tmp_res.getByName("__should_skip").column->getBool(0))
+                {
+                    continue;
+                }
+            }
+            DB::ColumnPtr length_col;
+            {
+                auto tmp_res = executeQuery(fmt::format("length({}({}))", transformers[transformer_idx], col_name), block, context);
+                length_col = tmp_res.getByPosition(0).column;
+            }
+            for (size_t row = 0; row < block.rows(); ++row)
+            {
+                auto occurence_idx = occurence_col.column->getUInt(row);
+                auto len = length_col->getUInt(row);
+                while (true)
+                {
+                    column_entries_vec[row].addEntry(
+                        ColumnEntries::ColumnEntry{.length = len, .col_idx = col, .transformer_idx = transformer_idx}, occurence_idx - 1);
+                    auto transformer_expr = fmt::format("{}({})", transformers[transformer_idx], col_name);
+                    auto res = executeQuery(
+                        fmt::format(
+                            "position({}, {}, {}), length({})", deduce_col_name, transformer_expr, occurence_idx + 1, transformer_expr),
+                        block,
+                        context);
+                    // TODO fixme later:
+                    if (auto new_pos = res.getByPosition(0).column->getUInt(row); new_pos == 0)
+                    {
+                        break;
+                    }
+                    else
+                    {
+                        occurence_idx = new_pos;
+                        len = res.getByPosition(1).column->getUInt(row);
+                    }
+                }
             }
         }
     }
-    column_entries.sortEntries();
+
+    for (size_t row = 0; row < block.rows(); ++row)
+    {
+        column_entries_vec[row].sortEntries();
+    }
 }
 
 size_t calculateLongestCommonSubstr(std::vector<size_t> & indices, DB::ColumnPtr col)
@@ -109,7 +207,7 @@ void traverseColumnEntriesImpl(
     DB::ColumnPtr deduction_col,
     const std::vector<ColumnEntries> & columns_entries,
     HypothesisList & hypothesis_list,
-    IdentityToken::IndexMapper index_mapper,
+    TransformerToken::IndexMapper index_mapper,
     LoggerPtr log)
 {
     size_t rows_cnt = deduction_col->size();
@@ -121,7 +219,7 @@ void traverseColumnEntriesImpl(
         }
         if (finished)
         {
-            hypothesis_list.emplace_back(std::move(state_builder).constuctHypothesis());
+            hypothesis_list.push_back(std::move(state_builder).constuctHypothesis());
             return;
         }
     }
@@ -130,6 +228,7 @@ void traverseColumnEntriesImpl(
     {
         std::vector<size_t> entry_indices(rows_cnt, 0);
         size_t current_max_col_idx = 0;
+        size_t transformer_idx = 0;
         bool finished = false;
         // All column_entries are sorted
         // So each iteration we find minimum and check if all columns has this entry
@@ -154,13 +253,18 @@ void traverseColumnEntriesImpl(
                 {
                     found_common = false;
                     current_max_col_idx = entries[entry_indices[row]].col_idx;
+                    transformer_idx = entries[entry_indices[row]].transformer_idx;
                     break;
+                }
+                else
+                {
+                    transformer_idx = entries[entry_indices[row]].transformer_idx;
                 }
             }
             if (found_common)
             {
                 auto derived = state_builder;
-                derived.addToken(createIdentityToken(current_max_col_idx, index_mapper));
+                derived.addToken(createTransformerToken(transformers[transformer_idx], current_max_col_idx, index_mapper));
                 for (size_t row = 0; row < rows_cnt; ++row)
                 {
                     const auto & row_entries = columns_entries[row].at(indices[row]);
@@ -193,7 +297,7 @@ void traverseColumnEntries(
     const std::vector<ColumnEntries> & columns_entries,
     DB::ColumnPtr deduction_col,
     HypothesisList & hypothesis_list,
-    IdentityToken::IndexMapper index_mapper,
+    TransformerToken::IndexMapper index_mapper,
     std::string_view col_to_deduce_name,
     LoggerPtr log)
 {
@@ -225,7 +329,7 @@ Deducer::Deducer(Block block_)
     {
         if (block.getDataTypes()[i]->getTypeId() != DB::TypeIndex::String)
         {
-            inds_to_delete.emplace_back(i);
+            inds_to_delete.push_back(i);
         }
     }
     std::reverse(inds_to_delete.begin(), inds_to_delete.end());
@@ -252,14 +356,11 @@ HypothesisList Deducer::deduceColumn(std::string_view name)
         return {};
     }
     size_t rows_cnt = block.rows();
-    std::vector<ColumnEntries> columns_entries(rows_cnt);
-    for (size_t i = 0; i < rows_cnt; ++i)
-    {
-        fillColumnsEntries(block, col_idx, i, columns_entries[i], log);
-    }
+    std::vector<ColumnEntries> column_entries_vec(rows_cnt);
+    fillColumnsEntries(block, col_idx, column_entries_vec, log);
     HypothesisList hypothesis_list;
     traverseColumnEntries(
-        columns_entries,
+        column_entries_vec,
         block.getByPosition(col_idx).column,
         hypothesis_list,
         std::make_shared<const std::vector<std::string>>(std::move(index_mapper)),

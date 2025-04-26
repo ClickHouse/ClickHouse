@@ -1,2 +1,4 @@
-all_1_1_0 (state Active)	CACHED: concat(val2 ,\',\' ,val1 ,\',\' ,val3 )
-all_2_2_0 (state Active)	CACHED: concat(val2 ,val1 ,val3 ) ; concat(val2 ,\'some_constant_string\' ,val3 )
+all_1_1_0 (state Active)	CACHED: concat(identity (val2 ) ,\',\' ,identity (val1 ) ,\',\' ,identity (val3 ) )
+all_2_2_0 (state Active)	CACHED: concat(identity (val2 ) ,identity (val1 ) ,identity (val3 ) ) ; concat(identity (val2 ) ,\'some_constant_string\' ,identity (val3 ) )
+all_1_1_0 (state Active)	CACHED: concat(base64Encode (base ) )
+all_2_2_0 (state Active)	CACHED: concat(upper (base ) )

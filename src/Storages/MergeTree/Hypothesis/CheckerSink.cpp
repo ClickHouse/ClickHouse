@@ -52,7 +52,7 @@ void CheckerSink::consume(Chunk & chunk)
 
         {
             // Some testing
-            std::string query_text = fmt::format("sum({} = {})", hypothesis.toString(), hypothesis.getName());
+            std::string query_text = fmt::format("sum({} = {}) as res", hypothesis.toString(), hypothesis.getName());
             Tokens tokens(query_text.data(), query_text.data() + query_text.size());
             IParser::Pos token_iterator(tokens, 100, 100);
             ParserQuery parser(query_text.data() + query_text.size(), false, true);
@@ -71,12 +71,12 @@ void CheckerSink::consume(Chunk & chunk)
             auto pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
             PullingPipelineExecutor executor(pipeline);
             Block res;
-            if (!executor.pull(res))
+            if (!executor.pull(res) || !res.has("res"))
             {
                 LOG_ERROR(log, "Hypothesis pipeline is broken");
                 return;
             }
-            is_ok = res.getColumns()[0]->getUInt(0) == chunk.getNumRows();
+            is_ok = res.getByName("res").column->getUInt(0) == chunk.getNumRows();
         }
         if (!is_ok)
         {

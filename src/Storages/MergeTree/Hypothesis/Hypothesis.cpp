@@ -31,9 +31,15 @@ void Hypothesis::readText(ReadBuffer & buf)
         }
         else
         {
-            std::string res;
-            readStringUntilWhitespace(res, buf);
-            this->tokens.emplace_back(new IdentityToken(std::move(res)));
+            std::string transformer_name;
+            std::string col_name;
+            readStringUntilWhitespace(transformer_name, buf);
+            assertChar(' ', buf);
+            assertChar('(', buf);
+            readStringUntilWhitespace(col_name, buf);
+            assertChar(' ', buf);
+            assertChar(')', buf);
+            this->tokens.emplace_back(new TransformerToken(transformer_name, col_name));
         }
         assertChar(' ', buf);
         if (!buf.peek(next) || next == ')')
@@ -53,9 +59,14 @@ void Hypothesis::writeText(WriteBuffer & buf) const
     {
         switch (token->getType())
         {
-            case TokenType::Identity: {
-                auto identity = static_pointer_cast<const IdentityToken>(token);
-                writeString(identity->getName(), buf);
+            case TokenType::Transformer: {
+                auto transformer = static_pointer_cast<const TransformerToken>(token);
+                writeString(transformer->getTransformerName(), buf);
+                writeChar(' ', buf);
+                writeChar('(', buf);
+                writeString(transformer->getColumnName(), buf);
+                writeChar(' ', buf);
+                writeChar(')', buf);
             }
             break;
             case TokenType::Const: {
