@@ -405,7 +405,6 @@ public:
         std::set<std::string> projections TSA_GUARDED_BY(mutex){};
         std::set<std::string> views TSA_GUARDED_BY(mutex){};
         std::set<std::string> skip_indexes TSA_GUARDED_BY(mutex){};
-
     };
     using QueryAccessInfoPtr = std::shared_ptr<QueryAccessInfo>;
 
@@ -854,15 +853,11 @@ public:
         SKIP_INDEX
     };
 
-    void addQueryAccessInfo(
-        const String & quoted_database_name,
-        const String & full_quoted_table_name);
-    void addQueryAccessInfo(
-        const String & full_quoted_table_name,
-        const TableAccessInfoType & entity_type, 
-        const Names & table_entity_names);
+    void addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name);
+    void
+    addQueryAccessInfo(const String & full_quoted_table_name, const TableAccessInfoType & entity_type, const Names & table_entity_names);
     void addViewAccessInfo(const String & view_name);
-    
+
 
     struct QualifiedProjectionName
     {

@@ -1194,12 +1194,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 {
                     auto local_storage_id = storage->getStorageID();
                     query_context->getQueryContext()->addQueryAccessInfo(
-                        backQuoteIfNeed(local_storage_id.getDatabaseName()),
-                        local_storage_id.getFullTableName());
+                        backQuoteIfNeed(local_storage_id.getDatabaseName()), local_storage_id.getFullTableName());
                     query_context->getQueryContext()->addQueryAccessInfo(
-                        local_storage_id.getFullTableName(),
-                        Context::TableAccessInfoType::COLUMN,
-                        columns_names);
+                        local_storage_id.getFullTableName(), Context::TableAccessInfoType::COLUMN, columns_names);
                 }
             }
 

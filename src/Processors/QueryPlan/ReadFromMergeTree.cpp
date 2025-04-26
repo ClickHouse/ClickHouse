@@ -2325,9 +2325,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
                 fmt::format("{}.{}", data.getStorageID().getFullNameNotQuoted(), part.data_part->info.getPartitionId()));
         }
         context->getQueryContext()->addQueryAccessInfo(
-            data.getStorageID().getFullTableName(),
-            Context::TableAccessInfoType::PARTITION,
-            partition_names);
+            data.getStorageID().getFullTableName(), Context::TableAccessInfoType::PARTITION, partition_names);
 
         Names skip_index_names;
         for (const auto & index_stat : result.index_stats)
@@ -2336,9 +2334,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
                 skip_index_names.emplace_back(index_stat.name);
         }
         context->getQueryContext()->addQueryAccessInfo(
-            data.getStorageID().getFullTableName(),
-            Context::TableAccessInfoType::SKIP_INDEX,
-            skip_index_names);
+            data.getStorageID().getFullTableName(), Context::TableAccessInfoType::SKIP_INDEX, skip_index_names);
     }
 
     ProfileEvents::increment(ProfileEvents::SelectedParts, result.selected_parts);
