@@ -17,8 +17,10 @@ ASTPtr ASTCreateDriverFunctionQuery::clone() const
     res->function_name = function_name->clone();
     res->children.push_back(res->function_name);
 
-    res->function_params = function_params->clone();
-    res->children.push_back(res->function_params);
+    if (function_params) {
+        res->function_params = function_params->clone();
+        res->children.push_back(res->function_params);
+    }
 
     res->function_return_type = function_return_type->clone();
     res->children.push_back(res->function_return_type);
@@ -48,9 +50,11 @@ void ASTCreateDriverFunctionQuery::formatImpl(
 
     ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getFunctionName()) << (settings.hilite ? hilite_none : "");
 
-    ostr << "(";
-    function_params->format(ostr, settings, state, frame);
-    ostr << ")";
+    if (function_params) {
+        ostr << "(";
+        function_params->format(ostr, settings, state, frame);
+        ostr << ")";
+    }
 
     ostr << " RETURNS ";
     function_return_type->format(ostr, settings, state, frame);

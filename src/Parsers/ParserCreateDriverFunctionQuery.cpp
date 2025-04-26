@@ -54,14 +54,12 @@ bool ParserCreateDriverFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
     if (!function_name_p.parse(pos, function_name, expected))
         return false;
 
-    if (!s_lparen.ignore(pos, expected))
-        return false;
+    if (s_lparen.ignore(pos, expected)) {
+        function_params_p.parse(pos, function_params, expected);
 
-    if (!function_params_p.parse(pos, function_params, expected))
-        return false;
-
-    if (!s_rparen.ignore(pos, expected))
-        return false;
+        if (!s_rparen.ignore(pos, expected))
+            return false;
+    }
 
     if (!s_returns.ignore(pos, expected))
         return false;
@@ -94,7 +92,10 @@ bool ParserCreateDriverFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
     create_function_query->if_not_exists = if_not_exists;
 
     create_function_query->function_params = function_params;
-    create_function_query->children.push_back(function_params);
+    if (function_params)
+    {
+        create_function_query->children.push_back(function_params);
+    }
 
     create_function_query->function_return_type = function_return_type;
     create_function_query->children.push_back(function_return_type);

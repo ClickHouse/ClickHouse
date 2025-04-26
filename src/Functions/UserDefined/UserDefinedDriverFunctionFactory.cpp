@@ -49,6 +49,7 @@ String formatCodeBlock(const String & code)
                 continue;
 
             line.erase(0, min_tabs_count);
+            boost::replace_all(line, "\"", "\\\"");
         }
     }
 
@@ -236,10 +237,13 @@ UserDefinedExecutableFunctionPtr UserDefinedDriverFunctionFactory::createUserDef
     const auto & configuration = driver->getConfiguration();
 
     std::vector<UserDefinedExecutableFunctionArgument> arguments;
-    for (auto & child : query.function_params->children)
+    if (query.function_params)
     {
-        auto * column = child->as<ASTNameTypePair>();
-        arguments.emplace_back(DataTypeFactory::instance().get(column->type), column->name);
+        for (auto & child : query.function_params->children)
+        {
+            auto * column = child->as<ASTNameTypePair>();
+            arguments.emplace_back(DataTypeFactory::instance().get(column->type), column->name);
+        }
     }
 
     auto result_type = DataTypeFactory::instance().get(query.function_return_type->as<ASTDataType>()->name);
@@ -250,11 +254,11 @@ UserDefinedExecutableFunctionPtr UserDefinedDriverFunctionFactory::createUserDef
     const auto & code = query.getFunctionBody();
     if (command_arguments.empty())
     {
-        command += "\'" + code + "\'";
+        command += '\"' + code + '\"';
     }
     else
     {
-        command_arguments.push_back("\'" + code + "\'");
+        command_arguments.push_back(code);
     }
 
     UserDefinedExecutableFunctionConfiguration func_configuration{
