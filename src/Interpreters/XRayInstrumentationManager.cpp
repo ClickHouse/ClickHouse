@@ -37,6 +37,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 }
+std::unordered_map<int64_t, std::list<XRayInstrumentationManager::InstrumentedFunctionInfo>::iterator> XRayInstrumentationManager::functionIdToInstrumentPoint;
 
 void XRayInstrumentationManager::registerHandler(const std::string & name, XRayHandlerFunction handler)
 {
