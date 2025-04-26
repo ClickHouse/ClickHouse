@@ -1,0 +1,152 @@
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/IColumn.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int ILLEGAL_COLUMN;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+class FunctionFlipCoordinates : public IFunction
+{
+public:
+    static constexpr auto name = "flipCoordinates";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFlipCoordinates>(); }
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (arguments.size() != 1)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} takes exactly one argument, got {}",
+                getName(),
+                arguments.size());
+
+        return arguments[0];
+    }
+
+    ColumnPtr
+    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
+    {
+        const ColumnWithTypeAndName & arg = arguments[0];
+
+        // Handle const columns by removing constness
+        ColumnPtr column = arg.column;
+        if (const auto * const_column = checkAndGetColumn<ColumnConst>(column.get()))
+        {
+            column = const_column->getDataColumnPtr();
+        }
+
+        if (checkAndGetDataType<DataTypeTuple>(arg.type.get()))
+        {
+            // Handle Point type (simple tuple of coordinates)
+            ColumnPtr result = executeForPoint(column);
+
+            // Wrap back in const column if the original was const
+            if (const auto * const_column = checkAndGetColumn<ColumnConst>(arg.column.get()))
+                return ColumnConst::create(result, const_column->size());
+            return result;
+        }
+        else if (const auto * array_type = checkAndGetDataType<DataTypeArray>(arg.type.get()))
+        {
+            // Handle Ring, Polygon, MultiPolygon
+            ColumnPtr result = executeForArray(column, array_type);
+
+            // Wrap back in const column if the original was const
+            if (const auto * const_column = checkAndGetColumn<ColumnConst>(arg.column.get()))
+                return ColumnConst::create(result, const_column->size());
+            return result;
+        }
+
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal type {} of argument of function {}. Expected Point, Ring, Polygon, or MultiPolygon",
+            arg.type->getName(),
+            getName());
+    }
+
+private:
+    // Handle point coordinates flip: (x, y) -> (y, x)
+    ColumnPtr executeForPoint(const ColumnPtr & column) const
+    {
+        const auto * column_tuple = checkAndGetColumn<ColumnTuple>(column.get());
+        if (!column_tuple)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", column->getName(), getName());
+
+        const auto & tuple_columns = column_tuple->getColumns();
+
+        if (tuple_columns.size() != 2)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function {} expects a Point with exactly 2 coordinates, got {}",
+                getName(),
+                tuple_columns.size());
+
+        // Create a new ColumnTuple with swapped columns - using explicit Columns type
+        Columns new_columns = {tuple_columns[1], tuple_columns[0]};
+        return ColumnTuple::create(new_columns);
+    }
+
+    // Handle array types (Ring, Polygon, MultiPolygon)
+    ColumnPtr executeForArray(const ColumnPtr & column, const DataTypeArray * array_type) const
+    {
+        const auto * column_array = checkAndGetColumn<ColumnArray>(column.get());
+        if (!column_array)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", column->getName(), getName());
+
+        const auto & nested_type = array_type->getNestedType();
+
+        // Get the nested column and process according to its type
+        const auto & nested_column = column_array->getDataPtr();
+
+        ColumnPtr result_nested;
+
+        if (checkAndGetDataType<DataTypeTuple>(nested_type.get()))
+        {
+            // Ring - Array of Points
+            result_nested = executeForPoint(nested_column);
+        }
+        else if (const auto * nested_array = checkAndGetDataType<DataTypeArray>(nested_type.get()))
+        {
+            // Polygon or MultiPolygon - Array of Arrays
+            result_nested = executeForArray(nested_column, nested_array);
+        }
+        else
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal nested type {} of argument of function {}",
+                nested_type->getName(),
+                getName());
+        }
+
+        // Create a new array with the same offsets but processed data
+        auto offsets_column = column_array->getOffsetsPtr();
+        auto result = ColumnArray::create(result_nested, offsets_column);
+        return result;
+    }
+};
+
+REGISTER_FUNCTION(FlipCoordinates)
+{
+    factory.registerFunction<FunctionFlipCoordinates>();
+}
+
+}
