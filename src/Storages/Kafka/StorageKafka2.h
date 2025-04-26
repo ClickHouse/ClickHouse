@@ -176,7 +176,6 @@ private:
     zkutil::ZooKeeperPtr keeper;
     const String keeper_path;
     const std::filesystem::path fs_keeper_path;
-    String replica_name;
     String replica_path;
     std::unique_ptr<KafkaSettings> kafka_settings;
     Macros::MacroExpansionInfo macros_info;
@@ -256,7 +255,6 @@ private:
     std::optional<LockedTopicPartitionInfo> createLocksInfo(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & partition_to_lock);
 
     // Takes lock over topic partitions and sets the committed offset in topic_partitions.
-    TopicPartitionLocks lockTopicPartitions(const TopicPartitionLocks & permanent_locks, const TopicPartitionLocks & tmp_locks);
     void updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & tmp_locks);
     void updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & permanent_locks, bool & permanent_locks_changed);
     void saveCommittedOffset(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition);

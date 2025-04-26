@@ -136,8 +136,7 @@ StorageKafka2::StorageKafka2(
     , keeper(getContext()->getZooKeeper())
     , keeper_path((*kafka_settings_)[KafkaSetting::kafka_keeper_path].value)
     , fs_keeper_path(keeper_path)
-    , replica_name((*kafka_settings_)[KafkaSetting::kafka_replica_name].value)
-    , replica_path(keeper_path + "/replicas/" + replica_name)
+    , replica_path(keeper_path + "/replicas/" + (*kafka_settings_)[KafkaSetting::kafka_replica_name].value)
     , kafka_settings(std::move(kafka_settings_))
     , macros_info{.table_id = table_id_}
     , topics(StorageKafkaUtils::parseTopics(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_topic_list].value, macros_info)))
@@ -861,6 +860,7 @@ std::optional<StorageKafka2::LockedTopicPartitionInfo> StorageKafka2::createLock
 /// then we create new locks from free partitions
 void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & tmp_locks)
 {
+    LOG_TRACE(log, "Starting to update temporary locks");
     size_t can_lock_partitions = static_cast<size_t>(std::ceil(static_cast<double>(topic_partitions.size()) / active_replica_count));
     auto available_topic_partitions = getAvailableTopicPartitions(keeper_to_use, topic_partitions);
 
@@ -880,6 +880,7 @@ void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, cons
 /// Otherwise, we try to lock free partitions one by one.
 void StorageKafka2::updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & permanent_locks, bool & permanent_locks_changed)
 {
+    LOG_TRACE(log, "Starting to update permanent locks");
     size_t can_lock_partitions = static_cast<size_t>(std::ceil(static_cast<double>(topic_partitions.size()) / active_replica_count));
     auto available_topic_partitions = getAvailableTopicPartitions(keeper_to_use, topic_partitions);
 
@@ -1425,4 +1426,3 @@ fs::path StorageKafka2::getTopicPartitionLockPath(const TopicPartition & topic_p
 }
 
 }
-
