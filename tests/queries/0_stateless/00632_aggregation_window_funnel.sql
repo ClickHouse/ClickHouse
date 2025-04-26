@@ -128,3 +128,59 @@ DROP TABLE IF EXISTS funnel_test2;
 
 
 drop table funnel_test_strict_increase;
+
+DROP TABLE IF EXISTS funnel_test_conv_time;
+CREATE TABLE funnel_test_conv_time (user_id UInt64, event_time UInt32, eventName String) ENGINE = Memory;
+
+INSERT INTO funnel_test_conv_time VALUES (1, 0, 'event1'), (1, 5, 'event2'), (1, 15, 'event3');
+
+INSERT INTO funnel_test_conv_time VALUES (2, 100, 'event1'), (2, 110, 'event2'), (2, 145, 'event3');
+
+INSERT INTO funnel_test_conv_time VALUES (3, 200, 'event1');
+
+INSERT INTO funnel_test_conv_time VALUES (4, 300, 'event1'), (4, 305, 'event2'), (4, 315, 'event3'), (4, 320, 'event1'), (4, 322, 'event2'), (4, 330, 'event3');
+
+INSERT INTO funnel_test_conv_time VALUES (5, 400, 'event1'), (5, 405, 'event2'), (5, 440, 'event1'), (5, 442, 'event2'), (5, 450, 'event3');
+
+SELECT
+    user_id,
+    windowFunnel(30, 'conversion_time')(
+        event_time,
+        eventName = 'event1',
+        eventName = 'event2',
+        eventName = 'event3'
+    ) AS funnel_result
+FROM funnel_test_conv_time
+GROUP BY user_id
+ORDER BY user_id;
+
+SELECT
+    user_id,
+    windowFunnel(30, 'conversion_time')(
+        event_time,
+        eventName = 'event1',
+        eventName = 'event2',
+        eventName = 'event3'
+    ) AS funnel_result,
+    funnel_result.max_level,
+    funnel_result.time_1_to_2,
+    funnel_result.time_2_to_3
+FROM funnel_test_conv_time
+GROUP BY user_id
+ORDER BY user_id;
+
+INSERT INTO funnel_test_conv_time VALUES (6, 500, 'event1'), (6, 501, 'event1'), (6, 505, 'event2'), (6, 510, 'event3');
+
+SELECT
+    user_id,
+    windowFunnel(30, 'strict_once', 'conversion_time')(
+        event_time,
+        eventName = 'event1',
+        eventName = 'event2',
+        eventName = 'event3'
+    ) AS funnel_result
+FROM funnel_test_conv_time
+WHERE user_id = 6
+GROUP BY user_id;
+
+DROP TABLE funnel_test_conv_time;

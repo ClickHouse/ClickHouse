@@ -265,13 +265,14 @@ windowFunnel(window, [mode, [mode, ... ]])(timestamp, cond1, cond2, ..., condN)
     - `'strict_order'` — Don't allow interventions of other events. E.g. in the case of `A->B->D->C`, it stops finding `A->B->C` at the `D` and the max event level is 2.
     - `'strict_increase'` — Apply conditions only to events with strictly increasing timestamps.
     - `'strict_once'` — Count each event only once in the chain even if it meets the condition several times
+    - `'conversion_time'` — Return a named tuple containing the maximum level reached and the conversion times between consecutive steps. See the **Returned value** section for details.
 
 **Returned value**
 
-The maximum number of consecutive triggered conditions from the chain within the sliding time window.
-All the chains in the selection are analyzed.
+- If the `'conversion_time'` mode is **not** specified: The maximum number of consecutive triggered conditions from the chain within the sliding time window. Type: `UInt8`.
+- If the `'conversion_time'` mode **is** specified: A named [Tuple](../../sql-reference/data-types/tuple.md) containing the maximum level reached and the conversion times (in the same units as the `timestamp` column difference) between consecutive steps that were actually completed as part of the funnel path that reached the maximum level. The tuple structure is `Tuple(max_level UInt8, time_1_to_2 UInt64, time_2_to_3 UInt64, ..., time_N-1_to_N UInt64)`. If a step transition was not completed, the corresponding time value will be `0`.
 
-Type: `Integer`.
+All the chains in the selection are analyzed.
 
 **Example**
 
@@ -328,6 +329,84 @@ Result:
 ┌─level─┬─c─┐
 │     4 │ 1 │
 └───────┴───┘
+```
+
+**Example (`conversion_time`)**
+
+Determine the maximum funnel step reached and the time taken between steps for users booking a trip.
+
+Set the following chain of events:
+
+1.  User searches for flights (`eventName = 'search_flights'`).
+2.  User selects a flight (`eventName = 'select_flight'`).
+3.  User completes booking (`eventName = 'book_flight'`).
+
+Input table (`trip_events`):
+
+```text
+┌─user_id─┬───────────event_time─┬─eventName───────┐
+│       1 │ 2023-10-27 10:00:00  │ search_flights  │
+│       1 │ 2023-10-27 10:00:10  │ select_flight   │
+│       1 │ 2023-10-27 10:00:35  │ book_flight     │
+│       2 │ 2023-10-27 11:00:00  │ search_flights  │
+│       2 │ 2023-10-27 11:00:15  │ select_flight   │
+│       2 │ 2023-10-27 11:01:00  │ book_flight     │ -- Outside 30s window from step 1
+│       3 │ 2023-10-27 12:00:00  │ search_flights  │
+└─────────┴──────────────────────┴─────────────────┘
+```
+
+Query using `conversion_time` with a 30-second window:
+
+```sql
+SELECT
+    user_id,
+    windowFunnel(30, 'conversion_time')(
+        event_time,
+        eventName = 'search_flights',
+        eventName = 'select_flight',
+        eventName = 'book_flight'
+    ) AS funnel_result
+FROM trip_events
+GROUP BY user_id
+ORDER BY user_id;
+```
+
+Result:
+
+```text
+┌─user_id─┬─funnel_result─┐
+│       1 │ (3,10,25)     │
+│       2 │ (2,15,0)      │ -- Step 3 was outside the window
+│       3 │ (1,0,0)       │ -- Only reached step 1
+└─────────┴───────────────┘
+```
+
+We can also query the named elements directly:
+
+```sql
+SELECT
+    user_id,
+    windowFunnel(30, 'conversion_time')(
+        event_time,
+        eventName = 'search_flights',
+        eventName = 'select_flight',
+        eventName = 'book_flight'
+    ) AS funnel_result,
+    funnel_result.max_level,
+    funnel_result.time_1_to_2
+FROM trip_events
+GROUP BY user_id
+ORDER BY user_id;
+```
+
+Result:
+
+```text
+┌─user_id─┬─funnel_result─┬─max_level─┬─time_1_to_2─┐
+│       1 │ (3,10,25)     │         3 │          10 │
+│       2 │ (2,15,0)      │         2 │          15 │
+│       3 │ (1,0,0)       │         1 │           0 │
+└─────────┴───────────────┴───────────┴─────────────┘
 ```
 
 ## retention
