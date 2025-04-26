@@ -850,7 +850,7 @@ std::optional<StorageKafka2::LockedTopicPartitionInfo> StorageKafka2::createLock
 void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & tmp_locks)
 {
     LOG_TRACE(log, "Starting to update temporary locks");
-    size_t can_lock_partitions = static_cast<size_t>(std::ceil(static_cast<double>(topic_partitions.size()) / active_replica_count));
+    size_t can_lock_partitions = std::max<size_t>(1, topic_partitions.size() / (2 * static_cast<size_t>(active_replica_count)));
     auto available_topic_partitions = getAvailableTopicPartitions(keeper_to_use, topic_partitions);
 
     tmp_locks.clear(); // to maintain order: looked at the old state, updated the state, committed the new state
@@ -870,7 +870,7 @@ void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, cons
 void StorageKafka2::updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & permanent_locks, bool & permanent_locks_changed)
 {
     LOG_TRACE(log, "Starting to update permanent locks");
-    size_t can_lock_partitions = static_cast<size_t>(std::ceil(static_cast<double>(topic_partitions.size()) / active_replica_count));
+    size_t can_lock_partitions = std::max<size_t>(1, topic_partitions.size() / static_cast<size_t>(active_replica_count));
     auto available_topic_partitions = getAvailableTopicPartitions(keeper_to_use, topic_partitions);
 
     if (can_lock_partitions < permanent_locks.size())
