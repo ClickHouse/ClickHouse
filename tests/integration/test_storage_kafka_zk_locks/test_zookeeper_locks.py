@@ -12,10 +12,11 @@ from helpers.cluster import ClickHouseCluster
 from helpers.keeper_utils import KeeperClient
 
 cluster = ClickHouseCluster(__file__)
+
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/kafka.xml", "configs/named_collection.xml"],
-    user_configs=["configs/users.xml"],
+    main_configs=["configs/kafka.xml", "configs/zookeeper.xml"],
+    user_configs=[],
     with_kafka=True,
     with_zookeeper=True,
     macros={
@@ -24,8 +25,7 @@ instance = cluster.add_instance(
         "kafka_group_name_new": "zk_locks_group",
         "kafka_client_id": "instance",
         "kafka_format_json_each_row": "JSONEachRow",
-    },
-    clickhouse_path_dir="clickhouse_path",
+    }
 )
 
 @pytest.fixture(scope="module")
@@ -62,7 +62,7 @@ def test_zookeeper_partition_locks(kafka_cluster):
 
     time.sleep(5)
 
-    with KeeperClient.from_cluster(kafka_cluster, keeper_node="instance") as zk:
+    with KeeperClient.from_cluster(kafka_cluster, keeper_node="zookeeper1") as zk:
         base = "/clickhouse/test/zk_locks/topic_partition_locks"
         children = set(zk.ls(base))
         expected = {f"zk_locks_topic_{pid}.lock" for pid in range(3)}
