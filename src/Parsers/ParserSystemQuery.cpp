@@ -762,9 +762,11 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 handler_name = temporary_identifier->as<ASTIdentifier &>().name();
             }
             res->handler_name = std::move(handler_name);
+            if (res->handler_name == "PROFILE")
+                break;
 
             res->parameters.emplace();
-            while (ParserToken{TokenType::Comma}.ignore(pos, expected))
+            do
             {
                 ASTPtr params_ast;
                 if (!ParserLiteral{}.parse(pos, params_ast, expected))
@@ -786,7 +788,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 {
                     res->parameters->emplace_back(value.safeGet<Float64>());
                 }
-            }
+            } while (ParserToken{TokenType::Comma}.ignore(pos, expected));
 
             break;
         }

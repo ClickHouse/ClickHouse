@@ -93,7 +93,18 @@ void XRayInstrumentationManager::setHandlerAndPatch(const std::string & function
 void XRayInstrumentationManager::unpatchFunction(const std::string & function_name)
 {
     std::lock_guard lock(mutex);
-    auto function_id = functionNameToXRayID[function_name]; // if not in a map?
+    int64_t function_id;
+    auto fn_it = functionNameToXRayID.find(function_name);
+    if (fn_it != functionNameToXRayID.end())
+        function_id = fn_it->second;
+    else
+    {
+        auto stripped_it = strippedFunctionNameToXRayID.find(function_name);
+        if (stripped_it != strippedFunctionNameToXRayID.end())
+            function_id = stripped_it->second.back();
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown function to instrument: ({})", function_name);
+    }
     instrumented_functions.erase(functionIdToInstrumentPoint[function_id]);
     functionIdToInstrumentPoint.erase(function_id);
     __xray_unpatch_function(function_id);
