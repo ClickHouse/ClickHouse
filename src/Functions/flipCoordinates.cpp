@@ -28,7 +28,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -43,47 +43,47 @@ public:
     }
 
     ColumnPtr
-    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
+    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         const ColumnWithTypeAndName & arg = arguments[0];
-
-        // Handle const columns by removing constness
+        
         ColumnPtr column = arg.column;
+        bool is_const = false;
+        size_t const_size = 0;
+        
         if (const auto * const_column = checkAndGetColumn<ColumnConst>(column.get()))
         {
             column = const_column->getDataColumnPtr();
+            is_const = true;
+            const_size = const_column->size();
         }
-
+        
+        ColumnPtr result;
+        
         if (checkAndGetDataType<DataTypeTuple>(arg.type.get()))
         {
-            // Handle Point type (simple tuple of coordinates)
-            ColumnPtr result = executeForPoint(column);
-
-            // Wrap back in const column if the original was const
-            if (const auto * const_column = checkAndGetColumn<ColumnConst>(arg.column.get()))
-                return ColumnConst::create(result, const_column->size());
-            return result;
+            result = executeForPoint(column);
         }
         else if (const auto * array_type = checkAndGetDataType<DataTypeArray>(arg.type.get()))
         {
-            // Handle Ring, Polygon, MultiPolygon
-            ColumnPtr result = executeForArray(column, array_type);
-
-            // Wrap back in const column if the original was const
-            if (const auto * const_column = checkAndGetColumn<ColumnConst>(arg.column.get()))
-                return ColumnConst::create(result, const_column->size());
-            return result;
+            result = executeForArray(column, array_type);
         }
-
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal type {} of argument of function {}. Expected Point, Ring, Polygon, or MultiPolygon",
-            arg.type->getName(),
-            getName());
+        else
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}. Expected Point, Ring, Polygon, or MultiPolygon",
+                arg.type->getName(),
+                getName());
+        }
+        
+        if (is_const)
+            return ColumnConst::create(result, const_size);
+        
+        return result;
     }
 
 private:
-    // Handle point coordinates flip: (x, y) -> (y, x)
     ColumnPtr executeForPoint(const ColumnPtr & column) const
     {
         const auto * column_tuple = checkAndGetColumn<ColumnTuple>(column.get());
@@ -99,12 +99,10 @@ private:
                 getName(),
                 tuple_columns.size());
 
-        // Create a new ColumnTuple with swapped columns - using explicit Columns type
         Columns new_columns = {tuple_columns[1], tuple_columns[0]};
         return ColumnTuple::create(new_columns);
     }
 
-    // Handle array types (Ring, Polygon, MultiPolygon)
     ColumnPtr executeForArray(const ColumnPtr & column, const DataTypeArray * array_type) const
     {
         const auto * column_array = checkAndGetColumn<ColumnArray>(column.get());
@@ -113,19 +111,16 @@ private:
 
         const auto & nested_type = array_type->getNestedType();
 
-        // Get the nested column and process according to its type
         const auto & nested_column = column_array->getDataPtr();
 
         ColumnPtr result_nested;
 
         if (checkAndGetDataType<DataTypeTuple>(nested_type.get()))
         {
-            // Ring - Array of Points
             result_nested = executeForPoint(nested_column);
         }
         else if (const auto * nested_array = checkAndGetDataType<DataTypeArray>(nested_type.get()))
         {
-            // Polygon or MultiPolygon - Array of Arrays
             result_nested = executeForArray(nested_column, nested_array);
         }
         else
@@ -137,7 +132,6 @@ private:
                 getName());
         }
 
-        // Create a new array with the same offsets but processed data
         auto offsets_column = column_array->getOffsetsPtr();
         auto result = ColumnArray::create(result_nested, offsets_column);
         return result;
