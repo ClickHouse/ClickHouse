@@ -247,7 +247,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     auto parameters_it = functionIdToInstrumentPoint.find(FuncId);
     auto & params_opt = parameters_it->second->parameters;
     if (!params_opt.has_value())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for sleep instrumentation"); // or maybe we want to use some default parameter insted of throwing exception??
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for sleep instrumentation"); // or maybe we want to use some default parameter instead of throwing exception??
 
     const auto & params = params_opt.value();
 
@@ -291,7 +291,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     auto parameters_it = functionIdToInstrumentPoint.find(FuncId);
     auto & params_opt = parameters_it->second->parameters;
     if (!params_opt.has_value())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for log instrumentation"); // or maybe we want to use some default parameter insted of throwing exception??
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for log instrumentation"); // or maybe we want to use some default parameter instead of throwing exception??
 
     const auto & params = params_opt.value();
 
@@ -325,7 +325,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     auto parameters_it = functionIdToInstrumentPoint.find(FuncId);
     auto & params_opt = parameters_it->second->parameters;
     if (!params_opt.has_value())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected parameters for profiling instrumentation"); // or maybe we want to use some default parameter insted of throwing exception??
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected parameters for profiling instrumentation"); // or maybe we want to use some default parameter instead of throwing exception??
     // TODO -- not clear yet how to write what we want to the system.instrumentation_profiling_log
     in_hook = false;
 }
