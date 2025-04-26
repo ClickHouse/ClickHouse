@@ -1,5 +1,6 @@
 #pragma once
 
+#include "base/types.h"
 #include "config.h"
 
 #if USE_XRAY
@@ -9,12 +10,14 @@
 #include <list>
 #include <vector>
 #include <mutex>
+#include <variant>
 #include <xray/xray_interface.h>
 
 namespace DB
 {
 
 using XRayHandlerFunction = void(*)(int32_t, XRayEntryType);
+using InstrumentParameter = std::variant<String, Int64, Float64>;
 
 class XRayInstrumentationManager
 {
@@ -22,13 +25,15 @@ public:
 
     struct InstrumentedFunctionInfo
     {
+        uint64_t instrumentation_point_id;
         uint32_t function_id;
         std::string function_name;
         std::string handler_name;
+        std::optional<std::vector<InstrumentParameter>> parameters;
     };
     static XRayInstrumentationManager & instance();
 
-    void setHandlerAndPatch(const std::string & function_name, const std::string & handler_name);
+    void setHandlerAndPatch(const std::string & function_name, const std::string & handler_name, std::optional<std::vector<InstrumentParameter>> &parameters);
     void unpatchFunction(const std::string & function_name);
 
     using InstrumentedFunctions = std::list<InstrumentedFunctionInfo>;
@@ -50,16 +55,21 @@ private:
     [[clang::xray_never_instrument]] static void logEntry(int32_t FuncId, XRayEntryType Type);
     [[clang::xray_never_instrument]] static void logAndSleep(int32_t FuncId, XRayEntryType Type);
     [[clang::xray_never_instrument]] static void logEntryExit(int32_t FuncId, XRayEntryType Type);
+
+    [[clang::xray_never_instrument]] static void sleep(int32_t FuncId, XRayEntryType Type);
+    [[clang::xray_never_instrument]] static void log(int32_t FuncId, XRayEntryType Type);
+    [[clang::xray_never_instrument]] static void profile(int32_t FuncId, XRayEntryType Type);
     // TODO: more handlers
 
     mutable std::mutex mutex;
+    uint64_t instrumentation_point_id;
     std::mutex functions_to_instrument_mutex;
     std::unordered_map<std::string, XRayHandlerFunction> xrayHandlerNameToFunction;
     std::unordered_map<std::string, int64_t> functionNameToXRayID;
     std::unordered_map<std::string, std::vector<int64_t>> strippedFunctionNameToXRayID;
     std::unordered_map<int64_t, std::string> xrayIdToFunctionName; // may be unnecessary, but we'll keep it for now
     std::list<InstrumentedFunctionInfo> instrumented_functions;
-    std::unordered_map<int64_t, std::list<InstrumentedFunctionInfo>::iterator> functionIdToInstrumentPoint;
+    static std::unordered_map<int64_t, std::list<InstrumentedFunctionInfo>::iterator> functionIdToInstrumentPoint;
 
     static inline std::mutex log_mutex;
 };

@@ -1,7 +1,6 @@
 #include "XRayInstrumentationManager.h"
 #include <cstdint>
 #include <string>
-#include <llvm/IR/Function.h>
 
 #if USE_XRAY
 
@@ -20,8 +19,10 @@
 #include <llvm/DebugInfo/Symbolize/Symbolize.h>
 #include <llvm/Support/Path.h>
 #include <llvm/Support/TargetSelect.h>
+#include <llvm/IR/Function.h>
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
+#include <Common/logger_useful.h>
 
 
 using namespace llvm;
@@ -50,6 +51,9 @@ XRayInstrumentationManager::XRayInstrumentationManager()
     registerHandler("logEntry", &logEntry);
     registerHandler("logAndSleep", &logAndSleep);
     registerHandler("logEntryExit", &logEntryExit);
+    registerHandler("SLEEP", &sleep);
+    registerHandler("LOG", &log);
+    registerHandler("PROFILE", &profile);
     parseXRayInstrumentationMap();
 }
 
@@ -60,7 +64,7 @@ XRayInstrumentationManager & XRayInstrumentationManager::instance()
 }
 
 
-void XRayInstrumentationManager::setHandlerAndPatch(const std::string & function_name, const std::string & handler_name)
+void XRayInstrumentationManager::setHandlerAndPatch(const std::string & function_name, const std::string & handler_name, std::optional<std::vector<InstrumentParameter>> &parameters)
 {
     std::lock_guard lock(mutex);
     auto handler_it = xrayHandlerNameToFunction.find(handler_name);
@@ -81,12 +85,12 @@ void XRayInstrumentationManager::setHandlerAndPatch(const std::string & function
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown function to instrument: ({})", function_name);
     }
-
-    instrumented_functions.emplace_front(function_id, function_name, handler_name);
+    instrumented_functions.emplace_front(instrumentation_point_id, function_id, function_name, handler_name, parameters);
     functionIdToInstrumentPoint[function_id] = instrumented_functions.begin();
+    instrumentation_point_id++;
     __xray_set_handler(handler_function);
     __xray_patch_function(function_id);
-    // add/update a row "functionId | functionName | handlerName" to system.instrument
+    // add/update a row "intrumentation_point_id | function_id | function_name | handler_name | parameters" to system.instrument -- TODO
 }
 
 
@@ -108,7 +112,7 @@ void XRayInstrumentationManager::unpatchFunction(const std::string & function_na
     instrumented_functions.erase(functionIdToInstrumentPoint[function_id]);
     functionIdToInstrumentPoint.erase(function_id);
     __xray_unpatch_function(function_id);
-    // delete a row "functionId | functionName | handlerName" in system.instrument by functionId
+    // delete a row "intrumentation_point_id | function_id | function_name | handler_name | parameters" in system.instrument by functionId
 }
 
 
@@ -225,6 +229,103 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
             std::println("[logEntryExit] Exiting Function ID {}", FuncId);
         }
     }
+    in_hook = false;
+}
+
+
+[[clang::xray_never_instrument]] void XRayInstrumentationManager::sleep(int32_t FuncId, XRayEntryType Type)
+{
+    static thread_local bool in_hook = false;
+    if (in_hook || Type != XRayEntryType::ENTRY)
+    {
+        return;
+    }
+
+    in_hook = true;
+    // but does XRay allow us to throw exceptions in handlers?
+    auto parameters_it = functionIdToInstrumentPoint.find(FuncId);
+    auto & params_opt = parameters_it->second->parameters;
+    if (!params_opt.has_value())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for sleep instrumentation"); // or maybe we want to use some default parameter insted of throwing exception??
+
+    const auto & params = params_opt.value();
+
+    if (params.size() != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected exactly one parameter for instrumentation, but got {}", params.size());
+
+    const auto & param = params[0];
+
+    if (std::holds_alternative<Int64>(param))
+    {
+        Int64 seconds = std::get<Int64>(param);
+        if (seconds < 0)
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be non-negative");
+        std::this_thread::sleep_for(std::chrono::seconds(seconds));
+    }
+    else if (std::holds_alternative<Float64>(param))
+    {
+        Float64 seconds = std::get<Float64>(param);
+        if (seconds < 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be non-negative");
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::duration<double>(seconds));
+        std::this_thread::sleep_for(duration);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected numeric parameter (Int64 or Float64) for sleep, but got something else");
+    }
+    in_hook = false;
+}
+
+[[clang::xray_never_instrument]] void XRayInstrumentationManager::log(int32_t FuncId, XRayEntryType Type)
+{
+    static thread_local bool in_hook = false;
+    if (in_hook || Type != XRayEntryType::ENTRY)
+    {
+        return;
+    }
+
+    in_hook = true;
+    // but does XRay allow us to throw exceptions in handlers?
+    auto parameters_it = functionIdToInstrumentPoint.find(FuncId);
+    auto & params_opt = parameters_it->second->parameters;
+    if (!params_opt.has_value())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for log instrumentation"); // or maybe we want to use some default parameter insted of throwing exception??
+
+    const auto & params = params_opt.value();
+
+    if (params.size() != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected exactly one parameter for instrumentation, but got {}", params.size());
+
+    const auto & param = params[0];
+
+    if (std::holds_alternative<String>(param))
+    {
+        String logger_info = std::get<String>(param);
+        LOG_DEBUG(getLogger("XRayInstrumentationManager::log"), "Instrumentation log: {}", logger_info); //maybe better to write smth else?
+    }
+    else
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected String for log, but got something else");
+    }
+    in_hook = false;
+}
+
+[[clang::xray_never_instrument]] void XRayInstrumentationManager::profile(int32_t FuncId, XRayEntryType Type)
+{
+    static thread_local bool in_hook = false;
+    if (in_hook || Type != XRayEntryType::ENTRY)
+    {
+        return;
+    }
+
+    in_hook = true;
+    // but does XRay allow us to throw exceptions in handlers?
+    auto parameters_it = functionIdToInstrumentPoint.find(FuncId);
+    auto & params_opt = parameters_it->second->parameters;
+    if (!params_opt.has_value())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected parameters for profiling instrumentation"); // or maybe we want to use some default parameter insted of throwing exception??
+    // TODO -- not clear yet how to write what we want to the system.instrumentation_profiling_log
     in_hook = false;
 }
 
