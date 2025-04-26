@@ -83,7 +83,6 @@ $CLICKHOUSE_CLIENT --query "
 # It is ok, we only check that server doesn't crash in this
 
 wait
-wait_for_mutation "t_rename_alter" "0000000001"
 
 $CLICKHOUSE_CLIENT --query "
     SELECT count() > 0 FROM t_rename_alter WHERE NOT ignore(*);
