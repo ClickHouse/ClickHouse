@@ -1,3 +1,4 @@
+#include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 
 #include <Parsers/CommonParsers.h>
@@ -28,6 +29,12 @@ bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     auto query = std::make_shared<ASTDescribeQuery>();
 
     s_table.ignore(pos, expected);
+
+    if (ParserSelectWithUnionQuery().parse(pos, query->table_expression, expected))
+    {
+        node = query;
+        return true;
+    }
 
     if (!ParserTableExpression().parse(pos, query->table_expression, expected))
         return false;
