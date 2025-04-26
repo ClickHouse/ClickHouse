@@ -42,24 +42,23 @@ public:
         return arguments[0];
     }
 
-    ColumnPtr
-    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         const ColumnWithTypeAndName & arg = arguments[0];
-        
+
         ColumnPtr column = arg.column;
         bool is_const = false;
         size_t const_size = 0;
-        
+
         if (const auto * const_column = checkAndGetColumn<ColumnConst>(column.get()))
         {
             column = const_column->getDataColumnPtr();
             is_const = true;
             const_size = const_column->size();
         }
-        
+
         ColumnPtr result;
-        
+
         if (checkAndGetDataType<DataTypeTuple>(arg.type.get()))
         {
             result = executeForPoint(column);
@@ -76,10 +75,10 @@ public:
                 arg.type->getName(),
                 getName());
         }
-        
+
         if (is_const)
             return ColumnConst::create(result, const_size);
-        
+
         return result;
     }
 
@@ -110,7 +109,6 @@ private:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", column->getName(), getName());
 
         const auto & nested_type = array_type->getNestedType();
-
         const auto & nested_column = column_array->getDataPtr();
 
         ColumnPtr result_nested;
