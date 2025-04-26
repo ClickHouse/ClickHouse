@@ -6,6 +6,8 @@
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+# shellcheck source=./cache.lib
+. "$CUR_DIR"/cache.lib
 
 for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     echo "Using storage policy: $STORAGE_POLICY"
@@ -17,7 +19,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
                                    SETTINGS storage_policy='$STORAGE_POLICY', min_bytes_for_wide_part = 10485760"
 
     $CLICKHOUSE_CLIENT --query "SYSTEM STOP MERGES test_02286"
-    $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE"
+    drop_filesystem_cache
 
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache"
     $CLICKHOUSE_CLIENT --enable_filesystem_cache_on_write_operations=0 --query "INSERT INTO test_02286 SELECT number, toString(number) FROM numbers(100)"
@@ -25,7 +27,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     $CLICKHOUSE_CLIENT --query "SELECT * FROM test_02286 FORMAT Null"
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache"
 
-    $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE"
+    drop_filesystem_cache
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache"
 
     $CLICKHOUSE_CLIENT --query "SELECT * FROM test_02286 FORMAT Null"
