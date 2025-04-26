@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings
+# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings, no-flaky-check
+# Tag no-flaky-check -- access to system.remote_data_path is too slow with thread fuzzer enabled
 
 # set -x
 
