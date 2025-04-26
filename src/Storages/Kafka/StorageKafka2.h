@@ -135,7 +135,7 @@ private:
         TopicPartitionLocks permanent_locks{};
         TopicPartitionLocks tmp_locks{};
 
-        // tells us “the set of permanent assignments shifted”.  
+        // tells us “the set of permanent assignments shifted”.
         // We use this flag to trigger an immediate refresh of temporary locks
         // so that no stale partitions linger when the “stable” assignment changes under us.
         bool permanent_locks_changed = false;
