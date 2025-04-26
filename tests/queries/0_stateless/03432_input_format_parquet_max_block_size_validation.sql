@@ -9,4 +9,4 @@ SET input_format_parquet_max_block_size = 8192;
 SELECT name, value FROM system.settings WHERE name = 'input_format_parquet_max_block_size' FORMAT TSV;
 
 -- Test that the setting works with queries
-SELECT 1 AS x FORMAT Parquet SETTINGS input_format_parquet_max_block_size = 16384;
+SELECT 1 AS x INTO OUTFILE '/dev/null' FORMAT Parquet SETTINGS input_format_parquet_max_block_size = 16384;
