@@ -752,29 +752,18 @@ void StorageKafka2::dropReplica()
 StorageKafka2::TopicPartitionSet StorageKafka2::getLockedTopicPartitions(zkutil::ZooKeeper & keeper_to_use)
 {
     LOG_TRACE(log, "Starting to lookup replica's state");
-    Strings replicas;
-    if (Coordination::Error::ZOK != keeper_to_use.tryGetChildren(keeper_path + "/replicas", replicas))
-    {
-        LOG_WARNING(log, "Cannot list replicas directory {}", replicas);
-        return {};
-    }
+    auto replicas = keeper_to_use.getChildren(keeper_path + "/replicas");
     active_replica_count = replicas.size();
 
     StorageKafka2::TopicPartitionSet locked_partitions;
-    Strings lock_nodes;
-    const auto locks_dir = keeper_path + "/topic_partition_locks";
-    if (Coordination::Error::ZOK != keeper_to_use.tryGetChildren(locks_dir, lock_nodes))
-    {
-        LOG_WARNING(log, "Cannot list locks directory {}", locks_dir);
-        return {};
-    }
+    auto lock_nodes = keeper_to_use.getChildren(keeper_path + "/topic_partition_locks");
 
     for (const auto & lock_name : lock_nodes)
     {
         auto base = lock_name.substr(0, lock_name.size() - 5); // drop ".lock"
         auto sep  = base.rfind('_');
         if (sep == String::npos)
-            continue;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Topic partition lock path {} is not in correct format.", lock_name);
 
         String topic = base.substr(0, sep);
         Int32  partition = parse<Int32>(base.substr(sep + 1));
@@ -791,7 +780,7 @@ StorageKafka2::TopicPartitionSet StorageKafka2::getLockedTopicPartitions(zkutil:
     Strings already_locked_partitions_str;
     already_locked_partitions_str.reserve(locked_partitions.size());
     for (const auto & already_locks : locked_partitions)
-        already_locked_partitions_str.push_back("[" + already_locks.topic + ":" + std::to_string(already_locks.partition_id) + "]");
+        already_locked_partitions_str.push_back(fmt::format("[{}:{}]", already_locks.topic, already_locks.partition_id));
     LOG_INFO(
         log,
         "Already locked topic partitions are {}",
@@ -814,7 +803,7 @@ StorageKafka2::TopicPartitions StorageKafka2::getAvailableTopicPartitions(zkutil
     Strings available_topic_partitions_str;
     available_topic_partitions_str.reserve(available_topic_partitions.size());
     for (const auto & available_partition : available_topic_partitions)
-        available_topic_partitions_str.push_back("[" + available_partition.topic + ":" + std::to_string(available_partition.partition_id) + "]");
+        available_topic_partitions_str.push_back(fmt::format("[{}:{}]", available_partition.topic, available_partition.partition_id));
     LOG_INFO(
         log,
         "Topic partitions {} are available",
@@ -1204,7 +1193,7 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
 
     try
     {
-        if (consumer_info.getAllTopicPartitionLocks().empty())
+        if (consumer_info.permanent_locks.empty())
         {
             LOG_TRACE(log, "Consumer needs update offset");
             // First release the locks so let other consumers acquire them ASAP
@@ -1219,7 +1208,12 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
             }
 
             updatePermanentLocks(*consumer_info.keeper, consumer->getAllTopicPartitions(), consumer_info.permanent_locks, consumer_info.permanent_locks_changed);
-            if (consumer_info.permanent_locks_changed)
+            if (consumer_info.poll_count >= TMP_LOCKS_REFRESH_POLLS)
+            {
+                updateTemporaryLocks(*consumer_info.keeper, consumer_info.consumer->getAllTopicPartitions(), consumer_info.tmp_locks);
+                consumer_info.poll_count = 0;
+            }
+            else if (consumer_info.permanent_locks_changed)
             {
                 // If our permanent locks just changed, we clear and re-acquire temporary locks immediately
                 // so we never mix old temporary work with the new permanent locks set.
@@ -1228,25 +1222,20 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
             }
 
             // Now we always have some assignment
-            auto current_locks = consumer_info.getAllTopicPartitionLocks();
-            auto locks_it = current_locks.begin();
-            TopicPartitions new_assigment(current_locks.size());
-            for (size_t i = 0; locks_it != current_locks.end(); ++i, ++locks_it)
-                new_assigment[i] = locks_it->first;
-            consumer_info.topic_partitions.reserve(new_assigment.size());
-
-            for (const auto & topic_partition : new_assigment)
+            consumer_info.topic_partitions.clear();
+            consumer_info.topic_partitions.reserve(consumer_info.permanent_locks.size() + consumer_info.tmp_locks.size());
+            auto update_topic_partitions = [&](const auto & locks)
             {
-                TopicPartition topic_partition_copy{topic_partition};
-                if (const auto & maybe_committed_offset = current_locks.at(topic_partition).committed_offset;
-                    maybe_committed_offset.has_value())
+                for (const auto & [topic_partition, info] : locks)
                 {
-                    topic_partition_copy.offset = *maybe_committed_offset;
+                    TopicPartition copy = topic_partition;
+                    if (info.committed_offset.has_value())
+                        copy.offset = *info.committed_offset;
+                    consumer_info.topic_partitions.push_back(std::move(copy));
                 }
-                // in case no saved offset, we will get the offset from Kafka as a best effort. This is important to not to duplicate message when recreating the table.
-
-                consumer_info.topic_partitions.push_back(std::move(topic_partition_copy));
-            }
+            };
+            update_topic_partitions(consumer_info.permanent_locks);
+            update_topic_partitions(consumer_info.tmp_locks);
             consumer->updateOffsets(consumer_info.topic_partitions);
         }
 
@@ -1329,15 +1318,10 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
     // Change temporary locks every TMP_LOCKS_REFRESH_POLLS calls (or whenever permanent_locks_changed is set)
     // This keeps batchy work from sitting too long on the same partitions and smoothly hands off load over time.
     ++consumer_info.poll_count;
-    if (consumer_info.poll_count >= TMP_LOCKS_REFRESH_POLLS)
-    {
-        updateTemporaryLocks(keeper_to_use, consumer_info.consumer->getAllTopicPartitions(), consumer_info.tmp_locks);
-        consumer_info.poll_count = 0;
-    }
 
-    auto current_locks = consumer_info.getAllTopicPartitionLocks();
+    auto * lock_info = consumer_info.findTopicPartitionLock(topic_partition);
     auto [blocks, last_read_offset] = pollConsumer(
-        *consumer_info.consumer, topic_partition, current_locks[topic_partition].intent_size, consumer_info.watch, kafka_context);
+        *consumer_info.consumer, topic_partition, lock_info->intent_size, consumer_info.watch, kafka_context);
 
     if (blocks.empty())
     {
@@ -1358,10 +1342,8 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
 
     // We can't cancel during copyData, as it's not aware of commits and other kafka-related stuff.
     // It will be cancelled on underlying layer (kafka buffer)
-
-    auto & lock_info = current_locks.at(topic_partition);
-    lock_info.intent_size = last_read_offset - lock_info.committed_offset.value_or(0);
-    saveIntent(keeper_to_use, topic_partition, *lock_info.intent_size);
+    lock_info->intent_size = last_read_offset - lock_info->committed_offset.value_or(0);
+    saveIntent(keeper_to_use, topic_partition, *lock_info->intent_size);
     std::atomic_size_t rows = 0;
     {
         block_io.pipeline.complete(Pipe{std::make_shared<BlocksListSource>(std::move(blocks))});
@@ -1370,11 +1352,11 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
         CompletedPipelineExecutor executor(block_io.pipeline);
         executor.execute();
     }
-    lock_info.committed_offset = last_read_offset + 1;
+    lock_info->committed_offset = last_read_offset + 1;
     topic_partition.offset = last_read_offset + 1;
     saveCommittedOffset(keeper_to_use, topic_partition);
     consumer_info.consumer->commit(topic_partition);
-    lock_info.intent_size.reset();
+    lock_info->intent_size.reset();
     needs_offset_reset = false;
 
     return rows;

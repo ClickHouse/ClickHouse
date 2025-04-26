@@ -140,13 +140,17 @@ private:
         // so that no stale partitions linger when the “stable” assignment changes under us.
         bool permanent_locks_changed = false;
 
-        /// Locks = permanent_locks + tmp_locks
-        TopicPartitionLocks getAllTopicPartitionLocks()
+        // Searches first in permanent_locks, then in tmp_locks.
+        // Returns a pointer to the lock if found; otherwise, returns nullptr.
+        LockedTopicPartitionInfo * findTopicPartitionLock(const TopicPartition & topic_partition)
         {
-            TopicPartitionLocks locks;
-            locks.insert(permanent_locks.begin(), permanent_locks.end());
-            locks.insert(tmp_locks.begin(), tmp_locks.end());
-            return locks;
+            auto locks_it = permanent_locks.find(topic_partition);
+            if (locks_it != permanent_locks.end())
+                return &locks_it->second;
+            locks_it = tmp_locks.find(topic_partition);
+            if (locks_it != tmp_locks.end())
+                return &locks_it->second;
+            return nullptr;
         }
     };
 
