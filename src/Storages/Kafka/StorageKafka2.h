@@ -135,7 +135,10 @@ private:
         TopicPartitionLocks permanent_locks{};
         TopicPartitionLocks tmp_locks{};
 
-        // Locks = permanent_locks + tmp_locks
+        /// For the condition for updating temporary locks
+        bool permanent_locks_changed = false;
+
+        /// Locks = permanent_locks + tmp_locks
         TopicPartitionLocks getAllTopicPartitionLocks()
         {
             TopicPartitionLocks locks;
@@ -253,7 +256,7 @@ private:
     // Takes lock over topic partitions and sets the committed offset in topic_partitions.
     TopicPartitionLocks lockTopicPartitions(const TopicPartitionLocks & permanent_locks, const TopicPartitionLocks & tmp_locks);
     void updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & tmp_locks);
-    void updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & permanent_locks);
+    void updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & permanent_locks, bool & permanent_locks_changed);
     void saveCommittedOffset(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition);
     void saveIntent(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition, int64_t intent);
 

@@ -878,17 +878,21 @@ void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, cons
 
 /// If the number of locks on a replica is greater than it can hold, then we first release the partitions that we can no longer hold.
 /// Otherwise, we try to lock free partitions one by one.
-void StorageKafka2::updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & permanent_locks)
+void StorageKafka2::updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & permanent_locks, bool & permanent_locks_changed)
 {
     size_t can_lock_partitions = static_cast<size_t>(std::ceil(static_cast<double>(topic_partitions.size()) / active_replica_count));
     auto available_topic_partitions = getAvailableTopicPartitions(keeper_to_use, topic_partitions);
 
-    if (can_lock_partitions <  permanent_locks.size())
+    if (can_lock_partitions < permanent_locks.size())
     {
         size_t need_to_unlock =  permanent_locks.size() - can_lock_partitions;
         auto permanent_locks_it = permanent_locks.begin();
         for (size_t i = 0; i < need_to_unlock && permanent_locks_it != permanent_locks.end(); ++i)
+        {
+            if (!permanent_locks_changed)
+                permanent_locks_changed = true;
             permanent_locks_it = permanent_locks.erase(permanent_locks_it);
+        }
     }
     else
     {
@@ -899,6 +903,8 @@ void StorageKafka2::updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, cons
             auto maybe_lock = createLocksInfo(keeper_to_use, tp);
             if (!maybe_lock.has_value())
                 continue;
+            if (!permanent_locks_changed)
+                permanent_locks_changed = true;
             permanent_locks.emplace(TopicPartition(tp), std::move(*maybe_lock));
         }
     }
@@ -1211,7 +1217,8 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
                 LOG_TEST(log, "Got new zookeeper");
             }
 
-            updatePermanentLocks(*consumer_info.keeper, consumer->getAllTopicPartitions(), consumer_info.permanent_locks);
+            updatePermanentLocks(*consumer_info.keeper, consumer->getAllTopicPartitions(), consumer_info.permanent_locks, consumer_info.permanent_locks_changed);
+
             // Now we always have some assignment
             auto current_locks = consumer_info.getAllTopicPartitionLocks();
             auto locks_it = current_locks.begin();
@@ -1316,9 +1323,13 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
     {
         updateTemporaryLocks(keeper_to_use, consumer_info.consumer->getAllTopicPartitions(), consumer_info.tmp_locks);
         consumer_info.poll_count = 0;
+    } else if (consumer_info.permanent_locks_changed)
+    {
+        updateTemporaryLocks(keeper_to_use, consumer_info.consumer->getAllTopicPartitions(), consumer_info.tmp_locks);
+        consumer_info.permanent_locks_changed = false;
     }
-    auto current_locks = consumer_info.getAllTopicPartitionLocks();
 
+    auto current_locks = consumer_info.getAllTopicPartitionLocks();
     auto [blocks, last_read_offset] = pollConsumer(
         *consumer_info.consumer, topic_partition, current_locks[topic_partition].intent_size, consumer_info.watch, kafka_context);
 
