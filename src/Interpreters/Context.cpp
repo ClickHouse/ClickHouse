@@ -2175,8 +2175,7 @@ bool Context::hasScalar(const String & name) const
 
 void Context::addQueryAccessInfo(
     const String & quoted_database_name,
-    const String & full_quoted_table_name,
-    const Names & column_names)
+    const String & full_quoted_table_name)
 {
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
@@ -2184,19 +2183,6 @@ void Context::addQueryAccessInfo(
     std::lock_guard lock(query_access_info->mutex);
     query_access_info->databases.emplace(quoted_database_name);
     query_access_info->tables.emplace(full_quoted_table_name);
-
-    for (const auto & column_name : column_names)
-        query_access_info->columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
-}
-
-void Context::addQueryAccessInfo(const Names & partition_names)
-{
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
-
-    std::lock_guard<std::mutex> lock(query_access_info->mutex);
-    for (const auto & partition_name : partition_names)
-        query_access_info->partitions.emplace(partition_name);
 }
 
 void Context::addViewAccessInfo(const String & view_name)
@@ -2206,6 +2192,31 @@ void Context::addViewAccessInfo(const String & view_name)
 
     std::lock_guard<std::mutex> lock(query_access_info->mutex);
     query_access_info->views.emplace(view_name);
+}
+
+void Context::addQueryAccessInfo(
+        const String & full_quoted_table_name,
+        const TableAccessInfoType & entity_type, 
+        const Names & table_entity_names)
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
+
+    std::lock_guard lock(query_access_info->mutex);
+    for (const auto & entity_name : table_entity_names){
+        String full_quoted_entity_name = full_quoted_table_name + "." + backQuoteIfNeed(entity_name);
+        switch (entity_type){
+            case TableAccessInfoType::COLUMN:
+                query_access_info->columns.emplace(full_quoted_entity_name);
+                break;
+            case TableAccessInfoType::SKIP_INDEX:
+                query_access_info->skip_indexes.emplace(full_quoted_entity_name);
+                break;
+            case TableAccessInfoType::PARTITION:
+                query_access_info->partitions.emplace(full_quoted_entity_name);
+                break;
+        }
+    }
 }
 
 void Context::addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name)

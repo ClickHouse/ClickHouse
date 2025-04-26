@@ -2713,7 +2713,10 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             auto local_storage_id = storage->getStorageID();
             context->getQueryContext()->addQueryAccessInfo(
                 backQuoteIfNeed(local_storage_id.getDatabaseName()),
+                local_storage_id.getFullTableName());
+            context->getQueryContext()->addQueryAccessInfo(
                 local_storage_id.getFullTableName(),
+                Context::TableAccessInfoType::COLUMN,
                 required_columns);
         }
 
