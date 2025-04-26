@@ -733,8 +733,20 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
             break;
         }
-        case Type::INSTRUMENT_ADD:
         case Type::INSTRUMENT_REMOVE:
+        {
+            String function_name;
+            ASTPtr temporary_identifier;
+
+            if (ParserIdentifier{}.parse(pos, temporary_identifier, expected))
+                function_name = temporary_identifier->as<ASTIdentifier &>().name();
+            else
+                return false;
+
+            res->function_name = std::move(function_name);
+            break;
+        }
+        case Type::INSTRUMENT_ADD:
         {
             String function_name;
             ASTPtr temporary_identifier;
@@ -752,7 +764,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             res->handler_name = std::move(handler_name);
 
             res->parameters.emplace();
-            do
+            while (ParserToken{TokenType::Comma}.ignore(pos, expected))
             {
                 ASTPtr params_ast;
                 if (!ParserLiteral{}.parse(pos, params_ast, expected))
@@ -774,7 +786,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 {
                     res->parameters->emplace_back(value.safeGet<Float64>());
                 }
-            } while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+            }
 
             break;
         }

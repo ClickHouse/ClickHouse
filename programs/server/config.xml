@@ -1242,29 +1242,17 @@
         <flush_on_crash>false</flush_on_crash>
     </error_log>
 
-    <!-- Instrumentation contains rows with information about which functions are instrumented by XRay with which handlers. -->
-    <instrumentation>
+    <!-- Instrumentation profiling log contains rows with profiling information produced using XRay that we can export to Chrome trace format. -->
+    <instrumentation_profiling_log>
         <database>system</database>
-        <table>instrumentation</table>
+        <table>instrumentation_profiling_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
         <max_size_rows>1048576</max_size_rows>
         <reserved_size_rows>8192</reserved_size_rows>
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
         <flush_on_crash>false</flush_on_crash>
-    </instrumentation>
-
-    <!-- XRay profiling contains rows with profiling information produced using XRay that we can export to Chrome trace format. -->
-    <xray_profiling>
-        <database>system</database>
-        <table>xray_profiling</table>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
-        <flush_on_crash>false</flush_on_crash>
-    </xray_profiling>
+    </instrumentation_profiling_log>
 
     <!-- Query metric log contains rows Contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk
     every "collect_interval_milliseconds" interval-->

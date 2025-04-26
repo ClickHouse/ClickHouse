@@ -7,6 +7,7 @@
 #include <string>
 #include <unordered_map>
 #include <list>
+#include <vector>
 #include <mutex>
 #include <xray/xray_interface.h>
 
@@ -43,6 +44,8 @@ private:
     void registerHandler(const std::string & name, XRayHandlerFunction handler);
     XRayHandlerFunction getHandler(const std::string & name) const;
     void parseXRayInstrumentationMap();
+    static std::string_view removeTemplateArgs(std::string_view input);
+    std::string extractNearestNamespaceAndFunction(std::string_view signature);
 
     [[clang::xray_never_instrument]] static void logEntry(int32_t FuncId, XRayEntryType Type);
     [[clang::xray_never_instrument]] static void logAndSleep(int32_t FuncId, XRayEntryType Type);
@@ -53,6 +56,7 @@ private:
     std::mutex functions_to_instrument_mutex;
     std::unordered_map<std::string, XRayHandlerFunction> xrayHandlerNameToFunction;
     std::unordered_map<std::string, int64_t> functionNameToXRayID;
+    std::unordered_map<std::string, std::vector<int64_t>> strippedFunctionNameToXRayID;
     std::unordered_map<int64_t, std::string> xrayIdToFunctionName; // may be unnecessary, but we'll keep it for now
     std::list<InstrumentedFunctionInfo> instrumented_functions;
     std::unordered_map<int64_t, std::list<InstrumentedFunctionInfo>::iterator> functionIdToInstrumentPoint;
