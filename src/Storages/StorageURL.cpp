@@ -31,6 +31,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
 
+#include "Common/LoggingFormatStringHelpers.h"
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadStatus.h>
@@ -120,7 +121,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
 
 static auto getWriteBodyCallback(const String & body)
 {
-    return [body](std::ostream & os) { os << "sample_block=" << body; };
+    return [body](std::ostream & os) { os << body; };
 }
 
 bool urlWithGlobs(const String & uri)
@@ -1603,12 +1604,12 @@ FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Argum
     return format_settings;
 }
 
-std::string convertBodySubqueryToString(ASTPtr body_ptr, const ContextPtr & context)
+std::string evaluateBodySubqueryToString(ASTPtr body_ptr, const std::optional<String>& format, const ContextPtr & context)
 {
     auto write_buffer = WriteBufferFromOwnString();
 
     BlockIO block = interpretSubquery(body_ptr, context, {}, {})->execute();
-    auto out = context->getOutputFormat("JSONLines", write_buffer, materializeBlock(block.pipeline.getHeader()));
+    auto out = context->getOutputFormat(format.value_or("JSONLines"), write_buffer, materializeBlock(block.pipeline.getHeader()));
     out->setAutoFlush();
     block.pipeline.complete(std::move(out));
     CompletedPipelineExecutor executor(block.pipeline);
@@ -1688,36 +1689,43 @@ size_t StorageURL::evalArgsAndCollectHeaders(
             const auto * body_function_args_expr = assert_cast<const ASTExpressionList *>(ast_as_function->arguments.get());
             auto body_function_args = body_function_args_expr->children;
 
-            if (body_function_args.size() != 1)
+            if (body_function_args.size() == 0 || body_function_args.size() > 2)
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "URL table function argument body=() excepts a single string as an argument. {}",
+                    "URL table function argument body=() excepts a one or two arguments {}",
                     bad_arguments_error_message);
             }
 
-            for (auto & body_arg : body_function_args)
+            auto input_argument = body_function_args[0];
+            if (input_argument->as<ASTSubquery>())
             {
-
-                if (body_arg->as<ASTSubquery>())
+                LOG_DEBUG(getLogger("StorageURLDistributed"), "Got a subquery in body arg, trying to evaluate it ...");
+                std::optional<String> format;
+                if (body_function_args.size() == 2)
                 {
-                    LOG_DEBUG(getLogger("StorageURLDistributed"), "Got a subquery in body arg, tryyin to evaluate it ...");
-                    auto body_result = convertBodySubqueryToString(body_arg, context);
-                    LOG_DEBUG(getLogger("StorageURLDistributed"), "Got a subquery in body arg, tryyin to evaluate it done");
-                    body_entry = body_result;
-                }
-                else
-                {
-                    auto ast_literal = evaluateConstantExpressionOrIdentifierAsLiteral(body_arg, context);
+                    auto format_argument = body_function_args[1];
+                    auto ast_literal = evaluateConstantExpressionOrIdentifierAsLiteral(format_argument, context);
                     auto arg_name_value = ast_literal->as<ASTLiteral>()->value;
-
                     if (arg_name_value.getType() != Field::Types::Which::String)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected string as body argument");
-                    auto body_argument = arg_name_value.safeGet<String>();
-                    LOG_DEBUG(getLogger("StorageURLDistributed"), "Got a body argument:    {}", body_argument);
-                    body_entry = body_argument;
+                    format = arg_name_value.safeGet<String>();
                 }
+                auto body_result = evaluateBodySubqueryToString(input_argument, format, context);
+                LOG_DEBUG(getLogger("StorageURLDistributed"), "Got a subquery in body arg, tryyin to evaluate it done");
+                body_entry = body_result;
             }
+            else
+            {
+                auto ast_literal = evaluateConstantExpressionOrIdentifierAsLiteral(input_argument, context);
+                auto arg_name_value = ast_literal->as<ASTLiteral>()->value;
+
+                if (arg_name_value.getType() != Field::Types::Which::String)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected string as body argument");
+                auto body_argument = arg_name_value.safeGet<String>();
+                LOG_DEBUG(getLogger("StorageURLDistributed"), "Got a body argument:    {}", body_argument);
+                body_entry = body_argument;
+            } 
             body_it = arg_it;
             LOG_DEBUG(getLogger("StorageURLDistributed"), "Saving a body argument done");
             continue;
