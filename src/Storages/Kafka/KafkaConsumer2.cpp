@@ -6,7 +6,6 @@
 #include <cppkafka/cppkafka.h>
 #include <cppkafka/topic_partition_list.h>
 #include <fmt/ostream.h>
-#include <boost/algorithm/string/join.hpp>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <Storages/Kafka/StorageKafkaUtils.h>
@@ -14,8 +13,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
-
-#include <algorithm>
 
 
 namespace ProfileEvents
@@ -245,11 +242,14 @@ void KafkaConsumer2::subscribeIfNotSubscribedYet()
 
 KafkaConsumer2::TopicPartitions KafkaConsumer2::getAllTopicPartitions() const
 {
+    std::unordered_set<String> topics_set;
+    topics_set.insert(topics.begin(), topics.end());
+
     auto metadata = consumer->get_metadata(true, std::chrono::milliseconds(1000));
     TopicPartitions topic_partitions;
     for (const auto & topic_metadata : metadata.get_topics())
     {
-        if (std::find(topics.begin(), topics.end(), topic_metadata.get_name()) == topics.end())
+        if (!topics_set.contains(topic_metadata.get_name()))
             continue;
 
         for (const auto & partition_metadata : topic_metadata.get_partitions())
