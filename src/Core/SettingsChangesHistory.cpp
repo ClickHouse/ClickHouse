@@ -72,9 +72,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"secondary_indices_enable_bulk_filtering", false, true, "A new algorithm for filtering by data skipping indices"},
             {"implicit_table_at_top_level", "", "", "A new setting, used in clickhouse-local"},
             {"use_skip_indexes_if_final_exact_mode", 0, 0, "This setting was introduced to help FINAL query return correct results with skip indexes"},
+            {"parallel_replicas_insert_select_local_pipeline", false, true, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"},
             {"page_cache_block_size", 1048576, 1048576, "Made this setting adjustable on a per-query level."},
             {"page_cache_lookahead_blocks", 16, 16, "Made this setting adjustable on a per-query level."},
             {"output_format_pretty_glue_chunks", "0", "auto", "A new setting to make Pretty formats prettier."},
+            {"parallel_hash_join_threshold", 0, 100'000, "New setting"},
             {"make_distributed_plan", 0, 0, "New experimental setting."},
             {"execute_distributed_plan_locally", 0, 0, "New experimental setting."},
             {"default_shuffle_join_bucket_count", 8, 8, "New experimental setting."},
@@ -82,6 +84,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_exchanges", 0, 0, "New experimental setting."},
             {"force_exchange_kind", "", "", "New experimental setting."},
             {"allow_experimental_delta_kernel_rs", false, false, "New setting"},
+            {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
