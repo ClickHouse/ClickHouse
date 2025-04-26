@@ -35,7 +35,11 @@ bool KafkaConsumer2::TopicPartition::operator<(const TopicPartition & other) con
     return std::tie(topic, partition_id, offset) < std::tie(other.topic, other.partition_id, other.offset);
 }
 
-
+// BROKER-SIDE REBALANCE REMOVED
+//
+// We no longer rely on Kafka’s group rebalance callbacks
+// (assignment/revocation).  All partition assignment
+// is now driven explicitly by StorageKafka2 via ZooKeeper locks.
 KafkaConsumer2::KafkaConsumer2(
     ConsumerPtr consumer_,
     LoggerPtr log_,

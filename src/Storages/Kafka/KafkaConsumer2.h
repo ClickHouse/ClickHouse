@@ -104,6 +104,7 @@ public:
 
     void subscribeIfNotSubscribedYet();
 
+    // Build the full list of partitions for our subscribed topics.
     TopicPartitions getAllTopicPartitions() const;
 
 private:

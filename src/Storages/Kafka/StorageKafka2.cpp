@@ -1218,6 +1218,13 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
             }
 
             updatePermanentLocks(*consumer_info.keeper, consumer->getAllTopicPartitions(), consumer_info.permanent_locks, consumer_info.permanent_locks_changed);
+            if (consumer_info.permanent_locks_changed)
+            {
+                // If our permanent locks just changed, we clear and re-acquire temprorary locks immediately
+                // so we never mix old temporary work with the new permanent locks set.
+                updateTemporaryLocks(*consumer_info.keeper, consumer_info.consumer->getAllTopicPartitions(), consumer_info.tmp_locks);
+                consumer_info.permanent_locks_changed = false;
+            }
 
             // Now we always have some assignment
             auto current_locks = consumer_info.getAllTopicPartitionLocks();
@@ -1318,15 +1325,14 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
     });
 
     auto & keeper_to_use = *consumer_info.keeper;
+
+    // Change temporary locks every TMP_LOCKS_REFRESH_POLLS calls (or whenever permanent_locks_changed is set)
+    // This keeps batchy work from sitting too long on the same partitions and smoothly hands off load over time.
     ++consumer_info.poll_count;
     if (consumer_info.poll_count >= TMP_LOCKS_REFRESH_POLLS)
     {
         updateTemporaryLocks(keeper_to_use, consumer_info.consumer->getAllTopicPartitions(), consumer_info.tmp_locks);
         consumer_info.poll_count = 0;
-    } else if (consumer_info.permanent_locks_changed)
-    {
-        updateTemporaryLocks(keeper_to_use, consumer_info.consumer->getAllTopicPartitions(), consumer_info.tmp_locks);
-        consumer_info.permanent_locks_changed = false;
     }
 
     auto current_locks = consumer_info.getAllTopicPartitionLocks();
