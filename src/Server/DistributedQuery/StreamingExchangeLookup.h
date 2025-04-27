@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef OS_LINUX
+
 #include <Server/DistributedQuery/ExchangeConnections.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
@@ -14,3 +16,5 @@ ExchangeLookupPtr createStreamingExchangeLookup(
     UInt16 streaming_exchange_port);
 
 }
+
+#endif

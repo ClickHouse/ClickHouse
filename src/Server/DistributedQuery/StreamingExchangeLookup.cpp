@@ -1,3 +1,5 @@
+#ifdef OS_LINUX
+
 #include <Server/DistributedQuery/StreamingExchangeLookup.h>
 #include <Server/DistributedQuery/StreamingExchangeSink.h>
 #include <Server/DistributedQuery/StreamingExchangeSource.h>
@@ -56,3 +58,5 @@ ExchangeLookupPtr createStreamingExchangeLookup(
 }
 
 }
+
+#endif

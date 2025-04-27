@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef OS_LINUX
+
 #include <Processors/ISink.h>
 #include <Processors/Port.h>
 #include <Poco/Net/StreamSocket.h>
@@ -75,3 +77,5 @@ private:
 };
 
 }
+
+#endif

@@ -31,9 +31,11 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
 
 
@@ -440,12 +442,17 @@ ExchangeLookupPtr createExchangeLookup(
     TemporaryFileLookupPtr temporary_files_,
     ContextPtr context)
 {
-    auto persisted_exchanges = std::make_shared<ExchangeViaTemporaryFiles>(temporary_files_);
-
+    ExchangeLookupPtr streaming_exchanges;
+#ifdef OS_LINUX
     auto streaming_exchange_port = context->getConfigRef().getUInt("distributed_query.streaming_exchange_port", 0);
-    auto streaming_exchanges = streaming_exchange_port != 0 ?
+    streaming_exchanges = streaming_exchange_port != 0 ?
         createStreamingExchangeLookup(query_id, ExchangeConnections::instance(), exchange_stream_destinations, streaming_exchange_port) :
         std::make_shared<ExchangeViaChunks>(query_id);
+#else
+    UNUSED(exchanges_, exchange_stream_destinations, context);
+    streaming_exchanges = std::make_shared<ExchangeViaChunks>(query_id);
+#endif
+    auto persisted_exchanges = std::make_shared<ExchangeViaTemporaryFiles>(temporary_files_);
 
     return std::make_shared<AllKindsExchangeLookup>(exchanges_, persisted_exchanges, streaming_exchanges);
 }

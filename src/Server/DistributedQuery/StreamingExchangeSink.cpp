@@ -1,3 +1,5 @@
+#ifdef OS_LINUX
+
 #include <Server/DistributedQuery/StreamingExchangeSink.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -7,7 +9,9 @@
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <Common/logger_useful.h>
 #include <Poco/Net/NetException.h>
+
 #include <sys/epoll.h>
+
 
 namespace DB
 {
@@ -291,3 +295,5 @@ void StreamingExchangeSink::receiveNoMoDataNeeded()
 }
 
 }
+
+#endif
