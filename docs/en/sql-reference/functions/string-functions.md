@@ -2637,3 +2637,164 @@ Result:
 1. │ [417784657,728683856,3071092609] │
    └──────────────────────────────────┘
 ```
+
+## smashSimilarity {#smashsimilarity}
+
+Calculates the SMASH (Smart String Similarity) between two strings. This function is designed to handle word-based string comparisons with intelligent gap handling and subsequence matching.
+
+**When to use:**
+
+For matching manually entered strings (acronyms, abbreviations, typos), e.g., police rosters, medical records, location names. Suitable for integration into tools for non-technical users.
+
+**Syntax**
+
+```sql
+smashSimilarity(haystack, needle)
+```
+
+**Arguments**
+
+- `haystack` — First input string. [String](../data-types/string.md).
+- `needle` — Second input string. [String](../data-types/string.md).
+
+**Returned value**
+
+- Returns a value between 0 and 1, where 1 indicates identical strings and 0 indicates completely different strings. [Float64](../data-types/float.md).
+
+**Complexity**
+
+- Time complexity: O(m * n^3 * l) where m is the number of words in the longer string and n is the length of the shorter string, l is size of the largest word.
+- Space complexity: O(m * n) for the dynamic programming matrix.
+
+The algorithm:
+- Splits the longer string into words
+- Compares each word with substrings of the shorter string using affineGap algorithm
+- Uses affine gap penalties for better alignment
+- Handles subsequence matching for partial word matches
+- Normalizes the result to [0,1] range
+
+**Example**
+
+Query:
+```sql
+SELECT smashSimilarity('Hello World', 'hello wrld');
+```
+
+Result:
+```text
+┌─smashSimilarity('Hello World', 'hello wrld')─┐
+│                                        0.825 │
+└──────────────────────────────────────────────┘
+```
+
+## smashSimilarityUTF8 {#smashsimilarityutf8}
+
+Calculates the SMASH similarity between two UTF-8 encoded strings. This is the UTF-8 aware version of smashSimilarity that correctly handles multi-byte characters.
+
+**When to use:**
+
+For matching manually entered strings (acronyms, abbreviations, typos), e.g., police rosters, medical records, location names. Suitable for integration into tools for non-technical users.
+
+**Syntax**
+
+```sql
+smashSimilarityUTF8(haystack, needle)
+```
+
+**Arguments**
+
+- `haystack` — First input UTF-8 string. [String](../data-types/string.md).
+- `needle` — Second input UTF-8 string. [String](../data-types/string.md).
+
+**Returned value**
+
+- Returns a value between 0 and 1, where 1 indicates identical strings and 0 indicates completely different strings. [Float64](../data-types/float.md).
+
+**Complexity**
+
+- Time complexity: O(m * n^3 * l) where m is the number of words in the longer string and n is the length of the shorter string, l is size of the largest word.
+- Space complexity: O(m * n) for the dynamic programming matrix.
+
+**Example**
+
+Query:
+```sql
+SELECT smashSimilarityUTF8('Привет мир', 'привет мр');
+```
+
+Result:
+```text
+┌─smashSimilarityUTF8('Привет мир', 'привет мр')─┐
+│                                          0.850 │
+└────────────────────────────────────────────────┘
+```
+
+## affineGap
+
+Calculates the affine gap distance between two byte-strings.
+
+**Syntax**
+
+```sql
+affineGap(string1, string2)
+```
+
+**Parameters**
+
+- `string1` — First string to compare. [String](../../sql-reference/data-types/string.md).
+- `string2` — Second string to compare. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+- Affine gap distance between the strings. [Float64](../../sql-reference/data-types/float.md).
+
+**Complexity**
+
+- Time complexity: O(m * n) where m and n are the lengths of the input strings.
+- Space complexity: O(m * n) for the three dynamic programming matrices.
+
+**Example**
+
+```sql
+SELECT affineGap('hello', 'helo');
+```
+
+Result:
+```
+0.7
+```
+
+## affineGapUTF8
+
+Calculates the affine gap distance between two UTF-8 strings.
+
+**Syntax**
+
+```sql
+affineGapUTF8(string1, string2 [, gap_open, gap_extend, mismatch])
+```
+
+**Parameters**
+
+- `string1` — First UTF-8 string to compare. [String](../../sql-reference/data-types/string.md).
+- `string2` — Second UTF-8 string to compare. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+- Affine gap distance between the UTF-8 strings. [Float64](../../sql-reference/data-types/float.md).
+
+**Complexity**
+
+- Time complexity: O(m * n) where m and n are the lengths of the input strings (in code points).
+- Space complexity: O(m * n) for the three dynamic programming matrices.
+
+**Example**
+
+```sql
+SELECT affineGapUTF8('привет', 'привт');
+```
+
+Result:
+```
+0.7
+```
