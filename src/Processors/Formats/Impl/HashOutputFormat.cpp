@@ -3,18 +3,12 @@
 #include <IO/WriteHelpers.h>
 #include <Formats/FormatFactory.h>
 #include <Common/Exception.h>
-#include <Common/ErrorCodes.h>
 #include <Common/HashTable/Hash.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Columns/IColumn.h>
 #include <Processors/Port.h>
 #include <fmt/format.h>
 #include <optional>
-
-namespace DB::ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 namespace DB
 {
