@@ -2853,7 +2853,7 @@ bool ClientBase::processQueryText(const String & text)
 {
     auto trimmed_input = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
 
-    if (exit_strings.end() != exit_strings.find(trimmed_input))
+    if (exit_strings.contains(trimmed_input))
         return false;
 
     if (trimmed_input.starts_with("\\i"))
@@ -3256,14 +3256,14 @@ void ClientBase::addSettingsToProgramOptionsAndSubscribeToChanges(OptionsDescrip
 
 void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & options)
 {
-    if (options.count("verbose"))
+    if (options.contains("verbose"))
         getClientConfiguration().setBool("verbose", true);
 
     /// Output execution time to stderr in batch mode.
-    if (options.count("time"))
+    if (options.contains("time"))
         getClientConfiguration().setBool("print-time-to-stderr", true);
 
-    if (options.count("memory-usage"))
+    if (options.contains("memory-usage"))
     {
         const auto & memory_usage_mode = options["memory-usage"].as<std::string>();
         if (memory_usage_mode != "none" && memory_usage_mode != "default" && memory_usage_mode != "readable")
@@ -3271,40 +3271,40 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
         getClientConfiguration().setString("print-memory-to-stderr", memory_usage_mode);
     }
 
-    if (options.count("query"))
+    if (options.contains("query"))
         queries = options["query"].as<std::vector<std::string>>();
-    if (options.count("query_id"))
+    if (options.contains("query_id"))
         getClientConfiguration().setString("query_id", options["query_id"].as<std::string>());
-    if (options.count("database"))
+    if (options.contains("database"))
         getClientConfiguration().setString("database", options["database"].as<std::string>());
-    if (options.count("config-file"))
+    if (options.contains("config-file"))
         getClientConfiguration().setString("config-file", options["config-file"].as<std::string>());
-    if (options.count("queries-file"))
+    if (options.contains("queries-file"))
     {
         if (isEmbeeddedClient())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Reading queries from file is not allowed, because the client runs in an embedded mode");
         queries_files = options["queries-file"].as<std::vector<std::string>>();
     }
-    if (options.count("multiline"))
+    if (options.contains("multiline"))
         getClientConfiguration().setBool("multiline", true);
-    if (options.count("ignore-error"))
+    if (options.contains("ignore-error"))
         getClientConfiguration().setBool("ignore-error", true);
-    if (options.count("format"))
+    if (options.contains("format"))
         getClientConfiguration().setString("format", options["format"].as<std::string>());
-    if (options.count("output-format"))
+    if (options.contains("output-format"))
         getClientConfiguration().setString("output-format", options["output-format"].as<std::string>());
-    if (options.count("vertical"))
+    if (options.contains("vertical"))
         getClientConfiguration().setBool("vertical", true);
-    if (options.count("stacktrace"))
+    if (options.contains("stacktrace"))
         getClientConfiguration().setBool("stacktrace", true);
-    if (options.count("print-profile-events"))
+    if (options.contains("print-profile-events"))
         getClientConfiguration().setBool("print-profile-events", true);
-    if (options.count("profile-events-delay-ms"))
+    if (options.contains("profile-events-delay-ms"))
         getClientConfiguration().setUInt64("profile-events-delay-ms", options["profile-events-delay-ms"].as<UInt64>());
     /// Whether to print the number of processed rows at
-    if (options.count("processed-rows"))
+    if (options.contains("processed-rows"))
         getClientConfiguration().setBool("print-num-processed-rows", true);
-    if (options.count("progress"))
+    if (options.contains("progress"))
     {
         switch (options["progress"].as<ProgressOption>())
         {
@@ -3322,7 +3322,7 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
                 break;
         }
     }
-    if (options.count("progress-table"))
+    if (options.contains("progress-table"))
     {
         switch (options["progress-table"].as<ProgressOption>())
         {
@@ -3340,48 +3340,48 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
                 break;
         }
     }
-    if (options.count("enable-progress-table-toggle"))
+    if (options.contains("enable-progress-table-toggle"))
         getClientConfiguration().setBool("enable-progress-table-toggle", options["enable-progress-table-toggle"].as<bool>());
-    if (options.count("echo"))
+    if (options.contains("echo"))
         getClientConfiguration().setBool("echo", true);
-    if (options.count("disable_suggestion"))
+    if (options.contains("disable_suggestion"))
         getClientConfiguration().setBool("disable_suggestion", true);
-    if (options.count("wait_for_suggestions_to_load"))
+    if (options.contains("wait_for_suggestions_to_load"))
         getClientConfiguration().setBool("wait_for_suggestions_to_load", true);
-    if (options.count("suggestion_limit"))
+    if (options.contains("suggestion_limit"))
         getClientConfiguration().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
-    if (options.count("highlight"))
+    if (options.contains("highlight"))
         getClientConfiguration().setBool("highlight", options["highlight"].as<bool>());
-    if (options.count("history_file"))
+    if (options.contains("history_file"))
     {
         if (isEmbeeddedClient())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Specifying custom history file is not allowed, because the client runs in an embedded mode");
         getClientConfiguration().setString("history_file", options["history_file"].as<std::string>());
     }
-    if (options.count("history_max_entries"))
+    if (options.contains("history_max_entries"))
         getClientConfiguration().setUInt("history_max_entries", options["history_max_entries"].as<UInt32>());
-    if (options.count("interactive"))
+    if (options.contains("interactive"))
         getClientConfiguration().setBool("interactive", true);
-    if (options.count("pager"))
+    if (options.contains("pager"))
     {
         if (isEmbeeddedClient())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Specifying custom pager is not allowed, because the client runs in an embedded mode");
         getClientConfiguration().setString("pager", options["pager"].as<std::string>());
     }
 
-    if (options.count("prompt"))
+    if (options.contains("prompt"))
         getClientConfiguration().setString("prompt", options["prompt"].as<std::string>());
 
-    if (options.count("log-level"))
+    if (options.contains("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
-    if (options.count("server_logs_file"))
+    if (options.contains("server_logs_file"))
     {
         if (isEmbeeddedClient())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Writing server logs to a file is disabled, because the client runs in an embedded mode");
         server_logs_file = options["server_logs_file"].as<std::string>();
     }
 
-    if (options.count("proto_caps"))
+    if (options.contains("proto_caps"))
     {
         std::string proto_caps_str = options["proto_caps"].as<std::string>();
 

@@ -287,7 +287,7 @@ void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow
 {
     const SQLRelation rel = createTableRelation(rg, allow_internal_cols, rel_name, t);
 
-    if (this->levels.find(this->current_level) == this->levels.end())
+    if (!this->levels.contains(this->current_level))
     {
         this->levels[this->current_level] = QueryLevel(this->current_level);
     }
@@ -310,7 +310,7 @@ void StatementGenerator::addViewRelation(const String & rel_name, const SQLView 
 {
     const SQLRelation rel = createViewRelation(rel_name, v);
 
-    if (this->levels.find(this->current_level) == this->levels.end())
+    if (!this->levels.contains(this->current_level))
     {
         this->levels[this->current_level] = QueryLevel(this->current_level);
     }
@@ -335,7 +335,7 @@ void StatementGenerator::addDictionaryRelation(const String & rel_name, const SQ
         rel.cols.emplace_back(SQLRelationCol(rel_name, names));
     }
     this->table_entries.clear();
-    if (this->levels.find(this->current_level) == this->levels.end())
+    if (!this->levels.contains(this->current_level))
     {
         this->levels[this->current_level] = QueryLevel(this->current_level);
     }

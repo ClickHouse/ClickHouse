@@ -1611,7 +1611,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     size_t res = 0;
     for (const auto & part : parts)
     {
-        if ((part_values.empty() || part_values.find(part.data_part->name) != part_values.end())
+        if ((part_values.empty() || part_values.contains(part.data_part->name))
             && !partition_pruner.canBePruned(*part.data_part))
             res += part.data_part->rows_count;
     }
@@ -9557,7 +9557,7 @@ bool MergeTreeData::insertQueryIdOrThrow(const String & query_id, size_t max_que
 
 bool MergeTreeData::insertQueryIdOrThrowNoLock(const String & query_id, size_t max_queries) const
 {
-    if (query_id_set.find(query_id) != query_id_set.end())
+    if (query_id_set.contains(query_id))
         return false;
     if (query_id_set.size() >= max_queries)
         throw Exception(
@@ -9577,7 +9577,7 @@ void MergeTreeData::removeQueryId(const String & query_id) const
 
 void MergeTreeData::removeQueryIdNoLock(const String & query_id) const
 {
-    if (query_id_set.find(query_id) == query_id_set.end())
+    if (!query_id_set.contains(query_id))
         LOG_WARNING(log, "We have query_id removed but it's not recorded. This is a bug");
     else
         query_id_set.erase(query_id);
@@ -9664,7 +9664,7 @@ ReservationPtr MergeTreeData::balancedReservation(
                         auto it = disk_occupation.find(name);
                         if (it != disk_occupation.end())
                         {
-                            if (submerging_big_parts_from_partition.find(part->name) == submerging_big_parts_from_partition.end())
+                            if (!submerging_big_parts_from_partition.contains(part->name))
                             {
                                 it->second += part->getBytesOnDisk();
                                 disk_parts_for_logging[name].push_back(formatReadableSizeWithBinarySuffix(part->getBytesOnDisk()));
@@ -9686,7 +9686,7 @@ ReservationPtr MergeTreeData::balancedReservation(
             for (const auto & [name, emerging_part] : currently_emerging_big_parts)
             {
                 // It's possible that the emerging big parts are committed and get added twice. Thus a set is used to deduplicate.
-                if (committed_big_parts_from_partition.find(name) == committed_big_parts_from_partition.end()
+                if (!committed_big_parts_from_partition.contains(name)
                     && part_info.getPartitionId() == emerging_part.partition_id)
                 {
                     auto it = disk_occupation.find(emerging_part.disk_name);

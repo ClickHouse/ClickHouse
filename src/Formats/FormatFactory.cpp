@@ -64,7 +64,7 @@ namespace ErrorCodes
 
 bool FormatFactory::exists(const String & name) const
 {
-    return dict.find(boost::to_lower_copy(name)) != dict.end();
+    return dict.contains(boost::to_lower_copy(name));
 }
 
 const FormatFactory::Creators & FormatFactory::getCreators(const String & name) const
