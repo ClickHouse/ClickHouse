@@ -266,7 +266,7 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
 
 bool KeeperClient::processQueryText(const String & text)
 {
-    if (exit_strings.find(text) != exit_strings.end())
+    if (exit_strings.contains(text))
         return false;
 
     try

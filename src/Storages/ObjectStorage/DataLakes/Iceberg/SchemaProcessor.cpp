@@ -436,6 +436,6 @@ std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSch
 
 bool IcebergSchemaProcessor::hasClickhouseTableSchemaById(Int32 id) const
 {
-    return clickhouse_table_schemas_by_ids.find(id) != clickhouse_table_schemas_by_ids.end();
+    return clickhouse_table_schemas_by_ids.contains(id);
 }
 }

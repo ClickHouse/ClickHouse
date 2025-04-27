@@ -1844,7 +1844,7 @@ try
             removeAllLogsAfter(last_log_read_result->log_start_index);
 
             /// This log, even if it finished with error shouldn't be removed
-            chassert(existing_changelogs.find(last_log_read_result->log_start_index) != existing_changelogs.end());
+            chassert(existing_changelogs.contains(last_log_read_result->log_start_index));
             chassert(existing_changelogs.find(last_log_read_result->log_start_index)->first == existing_changelogs.rbegin()->first);
         };
 

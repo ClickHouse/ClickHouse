@@ -3747,7 +3747,7 @@ void StatementGenerator::dropTable(const bool staged, bool drop_peer, const uint
 {
     auto & map_to_delete = staged ? this->staged_tables : this->tables;
 
-    if (map_to_delete.find(tname) != map_to_delete.end())
+    if (map_to_delete.contains(tname))
     {
         if (drop_peer)
         {
@@ -4359,21 +4359,21 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                 }
                 for (const auto & [key, val] : backup.tables)
                 {
-                    if (!val.db || this->databases.find(val.db->dname) != this->databases.end())
+                    if (!val.db || this->databases.contains(val.db->dname))
                     {
                         this->tables[key] = val;
                     }
                 }
                 for (const auto & [key, val] : backup.views)
                 {
-                    if (!val.db || this->databases.find(val.db->dname) != this->databases.end())
+                    if (!val.db || this->databases.contains(val.db->dname))
                     {
                         this->views[key] = val;
                     }
                 }
                 for (const auto & [key, val] : backup.dictionaries)
                 {
-                    if (!val.db || this->databases.find(val.db->dname) != this->databases.end())
+                    if (!val.db || this->databases.contains(val.db->dname))
                     {
                         this->dictionaries[key] = val;
                     }

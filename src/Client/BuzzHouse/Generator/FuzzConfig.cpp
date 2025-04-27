@@ -46,10 +46,9 @@ static std::optional<ServerCredentials> loadServerCredentials(
     {
         const String & nkey = String(key);
 
-        if (configEntries.find(nkey) == configEntries.end())
-        {
+        if (!configEntries.contains(nkey))
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown server option: {}", nkey);
-        }
+
         configEntries.at(nkey)(value);
     }
 
@@ -73,10 +72,9 @@ loadPerformanceMetric(const JSONParserImpl::Element & jobj, const uint32_t defau
     {
         const String & nkey = String(key);
 
-        if (metricEntries.find(nkey) == metricEntries.end())
-        {
+        if (!metricEntries.contains(nkey))
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown metric option: {}", nkey);
-        }
+
         metricEntries.at(nkey)(value);
     }
 
@@ -188,10 +186,9 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
              {
                  const auto & entry = std::string_view(word);
 
-                 if (type_entries.find(entry) == type_entries.end())
-                 {
+                 if (!type_entries.contains(entry))
                      throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown type option for disabled_types: {}", String(entry));
-                 }
+
                  type_mask &= (~type_entries.at(entry));
              }
          }}};
@@ -200,7 +197,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
     {
         const String & nkey = String(key);
 
-        if (configEntries.find(nkey) == configEntries.end())
+        if (!configEntries.contains(nkey))
         {
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown BuzzHouse option: {}", nkey);
         }

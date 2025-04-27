@@ -286,7 +286,7 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_,
     auto & cache = context_->getSampleBlockCache();
     /// Using query string because query_ptr changes for every internal SELECT
     auto key = query_ptr_->formatWithSecretsOneLine();
-    if (cache.find(key) != cache.end())
+    if (cache.contains(key))
     {
         return cache[key];
     }

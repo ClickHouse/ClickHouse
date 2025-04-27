@@ -673,7 +673,7 @@ void QueryOracle::findTablesWithPeersAndReplace(
             {
                 const uint32_t tname = static_cast<uint32_t>(std::stoul(est.table().table().substr(1)));
 
-                if (gen.tables.find(tname) != gen.tables.end())
+                if (gen.tables.contains(tname))
                 {
                     const SQLTable & t = gen.tables.at(tname);
 

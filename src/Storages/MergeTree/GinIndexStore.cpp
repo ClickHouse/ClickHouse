@@ -460,7 +460,7 @@ GinPostingsCachePtr GinIndexStoreDeserializer::createPostingsCacheFromTerms(cons
     for (const auto & term : terms)
     {
         // Make sure don't read for duplicated terms
-        if (postings_cache->find(term) != postings_cache->end())
+        if (postings_cache->contains(term))
             continue;
 
         auto container = readSegmentedPostingsLists(term);

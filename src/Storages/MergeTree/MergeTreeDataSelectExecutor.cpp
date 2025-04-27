@@ -1879,7 +1879,7 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
         });
 
         const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
-        if (part_values && part_values->find(part->name) == part_values->end())
+        if (part_values && !part_values->contains(part->name))
             continue;
 
         if (part->isEmpty())
@@ -1943,7 +1943,7 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
         {
             const auto & part_or_projection = prev_part.data_part;
             const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
-            if (part_values && part_values->find(part->name) == part_values->end())
+            if (part_values && !part_values->contains(part->name))
                 continue;
 
             if (part->isEmpty())

@@ -235,7 +235,7 @@ std::unordered_map<String, KQLFunctionValue> KQLFunctionFactory::kql_functions
 
 std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String & kql_function)
 {
-    if (kql_functions.find(kql_function) == kql_functions.end())
+    if (!kql_functions.contains(kql_function))
         return nullptr;
 
     auto kql_function_id = kql_functions[kql_function];

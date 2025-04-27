@@ -220,7 +220,7 @@ void Block::insertUnique(ColumnWithTypeAndName elem)
     if (elem.name.empty())
         throw Exception(ErrorCodes::AMBIGUOUS_COLUMN_NAME, "Column name in Block cannot be empty");
 
-    if (index_by_name.end() == index_by_name.find(elem.name))
+    if (!index_by_name.contains(elem.name))
         insert(std::move(elem));
 }
 
@@ -393,7 +393,7 @@ bool Block::has(const std::string & name, bool case_insensitive) const
     if (case_insensitive)
         return std::ranges::find_if(data, [&](const auto & column) { return boost::iequals(column.name, name); }) != data.end();
     else
-        return index_by_name.find(name) != index_by_name.end();
+        return index_by_name.contains(name);
 }
 
 
