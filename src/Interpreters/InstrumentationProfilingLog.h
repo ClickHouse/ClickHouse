@@ -40,6 +40,8 @@ class InstrumentationProfilingLog : public SystemLog<InstrumentationProfilingLog
 {
     using SystemLog<InstrumentationProfilingLogElement>::SystemLog;
 public:
+    void shutdown() override;
+
     InstrumentationProfilingLog(ContextPtr context_,
         const SystemLogSettings & settings_,
         std::shared_ptr<SystemLogQueue<InstrumentationProfilingLogElement>> queue_ = nullptr)
