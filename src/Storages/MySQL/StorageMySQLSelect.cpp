@@ -1,14 +1,6 @@
 #include "config.h"
 #if USE_MYSQL
 
-#if __has_include(<mysql.h>)
-#include <mysql.h>
-#else
-#include <mysql/mysql.h>
-#endif
-
-// NB: swapping mysql.h include with unit's header breaks the build because of enum forward declaration in mysqlxx/Types.h
-// See another example of such issue in mysqlxx/Row.cpp
 #include "StorageMySQLSelect.h"
 
 #include <Common/logger_useful.h>
@@ -16,15 +8,10 @@
 #include <Common/quoteString.h>
 #include <Common/RemoteHostFilter.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/convertMySQLDataType.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <IO/Operators.h>
-#include <IO/WriteHelpers.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/MySQLSource.h>
@@ -32,7 +19,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/MySQL/MySQLHelpers.h>
 #include <Storages/MySQL/MySQLSettings.h>
-#include <Storages/StorageFactory.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/algorithm/transform.hpp>
@@ -116,8 +102,8 @@ Pipe StorageMySQLSelect::read(
 
         WhichDataType which(column_data.type);
         /// Convert enum to string.
-        // if (which.isEnum())
-        //     column_data.type = std::make_shared<DataTypeString>();
+        if (which.isEnum())
+            column_data.type = std::make_shared<DataTypeString>();
         sample_block.insert({column_data.type, column_data.name});
     }
 
@@ -163,119 +149,25 @@ StorageMySQLSelect::doQueryResultStructure(mysqlxx::PoolWithFailover & pool_, co
     auto query = conn->query(limited_select);
 
     auto query_res = query.use();
-    auto * fields = query_res.getFields();
     auto field_cnt = query_res.getNumFields();
     if (field_cnt == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MySQL SELECT query returned no fields");
 
-
     ColumnsDescription columns;
-
     const auto & settings = context_->getSettingsRef();
-    (void)settings;
     for (size_t i = 0; i < field_cnt; ++i)
     {
-        const auto & field = fields[i];
-
-        // Check flags for additional type information
-        bool is_nullable = !(field.flags & NOT_NULL_FLAG);
-        bool is_unsigned = (field.flags & UNSIGNED_FLAG);
-
-        DataTypePtr data_type;
-
-        switch (field.type)
-        {
-            case enum_field_types::MYSQL_TYPE_DECIMAL:
-                 case enum_field_types::MYSQL_TYPE_NEWDECIMAL:
-                {
-                    // MySQL DECIMAL includes space for sign and decimal point in length
-                    auto precision = field.length;
-                    if (field.decimals > 0)
-                        precision -= 1; // Decimal point
-                    if (!(field.flags & UNSIGNED_FLAG))
-                        precision -= 1; // Sign
-
-                    data_type = createDecimal<DataTypeDecimal>(precision, field.decimals);
-                }
-                break;
-            case enum_field_types::MYSQL_TYPE_TINY:
-                if (is_unsigned)
-                    data_type = std::make_shared<DataTypeUInt8>();
-                else
-                    data_type = std::make_shared<DataTypeInt8>();
-                break;
-            case enum_field_types::MYSQL_TYPE_SHORT:
-                if (is_unsigned)
-                    data_type = std::make_shared<DataTypeUInt16>();
-                else
-                    data_type = std::make_shared<DataTypeInt16>();
-                break;
-            case enum_field_types::MYSQL_TYPE_INT24: // Treat int24 as int32
-            case enum_field_types::MYSQL_TYPE_LONG:
-                if (is_unsigned)
-                    data_type = std::make_shared<DataTypeUInt32>();
-                else
-                    data_type = std::make_shared<DataTypeInt32>();
-                break;
-            case enum_field_types::MYSQL_TYPE_LONGLONG:
-                if (is_unsigned)
-                    data_type = std::make_shared<DataTypeUInt64>();
-                else
-                    data_type = std::make_shared<DataTypeInt64>();
-                break;
-            case enum_field_types::MYSQL_TYPE_FLOAT:
-                data_type = std::make_shared<DataTypeFloat32>();
-                break;
-            case enum_field_types::MYSQL_TYPE_DOUBLE:
-                data_type = std::make_shared<DataTypeFloat64>();
-                break;
-            case enum_field_types::MYSQL_TYPE_NULL:
-                data_type = std::make_shared<DataTypeNothing>();
-                break;
-            case enum_field_types::MYSQL_TYPE_TIMESTAMP:
-                data_type = std::make_shared<DataTypeDateTime>();
-                break;
-            case enum_field_types::MYSQL_TYPE_DATE:
-            case enum_field_types::MYSQL_TYPE_NEWDATE:
-                data_type = std::make_shared<DataTypeDate>();
-                break;
-            case enum_field_types::MYSQL_TYPE_TIME:
-                data_type = std::make_shared<DataTypeString>(); // ClickHouse doesn't have a TIME type
-                break;
-            case enum_field_types::MYSQL_TYPE_DATETIME:
-                data_type = std::make_shared<DataTypeDateTime>();
-                break;
-            case enum_field_types::MYSQL_TYPE_YEAR:
-                data_type = std::make_shared<DataTypeUInt16>();
-                break;
-            case enum_field_types::MYSQL_TYPE_VARCHAR:
-                data_type = std::make_shared<DataTypeString>();
-                break;
-            case enum_field_types::MYSQL_TYPE_BIT:
-                data_type = std::make_shared<DataTypeUInt64>();
-                break;
-            case enum_field_types::MYSQL_TYPE_JSON:
-            case enum_field_types::MYSQL_TYPE_ENUM:
-            case enum_field_types::MYSQL_TYPE_SET:
-            case enum_field_types::MYSQL_TYPE_TINY_BLOB:
-            case enum_field_types::MYSQL_TYPE_MEDIUM_BLOB:
-            case enum_field_types::MYSQL_TYPE_LONG_BLOB:
-            case enum_field_types::MYSQL_TYPE_BLOB:
-            case enum_field_types::MYSQL_TYPE_GEOMETRY:
-                data_type = std::make_shared<DataTypeString>();
-                break;
-            default:
-                // For unknown types, fallback to String
-                data_type = std::make_shared<DataTypeString>();
-        }
-
-        if (is_nullable && !data_type->isNullable())
-            data_type = makeNullable(data_type);
-
-        ColumnDescription column_description(query_res.getFieldName(i), data_type);
+        auto* field = query_res.getField(i);
+        ColumnDescription column_description(query_res.getFieldName(i), convertMySQLDataType(
+            settings[Setting::mysql_datatypes_support_level],
+            field));
         columns.add(column_description);
     }
 
+    // Preserve correctness of mysqlxx usage in case of force majeure related to "LIMIT 0"
+    while (query_res.fetch()) {
+        // do nothing
+    }
     return columns;
 }
 }
