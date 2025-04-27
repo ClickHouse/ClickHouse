@@ -59,6 +59,12 @@ public:
     void nestedRemoveNullable() override;
     bool nestedCanBeInsideNullable() const override { return getNestedColumn()->canBeInsideNullable(); }
 
+    bool haveIndexesChanged() const override { return false; }
+    MutableColumnPtr detachChangedIndexes() override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'detachChangedIndexes' not implemented for ColumnUnique");
+    }
+
     size_t uniqueInsert(const Field & x) override;
     bool tryUniqueInsert(const Field & x, size_t & index) override;
     size_t uniqueInsertFrom(const IColumn & src, size_t n) override;

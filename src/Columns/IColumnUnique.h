@@ -28,6 +28,21 @@ public:
     virtual ColumnPtr getNestedNotNullableColumn() const = 0;
 
 
+    /// After inserts, for some implementations (see ColumnUniqueFCBlockDF) the order of values may change.
+    /// So, users of IColumnUnique (see LowCardinality) should change their indexes.
+    /// Usage: after any insert:
+    /// if (column_unique->haveIndexesChanged())
+    /// {
+    ///     auto old_to_new_mapping = detachChangedIndexes();
+    ///     ... /// apply this mapping
+    /// }
+    /// This function should return false between `detachChangedIndexes` calls and following inserts 
+    virtual bool haveIndexesChanged() const = 0;
+
+    /// Returns a column containing the mapping between old and new indexes
+    /// Should be called inly if haveIndexesChanged() is true. After such a call
+    /// haveIndexesChanged() should return false until next inserts
+    virtual MutableColumnPtr detachChangedIndexes() = 0;
 
     virtual bool nestedColumnIsNullable() const = 0;
     virtual void nestedToNullable() = 0;
