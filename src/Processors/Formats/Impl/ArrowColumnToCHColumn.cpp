@@ -179,7 +179,7 @@ static ColumnWithTypeAndName readColumnWithJSONData(const std::shared_ptr<arrow:
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        const ArrowArray & chunk = assert_cast<const ArrowArray &>(*arrow_column->chunk(chunk_i));
+        const ArrowArray & chunk = dynamic_cast<ArrowArray &>(*(arrow_column->chunk(chunk_i)));
 
         if (chunk.null_count() == 0)
         {
