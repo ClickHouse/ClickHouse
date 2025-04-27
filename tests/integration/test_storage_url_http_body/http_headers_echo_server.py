@@ -4,28 +4,6 @@ import sys
 
 RESULT_PATH = "/echo_server_headers.txt"
  
-simple_string = 'test'
-
-json_each_row_dump = '''
-{"id":1,"name":"Vasya","number":"123"}
-{"id":2,"name":"Kolya","number":"0"}
-{"id":3,"name":"Dima","number":"789"}
-'''
-
-tab_separate_each_row_dump = '''
-1	Vasya	123
-2	Kolya	0
-3	Dima	789
-'''
-
-csv_each_row_dump = '''
-"id","name","number"
-1,"Vasya",123
-2,"Kolya",0
-3,"Dima",789
-'''
-
-
 class RequestHandler(http.server.BaseHTTPRequestHandler):
     def log_body(self, results):
         with open(RESULT_PATH, "w") as f:
@@ -47,11 +25,6 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             content_length = int(self.headers.get('Content-Length', 0))
             body, body_length = self.rfile.read(content_length).decode('utf-8', errors='replace'), content_length
 
-        print("Headers:")
-        for key, value in self.headers.items():
-            print(f"  {key}: {value}")
-        print("Body:")
-        print(body)
         self.log_body(body)
         print("-" * 60)
         self.send_response(200)

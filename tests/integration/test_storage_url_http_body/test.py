@@ -43,8 +43,6 @@ def run_server(container_id, file_name, hostname, port, *args):
         if '{"status":"ok"}' in ping_response:
             return
 
-        print(ping_response)
-
     raise Exception("Echo server is not responding")
 
 
