@@ -122,6 +122,8 @@ namespace
 {
 constexpr auto MAX_FAILED_POLL_ATTEMPTS = 10;
 constexpr auto TMP_LOCKS_REFRESH_POLLS = 15;
+constexpr auto TMP_LOCKS_QUOTA_STEP = 2;
+constexpr size_t LOCKS_QUOTA_MIN = 1;
 }
 
 StorageKafka2::StorageKafka2(
@@ -847,16 +849,32 @@ std::optional<StorageKafka2::LockedTopicPartitionInfo> StorageKafka2::createLock
 
 /// First we delete all current temporary locks,
 /// then we create new locks from free partitions
-void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & tmp_locks)
+void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & tmp_locks, size_t & tmp_locks_quota)
 {
     LOG_TRACE(log, "Starting to update temporary locks");
-    size_t can_lock_partitions = std::max<size_t>(1, topic_partitions.size() / (2 * static_cast<size_t>(active_replica_count)));
+
+    /// Adjust tmp_locks_quota based on quota boundaries:
+    /// - Increase by TMP_LOCKS_QUOTA_STEP if under the maximum allowed value (tmp_locks_quota_max);
+    /// - Decrease by TMP_LOCKS_QUOTA_STEP if increment would exceed or reach the maximum;
+    /// - Never allow tmp_locks_quota to go below TMP_LOCKS_QUOTA_MIN.
+    size_t tmp_locks_quota_max = std::max(LOCKS_QUOTA_MIN, topic_partitions.size() / (static_cast<size_t>(active_replica_count)));
+    if (tmp_locks_quota + TMP_LOCKS_QUOTA_STEP >= tmp_locks_quota_max)
+    {
+        tmp_locks_quota = std::max(tmp_locks_quota > TMP_LOCKS_QUOTA_STEP ?
+                               tmp_locks_quota - TMP_LOCKS_QUOTA_STEP : LOCKS_QUOTA_MIN,
+                               LOCKS_QUOTA_MIN);
+    }
+    else
+    {
+        tmp_locks_quota = std::min(tmp_locks_quota + TMP_LOCKS_QUOTA_STEP, tmp_locks_quota_max);
+    }
+    LOG_INFO(log, "The replica has access to {} temporary locks in current round", tmp_locks_quota);
     auto available_topic_partitions = getAvailableTopicPartitions(keeper_to_use, topic_partitions);
 
     tmp_locks.clear(); // to maintain order: looked at the old state, updated the state, committed the new state
     for (const auto & tp : available_topic_partitions)
     {
-        if (tmp_locks.size() >= can_lock_partitions)
+        if (tmp_locks.size() >= tmp_locks_quota)
             break;
         auto maybe_lock = createLocksInfo(keeper_to_use, tp);
         if (!maybe_lock.has_value())
@@ -870,7 +888,7 @@ void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, cons
 void StorageKafka2::updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & permanent_locks, bool & permanent_locks_changed)
 {
     LOG_TRACE(log, "Starting to update permanent locks");
-    size_t can_lock_partitions = std::max<size_t>(1, topic_partitions.size() / static_cast<size_t>(active_replica_count));
+    size_t can_lock_partitions = std::max(LOCKS_QUOTA_MIN, topic_partitions.size() / static_cast<size_t>(active_replica_count));
     auto available_topic_partitions = getAvailableTopicPartitions(keeper_to_use, topic_partitions);
 
     if (can_lock_partitions < permanent_locks.size())
@@ -1210,14 +1228,14 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
             updatePermanentLocks(*consumer_info.keeper, consumer->getAllTopicPartitions(), consumer_info.permanent_locks, consumer_info.permanent_locks_changed);
             if (consumer_info.poll_count >= TMP_LOCKS_REFRESH_POLLS)
             {
-                updateTemporaryLocks(*consumer_info.keeper, consumer_info.consumer->getAllTopicPartitions(), consumer_info.tmp_locks);
+                updateTemporaryLocks(*consumer_info.keeper, consumer_info.consumer->getAllTopicPartitions(), consumer_info.tmp_locks, consumer_info.tmp_locks_quota);
                 consumer_info.poll_count = 0;
             }
             else if (consumer_info.permanent_locks_changed)
             {
                 // If our permanent locks just changed, we clear and re-acquire temporary locks immediately
                 // so we never mix old temporary work with the new permanent locks set.
-                updateTemporaryLocks(*consumer_info.keeper, consumer->getAllTopicPartitions(), consumer_info.tmp_locks);
+                updateTemporaryLocks(*consumer_info.keeper, consumer->getAllTopicPartitions(), consumer_info.tmp_locks, consumer_info.tmp_locks_quota);
                 consumer_info.permanent_locks_changed = false;
             }
 

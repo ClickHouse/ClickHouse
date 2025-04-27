@@ -140,6 +140,9 @@ private:
         // so that no stale partitions linger when the “stable” assignment changes under us.
         bool permanent_locks_changed = false;
 
+        /// Quota, how many temporary locks can be taken in current round
+        size_t tmp_locks_quota = 1;
+
         // Searches first in permanent_locks, then in tmp_locks.
         // Returns a pointer to the lock if found; otherwise, returns nullptr.
         LockedTopicPartitionInfo * findTopicPartitionLock(const TopicPartition & topic_partition)
@@ -259,7 +262,7 @@ private:
     std::optional<LockedTopicPartitionInfo> createLocksInfo(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & partition_to_lock);
 
     // Takes lock over topic partitions and sets the committed offset in topic_partitions.
-    void updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & tmp_locks);
+    void updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & tmp_locks, size_t & tmp_locks_quota);
     void updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & permanent_locks, bool & permanent_locks_changed);
     void saveCommittedOffset(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition);
     void saveIntent(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition, int64_t intent);
