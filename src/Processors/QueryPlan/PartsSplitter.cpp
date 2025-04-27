@@ -987,6 +987,13 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
     {
         std::vector<PartsRangesIterator> part_candidate_ranges;
         const auto & index_granularity = ranges_in_data_parts[part_index].data_part->index_granularity;
+        const auto & part_lower_bound = index_access.getValue(part_index, 0);
+        const auto & part_upper_bound = index_access.getValue(part_index, index_granularity->getMarksCountWithoutFinal());
+        if ((compareValues(selected_lower_bound.value, part_upper_bound, false) > 0) ||
+            (compareValues(selected_upper_bound.value, part_lower_bound, false) < 0))
+        {
+            continue; /// early exit, intersection infeasible in this part
+        }
         for (size_t range_begin = 0; range_begin < index_granularity->getMarksCountWithoutFinal(); range_begin++)
         {
             const bool value_is_defined_at_end_mark = ((range_begin + 1) < index_granularity->getMarksCount());
