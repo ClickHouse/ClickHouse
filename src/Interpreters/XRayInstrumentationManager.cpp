@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <thread>
 #include <string_view>
+#include <unistd.h>
 
 #include <llvm/Object/Binary.h>
 #include <llvm/Object/ObjectFile.h>
@@ -339,18 +340,24 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     if (auto log = context->getInstrumentationProfilingLog())
     {
         InstrumentationProfilingLogElement element;
+        element.function_name = xrayIdToFunctionName[FuncId];
+        element.category = "function";
+        if (Type == XRayEntryType::ENTRY)
+            element.phase = "B";
+        else
+            element.phase = "E";
+
+        element.pid = getpid();  
+        element.tid = getThreadId();  
         using namespace std::chrono;
 
         auto now = system_clock::now();
         auto now_us = duration_cast<microseconds>(now.time_since_epoch()).count();
 
+        element.timestamp = Decimal64(now_us);
         element.event_time = time_t(duration_cast<seconds>(now.time_since_epoch()).count());
-        element.event_time_microseconds = Decimal64(now_us);
-        element.query_id = CurrentThread::isInitialized() ? CurrentThread::getQueryId() : "";
-        element.thread_id = getThreadId();  
+        element.query_id = CurrentThread::isInitialized() ? CurrentThread::getQueryId() : ""; 
         element.function_id = FuncId;
-        element.function_name = xrayIdToFunctionName[FuncId];
-
         log->add(std::move(element));
     }
     in_hook = false;

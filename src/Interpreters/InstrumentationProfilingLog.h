@@ -15,13 +15,15 @@ namespace DB
 
 struct InstrumentationProfilingLogElement
 {
-    time_t event_time{};
-    UInt64 event_time_microseconds{};
-    String query_id;
-    UInt64 thread_id{};
-    Int32 function_id{};
     String function_name;
-    String handler_name;
+    String category;
+    String phase;
+    UInt64 pid{};
+    UInt64 tid{};
+    UInt64 timestamp{};
+    time_t event_time{};
+    String query_id;
+    Int32 function_id{};
 
     static std::string name() { return "InstrumentationProfilingLog"; }
 
