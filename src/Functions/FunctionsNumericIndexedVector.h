@@ -783,7 +783,7 @@ public:
         WhichDataType which(type0->getArgumentsDataTypes()[1]->getTypeId());
 #define DISPATCH(TYPE) \
     if (which.idx == TypeIndex::TYPE) \
-        return std::make_shared<DataTypeNumber<TYPE>>();
+        return std::make_shared<DataTypeNumber<TYPE>>(); /// NOLINT
         FOR_NUMERIC_INDEXED_VECTOR_VALUE_TYPES(DISPATCH)
 #undef DISPATCH
         throw Exception(

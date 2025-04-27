@@ -896,6 +896,7 @@ RabbitMQ
 Rabl
 RangeHashed
 RawBLOB
+RawSum
 RawWithNames
 RawWithNamesAndTypes
 ReDoS
@@ -2394,6 +2395,7 @@ nullable
 nullables
 nullptr
 num
+numericIndexedVector
 numericIndexedVectorAllValueSum
 numericIndexedVectorBuild
 numericIndexedVectorCardinality

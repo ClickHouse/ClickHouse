@@ -60,8 +60,6 @@ AggregateFunctionPtr createAggregateFunctionNumericIndexedVector(
 
     if (parameters.empty() || applyVisitor(FieldVisitorToString(), parameters[0]) == "BSI")
     {
-        String numeric_index_vector_type = "BSI";
-
         UInt32 integer_bit_num;
         UInt32 fraction_bit_num;
 

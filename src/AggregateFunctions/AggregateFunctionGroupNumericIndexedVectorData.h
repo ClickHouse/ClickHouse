@@ -37,19 +37,6 @@ extern const int BAD_ARGUMENTS;
 extern const int INCORRECT_DATA;
 }
 
-namespace
-{
-
-UInt64 Float64ToUInt64(Float64 d)
-{
-    if (d >= static_cast<Float64>(std::numeric_limits<UInt64>::max()))
-        return std::numeric_limits<UInt64>::max();
-    return static_cast<UInt64>(d);
-}
-
-}
-
-
 #define FOR_NUMERIC_INDEXED_VECTOR_INDEX_TYPES(M) \
     M(UInt8) \
     M(UInt16) \
@@ -503,6 +490,13 @@ public:
         }
     }
 
+    static UInt64 float64ToUInt64(Float64 d)
+    {
+        if (d >= static_cast<Float64>(std::numeric_limits<UInt64>::max()))
+            return std::numeric_limits<UInt64>::max();
+        return static_cast<UInt64>(d);
+    }
+
     static void toVectorCompactArray(
         const PaddedPODArray<UInt32> & indexes,
         const PaddedPODArray<Float64> & values,
@@ -538,7 +532,7 @@ public:
         Float64 ratio = static_cast<Float64>(1ULL << vector.fraction_bit_num);
         for (size_t i = 0; i < length; ++i)
         {
-            buffer[i] = Float64ToUInt64(values[i] * ratio);
+            buffer[i] = float64ToUInt64(values[i] * ratio);
             buffer[i] &= mask;
         }
 
@@ -594,7 +588,7 @@ public:
         nonzero_cnt = 0;
         for (size_t i = 0; i < length; ++i)
         {
-            UInt64 tmp = Float64ToUInt64(values[i] * ratio);
+            UInt64 tmp = float64ToUInt64(values[i] * ratio);
             tmp &= mask;
             buffer[i] = tmp;
             number_of_1s += __builtin_popcountll(tmp);
@@ -861,6 +855,10 @@ public:
                     {
                         res_values[i] = lhs_values[i] / rhs_values[i];
                     }
+                    break;
+                default:
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported op_code: {}", op_code);
+
             }
             toVector(indexes, res_values, indexes_size, container_id, res);
         }
@@ -902,6 +900,9 @@ public:
                     {
                         res_values[i] = lhs_values[i] / rhs;
                     }
+                    break;
+                default:
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported op_code: {}", op_code);
             }
             toVector(indexes, res_values, indexes_size, container_id, res);
         }
