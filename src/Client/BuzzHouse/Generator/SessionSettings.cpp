@@ -1412,7 +1412,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     /// Set hot settings
     for (const auto & entry : fc.hot_settings)
     {
-        if (serverSettings.find(entry) == serverSettings.end())
+        if (!serverSettings.contains(entry))
         {
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown server setting: {}", entry);
         }

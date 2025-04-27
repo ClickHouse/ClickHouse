@@ -1062,7 +1062,7 @@ NameSet ActionsDAG::foldActionsByProjection(
     /// Record all needed output nodes to start folding.
     for (const auto & output_node : outputs)
     {
-        if (required_columns.find(output_node->result_name) != required_columns.end() || output_node->result_name == predicate_column_name)
+        if (required_columns.contains(output_node->result_name) || output_node->result_name == predicate_column_name)
         {
             visited_nodes.insert(output_node);
             visited_output_nodes_names.insert(output_node->result_name);
@@ -1077,7 +1077,7 @@ NameSet ActionsDAG::foldActionsByProjection(
     {
         for (const auto & column : required_columns)
         {
-            if (visited_output_nodes_names.find(column) == visited_output_nodes_names.end())
+            if (!visited_output_nodes_names.contains(column))
             {
                 if (const ColumnWithTypeAndName * column_with_type_name = projection_block_for_keys.findByName(column))
                 {
