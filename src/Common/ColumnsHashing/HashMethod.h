@@ -249,7 +249,9 @@ struct HashMethodKeysFixed
     static constexpr bool has_low_cardinality = has_low_cardinality_;
 
     static constexpr bool has_cheap_key_calculation = true;
-    static constexpr bool has_pre_computed_hashes = sizeof(Key) >= 16;
+    // static constexpr bool has_pre_computed_hashes = sizeof(Key) >= 16;
+    static constexpr bool has_pre_computed_hashes = false;
+    static constexpr bool use_string_hash_table = false;
 
     LowCardinalityKeys<has_low_cardinality> low_cardinality_keys;
     Sizes key_sizes;

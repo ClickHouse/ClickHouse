@@ -76,7 +76,6 @@ struct ArenaKeyHolder
 {
     StringRef key;
     Arena & pool;
-
 };
 
 }
@@ -133,3 +132,93 @@ inline void ALWAYS_INLINE keyHolderDiscardKey(DB::SerializedKeyHolder & holder)
     holder.key.size = 0;
 }
 
+struct StringRefWithInlineHash
+{
+    constexpr static auto SHIFT = 32;
+    constexpr static UInt64 MASK = (1ULL << SHIFT) - 1;
+
+    const char * data = nullptr;
+    size_t size = 0;
+
+    /// Non-constexpr due to reinterpret_cast.
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
+    StringRefWithInlineHash(const CharT * data_, size_t size_) : data(reinterpret_cast<const char *>(data_)), size(size_)
+    {
+        /// Sanity check for overflowed values.
+        assert(size < 0x8000000000000000ULL);
+    }
+
+    constexpr StringRefWithInlineHash(const char * data_, size_t size_) : data(data_), size(size_) {}
+    constexpr StringRefWithInlineHash() = default;
+    bool empty() const { return size == 0; }
+};
+
+namespace DB
+{
+struct ArenaKeyHolderWithInlineHash
+{
+    StringRefWithInlineHash key;
+    Arena & pool;
+};
+}
+
+inline StringRefWithInlineHash & ALWAYS_INLINE keyHolderGetKey(DB::ArenaKeyHolderWithInlineHash & holder)
+{
+    return holder.key;
+}
+
+inline void ALWAYS_INLINE keyHolderPersistKey(DB::ArenaKeyHolderWithInlineHash & holder)
+{
+    holder.key.data = holder.pool.insert(holder.key.data, holder.key.size >> StringRefWithInlineHash::SHIFT);
+}
+
+inline void ALWAYS_INLINE keyHolderDiscardKey(DB::ArenaKeyHolderWithInlineHash &)
+{
+}
+
+
+namespace DB
+{
+
+struct SerializedKeyHolderWithInlineHash
+{
+    StringRefWithInlineHash key;
+    Arena & pool;
+};
+
+}
+
+inline StringRefWithInlineHash & ALWAYS_INLINE keyHolderGetKey(DB::SerializedKeyHolderWithInlineHash & holder)
+{
+    return holder.key;
+}
+
+inline void ALWAYS_INLINE keyHolderPersistKey(DB::SerializedKeyHolderWithInlineHash &)
+{
+}
+
+inline void ALWAYS_INLINE keyHolderDiscardKey(DB::SerializedKeyHolderWithInlineHash & holder)
+{
+    [[maybe_unused]] void * new_head = holder.pool.rollback(holder.key.size >> StringRefWithInlineHash::SHIFT);
+    assert(new_head == holder.key.data);
+    holder.key.data = nullptr;
+    holder.key.size = 0;
+}
+
+inline bool operator== (StringRefWithInlineHash lhs, StringRefWithInlineHash rhs)
+{
+    if (lhs.size != rhs.size)
+        return false;
+
+    if (lhs.size == 0)
+        return true;
+
+    UInt16 size = lhs.size >> StringRefWithInlineHash::SHIFT;
+
+#if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
+    return memequalWide(lhs.data, rhs.data, size);
+#else
+    return 0 == memcmp(lhs.data, rhs.data, size);
+#endif
+}

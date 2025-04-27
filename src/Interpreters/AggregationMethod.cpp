@@ -187,8 +187,8 @@ template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel, fa
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel, false, true>;
 
 
-template <typename TData, bool nullable, bool prealloc>
-void AggregationMethodSerialized<TData, nullable, prealloc>::insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
+template <typename TData, bool nullable, bool prealloc, bool inline_hash>
+void AggregationMethodSerialized<TData, nullable, prealloc, inline_hash>::insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
 {
     const auto * pos = key.data;
     for (auto & column : key_columns)
@@ -202,12 +202,12 @@ template struct AggregationMethodSerialized<AggregatedDataWithStringKey, true, f
 template struct AggregationMethodSerialized<AggregatedDataWithStringKeyTwoLevel, true, false>;
 template struct AggregationMethodSerialized<AggregatedDataWithStringKeyHash64, true, false>;
 // AggregationMethodPreallocSerialized
-template struct AggregationMethodSerialized<AggregatedDataWithStringKey, false, true>;
-template struct AggregationMethodSerialized<AggregatedDataWithStringKeyTwoLevel, false, true>;
+template struct AggregationMethodSerialized<AggregatedDataWithSerializedKey, false, true, true>;
+template struct AggregationMethodSerialized<AggregatedDataWithSerializedKeyTwoLevel, false, true, true>;
 template struct AggregationMethodSerialized<AggregatedDataWithStringKeyHash64, false, true>;
 // AggregationMethodNullablePreallocSerialized
-template struct AggregationMethodSerialized<AggregatedDataWithStringKey, true, true>;
-template struct AggregationMethodSerialized<AggregatedDataWithStringKeyTwoLevel, true, true>;
+template struct AggregationMethodSerialized<AggregatedDataWithSerializedKey, true, true, true>;
+template struct AggregationMethodSerialized<AggregatedDataWithSerializedKeyTwoLevel, true, true, true>;
 template struct AggregationMethodSerialized<AggregatedDataWithStringKeyHash64, true, true>;
 
 }
