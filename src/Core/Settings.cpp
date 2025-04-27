@@ -6548,7 +6548,7 @@ SELECT queries with LIMIT bigger than this setting cannot use vector similarity 
     DECLARE(UInt64, hnsw_candidate_list_size_for_search, 256, R"(
 The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, rescore_in_ann_queries, true, R"(
+    DECLARE(Bool, rescore_in_ann_queries, false, R"(
 Return vector search results from only the vector similarity index or perform additional rescoring using vectors in the base table.
 )", 0) \
     DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(

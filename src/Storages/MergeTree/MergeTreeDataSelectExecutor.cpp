@@ -1668,7 +1668,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 #endif
                    }
 
-                    if (!settings[Setting::rescore_in_ann_queries] || has_duplicates ||
+                    if (settings[Setting::rescore_in_ann_queries] || has_duplicates ||
                         (read_hints.ann_search_results.value().second.empty()) ||
                         index_granularity < part->index_granularity->getMarksCountWithoutFinal())
                     {

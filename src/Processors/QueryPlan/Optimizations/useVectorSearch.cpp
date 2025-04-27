@@ -166,7 +166,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     if (search_column.empty() || reference_vector.empty())
         return updated_layers;
 
-    bool optimize = settings.rescore_in_ann_queries;
+    bool optimize = !settings.rescore_in_ann_queries;
     if (optimize)
     {
         /// 2 rewrites in the plan :-
