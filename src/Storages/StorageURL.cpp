@@ -119,9 +119,12 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
     "headers.header.value",
 };
 
-static auto getWriteBodyCallback(const String & body)
+static std::function<void(std::ostream &)>  getWriteBodyCallback(const String & body)
 {
-    return [body](std::ostream & os) { os << body; };
+    if(body.empty()){
+        return nullptr;
+    }
+    return [body](std::ostream & os) {os << body; };
 }
 
 bool urlWithGlobs(const String & uri)
