@@ -173,7 +173,7 @@ public:
             StoragePtr external_storage = external_storage_holder->getTable();
             external_tables.emplace(external_table_name, external_storage_holder);
 
-            auto set_key = database_and_table_name->getTreeHash(/*ignore_aliases=*/ true);
+            auto set_key = PreparedSets::createSetKey(database_and_table_name->getTreeHash(/*ignore_aliases=*/ true));
 
             if (!prepared_sets->findSubquery(set_key))
             {

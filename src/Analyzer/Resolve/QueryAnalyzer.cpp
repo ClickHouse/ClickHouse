@@ -2747,6 +2747,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
     auto function_name = function_node_ptr->getFunctionName();
 
+    LOG_INFO(getLogger("Igor"), "Function name: {}", function_name);
+    LOG_INFO(getLogger("Igor"), "isNameOfInFunction: {}", isNameOfInFunction(function_name));
+
     /// Resolve function parameters
 
     auto parameters_projection_names = resolveExpressionNodeList(
@@ -3582,9 +3585,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             SizeLimits size_limits_for_set = {settings[Setting::max_rows_in_set], settings[Setting::max_bytes_in_set], settings[Setting::set_overflow_mode]};
 
-            auto hash = function_arguments[1]->getTreeHash();
+            auto hash = PreparedSets::createSetKey(function_arguments[1]->getTreeHash());
             auto ast = function_arguments[1]->toAST();
-            auto future_set = std::make_shared<FutureSetFromTuple>(hash, std::move(ast), std::move(result_block), settings[Setting::transform_null_in], size_limits_for_set);
+            auto future_set = std::make_shared<FutureSetFromTuple>(hash, std::move(ast), std::move(result_block), SetType::SET, settings[Setting::transform_null_in], size_limits_for_set);
 
             /// Create constant set column for constant folding
 

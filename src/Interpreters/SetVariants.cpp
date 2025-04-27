@@ -1,5 +1,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
+#include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Interpreters/SetVariants.h>
@@ -10,6 +11,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -24,8 +26,30 @@ void SetVariantsTemplate<Variant>::init(Type type_)
 
     #define M(NAME) \
         case Type::NAME: (NAME) = std::make_unique<typename decltype(NAME)::element_type>(); break;
-        APPLY_FOR_SET_VARIANTS(M)
+        APPLY_FOR_NOT_PROB_SET_VARIANTS(M)
     #undef M
+
+        default:
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "A prob set was provided, but a set was expected");
+    }
+}
+
+template <typename Variant>
+void SetVariantsTemplate<Variant>::initProb(Type type_, double targetFPR)
+{
+    type = type_;
+
+    switch (type)
+    {
+        case Type::EMPTY: break;
+
+    #define M(NAME) \
+        case Type::NAME: (NAME) = std::make_unique<typename decltype(NAME)::element_type>(targetFPR); break;
+        APPLY_FOR_PROB_SET_VARIANTS(M)
+    #undef M
+
+        default:
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "A set was provided, but a prob set was expected");
     }
 }
 
@@ -58,7 +82,20 @@ size_t SetVariantsTemplate<Variant>::getTotalByteCount() const
 }
 
 template <typename Variant>
-typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes)
+typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes, SetType set_type)
+{
+    if (set_type == SetType::SET)
+    {
+        return SetVariantsTemplate<Variant>::chooseMethodSet(key_columns, key_sizes);
+    }
+    else
+    {
+        return SetVariantsTemplate<Variant>::chooseMethodProb(key_columns, key_sizes, set_type);
+    }
+}
+
+template <typename Variant>
+typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::chooseMethodSet(const ColumnRawPtrs & key_columns, Sizes & key_sizes)
 {
     /// Check if at least one of the specified keys is nullable.
     /// Create a set of nested key columns from the corresponding key columns.
@@ -162,6 +199,20 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
 
     /// Otherwise, will use set of cryptographic hashes of unambiguously serialized values.
     return Type::hashed;
+}
+
+template <typename Variant>
+typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::chooseMethodProb(const ColumnRawPtrs &, Sizes &, SetType set_type)
+{
+    if (set_type == SetType::SET)
+    {
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "A set type was provided, but a filter was expected");
+    }
+
+    if (set_type == SetType::BLOOM_FILTER)
+        return Type::key64_bloom;
+    else
+        return Type::key64_cuckoo;
 }
 
 template struct SetVariantsTemplate<NonClearableSet>;

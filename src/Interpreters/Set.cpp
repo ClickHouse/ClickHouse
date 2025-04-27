@@ -39,12 +39,15 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int TYPE_MISMATCH;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
+
+////////////////////////// Set /////////////////////////
 
 template <typename Method>
 void NO_INLINE Set::insertFromBlockImpl(
@@ -120,6 +123,10 @@ DataTypes Set::getElementTypes(DataTypes types, bool transform_null_in)
     return types;
 }
 
+void Set::initSetVariant(const ColumnRawPtrs& key_columns)
+{
+    data.init(SetVariants::chooseMethod(key_columns, key_sizes, set_type));
+}
 
 void Set::setHeader(const ColumnsWithTypeAndName & header)
 {
@@ -171,7 +178,7 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
     }
 
     /// Choose data structure to use for the set.
-    data.init(SetVariants::chooseMethod(key_columns, key_sizes));
+    initSetVariant(key_columns);
 }
 
 void Set::fillSetElements()
@@ -592,6 +599,26 @@ void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) c
                         "{} on the left, {} on the right", toString(set_type_idx + 1),
                         other_type->getName(), data_types[set_type_idx]->getName());
 }
+
+
+////////////////////// SetFilter //////////////////////
+
+SetFilter::SetFilter(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_, SetType set_type_, double targetFPR_)
+      : Set(limits_, max_elements_to_fill_, transform_null_in_, set_type_), targetFPR(targetFPR_)
+{
+    if (set_type == SetType::SET)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Creating SetFilter with type SetType::SET! Consider using Set instead");
+    }
+}
+
+void SetFilter::initSetVariant(const ColumnRawPtrs & key_columns)
+{
+    data.initProb(SetVariants::chooseMethod(key_columns, key_sizes, set_type), targetFPR);
+}
+
+
+////////////////// MergeTreeSetIndex //////////////////
 
 MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
     : has_all_keys(set_elements.size() == indexes_mapping_.size()), indexes_mapping(std::move(indexes_mapping_))

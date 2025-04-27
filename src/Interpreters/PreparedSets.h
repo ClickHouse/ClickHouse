@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST_fwd.h>
+#include <Common/SetType.h>
 #include <DataTypes/IDataType.h>
 #include <memory>
 #include <unordered_map>
@@ -60,6 +61,8 @@ public:
     using Hash = CityHash_v1_0_2::uint128;
     virtual Hash getHash() const = 0;
 
+    virtual SetType getSetType() const = 0;
+
     virtual ASTPtr getSourceAST() const = 0;
 };
 
@@ -76,6 +79,7 @@ public:
     DataTypes getTypes() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr &) override;
     Hash getHash() const override;
+    SetType getSetType() const override;
     ASTPtr getSourceAST() const override { return ast; }
 
     const std::optional<StorageID> & getStorageID() const { return storage_id; }
@@ -93,13 +97,14 @@ using FutureSetFromStoragePtr = std::shared_ptr<FutureSetFromStorage>;
 class FutureSetFromTuple final : public FutureSet
 {
 public:
-    FutureSetFromTuple(Hash hash_, ASTPtr ast_, ColumnsWithTypeAndName block, bool transform_null_in, SizeLimits size_limits);
+    FutureSetFromTuple(Hash hash_, ASTPtr ast_, ColumnsWithTypeAndName block, SetType set_type, bool transform_null_in, SizeLimits size_limits);
 
     SetPtr get() const override { return set; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
     DataTypes getTypes() const override;
     Hash getHash() const override;
+    SetType getSetType() const override;
     ASTPtr getSourceAST() const override { return ast; }
     Columns getKeyColumns();
 private:
@@ -132,6 +137,7 @@ public:
         std::unique_ptr<QueryPlan> source_,
         StoragePtr external_table_,
         std::shared_ptr<FutureSetFromSubquery> external_table_set_,
+        SetType set_type,
         bool transform_null_in,
         SizeLimits size_limits,
         size_t max_size_for_index);
@@ -140,6 +146,7 @@ public:
         Hash hash_,
         ASTPtr ast_,
         QueryTreeNodePtr query_tree_,
+        SetType set_type,
         bool transform_null_in,
         SizeLimits size_limits,
         size_t max_size_for_index);
@@ -149,6 +156,7 @@ public:
     SetPtr get() const override;
     DataTypes getTypes() const override;
     Hash getHash() const override;
+    SetType getSetType() const override;
     ASTPtr getSourceAST() const override { return ast; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
@@ -193,8 +201,10 @@ public:
     using SetsFromStorage = std::unordered_map<Hash, FutureSetFromStoragePtr, Hashing>;
     using SetsFromSubqueries = std::unordered_map<Hash, FutureSetFromSubqueryPtr, Hashing>;
 
+    static Hash createSetKey(const Hash & ast_hash, SetType set_type = SetType::SET);
+
     FutureSetFromStoragePtr addFromStorage(const Hash & key, ASTPtr ast, SetPtr set_, StorageID storage_id);
-    FutureSetFromTuplePtr addFromTuple(const Hash & key, ASTPtr ast, ColumnsWithTypeAndName block, const Settings & settings);
+    FutureSetFromTuplePtr addFromTuple(const Hash & key, ASTPtr ast, ColumnsWithTypeAndName block, const Settings & settings, SetType set_type = SetType::SET);
 
     FutureSetFromSubqueryPtr addFromSubquery(
         const Hash & key,
@@ -202,15 +212,18 @@ public:
         std::unique_ptr<QueryPlan> source,
         StoragePtr external_table,
         FutureSetFromSubqueryPtr external_table_set,
-        const Settings & settings);
+        const Settings & settings,
+        SetType set_type = SetType::SET);
 
     FutureSetFromSubqueryPtr addFromSubquery(
         const Hash & key,
         ASTPtr ast,
         QueryTreeNodePtr query_tree,
-        const Settings & settings);
+        const Settings & settings,
+        SetType set_type = SetType::SET);
 
     FutureSetFromTuplePtr findTuple(const Hash & key, const DataTypes & types) const;
+    FutureSetFromTuplePtr findAnyTupleForKey(const Hash & key) const;
     FutureSetFromStoragePtr findStorage(const Hash & key) const;
     FutureSetFromSubqueryPtr findSubquery(const Hash & key) const;
 
@@ -218,7 +231,7 @@ public:
     Subqueries getSubqueries() const;
     bool hasSubqueries() const { return !sets_from_subqueries.empty(); }
 
-    const SetsFromTuple & getSetsFromTuple() const { return sets_from_tuple; }
+    // const SetsFromTuple & getSetsFromTuple() const { return sets_from_tuple; }
     // const SetsFromStorage & getSetsFromStorage() const { return sets_from_storage; }
     // const SetsFromSubqueries & getSetsFromSubquery() const { return sets_from_subqueries; }
 

@@ -50,6 +50,8 @@ public:
         if (!function_node || !isNameOfInFunction(function_node->getFunctionName()))
             return;
 
+        auto set_type = getSetTypeFromFunctionInName(function_node->getFunctionName());
+
         auto in_first_argument = function_node->getArguments().getNodes().at(0);
         auto in_second_argument = function_node->getArguments().getNodes().at(1);
         auto in_second_argument_node_type = in_second_argument->getNodeType();
@@ -61,10 +63,11 @@ public:
         auto * second_argument_table = in_second_argument->as<TableNode>();
         StorageSet * storage_set = second_argument_table != nullptr ? dynamic_cast<StorageSet *>(second_argument_table->getStorage().get()) : nullptr;
 
-        if (storage_set)
+        // Now we are not support reusing filters from storages
+        if (storage_set && set_type == SetType::SET)
         {
             /// Handle storage_set as ready set.
-            auto set_key = in_second_argument->getTreeHash();
+            auto set_key = PreparedSets::createSetKey(in_second_argument->getTreeHash());
             if (sets.findStorage(set_key))
                 return;
             auto ast = in_second_argument->toAST();
@@ -85,19 +88,19 @@ public:
                 set_element_types = left_tuple_type->getElements();
 
             set_element_types = Set::getElementTypes(std::move(set_element_types), settings[Setting::transform_null_in]);
-            auto set_key = in_second_argument->getTreeHash();
+            auto set_key = PreparedSets::createSetKey(in_second_argument->getTreeHash(), set_type);
 
             if (sets.findTuple(set_key, set_element_types))
                 return;
 
             auto ast = in_second_argument->toAST();
-            sets.addFromTuple(set_key, std::move(ast), std::move(set), settings);
+            sets.addFromTuple(set_key, std::move(ast), std::move(set), settings, set_type);
         }
         else if (in_second_argument_node_type == QueryTreeNodeType::QUERY ||
             in_second_argument_node_type == QueryTreeNodeType::UNION ||
             in_second_argument_node_type == QueryTreeNodeType::TABLE)
         {
-            auto set_key = in_second_argument->getTreeHash();
+            auto set_key = PreparedSets::createSetKey(in_second_argument->getTreeHash(), set_type);
             if (sets.findSubquery(set_key))
                 return;
 
@@ -106,7 +109,7 @@ public:
                 subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context.getQueryContext());
 
             auto ast = in_second_argument->toAST();
-            sets.addFromSubquery(set_key, std::move(ast), std::move(subquery_to_execute), settings);
+            sets.addFromSubquery(set_key, std::move(ast), std::move(subquery_to_execute), settings, set_type);
         }
         else
         {
