@@ -1690,7 +1690,7 @@ size_t StorageURL::evalArgsAndCollectHeaders(
             const auto * body_function_args_expr = assert_cast<const ASTExpressionList *>(ast_as_function->arguments.get());
             auto body_function_args = body_function_args_expr->children;
 
-            if (body_function_args.size() == 0 || body_function_args.size() > 2)
+            if (body_function_args.empty() || body_function_args.size() > 2)
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
@@ -1698,7 +1698,7 @@ size_t StorageURL::evalArgsAndCollectHeaders(
                     bad_arguments_error_message);
             }
 
-            auto input_argument = body_function_args[0];
+            const auto& input_argument = body_function_args[0];
             if (input_argument->as<ASTSubquery>())
             {
                 LOG_DEBUG(getLogger("StorageURLDistributed"), "Got a subquery in body arg, trying to evaluate it ...");
