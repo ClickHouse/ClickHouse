@@ -394,17 +394,7 @@ void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_n
 
 void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name) const
 {
-    // Compute allowed max length directly
-    size_t allowed_max_length = computeMaxTableNameLength(database_name, getContext());
-    String table_metadata_path = getObjectMetadataPath(to_table_name);
-
-    const auto escaped_name_length = escapeForFileName(to_table_name).length();
-
-    if (escaped_name_length > allowed_max_length)
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                        "The max length of table name for database {} is {}, current length is {}",
-                        database_name, allowed_max_length, escaped_name_length);
-
+    const String table_metadata_path = getObjectMetadataPath(to_table_name);
     if (db_disk->existsFile(table_metadata_path))
     {
         fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
@@ -913,5 +903,22 @@ void DatabaseOnDisk::alterDatabaseComment(const AlterCommand & command)
     DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
 }
 
+void DatabaseOnDisk::checkTableNameLength(const String & table_name) const
+{
+    std::lock_guard lock(mutex);
+    checkTableNameLengthUnlocked(table_name);
+}
+
+void DatabaseOnDisk::checkTableNameLengthUnlocked(const String & table_name) const TSA_REQUIRES(mutex)
+{
+    const size_t allowed_max_length = computeMaxTableNameLength(database_name, getContext());
+    const size_t escaped_name_length = escapeForFileName(table_name).length();
+    if (escaped_name_length > allowed_max_length)
+    {
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+            "The max length of table name for database {} is {}, current length is {}",
+            database_name, allowed_max_length, escaped_name_length);
+    }
+}
 
 }

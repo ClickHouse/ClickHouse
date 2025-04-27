@@ -219,6 +219,7 @@ struct JoinSettings
     /* Hash/Parallel hash join settings */
     bool collect_hash_table_stats_during_joins;
     UInt64 max_size_to_preallocate_for_joins;
+    UInt64 parallel_hash_join_threshold;
     UInt64 join_output_by_rowlist_perkey_rows_threshold;
     bool allow_experimental_join_right_table_sorting;
     UInt64 join_to_sort_minimum_perkey_rows;

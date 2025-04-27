@@ -655,7 +655,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
             if (execution.interrupt_execution.load())
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
 
-            logQueryFinish(*query_log_elem, refresh_context, refresh_query, pipeline, /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, /*internal=*/false);
+            logQueryFinish(*query_log_elem, refresh_context, refresh_query, std::move(pipeline), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, /*internal=*/false);
             query_log_elem = std::nullopt;
             query_span = nullptr;
             process_list_entry.reset(); // otherwise it needs to be alive for logQueryException

@@ -18,7 +18,6 @@ namespace Setting
 {
     extern const SettingsBool allow_changing_replica_until_first_data_packet;
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 connections_with_failover_max_tries;
     extern const SettingsDialect dialect;
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
@@ -54,9 +53,7 @@ HedgedConnections::HedgedConnections(
           timeouts_,
           context_->getSettingsRef()[Setting::connections_with_failover_max_tries].value,
           context_->getSettingsRef()[Setting::fallback_to_stale_replicas_for_distributed_queries].value,
-          context_->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas].value > 0
-            ? context_->getSettingsRef()[Setting::max_parallel_replicas].value
-            : 1,
+          context_->getSettingsRef()[Setting::max_parallel_replicas].value,
           context_->getSettingsRef()[Setting::skip_unavailable_shards].value,
           table_to_check_,
           priority_func)
