@@ -81,9 +81,6 @@ addQuarters
 addSeconds
 addWeeks
 addYears
-addressToLine
-addressToLineWithInlines
-addressToSymbol
 age
 alphaTokens
 and
@@ -118,7 +115,6 @@ bitmaskToList
 blockNumber
 blockSerializedSize
 blockSize
-buildId
 byteSize
 caseWithExpression
 catboostEvaluate
@@ -202,6 +198,7 @@ finalizeAggregation
 firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
 flattenTuple
+flipCoordinates
 floor
 format
 formatDateTime
