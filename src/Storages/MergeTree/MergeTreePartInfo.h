@@ -20,7 +20,23 @@ namespace DB
 /// Allows determining if parts are disjoint or one part fully contains the other.
 struct MergeTreePartInfo
 {
+public:
+    enum class Kind
+    {
+        /// Regular data part. Created on inserts, merges and mutations.
+        Regular,
+    };
+
+    static Kind getKind(const String & /*partition_id*/)
+    {
+        return Kind::Regular;
+    }
+
+private:
+    Kind kind = Kind::Regular;
     String partition_id;
+
+public:
     Int64 min_block = 0;
     Int64 max_block = 0;
     UInt32 level = 0;
@@ -31,37 +47,28 @@ struct MergeTreePartInfo
     MergeTreePartInfo() = default;
 
     MergeTreePartInfo(String partition_id_, Int64 min_block_, Int64 max_block_, UInt32 level_)
-        : partition_id(std::move(partition_id_)), min_block(min_block_), max_block(max_block_), level(level_)
+        : kind(getKind(partition_id_)), partition_id(std::move(partition_id_)), min_block(min_block_), max_block(max_block_), level(level_)
     {
     }
 
     MergeTreePartInfo(String partition_id_, Int64 min_block_, Int64 max_block_, UInt32 level_, Int64 mutation_)
-        : partition_id(std::move(partition_id_)), min_block(min_block_), max_block(max_block_), level(level_), mutation(mutation_)
+        : kind(getKind(partition_id_)), partition_id(std::move(partition_id_)), min_block(min_block_), max_block(max_block_), level(level_), mutation(mutation_)
     {
     }
 
-    bool operator<(const MergeTreePartInfo & rhs) const
+    Kind getKind() const { return kind; }
+
+    void setPartitionId(const String & new_partition_id)
     {
-        return std::forward_as_tuple(partition_id, min_block, max_block, level, mutation)
-            < std::forward_as_tuple(rhs.partition_id, rhs.min_block, rhs.max_block, rhs.level, rhs.mutation);
+        kind = getKind(new_partition_id);
+        partition_id = new_partition_id;
     }
 
-    bool operator>(const MergeTreePartInfo & rhs) const
-    {
-        return std::forward_as_tuple(partition_id, min_block, max_block, level, mutation)
-            > std::forward_as_tuple(rhs.partition_id, rhs.min_block, rhs.max_block, rhs.level, rhs.mutation);
-    }
+    const String & getPartitionId() const { return partition_id; }
 
-
-    bool operator==(const MergeTreePartInfo & rhs) const
-    {
-        return !(*this != rhs);
-    }
-
-    bool operator!=(const MergeTreePartInfo & rhs) const
-    {
-        return *this < rhs || rhs < *this;
-    }
+    auto toTuple() const { return std::tie(kind, partition_id, min_block, max_block, level, mutation); }
+    auto operator<=>(const MergeTreePartInfo & rhs) const { return toTuple() <=> rhs.toTuple();}
+    bool operator==(const MergeTreePartInfo & rhs) const { return toTuple() == rhs.toTuple(); }
 
     /// Get block number that can be used to determine which mutations we still need to apply to this part
     /// (all mutations with version greater than this block number).
@@ -72,9 +79,12 @@ struct MergeTreePartInfo
     {
         /// Containing part may have equal level iff block numbers are equal (unless level is MAX_LEVEL)
         /// (e.g. all_0_5_2 does not contain all_0_4_2, but all_0_5_3 or all_0_4_2_9 do)
-        bool strictly_contains_block_range = (min_block == rhs.min_block && max_block == rhs.max_block) || level > rhs.level
-            || level == MAX_LEVEL || level == LEGACY_MAX_LEVEL;
-        return partition_id == rhs.partition_id        /// Parts for different partitions are not merged
+        bool strictly_contains_block_range = (min_block == rhs.min_block && max_block == rhs.max_block)
+            || level > rhs.level
+            || level == MAX_LEVEL
+            || level == LEGACY_MAX_LEVEL;
+
+        return partition_id == rhs.getPartitionId()        /// Parts for different partitions are not merged
             && min_block <= rhs.min_block
             && max_block >= rhs.max_block
             && level >= rhs.level
@@ -85,7 +95,7 @@ struct MergeTreePartInfo
     /// Part was created with mutation of parent_candidate part
     bool isMutationChildOf(const MergeTreePartInfo & parent_candidate) const
     {
-        return partition_id == parent_candidate.partition_id
+        return partition_id == parent_candidate.getPartitionId()
             && min_block == parent_candidate.min_block
             && max_block == parent_candidate.max_block
             && level == parent_candidate.level
@@ -101,7 +111,7 @@ struct MergeTreePartInfo
     /// True if parts do not intersect in any way.
     bool isDisjoint(const MergeTreePartInfo & rhs) const
     {
-        return partition_id != rhs.partition_id
+        return partition_id != rhs.getPartitionId()
             || min_block > rhs.max_block
             || max_block < rhs.min_block;
     }

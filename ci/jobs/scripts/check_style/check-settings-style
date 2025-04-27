@@ -37,7 +37,7 @@ ALL_DECLARATION_FILES="
     $ROOT_PATH/src/Storages/MySQL/MySQLSettings.cpp
     $ROOT_PATH/src/Storages/NATS/NATSSettings.cpp
     $ROOT_PATH/src/Storages/ObjectStorageQueue/ObjectStorageQueueSettings.cpp
-    $ROOT_PATH/src/Storages/ObjectStorage/StorageObjectStorageSettings.cpp
+    $ROOT_PATH/src/Storages/ObjectStorage/StorageObjectStorageSettings.h
     $ROOT_PATH/src/Storages/PostgreSQL/MaterializedPostgreSQLSettings.cpp
     $ROOT_PATH/src/Storages/RabbitMQ/RabbitMQSettings.cpp
     $ROOT_PATH/src/Storages/RocksDB/RocksDBSettings.cpp
@@ -55,7 +55,8 @@ function add_setting_declaration_file()
     fi
     filename=$(basename -- "$1")
     filename="${filename%.*}"
-    grep "DECLARE(" "$1" | awk -vfilename="${filename}" '{print substr($2, 0, length($2) - 1) " " filename substr($1, 9, length($1) - 9) " SettingsDeclaration" }' >> "${SETTINGS_FILE}"
+    grep -e "DECLARE(" "$1" | awk -vfilename="${filename}" '{print substr($2, 0, length($2) - 1) " " filename substr($1, 9, length($1) - 9) " SettingsDeclaration" }' >> "${SETTINGS_FILE}"
+    grep -e "DECLARE_WITH_ALIAS(" "$1" | awk -vfilename="${filename}" '{print substr($2, 0, length($2) - 1) " " filename substr($1, 20, length($1) - 20) " SettingsDeclaration" }' >> "${SETTINGS_FILE}"
 }
 
 for settings_file in ${ALL_DECLARATION_FILES};

@@ -1,6 +1,6 @@
-#include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
 #include <optional>
 #include <unordered_set>
+#include <boost/rational.hpp> /// For calculations related to sampling coefficients.
 
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
@@ -39,20 +39,21 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
-#include <Core/UUID.h>
 #include <Core/Settings.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/FailPoint.h>
-#include <Common/quoteString.h>
-#include <base/sleep.h>
+#include <Core/UUID.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeArray.h>
 #include <Functions/IFunction.h>
+#include <base/sleep.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/FailPoint.h>
+#include <Common/quoteString.h>
 
 #include <IO/WriteBufferFromOStream.h>
 
@@ -63,6 +64,12 @@ namespace CurrentMetrics
     extern const Metric MergeTreeDataSelectExecutorThreadsScheduled;
     extern const Metric FilteringMarksWithPrimaryKey;
     extern const Metric FilteringMarksWithSecondaryKeys;
+}
+
+namespace ProfileEvents
+{
+extern const Event FilteringMarksWithPrimaryKeyMicroseconds;
+extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
 }
 
 namespace DB
@@ -172,7 +179,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     ContextPtr context,
     const UInt64 max_block_size,
     const size_t num_streams,
-    std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
+    PartitionIdToMaxBlockPtr max_block_numbers_to_read,
     bool enable_parallel_reading) const
 {
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
@@ -672,8 +679,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         std::atomic<size_t> granules_dropped = 0;
         std::atomic<size_t> total_parts = 0;
         std::atomic<size_t> parts_dropped = 0;
+        std::atomic<size_t> elapsed_us = 0;
     };
 
+    IndexStat pk_stat;
     std::vector<IndexStat> useful_indices_stat(skip_indexes.useful_indices.size());
     std::vector<IndexStat> merged_indices_stat(skip_indexes.merged_indices.size());
 
@@ -682,6 +691,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     RangesInDataParts parts_with_ranges(parts.size());
     std::vector<size_t> skip_index_used_in_part(parts.size(), 0);
+
+    size_t num_threads = std::min<size_t>(num_streams, parts.size());
+    if (settings[Setting::max_threads_for_indexes])
+    {
+        num_threads = std::min<size_t>(num_streams, settings[Setting::max_threads_for_indexes]);
+    }
 
     /// Let's find what range to read from each part.
     {
@@ -704,6 +719,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             if (metadata_snapshot->hasPrimaryKey() || part_offset_condition)
             {
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithPrimaryKey);
+                ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithPrimaryKeyMicroseconds);
+
+                pk_stat.total_parts.fetch_add(1, std::memory_order_relaxed);
+                pk_stat.total_granules.fetch_add(total_marks_count, std::memory_order_relaxed);
+
                 ranges.ranges = markRangesFromPKRange(
                     part,
                     metadata_snapshot,
@@ -712,6 +732,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     find_exact_ranges ? &ranges.exact_ranges : nullptr,
                     settings,
                     log);
+
+                pk_stat.granules_dropped.fetch_add(total_marks_count - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
+                if (ranges.ranges.empty())
+                    pk_stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
+                pk_stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
             }
             else if (total_marks_count)
             {
@@ -729,6 +754,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             {
                 if (ranges.ranges.empty())
                     break;
+
+                ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
                 const auto & index_and_condition = skip_indexes.useful_indices[idx];
                 auto & stat = useful_indices_stat[idx];
@@ -751,6 +778,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
                 if (ranges.ranges.empty())
                     stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
+                stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
                 skip_index_used_in_part[part_index] = 1; /// thread-safe
             }
 
@@ -779,12 +807,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
             parts_with_ranges[part_index] = std::move(ranges);
         };
-
-        size_t num_threads = std::min<size_t>(num_streams, parts.size());
-        if (settings[Setting::max_threads_for_indexes])
-        {
-            num_threads = std::min<size_t>(num_streams, settings[Setting::max_threads_for_indexes]);
-        }
 
         LOG_TRACE(log, "Filtering marks by primary and secondary keys");
 
@@ -849,6 +871,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     if (metadata_snapshot->hasPrimaryKey())
     {
+        LOG_DEBUG(
+            log,
+            "PK index has dropped {}/{} granules, it took {}ms across {} threads.",
+            pk_stat.granules_dropped.load(),
+            pk_stat.total_granules.load(),
+            pk_stat.elapsed_us.load() / 1000,
+            num_threads);
+
         auto description = key_condition.getDescription();
 
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
@@ -866,10 +896,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         const auto & index_name = index_and_condition.index->index.name;
         LOG_DEBUG(
             log,
-            "Index {} has dropped {}/{} granules.",
+            "Index {} has dropped {}/{} granules, it took {}ms across {} threads.",
             backQuote(index_name),
             stat.granules_dropped.load(),
-            stat.total_granules.load());
+            stat.total_granules.load(),
+            stat.elapsed_us.load() / 1000,
+            num_threads);
 
         std::string description
             = index_and_condition.index->index.type + " GRANULARITY " + std::to_string(index_and_condition.index->index.granularity);
@@ -887,9 +919,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         const auto & index_and_condition = skip_indexes.merged_indices[idx];
         const auto & stat = merged_indices_stat[idx];
         const auto & index_name = "Merged";
-        LOG_DEBUG(log, "Index {} has dropped {}/{} granules.",
-                    backQuote(index_name),
-                    stat.granules_dropped.load(), stat.total_granules.load());
+        LOG_DEBUG(
+            log,
+            "Index {} has dropped {}/{} granules, it took {}ms across {} threads.",
+            backQuote(index_name),
+            stat.granules_dropped.load(),
+            stat.total_granules.load(),
+            stat.elapsed_us.load() / 1000,
+            num_threads);
 
         std::string description = "MERGED GRANULARITY " + std::to_string(index_and_condition.indices.at(0)->index.granularity);
 
@@ -1023,7 +1060,7 @@ std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
     {
         std::set<String> partitions;
         for (const auto & part_with_ranges : result.parts_with_ranges)
-            partitions.insert(part_with_ranges.data_part->info.partition_id);
+            partitions.insert(part_with_ranges.data_part->info.getPartitionId());
         if (partitions.size() > static_cast<size_t>(max_partitions_to_read))
             throw Exception(
                 ErrorCodes::TOO_MANY_PARTITIONS,
@@ -1050,7 +1087,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
     const SelectQueryInfo & query_info,
     ContextPtr context,
     size_t num_streams,
-    std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read) const
+    PartitionIdToMaxBlockPtr max_block_numbers_to_read) const
 {
     size_t total_parts = parts.size();
     if (total_parts == 0)
@@ -1082,7 +1119,7 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
     ContextPtr context,
     const UInt64 max_block_size,
     const size_t num_streams,
-    std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
+    PartitionIdToMaxBlockPtr max_block_numbers_to_read,
     ReadFromMergeTree::AnalysisResultPtr merge_tree_select_result_ptr,
     bool enable_parallel_reading) const
 {
@@ -1816,7 +1853,7 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
 
         if (max_block_numbers_to_read)
         {
-            auto blocks_iterator = max_block_numbers_to_read->find(part->info.partition_id);
+            auto blocks_iterator = max_block_numbers_to_read->find(part->info.getPartitionId());
             if (blocks_iterator == max_block_numbers_to_read->end() || part->info.max_block > blocks_iterator->second)
                 continue;
         }
@@ -1879,7 +1916,7 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
 
             if (max_block_numbers_to_read)
             {
-                auto blocks_iterator = max_block_numbers_to_read->find(part->info.partition_id);
+                auto blocks_iterator = max_block_numbers_to_read->find(part->info.getPartitionId());
                 if (blocks_iterator == max_block_numbers_to_read->end() || part->info.max_block > blocks_iterator->second)
                     continue;
             }

@@ -86,13 +86,13 @@ size_t countPartitions(const Container & parts, Getter get_partition_id)
 
 size_t countPartitions(const RangesInDataParts & parts_with_ranges)
 {
-    auto get_partition_id = [](const RangesInDataPart & rng) { return rng.data_part->info.partition_id; };
+    auto get_partition_id = [](const RangesInDataPart & rng) { return rng.data_part->info.getPartitionId(); };
     return countPartitions(parts_with_ranges, get_partition_id);
 }
 
 size_t countPartitions(const MergeTreeData::DataPartsVector & prepared_parts)
 {
-    auto get_partition_id = [](const MergeTreeData::DataPartPtr data_part) { return data_part->info.partition_id; };
+    auto get_partition_id = [](const MergeTreeData::DataPartPtr data_part) { return data_part->info.getPartitionId(); };
     return countPartitions(prepared_parts, get_partition_id);
 }
 
@@ -345,7 +345,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     const ContextPtr & context_,
     size_t max_block_size_,
     size_t num_streams_,
-    std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
+    PartitionIdToMaxBlockPtr max_block_numbers_to_read_,
     LoggerPtr log_,
     AnalysisResultPtr analyzed_result_ptr_,
     bool enable_parallel_reading_,
@@ -442,7 +442,10 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(RangesInDataParts parts_wit
     const auto & client_info = context->getClientInfo();
 
     auto extension = ParallelReadingExtension{
-        all_ranges_callback.value(), read_task_callback.value(), number_of_current_replica.value_or(client_info.number_of_current_replica), context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount()};
+        all_ranges_callback.value(),
+        read_task_callback.value(),
+        number_of_current_replica.value_or(client_info.number_of_current_replica),
+        context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount()};
 
     auto pool = std::make_shared<MergeTreeReadPoolParallelReplicas>(
         std::move(extension),
@@ -464,8 +467,8 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(RangesInDataParts parts_wit
     {
         auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(i);
 
-        auto processor
-            = std::make_unique<MergeTreeSelectProcessor>(pool, std::move(algorithm), prewhere_info, lazily_read_info, actions_settings, reader_settings);
+        auto processor = std::make_unique<MergeTreeSelectProcessor>(
+            pool, std::move(algorithm), prewhere_info, lazily_read_info, actions_settings, reader_settings);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
         pipes.emplace_back(std::move(source));
@@ -1208,7 +1211,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
                 /// We take full part if it contains enough marks or
                 /// if we know limit and part contains less than 'limit' rows.
-                bool take_full_part = marks_in_part <= need_marks || (input_order_info->limit && input_order_info->limit > part.getRowsCount());
+                bool take_full_part = marks_in_part <= need_marks || (input_order_info->limit && input_order_info->limit < part.getRowsCount());
 
                 /// We take the whole part if it is small enough.
                 if (take_full_part)
@@ -1437,7 +1440,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         while (it != parts_with_ranges.end())
         {
             it = std::find_if(
-                it, parts_with_ranges.end(), [&it](auto & part) { return it->data_part->info.partition_id != part.data_part->info.partition_id; });
+                it, parts_with_ranges.end(), [&it](auto & part) { return it->data_part->info.getPartitionId() != part.data_part->info.getPartitionId(); });
             parts_to_merge_ranges.push_back(it);
         }
     }
@@ -1838,7 +1841,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     const SelectQueryInfo & query_info_,
     ContextPtr context_,
     size_t num_streams,
-    std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
+    PartitionIdToMaxBlockPtr max_block_numbers_to_read,
     const MergeTreeData & data,
     const Names & all_column_names,
     LoggerPtr log,
@@ -2149,7 +2152,7 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
     {
         std::unordered_map<String, size_t> partition_rows;
         for (const auto & part : prepared_parts)
-            partition_rows[part->info.partition_id] += part->rows_count;
+            partition_rows[part->info.getPartitionId()] += part->rows_count;
         size_t sum_rows = 0;
         size_t max_rows = 0;
         for (const auto & [_, rows] : partition_rows)
@@ -2275,7 +2278,7 @@ Pipe ReadFromMergeTree::groupStreamsByPartition(AnalysisResult & result, std::op
             end = std::find_if(
                 end,
                 parts_with_ranges.end(),
-                [&end](const auto & part) { return end->data_part->info.partition_id != part.data_part->info.partition_id; });
+                [&end](const auto & part) { return end->data_part->info.getPartitionId() != part.data_part->info.getPartitionId(); });
 
         RangesInDataParts partition_parts{std::make_move_iterator(begin), std::make_move_iterator(end)};
 
@@ -2285,6 +2288,11 @@ Pipe ReadFromMergeTree::groupStreamsByPartition(AnalysisResult & result, std::op
     }
 
     return Pipe::unitePipes(std::move(pipes));
+}
+
+QueryPlanStepPtr ReadFromMergeTree::clone() const
+{
+    return std::make_unique<ReadFromMergeTree>(*this);
 }
 
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -2319,7 +2327,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         for (const auto & part : result.parts_with_ranges)
         {
             partition_names.emplace_back(
-                fmt::format("{}.{}", data.getStorageID().getFullNameNotQuoted(), part.data_part->info.partition_id));
+                fmt::format("{}.{}", data.getStorageID().getFullNameNotQuoted(), part.data_part->info.getPartitionId()));
         }
         context->getQueryContext()->addQueryAccessInfo(partition_names);
     }

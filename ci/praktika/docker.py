@@ -59,9 +59,7 @@ class Docker:
 
             command = f"docker buildx build --builder default {tags_substr} {from_tag} --platform {','.join(platforms)} --cache-to type=inline --cache-from type=registry,ref={config.name} {config.path} --push"
 
-            return Result.from_commands_run(
-                name=name, command=command, with_info=with_log
-            )
+            return Result.from_commands_run(name=name, command=command)
         else:
             return Result(
                 name=name,
@@ -105,7 +103,6 @@ class Docker:
         return Result.from_commands_run(
             name=f"merge: {config.name}:{digests[config.name]} (latest={add_latest})",
             command=commands,
-            with_info=with_log,
             fail_fast=True,
         )
 
