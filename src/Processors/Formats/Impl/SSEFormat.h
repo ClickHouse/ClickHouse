@@ -14,13 +14,15 @@
 namespace DB 
 {
 
+template <typename Format, bool support_progress>
 class SSEFormat : public IRowOutputFormat
 {
 public:
     SSEFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & fs) 
     : IRowOutputFormat(header_, out_)
-    , json_format(json_buffer, getPort(IOutputFormat::PortKind::Main).getHeader(), fs, false)
+    , json_format(json_buffer, getPort(IOutputFormat::PortKind::Main).getHeader(), fs)
     {
+        json_format.auto_flush = false;
     }
 
     String getName() const override { return "SSEFormat"; }
@@ -28,6 +30,10 @@ public:
     std::string getContentType() const override { return "text/event-stream"; }
 
 protected:
+
+    bool supportTotals() const override { return support_progress; }
+    bool supportExtremes() const override { return support_progress; }
+
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override 
     {
         json_format.writeField(column, serialization, row_num);
@@ -40,6 +46,7 @@ protected:
 
     void writeRowStartDelimiter() override 
     {
+        json_buffer.restart();
         writeCString("event: results\n", json_buffer);
         writeCString("data: ", json_buffer);
         json_format.writeRowStartDelimiter();
@@ -58,7 +65,8 @@ protected:
 
     void writePrefix() override 
     {
-        writeCString("event: progress\n", json_buffer);
+        json_buffer.restart();
+        writeCString("event: prefix\n", json_buffer);
         writeCString("data: ", json_buffer);
         json_format.writePrefix();
         writeCString("\n\n", json_buffer);
@@ -66,13 +74,28 @@ protected:
     }
 
     void writeSuffix() override {
+        json_buffer.restart();
+        writeCString("event: suffix\n", json_buffer);
+        writeCString("data: ", json_buffer);
         json_format.writeSuffix();
+        writeCString("\n\n", json_buffer);
+        flushBuffer();
     }
 
-    bool writesProgressConcurrently() const override { return true; }
+    bool writesProgressConcurrently() const override { return support_progress; }
 
     void writeProgress(const Progress & value) override 
     {
+        if (!support_progress) {
+            return;
+        }
+
+        if (value.empty()) 
+        {
+            return;
+        }
+    
+        json_buffer.restart();
         writeCString("event: progress\n", json_buffer);
         writeCString("data: ", json_buffer);
         json_format.writeProgress(value);
@@ -82,6 +105,11 @@ protected:
 
     void writeMinExtreme(const Columns & columns, size_t row_num) override
     {
+        if (!support_progress) {
+            return;
+        }
+
+        json_buffer.restart();
         writeCString("event: min_extreme\n", json_buffer);
         writeCString("data: ", json_buffer);
         json_format.writeMinExtreme(columns,row_num);
@@ -91,6 +119,11 @@ protected:
 
     void writeMaxExtreme(const Columns & columns, size_t row_num) override
     {
+        if (!support_progress) {
+            return;
+        }
+
+        json_buffer.restart();
         writeCString("event: max_extreme\n", json_buffer);
         writeCString("data: ", json_buffer);
         json_format.writeMaxExtreme(columns,row_num);
@@ -100,6 +133,11 @@ protected:
 
     void writeTotals(const Columns & columns, size_t row_num) override
     {
+        if (!support_progress) {
+            return;
+        }
+
+        json_buffer.restart();
         writeCString("event: totals\n", json_buffer);
         writeCString("data: ", json_buffer);
         json_format.writeTotals(columns, row_num);
@@ -109,7 +147,8 @@ protected:
 
     void finalizeImpl() override
     {
-        writeCString("event: progress\n", json_buffer);
+        json_buffer.restart();
+        writeCString("event: finalize\n", json_buffer);
         writeCString("data: ", json_buffer);
         json_format.finalizeImpl();
         writeCString("\n\n", json_buffer);
@@ -143,7 +182,7 @@ private:
     }
 
     WriteBufferFromOwnString json_buffer;
-    JSONEachRowWithProgressRowOutputFormat json_format;
+    Format json_format;
 };
 
 }

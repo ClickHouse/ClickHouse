@@ -31,6 +31,7 @@ public:
         return settings.json.array_of_rows ? "application/json; charset=UTF-8" : "application/x-ndjson; charset=UTF-8" ;
     }
 
+    template <typename Format, bool support_progress>
     friend class SSEFormat;
 
 protected:
