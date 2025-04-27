@@ -10,7 +10,7 @@ INSERT INTO users VALUES (1231, 'John', 33, 1);
 INSERT INTO users VALUES (6666, 'Ksenia', 48, 2);
 INSERT INTO users VALUES (8888, 'Alice', 50, 2);
 
-CREATE OR REPLACE TABLE parents (uid Int16, name String, age Int16) 
+CREATE TABLE parents (uid Int16, name String, age Int16) 
 ENGINE = MergeTree()
 ORDER BY uid;
 ALTER TABLE parents ADD INDEX age_i age TYPE set(10) GRANULARITY 2;
