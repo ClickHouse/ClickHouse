@@ -121,9 +121,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
 
 static std::function<void(std::ostream &)>  getWriteBodyCallback(const String & body)
 {
-    if(body.empty()){
-        return nullptr;
-    }
+    if (body.empty()) { return nullptr; }
     return [body](std::ostream & os) {os << body; };
 }
 
@@ -1728,7 +1726,7 @@ size_t StorageURL::evalArgsAndCollectHeaders(
                 auto body_argument = arg_name_value.safeGet<String>();
                 LOG_DEBUG(getLogger("StorageURLDistributed"), "Got a body argument:    {}", body_argument);
                 body_entry = body_argument;
-            } 
+            }
             body_it = arg_it;
             LOG_DEBUG(getLogger("StorageURLDistributed"), "Saving a body argument done");
             continue;
