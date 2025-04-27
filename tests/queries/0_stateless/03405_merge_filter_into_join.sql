@@ -9,6 +9,7 @@ INSERT INTO users VALUES (8888, 'Alice', 50);
 set query_plan_join_swap_table = 0;
 set enable_analyzer = 1; -- Optimization requires LogicalJoinStep
 set enable_parallel_replicas = 0; -- Optimization requires LogicalJoinStep
+set parallel_hash_join_threshold = 0;
 
 -- { echoOn }
 

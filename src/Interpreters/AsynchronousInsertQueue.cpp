@@ -946,7 +946,7 @@ try
         throw;
     }
 
-    auto finish_entries = [&](size_t num_rows, size_t num_bytes)
+    auto finish_entries = [&](QueryPipeline && pileline_, size_t num_rows, size_t num_bytes)
     {
         for (const auto & entry : data->entries)
         {
@@ -963,7 +963,7 @@ try
         LOG_DEBUG(log, "Flushed {} rows, {} bytes for query '{}'", num_rows, num_bytes, key.query_str);
         queue_shard_flush_time_history.updateWithCurrentTime();
 
-        logQueryFinish(query_log_elem, insert_context, key.query, pipeline, /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, internal);
+        logQueryFinish(query_log_elem, insert_context, key.query, std::move(pileline_), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, internal);
     };
 
     try
@@ -980,8 +980,8 @@ try
 
         if (chunk.getNumRows() == 0)
         {
-            finish_entries(/*num_rows=*/ 0, /*num_bytes=*/ 0);
-            pipeline.cancel();
+            pipeline.cancel(); // this just cancels the processors
+            finish_entries(std::move(pipeline), /*num_rows=*/ 0, /*num_bytes=*/ 0);
             return;
         }
 
@@ -994,7 +994,7 @@ try
         CompletedPipelineExecutor completed_executor(pipeline);
         completed_executor.execute();
 
-        finish_entries(num_rows, num_bytes);
+        finish_entries(std::move(pipeline), num_rows, num_bytes);
     }
     catch (...)
     {
