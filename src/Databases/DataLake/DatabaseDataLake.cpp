@@ -420,7 +420,6 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         getFormatSettings(context_copy),
         LoadingStrictnessLevel::CREATE,
         /* distributed_processing */false,
-        /* partition_by */nullptr,
         /* is_table_function */false,
         /* lazy_init */true);
 }

@@ -77,7 +77,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
     "expiration_window_seconds",
     "no_sign_request",
     "partition_strategy",
-    "hive_partition_strategy_write_partition_columns_into_files"
+    "partition_columns_in_data_file"
 };
 
 String StorageS3Configuration::getDataSourceDescription() const
@@ -175,8 +175,8 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
     else
         url = S3::URI(collection.get<String>("url"), settings[Setting::allow_archive_path_syntax]);
 
-    partition_strategy = collection.getOrDefault<String>("partition_strategy", "wildcard");
-    hive_partition_strategy_write_partition_columns_into_files = collection.getOrDefault<bool>("hive_partition_strategy_write_partition_columns_into_files", false);
+    partition_strategy_name = collection.getOrDefault<String>("partition_strategy", "wildcard");
+    partition_columns_in_data_file = collection.getOrDefault<bool>("partition_columns_in_data_file", partition_strategy_name != "hive");
 
     auth_settings[S3AuthSetting::access_key_id] = collection.getOrDefault<String>("access_key_id", "");
     auth_settings[S3AuthSetting::secret_access_key] = collection.getOrDefault<String>("secret_access_key", "");
@@ -386,9 +386,9 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     }
     /// For 8 arguments we support:
     /// if with_structure == 0:
-    /// - s3(source, access_key_id, secret_access_key, session_token, format, compression_method, partition_strategy, hive_partition_strategy_write_partition_columns_into_files)
+    /// - s3(source, access_key_id, secret_access_key, session_token, format, compression_method, partition_strategy, partition_columns_in_data_file)
     /// if with_structure == 1:
-    /// - s3(source, access_key_id, secret_access_key, session_token, format, structure, partition_strategy, hive_partition_strategy_write_partition_columns_into_files)
+    /// - s3(source, access_key_id, secret_access_key, session_token, format, structure, partition_strategy, partition_columns_in_data_file)
     /// - s3(source, access_key_id, secret_access_key, session_token, format, structure, compression_method, partition_strategy)
     else if (count == 8)
     {
@@ -397,7 +397,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
             auto sixth_arg = checkAndGetLiteralArgument<String>(args[6], "compression_method/partition_strategy");
             if (PartitionStrategy::partition_strategy_to_wildcard_acceptance.contains(sixth_arg))
             {
-                engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"partition_strategy", 6}, {"hive_partition_strategy_write_partition_columns_into_files", 7}};
+                engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"partition_strategy", 6}, {"partition_columns_in_data_file", 7}};
             }
             else
             {
@@ -406,13 +406,13 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
         }
         else
         {
-            engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"compression_method", 5}, {"partition_strategy", 6}, {"hive_partition_strategy_write_partition_columns_into_files", 7}};
+            engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"compression_method", 5}, {"partition_strategy", 6}, {"partition_columns_in_data_file", 7}};
         }
     }
     /// s3(source, access_key_id, secret_access_key, session_token, format, structure, compression_method)
     else if (with_structure && count == 9)
     {
-        engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"compression_method", 6}, {"partition_strategy", 7}, {"hive_partition_strategy_write_partition_columns_into_files", 8}};
+        engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"compression_method", 6}, {"partition_strategy", 7}, {"partition_columns_in_data_file", 8}};
     }
 
     /// This argument is always the first
@@ -434,10 +434,12 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
         compression_method = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["compression_method"]], "compression_method");
 
     if (engine_args_to_idx.contains("partition_strategy"))
-        partition_strategy = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["partition_strategy"]], "partition_strategy");
+        partition_strategy_name = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["partition_strategy"]], "partition_strategy");
 
-    if (engine_args_to_idx.contains("hive_partition_strategy_write_partition_columns_into_files"))
-        hive_partition_strategy_write_partition_columns_into_files = checkAndGetLiteralArgument<bool>(args[engine_args_to_idx["hive_partition_strategy_write_partition_columns_into_files"]], "hive_partition_strategy_write_partition_columns_into_files");
+    if (engine_args_to_idx.contains("partition_columns_in_data_file"))
+        partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(args[engine_args_to_idx["partition_columns_in_data_file"]], "partition_columns_in_data_file");
+    else
+        partition_columns_in_data_file = partition_strategy_name != "hive";
 
     if (engine_args_to_idx.contains("access_key_id"))
         auth_settings[S3AuthSetting::access_key_id] = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["access_key_id"]], "access_key_id");

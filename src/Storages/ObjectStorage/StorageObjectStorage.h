@@ -71,7 +71,6 @@ public:
         std::optional<FormatSettings> format_settings_,
         LoadingStrictnessLevel mode,
         bool distributed_processing_ = false,
-        ASTPtr partition_by_ = nullptr,
         bool is_table_function_ = false,
         bool lazy_init = false);
 
@@ -146,6 +145,10 @@ public:
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
+
+    StorageInMemoryMetadata getInMemoryMetadata() const override;
+
+    StorageMetadataPtr getInMemoryMetadataPtr() const override;
 protected:
     String getPathSample(ContextPtr context);
 
@@ -160,10 +163,12 @@ protected:
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
     const bool distributed_processing;
-    std::shared_ptr<PartitionStrategy> partition_strategy;
     bool update_configuration_on_read;
 
     LoggerPtr log;
+
+private:
+    StorageMetadataPtr metadata_with_partition_columns;
 };
 
 class StorageObjectStorage::Configuration
@@ -181,7 +186,9 @@ public:
         ASTs & engine_args,
         ContextPtr local_context,
         bool with_table_structure,
-        StorageObjectStorageSettingsPtr settings);
+        StorageObjectStorageSettingsPtr settings,
+        const ColumnsDescription & columns = {},
+        const ASTPtr & partition_by = nullptr);
 
     /// Storage type: s3, hdfs, azure, local.
     virtual ObjectStorageType getType() const = 0;
@@ -269,13 +276,16 @@ public:
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
-    std::string partition_strategy = "wildcard";
+    std::string partition_strategy_name = "wildcard";
     /*
      * Only supported by hive partitioning style for now
      */
-    bool hive_partition_strategy_write_partition_columns_into_files = false;
+    bool partition_columns_in_data_file = false;
+    std::shared_ptr<PartitionStrategy> partition_strategy;
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
+
+    void updatePartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context);
 
     const StorageObjectStorageSettings & getSettingsRef() const;
 

@@ -167,6 +167,11 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
         return storage;
     }
 
+    if (const auto * insert_query_class = insert_query->as<ASTInsertQuery>())
+    {
+        configuration->updatePartitionStrategy(insert_query_class->partition_by, columns, context);
+    }
+
     storage = std::make_shared<StorageObjectStorage>(
         configuration,
         getObjectStorage(context, !insert_query),
@@ -178,7 +183,6 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
         /* format_settings */ std::nullopt,
         /* mode */ LoadingStrictnessLevel::CREATE,
         /* distributed_processing */ is_secondary_query,
-        /* partition_by */ insert_query ? insert_query->as<ASTInsertQuery>()->partition_by : nullptr,
         /* is_table_function */true);
 
     storage->startup();

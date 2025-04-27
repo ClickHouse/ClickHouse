@@ -721,7 +721,7 @@ public:
 
     SinkPtr createSinkForPartition(const String & partition_id) override
     {
-        std::string partition_path = getPartitionStrategy()->getPath(uri, partition_id);
+        std::string partition_path = partition_strategy->getWritingPath(uri, partition_id);
 
         context->getRemoteHostFilter().checkURL(Poco::URI(partition_path));
         return std::make_shared<StorageURLSink>(

@@ -30,6 +30,8 @@
 
 #include <Poco/Logger.h>
 
+#include "Common/tests/gtest_global_context.h"
+
 namespace DB
 {
 namespace Setting
@@ -84,13 +86,12 @@ StorageObjectStorage::StorageObjectStorage(
     ObjectStoragePtr object_storage_,
     ContextPtr context,
     const StorageID & table_id_,
-    const ColumnsDescription & columns_,
+    const ColumnsDescription & columns,
     const ConstraintsDescription & constraints_,
     const String & comment,
     std::optional<FormatSettings> format_settings_,
     LoadingStrictnessLevel mode,
     bool distributed_processing_,
-    ASTPtr partition_by,
     bool is_table_function_,
     bool lazy_init)
     : IStorage(table_id_)
@@ -100,7 +101,8 @@ StorageObjectStorage::StorageObjectStorage(
     , distributed_processing(distributed_processing_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
-    bool do_lazy_init = lazy_init && !columns_.empty() && !configuration->format.empty();
+    bool needs_to_resolve_schema_or_format = columns.empty() || configuration->format == "auto";
+    bool do_lazy_init = lazy_init && !needs_to_resolve_schema_or_format;
     update_configuration_on_read = !is_table_function_ || do_lazy_init;
     bool failed_init = false;
     auto do_init = [&]()
@@ -116,7 +118,7 @@ StorageObjectStorage::StorageObjectStorage(
         {
             // If we don't have format or schema yet, we can't ignore failed configuration update,
             // because relevant configuration is crucial for format and schema inference
-            if (mode <= LoadingStrictnessLevel::CREATE || columns_.empty() || (configuration->format == "auto"))
+            if (mode <= LoadingStrictnessLevel::CREATE || needs_to_resolve_schema_or_format)
             {
                 throw;
             }
@@ -128,18 +130,41 @@ StorageObjectStorage::StorageObjectStorage(
         }
     };
 
+    StorageInMemoryMetadata metadata;
+    metadata.setConstraints(constraints_);
+    metadata.setComment(comment);
+
+    NamesAndTypesList partition_columns;
+
+    // perhaps it is worth adding some extra safeguards for cases like
+    // create table s3_table engine=s3('{_partition_id}'); -- partition id wildcard set, but no partition expression
+    // create table s3_table engine=s3(partition_strategy='hive'); -- partition strategy set, but no partition expression
+    if (configuration->partition_strategy)
+    {
+        /*
+         * I am assuming it is impossible to have a `partition by` clause without specifying the schema and the format
+         */
+        chassert(!columns.empty());
+        chassert(!configuration->format.empty());
+        metadata.setColumns(columns);
+
+        metadata_with_partition_columns = std::make_shared<const StorageInMemoryMetadata>(metadata);
+        partition_columns = configuration->partition_strategy->getPartitionColumns();
+    }
+
     if (!do_lazy_init)
         do_init();
 
     std::string sample_path;
-    ColumnsDescription columns{columns_};
-    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
-    configuration->check(context);
 
-    StorageInMemoryMetadata metadata;
-    metadata.setColumns(columns);
-    metadata.setConstraints(constraints_);
-    metadata.setComment(comment);
+    if (needs_to_resolve_schema_or_format)
+    {
+        ColumnsDescription resolved_columns;
+        resolveSchemaAndFormat(resolved_columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
+        metadata.setColumns(resolved_columns);
+    }
+
+    configuration->check(context);
 
     /// FIXME: We need to call getPathSample() lazily on select
     /// in case it failed to be initialized in constructor.
@@ -162,23 +187,8 @@ StorageObjectStorage::StorageObjectStorage(
         }
     }
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context, sample_path, format_settings));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context, sample_path, format_settings, partition_columns));
     setInMemoryMetadata(metadata);
-
-    // perhaps it is worth adding some extra safeguards for cases like
-    // create table s3_table engine=s3('{_partition_id}'); -- partition id wildcard set, but no partition expression
-    // create table s3_table engine=s3(partition_strategy='hive'); -- partition strategy set, but no partition expression
-    if (partition_by)
-    {
-        partition_strategy = PartitionStrategyFactory::get(
-                partition_by,
-                metadata.getSampleBlock(),
-                context,
-                configuration->format,
-                configuration->withPartitionWildcard(),
-                configuration->partition_strategy,
-                configuration->hive_partition_strategy_write_partition_columns_into_files);
-    }
 }
 
 String StorageObjectStorage::getName() const
@@ -205,6 +215,25 @@ void StorageObjectStorage::Configuration::update(ObjectStoragePtr object_storage
 {
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
+}
+
+void StorageObjectStorage::Configuration::updatePartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context)
+{
+    if (!partition_by)
+    {
+        return;
+    }
+
+    partition_strategy = PartitionStrategyFactory::get(
+        partition_by,
+        columns.getOrdinary(),
+        context,
+        format,
+        withPartitionWildcard(),
+        partition_strategy_name,
+        partition_columns_in_data_file);
+
+    setPath(partition_strategy->getReadingPath(getPath()));
 }
 
 bool StorageObjectStorage::hasExternalDynamicMetadata() const
@@ -234,6 +263,27 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
 {
     configuration->update(object_storage, query_context);
     return configuration->totalBytes();
+}
+
+StorageInMemoryMetadata StorageObjectStorage::getInMemoryMetadata() const
+{
+    // todo fix this
+    if (configuration->partition_strategy)
+    {
+        return *metadata_with_partition_columns;
+    }
+
+    return IStorage::getInMemoryMetadata();
+}
+
+StorageMetadataPtr StorageObjectStorage::getInMemoryMetadataPtr() const
+{
+    if (configuration->partition_strategy)
+    {
+        return metadata_with_partition_columns;
+    }
+
+    return IStorage::getInMemoryMetadataPtr();
 }
 
 namespace
@@ -381,15 +431,15 @@ void StorageObjectStorage::read(
     if (update_configuration_on_read)
         configuration->update(object_storage, local_context);
 
-    if (partition_strategy)
+    if (configuration->partition_strategy && configuration->partition_strategy_name != "hive")
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Reading from a partitioned {} storage is not implemented yet",
                         getName());
     }
 
-    const auto read_from_format_info = configuration->prepareReadingFromFormat(
-        object_storage, column_names, storage_snapshot, supportsSubsetOfColumns(local_context), local_context);
+    auto read_from_format_info = configuration->prepareReadingFromFormat(
+        object_storage, column_names, storage_snapshot, supportsSubsetOfColumns(local_context) || configuration->partition_strategy, local_context);
 
     const bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];
@@ -436,7 +486,7 @@ SinkToStoragePtr StorageObjectStorage::write(
                         configuration->getPath());
     }
 
-    if (configuration->withGlobsIgnorePartitionWildcard())
+    if (!configuration->partition_strategy && configuration->withGlobsIgnorePartitionWildcard())
     {
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                         "Path '{}' contains globs, so the table is in readonly mode",
@@ -446,10 +496,9 @@ SinkToStoragePtr StorageObjectStorage::write(
     if (!configuration->supportsWrites())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
 
-    if (partition_strategy)
+    if (configuration->partition_strategy)
     {
-        return std::make_shared<PartitionedStorageObjectStorageSink>(
-            partition_strategy, object_storage, configuration, format_settings, sample_block, local_context);
+        return std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, format_settings, sample_block, local_context);
     }
 
     auto paths = configuration->getPaths();
@@ -616,7 +665,9 @@ void StorageObjectStorage::Configuration::initialize(
     ASTs & engine_args,
     ContextPtr local_context,
     bool with_table_structure,
-    StorageObjectStorageSettingsPtr settings)
+    StorageObjectStorageSettingsPtr settings,
+    const ColumnsDescription & columns,
+    const ASTPtr & partition_by)
 {
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
@@ -643,6 +694,8 @@ void StorageObjectStorage::Configuration::initialize(
     }
     else
         FormatFactory::instance().checkFormatName(configuration_to_initialize.format);
+
+    configuration_to_initialize.updatePartitionStrategy(partition_by, columns, local_context);
 
     configuration_to_initialize.storage_settings = settings;
     configuration_to_initialize.initialized = true;

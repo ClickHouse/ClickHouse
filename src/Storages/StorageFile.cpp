@@ -1929,11 +1929,11 @@ public:
 
     SinkPtr createSinkForPartition(const String & partition_id) override
     {
-        std::string filepath = getPartitionStrategy()->getPath(path, partition_id);
+        std::string filepath = partition_strategy->getWritingPath(path, partition_id);
 
         fs::create_directories(fs::path(filepath).parent_path());
 
-        PartitionedSink::validatePartitionKey(filepath, true);
+        validatePartitionKey(filepath, true);
         checkCreationIsAllowed(context, context->getUserFilesPath(), filepath, /*can_be_directory=*/ true);
         return std::make_shared<StorageFileSink>(
             metadata_snapshot,

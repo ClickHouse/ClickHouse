@@ -166,7 +166,7 @@ std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValues(
     return key_values;
 }
 
-VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & storage_columns, const ContextPtr & context, const std::string & path, std::optional<FormatSettings> format_settings_)
+VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & storage_columns, const ContextPtr & context, const std::string & path, std::optional<FormatSettings> format_settings_, const NamesAndTypesList & partition_columns)
 {
     VirtualColumnsDescription desc;
 
@@ -195,17 +195,27 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
 
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
     {
-        auto map = parseHivePartitioningKeysAndValues(path);
-        auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
-        for (auto & item : map)
+        if (!partition_columns.empty())
         {
-            auto type = tryInferDataTypeByEscapingRule(item.second, format_settings, FormatSettings::EscapingRule::Raw);
-            if (type == nullptr)
-                type = std::make_shared<DataTypeString>();
-            if (type->canBeInsideLowCardinality())
-                add_virtual({item.first, std::make_shared<DataTypeLowCardinality>(type)}, true);
-            else
-                add_virtual({item.first, type}, true);
+            for (const auto & column : partition_columns)
+            {
+                add_virtual({column.name, column.type}, true);
+            }
+        }
+        else
+        {
+            auto map = parseHivePartitioningKeysAndValues(path);
+            auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
+            for (auto & item : map)
+            {
+                auto type = tryInferDataTypeByEscapingRule(item.second, format_settings, FormatSettings::EscapingRule::Raw);
+                if (type == nullptr)
+                    type = std::make_shared<DataTypeString>();
+                if (type->canBeInsideLowCardinality())
+                    add_virtual({item.first, std::make_shared<DataTypeLowCardinality>(type)}, true);
+                else
+                    add_virtual({item.first, type}, true);
+            }
         }
     }
 

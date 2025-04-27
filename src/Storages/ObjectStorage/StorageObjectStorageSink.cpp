@@ -125,13 +125,12 @@ void StorageObjectStorageSink::cancelBuffers()
 }
 
 PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
-    std::shared_ptr<PartitionStrategy> partition_strategy_,
     ObjectStoragePtr object_storage_,
     ConfigurationPtr configuration_,
     std::optional<FormatSettings> format_settings_,
     const Block & sample_block_,
     ContextPtr context_)
-    : PartitionedSink(partition_strategy_, context_, sample_block_)
+    : PartitionedSink(configuration_->partition_strategy, context_, sample_block_)
     , object_storage(object_storage_)
     , configuration(configuration_)
     , query_settings(configuration_->getQuerySettings(context_))
@@ -149,7 +148,7 @@ StorageObjectStorageSink::~StorageObjectStorageSink()
 
 SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String & partition_id)
 {
-    auto file_path = getPartitionStrategy()->getPath(configuration->getPath(), partition_id);
+    auto file_path = partition_strategy->getWritingPath(configuration->getPathWithoutGlobs(), partition_id);
 
     validateNamespace(configuration->getNamespace(), configuration);
     validateKey(file_path);
@@ -164,7 +163,7 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
         object_storage,
         configuration,
         format_settings,
-        getPartitionStrategy()->getBlockWithoutPartitionColumnsIfNeeded(),
+        partition_strategy->getFormatHeader(),
         context,
         file_path
     );

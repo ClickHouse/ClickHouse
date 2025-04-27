@@ -22,35 +22,22 @@ struct PartitionStrategy
 
     virtual ~PartitionStrategy() = default;
 
-    virtual PartitionExpressionActionsAndColumnName getExpression() = 0;
-    virtual std::string getPath(const std::string & prefix, const std::string & partition_key) = 0;
+    virtual ColumnPtr computePartitionKey(const Chunk & chunk) = 0;
 
-    /*
-     * Hive style partition strategy will put partition column keys and values in the filepath itself
-     * So we need to remove those columns from the chunk.
-     *
-     * Default behavior is not to remove, therefore the base class simply returns the same chunk
-     * */
-    virtual Chunk getChunkWithoutPartitionColumnsIfNeeded(const Chunk & chunk)
-    {
-        return chunk.clone();
-    }
+    virtual std::string getReadingPath(const std::string & prefix) = 0;
+    virtual std::string getWritingPath(const std::string & prefix, const std::string & partition_key) = 0;
 
-    /*
-     * Hive style partition strategy will put partition column keys and values in the filepath itself
-     * So we need to remove those columns from the block.
-     *
-     * Default behavior is not to remove, therefore the base class simply returns the same block
-     * */
-    virtual Block getBlockWithoutPartitionColumnsIfNeeded()
-    {
-        return sample_block;
-    }
+    virtual Chunk getFormatChunk(const Chunk & chunk) { return chunk.clone(); }
+
+    virtual Block getFormatHeader() { return sample_block; }
+
+    const NamesAndTypesList & getPartitionColumns() const;
 
 protected:
     ASTPtr partition_by;
     Block sample_block;
     ContextPtr context;
+    NamesAndTypesList partition_columns;
 };
 
 struct PartitionStrategyFactory
@@ -62,15 +49,28 @@ struct PartitionStrategyFactory
         const std::string & file_format,
         bool has_partition_wildcard,
         const std::string & partition_strategy = "wildcard",
-        bool hive_partition_strategy_write_partition_columns_into_files = false);
+        bool partition_columns_in_data_file = false);
+
+    static std::shared_ptr<PartitionStrategy> get(
+        ASTPtr partition_by,
+        const NamesAndTypesList & partition_columns,
+        ContextPtr context,
+        const std::string & file_format,
+        bool has_partition_wildcard,
+        const std::string & partition_strategy = "wildcard",
+        bool partition_columns_in_data_file = false);
 };
 
 struct StringifiedPartitionStrategy : PartitionStrategy
 {
     StringifiedPartitionStrategy(ASTPtr partition_by_, const Block & sample_block_, ContextPtr context_);
 
-    PartitionExpressionActionsAndColumnName getExpression() override;
-    std::string getPath(const std::string & prefix, const std::string & partition_key) override;
+    ColumnPtr computePartitionKey(const Chunk & chunk) override;
+    std::string getReadingPath(const std::string & prefix) override;
+    std::string getWritingPath(const std::string & prefix, const std::string & partition_key) override;
+
+private:
+    PartitionExpressionActionsAndColumnName actions_with_column_name;
 };
 
 struct HiveStylePartitionStrategy : PartitionStrategy
@@ -80,18 +80,19 @@ struct HiveStylePartitionStrategy : PartitionStrategy
         const Block & sample_block_,
         ContextPtr context_,
         const std::string & file_format_,
-        bool hive_partition_strategy_write_partition_columns_into_files_);
+        bool partition_columns_in_data_file_);
 
-    PartitionExpressionActionsAndColumnName getExpression() override;
-    std::string getPath(const std::string & prefix, const std::string & partition_key) override;
-    Chunk getChunkWithoutPartitionColumnsIfNeeded(const Chunk & chunk) override;
-    Block getBlockWithoutPartitionColumnsIfNeeded() override;
+    ColumnPtr computePartitionKey(const Chunk & chunk) override;
+    std::string getReadingPath(const std::string & prefix) override;
+    std::string getWritingPath(const std::string & prefix, const std::string & partition_key) override;
+
+    Chunk getFormatChunk(const Chunk & chunk) override;
+    Block getFormatHeader() override;
 
 private:
     std::string file_format;
-    bool hive_partition_strategy_write_partition_columns_into_files;
-    Names partition_expression_required_columns;
-    std::unordered_set<std::string> partition_expression_required_columns_set;
+    bool partition_columns_in_data_file;
+    std::unordered_set<std::string> partition_columns_name_set;
     PartitionExpressionActionsAndColumnName actions_with_column_name;
     Block block_without_partition_columns;
 };

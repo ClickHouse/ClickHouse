@@ -27,15 +27,12 @@ namespace ErrorCodes
 PartitionedSink::PartitionedSink(
     std::shared_ptr<PartitionStrategy> partition_strategy_,
     ContextPtr context_,
-    const Block & sample_block_)
-    : SinkToStorage(sample_block_)
+    const Block & source_header_)
+    : SinkToStorage(source_header_)
     , partition_strategy(partition_strategy_)
     , context(context_)
-    , sample_block(sample_block_)
+    , source_header(source_header_)
 {
-    auto actions_with_column_name = partition_strategy->getExpression();
-    partition_by_expr = actions_with_column_name.actions;
-    partition_by_column_name = actions_with_column_name.column_name;
 }
 
 
@@ -51,28 +48,24 @@ SinkPtr PartitionedSink::getSinkForPartitionKey(StringRef partition_key)
     return it->second;
 }
 
-void PartitionedSink::consume(Chunk & input_chunk)
+void PartitionedSink::consume(Chunk & source_chunk)
 {
-    Block block_with_partition_by_expr = sample_block.cloneWithoutColumns();
-    block_with_partition_by_expr.setColumns(input_chunk.getColumns());
-    partition_by_expr->execute(block_with_partition_by_expr);
-
-    const auto * partition_by_result_column = block_with_partition_by_expr.getByName(partition_by_column_name).column.get();
+    const ColumnPtr partition_by_result_column = partition_strategy->computePartitionKey(source_chunk);
 
     /*
-     * `hive_partition_strategy_write_partition_columns_into_files`
+     * `partition_columns_in_data_file`
      */
-    const auto chunk = partition_strategy->getChunkWithoutPartitionColumnsIfNeeded(input_chunk);
-    const auto & columns_to_consume = chunk.getColumns();
+    const auto format_chunk = partition_strategy->getFormatChunk(source_chunk);
+    const auto & columns_to_consume = format_chunk.getColumns();
 
     if (columns_to_consume.empty())
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "No column to write as all columns are specified as partition columns. "
-                        "Consider setting `hive_partition_strategy_write_partition_columns_into_files=1`");
+                        "Consider setting `partition_columns_in_data_file=1`");
     }
 
-    size_t chunk_rows = chunk.getNumRows();
+    size_t chunk_rows = format_chunk.getNumRows();
     chunk_row_index_to_partition_index.resize(chunk_rows);
 
     partition_id_to_chunk_index.clear();
@@ -117,11 +110,6 @@ void PartitionedSink::consume(Chunk & input_chunk)
         auto sink = getSinkForPartitionKey(partition_key);
         sink->consume(partition_index_to_chunk[partition_index]);
     }
-}
-
-std::shared_ptr<PartitionStrategy> PartitionedSink::getPartitionStrategy()
-{
-    return partition_strategy;
 }
 
 void PartitionedSink::onException(std::exception_ptr exception)

@@ -22,15 +22,9 @@ extern const int BAD_ARGUMENTS;
 
 namespace
 {
-    Names extractPartitionRequiredColumns(ASTPtr & partition_by, const Block & sample_block, ContextPtr context)
-    {
-        auto key_description = KeyDescription::getKeyFromAST(partition_by, ColumnsDescription::fromNamesAndTypes(sample_block.getNamesAndTypes()), context);
-        return key_description.sample_block.getNames();
-    }
-
     HiveStylePartitionStrategy::PartitionExpressionActionsAndColumnName buildExpressionHive(
         ASTPtr partition_by,
-        const Names & partition_expression_required_columns,
+        const NamesAndTypesList & partition_columns,
         const Block & sample_block,
         ContextPtr context)
     {
@@ -40,13 +34,15 @@ namespace
         if (const auto * tuple_function = partition_by->as<ASTFunction>();
             tuple_function && tuple_function->name == "tuple")
         {
-            chassert(tuple_function->arguments->children.size() == partition_expression_required_columns.size());
+            chassert(tuple_function->arguments->children.size() == partition_columns.size());
 
-            for (size_t i = 0; i < tuple_function->arguments->children.size(); i++)
+            std::size_t index = 0;
+
+            for (const auto & partition_column : partition_columns)
             {
-                const auto & child = tuple_function->arguments->children[i];
+                const auto & child = tuple_function->arguments->children[index++];
 
-                concat_args.push_back(std::make_shared<ASTLiteral>(partition_expression_required_columns[i] + "="));
+                concat_args.push_back(std::make_shared<ASTLiteral>(partition_column.name + "="));
 
                 concat_args.push_back(makeASTFunction("toString", child));
 
@@ -55,10 +51,10 @@ namespace
         }
         else
         {
-            chassert(partition_expression_required_columns.size() == 1);
+            chassert(partition_columns.size() == 1);
 
             ASTs to_string_args = {1, partition_by};
-            concat_args.push_back(std::make_shared<ASTLiteral>(partition_expression_required_columns[0] + "="));
+            concat_args.push_back(std::make_shared<ASTLiteral>(partition_columns.front().name + "="));
             concat_args.push_back(makeASTFunction("toString", std::move(to_string_args)));
             concat_args.push_back(std::make_shared<ASTLiteral>("/"));
         }
@@ -125,7 +121,13 @@ std::unordered_map<std::string, bool> PartitionStrategy::partition_strategy_to_w
 PartitionStrategy::PartitionStrategy(ASTPtr partition_by_, const Block & sample_block_, ContextPtr context_)
 : partition_by(partition_by_), sample_block(sample_block_), context(context_)
 {
+    auto key_description = KeyDescription::getKeyFromAST(partition_by, ColumnsDescription::fromNamesAndTypes(sample_block.getNamesAndTypes()), context);
+    partition_columns = key_description.sample_block.getNamesAndTypesList();
+}
 
+const NamesAndTypesList & PartitionStrategy::getPartitionColumns() const
+{
+    return partition_columns;
 }
 
 std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(ASTPtr partition_by,
@@ -134,7 +136,7 @@ std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(ASTPtr partitio
                                                                  const std::string & file_format,
                                                                  bool has_partition_wildcard,
                                                                  const std::string & partition_strategy,
-                                                                 bool hive_partition_strategy_write_partition_columns_into_files)
+                                                                 bool partition_columns_in_data_file)
 {
     sanityCheckPartitioningConfiguration(partition_strategy, has_partition_wildcard);
 
@@ -150,31 +152,55 @@ std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(ASTPtr partitio
             sample_block,
             context,
             file_format,
-            hive_partition_strategy_write_partition_columns_into_files);
+            partition_columns_in_data_file);
     }
 
     return std::make_shared<StringifiedPartitionStrategy>(partition_by, sample_block, context);
 }
 
+std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(ASTPtr partition_by,
+                                                                 const NamesAndTypesList & partition_columns,
+                                                                 ContextPtr context,
+                                                                 const std::string & file_format,
+                                                                 bool has_partition_wildcard,
+                                                                 const std::string & partition_strategy,
+                                                                 bool partition_columns_in_data_file)
+{
+    Block block;
+    for (const auto & partition_column : partition_columns)
+    {
+        block.insert({partition_column.type, partition_column.name});
+    }
+
+    return get(partition_by, block, context, file_format, has_partition_wildcard, partition_strategy, partition_columns_in_data_file);
+}
+
 StringifiedPartitionStrategy::StringifiedPartitionStrategy(ASTPtr partition_by_, const Block & sample_block_, ContextPtr context_)
     : PartitionStrategy(partition_by_, sample_block_, context_)
 {
-}
-
-StringifiedPartitionStrategy::PartitionExpressionActionsAndColumnName StringifiedPartitionStrategy::getExpression()
-{
-    PartitionExpressionActionsAndColumnName actions_with_column_name;
-
     ASTs arguments(1, partition_by);
     ASTPtr partition_by_string = makeASTFunction("toString", std::move(arguments));
     auto syntax_result = TreeRewriter(context).analyze(partition_by_string, sample_block.getNamesAndTypesList());
     actions_with_column_name.actions = ExpressionAnalyzer(partition_by_string, syntax_result, context).getActions(false);
     actions_with_column_name.column_name = partition_by_string->getColumnName();
-
-    return actions_with_column_name;
 }
 
-std::string StringifiedPartitionStrategy::getPath(
+ColumnPtr StringifiedPartitionStrategy::computePartitionKey(const Chunk & chunk)
+{
+    Block block_with_partition_by_expr = sample_block.cloneWithoutColumns();
+    block_with_partition_by_expr.setColumns(chunk.getColumns());
+    actions_with_column_name.actions->execute(block_with_partition_by_expr);
+
+    return block_with_partition_by_expr.getByName(actions_with_column_name.column_name).column;
+}
+
+std::string StringifiedPartitionStrategy::getReadingPath(
+    const std::string & prefix)
+{
+    return prefix;
+}
+
+std::string StringifiedPartitionStrategy::getWritingPath(
     const std::string & prefix,
     const std::string & partition_key)
 {
@@ -186,23 +212,25 @@ HiveStylePartitionStrategy::HiveStylePartitionStrategy(
     const Block & sample_block_,
     ContextPtr context_,
     const std::string & file_format_,
-    bool hive_partition_strategy_write_partition_columns_into_files_)
+    bool partition_columns_in_data_file_)
     : PartitionStrategy(partition_by_, sample_block_, context_),
     file_format(file_format_),
-    hive_partition_strategy_write_partition_columns_into_files(hive_partition_strategy_write_partition_columns_into_files_),
-    partition_expression_required_columns(extractPartitionRequiredColumns(partition_by, sample_block, context)),
-    partition_expression_required_columns_set(partition_expression_required_columns.begin(), partition_expression_required_columns.end())
+    partition_columns_in_data_file(partition_columns_in_data_file_)
 {
-    actions_with_column_name = buildExpressionHive(partition_by, partition_expression_required_columns, sample_block, context);
-    block_without_partition_columns = buildBlockWithoutPartitionColumns(sample_block, partition_expression_required_columns_set);
+    for (const auto & partition_column : partition_columns)
+    {
+        partition_columns_name_set.insert(partition_column.name);
+    }
+    actions_with_column_name = buildExpressionHive(partition_by, partition_columns, sample_block, context);
+    block_without_partition_columns = buildBlockWithoutPartitionColumns(sample_block, partition_columns_name_set);
 }
 
-HiveStylePartitionStrategy::PartitionExpressionActionsAndColumnName HiveStylePartitionStrategy::getExpression()
+std::string HiveStylePartitionStrategy::getReadingPath(const std::string & prefix)
 {
-    return actions_with_column_name;
+    return prefix + "**." + Poco::toLower(file_format);
 }
 
-std::string HiveStylePartitionStrategy::getPath(
+std::string HiveStylePartitionStrategy::getWritingPath(
     const std::string & prefix,
     const std::string & partition_key)
 {
@@ -223,11 +251,20 @@ std::string HiveStylePartitionStrategy::getPath(
     return path + partition_key + "/" + std::to_string(generateSnowflakeID()) + "." + Poco::toLower(file_format);
 }
 
-Chunk HiveStylePartitionStrategy::getChunkWithoutPartitionColumnsIfNeeded(const Chunk & chunk)
+ColumnPtr HiveStylePartitionStrategy::computePartitionKey(const Chunk & chunk)
+{
+    Block block_with_partition_by_expr = sample_block.cloneWithoutColumns();
+    block_with_partition_by_expr.setColumns(chunk.getColumns());
+    actions_with_column_name.actions->execute(block_with_partition_by_expr);
+
+    return block_with_partition_by_expr.getByName(actions_with_column_name.column_name).column;
+}
+
+Chunk HiveStylePartitionStrategy::getFormatChunk(const Chunk & chunk)
 {
     Chunk result;
 
-    if (hive_partition_strategy_write_partition_columns_into_files)
+    if (partition_columns_in_data_file)
     {
         for (const auto & column : chunk.getColumns())
         {
@@ -241,7 +278,7 @@ Chunk HiveStylePartitionStrategy::getChunkWithoutPartitionColumnsIfNeeded(const 
 
     for (size_t i = 0; i < sample_block.columns(); i++)
     {
-        if (!partition_expression_required_columns_set.contains(sample_block.getByPosition(i).name))
+        if (!partition_columns_name_set.contains(sample_block.getByPosition(i).name))
         {
             result.addColumn(chunk.getColumns()[i]);
         }
@@ -250,9 +287,9 @@ Chunk HiveStylePartitionStrategy::getChunkWithoutPartitionColumnsIfNeeded(const 
     return result;
 }
 
-Block HiveStylePartitionStrategy::getBlockWithoutPartitionColumnsIfNeeded()
+Block HiveStylePartitionStrategy::getFormatHeader()
 {
-    if (hive_partition_strategy_write_partition_columns_into_files)
+    if (partition_columns_in_data_file)
     {
         return sample_block;
     }

@@ -42,7 +42,6 @@ public:
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
     PartitionedStorageObjectStorageSink(
-        std::shared_ptr<PartitionStrategy> partition_strategy_,
         ObjectStoragePtr object_storage_,
         ConfigurationPtr configuration_,
         std::optional<FormatSettings> format_settings_,

@@ -22,7 +22,7 @@ public:
     PartitionedSink(
         std::shared_ptr<PartitionStrategy> partition_strategy_,
         ContextPtr context_,
-        const Block & sample_block_);
+        const Block & source_header_);
 
     ~PartitionedSink() override;
 
@@ -40,15 +40,12 @@ public:
 
     static String replaceWildcards(const String & haystack, const String & partition_id);
 
-    std::shared_ptr<PartitionStrategy> getPartitionStrategy();
+protected:
+    std::shared_ptr<PartitionStrategy> partition_strategy;
 
 private:
-    std::shared_ptr<PartitionStrategy> partition_strategy;
     ContextPtr context;
-    Block sample_block;
-
-    ExpressionActionsPtr partition_by_expr;
-    String partition_by_column_name;
+    Block source_header;
 
     absl::flat_hash_map<StringRef, SinkPtr> partition_id_to_sink;
     HashMapWithSavedHash<StringRef, size_t> partition_id_to_chunk_index;
