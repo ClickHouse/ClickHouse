@@ -6,9 +6,7 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/Exception.h>
 #include <base/types.h>
-
-#include <zlib.h>
-#include <Poco/UTF8Encoding.h>
+#include <Common/HashTable/Hash.h>
 
 namespace DB
 {
@@ -29,56 +27,13 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 namespace
 {
 
-#ifdef __SSE4_2__
-
 struct CRC32CHasher
 {
     size_t operator()(const char* data, size_t length) const
     {
-        UInt64 crc = 0ULL;
-        for (size_t i = 0; i < length; ++i)
-            crc = _mm_crc32_u64(crc, data[i]);
-        return crc;
+        return updateWeakHash32(reinterpret_cast<const UInt8*>(data), length, 0);
     }
 };
-
-#elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
-
-struct CRC32CHasher
-{
-    size_t operator()(const char* data, size_t length) const
-    {
-        UInt64 crc = 0ULL;
-        for (size_t i = 0; i < length; ++i)
-            crc = __crc32cd(static_cast<UInt32>(crc), data[i]);
-        return crc;
-    }
-};
-
-#elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-
-struct CRC32CHasher
-{
-    size_t operator()(const char* data, size_t length) const
-    {
-        UInt64 crc = 0ULL;
-        for (size_t i = 0; i < length; ++i)
-            crc = s390x_crc32c(crc, data[UInt128::_impl::little(i)]);
-        return crc;
-    }
-};
-#else
-
-/// On other platforms we do not use CRC32. NOTE This can be confusing.
-struct CRC32CHasher
-{
-    size_t operator()(const char* data, size_t length) const
-    {
-        return crc32_z(0L, reinterpret_cast<const unsigned char *>(data), length);
-    }
-};
-
-#endif
 
 using Pos = const char *;
 
