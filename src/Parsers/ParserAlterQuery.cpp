@@ -1068,6 +1068,14 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         if (!parseDatabaseAsAST(pos, expected, query->database))
             return false;
+
+        String cluster_str;
+        if (ParserKeyword(Keyword::ON).ignore(pos, expected))
+        {
+            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+                return false;
+        }
+        query->cluster = cluster_str;
     }
     else
     {

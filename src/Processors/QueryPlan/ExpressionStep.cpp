@@ -97,6 +97,11 @@ std::unique_ptr<IQueryPlanStep> ExpressionStep::deserialize(Deserialization & ct
     return std::make_unique<ExpressionStep>(ctx.input_headers.front(), std::move(actions_dag));
 }
 
+QueryPlanStepPtr ExpressionStep::clone() const
+{
+    return std::make_unique<ExpressionStep>(*this);
+}
+
 void registerExpressionStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Expression", ExpressionStep::deserialize);

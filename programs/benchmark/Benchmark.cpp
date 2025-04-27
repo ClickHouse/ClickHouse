@@ -313,7 +313,9 @@ private:
         std::lock_guard lock(mutex);
 
         log << "\nQueries executed: " << num;
-        if (queries.size() > 1)
+        if (max_iterations > 1)
+            log << " (" << (num * 100.0 / max_iterations) << "%)";
+        else if (queries.size() > 1)
             log << " (" << (num * 100.0 / queries.size()) << "%)";
         log << ".\n" << flush;
     }

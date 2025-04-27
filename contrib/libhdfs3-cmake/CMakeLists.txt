@@ -10,7 +10,6 @@ if(NOT ENABLE_HDFS)
 endif()
 
 if (TARGET ch_contrib::krb5)
-    message(STATUS "Enable kerberos for HDFS")
     SET(WITH_KERBEROS 1)
 else()
     SET(WITH_KERBEROS 0)
