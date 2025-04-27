@@ -35,9 +35,9 @@ ColumnsDescription InstrumentationProfilingLogElement::getColumnsDescription()
         {"pid", std::make_shared<DataTypeUInt64>(), "Process ID."},
         {"tid", std::make_shared<DataTypeUInt64>(), "Thread ID."},
         {"ts", std::make_shared<DataTypeDateTime64>(6), "Timestamp of the sampling moment with microseconds precision"},
-        {"event_time", std::make_shared<DataTypeDateTime>(),  "Timestamp of the sampling moment."},
+        {"event_time", std::make_shared<DataTypeDateTime>(), "Timestamp of the sampling moment."},
         {"query_id", std::make_shared<DataTypeString>(), "Query identifier that can be used to get details about a query that was running from the query_log system table."},
-        {"function_id", std::make_shared<DataTypeInt32>(),  "ID assigned to the function in xray_instr_map section of elf-binary."},
+        {"function_id", std::make_shared<DataTypeInt32>(), "ID assigned to the function in xray_instr_map section of elf-binary."},
     };
 }
 

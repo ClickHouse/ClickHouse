@@ -27,7 +27,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InstrumentationProfilingLog.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h> 
+#include <Common/ThreadStatus.h>
 
 
 using namespace llvm;
@@ -347,8 +347,8 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
         else
             element.phase = "E";
 
-        element.pid = getpid();  
-        element.tid = getThreadId();  
+        element.pid = getpid();
+        element.tid = getThreadId();
         using namespace std::chrono;
 
         auto now = system_clock::now();
@@ -356,7 +356,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
 
         element.timestamp = Decimal64(now_us);
         element.event_time = time_t(duration_cast<seconds>(now.time_since_epoch()).count());
-        element.query_id = CurrentThread::isInitialized() ? CurrentThread::getQueryId() : ""; 
+        element.query_id = CurrentThread::isInitialized() ? CurrentThread::getQueryId() : "";
         element.function_id = FuncId;
         log->add(std::move(element));
     }
