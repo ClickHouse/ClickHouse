@@ -1354,7 +1354,7 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
     try
     {
         if (add)
-            XRayInstrumentationManager::instance().setHandlerAndPatch(query.function_name, query.handler_name, query.parameters);
+            XRayInstrumentationManager::instance().setHandlerAndPatch(query.function_name, query.handler_name, query.parameters, getContext());
         else
             XRayInstrumentationManager::instance().unpatchFunction(query.function_name);
     }

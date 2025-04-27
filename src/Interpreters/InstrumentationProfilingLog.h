@@ -17,7 +17,7 @@ struct InstrumentationProfilingLogElement
 {
     time_t event_time{};
     UInt64 event_time_microseconds{};
-    UUID query_id;
+    String query_id;
     UInt64 thread_id{};
     Int32 function_id{};
     String function_name;

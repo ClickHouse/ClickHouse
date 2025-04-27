@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Interpreters/Context_fwd.h"
 #include "base/types.h"
 #include "config.h"
 
@@ -30,10 +31,11 @@ public:
         std::string function_name;
         std::string handler_name;
         std::optional<std::vector<InstrumentParameter>> parameters;
+        ContextPtr context;
     };
     static XRayInstrumentationManager & instance();
 
-    void setHandlerAndPatch(const std::string & function_name, const std::string & handler_name, std::optional<std::vector<InstrumentParameter>> &parameters);
+    void setHandlerAndPatch(const std::string & function_name, const std::string & handler_name, std::optional<std::vector<InstrumentParameter>> &parameters, ContextPtr context);
     void unpatchFunction(const std::string & function_name);
 
     using InstrumentedFunctions = std::list<InstrumentedFunctionInfo>;
@@ -67,7 +69,7 @@ private:
     std::unordered_map<std::string, XRayHandlerFunction> xrayHandlerNameToFunction;
     std::unordered_map<std::string, int64_t> functionNameToXRayID;
     std::unordered_map<std::string, std::vector<int64_t>> strippedFunctionNameToXRayID;
-    std::unordered_map<int64_t, std::string> xrayIdToFunctionName; // may be unnecessary, but we'll keep it for now
+    static std::unordered_map<int64_t, std::string> xrayIdToFunctionName;
     std::list<InstrumentedFunctionInfo> instrumented_functions;
     static std::unordered_map<int64_t, std::list<InstrumentedFunctionInfo>::iterator> functionIdToInstrumentPoint;
 

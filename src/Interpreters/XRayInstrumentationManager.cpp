@@ -23,6 +23,10 @@
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InstrumentationProfilingLog.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h> 
 
 
 using namespace llvm;
@@ -38,6 +42,7 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 }
 std::unordered_map<int64_t, std::list<XRayInstrumentationManager::InstrumentedFunctionInfo>::iterator> XRayInstrumentationManager::functionIdToInstrumentPoint;
+std::unordered_map<int64_t, std::string> XRayInstrumentationManager::xrayIdToFunctionName;
 
 void XRayInstrumentationManager::registerHandler(const std::string & name, XRayHandlerFunction handler)
 {
@@ -65,7 +70,7 @@ XRayInstrumentationManager & XRayInstrumentationManager::instance()
 }
 
 
-void XRayInstrumentationManager::setHandlerAndPatch(const std::string & function_name, const std::string & handler_name, std::optional<std::vector<InstrumentParameter>> &parameters)
+void XRayInstrumentationManager::setHandlerAndPatch(const std::string & function_name, const std::string & handler_name, std::optional<std::vector<InstrumentParameter>> &parameters, ContextPtr context)
 {
     std::lock_guard lock(mutex);
     auto handler_it = xrayHandlerNameToFunction.find(handler_name);
@@ -86,7 +91,7 @@ void XRayInstrumentationManager::setHandlerAndPatch(const std::string & function
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown function to instrument: ({})", function_name);
     }
-    instrumented_functions.emplace_front(instrumentation_point_id, function_id, function_name, handler_name, parameters);
+    instrumented_functions.emplace_front(instrumentation_point_id, function_id, function_name, handler_name, parameters, context);
     functionIdToInstrumentPoint[function_id] = instrumented_functions.begin();
     instrumentation_point_id++;
     __xray_set_handler(handler_function);
@@ -327,6 +332,27 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     if (!params_opt.has_value())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected parameters for profiling instrumentation"); // or maybe we want to use some default parameter instead of throwing exception??
     // TODO -- not clear yet how to write what we want to the system.instrumentation_profiling_log
+    auto context_it = functionIdToInstrumentPoint.find(FuncId);
+    auto & context = context_it->second->context;
+    if (!context)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No context for profiling instrumentation");
+    if (auto log = context->getInstrumentationProfilingLog())
+    {
+        InstrumentationProfilingLogElement element;
+        using namespace std::chrono;
+
+        auto now = system_clock::now();
+        auto now_us = duration_cast<microseconds>(now.time_since_epoch()).count();
+
+        element.event_time = time_t(duration_cast<seconds>(now.time_since_epoch()).count());
+        element.event_time_microseconds = Decimal64(now_us);
+        element.query_id = CurrentThread::isInitialized() ? CurrentThread::getQueryId() : "";
+        element.thread_id = getThreadId();  
+        element.function_id = FuncId;
+        element.function_name = xrayIdToFunctionName[FuncId];
+
+        log->add(std::move(element));
+    }
     in_hook = false;
 }
 
