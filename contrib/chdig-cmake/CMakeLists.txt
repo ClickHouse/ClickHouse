@@ -1,0 +1,10 @@
+option(USE_CHDIG "Use chdig" ${ENABLE_RUST})
+if (NOT USE_CHDIG)
+    message(STATUS "Not using chdig")
+    return()
+endif()
+
+if (USE_CHDIG)
+    clickhouse_import_crate(MANIFEST_PATH ../chdig/Cargo.toml ALL_FEATURES CRATE_TYPES bin)
+    clickhouse_config_crate_flags(chdig)
+endif()
