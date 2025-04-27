@@ -16,7 +16,7 @@ HashOutputFormat::HashOutputFormat(const Block & header, WriteBuffer & buf, cons
 }
 
 String HashOutputFormat::getName() const
-{ 
+{
     return "HashOutputFormat";
 }
 
