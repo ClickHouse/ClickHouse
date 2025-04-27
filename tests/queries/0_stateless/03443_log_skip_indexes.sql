@@ -22,7 +22,6 @@ ALTER TABLE parents ADD INDEX name_i name TYPE tokenbf_v1(8192, 1, 0) GRANULARIT
 
 
 
-SYSTEM FLUSH LOGS system.query_log;
 
 SELECT * FROM users FORMAT Null SETTINGS log_comment='1';
 SELECT * FROM users WHERE age = 33 FORMAT Null SETTINGS log_comment='2';
@@ -32,6 +31,8 @@ SELECT * FROM users
 LEFT JOIN parents ON users.parent_id = parents.uid 
 WHERE parents.age >= 90 AND users.name = 'Alice' 
 FORMAT Null SETTINGS log_comment='5';
+
+SYSTEM FLUSH LOGS system.query_log;
 
 SELECT arraySort(skip_indexes)
 FROM system.query_log
