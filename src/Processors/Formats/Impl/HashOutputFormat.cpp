@@ -9,7 +9,7 @@
 namespace DB
 {
 
-HashOutputFormat::HashOutputFormat(const Block & header, WriteBuffer & buf, const String & /* algorithm */)
+HashOutputFormat::HashOutputFormat(const Block & header, WriteBuffer & buf)
     : IOutputFormat(header, buf), hashing_buffer(buf)
 {
 
@@ -63,7 +63,7 @@ void registerOutputFormatHash(FormatFactory & factory)
     factory.registerOutputFormat("Hash",
         [](WriteBuffer & buf, const Block & header, const FormatSettings &)
         {
-            return std::make_shared<HashOutputFormat>(header, buf, "CRC32");
+            return std::make_shared<HashOutputFormat>(header, buf);
         });
 }
 

@@ -9,7 +9,7 @@ namespace DB
 class HashOutputFormat final : public IOutputFormat
 {
 public:
-    HashOutputFormat(const Block & header, WriteBuffer & out, const String & algorithm);
+    HashOutputFormat(const Block & header, WriteBuffer & buf);
     String getName() const override;
     String getHash();
 
