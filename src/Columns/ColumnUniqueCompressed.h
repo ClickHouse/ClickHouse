@@ -50,6 +50,9 @@ public:
 
     bool isCollationSupported() const override { return true; }
 
+    bool haveIndexesChanged() const override;
+    MutableColumnPtr detachChangedIndexes() override;
+
     size_t uniqueInsert(const Field & x) override;
     bool tryUniqueInsert(const Field & x, size_t & index) override;
     size_t uniqueInsertFrom(const IColumn & src, size_t n) override;
@@ -174,8 +177,14 @@ private:
     /// Returns a string column containing all the decompressed values
     MutableColumnPtr getDecompressedAll() const;
 
-    /// It's useful when mutating the column as data_column and prefix lengths recalculations are needed
-    void recalculateForNewData(const ColumnPtr & string_column);
+    /// Inserts data from `to_insert` into `column_to_modify`. Stores sorted version of `column_to_modify` in `sorted_column` and returns 
+    /// a column containing the permutation of data initialy in `column_to_mofiy`. This data is `old_indexes_mapping` itself.
+    /// This method provides an optimized way to calculate `old_indexes_mapping` during inserts
+    static MutableColumnPtr prepareForInsert(const MutableColumnPtr & column_to_modify, const ColumnPtr & to_insert, ColumnPtr & sorted_column);
+
+    /// Compresses `string_column` and stores this compression instead of current
+    /// Assumes that string_column is sorted
+    void calculateCompression(const ColumnPtr & string_column);
 
     /// Returns pointer to the end of serialization (first byte past the data)
     /// `pos` is the index at which the value resides in the column
@@ -184,6 +193,8 @@ private:
     IColumn::WrappedPtr data_column;
     Lengths common_prefix_lengths;
     size_t block_size;
+
+    ColumnPtr old_indexes_mapping;
 
     bool is_nullable;
     mutable IColumnUnique::IncrementalHash hash;

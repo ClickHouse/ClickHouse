@@ -115,48 +115,10 @@ ColumnUniqueFCBlockDF::ColumnUniqueFCBlockDF(const ColumnPtr & string_column, si
         IColumn::PermutationSortDirection::Ascending,
         IColumn::PermutationSortStability::Unstable,
         0, /* limit */
-        1, /* nan_direction_hint */
+        -1, /* nan_direction_hint */
         sorted_permutation);
     auto sorted_column = string_column->permute(sorted_permutation, 0);
-
-    /// Default / Null value
-    data_column->insert("");
-    common_prefix_lengths.push_back(0);
-
-    StringRef current_header = "";
-    StringRef prev_data = ""; // to skip duplicates
-    size_t pos_in_block = 0;
-    for (size_t i = 0; i < sorted_column->size(); ++i)
-    {
-        const StringRef data = sorted_column->getDataAt(i);
-        if (prev_data == data)
-        {
-            continue;
-        }
-        if (pos_in_block == 0)
-        {
-            current_header = data;
-            data_column->insertData(current_header.data, current_header.size);
-            common_prefix_lengths.push_back(current_header.size);
-        }
-        else
-        {
-            size_t same_prefix_length = 0;
-            while (same_prefix_length < current_header.size && same_prefix_length < data.size
-                   && current_header.data[same_prefix_length] == data.data[same_prefix_length])
-            {
-                ++same_prefix_length;
-            }
-            data_column->insertData(data.data + same_prefix_length, data.size - same_prefix_length);
-            common_prefix_lengths.push_back(same_prefix_length);
-        }
-        prev_data = data;
-        ++pos_in_block;
-        if (pos_in_block == block_size)
-        {
-            pos_in_block = 0;
-        }
-    }
+    calculateCompression(sorted_column);
 }
 
 ColumnUniqueFCBlockDF::ColumnUniqueFCBlockDF(const ColumnUniqueFCBlockDF & other)
@@ -219,11 +181,49 @@ size_t ColumnUniqueFCBlockDF::getPosToInsert(StringRef value) const
     return pos;
 }
 
-void ColumnUniqueFCBlockDF::recalculateForNewData(const ColumnPtr & string_column)
+void ColumnUniqueFCBlockDF::calculateCompression(const ColumnPtr & string_column)
 {
-    ColumnUniqueFCBlockDF temp_column(string_column, block_size, is_nullable);
-    data_column = temp_column.data_column;
-    common_prefix_lengths = std::move(temp_column.common_prefix_lengths);
+    data_column = data_column->cloneEmpty();
+    common_prefix_lengths.clear();
+
+    /// Default / Null value
+    data_column->insert("");
+    common_prefix_lengths.push_back(0);
+
+    StringRef current_header = "";
+    StringRef prev_data = ""; // to skip duplicates
+    size_t pos_in_block = 0;
+    for (size_t i = 0; i < string_column->size(); ++i)
+    {
+        const StringRef data = string_column->getDataAt(i);
+        if (prev_data == data)
+        {
+            continue;
+        }
+        if (pos_in_block == 0)
+        {
+            current_header = data;
+            data_column->insertData(current_header.data, current_header.size);
+            common_prefix_lengths.push_back(current_header.size);
+        }
+        else
+        {
+            size_t same_prefix_length = 0;
+            while (same_prefix_length < current_header.size && same_prefix_length < data.size
+                   && current_header.data[same_prefix_length] == data.data[same_prefix_length])
+            {
+                ++same_prefix_length;
+            }
+            data_column->insertData(data.data + same_prefix_length, data.size - same_prefix_length);
+            common_prefix_lengths.push_back(same_prefix_length);
+        }
+        prev_data = data;
+        ++pos_in_block;
+        if (pos_in_block == block_size)
+        {
+            pos_in_block = 0;
+        }
+    }
 }
 
 std::optional<UInt64> ColumnUniqueFCBlockDF::getOrFindValueIndex(StringRef value) const
@@ -266,10 +266,11 @@ bool ColumnUniqueFCBlockDF::tryUniqueInsert(const Field & x, size_t & index)
 
 MutableColumnPtr ColumnUniqueFCBlockDF::uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    auto values = getDecompressedAll();
-    values->insertRangeFrom(src, start, length);
 
-    recalculateForNewData(std::move(values));
+
+    ColumnPtr sorted_column;
+    old_indexes_mapping = prepareForInsert(getDecompressedAll(), src.cut(start, length), sorted_column);
+    calculateCompression(sorted_column);
 
     auto positions = ColumnVector<UInt64>::create();
     for (size_t i = 0; i < length; ++i)
@@ -286,9 +287,11 @@ size_t ColumnUniqueFCBlockDF::uniqueInsertData(const char * pos, size_t length)
     const size_t output = getPosToInsert(StringRef{pos, length});
     auto single_value_column = ColumnString::create();
     single_value_column->insertData(pos, length);
-    auto temp_strings_column = getDecompressedAll();
-    temp_strings_column->insertRangeFrom(*single_value_column, 0, single_value_column->size());
-    recalculateForNewData(std::move(temp_strings_column));
+    
+    ColumnPtr sorted_column;
+    old_indexes_mapping = prepareForInsert(getDecompressedAll(), std::move(single_value_column), sorted_column);
+    calculateCompression(sorted_column);
+
     return output;
 }
 
@@ -340,6 +343,7 @@ ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t
     size_t src_ptr = 0;
     PaddedPODArray<size_t> added;
     const size_t initial_size = our_values->size(); /// always at least 1 because of default value
+    MutableColumnPtr to_insert = ColumnString::create();
     while (our_ptr < initial_size && src_ptr < src_values->size())
     {
         const StringRef our_value = our_values->getDataAt(our_ptr);
@@ -351,7 +355,7 @@ ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t
         else if (our_value > src_value)
         {
             added.push_back(src_ptr);
-            our_values->insertData(src_value.data, src_value.size);
+            to_insert->insertData(src_value.data, src_value.size);
             ++src_ptr;
         }
         else
@@ -371,11 +375,13 @@ ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t
         {
             added.push_back(src_ptr);
             ++src_ptr;
-            our_values->insertData(value.data, value.size);
+            to_insert->insertData(value.data, value.size);
         }
     }
 
-    recalculateForNewData(std::move(our_values));
+    ColumnPtr sorted_column;
+    old_indexes_mapping = prepareForInsert(our_values, std::move(to_insert), sorted_column);
+    calculateCompression(sorted_column);
 
     auto indexes = ColumnVector<UInt64>::create();
     for (const auto pos : added)
@@ -581,6 +587,38 @@ size_t ColumnUniqueFCBlockDF::allocatedBytes() const
 UInt128 ColumnUniqueFCBlockDF::getHash() const
 {
     return hash.getHash(data_column);
+}
+
+bool ColumnUniqueFCBlockDF::haveIndexesChanged() const
+{
+    return old_indexes_mapping != nullptr;
+}
+
+MutableColumnPtr ColumnUniqueFCBlockDF::detachChangedIndexes()
+{
+    MutableColumnPtr temp = IColumn::mutate(std::move(old_indexes_mapping));
+    old_indexes_mapping = nullptr;
+    return temp;
+}
+
+MutableColumnPtr ColumnUniqueFCBlockDF::prepareForInsert(const MutableColumnPtr & column_to_modify, const ColumnPtr & to_insert, ColumnPtr & sorted_column)
+{
+    MutableColumnPtr mapping = ColumnUInt64::create(column_to_modify->size());
+    
+    IColumn::Permutation sorted_permutation;
+    column_to_modify->insertRangeFrom(*to_insert, 0, to_insert->size());
+    column_to_modify->getPermutation(
+        IColumn::PermutationSortDirection::Ascending,
+        IColumn::PermutationSortStability::Unstable,
+        0, /* limit */
+        -1, /* nan_direction_hint */
+        sorted_permutation);
+    sorted_column = column_to_modify->permute(sorted_permutation, 0);
+
+    auto* column_data = static_cast<ColumnUInt64 &>(*mapping).getData().data();
+    memcpy(column_data, sorted_permutation.data(), sizeof(UInt64) * mapping->size());
+
+    return mapping;
 }
 
 }
