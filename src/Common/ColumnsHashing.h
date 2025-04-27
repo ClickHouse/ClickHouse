@@ -97,6 +97,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
     static constexpr bool has_cheap_key_calculation = Base::has_cheap_key_calculation;
     static constexpr bool has_pre_computed_hashes = Base::has_pre_computed_hashes;
+    static constexpr bool use_string_hash_table = false;
 
     static HashMethodContextPtr createContext(const HashMethodContextSettings & settings)
     {
@@ -339,15 +340,16 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
   * That is, for example, for strings, it contains first the serialized length of the string, and then the bytes.
   * Therefore, when aggregating by several strings, there is no ambiguity.
   */
-template <typename Value, typename Mapped, bool nullable, bool prealloc>
+template <typename Value, typename Mapped, bool nullable, bool prealloc, bool inline_hash>
 struct HashMethodSerialized
-    : public columns_hashing_impl::HashMethodBase<HashMethodSerialized<Value, Mapped, nullable, prealloc>, Value, Mapped, false>
+    : public columns_hashing_impl::HashMethodBase<HashMethodSerialized<Value, Mapped, nullable, prealloc, inline_hash>, Value, Mapped, false>
 {
-    using Self = HashMethodSerialized<Value, Mapped, nullable, prealloc>;
+    using Self = HashMethodSerialized<Value, Mapped, nullable, prealloc, inline_hash>;
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
     static constexpr bool has_cheap_key_calculation = false;
     static constexpr bool has_pre_computed_hashes = prealloc;
+    static constexpr bool use_string_hash_table = prealloc && inline_hash;
 
     ColumnRawPtrs key_columns;
     size_t keys_size;
@@ -375,9 +377,16 @@ struct HashMethodSerialized
 
         if constexpr (prealloc)
         {
-            null_maps.resize(keys_size);
-            for (size_t i = 0; i < keys_size; ++i)
-                key_columns[i]->collectSerializedValueSizes(row_sizes, null_maps[i]);
+            if constexpr (nullable)
+            {
+                for (size_t i = 0; i < keys_size; ++i)
+                    key_columns[i]->collectSerializedValueSizes(row_sizes, null_maps[i]);
+            }
+            else
+            {
+                for (size_t i = 0; i < keys_size; ++i)
+                    key_columns[i]->collectSerializedValueSizes(row_sizes, nullptr);
+            }
         }
 
         if constexpr (has_pre_computed_hashes)
@@ -392,23 +401,32 @@ struct HashMethodSerialized
 
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
-    ALWAYS_INLINE SerializedKeyHolder getKeyHolder(size_t row, Arena & pool) const
+    ALWAYS_INLINE auto getKeyHolder(size_t row, Arena & pool) const
     {
         if constexpr (prealloc)
         {
             const char * begin = nullptr;
 
             char * memory = pool.allocContinue(row_sizes[row], begin);
-            StringRef key(memory, row_sizes[row]);
+            char * pos = memory;
             for (size_t j = 0; j < keys_size; ++j)
             {
                 if constexpr (nullable)
-                    memory = key_columns[j]->serializeValueIntoMemoryWithNull(row, memory, null_maps[j]);
+                    pos = key_columns[j]->serializeValueIntoMemoryWithNull(row, pos, null_maps[j]);
                 else
-                    memory = key_columns[j]->serializeValueIntoMemory(row, memory);
+                    pos = key_columns[j]->serializeValueIntoMemory(row, pos);
             }
 
-            return SerializedKeyHolder{key, pool};
+            if constexpr (inline_hash)
+            {
+                StringRefWithInlineHash key(memory, ((row_sizes[row] << StringRefWithInlineHash::SHIFT) | hashes.getData()[row]));
+                return SerializedKeyHolderWithInlineHash{key, pool};
+            }
+            else
+            {
+                StringRef key(memory, row_sizes[row]);
+                return SerializedKeyHolder{key, pool};
+            }
         }
         else if constexpr (nullable)
         {
@@ -420,10 +438,12 @@ struct HashMethodSerialized
 
             return SerializedKeyHolder{{begin, sum_size}, pool};
         }
-
-        return SerializedKeyHolder{
-            serializeKeysToPoolContiguous(row, keys_size, key_columns, pool),
-            pool};
+        else
+        {
+            return SerializedKeyHolder{
+                serializeKeysToPoolContiguous(row, keys_size, key_columns, pool),
+                pool};
+        }
     }
 };
 

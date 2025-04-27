@@ -237,13 +237,13 @@ public:
         prefetchByHash(key_hash);
     }
 
-    void ALWAYS_INLINE prefetchByHash(size_t key_hash) const
+    void ALWAYS_INLINE prefetchByHash(size_t key_hash, size_t = 0) const
     {
         const auto bucket = getBucketFromHash(key_hash);
         impls[bucket].prefetchByHash(key_hash);
     }
 
-    bool ALWAYS_INLINE isEmptyCell(size_t key_hash) const
+    bool ALWAYS_INLINE isEmptyCell(size_t key_hash, size_t = 0) const
     {
         const auto bucket = getBucketFromHash(key_hash);
         return impls[bucket].isEmptyCell(key_hash);
