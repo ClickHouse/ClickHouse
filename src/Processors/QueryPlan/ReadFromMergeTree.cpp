@@ -2321,8 +2321,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         Names partition_names;
         for (const auto & part : result.parts_with_ranges)
         {
-            partition_names.emplace_back(
-                fmt::format("{}.{}", data.getStorageID().getFullNameNotQuoted(), part.data_part->info.getPartitionId()));
+            partition_names.emplace_back(part.data_part->info.getPartitionId());
         }
         context->getQueryContext()->addQueryAccessInfo(
             data.getStorageID().getFullTableName(), Context::TableAccessInfoType::PARTITION, partition_names);
