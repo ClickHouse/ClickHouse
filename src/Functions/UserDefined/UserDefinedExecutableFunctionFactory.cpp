@@ -4,6 +4,7 @@
 
 #include <Common/filesystemHelpers.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/quoteString.h>
 #include <DataTypes/FieldToDataType.h>
 
 #include <Processors/Sources/ShellCommandSource.h>
@@ -104,7 +105,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool isDeterministic() const override { return false; }
+    bool isDeterministic() const override { return executable_function->getConfiguration().is_deterministic; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override

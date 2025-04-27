@@ -2,11 +2,13 @@
 
 #include <string>
 #include <filesystem>
+#include <thread>
 
 #include <Common/logger_useful.h>
 #include <Disks/IDisk.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/CoordinationSettings.h>
+#include <IO/WriteBufferFromFileBase.h>
 
 namespace DB
 {

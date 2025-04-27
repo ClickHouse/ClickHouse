@@ -1,6 +1,7 @@
 #include <filesystem>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -19,7 +20,6 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSystemQuery.h>
-#include <Parsers/queryToString.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <QueryPipeline/Pipe.h>
 #include <base/sort.h>
@@ -184,12 +184,12 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
 
     DDLLogEntry entry;
     entry.hosts = std::move(hosts);
-    entry.query = queryToString(query_ptr);
+    entry.query = query_ptr->formatWithSecretsOneLine();
     entry.initiator = ddl_worker.getCommonHostID();
     entry.setSettingsIfRequired(context);
     entry.tracing_context = OpenTelemetry::CurrentContext();
     entry.initial_query_id = context->getClientInfo().initial_query_id;
-    String node_path = ddl_worker.enqueueQuery(entry, params.retries_info, context->getProcessListElement());
+    String node_path = ddl_worker.enqueueQuery(entry, params.retries_info);
 
     return getDDLOnClusterStatus(node_path, ddl_worker.getReplicasDir(), entry, context);
 }

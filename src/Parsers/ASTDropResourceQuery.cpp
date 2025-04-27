@@ -10,16 +10,16 @@ ASTPtr ASTDropResourceQuery::clone() const
     return std::make_shared<ASTDropResourceQuery>(*this);
 }
 
-void ASTDropResourceQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
+void ASTDropResourceQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "DROP RESOURCE ";
+    ostr << (settings.hilite ? hilite_keyword : "") << "DROP RESOURCE ";
 
     if (if_exists)
-        settings.ostr << "IF EXISTS ";
+        ostr << "IF EXISTS ";
 
-    settings.ostr << (settings.hilite ? hilite_none : "");
-    settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(resource_name) << (settings.hilite ? hilite_none : "");
-    formatOnCluster(settings);
+    ostr << (settings.hilite ? hilite_none : "");
+    ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(resource_name) << (settings.hilite ? hilite_none : "");
+    formatOnCluster(ostr, settings);
 }
 
 }

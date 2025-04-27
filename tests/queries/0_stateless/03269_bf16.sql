@@ -1,5 +1,3 @@
-SET allow_experimental_bfloat16_type = 1;
-
 -- This is a smoke test, non exhaustive.
 
 -- Conversions

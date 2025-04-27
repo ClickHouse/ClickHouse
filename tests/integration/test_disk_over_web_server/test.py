@@ -372,23 +372,23 @@ def test_page_cache(cluster):
             return res
 
         ev1 = get_profile_events("test cold cache")
-        assert ev1.get("PageCacheChunkMisses", 0) > 0
+        assert ev1.get("PageCacheMisses", 0) > 0
         assert (
             ev1.get("DiskConnectionsCreated", 0) + ev1.get("DiskConnectionsReused", 0)
             > 0
         )
 
         ev2 = get_profile_events("test warm cache")
-        assert ev2.get("PageCacheChunkDataHits", 0) > 0
-        assert ev2.get("PageCacheChunkMisses", 0) == 0
+        assert ev2.get("PageCacheHits", 0) > 0
+        assert ev2.get("PageCacheMisses", 0) == 0
         assert (
             ev2.get("DiskConnectionsCreated", 0) + ev2.get("DiskConnectionsReused", 0)
             == 0
         )
 
         ev3 = get_profile_events("test no cache")
-        assert ev3.get("PageCacheChunkDataHits", 0) == 0
-        assert ev3.get("PageCacheChunkMisses", 0) == 0
+        assert ev3.get("PageCacheHits", 0) == 0
+        assert ev3.get("PageCacheMisses", 0) == 0
         assert (
             ev3.get("DiskConnectionsCreated", 0) + ev3.get("DiskConnectionsReused", 0)
             > 0

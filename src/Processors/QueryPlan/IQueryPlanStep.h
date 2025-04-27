@@ -6,8 +6,6 @@
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 
-#include <fmt/core.h>
-
 namespace DB
 {
 
@@ -24,8 +22,15 @@ namespace JSONBuilder { class JSONMap; }
 class QueryPlan;
 using QueryPlanRawPtrs = std::list<QueryPlan *>;
 
+struct QueryPlanSerializationSettings;
+
 using Header = Block;
 using Headers = std::vector<Header>;
+
+struct ExplainPlanOptions;
+
+class IQueryPlanStep;
+using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 
 /// Single step of query plan.
 class IQueryPlanStep
@@ -33,9 +38,13 @@ class IQueryPlanStep
 public:
     IQueryPlanStep();
 
+    IQueryPlanStep(const IQueryPlanStep &) = default;
+    IQueryPlanStep(IQueryPlanStep &&) = default;
+
     virtual ~IQueryPlanStep() = default;
 
     virtual String getName() const = 0;
+    virtual String getSerializationName() const { return getName(); }
 
     /// Add processors from current step to QueryPipeline.
     /// Calling this method, we assume and don't check that:
@@ -53,6 +62,15 @@ public:
     /// Methods to describe what this step is needed for.
     const std::string & getStepDescription() const { return step_description; }
     void setStepDescription(std::string description) { step_description = std::move(description); }
+
+    struct Serialization;
+    struct Deserialization;
+
+    virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/) const {}
+    virtual void serialize(Serialization & /*ctx*/) const;
+    virtual bool isSerializable() const { return false; }
+
+    virtual QueryPlanStepPtr clone() const;
 
     virtual const SortDescription & getSortDescription() const;
 
@@ -73,6 +91,9 @@ public:
     virtual void describeIndexes(JSONBuilder::JSONMap & /*map*/) const {}
     virtual void describeIndexes(FormatSettings & /*settings*/) const {}
 
+    /// Get description of the distributed plan. Shown in with options `distributed = 1
+    virtual void describeDistributedPlan(FormatSettings & /*settings*/, const ExplainPlanOptions & /*options*/) {}
+
     /// Get description of processors added in current step. Should be called after updatePipeline().
     virtual void describePipeline(FormatSettings & /*settings*/) const {}
 
@@ -84,11 +105,13 @@ public:
 
     /// Updates the input streams of the given step. Used during query plan optimizations.
     /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
-    String getUniqID() const { return fmt::format("{}_{}", getName(), step_index); }
+    String getUniqID() const;
 
     /// (e.g. you correctly remove / add columns).
     void updateInputHeaders(Headers input_headers_);
     void updateInputHeader(Header input_header, size_t idx = 0);
+
+    virtual bool hasCorrelatedExpressions() const;
 
 protected:
     virtual void updateOutputHeader() = 0;
@@ -109,5 +132,4 @@ private:
     size_t step_index = 0;
 };
 
-using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 }

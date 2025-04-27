@@ -43,6 +43,7 @@ const auto KAFKA_CONSUMERS_POOL_TTL_MS_MAX = 600'000;
     M(CLASS_NAME, StreamingHandleErrorMode) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt64) \
+    M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, URI)
 
@@ -66,6 +67,8 @@ struct KafkaSettings
     SettingsChanges getFormatSettings() const;
 
     void sanityCheck() const;
+
+    static bool hasBuiltin(std::string_view name);
 
 private:
     std::unique_ptr<KafkaSettingsImpl> impl;

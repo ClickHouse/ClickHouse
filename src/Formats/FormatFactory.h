@@ -1,14 +1,12 @@
 #pragma once
 
-#include <Common/Allocator.h>
-#include <Columns/IColumn.h>
 #include <Formats/FormatSettings.h>
-#include <Interpreters/Context_fwd.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ParallelReadBuffer.h>
+#include <Interpreters/Context_fwd.h>
 #include <base/types.h>
-#include <Core/NamesAndTypes.h>
+#include <Common/Allocator.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -141,6 +139,7 @@ private:
         ExternalSchemaReaderCreator external_schema_reader_creator;
         bool supports_parallel_formatting{false};
         bool prefers_large_blocks{false};
+        bool is_tty_friendly{true}; /// If false, client will ask before output in the terminal.
         NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker;
         AppendSupportChecker append_support_checker;
         AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter;
@@ -237,6 +236,7 @@ public:
 
     void markOutputFormatSupportsParallelFormatting(const String & name);
     void markOutputFormatPrefersLargeBlocks(const String & name);
+    void markOutputFormatNotTTYFriendly(const String & name);
 
     void markFormatSupportsSubsetOfColumns(const String & name);
     void registerSubsetOfColumnsSupportChecker(const String & name, SubsetOfColumnsSupportChecker subset_of_columns_support_checker);
@@ -246,6 +246,7 @@ public:
     bool checkIfFormatHasExternalSchemaReader(const String & name) const;
     bool checkIfFormatHasAnySchemaReader(const String & name) const;
     bool checkIfOutputFormatPrefersLargeBlocks(const String & name) const;
+    bool checkIfOutputFormatIsTTYFriendly(const String & name) const;
 
     bool checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const;
 

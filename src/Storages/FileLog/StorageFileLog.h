@@ -5,7 +5,7 @@
 #include <Storages/FileLog/Buffer_fwd.h>
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
 
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/StreamingHandleErrorMode.h>
 #include <Storages/IStorage.h>
 #include <Common/SettingsChanges.h>
@@ -134,6 +134,7 @@ public:
 private:
     friend class ReadFromStorageFileLog;
 
+    ContextMutablePtr filelog_context;
     std::unique_ptr<FileLogSettings> filelog_settings;
 
     const String path;
@@ -169,9 +170,9 @@ private:
 
     struct TaskContext
     {
-        BackgroundSchedulePool::TaskHolder holder;
+        BackgroundSchedulePoolTaskHolder holder;
         std::atomic<bool> stream_cancelled {false};
-        explicit TaskContext(BackgroundSchedulePool::TaskHolder&& task_) : holder(std::move(task_))
+        explicit TaskContext(BackgroundSchedulePoolTaskHolder&& task_) : holder(std::move(task_))
         {
         }
     };

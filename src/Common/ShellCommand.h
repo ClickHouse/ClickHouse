@@ -67,6 +67,21 @@ public:
         DestructorStrategy terminate_in_destructor_strategy = DestructorStrategy(false, 0);
     };
 
+    pid_t getPid() const
+    {
+        return pid;
+    }
+
+    bool isWaitCalled() const
+    {
+        return wait_called;
+    }
+
+    void setDoNotTerminate()
+    {
+        do_not_terminate = true;
+    }
+
     /// Run the command using /bin/sh -c.
     /// If terminate_in_destructor is true, send terminate signal in destructor and don't wait process.
     static std::unique_ptr<ShellCommand> execute(const Config & config);
@@ -81,6 +96,10 @@ public:
     /// Wait for the process to finish, see the return code. To throw an exception if the process was not completed independently.
     int tryWait();
 
+    /// Returns if process terminated.
+    /// If process terminated, then handle return code.
+    bool waitIfProccesTerminated();
+
     WriteBufferFromFile in;        /// If the command reads from stdin, do not forget to call in.close() after writing all the data there.
     ReadBufferFromFile out;
     ReadBufferFromFile err;
@@ -92,10 +111,16 @@ private:
     pid_t pid;
     Config config;
     bool wait_called = false;
+    bool do_not_terminate = false;
 
     ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, const Config & config);
 
     bool tryWaitProcessWithTimeout(size_t timeout_in_seconds);
+    struct tryWaitResult;
+
+    tryWaitResult tryWaitImpl(bool blocking);
+
+    void handleProcessRetcode(int retcode) const;
 
     static LoggerPtr getLogger();
 

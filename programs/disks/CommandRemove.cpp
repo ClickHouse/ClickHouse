@@ -1,6 +1,7 @@
 #include <Interpreters/Context.h>
 #include "Common/Exception.h"
 #include "ICommand.h"
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -14,7 +15,7 @@ namespace ErrorCodes
 class CommandRemove final : public ICommand
 {
 public:
-    CommandRemove()
+    CommandRemove() : ICommand("CommandRemove")
     {
         command_name = "remove";
         description = "Remove file or directory. Throws exception if file doesn't exists";
@@ -35,10 +36,13 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "cannot remove '{}': Is a directory", path);
             }
 
-            disk.getDisk()->removeRecursive(path);
+            LOG_INFO(log, "Removing directory '{}' at disk '{}'", path, disk.getDisk()->getName());
+
+            disk.getDisk()->removeRecursiveWithLimit(path);
         }
         else if (disk.getDisk()->existsFile(path))
         {
+            LOG_INFO(log, "Removing file '{}' at disk '{}'", path, disk.getDisk()->getName());
             disk.getDisk()->removeFileIfExists(path);
         }
         else

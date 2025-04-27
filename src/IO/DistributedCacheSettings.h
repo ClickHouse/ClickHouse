@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/DistributedCacheProtocol.h>
+#include <Core/DistributedCacheDefines.h>
 #include <Core/Types.h>
 #include <IO/DistributedCacheLogMode.h>
 #include <IO/DistributedCachePoolBehaviourOnLimit.h>

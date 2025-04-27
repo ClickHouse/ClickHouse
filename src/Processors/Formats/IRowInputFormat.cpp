@@ -104,12 +104,8 @@ Chunk IRowInputFormat::read()
     }
 
     const Block & header = getPort().getHeader();
-
     size_t num_columns = header.columns();
-    MutableColumns columns(num_columns);
-
-    for (size_t i = 0; i < num_columns; ++i)
-        columns[i] = header.getByPosition(i).type->createColumn(*serializations[i]);
+    MutableColumns columns = header.cloneEmptyColumns(serializations);
 
     ColumnCheckpoints checkpoints(columns.size());
     for (size_t column_idx = 0; column_idx < columns.size(); ++column_idx)

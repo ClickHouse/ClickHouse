@@ -1,13 +1,10 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <Storages/IStorageCluster.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/getStructureOfRemoteTable.h>
-#include <Common/SettingsChanges.h>
+#include <Columns/IColumn.h>
 #include <Common/SimpleIncrement.h>
-#include <Client/ConnectionPool.h>
-#include <Client/ConnectionPoolWithFailover.h>
 #include <Common/ActionBlocker.h>
 #include <Interpreters/Cluster.h>
 
@@ -31,6 +28,13 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 struct TreeRewriterResult;
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
+
+class SettingsChanges;
+
+class ConnectionPoolWithFailover;
+using ConnectionPoolWithFailoverPtr = std::shared_ptr<ConnectionPoolWithFailover>;
+
+class IStorageCluster;
 
 /** A distributed table that resides on multiple servers.
   * Uses data from the specified database and tables on each server.
@@ -108,7 +112,7 @@ public:
         size_t /*num_streams*/) override;
 
     bool supportsParallelInsert() const override { return true; }
-    std::optional<UInt64> totalBytes(const Settings &) const override;
+    std::optional<UInt64> totalBytes(ContextPtr) const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool /*async_insert*/) override;
 

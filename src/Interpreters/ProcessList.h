@@ -14,7 +14,7 @@
 #include <Parsers/IAST.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
-#include <Common/LockGuard.h>
+#include <Common/UniqueLock.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -42,6 +42,16 @@ class QueryStatus;
 class ThreadStatus;
 class ProcessListEntry;
 
+enum CancelReason
+{
+    UNDEFINED,
+    TIMEOUT,
+    CANCELLED_BY_USER,
+
+    /// CANCELLED_BY_ERROR means that there were parallel processes/threads and some of them failed,
+    /// so we cancel other processes/threads with this cancel reason.
+    CANCELLED_BY_ERROR,
+};
 
 /** Information of process list element.
   * To output in SHOW PROCESSLIST query. Does not contain any complex objects, that do something on copy or destructor.
@@ -49,6 +59,7 @@ class ProcessListEntry;
 struct QueryStatusInfo
 {
     String query;
+    UInt64 normalized_query_hash;
     IAST::QueryKind query_kind{};
     UInt64 elapsed_microseconds;
     size_t read_rows;
@@ -60,6 +71,7 @@ struct QueryStatusInfo
     Int64 peak_memory_usage;
     ClientInfo client_info;
     bool is_cancelled;
+    CancelReason cancel_reason;
     bool is_all_data_sent;
 
     /// Optional fields, filled by query
@@ -83,6 +95,7 @@ protected:
     friend struct ::GlobalOvercommitTracker;
 
     String query;
+    UInt64 normalized_query_hash;
     ClientInfo client_info;
 
     /// Info about all threads involved in query execution
@@ -109,8 +122,9 @@ protected:
     /// KILL was send to the query
     std::atomic<bool> is_killed { false };
 
-    std::exception_ptr cancellation_exception TSA_GUARDED_BY(cancellation_exception_mutex);
-    mutable std::mutex cancellation_exception_mutex;
+    mutable std::mutex cancel_mutex;
+    CancelReason cancel_reason { CancelReason::UNDEFINED };
+    std::exception_ptr cancellation_exception TSA_GUARDED_BY(cancel_mutex);
 
     /// All data to the client already had been sent.
     /// Including EndOfStream or Exception.
@@ -130,7 +144,7 @@ protected:
     /// A weak pointer is used here because it's a ProcessListEntry which owns this QueryStatus, and not vice versa.
     void setProcessListEntry(std::weak_ptr<ProcessListEntry> process_list_entry_);
 
-    [[noreturn]] void throwQueryWasCancelled() const;
+    [[noreturn]] void throwQueryWasCancelled() const TSA_REQUIRES(cancel_mutex);
 
     mutable std::mutex executors_mutex;
 
@@ -176,6 +190,7 @@ public:
     QueryStatus(
         ContextPtr context_,
         const String & query_,
+        UInt64 normalized_query_hash_,
         const ClientInfo & client_info_,
         QueryPriorities::Handle && priority_handle_,
         ThreadGroupPtr && thread_group_,
@@ -215,7 +230,7 @@ public:
         progress_in.incrementPiecewiseAtomically(value);
 
         if (priority_handle)
-            priority_handle->waitIfNeed(std::chrono::seconds(1));        /// NOTE Could make timeout customizable.
+            priority_handle->waitIfNeed();
 
         return !is_killed.load(std::memory_order_relaxed);
     }
@@ -230,9 +245,11 @@ public:
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
+    void throwProperExceptionIfNeeded(const UInt64 & max_execution_time_ms, const UInt64 & elapsed_ns);
+
     /// Cancels the current query.
     /// Optional argument `exception` allows to set an exception which checkTimeLimit() will throw instead of "QUERY_WAS_CANCELLED".
-    CancellationCode cancelQuery(bool kill, std::exception_ptr exception = nullptr);
+    CancellationCode cancelQuery(CancelReason reason, std::exception_ptr exception = nullptr);
 
     bool isKilled() const { return is_killed; }
 
@@ -357,7 +374,7 @@ public:
 
     using Mutex = std::mutex;
     using Lock = std::unique_lock<Mutex>;
-    using LockAndBlocker = LockAndOverCommitTrackerBlocker<LockGuard, Mutex>;
+    using LockAndBlocker = LockAndOverCommitTrackerBlocker<UniqueLock, Mutex>;
 
 protected:
     friend class ProcessListEntry;
@@ -399,6 +416,9 @@ protected:
     /// limit for select. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
     size_t max_select_queries_amount = 0;
 
+    /// timeout in millisecond for low priority query to wait
+    size_t low_priority_query_wait_time_ms = 0;
+
     /// amount of queries by query kind.
     QueryKindAmounts query_kind_amounts;
 
@@ -425,7 +445,7 @@ public:
       * If timeout is passed - throw an exception.
       * Don't count KILL QUERY queries or async insert flush queries
       */
-    EntryPtr insert(const String & query_, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds);
+    EntryPtr insert(const String & query_, UInt64 normalized_query_hash, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds);
 
     /// Number of currently executing queries.
     size_t size() const { return processes.size(); }
@@ -468,6 +488,18 @@ public:
         return max_insert_queries_amount;
     }
 
+    void setLowPriorityQueryWaitTimeMs(size_t low_priority_query_wait_time_ms_)
+    {
+        Lock lock(mutex);
+        low_priority_query_wait_time_ms = low_priority_query_wait_time_ms_;
+    }
+
+    size_t getLowPriorityQueryWaitTimeMs() const
+    {
+        Lock lock(mutex);
+        return low_priority_query_wait_time_ms;
+    }
+
     void setMaxSelectQueriesAmount(size_t max_select_queries_amount_)
     {
         Lock lock(mutex);
@@ -496,8 +528,8 @@ public:
     void decrementWaiters();
 
     /// Try call cancel() for input and output streams of query with specified id and user
-    CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill = false);
-    CancellationCode sendCancelToQuery(QueryStatusPtr elem, bool kill = false);
+    CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user);
+    CancellationCode sendCancelToQuery(QueryStatusPtr elem);
 
     void killAllQueries();
 };

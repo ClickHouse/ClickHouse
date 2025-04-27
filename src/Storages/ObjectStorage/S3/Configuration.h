@@ -67,6 +67,9 @@ public:
     std::string getSignatures(bool with_structure = true) const { return with_structure ? signatures_with_structure : signatures_without_structure; }
     size_t getMaxNumberOfArguments(bool with_structure = true) const { return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure; }
 
+    S3::URI getURL() const { return url; }
+    const S3::S3AuthSettings & getAuthSettings() const { return auth_settings; }
+
     Path getPath() const override { return url.key; }
     void setPath(const Path & path) override { url.key = path; }
 
@@ -91,7 +94,8 @@ public:
         ASTs & args,
         const String & structure,
         const String & format,
-        ContextPtr context) override;
+        ContextPtr context,
+        bool with_structure) override;
 
 private:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;

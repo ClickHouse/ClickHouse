@@ -1,8 +1,0 @@
-position: 300
-label: 'No-Code platforms'
-collapsible: true
-collapsed: true
-link:
-  type: generated-index
-  title: No-Code platforms
-  slug: /ja/integrations/no-code

@@ -11,8 +11,8 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/StorageDictionary.h>
@@ -23,6 +23,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -30,8 +31,9 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
+extern const SettingsBool fsync_metadata;
+extern const SettingsUInt64 max_parser_backtracks;
+extern const SettingsUInt64 max_parser_depth;
 }
 namespace ErrorCodes
 {
@@ -41,13 +43,14 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int BAD_ARGUMENTS;
 }
 namespace
 {
 void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
 {
     /// First validate that the query can be parsed
-    const auto serialized_query = serializeAST(query);
+    const auto serialized_query = query.formatWithSecretsOneLine();
     ParserCreateQuery parser;
     ASTPtr new_query_raw = parseQuery(
         parser,
@@ -199,6 +202,12 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
             if (metadata.settings_changes)
                 storage_ast.set(storage_ast.settings, metadata.settings_changes);
         }
+        else if (metadata.settings_changes)
+        {
+            auto & settings_changes = metadata.settings_changes->as<ASTSetQuery &>().changes;
+            if (!settings_changes.empty())
+                storage_ast.set(storage_ast.settings, metadata.settings_changes);
+        }
     }
 
     if (metadata.comment.empty())
@@ -292,13 +301,52 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
     if (!query.isView())
         query.select = nullptr;
 
-    query.format = nullptr;
+    query.format_ast = nullptr;
     query.out_file = nullptr;
 }
 
+String readMetadataFile(std::shared_ptr<IDisk> db_disk, const String & file_path)
+{
+    auto read_buf = db_disk->readFile(file_path, getReadSettingsForMetadata());
+    String content;
+    readStringUntilEOF(content, *read_buf);
+
+    return content;
+}
+
+void writeMetadataFile(std::shared_ptr<IDisk> db_disk, const String & file_path, std::string_view content, bool fsync_metadata)
+{
+    auto out = db_disk->writeFile(file_path, content.size(), WriteMode::Rewrite, getWriteSettingsForMetadata());
+    writeString(content, *out);
+
+    out->next();
+    if (fsync_metadata)
+        out->sync();
+    out->finalize();
+    out.reset();
+}
+
+void updateDatabaseCommentWithMetadataFile(DatabasePtr db, const AlterCommand & command)
+{
+    if (!command.comment)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to obtain database comment from query");
+
+    String old_database_comment = db->getDatabaseComment();
+    db->setDatabaseComment(command.comment.value());
+
+    try
+    {
+        DatabaseCatalog::instance().updateMetadataFile(db);
+    }
+    catch (...)
+    {
+        db->setDatabaseComment(old_database_comment);
+        throw;
+    }
+}
 
 DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context_)
-        : IDatabase(name_), WithContext(context_->getGlobalContext()), log(getLogger(logger))
+    : IDatabase(name_), WithContext(context_->getGlobalContext()), db_disk(context_->getDatabaseDisk()), log(getLogger(logger))
 {
 }
 

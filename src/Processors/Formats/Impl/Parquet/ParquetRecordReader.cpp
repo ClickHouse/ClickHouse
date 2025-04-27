@@ -15,6 +15,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/castColumn.h>
 
+#include <base/scope_guard.h>
+
 #include <arrow/status.h>
 #include <parquet/arrow/reader.h>
 #include <parquet/column_reader.h>
@@ -93,19 +95,20 @@ private:
     std::unique_ptr<ParquetColumnReader> fromInt32INT(const parquet::IntLogicalType & int_type);
     std::unique_ptr<ParquetColumnReader> fromInt64INT(const parquet::IntLogicalType & int_type);
 
-    template<class DataType>
+    template<class ClickHouseType, typename ParquetType>
     auto makeLeafReader()
     {
-        return std::make_unique<ParquetLeafColReader<typename DataType::ColumnType>>(
-            col_descriptor, std::make_shared<DataType>(), std::move(meta), std::move(page_reader));
+        return std::make_unique<ParquetLeafColReader<typename ClickHouseType::ColumnType, ParquetType>>(
+            col_descriptor, std::make_shared<ClickHouseType>(), std::move(meta), std::move(page_reader));
     }
 
-    template<class DecimalType>
+    template<class DecimalType, typename ParquetType>
     auto makeDecimalLeafReader()
     {
         auto data_type = std::make_shared<DataTypeDecimal<DecimalType>>(
             col_descriptor.type_precision(), col_descriptor.type_scale());
-        return std::make_unique<ParquetLeafColReader<ColumnDecimal<DecimalType>>>(
+
+        return std::make_unique<ParquetLeafColReader<ColumnDecimal<DecimalType>, ParquetType>>(
             col_descriptor, std::move(data_type), std::move(meta), std::move(page_reader));
     }
 
@@ -157,11 +160,11 @@ std::unique_ptr<ParquetColumnReader> ColReaderFactory::fromInt32()
         case parquet::LogicalType::Type::INT:
             return fromInt32INT(dynamic_cast<const parquet::IntLogicalType &>(*col_descriptor.logical_type()));
         case parquet::LogicalType::Type::NONE:
-            return makeLeafReader<DataTypeInt32>();
+            return makeLeafReader<DataTypeInt32, int32_t>();
         case parquet::LogicalType::Type::DATE:
-            return makeLeafReader<DataTypeDate32>();
+            return makeLeafReader<DataTypeDate32, int32_t>();
         case parquet::LogicalType::Type::DECIMAL:
-            return makeDecimalLeafReader<Decimal32>();
+            return makeDecimalLeafReader<Decimal32, int32_t>();
         default:
             return throwUnsupported();
     }
@@ -174,16 +177,16 @@ std::unique_ptr<ParquetColumnReader> ColReaderFactory::fromInt64()
         case parquet::LogicalType::Type::INT:
             return fromInt64INT(dynamic_cast<const parquet::IntLogicalType &>(*col_descriptor.logical_type()));
         case parquet::LogicalType::Type::NONE:
-            return makeLeafReader<DataTypeInt64>();
+            return makeLeafReader<DataTypeInt64, int64_t>();
         case parquet::LogicalType::Type::TIMESTAMP:
         {
             const auto & tm_type = dynamic_cast<const parquet::TimestampLogicalType &>(*col_descriptor.logical_type());
             auto read_type = std::make_shared<DataTypeDateTime64>(getScaleFromLogicalTimestamp(tm_type.time_unit()));
-            return std::make_unique<ParquetLeafColReader<ColumnDecimal<DateTime64>>>(
+            return std::make_unique<ParquetLeafColReader<ColumnDecimal<DateTime64>, int64_t>>(
                 col_descriptor, std::move(read_type), std::move(meta), std::move(page_reader));
         }
         case parquet::LogicalType::Type::DECIMAL:
-            return makeDecimalLeafReader<Decimal64>();
+            return makeDecimalLeafReader<Decimal64, int64_t>();
         default:
             return throwUnsupported();
     }
@@ -195,7 +198,7 @@ std::unique_ptr<ParquetColumnReader> ColReaderFactory::fromByteArray()
     {
         case parquet::LogicalType::Type::STRING:
         case parquet::LogicalType::Type::NONE:
-            return makeLeafReader<DataTypeString>();
+            return makeLeafReader<DataTypeString, ParquetByteArrayTypeStub>();
         default:
             return throwUnsupported();
     }
@@ -210,9 +213,9 @@ std::unique_ptr<ParquetColumnReader> ColReaderFactory::fromFLBA()
             if (col_descriptor.type_length() > 0)
             {
                 if (col_descriptor.type_length() <= static_cast<int>(sizeof(Decimal128)))
-                    return makeDecimalLeafReader<Decimal128>();
+                    return makeDecimalLeafReader<Decimal128, ParquetByteArrayTypeStub>();
                 if (col_descriptor.type_length() <= static_cast<int>(sizeof(Decimal256)))
-                    return makeDecimalLeafReader<Decimal256>();
+                    return makeDecimalLeafReader<Decimal256, ParquetByteArrayTypeStub>();
             }
 
             return throwUnsupported(PreformattedMessage::create(
@@ -227,11 +230,23 @@ std::unique_ptr<ParquetColumnReader> ColReaderFactory::fromInt32INT(const parque
 {
     switch (int_type.bit_width())
     {
+        case 8:
+        {
+            if (int_type.is_signed())
+                return makeLeafReader<DataTypeInt8, int32_t>();
+            return makeLeafReader<DataTypeUInt8, int32_t>();
+        }
+        case 16:
+        {
+            if (int_type.is_signed())
+                return makeLeafReader<DataTypeInt16, int32_t>();
+            return makeLeafReader<DataTypeUInt16, int32_t>();
+        }
         case 32:
         {
             if (int_type.is_signed())
-                return makeLeafReader<DataTypeInt32>();
-            return makeLeafReader<DataTypeUInt32>();
+                return makeLeafReader<DataTypeInt32, int32_t>();
+            return makeLeafReader<DataTypeUInt32, int32_t>();
         }
         default:
             return throwUnsupported(PreformattedMessage::create(", bit width: {}", int_type.bit_width()));
@@ -245,8 +260,8 @@ std::unique_ptr<ParquetColumnReader> ColReaderFactory::fromInt64INT(const parque
         case 64:
         {
             if (int_type.is_signed())
-                return makeLeafReader<DataTypeInt64>();
-            return makeLeafReader<DataTypeUInt64>();
+                return makeLeafReader<DataTypeInt64, int64_t>();
+            return makeLeafReader<DataTypeUInt64, int64_t>();
         }
         default:
             return throwUnsupported(PreformattedMessage::create(", bit width: {}", int_type.bit_width()));
@@ -263,7 +278,7 @@ std::unique_ptr<ParquetColumnReader> ColReaderFactory::makeReader()
     switch (col_descriptor.physical_type())
     {
         case parquet::Type::BOOLEAN:
-            return makeLeafReader<DataTypeUInt8>();
+            return makeLeafReader<DataTypeUInt8, bool>();
         case parquet::Type::INT32:
             return fromInt32();
         case parquet::Type::INT64:
@@ -276,13 +291,13 @@ std::unique_ptr<ParquetColumnReader> ColReaderFactory::makeReader()
                 auto scale = getScaleFromArrowTimeUnit(arrow_properties.coerce_int96_timestamp_unit());
                 read_type = std::make_shared<DataTypeDateTime64>(scale);
             }
-            return std::make_unique<ParquetLeafColReader<ColumnDecimal<DateTime64>>>(
+            return std::make_unique<ParquetLeafColReader<ColumnDecimal<DateTime64>, ParquetInt96TypeStub>>(
                 col_descriptor, read_type, std::move(meta), std::move(page_reader));
         }
         case parquet::Type::FLOAT:
-            return makeLeafReader<DataTypeFloat32>();
+            return makeLeafReader<DataTypeFloat32, float>();
         case parquet::Type::DOUBLE:
-            return makeLeafReader<DataTypeFloat64>();
+            return makeLeafReader<DataTypeFloat64, double>();
         case parquet::Type::BYTE_ARRAY:
             return fromByteArray();
         case parquet::Type::FIXED_LEN_BYTE_ARRAY:

@@ -1,3 +1,4 @@
+import argparse
 import math
 import multiprocessing
 import os
@@ -192,7 +193,7 @@ def check_repo_submodules():
 
 def check_other():
     res, out, err = Shell.get_res_stdout_stderr(
-        "./ci/jobs/scripts/check_style/checks_to_refactor.sh"
+        "./ci/jobs/scripts/check_style/various_checks.sh"
     )
     if err:
         out += err
@@ -245,19 +246,16 @@ def check_file_names(files):
     return ""
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="ClickHouse Style Check Job")
+    parser.add_argument("--test", help="Sub check name", default="")
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
     results = []
-    stop_watch = Utils.Stopwatch()
-
-    all_files = Utils.traverse_paths(
-        include_paths=["."],
-        exclude_paths=[
-            "./.git",
-            "./contrib",
-            "./build",
-        ],
-        not_exists_ok=True,  # ./build may exist if runs locally
-    )
+    args = parse_args()
+    testpattern = args.test
 
     cpp_files = Utils.traverse_paths(
         include_paths=["./src", "./base", "./programs", "./utils"],
@@ -276,8 +274,8 @@ if __name__ == "__main__":
     )
 
     xml_files = Utils.traverse_paths(
-        include_paths=["."],
-        exclude_paths=["./.git", "./contrib/"],
+        include_paths=["./tests", "./programs/"],
+        exclude_paths=[],
         file_suffixes=[".xml"],
     )
 
@@ -287,96 +285,111 @@ if __name__ == "__main__":
         file_suffixes=[".sql", ".sh", ".py", ".j2"],
     )
 
-    results.append(
-        Result(
-            name="Read Files",
-            status=Result.Status.SUCCESS,
-            start_time=stop_watch.start_time,
-            duration=stop_watch.duration,
+    testname = "whitespace_check"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            run_check_concurrent(
+                check_name=testname,
+                check_function=check_whitespaces,
+                files=cpp_files,
+            )
         )
-    )
+    testname = "yamllint"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            run_check_concurrent(
+                check_name=testname,
+                check_function=check_yamllint,
+                files=yaml_workflow_files,
+            )
+        )
+    testname = "xmllint"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            run_check_concurrent(
+                check_name=testname,
+                check_function=check_xmllint,
+                files=xml_files,
+            )
+        )
+    testname = "functional_tests_check"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            run_check_concurrent(
+                check_name=testname,
+                check_function=check_functional_test_cases,
+                files=functional_test_files,
+            )
+        )
+    testname = "test_numbers_check"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            Result.from_commands_run(
+                name=testname,
+                command=check_gaps_in_tests_numbers,
+                command_args=[functional_test_files],
+            )
+        )
+    testname = "symlinks"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            Result.from_commands_run(
+                name=testname,
+                command=check_broken_links,
+                command_kwargs={
+                    "path": "./",
+                    "exclude_paths": ["contrib/", "metadata/", "programs/server/data"],
+                },
+            )
+        )
+    testname = "cpp"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            Result.from_commands_run(
+                name=testname,
+                command=check_cpp_code,
+            )
+        )
+    testname = "submodules"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            Result.from_commands_run(
+                name=testname,
+                command=check_repo_submodules,
+            )
+        )
+    testname = "various"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            Result.from_commands_run(
+                name=testname,
+                command=check_other,
+            )
+        )
+    testname = "codespell"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            Result.from_commands_run(
+                name=testname,
+                command=check_codespell,
+            )
+        )
+    testname = "aspell"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            Result.from_commands_run(
+                name=testname,
+                command=check_aspell,
+            )
+        )
 
-    results.append(
-        run_check_concurrent(
-            check_name="Whitespace Check",
-            check_function=check_whitespaces,
-            files=cpp_files,
+    testname = "mypy"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            Result.from_commands_run(
+                name=testname,
+                command=check_mypy,
+            )
         )
-    )
-    results.append(
-        run_check_concurrent(
-            check_name="YamlLint Check",
-            check_function=check_yamllint,
-            files=yaml_workflow_files,
-        )
-    )
-    results.append(
-        run_check_concurrent(
-            check_name="XmlLint Check",
-            check_function=check_xmllint,
-            files=xml_files,
-        )
-    )
-    results.append(
-        run_check_concurrent(
-            check_name="Functional Tests scripts smoke check",
-            check_function=check_functional_test_cases,
-            files=functional_test_files,
-        )
-    )
-    results.append(
-        Result.create_from_command_execution(
-            name="Check Tests Numbers",
-            command=check_gaps_in_tests_numbers,
-            command_args=[functional_test_files],
-        )
-    )
-    results.append(
-        Result.create_from_command_execution(
-            name="Check Broken Symlinks",
-            command=check_broken_links,
-            command_kwargs={
-                "path": "./",
-                "exclude_paths": ["contrib/", "metadata/", "programs/server/data"],
-            },
-        )
-    )
-    results.append(
-        Result.create_from_command_execution(
-            name="Check CPP code",
-            command=check_cpp_code,
-        )
-    )
-    results.append(
-        Result.create_from_command_execution(
-            name="Check Submodules",
-            command=check_repo_submodules,
-        )
-    )
-    results.append(
-        Result.create_from_command_execution(
-            name="Check File Names",
-            command=check_file_names,
-            command_args=[all_files],
-        )
-    )
-    results.append(
-        Result.create_from_command_execution(
-            name="Check Many Different Things",
-            command=check_other,
-        )
-    )
-    results.append(
-        Result.create_from_command_execution(
-            name="Check Codespell",
-            command=check_codespell,
-        )
-    )
-    results.append(
-        Result.create_from_command_execution(
-            name="Check Aspell",
-            command=check_aspell,
-        )
-    )
 
-    Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+    Result.create_from(results=results).complete_job()

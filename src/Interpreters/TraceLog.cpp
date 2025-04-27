@@ -1,4 +1,6 @@
 #include <base/getFQDNOrHostName.h>
+#include <base/demangle.h>
+#include <Common/DateLUTImpl.h>
 #include <Interpreters/TraceLog.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
@@ -9,6 +11,10 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/SymbolIndex.h>
+#include <Common/Dwarf.h>
+#include <IO/WriteBufferFromArena.h>
+
+#include <filesystem>
 
 
 namespace DB
@@ -28,6 +34,8 @@ const TraceDataType::Values TraceLogElement::trace_values =
 
 ColumnsDescription TraceLogElement::getColumnsDescription()
 {
+    DataTypePtr symbolized_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
+
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
@@ -51,6 +59,8 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
         {"ptr", std::make_shared<DataTypeUInt64>(), "The address of the allocated chunk."},
         {"event", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "For trace type ProfileEvent is the name of updated profile event, for other trace types is an empty string."},
         {"increment", std::make_shared<DataTypeInt64>(), "For trace type ProfileEvent is the amount of increment of profile event, for other trace types is 0."},
+        {"symbols", symbolized_type, "If the symbolization is enabled, contains demangled symbol names, corresponding to the `trace`."},
+        {"lines", symbolized_type, "If the symbolization is enabled, contains strings with file names with line numbers, corresponding to the `trace`."},
     };
 }
 
@@ -66,6 +76,75 @@ NamesAndAliases TraceLogElement::getNamesAndAliases()
     };
 }
 
+
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+namespace
+{
+    class AddressToLineCache
+    {
+    private:
+       Arena arena;
+        using Map = HashMap<uintptr_t, StringRef>;
+        Map map;
+        std::unordered_map<std::string, Dwarf> dwarfs;
+
+        void setResult(StringRef & result, const Dwarf::LocationInfo & location, const std::vector<Dwarf::SymbolizedFrame> &)
+        {
+            const char * arena_begin = nullptr;
+            WriteBufferFromArena out(arena, arena_begin);
+
+            writeString(location.file.toString(), out);
+            writeChar(':', out);
+            writeIntText(location.line, out);
+
+            out.finalize();
+            result = out.complete();
+        }
+
+        StringRef impl(uintptr_t addr)
+        {
+            const SymbolIndex & symbol_index = SymbolIndex::instance();
+
+            if (const auto * object = symbol_index.findObject(reinterpret_cast<const void *>(addr)))
+            {
+                auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
+                if (!std::filesystem::exists(object->name))
+                    return {};
+
+                Dwarf::LocationInfo location;
+                std::vector<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
+                StringRef result;
+                if (dwarf_it->second.findAddress(addr - uintptr_t(object->address_begin), location, Dwarf::LocationInfoMode::FAST, frames))
+                {
+                    setResult(result, location, frames);
+                    return result;
+                }
+                return {object->name};
+            }
+            return {};
+        }
+
+        StringRef implCached(uintptr_t addr)
+        {
+            typename Map::LookupResult it;
+            bool inserted;
+            map.emplace(addr, it, inserted);
+            if (inserted)
+                it->getMapped() = impl(addr);
+            return it->getMapped();
+        }
+
+    public:
+        static StringRef get(uintptr_t addr)
+        {
+            static AddressToLineCache cache;
+            return cache.implCached(addr);
+        }
+    };
+}
+#endif
+
+
 void TraceLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
@@ -79,7 +158,7 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(static_cast<UInt8>(trace_type));
     columns[i++]->insert(thread_id);
     columns[i++]->insertData(query_id.data(), query_id.size());
-    columns[i++]->insert(trace);
+    columns[i++]->insert(Array(trace.begin(), trace.end()));
     columns[i++]->insert(size);
     columns[i++]->insert(ptr);
 
@@ -89,6 +168,48 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(event_name);
     columns[i++]->insert(increment);
+
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+    if (symbolize)
+    {
+        Array symbols;
+        Array lines;
+        size_t num_frames = trace.size();
+        symbols.reserve(num_frames);
+        lines.reserve(num_frames);
+
+        const SymbolIndex & symbol_index = SymbolIndex::instance();
+
+        for (size_t frame = 0; frame < num_frames; ++frame)
+        {
+            if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(trace[frame])))
+            {
+                std::string_view mangled_symbol(symbol->name);
+
+                auto demangled = tryDemangle(symbol->name);
+                if (demangled)
+                    symbols.emplace_back(std::string_view(demangled.get()));
+                else
+                    symbols.emplace_back(std::string_view(symbol->name));
+
+                lines.emplace_back(AddressToLineCache::get(trace[frame]).toView());
+            }
+            else
+            {
+                symbols.emplace_back(String());
+                lines.emplace_back(String());
+            }
+        }
+
+        columns[i++]->insert(symbols);
+        columns[i++]->insert(lines);
+    }
+    else
+#endif
+    {
+        columns[i++]->insertDefault();
+        columns[i++]->insertDefault();
+    }
 }
 
 }

@@ -2,6 +2,7 @@
 #include <Core/Settings.h>
 
 #include <boost/noncopyable.hpp>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -26,6 +27,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromAppendOnlyFile.h>
 #include <Backups/BackupEntryFromMemory.h>
@@ -91,8 +93,7 @@ public:
         {
             Block compressed_block;
             for (const auto & elem : block)
-                compressed_block.insert({ elem.column->compress(), elem.type, elem.name });
-
+                compressed_block.insert({elem.column->compress(/*force_compression=*/true), elem.type, elem.name});
             new_blocks.push_back(std::move(compressed_block));
         }
         else
@@ -180,7 +181,7 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     /// rows and bytes counters into the MultiVersion-ed struct, then everything would be consistent.
     snapshot_data->rows_approx = total_size_rows.load(std::memory_order_relaxed);
 
-    if (!hasDynamicSubcolumns(metadata_snapshot->getColumns()))
+    if (!hasDynamicSubcolumnsDeprecated(metadata_snapshot->getColumns()))
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(snapshot_data));
 
     auto object_columns = getConcreteObjectColumns(
@@ -259,7 +260,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     {
         if ((*memory_settings)[MemorySetting::compress])
             for (auto & elem : block)
-                elem.column = elem.column->compress();
+                elem.column = elem.column->compress(/*force_compression=*/true);
 
         out.push_back(block);
     }
@@ -561,7 +562,7 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
             temp_data_file.emplace(temporary_disk);
             auto out = std::make_unique<WriteBufferFromFile>(temp_data_file->getAbsolutePath());
             copyData(*in, *out);
-            out.reset();
+            out->finalize();
             in = createReadBufferFromFileBase(temp_data_file->getAbsolutePath(), {});
         }
         std::unique_ptr<ReadBufferFromFileBase> in_from_file{static_cast<ReadBufferFromFileBase *>(in.release())};
@@ -574,7 +575,7 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
             {
                 Block compressed_block;
                 for (const auto & elem : block)
-                    compressed_block.insert({ elem.column->compress(), elem.type, elem.name });
+                    compressed_block.insert({elem.column->compress(/*force_compression=*/true), elem.type, elem.name});
 
                 new_blocks.push_back(std::move(compressed_block));
             }
@@ -612,14 +613,14 @@ void StorageMemory::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 }
 
-std::optional<UInt64> StorageMemory::totalRows(const Settings &) const
+std::optional<UInt64> StorageMemory::totalRows(ContextPtr) const
 {
     /// All modifications of these counters are done under mutex which automatically guarantees synchronization/consistency
     /// When run concurrently we are fine with any value: "before" or "after"
     return total_size_rows.load(std::memory_order_relaxed);
 }
 
-std::optional<UInt64> StorageMemory::totalBytes(const Settings &) const
+std::optional<UInt64> StorageMemory::totalBytes(ContextPtr) const
 {
     return total_size_bytes.load(std::memory_order_relaxed);
 }
@@ -645,6 +646,7 @@ void registerStorageMemory(StorageFactory & factory)
     {
         .supports_settings = true,
         .supports_parallel_insert = true,
+        .has_builtin_setting_fn = MemorySettings::hasBuiltin,
     });
 }
 

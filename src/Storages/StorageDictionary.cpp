@@ -17,6 +17,7 @@
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Core/ServerSettings.h>
 
 
 namespace DB
@@ -24,6 +25,11 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool dictionary_validate_primary_key_type;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool dictionaries_lazy_load;
 }
 
 namespace ErrorCodes
@@ -210,7 +216,7 @@ void StorageDictionary::startup()
 {
     auto global_context = getContext();
 
-    bool lazy_load = global_context->getConfigRef().getBool("dictionaries_lazy_load", true);
+    bool lazy_load = global_context->getServerSettings()[ServerSetting::dictionaries_lazy_load];
     if (!lazy_load)
     {
         const auto & external_dictionaries_loader = global_context->getExternalDictionariesLoader();
@@ -345,7 +351,7 @@ void registerStorageDictionary(StorageFactory & factory)
             auto abstract_dictionary_configuration = getDictionaryConfigurationFromAST(args.query, local_context, dictionary_id.database_name);
             auto result_storage = std::make_shared<StorageDictionary>(dictionary_id, abstract_dictionary_configuration, local_context);
 
-            bool lazy_load = local_context->getConfigRef().getBool("dictionaries_lazy_load", true);
+            bool lazy_load = local_context->getServerSettings()[ServerSetting::dictionaries_lazy_load];
             if (args.mode <= LoadingStrictnessLevel::CREATE && !lazy_load)
             {
                 /// load() is called here to force loading the dictionary, wait until the loading is finished,

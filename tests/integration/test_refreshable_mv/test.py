@@ -1,7 +1,4 @@
-import os
-import re
-import shutil
-import threading
+import logging
 import time
 from random import randint
 
@@ -32,7 +29,18 @@ node2 = cluster.add_instance(
     keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
     macros={"shard": "shard1", "replica": "2"},
 )
+
+reading_node = cluster.add_instance(
+    "reading_node",
+    main_configs=["configs/read_only.xml"],
+    user_configs=["configs/users.xml"],
+    with_zookeeper=True,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+    macros={"shard": "shard1", "replica": "3"},
+)
 nodes = [node1, node2]
+
+test_idx = 0
 
 
 @pytest.fixture(scope="module")
@@ -44,11 +52,25 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+@pytest.fixture
+def cleanup():
+    yield
 
-def test_refreshable_mv_in_replicated_db(started_cluster):
-    for node in nodes:
+    for node in nodes + [reading_node]:
         node.query(
-            "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
+            "drop database if exists re sync;"
+            "drop table if exists system.a;")
+
+    global test_idx
+    test_idx += 1
+
+def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
+    for node in nodes:
+        # (Use different znode path for each test because even `drop database ... sync` doesn't seem
+        # to guarantee that a new database can be immediately created with the same znode path:
+        # https://github.com/ClickHouse/ClickHouse/issues/76418 )
+        node.query(
+            f"create database re engine = Replicated('/test/re_{test_idx}', 'shard1', '{{replica}}');"
         )
 
     # Table engine check.
@@ -88,7 +110,10 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
             # Wait twice to make sure we wait for a refresh that started after we adjusted the clock.
             # Otherwise another refresh may start right after (because clock moved far forward).
             node.query(
-                f"system wait view re.{name}; system refresh view re.{name}; system wait view re.{name};"
+                f"system wait view re.{name};\
+                system refresh view re.{name};\
+                system wait view re.{name};\
+                system sync replica re.{name};"
             )
         rows_before = int(nodes[randint(0, 1)].query(f"select count() from re.{name}"))
         # Advance the clocks.
@@ -153,12 +178,7 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
     )
 
     # Locate coordination znodes.
-    znode_exists = (
-        lambda uuid: nodes[randint(0, 1)].query(
-            f"select count() from system.zookeeper where path = '/clickhouse/tables/{uuid}' and name = 'shard1'"
-        )
-        == "1\n"
-    )
+    znode_exists_query = lambda uuid: f"select count() from system.zookeeper where path = '/clickhouse/tables/{uuid}' and name = 'shard1'"
     tables = []
     for row in node1.query(
         "select table, uuid from system.tables where database = 're'"
@@ -169,7 +189,8 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
             continue
         coordinated = not name.endswith("uncoordinated")
         tables.append((name, uuid, coordinated))
-        assert coordinated == znode_exists(uuid)
+        znode_exists = nodes[randint(0, 1)].query(znode_exists_query(uuid)) == '1\n'
+        assert coordinated == znode_exists
     assert sorted([name for (name, _, _) in tables]) == [
         "a",
         "append",
@@ -181,10 +202,11 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
 
     # Drop all tables and check that coordination znodes were deleted.
     for name, uuid, coordinated in tables:
-        maybe_sync = " sync" if randint(0, 1) == 0 else ""
-        nodes[randint(0, 1)].query(f"drop table re.{name}{maybe_sync}")
+        sync = randint(0, 1) == 0
+        nodes[randint(0, 1)].query(f"drop table re.{name}{' sync' if sync else ''}")
         # TODO: After https://github.com/ClickHouse/ClickHouse/issues/61065 is done (for MVs, not ReplicatedMergeTree), check the parent znode instead.
-        assert not znode_exists(uuid)
+        if sync:
+            assert_eq_with_retry(nodes[randint(0, 1)], znode_exists_query(uuid), '0\n')
 
     # A little stress test dropping MV while it's refreshing, hoping to hit various cases where the
     # drop happens while creating/exchanging/dropping the inner table.
@@ -206,11 +228,8 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
     for node in nodes:
         assert node.query("show tables from re") == ""
 
-    node1.query("drop database re sync")
-    node2.query("drop database re sync")
 
-
-def test_refreshable_mv_in_system_db(started_cluster):
+def test_refreshable_mv_in_system_db(started_cluster, cleanup):
     node1.query(
         "create materialized view system.a refresh every 1 second (x Int64) engine Memory as select number+1 as x from numbers(2);"
         "system refresh view system.a;"
@@ -220,4 +239,145 @@ def test_refreshable_mv_in_system_db(started_cluster):
     node1.query("system refresh view system.a")
     assert node1.query("select count(), sum(x) from system.a") == "2\t3\n"
 
-    node1.query("drop table system.a")
+def test_refreshable_mv_in_read_only_node(started_cluster, cleanup):
+    # writable node
+    node1.query(
+        f"create database re engine = Replicated('/test/re_{test_idx}', 'shard1', '{{replica}}');"
+    )
+
+    # read_only node
+    reading_node.query(
+        f"create database re engine = Replicated('/test/re_{test_idx}', 'shard1', '{{replica}}');"
+    )
+
+    # disable view sync on writable node, see if there's RefreshTask on read_only node
+    node1.query(
+        "system stop view sync"
+    )
+
+    # clear text_log ensure all logs are related to this test
+    reading_node.query(
+        "system flush logs;"
+        "truncate table system.text_log;"
+    )
+
+    # this MV will be replicated to read_only node
+    node1.query(
+        "create materialized view re.a refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x as select number*10 as x from numbers(2)"
+    )
+
+    # refresh the view manually
+    reading_node.query("system refresh view re.a")
+
+    # slepp 3 seconds to make sure the view is refreshed
+    reading_node.query("select sleep(3)")
+
+    # check if there's RefreshTask on read_only node
+    reading_node.query("system flush logs")
+    assert reading_node.query("select count() from system.text_log where message like '%QUERY_IS_PROHIBITED%'") == "0\n"
+    assert reading_node.query("select count() from system.view_refreshes where exception != ''") == "0\n"
+
+    # start sync and chek refresh task works well on node1
+    node1.query("system start view sync")
+    node1.query("system refresh view re.a")
+    assert_eq_with_retry(
+        node1,
+        "select * from re.a order by x",
+        "0\n10\n",
+    )
+    assert_eq_with_retry(
+        node1,
+        "select count() from system.view_refreshes where exception = '' and last_refresh_replica = '1'",
+        "1\n",
+    )
+
+def test_refresh_vs_shutdown_smoke(started_cluster, cleanup):
+    for node in nodes:
+        node.query(
+            f"create database re engine = Replicated('/test/re_{test_idx}', 'shard1', '{{replica}}');"
+        )
+
+    node1.stop_clickhouse()
+
+    num_tables = 2
+
+    for i in range(10):
+        exec_id = node1.start_clickhouse()
+        assert exec_id is not None
+
+        if i == 0:
+            node1.query("select '===test_refresh_vs_shutdown_smoke start==='")
+            for j in range(num_tables):
+                node1.query(
+                    f"create materialized view re.a{j} refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x as select number*10 as x from numbers(2)"
+                )
+
+        if randint(0, 1):
+            for j in range(num_tables):
+                if randint(0, 1):
+                    node1.query(f"system refresh view re.a{j}")
+        r = randint(0, 2)
+        if r == 1:
+            time.sleep(randint(0, 10) / 1000)
+        elif r == 2:
+            time.sleep(randint(0, 100) / 1000)
+
+        node1.stop_clickhouse(stop_wait_sec=300)
+        while True:
+            exit_code = cluster.docker_client.api.exec_inspect(exec_id)["ExitCode"]
+            if exit_code is not None:
+                assert exit_code == 0
+                break
+            time.sleep(1)
+
+    assert not node1.contains_in_log("view refreshes failed to stop", from_host=True)
+    assert not node1.contains_in_log("Closed connections. But", from_host=True)
+    assert not node1.contains_in_log("Will shutdown forcefully.", from_host=True)
+    assert not node1.contains_in_log("##########", from_host=True)
+    assert node1.contains_in_log(
+        "===test_refresh_vs_shutdown_smoke start===", from_host=True
+    )
+
+    node1.start_clickhouse()
+
+def test_adding_replica(started_cluster, cleanup):
+    node1.query(
+        "create database re engine = Replicated('/test/re', 'shard1', 'r1');"
+        "create materialized view re.a refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x as select number*10 as x from numbers(2);"
+        "system wait view re.a")
+    assert node1.query("select * from re.a order by all") == "0\n10\n"
+    assert node1.query("select last_refresh_replica from system.view_refreshes") == "1\n"
+
+    r = node2.query(
+        "create database re engine = Replicated('/test/re', 'shard1', 'r2');"
+        "system sync database replica re")
+    assert node2.query("select * from re.a order by all") == "0\n10\n"
+
+    node1.query("system stop view re.a")
+    r = node2.query(
+        "system wait view re.a;"
+        "system refresh view re.a;"
+        "system wait view re.a;"
+        "select last_refresh_replica from system.view_refreshes")
+    assert r == "2\n"
+
+def test_replicated_db_startup_race(started_cluster, cleanup):
+    for node in nodes:
+        node.query(
+            f"create database re engine = Replicated('/test/re_{test_idx}', 'shard1', '{{replica}}');"
+        )
+    node1.query(
+            "create materialized view re.a refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x as select number*10 as x from numbers(2);\
+            system wait view re.a"
+        )
+
+    # Drop a database before it's loaded.
+    # We stall DatabaseReplicated::startupDatabaseAsync task and expect the server to become responsive without waiting for it.
+    node1.replace_in_config("/etc/clickhouse-server/config.d/config.xml", "<database_replicated_startup_pause>false</database_replicated_startup_pause>", "<database_replicated_startup_pause>true</database_replicated_startup_pause>")
+    node1.restart_clickhouse()
+    node1.replace_in_config("/etc/clickhouse-server/config.d/config.xml", "<database_replicated_startup_pause>true</database_replicated_startup_pause>", "<database_replicated_startup_pause>false</database_replicated_startup_pause>")
+    drop_query_handle = node1.get_query_request("drop database re sync") # this will get stuck until we unpause loading
+    time.sleep(2)
+    node1.query("system disable failpoint database_replicated_startup_pause")
+    _, err = drop_query_handle.get_answer_and_error()
+    assert err == ""

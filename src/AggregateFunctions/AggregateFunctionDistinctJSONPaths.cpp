@@ -197,13 +197,15 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
 
     void deserialize(ReadBuffer & buf)
     {
-        size_t paths_size, types_size;
+        size_t paths_size;
+        size_t types_size;
         readVarUInt(paths_size, buf);
         if (paths_size > DISTINCT_JSON_PATHS_MAX_ARRAY_SIZE)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size for paths (maximum: {}): {}", DISTINCT_JSON_PATHS_MAX_ARRAY_SIZE, paths_size);
 
         data.reserve(paths_size);
-        String path, type;
+        String path;
+        String type;
         for (size_t i = 0; i != paths_size; ++i)
         {
             readStringBinary(path, buf);

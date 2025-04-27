@@ -1,6 +1,7 @@
-#include <Processors/Formats/LazyOutputFormat.h>
-#include <Processors/Transforms/AggregatingTransform.h>
 #include <IO/NullWriteBuffer.h>
+#include <Processors/Formats/LazyOutputFormat.h>
+#include <Processors/Port.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 
 
 namespace DB

@@ -37,7 +37,7 @@ namespace ErrorCodes
 }
 
 ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
+    ContainerClientPtr blob_container_client_,
     const String & path_,
     const ReadSettings & read_settings_,
     size_t max_single_read_retries_,
@@ -45,7 +45,7 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     bool use_external_buffer_,
     bool restricted_seek_,
     size_t read_until_position_)
-    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : read_settings_.remote_fs_buffer_size, nullptr, 0)
+    : ReadBufferFromFileBase()
     , blob_container_client(blob_container_client_)
     , path(path_)
     , max_single_read_retries(max_single_read_retries_)
@@ -228,7 +228,7 @@ void ReadBufferFromAzureBlobStorage::initialize()
         try
         {
             ProfileEvents::increment(ProfileEvents::AzureGetObject);
-            if (blob_container_client->GetClickhouseOptions().IsClientForDisk)
+            if (blob_container_client->IsClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskAzureGetObject);
 
             auto download_response = blob_client->Download(download_options);
@@ -281,7 +281,7 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
         try
         {
             ProfileEvents::increment(ProfileEvents::AzureGetObject);
-            if (blob_container_client->GetClickhouseOptions().IsClientForDisk)
+            if (blob_container_client->IsClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskAzureGetObject);
 
             Azure::Storage::Blobs::DownloadBlobOptions download_options;

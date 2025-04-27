@@ -2,21 +2,33 @@
 
 #include "registerTableFunctions.h"
 #include <Access/Common/AccessFlags.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/StorageURLCluster.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/TableFunctionNode.h>
-#include <Interpreters/parseColumnsListForTableFunction.h>
-#include <Formats/FormatFactory.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromVector.h>
+
+
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool parallel_replicas_for_cluster_engines;
+    extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsParallelReplicasMode parallel_replicas_mode;
+}
 
 std::vector<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
@@ -77,49 +89,34 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
     }
 }
 
-void TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure_, const String & format_, const ContextPtr & context)
-{
-    if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
-    {
-        /// In case of named collection, just add key-value pairs "format='...', structure='...'"
-        /// at the end of arguments to override existed format and structure with "auto" values.
-        if (collection->getOrDefault<String>("format", "auto") == "auto")
-        {
-            ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format_)};
-            auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
-            args.push_back(format_equal_func);
-        }
-        if (collection->getOrDefault<String>("structure", "auto") == "auto")
-        {
-            ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
-            auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
-            args.push_back(structure_equal_func);
-        }
-    }
-    else
-    {
-        /// If arguments contain headers, just remove it and add to the end of arguments later.
-        HTTPHeaderEntries tmp_headers;
-        size_t count = StorageURL::evalArgsAndCollectHeaders(args, tmp_headers, context);
-        ASTPtr headers_ast;
-        if (count != args.size())
-        {
-            chassert(count + 1 == args.size());
-            headers_ast = args.back();
-            args.pop_back();
-        }
-
-        ITableFunctionFileLike::updateStructureAndFormatArgumentsIfNeeded(args, structure_, format_, context);
-
-        if (headers_ast)
-            args.push_back(headers_ast);
-    }
-}
-
 StoragePtr TableFunctionURL::getStorage(
     const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
-    const std::string & table_name, const String & compression_method_) const
+    const std::string & table_name, const String & compression_method_, bool is_insert_query) const
 {
+    const auto & settings = global_context->getSettingsRef();
+    const auto is_secondary_query = global_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+    const auto parallel_replicas_cluster_name = settings[Setting::cluster_for_parallel_replicas].toString();
+    const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
+        && settings[Setting::parallel_replicas_for_cluster_engines]
+        && global_context->canUseTaskBasedParallelReplicas()
+        && !global_context->isDistributed()
+        && !is_secondary_query
+        && !is_insert_query;
+
+    if (can_use_parallel_replicas)
+    {
+        return std::make_shared<StorageURLCluster>(
+            global_context,
+            parallel_replicas_cluster_name,
+            filename,
+            format,
+            compression_method,
+            StorageID(getDatabaseName(), table_name),
+            getActualTableStructure(global_context, /* is_insert_query */ true),
+            ConstraintsDescription{},
+            configuration);
+    }
+
     return std::make_shared<StorageURL>(
         source,
         StorageID(getDatabaseName(), table_name),
@@ -131,7 +128,9 @@ StoragePtr TableFunctionURL::getStorage(
         global_context,
         compression_method_,
         configuration.headers,
-        configuration.http_method);
+        configuration.http_method,
+        nullptr,
+        /*distributed_processing=*/ is_secondary_query);
 }
 
 ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const

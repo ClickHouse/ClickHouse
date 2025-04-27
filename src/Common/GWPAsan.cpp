@@ -159,8 +159,11 @@ void printReport([[maybe_unused]] uintptr_t fault_address)
 {
     const auto logger = getLogger("GWPAsan");
     const auto * state = GuardedAlloc.getAllocatorState();
-    if (uintptr_t internal_error_ptr = __gwp_asan_get_internal_crash_address(state); internal_error_ptr)
-        fault_address = internal_error_ptr;
+    /// Previously the function `__gwp_asan_get_internal_crash_address`
+    /// was used to identify the failure address, but its interface was changed in this commit:
+    /// https://github.com/llvm/llvm-project/commit/35b5499d7259ac3e5c648a711678290695703a87
+    /// It looks like it is fairly Ok just to use the address from the state.
+    fault_address = state->FailureAddress;
 
     const gwp_asan::AllocationMetadata * allocation_meta = __gwp_asan_get_metadata(state, GuardedAlloc.getMetadataRegion(), fault_address);
 

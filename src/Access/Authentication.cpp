@@ -4,17 +4,27 @@
 #include <Access/ExternalAuthenticators.h>
 #include <Access/LDAPClient.h>
 #include <Access/GSSAcceptor.h>
-#include <Poco/SHA1Engine.h>
+#include <Common/Base64.h>
+#include <Common/Crypto/X509Certificate.h>
 #include <Common/Exception.h>
 #include <Common/SSHWrapper.h>
 #include <Common/typeid_cast.h>
-#include <Access/Common/SSLCertificateSubjects.h>
+#include <Poco/SHA1Engine.h>
 
+#include <base/types.h>
 #include "config.h"
 
+#if USE_SSL
+#    include <Common/OpenSSLHelpers.h>
+#endif
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 namespace
 {
@@ -39,6 +49,12 @@ namespace
     bool checkPasswordSHA256(std::string_view password, const Digest & password_sha256, const String & salt)
     {
         return Util::encodeSHA256(String(password).append(salt)) == password_sha256;
+    }
+
+    bool checkPasswordScramSHA256(std::string_view password, const Digest & password_scram_sha256, const String & salt)
+    {
+        auto digest = Util::encodeScramSHA256(password, salt);
+        return digest == password_scram_sha256;
     }
 
     bool checkPasswordDoubleSHA1MySQL(std::string_view scramble, std::string_view scrambled_password, const Digest & password_double_sha1)
@@ -79,6 +95,11 @@ namespace
                 return true;
         return false;
     }
+
+    bool hasPublicKey(const std::vector<SSHKey> & keys, const SSHKey & key)
+    {
+        return std::ranges::find_if(keys, [&](const auto & x) { return key.isEqual(x); }) != keys.end();
+    }
 #endif
 
     bool checkKerberosAuthentication(
@@ -88,6 +109,44 @@ namespace
     {
         return authentication_method.getType() == AuthenticationType::KERBEROS
             && external_authenticators.checkKerberosCredentials(authentication_method.getKerberosRealm(), *gss_acceptor_context);
+    }
+
+    std::string computeScramSHA256ClientProof(const std::vector<uint8_t> & salted_password [[maybe_unused]], const std::string& auth_message [[maybe_unused]])
+    {
+#if USE_SSL
+        auto client_key = hmacSHA256(salted_password, "Client Key");
+        auto stored_key = encodeSHA256(client_key);
+        auto client_signature = hmacSHA256(stored_key, auth_message);
+
+        String client_proof(client_key.size(), 0);
+        for (size_t i = 0; i < client_key.size(); ++i)
+            client_proof[i] = client_key[i] ^ client_signature[i];
+
+        return base64Encode(client_proof);
+#else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Client proof can be computed only with USE_SSL compile flag.");
+#endif
+    }
+
+    bool checkScramSHA256Authentication(
+        const ScramSHA256Credentials * scram_sha256_credentials,
+        const AuthenticationData & authentication_method)
+    {
+        const auto & client_proof = scram_sha256_credentials->getClientProof();
+        const auto & auth_message = scram_sha256_credentials->getAuthMessage();
+        const auto & salt = authentication_method.getSalt();
+        const auto & password = authentication_method.getPasswordHashBinary();
+        auto computed_client_proof = computeScramSHA256ClientProof(password, auth_message);
+
+        if (computed_client_proof.size() != client_proof.size())
+            return false;
+
+        for (size_t i = 0; i < computed_client_proof.size(); ++i)
+        {
+            if (static_cast<UInt8>(computed_client_proof[i]) != static_cast<UInt8>(client_proof[i]))
+                return false;
+        }
+        return true;
     }
 
     bool checkMySQLAuthentication(
@@ -115,6 +174,7 @@ namespace
         const BasicCredentials * basic_credentials,
         const AuthenticationData & authentication_method,
         const ExternalAuthenticators & external_authenticators,
+        const ClientInfo & client_info,
         SettingsChanges & settings)
     {
         switch (authentication_method.getType())
@@ -130,6 +190,11 @@ namespace
             case AuthenticationType::SHA256_PASSWORD:
             {
                 return checkPasswordSHA256(
+                    basic_credentials->getPassword(), authentication_method.getPasswordHashBinary(), authentication_method.getSalt());
+            }
+            case AuthenticationType::SCRAM_SHA256_PASSWORD:
+            {
+                return checkPasswordScramSHA256(
                     basic_credentials->getPassword(), authentication_method.getPasswordHashBinary(), authentication_method.getSalt());
             }
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
@@ -149,7 +214,7 @@ namespace
                 if (authentication_method.getHTTPAuthenticationScheme() == HTTPAuthenticationScheme::BASIC)
                 {
                     return external_authenticators.checkHTTPBasicCredentials(
-                        authentication_method.getHTTPAuthenticationServerName(), *basic_credentials, settings);
+                        authentication_method.getHTTPAuthenticationServerName(), *basic_credentials, client_info, settings);
                 }
                 break;
             }
@@ -160,6 +225,7 @@ namespace
         return false;
     }
 
+#if USE_SSL
     bool checkSSLCertificateAuthentication(
         const SSLCertificateCredentials * ssl_certificate_credentials,
         const AuthenticationData & authentication_method)
@@ -169,7 +235,7 @@ namespace
             return false;
         }
 
-        for (SSLCertificateSubjects::Type type : {SSLCertificateSubjects::Type::CN, SSLCertificateSubjects::Type::SAN})
+        for (X509Certificate::Subjects::Type type : {X509Certificate::Subjects::Type::CN, X509Certificate::Subjects::Type::SAN})
         {
             for (const auto & subject : authentication_method.getSSLCertificateSubjects().at(type))
             {
@@ -199,6 +265,7 @@ namespace
 
         return false;
     }
+#endif
 
 #if USE_SSH
     bool checkSshAuthentication(
@@ -208,6 +275,19 @@ namespace
         return AuthenticationType::SSH_KEY == authentication_method.getType()
             && checkSshSignature(authentication_method.getSSHKeys(), ssh_credentials->getSignature(), ssh_credentials->getOriginal());
     }
+
+    /**
+     * The idea behind this simple check is that the most of the work and verification is done by libssh.
+     * What we need to do is to compare the public key extracted from the user's private key and compare it
+     * to our database of keys associated with the user. Similar to how it is done with ~/.ssh/authorized_keys
+     */
+    bool checkSSHLoginAuthentication(
+        const SSHPTYCredentials * ssh_login_credentials,
+        const AuthenticationData & authentication_method)
+    {
+        return AuthenticationType::SSH_KEY == authentication_method.getType()
+            && hasPublicKey(authentication_method.getSSHKeys(), ssh_login_credentials->getKey());
+    }
 #endif
 }
 
@@ -215,6 +295,7 @@ bool Authentication::areCredentialsValid(
     const Credentials & credentials,
     const AuthenticationData & authentication_method,
     const ExternalAuthenticators & external_authenticators,
+    const ClientInfo & client_info,
     SettingsChanges & settings)
 {
     if (!credentials.isReady())
@@ -232,18 +313,30 @@ bool Authentication::areCredentialsValid(
 
     if (const auto * basic_credentials = typeid_cast<const BasicCredentials *>(&credentials))
     {
-        return checkBasicAuthentication(basic_credentials, authentication_method, external_authenticators, settings);
+        return checkBasicAuthentication(basic_credentials, authentication_method, external_authenticators, client_info, settings);
     }
 
+    if (const auto * scram_shh256_credentials = typeid_cast<const ScramSHA256Credentials *>(&credentials))
+    {
+        return checkScramSHA256Authentication(scram_shh256_credentials, authentication_method);
+    }
+
+#if USE_SSL
     if (const auto * ssl_certificate_credentials = typeid_cast<const SSLCertificateCredentials *>(&credentials))
     {
         return checkSSLCertificateAuthentication(ssl_certificate_credentials, authentication_method);
     }
+#endif
 
 #if USE_SSH
     if (const auto * ssh_credentials = typeid_cast<const SshCredentials *>(&credentials))
     {
         return checkSshAuthentication(ssh_credentials, authentication_method);
+    }
+
+    if (const auto * ssh_login_credentials = typeid_cast<const SSHPTYCredentials *>(&credentials))
+    {
+        return checkSSHLoginAuthentication(ssh_login_credentials, authentication_method);
     }
 #endif
 

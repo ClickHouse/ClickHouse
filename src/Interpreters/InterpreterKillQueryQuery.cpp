@@ -1,7 +1,6 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterKillQueryQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
-#include <Parsers/queryToString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -170,7 +169,7 @@ public:
 
                 LOG_DEBUG(getLogger("KillQuery"), "Will kill query {} (synchronously)", curr_process.query_id);
 
-                auto code = process_list.sendCancelToQuery(curr_process.query_id, curr_process.user, true);
+                auto code = process_list.sendCancelToQuery(curr_process.query_id, curr_process.user);
 
                 if (code != CancellationCode::QueryIsNotInitializedYet && code != CancellationCode::CancelSent)
                 {
@@ -237,7 +236,7 @@ BlockIO InterpreterKillQueryQuery::execute()
             {
                 if (!query.test)
                     LOG_DEBUG(getLogger("KillQuery"), "Will kill query {} (asynchronously)", query_desc.query_id);
-                auto code = (query.test) ? CancellationCode::Unknown : process_list.sendCancelToQuery(query_desc.query_id, query_desc.user, true);
+                auto code = (query.test) ? CancellationCode::Unknown : process_list.sendCancelToQuery(query_desc.query_id, query_desc.user);
                 insertResultRow(query_desc.source_num, code, processes_block, header, res_columns);
             }
 
@@ -432,7 +431,7 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     String select_query = "SELECT " + columns + " FROM " + table;
     auto & where_expression = query_ptr->as<ASTKillQueryQuery>()->where_expression;
     if (where_expression)
-        select_query += " WHERE " + queryToString(where_expression);
+        select_query += " WHERE " + where_expression->formatWithSecretsOneLine();
 
     auto io = executeQuery(select_query, getContext(), QueryFlags{ .internal = true }).second;
     PullingPipelineExecutor executor(io.pipeline);

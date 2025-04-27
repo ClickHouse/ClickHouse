@@ -1,15 +1,16 @@
-#include <string_view>
-#include <unordered_map>
 #include <Access/SettingsConstraints.h>
+#include <Access/SettingsProfileElement.h>
 #include <Access/resolveSetting.h>
 #include <Access/AccessControl.h>
 #include <Core/Settings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/SettingSource.h>
 #include <IO/WriteHelpers.h>
-#include <Poco/Util/AbstractConfiguration.h>
+
+#include <string_view>
+#include <unordered_map>
 
 namespace DB
 {
@@ -136,6 +137,13 @@ void SettingsConstraints::merge(const SettingsConstraints & other)
         settings_alias_cache.try_emplace(other_alias, other_resolved_name);
 }
 
+
+void SettingsConstraints::check(const Settings & current_settings, const AlterSettingsProfileElements & profile_elements, SettingSource source) const
+{
+    check(current_settings, profile_elements.add_settings, source);
+    check(current_settings, profile_elements.modify_settings, source);
+    /// We don't check `drop_settings` here.
+}
 
 void SettingsConstraints::check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source) const
 {
@@ -317,10 +325,10 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
     auto less_or_cannot_compare = [=](const Field & left, const Field & right)
     {
         if (reaction == THROW_ON_VIOLATION)
-            return applyVisitor(FieldVisitorAccurateLess{}, left, right);
+            return accurateLess(left, right);
         try
         {
-            return applyVisitor(FieldVisitorAccurateLess{}, left, right);
+            return accurateLess(left, right);
         }
         catch (...)
         {
@@ -414,13 +422,13 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
             if (setting_tier == SettingsTierType::EXPERIMENTAL && !allowed_experimental)
                 return Checker(
                     PreformattedMessage::create(
-                        "Cannot modify setting '{}'. Changes to EXPERIMENTAL settings are disabled in the server config ('allowed_feature_tier')",
+                        "Cannot modify setting '{}'. Changes to EXPERIMENTAL settings are disabled in the server config ('allow_feature_tier')",
                         setting_name),
                     ErrorCodes::READONLY);
             if (setting_tier == SettingsTierType::BETA && !allowed_beta)
                 return Checker(
                     PreformattedMessage::create(
-                        "Cannot modify setting '{}'. Changes to BETA settings are disabled in the server config ('allowed_feature_tier')",
+                        "Cannot modify setting '{}'. Changes to BETA settings are disabled in the server config ('allow_feature_tier')",
                         setting_name),
                     ErrorCodes::READONLY);
         }

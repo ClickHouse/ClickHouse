@@ -5,6 +5,8 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <DataTypes/IDataType.h>
+
 #include <algorithm>
 
 namespace DB
@@ -24,7 +26,7 @@ void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & ma
 
     ssize_t from = data.size() - 1;
     ssize_t index = mask.size() - 1;
-    data.resize(mask.size());
+    data.resize_exact(mask.size());
     while (index >= 0)
     {
         if (!!mask[index] ^ inverted)

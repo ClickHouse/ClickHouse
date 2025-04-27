@@ -2,7 +2,7 @@
 #include <Storages/buildQueryTreeForShard.h>
 
 #include <Analyzer/ColumnNode.h>
-#include <Analyzer/createUniqueTableAliases.h>
+#include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -14,7 +14,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Planner/Utils.h>
+#include <IO/WriteHelpers.h>
+#include <Planner/PlannerContext.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -24,8 +25,10 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 
+
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsDistributedProductMode distributed_product_mode;
@@ -38,6 +41,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED;
 }
 
@@ -200,6 +204,8 @@ private:
             const auto & distributed_storage_columns = table_node_typed.getStorageSnapshot()->metadata->getColumns();
             auto storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, distributed_storage_columns);
             auto replacement_table_expression = std::make_shared<TableNode>(std::move(storage), getContext());
+            if (auto table_expression_modifiers = table_node_typed.getTableExpressionModifiers())
+                replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
             replacement_map.emplace(table_node.get(), std::move(replacement_table_expression));
         }
         else if ((distributed_product_mode == DistributedProductMode::GLOBAL || getSettings()[Setting::prefer_global_in_and_join]) &&
@@ -293,8 +299,8 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 
     auto table_out = external_storage->write({}, external_storage->getInMemoryMetadataPtr(), mutable_context, /*async_insert=*/false);
 
-    auto optimization_settings = QueryPlanOptimizationSettings::fromContext(mutable_context);
-    auto build_pipeline_settings = BuildQueryPipelineSettings::fromContext(mutable_context);
+    QueryPlanOptimizationSettings optimization_settings(mutable_context);
+    BuildQueryPipelineSettings build_pipeline_settings(mutable_context);
     auto builder = query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings);
 
     size_t min_block_size_rows = mutable_context->getSettingsRef()[Setting::min_external_table_block_size_rows];
@@ -329,7 +335,8 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
     else if (
         join_table_expression_node_type == QueryTreeNodeType::TABLE || join_table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION)
     {
-        const auto & columns = column_source_to_columns.at(join_table_expression).columns;
+        auto columns_it = column_source_to_columns.find(join_table_expression);
+        const NamesAndTypes & columns = columns_it != column_source_to_columns.end() ? columns_it->second.columns : NamesAndTypes();
         subquery_node = buildSubqueryToReadColumnsFromTableExpression(columns, join_table_expression, context);
     }
     else
@@ -376,8 +383,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
             }
             else
             {
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Unexpected join kind: {}", join_kind);
+                throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "Unexpected global join kind: {}", toString(join_kind));
             }
 
             auto subquery_node
@@ -399,19 +405,28 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
                 && in_function_node_type != QueryTreeNodeType::TABLE)
                 continue;
 
+            QueryTreeNodePtr replacement_table_expression;
             auto & temporary_table_expression_node = global_in_temporary_tables[in_function_subquery_node];
             if (!temporary_table_expression_node)
             {
                 auto subquery_to_execute = in_function_subquery_node;
                 if (subquery_to_execute->as<TableNode>())
-                    subquery_to_execute
-                        = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context->getQueryContext());
+                    subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(
+                        subquery_to_execute,
+                        planner_context->getQueryContext());
 
                 temporary_table_expression_node = executeSubqueryNode(
-                    subquery_to_execute, planner_context->getMutableQueryContext(), global_in_or_join_node.subquery_depth);
+                    subquery_to_execute,
+                    planner_context->getMutableQueryContext(),
+                    global_in_or_join_node.subquery_depth);
+                    replacement_table_expression = temporary_table_expression_node;
+            }
+            else
+            {
+                replacement_table_expression = temporary_table_expression_node->clone();
             }
 
-            replacement_map.emplace(in_function_subquery_node.get(), temporary_table_expression_node);
+            replacement_map.emplace(in_function_subquery_node.get(), replacement_table_expression);
         }
         else
         {
@@ -427,7 +442,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
 
     removeGroupingFunctionSpecializations(query_tree_to_modify);
 
-    createUniqueTableAliases(query_tree_to_modify, nullptr, planner_context->getQueryContext());
+    createUniqueAliasesIfNecessary(query_tree_to_modify, planner_context->getQueryContext());
 
     // Get rid of the settings clause so we don't send them to remote. Thus newly non-important
     // settings won't break any remote parser. It's also more reasonable since the query settings

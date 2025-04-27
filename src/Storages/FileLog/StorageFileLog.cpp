@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -17,6 +18,7 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromStreamLikeEngine.h>
+#include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/FileLog/FileLogSettings.h>
 #include <Storages/FileLog/FileLogSource.h>
@@ -71,6 +73,18 @@ namespace ErrorCodes
 namespace
 {
     const auto MAX_THREAD_WORK_DURATION_MS = 60000;
+
+    ContextMutablePtr configureContext(ContextPtr context)
+    {
+        auto new_context = Context::createCopy(context);
+        /// It does not make sense to use auto detection here, since the format
+        /// will be reset for each message, plus, auto detection takes CPU
+        /// time.
+        new_context->setSetting("input_format_csv_detect_header", false);
+        new_context->setSetting("input_format_tsv_detect_header", false);
+        new_context->setSetting("input_format_custom_detect_header", false);
+        return new_context;
+    }
 }
 
 static constexpr auto TMP_SUFFIX = ".tmp";
@@ -111,10 +125,14 @@ private:
         if (file_log.file_infos.file_names.empty())
         {
             LOG_WARNING(file_log.log, "There is a idle table named {}, no files need to parse.", getName());
-            return Pipe{};
+            Header header;
+            auto column_names_and_types = storage_snapshot->getColumnsByNames(GetColumnsOptions::All, column_names);
+            for (const auto & [name, type] : column_names_and_types)
+                header.insert(ColumnWithTypeAndName(type, name));
+            return Pipe(std::make_unique<NullSource>(header));
         }
 
-        auto modified_context = Context::createCopy(getContext());
+        auto modified_context = Context::createCopy(file_log.filelog_context);
 
         auto max_streams_number = std::min<UInt64>((*file_log.filelog_settings)[FileLogSetting::max_threads], file_log.file_infos.file_names.size());
 
@@ -157,11 +175,12 @@ StorageFileLog::StorageFileLog(
     LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
+    , filelog_context(configureContext(getContext()))
     , filelog_settings(std::move(settings))
     , path(path_)
     , metadata_base_path(std::filesystem::path(metadata_base_path_) / "metadata")
     , format_name(format_name_)
-    , log(getLogger("StorageFileLog (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageFileLog (" + table_id_.getFullTableName() + ")"))
     , disk(getContext()->getStoragePolicy("default")->getDisks().at(0))
     , milliseconds_to_wait((*filelog_settings)[FileLogSetting::poll_directory_watch_events_backoff_init].totalMilliseconds())
 {
@@ -500,7 +519,7 @@ void StorageFileLog::openFilesAndSetPos()
                     "Last saved offsset for File {} is bigger than file size ({} > {})",
                     file,
                     meta.last_writen_position,
-                    file_end);
+                    std::streamoff{file_end});
             }
             /// update file end at the moment, used in ReadBuffer and serialize
             meta.last_open_end = file_end;
@@ -573,7 +592,8 @@ StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & f
     read_settings.local_fs_method = LocalFSReadMethod::pread;
     auto in = disk->readFile(full_path, read_settings);
     FileMeta metadata;
-    UInt64 inode, last_written_pos;
+    UInt64 inode;
+    UInt64 last_written_pos;
 
     if (in->eof()) /// File is empty.
     {
@@ -758,7 +778,7 @@ bool StorageFileLog::streamToViews()
     auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = table_id;
 
-    auto new_context = Context::createCopy(getContext());
+    auto new_context = Context::createCopy(filelog_context);
 
     InterpreterInsertQuery interpreter(
         insert,
@@ -804,7 +824,7 @@ bool StorageFileLog::streamToViews()
     }
 
     UInt64 milliseconds = watch.elapsedMilliseconds();
-    LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.", rows, table_id.getNameForLogs(), milliseconds);
+    LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.", rows.load(), table_id.getNameForLogs(), milliseconds);
 
     return updateFileInfos();
 }
@@ -898,6 +918,7 @@ void registerStorageFileLog(StorageFactory & factory)
         creator_fn,
         StorageFactory::StorageFeatures{
             .supports_settings = true,
+            .has_builtin_setting_fn = FileLogSettings::hasBuiltin,
         });
 }
 

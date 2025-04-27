@@ -5,10 +5,10 @@
 #include <base/types.h>
 
 #include <ctime>
-#include <cassert>
 #include <string>
 #include <type_traits>
 
+/// NOLINTBEGIN(modernize-macro-to-enum)
 #define DATE_SECONDS_PER_DAY 86400 /// Number of seconds in a day, 60 * 60 * 24
 
 #define DATE_LUT_MIN_YEAR 1900 /// 1900 since majority of financial organizations consider 1900 as an initial year.
@@ -28,6 +28,7 @@
 /// A constant to add to time_t so every supported time point becomes non-negative and still has the same remainder of division by 3600.
 /// If we treat "remainder of division" operation in the sense of modular arithmetic (not like in C++).
 #define DATE_LUT_ADD ((1970 - DATE_LUT_MIN_YEAR) * 366L * 86400)
+/// NOLINTEND(modernize-macro-to-enum)
 
 
 /// Flags for toYearWeek() function.
@@ -282,7 +283,7 @@ private:
     DateOrTime roundDown(DateOrTime x, Divisor divisor) const
     {
         static_assert(std::is_integral_v<DateOrTime> && std::is_integral_v<Divisor>);
-        assert(divisor > 0);
+        chassert(divisor > 0);
 
         if (offset_is_whole_number_of_hours_during_epoch) [[likely]]
         {
@@ -657,6 +658,9 @@ public:
     template <typename DateOrTime>
     Int16 toYear(DateOrTime v) const { return lut[toLUTIndex(v)].year; }
 
+    template <typename DateOrTime>
+    Int16 toYearSinceEpoch(DateOrTime v) const { return lut[toLUTIndex(v)].year - 1970; }
+
     /// 1-based, starts on Monday
     template <typename DateOrTime>
     UInt8 toDayOfWeek(DateOrTime v) const { return lut[toLUTIndex(v)].day_of_week; }
@@ -951,6 +955,13 @@ public:
     }
 
     template <typename DateOrTime>
+    Int32 toMonthNumSinceEpoch(DateOrTime v) const
+    {
+        const LUTIndex i = toLUTIndex(v);
+        return (lut[i].year - 1970) * 12 + lut[i].month - 1;
+    }
+
+    template <typename DateOrTime>
     Int32 toRelativeQuarterNum(DateOrTime v) const
     {
         const LUTIndex i = toLUTIndex(v);
@@ -975,7 +986,7 @@ public:
     }
 
     /// The same formula is used for positive time (after Unix epoch) and negative time (before Unix epoch).
-    /// It’s needed for correct work of dateDiff function.
+    /// It's needed for correct work of dateDiff function.
     Time toStableRelativeHourNum(Time t) const
     {
         return (t + DATE_LUT_ADD + 86400 - offset_at_start_of_epoch) / 3600 - (DATE_LUT_ADD / 3600);

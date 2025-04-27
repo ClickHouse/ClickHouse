@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 
 namespace DB
@@ -35,6 +36,17 @@ size_t MergeTreeIndexGranularityConstant::getMarkRows(size_t mark_index) const
         return last_mark_granularity;
 
     return 0; // Final mark.
+}
+
+MarkRange MergeTreeIndexGranularityConstant::getMarkRangeForRowOffset(size_t row_offset) const
+{
+    size_t mark_index;
+    if (row_offset < constant_granularity * (num_marks_without_final - 1))
+        mark_index = row_offset / constant_granularity;
+    else
+        mark_index = num_marks_without_final - 1;
+
+    return {mark_index, mark_index + 1};
 }
 
 size_t MergeTreeIndexGranularityConstant::getMarksCount() const

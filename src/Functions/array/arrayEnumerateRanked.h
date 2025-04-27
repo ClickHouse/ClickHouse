@@ -8,9 +8,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/AggregationCommon.h>
 #include <Interpreters/Context_fwd.h>
-#include <Common/ColumnsHashing.h>
 #include <Common/HashTable/ClearableHashMap.h>
 
 
@@ -132,18 +130,7 @@ private:
 
 
 /// Hash a set of keys into a UInt128 value.
-static UInt128 hash128depths(const std::vector<size_t> & indices, const ColumnRawPtrs & key_columns)
-{
-    SipHash hash;
-    for (size_t j = 0, keys_size = key_columns.size(); j < keys_size; ++j)
-    {
-        // Debug: const auto & field = (*key_columns[j])[indices[j]]; DUMP(j, indices[j], field);
-        key_columns[j]->updateHashWithValue(indices[j], hash);
-    }
-
-    return hash.get128();
-}
-
+UInt128 hash128depths(const std::vector<size_t> & indices, const ColumnRawPtrs & key_columns);
 
 template <typename Derived>
 ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(

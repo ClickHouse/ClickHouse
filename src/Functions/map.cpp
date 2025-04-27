@@ -3,8 +3,10 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -91,7 +93,8 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} requires even number of arguments, but {} given", getName(), arguments.size());
 
-        DataTypes keys, values;
+        DataTypes keys;
+        DataTypes values;
         for (size_t i = 0; i < arguments.size(); i += 2)
         {
             keys.emplace_back(arguments[i]);
@@ -231,24 +234,23 @@ public:
         ColumnPtr data_keys = col_keys->getDataPtr();
         if (isColumnNullableOrLowCardinalityNullable(*data_keys))
         {
-            const NullMap * null_map = nullptr;
             if (const auto * nullable = checkAndGetColumn<ColumnNullable>(data_keys.get()))
             {
-                null_map = &nullable->getNullMapData();
+                const auto * null_map = &nullable->getNullMapData();
+                if (null_map && !memoryIsZero(null_map->data(), 0, null_map->size()))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS, "The nested column of first argument in function {} must not contain NULLs", getName());
+
                 data_keys = nullable->getNestedColumnPtr();
             }
             else if (const auto * low_cardinality = checkAndGetColumn<ColumnLowCardinality>(data_keys.get()))
             {
-                if (const auto * nullable_dict = checkAndGetColumn<ColumnNullable>(low_cardinality->getDictionaryPtr().get()))
-                {
-                    null_map = &nullable_dict->getNullMapData();
-                    data_keys = ColumnLowCardinality::create(nullable_dict->getNestedColumnPtr(), low_cardinality->getIndexesPtr());
-                }
-            }
+                if (low_cardinality->containsNull())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS, "The nested column of first argument in function {} must not contain NULLs", getName());
 
-            if (null_map && !memoryIsZero(null_map->data(), 0, null_map->size()))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS, "The nested column of first argument in function {} must not contain NULLs", getName());
+                data_keys = low_cardinality->cloneWithDefaultOnNull();
+            }
         }
 
         if (!col_keys->hasEqualOffsets(*col_values))

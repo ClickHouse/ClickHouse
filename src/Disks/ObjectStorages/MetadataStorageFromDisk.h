@@ -9,6 +9,8 @@
 #include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
 #include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
 
+#include <shared_mutex>
+
 namespace DB
 {
 
@@ -35,6 +37,9 @@ public:
 
     MetadataStorageType getType() const override { return MetadataStorageType::Local; }
 
+    /// Metadata on disk for an empty file can store empty list of blobs and size=0
+    bool supportsEmptyFilesWithoutBlobs() const override { return true; }
+
     bool existsFile(const std::string & path) const override;
     bool existsDirectory(const std::string & path) const override;
     bool existsFileOrDirectory(const std::string & path) const override;
@@ -48,6 +53,8 @@ public:
     bool supportsChmod() const override { return disk->supportsChmod(); }
 
     bool supportsStat() const override { return disk->supportsStat(); }
+
+    bool supportsPartitionCommand(const PartitionCommand & command) const override;
 
     struct stat stat(const String & path) const override { return disk->stat(path); }
 

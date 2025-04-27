@@ -1,12 +1,9 @@
 #pragma once
 
-#include <cmath>
 #include <cstring>
 #include <string>
 #include <string_view>
 #include <limits>
-#include <algorithm>
-#include <iterator>
 #include <bit>
 #include <span>
 
@@ -18,29 +15,23 @@
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
 #include <Common/transformEndianness.h>
-#include <base/StringRef.h>
 #include <base/arithmeticOverflow.h>
-#include <base/sort.h>
 #include <base/unit.h>
 
 #include <Core/Types.h>
 #include <Core/DecimalFunctions.h>
-#include <Core/UUID.h>
 #include <base/IPv4andIPv6.h>
 
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
-#include <Common/intExp.h>
+#include <Common/exp10_i32.h>
 
 #include <Formats/FormatSettings.h>
 
-#include <IO/CompressionMethod.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
-
-#include <pcg_random.hpp>
 
 static constexpr auto DEFAULT_MAX_STRING_SIZE = 1_GiB;
 
@@ -61,7 +52,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_IPV6;
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
     extern const int CANNOT_PARSE_NUMBER;
-    extern const int INCORRECT_DATA;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
@@ -113,7 +103,19 @@ inline void readChar(char & x, ReadBuffer & buf)
 template <typename T>
 inline void readPODBinary(T & x, ReadBuffer & buf)
 {
-    buf.readStrict(reinterpret_cast<char *>(&x), sizeof(x)); /// NOLINT
+    static constexpr size_t size = sizeof(T); /// NOLINT
+
+    /// If the whole value fits in buffer do not call readStrict and copy with
+    /// __builtin_memcpy since it is faster than generic memcpy for small copies.
+    if (buf.position() && buf.position() + size <= buf.buffer().end()) [[likely]]
+    {
+        __builtin_memcpy(reinterpret_cast<char *>(&x), buf.position(), size);
+        buf.position() += size;
+    }
+    else
+    {
+        buf.readStrict(reinterpret_cast<char *>(&x), size);
+    }
 }
 
 inline void readUUIDBinary(UUID & x, ReadBuffer & buf)
@@ -593,6 +595,9 @@ template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in);
 /// simple: all until '\n' or '\t'
 void readString(String & s, ReadBuffer & buf);
 
+/// Reads maximum n bytes to string.
+void readString(String & s, ReadBuffer & buf, size_t n);
+
 void readEscapedString(String & s, ReadBuffer & buf);
 
 void readEscapedStringCRLF(String & s, ReadBuffer & buf);
@@ -623,6 +628,7 @@ void readEscapedStringUntilEOL(String & s, ReadBuffer & buf);
 
 /// Only 0x20 as whitespace character
 void readStringUntilWhitespace(String & s, ReadBuffer & buf);
+void skipStringUntilWhitespace(ReadBuffer & buf);
 
 void readStringUntilAmpersand(String & s, ReadBuffer & buf);
 void readStringUntilEquals(String & s, ReadBuffer & buf);
@@ -845,7 +851,7 @@ inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf, const DateLU
     else if (!readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters))
         return false;
 
-    ExtendedDayNum ret = date_lut.makeDayNum(local_date.year(), local_date.month(), local_date.day());
+    ExtendedDayNum ret = makeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day());
     convertToDayNum(date, ret);
     return ReturnType(true);
 }
@@ -863,7 +869,7 @@ inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf, cons
         return false;
 
     /// When the parameter is out of rule or out of range, Date32 uses 1925-01-01 as the default value (-DateLUT::instance().getDayNumOffsetEpoch(), -16436) and Date uses 1970-01-01.
-    date = date_lut.makeDayNum(local_date.year(), local_date.month(), local_date.day(), -static_cast<Int32>(DateLUTImpl::getDayNumOffsetEpoch()));
+    date = makeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day(), -static_cast<Int32>(getDayNumOffsetEpoch()));
     return ReturnType(true);
 }
 
@@ -1003,11 +1009,19 @@ template <typename T>
 inline T parse(const char * data, size_t size);
 
 template <typename T>
+inline T parseWithoutAssertEOF(const char * data, size_t size);
+
+template <typename T>
 inline T parseFromString(std::string_view str)
 {
     return parse<T>(str.data(), str.size());
 }
 
+template <typename T>
+inline T parseFromStringWithoutAssertEOF(std::string_view str)
+{
+    return parseWithoutAssertEOF<T>(str.data(), str.size());
+}
 
 template <typename ReturnType = void, bool dt64_mode = false>
 ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr);
@@ -1084,7 +1098,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             if (unlikely(year == 0))
                 datetime = 0;
             else
-                datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
+                datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
 
             if (dt_long)
                 buf.position() += date_time_broken_down_length;
@@ -1718,8 +1732,8 @@ inline void skipWhitespaceIfAny(ReadBuffer & buf, bool one_line = false)
 }
 
 /// Skips json value.
-void skipJSONField(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings);
-bool trySkipJSONField(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings);
+void skipJSONField(ReadBuffer & buf, std::string_view name_of_field, const FormatSettings::JSON & settings);
+bool trySkipJSONField(ReadBuffer & buf, std::string_view name_of_field, const FormatSettings::JSON & settings);
 
 
 /** Read serialized exception.
@@ -1750,6 +1764,17 @@ inline T parse(const char * data, size_t size)
     ReadBufferFromMemory buf(data, size);
     readText(res, buf);
     assertEOF(buf);
+    return res;
+}
+
+/// This function is used in one place (parseRemoteDescriptionForExternalDataba)
+/// where we need to preserve backward compatibility.
+template <typename T>
+inline T parseWithoutAssertEOF(const char * data, size_t size)
+{
+    T res;
+    ReadBufferFromMemory buf(data, size);
+    readText(res, buf);
     return res;
 }
 
@@ -1916,26 +1941,6 @@ bool loadAtPosition(ReadBuffer & in, Memory<Allocator<false>> & memory, char * &
 /// Skip data until start of the next row or eof (the end of row is determined by two delimiters:
 /// row_after_delimiter and row_between_delimiter).
 void skipToNextRowOrEof(PeekableReadBuffer & buf, const String & row_after_delimiter, const String & row_between_delimiter, bool skip_spaces);
-
-struct PcgDeserializer
-{
-    static void deserializePcg32(pcg32_fast & rng, ReadBuffer & buf)
-    {
-        decltype(rng.state_) multiplier, increment, state;
-        readText(multiplier, buf);
-        assertChar(' ', buf);
-        readText(increment, buf);
-        assertChar(' ', buf);
-        readText(state, buf);
-
-        if (multiplier != pcg32_fast::multiplier())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect multiplier in pcg32: expected {}, got {}", pcg32_fast::multiplier(), multiplier);
-        if (increment != pcg32_fast::increment())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect increment in pcg32: expected {}, got {}", pcg32_fast::increment(), increment);
-
-        rng.state_ = state;
-    }
-};
 
 void readParsedValueIntoString(String & s, ReadBuffer & buf, std::function<void(ReadBuffer &)> parse_func);
 

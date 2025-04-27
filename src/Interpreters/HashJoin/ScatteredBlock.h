@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/ColumnsNumber.h>
-#include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <base/defines.h>
 #include <Common/PODArray.h>
@@ -10,9 +9,12 @@
 #include <Common/logger_useful.h>
 
 #include <boost/noncopyable.hpp>
+#include <fmt/ranges.h>
 
 namespace DB
 {
+
+using IColumnFilter = PaddedPODArray<UInt8>;
 
 namespace ErrorCodes
 {
@@ -263,7 +265,7 @@ struct ScatteredBlock : private boost::noncopyable
     }
 
     /// Filters selector by mask discarding rows for which filter is false
-    void filter(const IColumn::Filter & filter)
+    void filter(const IColumnFilter & filter)
     {
         chassert(block && block.rows() == filter.size());
         IndexesPtr new_selector = Indexes::create();
@@ -302,10 +304,11 @@ struct ScatteredBlock : private boost::noncopyable
     /// Cut first `num_rows` rows from `block` in place and returns block with remaining rows
     ScatteredBlock cut(size_t num_rows)
     {
-        SCOPE_EXIT(filterBySelector());
-
         if (num_rows >= rows())
+        {
+            filterBySelector();
             return ScatteredBlock{Block{}};
+        }
 
         chassert(block);
 
@@ -314,6 +317,7 @@ struct ScatteredBlock : private boost::noncopyable
         auto remaining = ScatteredBlock{block, std::move(remaining_selector)};
 
         selector = std::move(first_num_rows);
+        filterBySelector();
 
         return remaining;
     }

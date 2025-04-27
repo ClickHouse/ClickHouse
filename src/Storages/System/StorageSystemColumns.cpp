@@ -12,7 +12,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
-#include <Parsers/queryToString.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/NullSource.h>
@@ -65,7 +64,7 @@ StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
             "The scale of approximate numeric data, exact numeric data, integer data, or monetary data. In ClickHouse makes sense only for Decimal types. Otherwise, the NULL value is returned."},
         { "datetime_precision",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Decimal precision of DateTime64 data type. For other data types, the NULL value is returned."},
-
+        { "serialization_hint",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "A hint for column to choose serialization on inserts according to statistics."},
     }));
     setInMemoryMetadata(storage_metadata);
 }
@@ -126,6 +125,7 @@ protected:
             Names cols_required_for_primary_key;
             Names cols_required_for_sampling;
             IStorage::ColumnSizeByName column_sizes;
+            SerializationInfoByName serialization_hints;
 
             {
                 StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
@@ -139,6 +139,7 @@ protected:
 
                 auto metadata_snapshot = storage->getInMemoryMetadataPtr();
                 columns = metadata_snapshot->getColumns();
+                serialization_hints = storage->getSerializationHints();
 
                 /// Certain information about a table - should be calculated only when the corresponding columns are queried.
                 if (columns_mask[7] || columns_mask[8] || columns_mask[9])
@@ -186,7 +187,7 @@ protected:
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(toString(column.default_desc.kind));
                     if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(queryToString(column.default_desc.expression));
+                        res_columns[res_index++]->insert(column.default_desc.expression->formatForLogging());
                 }
                 else
                 {
@@ -240,7 +241,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (column.codec)
-                        res_columns[res_index++]->insert(queryToString(column.codec));
+                        res_columns[res_index++]->insert(column.codec->formatForLogging());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -295,6 +296,15 @@ protected:
                         res_columns[res_index++]->insert(assert_cast<const DataTypeDateTime64 &>(*not_nullable_type).getScale());
                     else if (isDateOrDate32(not_nullable_type) || isDateTime(not_nullable_type) || isDateTime64(not_nullable_type))
                         res_columns[res_index++]->insert(0);
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                /// serialization_hint
+                if (columns_mask[src_index++])
+                {
+                    if (auto it = serialization_hints.find(column.name); it != serialization_hints.end())
+                        res_columns[res_index++]->insert(ISerialization::kindToString(it->second->getKind()));
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -465,7 +475,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
             else
             {
                 const DatabasePtr & database = databases.at(database_name);
-                for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+                for (auto iterator = database->getLightweightTablesIterator(context); iterator->isValid(); iterator->next())
                 {
                     if (const auto & table = iterator->table())
                     {

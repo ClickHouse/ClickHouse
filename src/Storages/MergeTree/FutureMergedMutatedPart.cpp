@@ -57,7 +57,7 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, Merg
     }
 
     part_format = future_part_format;
-    part_info.partition_id = parts.front()->info.partition_id;
+    part_info.setPartitionId(parts.front()->info.getPartitionId());
     part_info.min_block = parts.front()->info.min_block;
     part_info.max_block = parts.back()->info.max_block;
     part_info.level = max_level + 1;
@@ -88,7 +88,8 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, Merg
 
 void FutureMergedMutatedPart::updatePath(const MergeTreeData & storage, const IReservation * reservation)
 {
-    path = storage.getFullPathOnDisk(reservation->getDisk()) + name + "/";
+    path = fs::path(storage.getFullPathOnDisk(reservation->getDisk())) / name;
+    path += "/";
 }
 
 }

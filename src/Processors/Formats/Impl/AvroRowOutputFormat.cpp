@@ -30,6 +30,8 @@
 
 #include <Common/re2.h>
 
+#include <Processors/Port.h>
+
 #include <DataFile.hh>
 #include <Encoder.hh>
 #include <Node.hh>
@@ -86,7 +88,7 @@ public:
     void backup(size_t len) override { out.position() -= len; }
 
     uint64_t byteCount() const override { return out.count(); }
-    void flush() override { }
+    void flush() override {}
 
 private:
     WriteBuffer & out;
@@ -634,6 +636,7 @@ void registerOutputFormatAvro(FormatFactory & factory)
         return std::make_shared<AvroRowOutputFormat>(buf, sample, settings);
     });
     factory.markFormatHasNoAppendSupport("Avro");
+    factory.markOutputFormatNotTTYFriendly("Avro");
 }
 
 }

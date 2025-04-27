@@ -24,9 +24,9 @@ class DatabaseReplicatedDDLWorker : public DDLWorker
 public:
     DatabaseReplicatedDDLWorker(DatabaseReplicated * db, ContextPtr context_);
 
-    String enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &, QueryStatusPtr) override;
+    String enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &) override;
 
-    String tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context);
+    String tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context, bool internal_query);
 
     void shutdown() override;
 

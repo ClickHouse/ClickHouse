@@ -1,6 +1,8 @@
+
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
+#include <DataTypes/IDataType.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -73,12 +75,13 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
     /// Special case for very large arrays and tuples. Instead of listing all elements, will use hash of them.
     /// (Otherwise column name will be too long, that will lead to significant slowdown of expression analysis.)
     auto type = value.getType();
-    if ((type == Field::Types::Array && value.safeGet<const Array &>().size() > min_elements_for_hashing)
-        || (type == Field::Types::Tuple && value.safeGet<const Tuple &>().size() > min_elements_for_hashing))
+    if ((type == Field::Types::Array && value.safeGet<Array>().size() > min_elements_for_hashing)
+        || (type == Field::Types::Tuple && value.safeGet<Tuple>().size() > min_elements_for_hashing))
     {
         SipHash hash;
         applyVisitor(FieldVisitorHash(hash), value);
-        UInt64 low, high;
+        UInt64 low;
+        UInt64 high;
         hash.get128(low, high);
 
         writeCString(type == Field::Types::Array ? "__array_" : "__tuple_", ostr);
@@ -110,11 +113,12 @@ void ASTLiteral::appendColumnNameImplLegacy(WriteBuffer & ostr) const
     /// Special case for very large arrays. Instead of listing all elements, will use hash of them.
     /// (Otherwise column name will be too long, that will lead to significant slowdown of expression analysis.)
     auto type = value.getType();
-    if ((type == Field::Types::Array && value.safeGet<const Array &>().size() > min_elements_for_hashing))
+    if ((type == Field::Types::Array && value.safeGet<Array>().size() > min_elements_for_hashing))
     {
         SipHash hash;
         applyVisitor(FieldVisitorHash(hash), value);
-        UInt64 low, high;
+        UInt64 low;
+        UInt64 high;
         hash.get128(low, high);
 
         writeCString("__array_", ostr);
@@ -148,12 +152,14 @@ String FieldVisitorToStringPostgreSQL::operator() (const String & x) const
     return wb.str();
 }
 
-void ASTLiteral::formatImplWithoutAlias(const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
+void ASTLiteral::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
-        settings.ostr << applyVisitor(FieldVisitorToString(), value);
+    if (custom_type && isBool(custom_type) && isInt64OrUInt64FieldType(value.getType()))
+        ostr << applyVisitor(FieldVisitorToString(), Field(value.safeGet<UInt64>() != 0));
+    else if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
+        ostr << applyVisitor(FieldVisitorToString(), value);
     else
-        settings.ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);
+        ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);
 }
 
 }

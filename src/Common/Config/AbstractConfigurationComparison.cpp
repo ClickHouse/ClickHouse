@@ -2,7 +2,6 @@
 #include <Common/getMultipleKeysFromConfig.h>
 
 #include <unordered_set>
-#include <base/StringRef.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 
@@ -41,7 +40,7 @@ namespace
 #if defined(DEBUG_OR_SANITIZER_BUILD)
             /// Compound `ignore_keys` are not yet implemented.
             for (const auto & ignore_key : *ignore_keys)
-                chassert(ignore_key.find('.') == std::string_view::npos);
+                chassert(!ignore_key.contains('.'));
 #endif
         }
 

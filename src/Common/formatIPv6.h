@@ -39,14 +39,14 @@ void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_byte
  *           To parse strings use overloads below.
  *
  * @param src         - iterator (reference to pointer) over input string - warning - continuity is not guaranteed.
- * @param eof         - function returning true if iterator riched the end - warning - can break iterator's continuity.
+ * @param eof         - function returning true if iterator reached the end - warning - can break iterator's continuity.
  * @param dst         - where to put output bytes, expected to be non-null and at IPV4_BINARY_LENGTH-long.
  * @param first_octet - preparsed first octet
  * @return            - true if parsed successfully, false otherwise.
  */
-template <typename T, typename EOFfunction>
+template <typename T, typename IsEOF>
 requires (std::is_same_v<std::remove_cv_t<T>, char>)
-inline bool parseIPv4(T * &src, EOFfunction eof, unsigned char * dst, int32_t first_octet = -1)
+inline bool parseIPv4(T *& src, IsEOF eof, unsigned char * dst, int32_t first_octet = -1)
 {
     if (src == nullptr || first_octet > 255)
         return false;
@@ -59,7 +59,7 @@ inline bool parseIPv4(T * &src, EOFfunction eof, unsigned char * dst, int32_t fi
         offset -= 8;
     }
 
-    for (; true; offset -= 8, ++src)
+    while (true)
     {
         if (eof())
             return false;
@@ -80,6 +80,9 @@ inline bool parseIPv4(T * &src, EOFfunction eof, unsigned char * dst, int32_t fi
 
         if (offset == 0)
             break;
+
+        offset -= 8;
+        ++src;
     }
 
     memcpy(dst, &result, sizeof(result));
@@ -130,9 +133,9 @@ inline bool parseIPv4whole(const char * src, unsigned char * dst)
 * @param first_block - preparsed first block
 * @return            - true if parsed successfully, false otherwise.
 */
-template <typename T, typename EOFfunction>
+template <typename T, typename IsEOF>
 requires (std::is_same_v<typename std::remove_cv_t<T>, char>)
-inline bool parseIPv6(T * &src, EOFfunction eof, unsigned char * dst, int32_t first_block = -1)
+inline bool parseIPv6(T * &src, IsEOF eof, unsigned char * dst, int32_t first_block = -1)
 {
     const auto clear_dst = [dst]()
     {
@@ -304,9 +307,9 @@ inline bool parseIPv6whole(const char * src, unsigned char * dst)
 * @param dst - where to put output bytes, expected to be non-null and at IPV6_BINARY_LENGTH-long.
 * @return    - true if parsed successfully, false otherwise.
 */
-template <typename T, typename EOFfunction>
+template <typename T, typename IsEOF>
 requires (std::is_same_v<typename std::remove_cv_t<T>, char>)
-inline bool parseIPv6orIPv4(T * &src, EOFfunction eof, unsigned char * dst)
+inline bool parseIPv6orIPv4(T * &src, IsEOF eof, unsigned char * dst)
 {
     const auto clear_dst = [dst]()
     {

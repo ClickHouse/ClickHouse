@@ -213,7 +213,7 @@ size_t StorageSet::getSize(ContextPtr) const
     return current_set->getTotalRowCount();
 }
 
-std::optional<UInt64> StorageSet::totalRows(const Settings &) const
+std::optional<UInt64> StorageSet::totalRows(ContextPtr) const
 {
     SetPtr current_set;
     {
@@ -223,7 +223,7 @@ std::optional<UInt64> StorageSet::totalRows(const Settings &) const
     return current_set->getTotalRowCount();
 }
 
-std::optional<UInt64> StorageSet::totalBytes(const Settings &) const
+std::optional<UInt64> StorageSet::totalBytes(ContextPtr) const
 {
     SetPtr current_set;
     {
@@ -346,7 +346,7 @@ void registerStorageSet(StorageFactory & factory)
         DiskPtr disk = args.getContext()->getDisk(set_settings[SetSetting::disk]);
         return std::make_shared<StorageSet>(
             disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings[SetSetting::persistent]);
-    }, StorageFactory::StorageFeatures{ .supports_settings = true, });
+    }, StorageFactory::StorageFeatures{ .supports_settings = true, .has_builtin_setting_fn = SetSettings::hasBuiltin, });
 }
 
 

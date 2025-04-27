@@ -81,11 +81,18 @@ public:
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override;
 
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
     using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
     DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
+
+    static ColumnsDescription getColumnsDescriptionFromSourceTables(
+        const ContextPtr & query_context,
+        const String & source_database_name_or_regexp,
+        bool database_is_regexp,
+        const String & source_table_regexp,
+        size_t max_tables_to_look);
 
 private:
     /// (Database, Table, Lock, TableName)
@@ -116,14 +123,24 @@ private:
     DatabaseNameOrRegexp database_name_or_regexp;
 
     template <typename F>
-    StoragePtr getFirstTable(F && predicate) const;
+    StoragePtr traverseTablesUntil(F && predicate) const;
 
     template <typename F>
     void forEachTable(F && func) const;
 
+    template <typename F>
+    static StoragePtr traverseTablesUntilImpl(const ContextPtr & query_context, const IStorage * ignore_self, const DatabaseNameOrRegexp & database_name_or_regexp, F && predicate);
+
+    /// Returns a unified column structure among multiple tables.
+    static ColumnsDescription getColumnsDescriptionFromSourceTablesImpl(
+        const ContextPtr & context,
+        const DatabaseNameOrRegexp & database_name_or_regexp,
+        size_t max_tables_to_look,
+        const IStorage * ignore_self);
+
     ColumnSizeByName getColumnSizes() const override;
 
-    ColumnsDescription getColumnsDescriptionFromSourceTables() const;
+    ColumnsDescription getColumnsDescriptionFromSourceTables(const ContextPtr & context) const;
 
     static VirtualColumnsDescription createVirtuals();
 
@@ -258,7 +275,7 @@ private:
         QueryProcessingStage::Enum processed_stage,
         UInt64 max_block_size,
         const StorageWithLockAndName & storage_with_lock,
-        Names && real_column_names,
+        const Names & real_column_names_read_from_the_source_table,
         const RowPolicyDataOpt & row_policy_data_opt,
         ContextMutablePtr modified_context,
         size_t streams_num) const;

@@ -1,8 +1,10 @@
 #pragma once
-#include <type_traits>
+#include <Columns/IColumn.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoinMethods.h>
-#include "Columns/IColumn.h"
-#include "Interpreters/HashJoin/ScatteredBlock.h"
+#include <Interpreters/HashJoin/ScatteredBlock.h>
+
+#include <type_traits>
 
 namespace DB
 {
@@ -12,7 +14,7 @@ extern const int UNSUPPORTED_JOIN_KEYS;
 extern const int LOGICAL_ERROR;
 }
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
+void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
     HashJoin & join,
     HashJoin::Type type,
     MapsTemplate & maps,
@@ -32,16 +34,16 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
         case HashJoin::Type::CROSS:
             /// Do nothing. We will only save block, and it is enough
             is_inserted = true;
-            return 0;
+            break;
 
 #define M(TYPE) \
     case HashJoin::Type::TYPE: \
         if (selector.isContinuousRange()) \
-            return insertFromBlockImplTypeCase< \
+            insertFromBlockImplTypeCase< \
                 typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
                 join, *maps.TYPE, key_columns, key_sizes, stored_block, selector.getRange(), null_map, join_mask, pool, is_inserted); \
         else \
-            return insertFromBlockImplTypeCase< \
+            insertFromBlockImplTypeCase< \
                 typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
                 join, *maps.TYPE, key_columns, key_sizes, stored_block, selector.getIndexes(), null_map, join_mask, pool, is_inserted); \
         break;
@@ -80,6 +82,7 @@ ScatteredBlock HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         const auto & key_names = !is_join_get ? onexprs[i].key_names_left : onexprs[i].key_names_right;
         join_on_keys.emplace_back(block, key_names, onexprs[i].condColumnNames().first, join.key_sizes[i]);
     }
+
     auto & source_block = block.getSourceBlock();
     size_t existing_columns = source_block.columns();
 
@@ -120,6 +123,20 @@ ScatteredBlock HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         block.filter(added_columns.filter);
 
     block.filterBySelector();
+
+    const auto & table_join = join.table_join;
+    std::set<size_t> block_columns_to_erase;
+    if (join.canRemoveColumnsFromLeftBlock())
+    {
+        std::unordered_set<String> left_output_columns;
+        for (const auto & out_column : table_join->getOutputColumns(JoinTableSide::Left))
+            left_output_columns.insert(out_column.name);
+        for (size_t i = 0; i < source_block.columns(); ++i)
+        {
+            if (!left_output_columns.contains(source_block.getByPosition(i).name))
+                block_columns_to_erase.insert(i);
+        }
+    }
 
     for (size_t i = 0; i < added_columns.size(); ++i)
         source_block.insert(added_columns.moveColumn(i));
@@ -178,6 +195,9 @@ ScatteredBlock HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         block.getSourceBlock().setColumns(columns);
         block = ScatteredBlock(std::move(block).getSourceBlock());
     }
+
+    block.getSourceBlock().erase(block_columns_to_erase);
+
     return remaining_block;
 }
 
@@ -199,7 +219,7 @@ KeyGetter HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::createKeyGetter(const
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 template <typename KeyGetter, typename HashMap, typename Selector>
-size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCase(
+void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCase(
     HashJoin & join,
     HashMap & map,
     const ColumnRawPtrs & key_columns,
@@ -258,7 +278,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeC
         else
             Inserter<HashMap, KeyGetter>::insertAll(join, map, key_getter, stored_block, ind, pool);
     }
-    return map.getBufferSizeInCells();
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
@@ -341,9 +360,15 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
     {
         if (added_columns.additional_filter_expression)
         {
-            bool mark_per_row_used = join_features.right || join_features.full || mapv.size() > 1;
+            const bool mark_per_row_used = join_features.right || join_features.full || mapv.size() > 1;
             return joinRightColumnsWithAddtitionalFilter<KeyGetter, Map>(
-                std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags, need_filter, mark_per_row_used);
+                std::forward<std::vector<KeyGetter>>(key_getter_vector),
+                mapv,
+                added_columns,
+                used_flags,
+                added_columns.src_block.getSelector(),
+                need_filter,
+                mark_per_row_used);
         }
     }
 
@@ -532,9 +557,10 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::setUsed(IColumn::Filter & 
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-template <typename AddedColumns>
+template <typename AddedColumns, typename Selector>
 ColumnPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::buildAdditionalFilter(
     size_t left_start_row,
+    const Selector & selector,
     const std::vector<const RowRef *> & selected_rows,
     const std::vector<size_t> & row_replicate_offset,
     AddedColumns & added_columns)
@@ -597,7 +623,7 @@ ColumnPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::buildAdditionalFilter
                 const size_t & left_offset = row_replicate_offset[i];
                 size_t rows = left_offset - prev_left_offset;
                 if (rows)
-                    new_col->insertManyFrom(*src_col->column, left_start_row + i - 1, rows);
+                    new_col->insertManyFrom(*src_col->column, selector[left_start_row + i - 1], rows);
                 prev_left_offset = left_offset;
             }
             executed_block.insert({std::move(new_col), src_col->type, col_name});
@@ -648,17 +674,18 @@ ColumnPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::buildAdditionalFilter
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-template <typename KeyGetter, typename Map, typename AddedColumns>
+template <typename KeyGetter, typename Map, typename AddedColumns, typename Selector>
 size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtitionalFilter(
     std::vector<KeyGetter> && key_getter_vector,
     const std::vector<const Map *> & mapv,
     AddedColumns & added_columns,
     JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]],
+    const Selector & selector,
     bool need_filter [[maybe_unused]],
     bool flag_per_row [[maybe_unused]])
 {
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
-    size_t left_block_rows = added_columns.rows_to_add;
+    const size_t left_block_rows = added_columns.src_block.rows();
     if (need_filter)
         added_columns.filter = IColumn::Filter(left_block_rows, 0);
 
@@ -672,7 +699,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
 
     using FindResult = typename KeyGetter::FindResult;
     size_t max_joined_block_rows = added_columns.max_joined_block_rows;
-    size_t left_row_iter = 0;
+    size_t it = 0;
     PreSelectedRows selected_rows;
     selected_rows.reserve(left_block_rows);
     std::vector<FindResult> find_results;
@@ -689,8 +716,10 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
         row_replicate_offset.push_back(0);
         current_added_rows = 0;
         selected_rows.clear();
-        for (; left_row_iter < left_block_rows; ++left_row_iter)
+        for (; it < left_block_rows; ++it)
         {
+            size_t ind = selector[it];
+
             if constexpr (join_features.need_replication)
             {
                 if (unlikely(total_added_rows + current_added_rows >= max_joined_block_rows))
@@ -703,13 +732,12 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
             for (size_t join_clause_idx = 0; join_clause_idx < added_columns.join_on_keys.size(); ++join_clause_idx)
             {
                 const auto & join_keys = added_columns.join_on_keys[join_clause_idx];
-                if (join_keys.null_map && (*join_keys.null_map)[left_row_iter])
+                if (join_keys.null_map && (*join_keys.null_map)[ind])
                     continue;
 
-                bool row_acceptable = !join_keys.isRowFiltered(left_row_iter);
-                auto find_result = row_acceptable
-                    ? key_getter_vector[join_clause_idx].findKey(*(mapv[join_clause_idx]), left_row_iter, *pool)
-                    : FindResult();
+                bool row_acceptable = !join_keys.isRowFiltered(ind);
+                auto find_result
+                    = row_acceptable ? key_getter_vector[join_clause_idx].findKey(*(mapv[join_clause_idx]), ind, *pool) : FindResult();
 
                 if (find_result.isFound())
                 {
@@ -862,11 +890,11 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
         }
     };
 
-    while (left_row_iter < left_block_rows && !exceeded_max_block_rows)
+    while (it < left_block_rows && !exceeded_max_block_rows)
     {
-        auto left_start_row = left_row_iter;
+        auto left_start_row = it;
         collect_keys_matched_rows_refs();
-        if (selected_rows.size() != current_added_rows || row_replicate_offset.size() != left_row_iter - left_start_row + 1)
+        if (selected_rows.size() != current_added_rows || row_replicate_offset.size() != it - left_start_row + 1)
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -875,10 +903,10 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
                 selected_rows.size(),
                 current_added_rows,
                 row_replicate_offset.size(),
-                left_row_iter,
+                it,
                 left_start_row);
         }
-        auto filter_col = buildAdditionalFilter(left_start_row, selected_rows, row_replicate_offset, added_columns);
+        auto filter_col = buildAdditionalFilter(left_start_row, selector, selected_rows, row_replicate_offset, added_columns);
         copy_final_matched_rows(left_start_row, filter_col);
 
         if constexpr (join_features.need_replication)
@@ -891,11 +919,11 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
 
     if constexpr (join_features.need_replication)
     {
-        added_columns.offsets_to_replicate->resize_assume_reserved(left_row_iter);
-        added_columns.filter.resize_assume_reserved(left_row_iter);
+        added_columns.offsets_to_replicate->resize_assume_reserved(it);
+        added_columns.filter.resize_assume_reserved(it);
     }
     added_columns.applyLazyDefaults();
-    return left_row_iter;
+    return it;
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>

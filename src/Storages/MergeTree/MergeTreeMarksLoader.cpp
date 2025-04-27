@@ -1,5 +1,6 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
@@ -7,7 +8,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ThreadPool.h>
-#include <Common/setThreadName.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 
 #include <utility>
@@ -16,6 +16,8 @@ namespace ProfileEvents
 {
     extern const Event WaitMarksLoadMicroseconds;
     extern const Event BackgroundLoadingMarksTasks;
+    extern const Event LoadingMarksTasksCanceled;
+    extern const Event LoadedMarksFiles;
     extern const Event LoadedMarksCount;
     extern const Event LoadedMarksMemoryBytes;
 }
@@ -33,6 +35,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int ASYNC_LOAD_CANCELED;
 }
 
 MergeTreeMarksGetter::MergeTreeMarksGetter(MarkCache::MappedPtr marks_, size_t num_columns_in_mark_)
@@ -83,7 +86,10 @@ void MergeTreeMarksLoader::startAsyncLoad()
 MergeTreeMarksLoader::~MergeTreeMarksLoader()
 {
     if (future.valid())
+    {
+        is_canceled = true;
         future.wait();
+    }
 }
 
 MergeTreeMarksGetterPtr MergeTreeMarksLoader::loadMarks()
@@ -191,18 +197,20 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
                 full_mark_path, marks_count, expected_uncompressed_size);
     }
 
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    std::ranges::for_each(
-        plain_marks,
-        [](auto & plain_mark)
-        {
-            plain_mark.offset_in_compressed_file = std::byteswap(plain_mark.offset_in_compressed_file);
-            plain_mark.offset_in_decompressed_block = std::byteswap(plain_mark.offset_in_decompressed_block);
-        });
-#endif
+    if constexpr (std::endian::native == std::endian::big)
+    {
+        std::ranges::for_each(
+            plain_marks,
+            [](auto & plain_mark)
+            {
+                plain_mark.offset_in_compressed_file = std::byteswap(plain_mark.offset_in_compressed_file);
+                plain_mark.offset_in_decompressed_block = std::byteswap(plain_mark.offset_in_decompressed_block);
+            });
+    }
 
     auto res = std::make_shared<MarksInCompressedFile>(plain_marks);
 
+    ProfileEvents::increment(ProfileEvents::LoadedMarksFiles);
     ProfileEvents::increment(ProfileEvents::LoadedMarksCount, marks_count * num_columns_in_mark);
     ProfileEvents::increment(ProfileEvents::LoadedMarksMemoryBytes, res->approximateMemoryUsage());
 
@@ -250,6 +258,12 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
     return scheduleFromThreadPoolUnsafe<MarkCache::MappedPtr>(
         [this]() -> MarkCache::MappedPtr
         {
+            if (is_canceled)
+            {
+                ProfileEvents::increment(ProfileEvents::LoadingMarksTasksCanceled);
+                throw Exception(ErrorCodes::ASYNC_LOAD_CANCELED, "Background task for loading marks was canceled");
+            }
+
             ProfileEvents::increment(ProfileEvents::BackgroundLoadingMarksTasks);
             return loadMarksSync();
         },
@@ -264,7 +278,7 @@ void addMarksToCache(const IMergeTreeDataPart & part, const PlainMarksByName & c
     for (const auto & [stream_name, marks] : cached_marks)
     {
         auto mark_path = part.index_granularity_info.getMarksFilePath(stream_name);
-        auto key = MarkCache::hash(fs::path(part.getDataPartStorage().getFullPath()) / mark_path);
+        auto key = MarkCache::hash(fs::path(part.getRelativePathOfActivePart()) / mark_path);
         mark_cache->set(key, std::make_shared<MarksInCompressedFile>(*marks));
     }
 }

@@ -35,6 +35,8 @@ struct ExecutableSettings
     void loadFromQuery(ASTStorage & storage_def);
     void applyChanges(const SettingsChanges & changes);
 
+    static bool hasBuiltin(std::string_view name);
+
 private:
     std::unique_ptr<ExecutableSettingsImpl> impl;
 };

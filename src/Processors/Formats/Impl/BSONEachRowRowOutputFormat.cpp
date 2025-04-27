@@ -21,6 +21,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferValidUTF8.h>
 
+#include <Processors/Port.h>
+
 
 namespace DB
 {
@@ -543,6 +545,7 @@ void registerOutputFormatBSONEachRow(FormatFactory & factory)
         [](WriteBuffer & buf, const Block & sample, const FormatSettings & _format_settings)
         { return std::make_shared<BSONEachRowRowOutputFormat>(buf, sample, _format_settings); });
     factory.markOutputFormatSupportsParallelFormatting("BSONEachRow");
+    factory.markOutputFormatNotTTYFriendly("BSONEachRow");
 }
 
 }

@@ -14,6 +14,7 @@
 
 #include <list>
 
+
 namespace DB
 {
 struct Settings;

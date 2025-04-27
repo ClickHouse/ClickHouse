@@ -171,7 +171,9 @@ SOFTWARE.
 
             /* Adjust Second Byte range for special First Bytes(E0,ED,F0,F4) */
             /* Overlaps lead to index 9~15, which are illegal in range table */
-            __m128i shift1, pos, range2;
+            __m128i shift1;
+            __m128i pos;
+            __m128i range2;
             /* shift1 = (input, prev_input) << 1 byte */
             shift1 = _mm_alignr_epi8(input, prev_input, 15);
             pos = _mm_sub_epi8(shift1, _mm_set1_epi8(0xEF));

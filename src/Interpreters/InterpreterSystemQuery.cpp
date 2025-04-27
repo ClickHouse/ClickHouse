@@ -46,6 +46,7 @@
 #include <Access/ContextAccess.h>
 #include <Access/Common/AllowedClientHosts.h>
 #include <Databases/DatabaseReplicated.h>
+#include <DataTypes/DataTypeString.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -98,6 +99,9 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 keeper_max_retries;
+    extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 keeper_retry_max_backoff_ms;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsMaxThreads max_threads;
@@ -110,6 +114,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_KILL;
@@ -371,9 +376,26 @@ BlockIO InterpreterSystemQuery::execute()
             prewarmMarkCache();
             break;
         }
+        case Type::PREWARM_PRIMARY_INDEX_CACHE:
+        {
+            prewarmPrimaryIndexCache();
+            break;
+        }
         case Type::DROP_MARK_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
             system_context->clearMarkCache();
+            break;
+        case Type::DROP_ICEBERG_METADATA_CACHE:
+#if USE_AVRO
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_ICEBERG_METADATA_CACHE);
+            system_context->clearIcebergMetadataFilesCache();
+            break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO");
+#endif
+        case Type::DROP_PRIMARY_INDEX_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
+            system_context->clearPrimaryIndexCache();
             break;
         case Type::DROP_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
@@ -387,17 +409,26 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             system_context->clearIndexUncompressedCache();
             break;
+        case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
+            system_context->clearVectorSimilarityIndexCache();
+            break;
         case Type::DROP_MMAP_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
             system_context->clearMMappedFileCache();
             break;
+        case Type::DROP_QUERY_CONDITION_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CONDITION_CACHE);
+            getContext()->clearQueryConditionCache();
+            break;
+        }
         case Type::DROP_QUERY_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
-            getContext()->clearQueryCache(query.query_cache_tag);
+            getContext()->clearQueryResultCache(query.query_result_cache_tag);
             break;
         }
-
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
 #if USE_EMBEDDED_COMPILER
             getContext()->checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
@@ -511,8 +542,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_PAGE_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PAGE_CACHE);
-
-            getContext()->dropPageCache();
+            system_context->clearPageCache();
             break;
         }
         case Type::DROP_SCHEMA_CACHE:
@@ -744,7 +774,7 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
             auto system_logs = getContext()->getSystemLogs();
-            system_logs.flush(true);
+            system_logs.flush(true, query.logs);
             break;
         }
         case Type::STOP_LISTEN:
@@ -809,6 +839,10 @@ BlockIO InterpreterSystemQuery::execute()
             resetCoverage();
             break;
         }
+        case Type::LOAD_PRIMARY_KEY: {
+            loadPrimaryKeys();
+            break;
+        }
         case Type::UNLOAD_PRIMARY_KEY:
         {
             unloadPrimaryKeys();
@@ -865,10 +899,16 @@ void InterpreterSystemQuery::restoreReplica()
     if (table_replicated_ptr == nullptr)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
 
-    table_replicated_ptr->restoreMetadataInZooKeeper();
+    const auto & settings = getContext()->getSettingsRef();
+
+    table_replicated_ptr->restoreMetadataInZooKeeper(
+        ZooKeeperRetriesInfo{settings[Setting::keeper_max_retries],
+                             settings[Setting::keeper_retry_initial_backoff_ms],
+                             settings[Setting::keeper_retry_max_backoff_ms],
+                             getContext()->getProcessListElementSafe()});
 }
 
-StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context)
+StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool throw_on_error)
 {
     LOG_TRACE(log, "Restarting replica {}", replica);
     auto table_ddl_guard = DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName());
@@ -878,12 +918,25 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
         throw Exception(ErrorCodes::ABORTED, "Database {} is being dropped or detached, will not restart replica {}",
                         backQuoteIfNeed(replica.getDatabaseName()), replica.getNameForLogs());
 
-    auto [database, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(replica, getContext());
+    std::optional<Exception> exception;
+    auto [database, table] = DatabaseCatalog::instance().getTableImpl(replica, getContext(), &exception);
     ASTPtr create_ast;
 
-    /// Detach actions
-    if (!table || !dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
+    if (!table)
+    {
+        if (throw_on_error)
+            throw Exception(*exception);
+        LOG_WARNING(getLogger("InterpreterSystemQuery"), "Cannot RESTART REPLICA {}: {}", replica.getNameForLogs(), exception->message());
         return nullptr;
+    }
+    const StorageID replica_table_id = table->getStorageID();
+    if (!dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
+    {
+        if (throw_on_error)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), replica.getNameForLogs());
+        LOG_WARNING(getLogger("InterpreterSystemQuery"), "Cannot RESTART REPLICA {}: not a ReplicatedMergeTree anymore", replica.getNameForLogs());
+        return nullptr;
+    }
 
     SCOPE_EXIT({
         if (table)
@@ -898,9 +951,8 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
 
         database->detachTable(system_context, replica.table_name);
     }
-    UUID uuid = table->getStorageID().uuid;
     table.reset();
-    database->waitDetachedTableNotInUse(uuid);
+    database->waitDetachedTableNotInUse(replica_table_id.uuid);
 
     /// Attach actions
     /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
@@ -911,7 +963,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
     auto data_path = database->getTableDataPath(create);
 
-    table = StorageFactory::instance().get(create,
+    auto new_table = StorageFactory::instance().get(create,
         data_path,
         system_context,
         system_context->getGlobalContext(),
@@ -919,18 +971,19 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
         constraints,
         LoadingStrictnessLevel::ATTACH);
 
-    database->attachTable(system_context, replica.table_name, table, data_path);
+    database->attachTable(system_context, replica.table_name, new_table, data_path);
+    if (new_table->getStorageID().uuid != replica_table_id.uuid)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Tables UUID does not match after RESTART REPLICA (old: {}, new: {})", replica_table_id.uuid, new_table->getStorageID().uuid);
 
-    table->startup();
-    LOG_TRACE(log, "Restarted replica {}", replica);
-    return table;
+    new_table->startup();
+    LOG_TRACE(log, "Restarted replica {}", new_table->getStorageID().getNameForLogs());
+    return new_table;
 }
 
 void InterpreterSystemQuery::restartReplica(const StorageID & replica, ContextMutablePtr system_context)
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTART_REPLICA, replica);
-    if (!tryRestartReplica(replica, system_context))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), replica.getNameForLogs());
+    doRestartReplica(replica, system_context, /*throw_on_error=*/ true);
 }
 
 void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
@@ -966,7 +1019,7 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 
     for (auto & replica : replica_names)
     {
-        pool.scheduleOrThrowOnError([&]() { tryRestartReplica(replica, system_context); });
+        pool.scheduleOrThrowOnError([&]() { doRestartReplica(replica, system_context, /*throw_on_error=*/ false); });
     }
     pool.wait();
 }
@@ -998,16 +1051,32 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         auto access = getContext()->getAccess();
         bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
 
+        /// Instead of silently failing, check the permissions to delete all databases in advance.
+        /// Throw an exception to user if the user doesn't have enough privileges to drop the replica.
+        /// Include the databases that the user needs privileges for in the exception
+        std::vector<String> required_access;
+        for (auto & elem : databases)
+        {
+            if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_DROP_REPLICA, elem.first))
+            {
+                required_access.emplace_back(elem.first);
+                LOG_INFO(log, "? Access {} denied, skipping database {}", "SYSTEM DROP REPLICA", elem.first);
+            }
+        }
+
+        if (!required_access.empty())
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "Access denied for {}. Not enough permissions to drop these databases: {}",
+                "SYSTEM DROP REPLICA",
+                fmt::join(required_access, ", "));
+
+        /// If we are here, then the user has the necassary access to drop the replica, continue with the operation.
         for (auto & elem : databases)
         {
             DatabasePtr & database = elem.second;
             for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             {
-                if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_DROP_REPLICA, elem.first, iterator->name()))
-                {
-                    LOG_INFO(log, "Access {} denied, skipping {}.{}", "SYSTEM DROP REPLICA", elem.first, iterator->name());
-                    continue;
-                }
                 dropReplicaImpl(query, iterator->table());
             }
             LOG_TRACE(log, "Dropped replica {} from database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
@@ -1215,28 +1284,38 @@ void InterpreterSystemQuery::waitLoadingParts()
     }
 }
 
+void InterpreterSystemQuery::loadPrimaryKeys()
+{
+    loadOrUnloadPrimaryKeysImpl(true);
+};
+
 void InterpreterSystemQuery::unloadPrimaryKeys()
+{
+    loadOrUnloadPrimaryKeysImpl(false);
+}
+
+void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
 {
     if (!table_id.empty())
     {
-        getContext()->checkAccess(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, table_id.database_name, table_id.table_name);
+        getContext()->checkAccess(load ? AccessType::SYSTEM_LOAD_PRIMARY_KEY : AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, table_id.database_name, table_id.table_name);
         StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
 
         if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
         {
-            LOG_TRACE(log, "Unloading primary keys for table {}", table_id.getFullTableName());
-            merge_tree->unloadPrimaryKeys();
+            LOG_TRACE(log, "{} primary keys for table {}", load ? "Loading" : "Unloading", table_id.getFullTableName());
+            load ? merge_tree->loadPrimaryKeys() : merge_tree->unloadPrimaryKeys();
         }
         else
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Command UNLOAD PRIMARY KEY is supported only for MergeTree table, but got: {}", table->getName());
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Command {} PRIMARY KEY is supported only for MergeTree tables, but got: {}", load ? "LOAD" : "UNLOAD", table->getName());
         }
     }
     else
     {
-        getContext()->checkAccess(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
-        LOG_TRACE(log, "Unloading primary keys for all tables");
+        getContext()->checkAccess(load ? AccessType::SYSTEM_LOAD_PRIMARY_KEY : AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
+        LOG_TRACE(log, "{} primary keys for all tables", load ? "Loading" : "Unloading");
 
         for (auto & database : DatabaseCatalog::instance().getDatabases())
         {
@@ -1244,7 +1323,7 @@ void InterpreterSystemQuery::unloadPrimaryKeys()
             {
                 if (auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get()))
                 {
-                    merge_tree->unloadPrimaryKeys();
+                    load ? merge_tree->loadPrimaryKeys() : merge_tree->unloadPrimaryKeys();
                 }
             }
         }
@@ -1302,7 +1381,7 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
 RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
 {
     auto ctx = getContext();
-    ctx->checkAccess(AccessType::SYSTEM_VIEWS);
+    ctx->checkAccess(AccessType::SYSTEM_VIEWS, table_id);
     auto tasks = ctx->getRefreshSet().findTasks(table_id);
     if (tasks.empty())
         throw Exception(
@@ -1319,9 +1398,12 @@ void InterpreterSystemQuery::prewarmMarkCache()
 
     auto table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
     auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
-
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM MARK CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
+
+    auto mark_cache = getContext()->getMarkCache();
+    if (!mark_cache)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mark cache is not configured");
 
     ThreadPool pool(
         CurrentMetrics::MergeTreePartsLoaderThreads,
@@ -1329,7 +1411,32 @@ void InterpreterSystemQuery::prewarmMarkCache()
         CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
         getContext()->getSettingsRef()[Setting::max_threads]);
 
-    merge_tree->prewarmMarkCache(pool);
+    merge_tree->prewarmCaches(pool, std::move(mark_cache), nullptr);
+}
+
+void InterpreterSystemQuery::prewarmPrimaryIndexCache()
+{
+    if (table_id.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table is not specified for PREWARM PRIMARY INDEX CACHE command");
+
+    getContext()->checkAccess(AccessType::SYSTEM_PREWARM_PRIMARY_INDEX_CACHE, table_id);
+
+    auto table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
+    auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
+    if (!merge_tree)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM PRIMARY INDEX CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
+
+    auto index_cache = merge_tree->getPrimaryIndexCache();
+    if (!index_cache)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary index cache is not configured or is not enabled for table {}", table_id.getFullTableName());
+
+    ThreadPool pool(
+        CurrentMetrics::MergeTreePartsLoaderThreads,
+        CurrentMetrics::MergeTreePartsLoaderThreadsActive,
+        CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
+        getContext()->getSettingsRef()[Setting::max_threads]);
+
+    merge_tree->prewarmCaches(pool, nullptr, std::move(index_cache));
 }
 
 
@@ -1351,13 +1458,19 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_DNS_CACHE:
         case Type::DROP_CONNECTIONS_CACHE:
         case Type::DROP_MARK_CACHE:
+        case Type::DROP_ICEBERG_METADATA_CACHE:
+        case Type::DROP_PRIMARY_INDEX_CACHE:
         case Type::DROP_MMAP_CACHE:
+        case Type::DROP_QUERY_CONDITION_CACHE:
         case Type::DROP_QUERY_CACHE:
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
+        case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
+        case Type::DROP_DISTRIBUTED_CACHE_CONNECTIONS:
+        case Type::DROP_DISTRIBUTED_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
         case Type::DROP_PAGE_CACHE:
         case Type::DROP_SCHEMA_CACHE:
@@ -1484,6 +1597,30 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_REPLICATION_QUEUES, query.getDatabase(), query.getTable());
             break;
         }
+        case Type::STOP_REPLICATED_DDL_QUERIES:
+        case Type::START_REPLICATED_DDL_QUERIES:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_REPLICATION_QUEUES);
+            break;
+        }
+        case Type::STOP_VIRTUAL_PARTS_UPDATE:
+        case Type::START_VIRTUAL_PARTS_UPDATE:
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::STOP_REDUCE_BLOCKING_PARTS:
+        case Type::START_REDUCE_BLOCKING_PARTS:
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_REDUCE_BLOCKING_PARTS);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_REDUCE_BLOCKING_PARTS, query.getDatabase(), query.getTable());
+            break;
+        }
         case Type::REFRESH_VIEW:
         case Type::WAIT_VIEW:
         case Type::START_VIEW:
@@ -1503,6 +1640,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_DATABASE_REPLICA:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_REPLICA, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::DROP_CATALOG_REPLICA:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_DROP_REPLICA);
             break;
         }
         case Type::RESTORE_REPLICA:
@@ -1534,6 +1676,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         }
         case Type::PREWARM_MARK_CACHE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_PREWARM_MARK_CACHE, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::PREWARM_PRIMARY_INDEX_CACHE:
         {
             required_access.emplace_back(AccessType::SYSTEM_PREWARM_MARK_CACHE, query.getDatabase(), query.getTable());
             break;
@@ -1592,12 +1739,25 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_JEMALLOC);
             break;
         }
+        case Type::LOAD_PRIMARY_KEY:
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_LOAD_PRIMARY_KEY);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_LOAD_PRIMARY_KEY, query.getDatabase(), query.getTable());
+            break;
+        }
         case Type::UNLOAD_PRIMARY_KEY:
         {
             if (!query.table)
                 required_access.emplace_back(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
             else
                 required_access.emplace_back(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::UNLOCK_SNAPSHOT:
+        {
+            required_access.emplace_back(AccessType::BACKUP);
             break;
         }
         case Type::STOP_THREAD_FUZZER:

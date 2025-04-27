@@ -93,7 +93,7 @@ namespace DeduplicationToken
     };
 
 
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
     /// use that class only with debug builds in CI for introspection
     class CheckTokenTransform : public ISimpleTransform
     {

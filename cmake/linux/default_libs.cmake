@@ -43,16 +43,10 @@ include (cmake/cxx.cmake)
 
 if (NOT OS_ANDROID)
     if (NOT USE_MUSL)
+        disable_dummy_launchers_if_needed()
         # Our compatibility layer doesn't build under Android, many errors in musl.
         add_subdirectory(base/glibc-compatibility)
+        enable_dummy_launchers_if_needed()
     endif ()
     add_subdirectory(base/harmful)
 endif ()
-
-link_libraries(global-group)
-
-target_link_libraries(global-group INTERFACE
-    -Wl,--start-group
-    $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>
-    -Wl,--end-group
-)

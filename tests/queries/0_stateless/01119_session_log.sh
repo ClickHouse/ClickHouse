@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 session_log_query_prefix="
-system flush logs;
+system flush logs session_log;
 select distinct type, user, auth_type, toString(client_address)!='::ffff:0.0.0.0' as a, client_port!=0 as b, interface from system.session_log
 where user in ('default', 'nonexistsnt_user_1119', '   ', ' INTERSERVER SECRET ')
 and interface in ('HTTP', 'TCP', 'TCP_Interserver')

@@ -5,7 +5,6 @@
 #include <Backups/RestoreCoordinationOnCluster.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/CreateQueryUUIDs.h>
-#include <Parsers/formatAST.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
@@ -33,6 +32,7 @@ RestoreCoordinationOnCluster::RestoreCoordinationOnCluster(
     , all_hosts_without_initiator(BackupCoordinationOnCluster::excludeInitiator(all_hosts))
     , current_host(current_host_)
     , current_host_index(BackupCoordinationOnCluster::findCurrentHostIndex(current_host, all_hosts))
+    , process_list_element(process_list_element_)
     , log(getLogger("RestoreCoordinationOnCluster"))
     , with_retries(log, get_zookeeper_, keeper_settings, process_list_element_, [root_zookeeper_path_](Coordination::ZooKeeperWithFaultInjection::Ptr zk) { zk->sync(root_zookeeper_path_); })
     , cleaner(/* is_restore = */ true, zookeeper_path, with_retries, log)
@@ -122,7 +122,8 @@ ZooKeeperRetriesInfo RestoreCoordinationOnCluster::getOnClusterInitializationKee
 {
     return ZooKeeperRetriesInfo{keeper_settings.max_retries_while_initializing,
                                 static_cast<UInt64>(keeper_settings.retry_initial_backoff_ms.count()),
-                                static_cast<UInt64>(keeper_settings.retry_max_backoff_ms.count())};
+                                static_cast<UInt64>(keeper_settings.retry_max_backoff_ms.count()),
+                                process_list_element};
 }
 
 bool RestoreCoordinationOnCluster::acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name)
@@ -273,7 +274,7 @@ bool RestoreCoordinationOnCluster::acquireInsertingDataForKeeperMap(const String
 
 void RestoreCoordinationOnCluster::generateUUIDForTable(ASTCreateQuery & create_query)
 {
-    String query_str = serializeAST(create_query);
+    String query_str = create_query.formatWithSecretsOneLine();
     CreateQueryUUIDs new_uuids{create_query, /* generate_random= */ true, /* force_random= */ true};
     String new_uuids_str = new_uuids.toString();
 

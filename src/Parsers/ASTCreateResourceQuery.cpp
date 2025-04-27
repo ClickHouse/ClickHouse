@@ -20,57 +20,70 @@ ASTPtr ASTCreateResourceQuery::clone() const
     return res;
 }
 
-void ASTCreateResourceQuery::formatImpl(const IAST::FormatSettings & format, IAST::FormatState &, IAST::FormatStateStacked) const
+void ASTCreateResourceQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & format, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    format.ostr << (format.hilite ? hilite_keyword : "") << "CREATE ";
+    ostr << (format.hilite ? hilite_keyword : "") << "CREATE ";
 
     if (or_replace)
-        format.ostr << "OR REPLACE ";
+        ostr << "OR REPLACE ";
 
-    format.ostr << "RESOURCE ";
+    ostr << "RESOURCE ";
 
     if (if_not_exists)
-        format.ostr << "IF NOT EXISTS ";
+        ostr << "IF NOT EXISTS ";
 
-    format.ostr << (format.hilite ? hilite_none : "");
+    ostr << (format.hilite ? hilite_none : "");
 
-    format.ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(getResourceName()) << (format.hilite ? hilite_none : "");
+    ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(getResourceName()) << (format.hilite ? hilite_none : "");
 
-    formatOnCluster(format);
+    formatOnCluster(ostr, format);
 
-    format.ostr << " (";
+    ostr << " (";
 
     bool first = true;
     for (const auto & operation : operations)
     {
         if (!first)
-            format.ostr << ", ";
+            ostr << ", ";
         else
             first = false;
 
-        switch (operation.mode)
+        if (operation.mode == AccessMode::MasterThread)
         {
-            case AccessMode::Read:
-            {
-                format.ostr << (format.hilite ? hilite_keyword : "") << "READ ";
-                break;
-            }
-            case AccessMode::Write:
-            {
-                format.ostr << (format.hilite ? hilite_keyword : "") << "WRITE ";
-                break;
-            }
+            ostr << (format.hilite ? hilite_keyword : "") << "MASTER THREAD" << (format.hilite ? hilite_none : "");
         }
-        if (operation.disk)
+        else if (operation.mode == AccessMode::WorkerThread)
         {
-            format.ostr << "DISK " << (format.hilite ? hilite_none : "");
-            format.ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(*operation.disk) << (format.hilite ? hilite_none : "");
+            ostr << (format.hilite ? hilite_keyword : "") << "WORKER THREAD" << (format.hilite ? hilite_none : "");
         }
         else
-            format.ostr << "ANY DISK" << (format.hilite ? hilite_none : "");
+        {
+            switch (operation.mode)
+            {
+                case AccessMode::DiskRead:
+                {
+                    ostr << (format.hilite ? hilite_keyword : "") << "READ ";
+                    break;
+                }
+                case AccessMode::DiskWrite:
+                {
+                    ostr << (format.hilite ? hilite_keyword : "") << "WRITE ";
+                    break;
+                }
+                default:
+                    chassert(false);
+            }
+            if (operation.disk)
+            {
+                ostr << "DISK " << (format.hilite ? hilite_none : "");
+                ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(*operation.disk) << (format.hilite ? hilite_none : "");
+            }
+            else
+                ostr << "ANY DISK" << (format.hilite ? hilite_none : "");
+        }
     }
 
-    format.ostr << ")";
+    ostr << ")";
 }
 
 String ASTCreateResourceQuery::getResourceName() const

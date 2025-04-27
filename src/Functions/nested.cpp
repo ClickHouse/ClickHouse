@@ -147,7 +147,7 @@ private:
         if (nested_names_field.getType() != Field::Types::Array)
             return {};
 
-        const auto & nested_names_array = nested_names_field.safeGet<const Array &>();
+        const auto & nested_names_array = nested_names_field.safeGet<Array>();
 
         Names nested_names;
         nested_names.reserve(nested_names_array.size());
@@ -157,7 +157,7 @@ private:
             if (nested_name_field.getType() != Field::Types::String)
                 return {};
 
-            nested_names.push_back(nested_name_field.safeGet<const String &>());
+            nested_names.push_back(nested_name_field.safeGet<String>());
         }
 
         return nested_names;
@@ -178,7 +178,7 @@ The first argument must be a constant array of Strings determining the names of 
 The other arguments must be arrays of the same size.
 )",
         .examples{{"nested", "SELECT nested(['keys', 'values'], ['key_1', 'key_2'], ['value_1','value_2'])", ""}},
-        .categories{"OtherFunctions"}
+        .category{"Other"}
     });
 }
 

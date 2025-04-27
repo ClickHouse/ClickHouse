@@ -1,11 +1,13 @@
 #pragma once
 
+#include <Columns/IColumn_fwd.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Formats/MarkInCompressedFile.h>
@@ -14,12 +16,13 @@
 namespace DB
 {
 
+using IColumnPermutation = PaddedPODArray<size_t>;
 struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
-Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation);
+Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation);
 
-Block permuteBlockIfNeeded(const Block & block, const IColumn::Permutation * permutation);
+Block permuteBlockIfNeeded(const Block & block, const IColumnPermutation * permutation);
 
 /// Writes data part to disk in different formats.
 /// Calculates and serializes primary and skip indices if needed.
@@ -40,7 +43,7 @@ public:
 
     virtual ~IMergeTreeDataPartWriter();
 
-    virtual void write(const Block & block, const IColumn::Permutation * permutation) = 0;
+    virtual void write(const Block & block, const IColumnPermutation * permutation) = 0;
 
     virtual void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) = 0;
 
@@ -49,13 +52,15 @@ public:
 
     virtual size_t getNumberOfOpenStreams() const = 0;
 
-    Columns releaseIndexColumns();
+    std::optional<Columns> releaseIndexColumns();
 
     PlainMarksByName releaseCachedMarks();
 
     MergeTreeIndexGranularityPtr getIndexGranularity() const { return index_granularity; }
 
-    virtual Block getColumnsSample() const = 0;
+    virtual const Block & getColumnsSample() const = 0;
+
+    virtual const ColumnsSubstreams & getColumnsSubstreams() const = 0;
 
 protected:
     SerializationPtr getSerialization(const String & column_name) const;

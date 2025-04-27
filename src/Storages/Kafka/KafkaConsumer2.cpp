@@ -13,6 +13,7 @@
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+#include <Common/SipHash.h>
 
 #include <algorithm>
 #include <iterator>
@@ -126,34 +127,7 @@ KafkaConsumer2::KafkaConsumer2(
 
 KafkaConsumer2::~KafkaConsumer2()
 {
-    try
-    {
-        if (!consumer->get_subscription().empty())
-        {
-            try
-            {
-                consumer->unsubscribe();
-            }
-            catch (const cppkafka::HandleException & e)
-            {
-                LOG_ERROR(log, "Error during unsubscribe: {}", e.what());
-            }
-            drainConsumerQueue();
-        }
-    }
-    catch (const cppkafka::HandleException & e)
-    {
-        LOG_ERROR(log, "Error while destructing consumer: {}", e.what());
-    }
-}
-
-// Needed to drain rest of the messages / queued callback calls from the consumer after unsubscribe, otherwise consumer
-// will hang on destruction. Partition queues doesn't have to be attached as events are not handled by those queues.
-// see https://github.com/edenhill/librdkafka/issues/2077
-//     https://github.com/confluentinc/confluent-kafka-go/issues/189 etc.
-void KafkaConsumer2::drainConsumerQueue()
-{
-    StorageKafkaUtils::drainConsumer(*consumer, DRAIN_TIMEOUT_MS, log);
+    StorageKafkaUtils::consumerGracefulStop(*consumer, DRAIN_TIMEOUT_MS, log);
 }
 
 void KafkaConsumer2::pollEvents()
@@ -379,4 +353,13 @@ void KafkaConsumer2::resetIfStopped()
         stalled_status = StalledStatus::CONSUMER_STOPPED;
     }
 }
+
+std::size_t KafkaConsumer2::OnlyTopicNameAndPartitionIdHash::operator()(const TopicPartition & tp) const
+{
+    SipHash s;
+    s.update(tp.topic);
+    s.update(tp.partition_id);
+    return s.get64();
+}
+
 }

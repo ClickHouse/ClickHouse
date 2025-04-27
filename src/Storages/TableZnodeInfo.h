@@ -4,6 +4,8 @@
 #include <Storages/RenamingRestrictions.h>
 #include <Databases/LoadingStrictnessLevel.h>
 
+#include <memory>
+
 namespace zkutil
 {
 class ZooKeeper;

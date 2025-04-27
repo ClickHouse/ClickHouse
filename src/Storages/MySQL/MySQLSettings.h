@@ -46,6 +46,8 @@ struct MySQLSettings
     void loadFromQueryContext(ContextPtr context, ASTStorage & storage_def);
     void loadFromNamedCollection(const NamedCollection & named_collection);
 
+    static bool hasBuiltin(std::string_view name);
+
 private:
     std::unique_ptr<MySQLSettingsImpl> impl;
 };
