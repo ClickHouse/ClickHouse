@@ -1,4 +1,6 @@
 -- Test for vector search optimization
+-- Tags: no-fasttest, no-ordinary-database
+SET enable_analyzer = 1;
 
 SET allow_experimental_vector_similarity_index=1;
 
