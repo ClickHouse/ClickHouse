@@ -874,8 +874,9 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 }
             }
 
-            if (settings.enable_json_parsing and isColumnJSON(arrow_field)) {
-              return readColumnWithJSONData<arrow::BinaryArray>(arrow_column, column_name);
+            if (settings.enable_json_parsing and isColumnJSON(arrow_field))
+            {
+                return readColumnWithJSONData<arrow::BinaryArray>(arrow_column, column_name);
             }
 
             return readColumnWithStringData<arrow::BinaryArray>(arrow_column, column_name);

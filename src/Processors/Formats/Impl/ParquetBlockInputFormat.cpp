@@ -1185,7 +1185,7 @@ NamesAndTypesList ParquetSchemaReader::readSchema()
     for (int i = 0; i < schema->num_fields(); ++i)
     {
         auto field = schema->field(i);
-        auto parquet_node = metadata->schema()->Column(i);
+        const auto * parquet_node = metadata->schema()->Column(i);
         const auto * lt = parquet_node->logical_type().get();
 
         if (lt and !lt->is_invalid())
