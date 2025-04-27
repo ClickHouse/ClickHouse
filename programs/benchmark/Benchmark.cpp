@@ -221,7 +221,7 @@ private:
     String query_to_execute;
     bool continue_on_errors;
     size_t max_consecutive_errors;
-    bool reconnect;
+    size_t reconnect;
     bool display_client_side_time;
     bool print_stacktrace;
     const Settings & settings;
