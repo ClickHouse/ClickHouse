@@ -801,6 +801,7 @@ struct ReadColumnFromArrowColumnSettings
     bool skip_columns_with_unsupported_types;
     bool allow_inferring_nullable_columns;
     bool case_insensitive_matching;
+    bool enable_json_parsing;
 };
 
 static ColumnWithTypeAndName readColumnFromArrowColumn(
@@ -865,13 +866,15 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                     case TypeIndex::Decimal256:
                         return readColumnWithBigNumberFromBinaryData<ColumnDecimal<Decimal256>>(arrow_column, column_name, type_hint);
                     case TypeIndex::Object:
-                        return readColumnWithJSONData<arrow::BinaryArray>(arrow_column, column_name);
+                        if (settings.enable_json_parsing)
+                            return readColumnWithJSONData<arrow::BinaryArray>(arrow_column, column_name);
+                        [[fallthrough]];
                     default:
                         break;
                 }
             }
 
-            if (isColumnJSON(arrow_field)) {
+            if (settings.enable_json_parsing and isColumnJSON(arrow_field)) {
               return readColumnWithJSONData<arrow::BinaryArray>(arrow_column, column_name);
             }
 
@@ -900,11 +903,13 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
         }
         case arrow::Type::LARGE_STRING:
         case arrow::Type::LARGE_BINARY:
-            if ((type_hint and type_hint->getTypeId() == TypeIndex::Object) or isColumnJSON(arrow_field))
-            {
-              return readColumnWithJSONData<arrow::LargeBinaryArray>(arrow_column, column_name);
-            }
-            return readColumnWithStringData<arrow::LargeBinaryArray>(arrow_column, column_name);
+        {
+            bool parse_json = settings.enable_json_parsing
+                and ((type_hint and type_hint->getTypeId() == TypeIndex::Object) or isColumnJSON(arrow_field));
+
+            return parse_json ? readColumnWithJSONData<arrow::LargeBinaryArray>(arrow_column, column_name)
+                              : readColumnWithStringData<arrow::LargeBinaryArray>(arrow_column, column_name);
+        }
         case arrow::Type::BOOL:
             return readColumnWithBooleanData(arrow_column, column_name);
         case arrow::Type::DATE32:
@@ -1352,7 +1357,8 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
     const std::string & format_name,
     bool skip_columns_with_unsupported_types,
     bool allow_inferring_nullable_columns,
-    bool case_insensitive_matching)
+    bool case_insensitive_matching,
+    bool enable_json_parsing)
 {
     ReadColumnFromArrowColumnSettings settings
     {
@@ -1361,7 +1367,8 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         .allow_arrow_null_type = false,
         .skip_columns_with_unsupported_types = skip_columns_with_unsupported_types,
         .allow_inferring_nullable_columns = allow_inferring_nullable_columns,
-        .case_insensitive_matching = case_insensitive_matching
+        .case_insensitive_matching = case_insensitive_matching,
+        .enable_json_parsing = enable_json_parsing
     };
 
     ColumnsWithTypeAndName sample_columns;
@@ -1397,7 +1404,8 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
     bool null_as_default_,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
     bool case_insensitive_matching_,
-    bool is_stream_)
+    bool is_stream_,
+    bool enable_json_parsing_)
     : header(header_)
     , format_name(format_name_)
     , allow_missing_columns(allow_missing_columns_)
@@ -1405,6 +1413,7 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
     , date_time_overflow_behavior(date_time_overflow_behavior_)
     , case_insensitive_matching(case_insensitive_matching_)
     , is_stream(is_stream_)
+    , enable_json_parsing(enable_json_parsing_)
 {
 }
 
@@ -1438,7 +1447,8 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(const NameToArrowColumn & nam
         .allow_arrow_null_type = true,
         .skip_columns_with_unsupported_types = false,
         .allow_inferring_nullable_columns = true,
-        .case_insensitive_matching = case_insensitive_matching
+        .case_insensitive_matching = case_insensitive_matching,
+        .enable_json_parsing = enable_json_parsing
     };
 
     Columns columns;

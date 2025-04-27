@@ -85,6 +85,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"force_exchange_kind", "", "", "New experimental setting."},
             {"allow_experimental_delta_kernel_rs", false, false, "New setting"},
             {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
+            {"input_format_parquet_enable_json_parsing", false, false, "When reading Parquet files, parse JSON columns as ClickHouse JSON Column."},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
