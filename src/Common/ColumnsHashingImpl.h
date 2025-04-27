@@ -371,6 +371,7 @@ protected:
         size_t limit_offset_plus_length,
         const std::optional<std::vector<std::pair<UInt64, SortDirection>>> & optimization_indexes)
     {
+        chassert(limit_offset_plus_length > 0);
         if constexpr (consecutive_keys_optimization)
         {
             if (cache.found && cache.check(keyHolderGetKey(key_holder)))
@@ -393,7 +394,7 @@ protected:
                        && !std::is_same_v<KeyHolder, UInt128>
                        && !std::is_same_v<KeyHolder, Int256>
                        && !std::is_same_v<KeyHolder, UInt256>) { // MVP. TODO support all types
-                if (optimization_indexes && data.size() > limit_offset_plus_length)
+                if (optimization_indexes && data.size() >= limit_offset_plus_length * 2)
                 {
                     assert(optimization_indexes->size() == 1 && (*optimization_indexes)[0].first == 0); // TODO support arbitrary number of expressions in findOptimizationSublistIndexes
                     if constexpr (HasBegin<Data>::value)
@@ -407,25 +408,23 @@ protected:
                             assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), Int256>));
                             assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), UInt256>));
 
-                            // find the maximum element of data
-                            auto max_key_holder = key_holder;
-                            for (const auto& data_el : data)
+                            // apply n-th element to data
+                            std::vector<typename Data::iterator> data_iterators;
+                            for (auto iter = data.begin(); iter != data.end(); ++iter)
+                                data_iterators.push_back(iter);
+                            std::nth_element(data_iterators.begin(), data_iterators.begin() + (limit_offset_plus_length - 1), data_iterators.end(), [this, &optimization_indexes](const typename Data::iterator& lhs, const typename Data::iterator& rhs)
                             {
-                                if constexpr (HasKey<KeyHolder>::value)
-                                {
-                                    if (compareKeyHolders(max_key_holder.key, data_el.getKey(), *optimization_indexes))
-                                        max_key_holder.key = data_el.getKey();
-                                } else
-                                    if (compareKeyHolders(max_key_holder, data_el.getKey(), *optimization_indexes))
-                                        max_key_holder = data_el.getKey();
-                            }
-                            const auto& max_key = keyHolderGetKey(max_key_holder);
+                                return compareKeyHolders(lhs->getKey(), rhs->getKey(), optimization_indexes.value());
+                            });
 
-                            // erase found element
-                            data.erase(max_key);
-                            if (max_key == keyHolderGetKey(key_holder))
-                                return std::nullopt;
+                            // erase excess elements
+                            for (size_t i = limit_offset_plus_length; i < data_iterators.size(); ++i)
+                                data.erase(data_iterators[i]->getKey());
+
+                            // renew iterator
                             it = data.find(key_holder);
+                            if (it == data.end())
+                                return std::nullopt;
                         }
                     } else if constexpr (HasForEachMapped<Data>::value)
                     {
