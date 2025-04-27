@@ -208,9 +208,9 @@ class SetFilter : public Set
 {
 public:
   SetFilter(
-      const SizeLimits& limits_, size_t max_elements_to_fill_, bool transform_null_in_, SetType set_type_, double targetFPR_ = 0.001);
+      const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_, SetType set_type_, double targetFPR_ = 0.001);
 
-  void initSetVariant(const ColumnRawPtrs& key_columns) override;
+  void initSetVariant(const ColumnRawPtrs & key_columns) override;
 
 private:
   double targetFPR;

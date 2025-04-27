@@ -94,6 +94,7 @@ InConversion buildInConversion(
         std::move(in_source),
         nullptr,
         nullptr,
+        SetType::SET,
         transform_null_in,
         size_limits,
         max_size_for_index);

@@ -12,7 +12,7 @@
 #include <numbers>
 #include <vector>
 
-#include <MurmurHash3.h>
+// #include <MurmurHash3.h>
 #include <city.h>
 
 namespace DB
