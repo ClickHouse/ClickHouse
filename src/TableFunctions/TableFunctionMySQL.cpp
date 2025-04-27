@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSubquery.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/MySQL/MySQLHelpers.h>
 #include <Storages/MySQL/MySQLSettings.h>
@@ -64,6 +65,9 @@ public:
     {
         return name;
     }
+
+    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const override { return {2}; }
+
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
     const char * getStorageTypeName() const override { return "MySQL"; }
@@ -104,13 +108,21 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
     // Check for `mysql('host:port', database, <SELECT query>, ...)` syntax
     if (args.size() > 2)
     {
+        // Check if it's in a form `mysql(h:p, db, (SELECT ...), ...)`, that is, an unquoted SELECT query
+        if (auto * maybe_select_ast = args[2]->as<ASTSubquery>())
+        {
+            // Simply convert it to a string literal, thus fallthrough into the next "if"
+            args[2] = std::make_shared<ASTLiteral>(maybe_select_ast->formatForAnything());
+        }
         auto maybe_select_ast = args[2];
         if (auto * maybe_select_lit = maybe_select_ast->as<ASTLiteral>())
         {
             if (maybe_select_lit->value.getType() == Field::Types::String)
             {
                 auto maybe_select = maybe_select_lit->value.safeGet<String>();
-                if (boost::istarts_with(maybe_select, "SELECT"))
+                auto maybe_select_sv = std::string_view(maybe_select);
+                maybe_select_sv.remove_prefix(maybe_select_sv.find_first_not_of('('));
+                if (boost::istarts_with(maybe_select_sv, "SELECT"))
                 {
                     auto select_cfg = StorageMySQLSelect::getConfiguration(args, context);
                     configuration = select_cfg;
@@ -128,10 +140,13 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
 
 ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    if (std::holds_alternative<StorageMySQL::Configuration>(configuration)) {
+    if (std::holds_alternative<StorageMySQL::Configuration>(configuration))
+    {
         auto storage_cfg = std::get<StorageMySQL::Configuration>(configuration);
         return StorageMySQL::getTableStructureFromData(*pool, storage_cfg.database, storage_cfg.table, context);
-    } else {
+    }
+    else
+    {
         auto select_cfg = std::get<StorageMySQLSelect::Configuration>(configuration);
         return StorageMySQLSelect::doQueryResultStructure(*pool, select_cfg.select_query, context);
     }

@@ -19,7 +19,7 @@ class NamedCollection;
 /**
  * StorageMySQLSelect is an implementation of IStorage similar to StorageMySQL.
  * However, it only provides interface to read result of SELECT query being directly passed to MySQL remote database.
- * Primary developed to be used by table function `mysql` for alternative syntax with query passing.
+ * Primarily developed to be used by table function `mysql` for alternative syntax with query passing.
  */
   class StorageMySQLSelect final : public IStorage, WithContext
   {
