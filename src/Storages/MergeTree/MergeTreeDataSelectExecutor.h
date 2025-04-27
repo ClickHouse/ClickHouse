@@ -15,8 +15,6 @@ namespace DB
 class KeyCondition;
 struct QueryIdHolder;
 
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
-
 /** Executes SELECT queries on data from the merge tree.
   */
 class MergeTreeDataSelectExecutor
@@ -35,7 +33,7 @@ public:
         ContextPtr context,
         UInt64 max_block_size,
         size_t num_streams,
-        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
+        PartitionIdToMaxBlockPtr max_block_numbers_to_read = nullptr,
         bool enable_parallel_reading = false) const;
 
     /// The same as read, but with specified set of parts.
@@ -48,7 +46,7 @@ public:
         ContextPtr context,
         UInt64 max_block_size,
         size_t num_streams,
-        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
+        PartitionIdToMaxBlockPtr max_block_numbers_to_read = nullptr,
         ReadFromMergeTree::AnalysisResultPtr merge_tree_select_result_ptr = nullptr,
         bool enable_parallel_reading = false) const;
 
@@ -63,7 +61,7 @@ public:
         const SelectQueryInfo & query_info,
         ContextPtr context,
         size_t num_streams,
-        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr) const;
+        PartitionIdToMaxBlockPtr max_block_numbers_to_read = nullptr) const;
 
     static MarkRanges markRangesFromPKRange(
         const MergeTreeData::DataPartPtr & part,
@@ -200,7 +198,8 @@ public:
         size_t num_streams,
         ReadFromMergeTree::IndexStats & index_stats,
         bool use_skip_indexes,
-        bool find_exact_ranges);
+        bool find_exact_ranges,
+        bool is_final_query);
 
     /// Filter parts using query condition cache.
     static void filterPartsByQueryConditionCache(
