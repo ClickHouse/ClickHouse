@@ -1,3 +1,4 @@
+#include <Common/SetType.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -26,7 +27,7 @@ namespace
   * notIn(x, set) - and NOT IN.
   */
 
-template <bool negative, bool global, bool null_is_skipped, bool ignore_set>
+template <bool negative, bool global, bool null_is_skipped, bool ignore_set, DB::SetType set_type = DB::SetType::SET>
 struct FunctionInName;
 
 template <> struct FunctionInName<false, false, true, false> { static constexpr auto name = "in"; };
@@ -45,14 +46,16 @@ template <> struct FunctionInName<false, false, false, true> { static constexpr 
 template <> struct FunctionInName<false, true, false, true> { static constexpr auto name = "globalNullInIgnoreSet"; };
 template <> struct FunctionInName<true, false, false, true> { static constexpr auto name = "notNullInIgnoreSet"; };
 template <> struct FunctionInName<true, true, false, true> { static constexpr auto name = "globalNotNullInIgnoreSet"; };
+template <> struct FunctionInName<false, false, true, false, DB::SetType::BLOOM_FILTER> { static constexpr auto name = "inBloomFilter"; };
+template <> struct FunctionInName<false, false, true, false, DB::SetType::CUCKOO_FILTER> { static constexpr auto name = "inCuckooFilter"; };
 
-template <bool negative, bool global, bool null_is_skipped, bool ignore_set>
+template <bool negative, bool global, bool null_is_skipped, bool ignore_set, DB::SetType set_type = DB::SetType::SET>
 class FunctionIn : public IFunction
 {
 public:
     /// ignore_set flag means that we don't use set from the second argument, just return zero column.
     /// It is needed to perform type analysis without creation of set.
-    static constexpr auto name = FunctionInName<negative, global, null_is_skipped, ignore_set>::name;
+    static constexpr auto name = FunctionInName<negative, global, null_is_skipped, ignore_set, set_type>::name;
 
     static FunctionPtr create(ContextPtr)
     {
@@ -196,12 +199,19 @@ void registerFunctionsInImpl(FunctionFactory & factory)
     factory.registerFunction<FunctionIn<true, true, false, ignore_set>>();
 }
 
+void registerFunctionsProbInImpl(FunctionFactory & factory)
+{
+    factory.registerFunction<FunctionIn<false, false, true, false, DB::SetType::BLOOM_FILTER>>();
+    factory.registerFunction<FunctionIn<false, false, true, false, DB::SetType::CUCKOO_FILTER>>();
+}
+
 }
 
 REGISTER_FUNCTION(In)
 {
     registerFunctionsInImpl<false>(factory);
     registerFunctionsInImpl<true>(factory);
+    registerFunctionsProbInImpl(factory);
 }
 
 }

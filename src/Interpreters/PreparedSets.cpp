@@ -1,4 +1,5 @@
 #include <chrono>
+#include <memory>
 #include <variant>
 #include <Core/Block.h>
 #include <Core/Settings.h>
@@ -17,6 +18,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/logger_useful.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -62,6 +64,7 @@ static bool equals(const DataTypes & lhs, const DataTypes & rhs)
 FutureSetFromStorage::FutureSetFromStorage(Hash hash_, ASTPtr ast_, SetPtr set_, std::optional<StorageID> storage_id_)
     : hash(hash_), ast(std::move(ast_)), storage_id(std::move(storage_id_)), set(std::move(set_)) {}
 SetPtr FutureSetFromStorage::get() const { return set; }
+SetType FutureSetFromStorage::getSetType() const { return set->getSetType(); }
 FutureSet::Hash FutureSetFromStorage::getHash() const { return hash; }
 DataTypes FutureSetFromStorage::getTypes() const { return set->getElementsTypes(); }
 
@@ -73,14 +76,17 @@ SetPtr FutureSetFromStorage::buildOrderedSetInplace(const ContextPtr &)
 
 FutureSetFromTuple::FutureSetFromTuple(
     Hash hash_, ASTPtr ast_, ColumnsWithTypeAndName block,
-    bool transform_null_in, SizeLimits size_limits)
+    SetType set_type, bool transform_null_in, SizeLimits size_limits)
     : hash(hash_), ast(std::move(ast_))
 {
     ColumnsWithTypeAndName header = block;
     for (auto & elem : header)
         elem.column = elem.column->cloneEmpty();
 
-    set = std::make_shared<Set>(size_limits, 0, transform_null_in);
+    if (set_type == SetType::SET)
+        set = std::make_shared<Set>(size_limits, 0, transform_null_in);
+    else
+        set = std::make_shared<SetFilter>(size_limits, 0, transform_null_in, set_type);
 
     set->setHeader(header);
     Columns columns;
@@ -105,6 +111,7 @@ FutureSetFromTuple::FutureSetFromTuple(
 }
 
 DataTypes FutureSetFromTuple::getTypes() const { return set->getElementsTypes(); }
+SetType FutureSetFromTuple::getSetType() const { return set->getSetType(); }
 FutureSet::Hash FutureSetFromTuple::getHash() const { return hash; }
 
 Columns FutureSetFromTuple::getKeyColumns()
@@ -142,6 +149,7 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     std::unique_ptr<QueryPlan> source_,
     StoragePtr external_table_,
     std::shared_ptr<FutureSetFromSubquery> external_table_set_,
+    SetType set_type,
     bool transform_null_in,
     SizeLimits size_limits,
     size_t max_size_for_index)
@@ -150,7 +158,10 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     set_and_key = std::make_shared<SetAndKey>();
     set_and_key->key = PreparedSets::toString(hash_, {});
 
-    set_and_key->set = std::make_shared<Set>(size_limits, max_size_for_index, transform_null_in);
+    if (set_type == SetType::SET)
+        set_and_key->set = std::make_shared<Set>(size_limits, max_size_for_index, transform_null_in);
+    else
+        set_and_key->set = std::make_shared<SetFilter>(size_limits, max_size_for_index, transform_null_in, set_type);
     set_and_key->set->setHeader(source->getCurrentHeader().getColumnsWithTypeAndName());
 }
 
@@ -158,6 +169,7 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     Hash hash_,
     ASTPtr ast_,
     QueryTreeNodePtr query_tree_,
+    SetType set_type,
     bool transform_null_in,
     SizeLimits size_limits,
     size_t max_size_for_index)
@@ -165,7 +177,11 @@ FutureSetFromSubquery::FutureSetFromSubquery(
 {
     set_and_key = std::make_shared<SetAndKey>();
     set_and_key->key = PreparedSets::toString(hash_, {});
-    set_and_key->set = std::make_shared<Set>(size_limits, max_size_for_index, transform_null_in);
+
+    if (set_type == SetType::SET)
+        set_and_key->set = std::make_shared<Set>(size_limits, max_size_for_index, transform_null_in);
+    else
+        set_and_key->set = std::make_shared<SetFilter>(size_limits, max_size_for_index, transform_null_in, set_type);
 }
 
 FutureSetFromSubquery::~FutureSetFromSubquery() = default;
@@ -189,6 +205,11 @@ void FutureSetFromSubquery::setExternalTable(StoragePtr external_table_) { exter
 DataTypes FutureSetFromSubquery::getTypes() const
 {
     return set_and_key->set->getElementsTypes();
+}
+
+SetType FutureSetFromSubquery::getSetType() const
+{
+    return set_and_key->set->getSetType();
 }
 
 FutureSet::Hash FutureSetFromSubquery::getHash() const { return hash; }
@@ -286,6 +307,16 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     return set_and_key->set;
 }
 
+PreparedSets::Hash PreparedSets::createSetKey(const PreparedSets::Hash & ast_hash, SetType set_type)
+{
+    SipHash hash;
+    hash.update(ast_hash);
+    hash.update(set_type);
+    Hash result;
+    hash.get128(result.low64, result.high64);
+    return result;
+}
+
 
 String PreparedSets::toString(const PreparedSets::Hash & key, const DataTypes & types)
 {
@@ -307,11 +338,11 @@ String PreparedSets::toString(const PreparedSets::Hash & key, const DataTypes & 
     return buf.str();
 }
 
-FutureSetFromTuplePtr PreparedSets::addFromTuple(const Hash & key, ASTPtr ast, ColumnsWithTypeAndName block, const Settings & settings)
+FutureSetFromTuplePtr PreparedSets::addFromTuple(const Hash & key, ASTPtr ast, ColumnsWithTypeAndName block, const Settings & settings, SetType set_type)
 {
     auto size_limits = getSizeLimitsForSet(settings);
     auto from_tuple = std::make_shared<FutureSetFromTuple>(
-        key, std::move(ast), std::move(block),
+        key, std::move(ast), std::move(block), set_type,
         settings[Setting::transform_null_in], size_limits);
 
     const auto & set_types = from_tuple->getTypes();
@@ -342,11 +373,12 @@ FutureSetFromSubqueryPtr PreparedSets::addFromSubquery(
     std::unique_ptr<QueryPlan> source,
     StoragePtr external_table,
     FutureSetFromSubqueryPtr external_table_set,
-    const Settings & settings)
+    const Settings & settings,
+    SetType set_type)
 {
     auto size_limits = getSizeLimitsForSet(settings);
     auto from_subquery = std::make_shared<FutureSetFromSubquery>(
-        key, std::move(ast), std::move(source), std::move(external_table), std::move(external_table_set),
+        key, std::move(ast), std::move(source), std::move(external_table), std::move(external_table_set), set_type,
         settings[Setting::transform_null_in], size_limits, settings[Setting::use_index_for_in_with_subqueries_max_values]);
 
     auto [it, inserted] = sets_from_subqueries.emplace(key, from_subquery);
@@ -361,11 +393,12 @@ FutureSetFromSubqueryPtr PreparedSets::addFromSubquery(
     const Hash & key,
     ASTPtr ast,
     QueryTreeNodePtr query_tree,
-    const Settings & settings)
+    const Settings & settings,
+    SetType set_type)
 {
     auto size_limits = getSizeLimitsForSet(settings);
     auto from_subquery = std::make_shared<FutureSetFromSubquery>(
-        key, std::move(ast), std::move(query_tree),
+        key, std::move(ast), std::move(query_tree), set_type,
         settings[Setting::transform_null_in], size_limits, settings[Setting::use_index_for_in_with_subqueries_max_values]);
 
     auto [it, inserted] = sets_from_subqueries.emplace(key, from_subquery);
@@ -387,6 +420,15 @@ FutureSetFromTuplePtr PreparedSets::findTuple(const Hash & key, const DataTypes 
             return set;
 
     return nullptr;
+}
+
+FutureSetFromTuplePtr PreparedSets::findAnyTupleForKey(const Hash & key) const
+{
+    auto it = sets_from_tuple.find(key);
+    if (it == sets_from_tuple.end() || it->second.empty())
+        return nullptr;
+
+    return it->second.at(0);
 }
 
 std::shared_ptr<FutureSetFromSubquery> PreparedSets::findSubquery(const Hash & key) const

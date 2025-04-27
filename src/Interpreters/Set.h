@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/SetType.h>
+
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
@@ -34,10 +36,14 @@ public:
     /// (that is useful only for checking that some value is in the set and may not store the original values),
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
-    Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_)
+    Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_, SetType set_type_ = SetType::SET)
         :  limits(limits_), transform_null_in(transform_null_in_), max_elements_to_fill(max_elements_to_fill_)
-        , log(getLogger("Set")), cast_cache(std::make_unique<InternalCastFunctionCache>())
+        , set_type(set_type_), log(getLogger("Set")), cast_cache(std::make_unique<InternalCastFunctionCache>())
     {}
+
+    virtual ~Set() = default;
+
+    virtual void initSetVariant(const ColumnRawPtrs & key_columns);
 
     /** Set can be created either from AST or from a stream of data (subquery result).
       */
@@ -89,6 +95,8 @@ public:
 
     static DataTypes getElementTypes(DataTypes types, bool transform_null_in);
 
+    SetType getSetType() const { return set_type; }
+
     /// Limitations on the maximum size of the set
     const SizeLimits limits;
 
@@ -97,10 +105,11 @@ public:
 
     const size_t max_elements_to_fill;
 
-private:
+protected:
     size_t keys_size = 0;
     Sizes key_sizes;
 
+    SetType set_type;
     SetVariants data;
 
     /** How IN works with Nullable types.
@@ -194,6 +203,18 @@ private:
 using SetPtr = std::shared_ptr<Set>;
 using ConstSetPtr = std::shared_ptr<const Set>;
 using Sets = std::vector<SetPtr>;
+
+class SetFilter : public Set
+{
+public:
+  SetFilter(
+      const SizeLimits& limits_, size_t max_elements_to_fill_, bool transform_null_in_, SetType set_type_, double targetFPR_ = 0.001);
+
+  void initSetVariant(const ColumnRawPtrs& key_columns) override;
+
+private:
+  double targetFPR;
+};
 
 
 class IFunction;
