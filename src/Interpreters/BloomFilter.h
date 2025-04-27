@@ -46,6 +46,10 @@ public:
     /// Bloom filters must have equal size and seed.
     bool contains(const BloomFilter & bf);
 
+    /// Checks if this and `help_filter` filters contain everything from another bloom filter.
+    /// Bloom filters must have equal size and seed.
+    bool containsWithAnotherFilter(const BloomFilter & help_filter, const BloomFilter & bf);
+
     const Container & getFilter() const { return filter; }
     Container & getFilter() { return filter; }
 
