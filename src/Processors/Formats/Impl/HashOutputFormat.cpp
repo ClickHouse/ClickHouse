@@ -67,4 +67,4 @@ void registerOutputFormatHash(FormatFactory & factory)
         });
 }
 
-} // namespace DB
+}
