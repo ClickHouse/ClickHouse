@@ -271,8 +271,8 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         auto & column_columns = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_partitions = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_projections = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_views = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_skip_indexes = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_views = typeid_cast<ColumnArray &>(*columns[i++]);
 
         auto fill_column = [](const std::set<String> & data, ColumnArray & column)
         {
@@ -291,8 +291,8 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(query_columns, column_columns);
         fill_column(query_partitions, column_partitions);
         fill_column(query_projections, column_projections);
-        fill_column(query_views, column_views);
         fill_column(query_skip_indexes, column_skip_indexes);
+        fill_column(query_views, column_views);
     }
 
     columns[i++]->insert(exception_code);
