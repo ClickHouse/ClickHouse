@@ -110,7 +110,7 @@ void MergeTreeIndexReader::read(size_t mark, MergeTreeIndexGranulePtr & granule)
         should_deserialize_aggregator = false;
 
         if (!res)
-            res = index->createIndexGranule();
+            res = aggregator->getGranuleAndReset();
         res->deserializeBinary(*stream->getDataBuffer(), version);
 
         stream_mark = mark + 1;
