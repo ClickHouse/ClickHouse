@@ -964,7 +964,7 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
                 {index_access.getValue(part_index, range.begin), false, range, part_index,
                     PartsRangesIterator::EventType::RangeStart, true});
 
-            const auto range_end_value = index_access.getValue(part_index, range.end);
+            const auto & range_end_value = index_access.getValue(part_index, range.end);
             if (selected_highest_value.empty() || (compareValues(range_end_value, selected_highest_value, false) > 0))
                 selected_highest_value = range_end_value;
 
@@ -985,7 +985,6 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
 
     for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
     {
-        std::vector<PartsRangesIterator> part_candidate_ranges;
         const auto & index_granularity = ranges_in_data_parts[part_index].data_part->index_granularity;
         const auto & part_lower_bound = index_access.getValue(part_index, 0);
         const auto & part_upper_bound = index_access.getValue(part_index, index_granularity->getMarksCountWithoutFinal());
@@ -994,6 +993,8 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
         {
             continue; /// early exit, intersection infeasible in this part
         }
+
+        std::vector<PartsRangesIterator> part_candidate_ranges;
         for (size_t range_begin = 0; range_begin < index_granularity->getMarksCountWithoutFinal(); range_begin++)
         {
             const bool value_is_defined_at_end_mark = ((range_begin + 1) < index_granularity->getMarksCount());
@@ -1016,14 +1017,14 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
                 PartsRangesIterator::EventType::RangeStart, false});
 
         /// Optimization - We don't add all ranges of the part, but only the ranges inside the feasible
-        /// intersection boundary. We skip the entire part if intersection not possible.
+        /// intersection boundary.
         auto candidates_start = std::upper_bound(part_candidate_ranges.begin(), part_candidate_ranges.end(),
                                                  selected_lower_bound);
-        if (candidates_start == part_candidate_ranges.end())
+        if (unlikely(candidates_start == part_candidate_ranges.end()))
             continue; /// no intersection possible in this part
         auto candidates_end = std::upper_bound(part_candidate_ranges.begin(), part_candidate_ranges.end(),
                                                selected_upper_bound);
-        if (candidates_end == part_candidate_ranges.begin())
+        if (unlikely(candidates_end == part_candidate_ranges.begin()))
             continue; /// no intersection possible in this part
 
         if (candidates_start != part_candidate_ranges.begin())
