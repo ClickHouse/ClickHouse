@@ -1,6 +1,6 @@
 SET log_queries = 1;
 
-CREATE OR REPLACE TABLE users (uid Int16, name String, age Int16, parent_id Int16) 
+CREATE TABLE users (uid Int16, name String, age Int16, parent_id Int16) 
 ENGINE = MergeTree()
 ORDER BY uid;
 ALTER TABLE users ADD INDEX age_i age TYPE set(10) GRANULARITY 2;
