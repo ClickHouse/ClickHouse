@@ -67,7 +67,7 @@ def create_tables(table_name, populate_count, skip_last_replica):
         pytest.param("test_1_shard_3_replicas", 3, True, 3),
         pytest.param("test_1_shard_3_replicas_1_unavailable", 3, False, 3),
         pytest.param("test_1_shard_3_replicas_1_unavailable", 3, True, 2),
-        pytest.param("test_1_shard_3_replicas_1_unavailable", 2, False, 2),
+        pytest.param("test_1_shard_3_replicas_1_unavailable", 2, False, 3),
         pytest.param("test_1_shard_3_replicas_1_unavailable", 2, True, 2),
     ],
 )
@@ -79,7 +79,7 @@ def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local
     target_table = "t_target"
     create_tables(target_table, populate_count=0, skip_last_replica=False)
 
-    log_comment = uuid.uuid4()
+    query_id = str(uuid.uuid4())
     node1.query(
         f"INSERT INTO {target_table} SELECT * FROM {source_table}",
         settings={
@@ -87,10 +87,10 @@ def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local
             "enable_parallel_replicas": 2,
             "max_parallel_replicas": max_parallel_replicas,
             "cluster_for_parallel_replicas": cluster_name,
-            "log_comment": log_comment,
             "parallel_replicas_insert_select_local_pipeline": local_pipeline,
             "enable_analyzer": 1,
         },
+        query_id=query_id
     )
     assert (
         node1.query(
@@ -107,15 +107,15 @@ def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local
 
     execute_on_cluster(f"SYSTEM FLUSH LOGS query_log")
     number_of_queries = node1.query(
-            f"""SELECT count() FROM clusterAllReplicas({cluster_name}, system.query_log) WHERE current_database = currentDatabase() AND log_comment = '{log_comment}' AND type = 'QueryFinish' AND query_kind = 'Insert'
-                settings skip_unavailable_shards=1"""
-        )
+            f"""SELECT count() FROM clusterAllReplicas({cluster_name}, system.query_log) WHERE current_database = currentDatabase() AND initial_query_id = '{query_id}' AND type = 'QueryFinish' AND query_kind = 'Insert'""",
+        settings={"skip_unavailable_shards": 1},
+    )
 
-    if max_parallel_replicas < 3:
-        if local_pipeline:
-            assert(number_of_queries == f"{executed_queries}\n" or number_of_queries == f"{executed_queries-1}\n")
-        else:
-            assert(number_of_queries == f"{executed_queries+1}\n" or number_of_queries == f"{executed_queries}\n")
+    if max_parallel_replicas < 3 and "unavailable" in cluster_name:
+        # if max_parallel_replicas < number of nodes in cluster then nodes will be chosen randomly
+        # and in case of cluster with unavailable node, the unavailable node can be chosen as well
+        # so, in such case, number of executed queries will be one less
+        assert(number_of_queries == f"{executed_queries}\n" or number_of_queries == f"{executed_queries-1}\n")
     else:
         assert(number_of_queries == f"{executed_queries}\n")
 
@@ -139,7 +139,6 @@ def test_insert_select_no_table(start_cluster, cluster_name, max_parallel_replic
     target_table = "t_target"
     create_tables(target_table, populate_count=0, skip_last_replica=False)
 
-    log_comment = uuid.uuid4()
     with pytest.raises(QueryRuntimeException) as e:
         node1.query(
             f"INSERT INTO {target_table} SELECT * FROM {source_table}",
@@ -148,7 +147,6 @@ def test_insert_select_no_table(start_cluster, cluster_name, max_parallel_replic
                 "enable_parallel_replicas": 2,
                 "max_parallel_replicas": max_parallel_replicas,
                 "cluster_for_parallel_replicas": cluster_name,
-                "log_comment": log_comment,
                 "parallel_replicas_insert_select_local_pipeline": local_pipeline,
                 "enable_analyzer": 1,
             },
@@ -171,7 +169,6 @@ def test_insert_select_no_target_table(start_cluster, cluster_name, max_parallel
     target_table = "t_target"
     create_tables(target_table, populate_count=0, skip_last_replica=True)
 
-    log_comment = uuid.uuid4()
     with pytest.raises(QueryRuntimeException) as e:
         node1.query(
             f"INSERT INTO {target_table} SELECT * FROM {source_table}",
@@ -180,7 +177,6 @@ def test_insert_select_no_target_table(start_cluster, cluster_name, max_parallel
                 "enable_parallel_replicas": 2,
                 "max_parallel_replicas": max_parallel_replicas,
                 "cluster_for_parallel_replicas": cluster_name,
-                "log_comment": log_comment,
                 "parallel_replicas_insert_select_local_pipeline": local_pipeline,
                 "enable_analyzer": 1,
             },
