@@ -1343,14 +1343,14 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_streams);
     auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, context, nullptr, query_info.row_level_filter, query_info.prewhere_info);
 
-    auto callback = getWriteBodyCallback(storage->body);
+    auto body_post_callback = getWriteBodyCallback(storage->body);
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto source = std::make_shared<StorageURLSource>(
             info,
             iterator_wrapper,
-            storage->getReadMethod(),
-            read_post_data_callback,
+            read_post_data_callback ? storage->getReadMethod() : "",
+            read_post_data_callback ? read_post_data_callback : body_post_callback,
             storage->format_name,
             storage->format_settings,
             storage->getName(),
