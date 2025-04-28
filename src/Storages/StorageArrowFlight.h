@@ -25,7 +25,7 @@ public:
     StorageArrowFlight(
         const StorageID & table_id_,
         const String & host_,
-        const int port_,
+        int port_,
         const String & dataset_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -46,7 +46,7 @@ public:
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context_,
-        bool async_insert_) override;
+        bool async_write) override;
 
     Names getColumnNames();
 

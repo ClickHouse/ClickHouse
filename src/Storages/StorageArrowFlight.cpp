@@ -15,7 +15,6 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/ColumnNode.h>
-#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
