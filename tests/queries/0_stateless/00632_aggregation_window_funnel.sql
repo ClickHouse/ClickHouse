@@ -184,3 +184,19 @@ WHERE user_id = 6
 GROUP BY user_id;
 
 DROP TABLE funnel_test_conv_time;
+
+DROP TABLE IF EXISTS funnel_test_overlap;
+CREATE TABLE funnel_test_overlap (ts UInt32, event String) ENGINE = Memory;
+INSERT INTO funnel_test_overlap VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'a'), (5, 'b'), (6, 'd');
+
+SELECT
+    windowFunnel(10, 'conversion_time')(
+        ts,
+        event = 'a',
+        event = 'b',
+        event = 'c',
+        event = 'd'
+    ) AS funnel_result
+FROM funnel_test_overlap;
+
+DROP TABLE funnel_test_overlap;
