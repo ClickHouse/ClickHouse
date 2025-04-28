@@ -911,7 +911,7 @@ namespace
                     url_options_to_check[current_index].cend(),
                     getContext(),
                     {},
-                    "", //Poco::Net::HTTPRequest::HTTP_GET
+                    "",
                     getWriteBodyCallback(body),
                     getHTTPTimeouts(getContext()),
                     credentials,
@@ -979,7 +979,7 @@ namespace
                 url_options_to_check[current_index - 1].cend(),
                 getContext(),
                 {},
-                "", // TODO: maybe POST
+                "",
                 getWriteBodyCallback(body),
                 getHTTPTimeouts(getContext()),
                 credentials,
