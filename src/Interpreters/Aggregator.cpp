@@ -1,7 +1,8 @@
 #include <algorithm>
+#include <future>
 #include <optional>
-#include <Poco/Util/Application.h>
 #include <Core/Settings.h>
+#include <Poco/Util/Application.h>
 
 #ifdef OS_LINUX
 #    include <unistd.h>
