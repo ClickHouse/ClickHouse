@@ -12,3 +12,10 @@ INSERT INTO test2(id, base, derived) SELECT number as id, randomPrintableASCII(4
 INSERT INTO test2(id, base, derived) SELECT number + 2500 as id, randomPrintableASCII(4) as base, upper(base) as derived FROM system.numbers limit 2500;
 
 DEDUCE TABLE test2 BY derived;
+
+CREATE TABLE test3(id UInt32, base String, derived String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO test3(id, base, derived) VALUES
+(1, 'bAse1', 'BASE1 base1'),
+(2, 'baSe2', 'base2 BASE2');
+
+DEDUCE TABLE test3 BY derived;

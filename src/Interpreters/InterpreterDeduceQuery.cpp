@@ -15,9 +15,9 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include "Common/Logger.h"
 #include <Common/typeid_cast.h>
 #include "Columns/IColumn.h"
+#include "Storages/StorageMergeTree.h"
 
 #include <Interpreters/processColumnTransformers.h>
 
@@ -51,17 +51,37 @@ BlockIO InterpreterDeduceQuery::execute()
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "no columns to deduce specified");
     }
-    auto result = table->deduce(query_ptr, (ast.col_to_deduce)->as<ASTIdentifier>()->name(), metadata_snapshot, context);
+    if (!table->getName().ends_with("MergeTree"))
+    {
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Deduce query is supported only for MergeTree storage engine");
+    }
+    auto merge_tree_storage = std::static_pointer_cast<StorageMergeTree>(table);
+    auto result = merge_tree_storage->deduce(query_ptr, (ast.col_to_deduce)->as<ASTIdentifier>()->name(), metadata_snapshot, context);
 
     Block block(ColumnsWithTypeAndName{
         ColumnWithTypeAndName(DataTypePtr(new DataTypeString()), "partition"),
         ColumnWithTypeAndName(DataTypePtr(new DataTypeString()), "hypothesis")});
 
     MutableColumns columns = block.cloneEmptyColumns();
-    for (const auto & [part_name, hypothesis_str] : result)
+    for (const auto & [part_name, hypothesis_list] : result)
     {
         columns[0]->insert(part_name);
-        columns[1]->insert(hypothesis_str);
+        std::string result_str;
+        size_t idx = 0;
+        for (const auto & hypothesis : hypothesis_list)
+        {
+            result_str += hypothesis.toString();
+            if (idx + 1 != hypothesis_list.size())
+            {
+                result_str += "; ";
+            }
+            ++idx;
+        }
+        if (result_str.empty())
+        {
+            result_str = "None";
+        }
+        columns[1]->insert(result_str);
     }
     BlockIO res;
     size_t num_rows = result.size();

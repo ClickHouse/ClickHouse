@@ -37,6 +37,17 @@ public:
         size_t length;
         size_t col_idx;
         size_t transformer_idx;
+
+        bool operator<(const ColumnEntry & other) const
+        {
+            return std::tie(col_idx, transformer_idx) < std::tie(other.col_idx, other.transformer_idx);
+        }
+
+        bool operator==(const ColumnEntry & other) const
+        {
+            return std::tie(col_idx, transformer_idx) == std::tie(other.col_idx, other.transformer_idx);
+        }
+        bool operator!=(const ColumnEntry & other) const { return !this->operator==(other); }
     };
 
     ColumnEntries() = default;
@@ -54,7 +65,7 @@ public:
     {
         for (auto & entry : entries)
         {
-            std::sort(entry.begin(), entry.end(), [](const auto & lhs, const auto & rhs) { return lhs.col_idx < rhs.col_idx; });
+            std::sort(entry.begin(), entry.end());
         }
     }
 
@@ -212,23 +223,32 @@ void traverseColumnEntriesImpl(
 {
     size_t rows_cnt = deduction_col->size();
     {
-        bool finished = true;
+        size_t finished = 0;
         for (size_t i = 0; i < rows_cnt; ++i)
         {
-            finished &= deduction_col->getDataAt(i).size == indices[i];
+            finished += deduction_col->getDataAt(i).size == indices[i];
         }
-        if (finished)
+        if (finished == rows_cnt)
         {
             hypothesis_list.push_back(std::move(state_builder).constuctHypothesis());
+        }
+        if (finished > 0)
+        {
             return;
         }
     }
     auto new_indices = indices;
-    if (columns_entries[0].size() > indices[0] && !columns_entries[0].at(indices[0]).empty())
+
+    bool has_any_entries_in_all_rows = true;
+    for (size_t i = 0; i < rows_cnt; ++i)
     {
+        has_any_entries_in_all_rows &= indices[i] < columns_entries[i].size() && !columns_entries[i].at(indices[i]).empty();
+    }
+    if (has_any_entries_in_all_rows)
+    {
+        auto get_nth_array = [&columns_entries, &indices](size_t idx) { return &columns_entries[idx].at(indices[idx]); };
         std::vector<size_t> entry_indices(rows_cnt, 0);
-        size_t current_max_col_idx = 0;
-        size_t transformer_idx = 0;
+        auto common_entry = get_nth_array(0)->at(0);
         bool finished = false;
         // All column_entries are sorted
         // So each iteration we find minimum and check if all columns has this entry
@@ -238,8 +258,8 @@ void traverseColumnEntriesImpl(
             bool found_common = true;
             for (size_t row = 0; row < rows_cnt; ++row)
             {
-                const auto & entries = columns_entries[row].at(indices[row]);
-                while (entry_indices[row] < entries.size() && entries[entry_indices[row]].col_idx < current_max_col_idx)
+                const auto & entries = *get_nth_array(row);
+                while (entry_indices[row] < entries.size() && entries[entry_indices[row]] < common_entry)
                 {
                     ++entry_indices[row];
                 }
@@ -249,32 +269,34 @@ void traverseColumnEntriesImpl(
                     finished = true;
                     break;
                 }
-                if (entries[entry_indices[row]].col_idx != current_max_col_idx)
+                if (entries[entry_indices[row]] != common_entry)
                 {
                     found_common = false;
-                    current_max_col_idx = entries[entry_indices[row]].col_idx;
-                    transformer_idx = entries[entry_indices[row]].transformer_idx;
+                    common_entry = entries[entry_indices[row]];
                     break;
-                }
-                else
-                {
-                    transformer_idx = entries[entry_indices[row]].transformer_idx;
                 }
             }
             if (found_common)
             {
                 auto derived = state_builder;
-                derived.addToken(createTransformerToken(transformers[transformer_idx], current_max_col_idx, index_mapper));
+                derived.addToken(createTransformerToken(transformers[common_entry.transformer_idx], common_entry.col_idx, index_mapper));
                 for (size_t row = 0; row < rows_cnt; ++row)
                 {
                     const auto & row_entries = columns_entries[row].at(indices[row]);
                     new_indices[row] = indices[row] + row_entries[entry_indices[row]].length;
                 }
                 traverseColumnEntriesImpl(new_indices, derived, deduction_col, columns_entries, hypothesis_list, index_mapper, log);
-                ++current_max_col_idx;
+
+                if (entry_indices[0] + 1 == get_nth_array(0)->size())
+                {
+                    finished = true;
+                    break;
+                }
+                common_entry = get_nth_array(0)->at(entry_indices[0] + 1);
             }
         }
     }
+
     if (state_builder.empty() || state_builder.back()->getType() != TokenType::Const)
     {
         size_t common_substr_len = calculateLongestCommonSubstr(indices, deduction_col);

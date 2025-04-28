@@ -1747,20 +1747,20 @@ bool StorageMergeTree::optimize(
     return true;
 }
 
-std::vector<std::pair<std::string, std::string>> StorageMergeTree::deduce(
+std::vector<std::pair<std::string, Hypothesis::HypothesisList>> StorageMergeTree::deduce(
     const ASTPtr &, const std::string & col_to_deduce, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     LOG_INFO(log, "Okay deduce for {}", col_to_deduce);
-    std::vector<std::pair<std::string, std::string>> result;
+    std::vector<std::pair<std::string, Hypothesis::HypothesisList>> result;
     DataPartsVector data_parts = getVisibleDataPartsVector(local_context);
     for (const auto & data_part : data_parts)
     {
-        auto sample_block = metadata_snapshot->getSampleBlock();
+        const auto & sample_block = metadata_snapshot->getSampleBlock();
         if (!sample_block.has(col_to_deduce))
         {
             continue;
         }
-        auto names = sample_block.getNames();
+        const auto & names = sample_block.getNames();
         auto names_and_types_list = sample_block.getNamesAndTypesList();
         if (data_part->getDataPartStorage().existsFile("hypothesis.txt"))
         {
@@ -1769,26 +1769,12 @@ std::vector<std::pair<std::string, std::string>> StorageMergeTree::deduce(
             Hypothesis::HypothesisList hypothesis_list;
             hypothesis_list.readText(*buffer);
             hypothesis_list = hypothesis_list.filterColumnName(col_to_deduce);
-            if (!hypothesis_list.empty())
-            {
-                std::string result_str;
-                size_t idx = 0;
-                for (const auto & hypothesis : hypothesis_list)
-                {
-                    result_str += hypothesis.toString();
-                    if (idx + 1 != hypothesis_list.size())
-                    {
-                        result_str += " ; ";
-                    }
-                    ++idx;
-                }
-                result.emplace_back(data_part->getNameWithState(), "CACHED: " + result_str);
-                continue;
-            }
+            result.emplace_back(data_part->getNameWithState(), std::move(hypothesis_list));
+            continue;
         }
 
         // deduce pipeline
-        const size_t deduce_sample_size = 10;
+        const size_t deduce_sample_size = std::min<size_t>(10, data_part->rows_count);
         Columns sample_columns(names_and_types_list.size());
         {
             StorageSnapshotPtr storage_snapshot_ptr = getStorageSnapshot(metadata_snapshot, local_context);
@@ -1801,16 +1787,22 @@ std::vector<std::pair<std::string, std::string>> StorageMergeTree::deduce(
                 {MarkRange(0, 1)},
                 /*virtual_fields=*/{},
                 /*uncompressed_cache=*/{},
-                nullptr,
-                nullptr,
+                /*mark_cache=*/nullptr,
+                /*deserialization_prefixes_cache=*/nullptr,
                 MergeTreeReaderSettings(),
                 ValueSizeMap{},
                 ReadBufferFromFileBase::ProfileCallback{});
-            data_part_reader->readRows(0, 1, false, deduce_sample_size, 0, sample_columns);
+            data_part_reader->readRows(
+                /*from_mark=*/0,
+                /*current_task_last_mark=*/1,
+                /*continue_reading=*/false,
+                deduce_sample_size,
+                /*rows_offset=*/0,
+                sample_columns);
         }
         for (auto & sample_column : sample_columns)
         {
-            sample_column = sample_column->cut(/*start=*/0, std::min(deduce_sample_size, sample_column->size()));
+            sample_column = sample_column->cut(/*start=*/0, deduce_sample_size);
         }
         Block deduce_block(sample_block);
         deduce_block.setColumns(sample_columns);
@@ -1835,27 +1827,7 @@ std::vector<std::pair<std::string, std::string>> StorageMergeTree::deduce(
         CompletedPipelineExecutor executor(pipeline);
         executor.execute();
         LOG_INFO(log, "Rows checked {}", checker->getRowsChecked());
-        if (checker->hypothesisVerifiedCount() == 0)
-        {
-            result.emplace_back(data_part->getNameWithState(), "None");
-            continue;
-        }
-        {
-            data_part->getDataPartStorage();
-        }
-        hypothesis_list = checker->getVerifiedHypothesis();
-        std::string hypothesis_str;
-        size_t idx = 0;
-        for (const auto & hypothesis : hypothesis_list)
-        {
-            hypothesis_str += hypothesis.toString();
-            if (idx + 1 != hypothesis_list.size())
-            {
-                hypothesis_str += " ; ";
-            }
-            ++idx;
-        }
-        result.emplace_back(data_part->getNameWithState(), hypothesis_str);
+        result.emplace_back(data_part->getNameWithState(), checker->getVerifiedHypothesis());
     }
     return result;
 }

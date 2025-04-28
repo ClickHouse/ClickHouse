@@ -17,6 +17,7 @@
 
 #include <Disks/StoragePolicy.h>
 #include <Common/SimpleIncrement.h>
+#include "Storages/MergeTree/Hypothesis/Hypothesis.hpp"
 
 
 namespace DB
@@ -87,11 +88,11 @@ public:
 
     /** Perform column hypothesis deduction.
       */
-    std::vector<std::pair<std::string,std::string>> deduce(
+    std::vector<std::pair<std::string,Hypothesis::HypothesisList>> deduce(
         const ASTPtr & query,
         const std::string& col_to_deduce,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr context) override;
+        ContextPtr context);
 
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 
