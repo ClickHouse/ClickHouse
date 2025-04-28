@@ -249,7 +249,7 @@ SELECT IPv6CIDRToRange(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32);
 ## toIPv4 {#toipv4}
 
 Converts a string or a UInt32 form of IPv4 address to [IPv4](../data-types/ipv4.md) type.
-Similar to [`IPv4StringToNum`](#IPv4StringToNum) and [IPv4StringToNum](#IPv4StringToNum) functions but it supports both string and unsigned integer data types as input arguments.
+Similar to [`IPv4StringToNum`](#IPv4StringToNum) and [IPv4NumToString](#IPv4NumToString) functions but it supports both string and unsigned integer data types as input arguments.
 
 **Syntax**
 
