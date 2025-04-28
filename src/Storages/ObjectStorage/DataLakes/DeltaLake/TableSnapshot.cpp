@@ -109,7 +109,7 @@ public:
         scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(), engine.get(), /* predicate */{}), "scan");
         scan_data_iterator = KernelUtils::unwrapResult(
             ffi::scan_metadata_iter_init(engine.get(), scan.get()),
-            "kernel_scan_data_init");
+            "scan_metadata_iter_init");
     }
 
     void scanDataFunc()
