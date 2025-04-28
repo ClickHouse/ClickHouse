@@ -22,12 +22,10 @@ class SSEFormat : public IRowOutputFormat
 public:
     SSEFormat(WriteBuffer & out_, const Block & header_, const FormatSettings &)
         : IRowOutputFormat(header_, out_)
-    // , json_format(json_buffer, getPort(IOutputFormat::PortKind::Main).getHeader(), fs)
     {
-        // json_format->auto_flush = false;
     }
 
-    String getName() const override { return json_format->getName() + "EventStream"; }
+    String getName() const override { return formatter->getName() + "EventStream"; }
 
     std::string getContentType() const override { return "text/event-stream"; }
 
@@ -37,45 +35,49 @@ protected:
 
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override
     {
-        json_format->writeField(column, serialization, row_num);
+        formatter->writeField(column, serialization, row_num);
     }
 
-    void writeFieldDelimiter() override { json_format->writeFieldDelimiter(); }
+    void writeFieldDelimiter() override { formatter->writeFieldDelimiter(); }
 
     void writeRowStartDelimiter() override
     {
-        json_buffer.restart();
-        writeCString("event: results\n", json_buffer);
-        writeCString("data: ", json_buffer);
-        json_format->writeRowStartDelimiter();
+        buffer.restart();
+        writeCString("event: results\n", buffer);
+        writeCString("data: ", buffer);
+        formatter->writeRowStartDelimiter();
     }
 
     void writeRowEndDelimiter() override
     {
-        json_format->writeRowEndDelimiter();
-        writeCString("\n\n", json_buffer);
-        flushBuffer();
+        formatter->writeRowEndDelimiter();
+        writeCString("\n", buffer);
+        flushBuffer(false);
     }
-    void writeRowBetweenDelimiter() override { json_format->writeRowBetweenDelimiter(); }
+    void writeRowBetweenDelimiter() override { formatter->writeRowBetweenDelimiter(); }
 
     void writePrefix() override
     {
-        json_buffer.restart();
-        writeCString("event: prefix\n", json_buffer);
-        writeCString("data: ", json_buffer);
-        json_format->writePrefix();
-        writeCString("\n\n", json_buffer);
-        flushBuffer();
+        buffer.restart();
+        writeCString("event: results\n", buffer);
+        writeCString("data: ", buffer);
+        auto len_before = buffer.stringView().length();
+        formatter->writePrefix();
+        auto len_after = buffer.stringView().length();
+        writeCString("\n", buffer);
+        flushBuffer(len_before == len_after);
     }
 
     void writeSuffix() override
     {
-        json_buffer.restart();
-        writeCString("event: suffix\n", json_buffer);
-        writeCString("data: ", json_buffer);
-        json_format->writeSuffix();
-        writeCString("\n\n", json_buffer);
-        flushBuffer();
+        buffer.restart();
+        writeCString("event: results\n", buffer);
+        writeCString("data: ", buffer);
+        auto len_before = buffer.stringView().length();
+        formatter->writeSuffix();
+        auto len_after = buffer.stringView().length();
+        writeCString("\n", buffer);
+        flushBuffer(len_before == len_after);
     }
 
     bool writesProgressConcurrently() const override { return support_progress; }
@@ -92,12 +94,12 @@ protected:
             return;
         }
 
-        json_buffer.restart();
-        writeCString("event: progress\n", json_buffer);
-        writeCString("data: ", json_buffer);
-        json_format->writeProgress(value);
-        writeCString("\n\n", json_buffer);
-        flushBuffer();
+        buffer.restart();
+        writeCString("event: progress\n", buffer);
+        writeCString("data: ", buffer);
+        formatter->writeProgress(value);
+        writeCString("\n", buffer);
+        flushBuffer(false);
     }
 
     void writeMinExtreme(const Columns & columns, size_t row_num) override
@@ -107,12 +109,14 @@ protected:
             return;
         }
 
-        json_buffer.restart();
-        writeCString("event: min_extreme\n", json_buffer);
-        writeCString("data: ", json_buffer);
-        json_format->writeMinExtreme(columns, row_num);
-        writeCString("\n\n", json_buffer);
-        flushBuffer();
+        buffer.restart();
+        writeCString("event: results\n", buffer);
+        writeCString("data: ", buffer);
+        auto len_before = buffer.stringView().length();
+        formatter->writeMinExtreme(columns, row_num);
+        auto len_after = buffer.stringView().length();
+        writeCString("\n", buffer);
+        flushBuffer(len_after == len_before);
     }
 
     void writeMaxExtreme(const Columns & columns, size_t row_num) override
@@ -122,12 +126,14 @@ protected:
             return;
         }
 
-        json_buffer.restart();
-        writeCString("event: max_extreme\n", json_buffer);
-        writeCString("data: ", json_buffer);
-        json_format->writeMaxExtreme(columns, row_num);
-        writeCString("\n\n", json_buffer);
-        flushBuffer();
+        buffer.restart();
+        writeCString("event: results\n", buffer);
+        writeCString("data: ", buffer);
+        auto len_before = buffer.stringView().length();
+        formatter->writeMaxExtreme(columns, row_num);
+        auto len_after = buffer.stringView().length();
+        writeCString("\n", buffer);
+        flushBuffer(len_after == len_before);
     }
 
     void writeTotals(const Columns & columns, size_t row_num) override
@@ -137,46 +143,53 @@ protected:
             return;
         }
 
-        json_buffer.restart();
-        writeCString("event: totals\n", json_buffer);
-        writeCString("data: ", json_buffer);
-        json_format->writeTotals(columns, row_num);
-        writeCString("\n\n", json_buffer);
-        flushBuffer();
+        buffer.restart();
+        writeCString("event: results\n", buffer);
+        writeCString("data: ", buffer);
+        auto len_before = buffer.stringView().length();
+        formatter->writeTotals(columns, row_num);
+        auto len_after = buffer.stringView().length();
+        writeCString("\n", buffer);
+        flushBuffer(len_after == len_before);
     }
 
     void finalizeImpl() override
     {
-        json_buffer.restart();
-        writeCString("event: finalize\n", json_buffer);
-        writeCString("data: ", json_buffer);
-        json_format->finalizeImpl();
-        writeCString("\n\n", json_buffer);
-        flushBuffer();
+        buffer.restart();
+        writeCString("event: results\n", buffer);
+        writeCString("data: ", buffer);
+        auto len_before = buffer.stringView().length();
+        formatter->finalizeImpl();
+        auto len_after = buffer.stringView().length();
+        writeCString("\n", buffer);
+        flushBuffer(len_after == len_before);
     }
 
-    void resetFormatterImpl() override { json_format->resetFormatterImpl(); }
+    void resetFormatterImpl() override { formatter->resetFormatterImpl(); }
 
-    void setRowsBeforeLimit(size_t rows_before_limit_) override { json_format->setRowsBeforeLimit(rows_before_limit_); }
+    void setRowsBeforeLimit(size_t rows_before_limit_) override { formatter->setRowsBeforeLimit(rows_before_limit_); }
 
     void setRowsBeforeAggregation(size_t rows_before_aggregation_) override
     {
-        json_format->setRowsBeforeAggregation(rows_before_aggregation_);
+        formatter->setRowsBeforeAggregation(rows_before_aggregation_);
     }
 
 private:
-    void flushBuffer()
+    void flushBuffer(bool is_empty)
     {
-        auto & res = json_buffer.str();
-        out.write(res.data(), res.size());
-        out.next();
-        json_format->flush();
-        json_buffer.restart();
+        auto & res = buffer.str();
+        if (!is_empty) {
+            out.write(res.data(), res.size());
+            out.next();
+        }
+
+        formatter->flush();
+        buffer.restart();
     }
 
 protected:
-    WriteBufferFromOwnString json_buffer;
-    std::shared_ptr<Format> json_format;
+    WriteBufferFromOwnString buffer;
+    std::shared_ptr<Format> formatter;
 };
 
 
@@ -186,7 +199,7 @@ public:
     SSEFormatJSON(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
         : SSEFormat<JSONEachRowRowOutputFormat, false>(out_, header_, format_settings_)
     {
-        json_format = std::make_shared<JSONEachRowRowOutputFormat>(json_buffer, header_, format_settings_);
+        formatter = std::make_shared<JSONEachRowRowOutputFormat>(buffer, header_, format_settings_);
     }
 };
 
@@ -196,7 +209,7 @@ public:
     SSEFormatJSONWithProgress(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
         : SSEFormat<JSONEachRowWithProgressRowOutputFormat, true>(out_, header_, format_settings_)
     {
-        json_format = std::make_shared<JSONEachRowWithProgressRowOutputFormat>(json_buffer, header_, format_settings_);
+        formatter = std::make_shared<JSONEachRowWithProgressRowOutputFormat>(buffer, header_, format_settings_);
     }
 };
 
@@ -206,7 +219,7 @@ public:
     SSEFormatCSV(WriteBuffer & out_, const Block & header_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
         : SSEFormat<CSVRowOutputFormat, true>(out_, header_, format_settings_)
     {
-        json_format = std::make_shared<CSVRowOutputFormat>(json_buffer, header_, with_names_, with_types_, format_settings_);
+        formatter = std::make_shared<CSVRowOutputFormat>(buffer, header_, with_names_, with_types_, format_settings_);
     }
 };
 
