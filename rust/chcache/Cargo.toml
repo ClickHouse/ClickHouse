@@ -12,7 +12,7 @@ serde = { version = "1.0.215", features = ["serde_derive"] }
 serde_bytes = "0.11.15"
 serde_json = "1.0.140"
 tar = "0.4.44"
-tokio = { version = "1.42.0", features = ["rt-multi-thread"] }
+tokio = { version = "1.44.2", features = ["rt-multi-thread"] }
 toml = "0.8.19"
 xdg = "2.5.2"
 
