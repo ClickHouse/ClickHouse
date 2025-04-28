@@ -199,12 +199,13 @@ void WriteBufferFromHTTPServerResponse::onProgressSSE(const Progress & progress)
         progress_watch.restart();
 
         WriteBufferFromOwnString progress_string_writer;
-        writeCString("event: progress\n\n", progress_string_writer);
+        writeCString("event: progress\n", progress_string_writer);
         writeCString("data: ", progress_string_writer);
         accumulated_progress.writeJSON(progress_string_writer);
         writeCString("\n\n", progress_string_writer);
         auto & out = *this;
-        writeString(progress_string_writer.str(), out);
+        if (!out.isCanceled() && !out.isFinalized())
+            writeString(progress_string_writer.str(), out);
     }
 }
 

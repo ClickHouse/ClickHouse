@@ -1,5 +1,5 @@
 event: progress
-data: {"progress":{"read_rows":"100000","read_bytes":"800000","elapsed_ns":"8314544"}}
+data: {"progress":{"read_rows":"100000","read_bytes":"800000"}}
 
 event: results
 data: {"meta":[{"name":"number","type":"UInt64"}]}
@@ -8,43 +8,43 @@ event: results
 data: {"row":{"number":"1"}}
 
 event: progress
-data: {"progress":{"read_rows":"16900000","read_bytes":"135200000","elapsed_ns":"100917880"}}
+data: {"progress":{"read_rows":"3900000","read_bytes":"31200000"}}
 
 event: progress
-data: {"progress":{"read_rows":"34900000","read_bytes":"279200000","elapsed_ns":"202410508"}}
+data: {"progress":{"read_rows":"17000000","read_bytes":"136000000"}}
 
 event: progress
-data: {"progress":{"read_rows":"55600000","read_bytes":"444800000","elapsed_ns":"302566786"}}
+data: {"progress":{"read_rows":"23100000","read_bytes":"184800000"}}
 
 event: progress
-data: {"progress":{"read_rows":"80500000","read_bytes":"644000000","elapsed_ns":"402593192"}}
+data: {"progress":{"read_rows":"28200000","read_bytes":"225600000"}}
 
 event: progress
-data: {"progress":{"read_rows":"108100000","read_bytes":"864800000","elapsed_ns":"502707850"}}
+data: {"progress":{"read_rows":"36400000","read_bytes":"291200000"}}
 
 event: progress
-data: {"progress":{"read_rows":"133800000","read_bytes":"1070400000","elapsed_ns":"602924969"}}
+data: {"progress":{"read_rows":"40100000","read_bytes":"320800000"}}
 
 event: progress
-data: {"progress":{"read_rows":"161400000","read_bytes":"1291200000","elapsed_ns":"703110658"}}
+data: {"progress":{"read_rows":"44800000","read_bytes":"358400000"}}
 
 event: progress
-data: {"progress":{"read_rows":"188900000","read_bytes":"1511200000","elapsed_ns":"803467620"}}
+data: {"progress":{"read_rows":"51000000","read_bytes":"408000000"}}
 
 event: progress
-data: {"progress":{"read_rows":"216900000","read_bytes":"1735200000","elapsed_ns":"903668599"}}
+data: {"progress":{"read_rows":"59700000","read_bytes":"477600000"}}
 
 event: progress
-data: {"progress":{"read_rows":"243700000","read_bytes":"1949600000","elapsed_ns":"1003781396"}}
+data: {"progress":{"read_rows":"70900000","read_bytes":"567200000"}}
 
 event: progress
-data: {"progress":{"read_rows":"270100000","read_bytes":"2160800000","elapsed_ns":"1104087067"}}
+data: {"progress":{"read_rows":"78800000","read_bytes":"630400000"}}
 
 event: progress
-data: {"progress":{"read_rows":"298000000","read_bytes":"2384000000","elapsed_ns":"1204220155"}}
+data: {"progress":{"read_rows":"88200000","read_bytes":"705600000"}}
 
 event: progress
-data: {"progress":{"read_rows":"326100000","read_bytes":"2608800000","elapsed_ns":"1304250011"}}
+data: {"progress":{"read_rows":"96400000","read_bytes":"771200000"}}
 
 event: progress
-data: {"progress":{"read_rows":"353600000","read_bytes":"2828800000","elapsed_ns":"1404255627"}}
+data: {"progress":{"read_rows":"101800000","read_bytes":"814400000"}}
