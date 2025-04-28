@@ -25,11 +25,10 @@ ArrowFlightSource::ArrowFlightSource(
     const std::string & query_,
     const Block & sample_block_,
     const std::vector<std::string> & column_names_,
-    UInt64 max_block_size_)
+    UInt64 /*max_block_size_*/)
     : ISource(sample_block_.cloneEmpty())
     , client(std::move(client_))
     , query(query_)
-    , max_block_size(max_block_size_)
     , sample_block(sample_block_)
     , column_names(column_names_)
 {

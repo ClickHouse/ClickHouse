@@ -15,7 +15,6 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/ColumnNode.h>
-#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
@@ -176,8 +175,6 @@ public:
         : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
-        , host(host_)
-        , port(port_)
         , dataset_name(dataset_name_)
     {
         arrow::flight::Location location;
@@ -235,8 +232,6 @@ public:
 private:
     [[maybe_unused]] const StorageArrowFlight & storage;
     StorageMetadataPtr metadata_snapshot;
-    [[maybe_unused]] String host;
-    [[maybe_unused]] int port;
     String dataset_name;
     std::unique_ptr<arrow::flight::FlightClient> client;
 };

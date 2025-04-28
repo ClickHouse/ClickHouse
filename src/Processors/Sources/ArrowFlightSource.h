@@ -28,7 +28,6 @@ protected:
 private:
     std::unique_ptr<arrow::flight::FlightClient> client;
     std::string query;
-    [[maybe_unused]] UInt64 max_block_size;
 
     Block sample_block;
     std::unique_ptr<arrow::flight::FlightStreamReader> stream_reader;
