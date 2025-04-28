@@ -3319,9 +3319,7 @@ def main(args):
     blacklist_check = []
 
     if args.no_parallel_replicas is True:
-        blacklist = try_get_skip_list(
-            base_dir, "../parallel_replicas_blacklist.txt"
-        )
+        blacklist = try_get_skip_list(base_dir, "../parallel_replicas_blacklist.txt")
         blacklist_check.extend(blacklist)
 
     for suite in sorted(os.listdir(base_dir), key=suite_key_func):
