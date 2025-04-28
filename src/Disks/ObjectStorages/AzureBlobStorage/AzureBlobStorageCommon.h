@@ -54,8 +54,10 @@ struct RequestSettings
     bool use_native_copy = false;
     bool check_objects_after_upload = false;
 
+#if USE_AZURE_BLOB_STORAGE
     using CurlOptions = Azure::Core::Http::CurlTransportOptions;
     CurlOptions::CurlOptIPResolve curl_ip_resolve = CurlOptions::CURL_IPRESOLVE_WHATEVER;
+#endif
 };
 
 struct Endpoint

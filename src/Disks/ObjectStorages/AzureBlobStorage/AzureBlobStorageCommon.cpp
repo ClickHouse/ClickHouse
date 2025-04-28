@@ -59,7 +59,7 @@ namespace AzureBlobStorage
 {
 
 #if USE_AZURE_BLOB_STORAGE
-    
+
 static void validateStorageAccountUrl(const String & storage_account_url)
 {
     const auto * storage_account_url_pattern_str = R"(http(()|s)://[a-z0-9-.:]+(()|/)[a-z0-9]*(()|/))";
