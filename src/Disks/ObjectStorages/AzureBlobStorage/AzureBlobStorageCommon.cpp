@@ -2,13 +2,16 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
+#include <azure/identity/managed_identity_credential.hpp>
+#include <azure/identity/workload_identity_credential.hpp>
+#include <azure/storage/blobs/blob_options.hpp>
+
+#endif
+
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
 #include <Core/Settings.h>
-#include <azure/identity/managed_identity_credential.hpp>
-#include <azure/identity/workload_identity_credential.hpp>
-#include <azure/storage/blobs/blob_options.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
 #include <filesystem>
@@ -55,6 +58,8 @@ namespace ErrorCodes
 namespace AzureBlobStorage
 {
 
+#if USE_AZURE_BLOB_STORAGE
+    
 static void validateStorageAccountUrl(const String & storage_account_url)
 {
     const auto * storage_account_url_pattern_str = R"(http(()|s)://[a-z0-9-.:]+(()|/)[a-z0-9]*(()|/))";
@@ -404,6 +409,8 @@ BlobClientOptions getClientOptions(const RequestSettings & settings, bool for_di
     return client_options;
 }
 
+#endif
+
 std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_settings)
 {
     auto settings = std::make_unique<RequestSettings>();
@@ -559,4 +566,4 @@ std::optional<AzureBlobStorage::RequestSettings> AzureSettingsByEndpoint::getSet
 
 }
 
-#endif
+

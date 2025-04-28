@@ -11,6 +11,9 @@
 #include <azure/identity/managed_identity_credential.hpp>
 #include <azure/identity/workload_identity_credential.hpp>
 
+#endif
+
+
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/strong_typedef.h>
@@ -96,6 +99,8 @@ struct Endpoint
     }
 };
 
+#if USE_AZURE_BLOB_STORAGE
+
 using BlobClient = Azure::Storage::Blobs::BlobClient;
 using BlockBlobClient = Azure::Storage::Blobs::BlockBlobClient;
 using RawContainerClient = Azure::Storage::Blobs::BlobContainerClient;
@@ -154,6 +159,8 @@ std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & par
 BlobClientOptions getClientOptions(const RequestSettings & settings, bool for_disk);
 AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
+#endif
+
 std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_settings);
 std::unique_ptr<RequestSettings> getRequestSettingsForBackup(ContextPtr context, String endpoint, bool use_native_copy);
 std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Settings & settings_ref);
@@ -178,5 +185,3 @@ private:
 
 
 }
-
-#endif

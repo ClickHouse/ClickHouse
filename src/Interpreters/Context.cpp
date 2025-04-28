@@ -5211,7 +5211,7 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
     {
         std::lock_guard lock(shared->mutex);
         if (shared->storage_azure_settings)
-            shared->storage_azure_settings->loadFromConfig(config, /* config_prefix */"azure", getSettingsRef());
+            shared->storage_azure_settings->loadFromConfig(config, /* config_prefix */"configuration.disks.", getSettingsRef());
     }
 
 }
