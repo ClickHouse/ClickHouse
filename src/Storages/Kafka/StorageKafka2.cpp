@@ -853,7 +853,7 @@ void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, cons
 {
     LOG_TRACE(log, "Starting to update temporary locks");
     auto available_topic_partitions = getAvailableTopicPartitions(keeper_to_use, topic_partitions);
-    
+
     /// Adjust tmp_locks_quota based on quota boundaries:
     /// - Increase by TMP_LOCKS_QUOTA_STEP if under the maximum allowed value (tmp_locks_quota_max);
     /// - Decrease by TMP_LOCKS_QUOTA_STEP if increment would exceed or reach the maximum;
@@ -1211,7 +1211,7 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
 
     try
     {
-        if (consumer_info.permanent_locks.empty())
+        if (consumer_info.permanent_locks.empty() || consumer_info.poll_count >= TMP_LOCKS_REFRESH_POLLS)
         {
             LOG_TRACE(log, "Consumer needs update offset");
             // First release the locks so let other consumers acquire them ASAP
