@@ -8,43 +8,43 @@ event: results
 data: {"row":{"number":"1"}}
 
 event: progress
-data: {"progress":{"read_rows":"3900000","read_bytes":"31200000"}}
+data: {"progress":{"read_rows":"200000","read_bytes":"1600000"}}
 
 event: progress
-data: {"progress":{"read_rows":"17000000","read_bytes":"136000000"}}
+data: {"progress":{"read_rows":"300000","read_bytes":"2400000"}}
 
 event: progress
-data: {"progress":{"read_rows":"23100000","read_bytes":"184800000"}}
+data: {"progress":{"read_rows":"400000","read_bytes":"3200000"}}
 
 event: progress
-data: {"progress":{"read_rows":"28200000","read_bytes":"225600000"}}
+data: {"progress":{"read_rows":"500000","read_bytes":"4000000"}}
 
 event: progress
-data: {"progress":{"read_rows":"36400000","read_bytes":"291200000"}}
+data: {"progress":{"read_rows":"600000","read_bytes":"4800000"}}
 
 event: progress
-data: {"progress":{"read_rows":"40100000","read_bytes":"320800000"}}
+data: {"progress":{"read_rows":"700000","read_bytes":"5600000"}}
 
 event: progress
-data: {"progress":{"read_rows":"44800000","read_bytes":"358400000"}}
+data: {"progress":{"read_rows":"800000","read_bytes":"6400000"}}
 
 event: progress
-data: {"progress":{"read_rows":"51000000","read_bytes":"408000000"}}
+data: {"progress":{"read_rows":"900000","read_bytes":"7200000"}}
 
 event: progress
-data: {"progress":{"read_rows":"59700000","read_bytes":"477600000"}}
+data: {"progress":{"read_rows":"1000000","read_bytes":"8000000"}}
 
 event: progress
-data: {"progress":{"read_rows":"70900000","read_bytes":"567200000"}}
+data: {"progress":{"read_rows":"1100000","read_bytes":"8800000"}}
 
 event: progress
-data: {"progress":{"read_rows":"78800000","read_bytes":"630400000"}}
+data: {"progress":{"read_rows":"1200000","read_bytes":"9600000"}}
 
 event: progress
-data: {"progress":{"read_rows":"88200000","read_bytes":"705600000"}}
+data: {"progress":{"read_rows":"1300000","read_bytes":"10400000"}}
 
 event: progress
-data: {"progress":{"read_rows":"96400000","read_bytes":"771200000"}}
+data: {"progress":{"read_rows":"1400000","read_bytes":"11200000"}}
 
 event: progress
-data: {"progress":{"read_rows":"101800000","read_bytes":"814400000"}}
+data: {"progress":{"read_rows":"1500000","read_bytes":"12000000"}}
