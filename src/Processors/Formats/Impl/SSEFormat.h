@@ -214,11 +214,11 @@ public:
     }
 };
 
-class SSEFormatCSV : public SSEFormat<CSVRowOutputFormat, true>
+class SSEFormatCSV : public SSEFormat<CSVRowOutputFormat, false>
 {
 public:
     SSEFormatCSV(WriteBuffer & out_, const Block & header_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
-        : SSEFormat<CSVRowOutputFormat, true>(out_, header_, format_settings_)
+        : SSEFormat<CSVRowOutputFormat, false>(out_, header_, format_settings_)
     {
         formatter = std::make_shared<CSVRowOutputFormat>(buffer, header_, with_names_, with_types_, format_settings_);
     }
