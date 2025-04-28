@@ -123,7 +123,7 @@ namespace
 constexpr auto MAX_FAILED_POLL_ATTEMPTS = 10;
 constexpr auto TMP_LOCKS_REFRESH_POLLS = 15;
 constexpr auto TMP_LOCKS_QUOTA_STEP = 2;
-constexpr size_t LOCKS_QUOTA_MIN = 1;
+constexpr auto LOCKS_QUOTA_MIN = 1U;
 }
 
 StorageKafka2::StorageKafka2(
@@ -861,7 +861,7 @@ void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, cons
     size_t tmp_locks_quota_max = available_topic_partitions.size();
     if (tmp_locks_quota + TMP_LOCKS_QUOTA_STEP >= tmp_locks_quota_max)
     {
-        tmp_locks_quota = std::max(tmp_locks_quota > TMP_LOCKS_QUOTA_STEP ?
+        tmp_locks_quota = std::max<size_t>(tmp_locks_quota > TMP_LOCKS_QUOTA_STEP ?
                                tmp_locks_quota - TMP_LOCKS_QUOTA_STEP : LOCKS_QUOTA_MIN,
                                LOCKS_QUOTA_MIN);
     }
@@ -888,7 +888,9 @@ void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, cons
 void StorageKafka2::updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & permanent_locks, bool & permanent_locks_changed)
 {
     LOG_TRACE(log, "Starting to update permanent locks");
-    size_t can_lock_partitions = std::max(LOCKS_QUOTA_MIN, topic_partitions.size() / static_cast<size_t>(active_replica_count));
+    size_t can_lock_partitions = std::max<size_t>(active_replica_count != 0 ?
+        topic_partitions.size() / static_cast<size_t>(active_replica_count) : LOCKS_QUOTA_MIN,
+        LOCKS_QUOTA_MIN);
     auto available_topic_partitions = getAvailableTopicPartitions(keeper_to_use, topic_partitions);
 
     if (can_lock_partitions < permanent_locks.size())
@@ -1213,7 +1215,6 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
     {
         if (consumer_info.permanent_locks.empty() || consumer_info.poll_count >= TMP_LOCKS_REFRESH_POLLS)
         {
-            LOG_TRACE(log, "Consumer needs update offset");
             // First release the locks so let other consumers acquire them ASAP
             consumer_info.topic_partitions.clear();
 
