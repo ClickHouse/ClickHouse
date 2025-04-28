@@ -167,14 +167,14 @@ def test_backup_restore_on_merge_tree_same_container(cluster):
     print("BACKUP DEST", backup_destination)
     azure_query(
         node1,
-        f"BACKUP TABLE test_simple_merge_tree TO {backup_destination}",
+        f"BACKUP TABLE test_simple_merge_tree TO {backup_destination} SETTINGS allow_azure_native_copy = 1",
     )
 
     assert node1.contains_in_log("using native copy")
 
     azure_query(
         node1,
-        f"RESTORE TABLE test_simple_merge_tree AS test_simple_merge_tree_restored FROM {backup_destination};",
+        f"RESTORE TABLE test_simple_merge_tree AS test_simple_merge_tree_restored FROM {backup_destination} SETTINGS allow_azure_native_copy = 1;",
     )
     assert (
         azure_query(node1, f"SELECT * from test_simple_merge_tree_restored") == "1\ta\n"
