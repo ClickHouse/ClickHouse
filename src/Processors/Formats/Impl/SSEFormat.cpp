@@ -1,9 +1,8 @@
 #include <Processors/Formats/Impl/SSEFormat.h>
-#include "Formats/FormatSettings.h"
-#include "Formats/registerWithNamesAndTypes.h"
-#include "Processors/Formats/IOutputFormat.h"
-#include "Processors/Formats/Impl/JSONEachRowRowOutputFormat.h"
-#include "Processors/Formats/Impl/JSONEachRowWithProgressRowOutputFormat.h"
+#include <Formats/FormatSettings.h>
+#include <Formats/registerWithNamesAndTypes.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Formats/Impl/JSONEachRowRowOutputFormat.h>
 
 
 namespace DB

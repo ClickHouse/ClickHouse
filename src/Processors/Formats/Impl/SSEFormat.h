@@ -1,27 +1,27 @@
 #pragma once
 
 #include <memory>
-#include <Processors/Formats/IRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <Processors/Port.h>
+#include <Formats/FormatSettings.h>
+#include <IO/Progress.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Processors/Formats/IRowOutputFormat.h>
+#include <Processors/Formats/Impl/CSVRowOutputFormat.h>
 #include <Processors/Formats/Impl/JSONEachRowRowOutputFormat.h>
-#include "Formats/FormatSettings.h"
-#include "IO/Progress.h"
-#include "IO/WriteBufferFromString.h"
-#include "IO/WriteHelpers.h"
-#include "Processors/Formats/Impl/CSVRowOutputFormat.h"
-#include "Processors/Formats/Impl/JSONEachRowWithProgressRowOutputFormat.h"
+#include <Processors/Formats/Impl/JSONEachRowWithProgressRowOutputFormat.h>
+#include <Processors/Port.h>
 
 
-namespace DB 
+namespace DB
 {
 
 template <typename Format, bool support_progress>
 class SSEFormat : public IRowOutputFormat
 {
 public:
-    SSEFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & ) 
-    : IRowOutputFormat(header_, out_)
+    SSEFormat(WriteBuffer & out_, const Block & header_, const FormatSettings &)
+        : IRowOutputFormat(header_, out_)
     // , json_format(json_buffer, getPort(IOutputFormat::PortKind::Main).getHeader(), fs)
     {
         // json_format->auto_flush = false;
@@ -32,21 +32,17 @@ public:
     std::string getContentType() const override { return "text/event-stream"; }
 
 protected:
-
     bool supportTotals() const override { return support_progress; }
     bool supportExtremes() const override { return support_progress; }
 
-    void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override 
+    void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override
     {
         json_format->writeField(column, serialization, row_num);
     }
 
-    void writeFieldDelimiter() override 
-    {
-        json_format->writeFieldDelimiter();
-    }
+    void writeFieldDelimiter() override { json_format->writeFieldDelimiter(); }
 
-    void writeRowStartDelimiter() override 
+    void writeRowStartDelimiter() override
     {
         json_buffer.restart();
         writeCString("event: results\n", json_buffer);
@@ -54,18 +50,15 @@ protected:
         json_format->writeRowStartDelimiter();
     }
 
-    void writeRowEndDelimiter() override 
+    void writeRowEndDelimiter() override
     {
         json_format->writeRowEndDelimiter();
         writeCString("\n\n", json_buffer);
         flushBuffer();
     }
-    void writeRowBetweenDelimiter() override 
-    {
-        json_format->writeRowBetweenDelimiter();
-    }
+    void writeRowBetweenDelimiter() override { json_format->writeRowBetweenDelimiter(); }
 
-    void writePrefix() override 
+    void writePrefix() override
     {
         json_buffer.restart();
         writeCString("event: prefix\n", json_buffer);
@@ -75,7 +68,8 @@ protected:
         flushBuffer();
     }
 
-    void writeSuffix() override {
+    void writeSuffix() override
+    {
         json_buffer.restart();
         writeCString("event: suffix\n", json_buffer);
         writeCString("data: ", json_buffer);
@@ -86,17 +80,18 @@ protected:
 
     bool writesProgressConcurrently() const override { return support_progress; }
 
-    void writeProgress(const Progress & value) override 
+    void writeProgress(const Progress & value) override
     {
-        if (!support_progress) {
-            return;
-        }
-
-        if (value.empty()) 
+        if (!support_progress)
         {
             return;
         }
-    
+
+        if (value.empty())
+        {
+            return;
+        }
+
         json_buffer.restart();
         writeCString("event: progress\n", json_buffer);
         writeCString("data: ", json_buffer);
@@ -107,35 +102,38 @@ protected:
 
     void writeMinExtreme(const Columns & columns, size_t row_num) override
     {
-        if (!support_progress) {
+        if (!support_progress)
+        {
             return;
         }
 
         json_buffer.restart();
         writeCString("event: min_extreme\n", json_buffer);
         writeCString("data: ", json_buffer);
-        json_format->writeMinExtreme(columns,row_num);
+        json_format->writeMinExtreme(columns, row_num);
         writeCString("\n\n", json_buffer);
         flushBuffer();
     }
 
     void writeMaxExtreme(const Columns & columns, size_t row_num) override
     {
-        if (!support_progress) {
+        if (!support_progress)
+        {
             return;
         }
 
         json_buffer.restart();
         writeCString("event: max_extreme\n", json_buffer);
         writeCString("data: ", json_buffer);
-        json_format->writeMaxExtreme(columns,row_num);
+        json_format->writeMaxExtreme(columns, row_num);
         writeCString("\n\n", json_buffer);
         flushBuffer();
     }
 
     void writeTotals(const Columns & columns, size_t row_num) override
     {
-        if (!support_progress) {
+        if (!support_progress)
+        {
             return;
         }
 
@@ -157,15 +155,9 @@ protected:
         flushBuffer();
     }
 
-    void resetFormatterImpl() override
-    {
-        json_format->resetFormatterImpl();
-    }
+    void resetFormatterImpl() override { json_format->resetFormatterImpl(); }
 
-    void setRowsBeforeLimit(size_t rows_before_limit_) override
-    {
-        json_format->setRowsBeforeLimit(rows_before_limit_);
-    }
+    void setRowsBeforeLimit(size_t rows_before_limit_) override { json_format->setRowsBeforeLimit(rows_before_limit_); }
 
     void setRowsBeforeAggregation(size_t rows_before_aggregation_) override
     {
@@ -173,10 +165,9 @@ protected:
     }
 
 private:
-
-    void flushBuffer() 
+    void flushBuffer()
     {
-        auto &res = json_buffer.str();
+        auto & res = json_buffer.str();
         out.write(res.data(), res.size());
         out.next();
         json_format->flush();
@@ -189,37 +180,34 @@ protected:
 };
 
 
-class SSEFormatJSON : public SSEFormat<JSONEachRowRowOutputFormat, false> 
+class SSEFormatJSON : public SSEFormat<JSONEachRowRowOutputFormat, false>
 {
 public:
-    SSEFormatJSON(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_) 
-    : SSEFormat<JSONEachRowRowOutputFormat, false>(out_, header_, format_settings_)
+    SSEFormatJSON(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
+        : SSEFormat<JSONEachRowRowOutputFormat, false>(out_, header_, format_settings_)
     {
         json_format = std::make_shared<JSONEachRowRowOutputFormat>(json_buffer, header_, format_settings_);
     }
-
 };
 
-class SSEFormatJSONWithProgress : public SSEFormat<JSONEachRowWithProgressRowOutputFormat, true> 
+class SSEFormatJSONWithProgress : public SSEFormat<JSONEachRowWithProgressRowOutputFormat, true>
 {
 public:
-    SSEFormatJSONWithProgress(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_) 
-    : SSEFormat<JSONEachRowWithProgressRowOutputFormat, true>(out_, header_, format_settings_)
+    SSEFormatJSONWithProgress(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
+        : SSEFormat<JSONEachRowWithProgressRowOutputFormat, true>(out_, header_, format_settings_)
     {
         json_format = std::make_shared<JSONEachRowWithProgressRowOutputFormat>(json_buffer, header_, format_settings_);
     }
-
 };
 
-class SSEFormatCSV : public SSEFormat<CSVRowOutputFormat, true> 
+class SSEFormatCSV : public SSEFormat<CSVRowOutputFormat, true>
 {
 public:
-SSEFormatCSV(WriteBuffer & out_, const Block & header_, bool with_names_, bool with_types_, const FormatSettings & format_settings_) 
-    : SSEFormat<CSVRowOutputFormat, true>(out_, header_, format_settings_)
+    SSEFormatCSV(WriteBuffer & out_, const Block & header_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
+        : SSEFormat<CSVRowOutputFormat, true>(out_, header_, format_settings_)
     {
         json_format = std::make_shared<CSVRowOutputFormat>(json_buffer, header_, with_names_, with_types_, format_settings_);
     }
-
 };
 
 }
