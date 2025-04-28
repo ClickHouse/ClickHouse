@@ -540,7 +540,7 @@ void AzureSettingsByEndpoint::loadFromConfig(
 
         azure_settings.emplace(
                 config.getString(endpoint_path),
-                std::move(*request_settings.get()));
+                std::move(*request_settings));
 
     }
 }
