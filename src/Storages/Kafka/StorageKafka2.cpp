@@ -582,6 +582,9 @@ bool StorageKafka2::createTableIfNotExists()
             ops.emplace_back(zkutil::makeCreateRequest(partitions_path, "", zkutil::CreateMode::Persistent));
         }
 
+        const auto topic_partition_locks_path = fs_keeper_path / "topic_partition_locks";
+        ops.emplace_back(zkutil::makeCreateRequest(topic_partition_locks_path, "", zkutil::CreateMode::Persistent));
+
         // Create the first replica
         ops.emplace_back(zkutil::makeCreateRequest(replicas_path, "", zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path, "", zkutil::CreateMode::Persistent));
@@ -923,6 +926,7 @@ void StorageKafka2::updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, cons
 void StorageKafka2::saveCommittedOffset(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition)
 {
     const auto partition_prefix = getTopicPartitionPath(topic_partition);
+    keeper_to_use.createAncestors(partition_prefix / commit_file_name);
     keeper_to_use.createOrUpdate(partition_prefix / commit_file_name, toString(topic_partition.offset), zkutil::CreateMode::Persistent);
     // This is best effort, if it fails we will try to remove in the next round
     keeper_to_use.tryRemove(partition_prefix / intent_file_name, -1);
@@ -939,6 +943,8 @@ void StorageKafka2::saveIntent(zkutil::ZooKeeper & keeper_to_use, const TopicPar
         topic_partition.topic,
         topic_partition.partition_id,
         topic_partition.offset);
+
+    keeper_to_use.createAncestors(getTopicPartitionPath(topic_partition) / intent_file_name);
     keeper_to_use.createOrUpdate(
         getTopicPartitionPath(topic_partition) / intent_file_name, toString(intent), zkutil::CreateMode::Persistent);
 }
