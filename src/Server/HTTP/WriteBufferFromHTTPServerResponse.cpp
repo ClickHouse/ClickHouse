@@ -167,7 +167,8 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
     std::lock_guard lock(mutex);
     // LOG_DEBUG(getLogger("WriteBufferFromHTTPServerResponse"), "onProgress called, is_event_stream_enabled={}", is_event_stream_enabled);
 
-    if (is_event_stream_enabled) {
+    if (is_event_stream_enabled)
+    {
          onProgressSSE(progress);
          return;
     }

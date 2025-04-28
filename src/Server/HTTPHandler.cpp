@@ -807,18 +807,20 @@ void HTTPHandler::releaseOrCloseSession(const String & session_id, bool close_se
     }
 }
 
-bool HTTPHandler::isEventStreamRequest(const HTTPServerRequest & request) const {
+bool HTTPHandler::isEventStreamRequest(const HTTPServerRequest & request) const
+{
     const auto &accept_values = request.getAll("Accept");
     for (const auto &accept_value : accept_values)
     {
-        if (startsWith(accept_value, "text/event-stream")) 
+        if (startsWith(accept_value, "text/event-stream"))
             return true;
     }
 
     return false;
 }
 
-void HTTPHandler::writeEventStreamHeader(HTTPServerResponse & response) {
+void HTTPHandler::writeEventStreamHeader(HTTPServerResponse & response)
+{
     response.setContentType("text/event-stream");
     response.set("Cache-Control", "no-cache");
     response.set("Connection", "keep-alive");
