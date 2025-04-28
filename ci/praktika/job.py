@@ -188,6 +188,20 @@ class Job:
                     )
             return res
 
+        def unset_provides(self, artifact_keyword):
+            """
+            removes artifact matching artifact_keyword
+            :param artifact_keyword:
+            :return: copied and modified Job.Config instance
+            """
+            res = copy.deepcopy(self)
+            provides_res = []
+            for artifact in res.provides:
+                if artifact_keyword.lower() not in artifact.lower():
+                    provides_res.append(artifact)
+            res.provides = provides_res
+            return res
+
         def set_allow_merge_on_failure(self, value):
             res = copy.deepcopy(self)
             res.allow_merge_on_failure = value

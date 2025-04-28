@@ -218,7 +218,7 @@ Result:
 └─────────┘
 ```
 )",
-        .category{"Time Series"}});
+        .category = FunctionDocumentation::Category::TimeSeries});
 }
 }
 #endif
