@@ -479,7 +479,7 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractCo
 
     settings->check_objects_after_upload = config.getBool(config_prefix + ".check_objects_after_upload", settings_ref[Setting::azure_check_objects_after_upload]);
 
-g
+
 #if USE_AZURE_BLOB_STORAGE
     if (config.has(config_prefix + ".curl_ip_resolve"))
     {
