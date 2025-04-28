@@ -119,7 +119,7 @@ public:
         {
             bool have_scan_data_res = KernelUtils::unwrapResult(
                 ffi::scan_metadata_next(scan_data_iterator.get(), this, visitData),
-                "kernel_scan_data_next");
+                "scan_metadata_next");
 
             if (have_scan_data_res)
             {
