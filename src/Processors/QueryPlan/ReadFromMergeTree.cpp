@@ -86,13 +86,13 @@ size_t countPartitions(const Container & parts, Getter get_partition_id)
 
 size_t countPartitions(const RangesInDataParts & parts_with_ranges)
 {
-    auto get_partition_id = [](const RangesInDataPart & rng) { return rng.data_part->info.getPartitionId(); };
+    auto get_partition_id = [](const RangesInDataPart & rng) { return rng.data_part->info.partition_id; };
     return countPartitions(parts_with_ranges, get_partition_id);
 }
 
 size_t countPartitions(const MergeTreeData::DataPartsVector & prepared_parts)
 {
-    auto get_partition_id = [](const MergeTreeData::DataPartPtr data_part) { return data_part->info.getPartitionId(); };
+    auto get_partition_id = [](const MergeTreeData::DataPartPtr data_part) { return data_part->info.partition_id; };
     return countPartitions(prepared_parts, get_partition_id);
 }
 
@@ -186,7 +186,6 @@ namespace Setting
     extern const SettingsBool query_plan_merge_filters;
     extern const SettingsUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool read_in_order_use_virtual_row;
-    extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool query_condition_cache_store_conditions_as_plaintext;
     extern const SettingsBool allow_experimental_analyzer;
@@ -345,7 +344,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     const ContextPtr & context_,
     size_t max_block_size_,
     size_t num_streams_,
-    PartitionIdToMaxBlockPtr max_block_numbers_to_read_,
+    std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
     LoggerPtr log_,
     AnalysisResultPtr analyzed_result_ptr_,
     bool enable_parallel_reading_,
@@ -1211,7 +1210,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
                 /// We take full part if it contains enough marks or
                 /// if we know limit and part contains less than 'limit' rows.
-                bool take_full_part = marks_in_part <= need_marks || (input_order_info->limit && input_order_info->limit < part.getRowsCount());
+                bool take_full_part = marks_in_part <= need_marks || (input_order_info->limit && input_order_info->limit > part.getRowsCount());
 
                 /// We take the whole part if it is small enough.
                 if (take_full_part)
@@ -1440,7 +1439,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         while (it != parts_with_ranges.end())
         {
             it = std::find_if(
-                it, parts_with_ranges.end(), [&it](auto & part) { return it->data_part->info.getPartitionId() != part.data_part->info.getPartitionId(); });
+                it, parts_with_ranges.end(), [&it](auto & part) { return it->data_part->info.partition_id != part.data_part->info.partition_id; });
             parts_to_merge_ranges.push_back(it);
         }
     }
@@ -1669,10 +1668,8 @@ static void buildIndexes(
 
     const auto & settings = context->getSettingsRef();
 
-    ActionsDAGWithInversionPushDown filter_dag((filter_actions_dag ? filter_actions_dag->getOutputs().front() : nullptr), context);
-
     indexes.emplace(
-        ReadFromMergeTree::Indexes{KeyCondition{filter_dag, context, primary_key_column_names, primary_key.expression}});
+        ReadFromMergeTree::Indexes{KeyCondition{filter_actions_dag, context, primary_key_column_names, primary_key.expression}});
 
     if (metadata_snapshot->hasPartitionKey())
     {
@@ -1680,12 +1677,12 @@ static void buildIndexes(
         auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
         auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings(context));
 
-        indexes->minmax_idx_condition.emplace(filter_dag, context, minmax_columns_names, minmax_expression_actions);
-        indexes->partition_pruner.emplace(metadata_snapshot, filter_dag, context, false /* strict */);
+        indexes->minmax_idx_condition.emplace(filter_actions_dag, context, minmax_columns_names, minmax_expression_actions);
+        indexes->partition_pruner.emplace(metadata_snapshot, filter_actions_dag, context, false /* strict */);
     }
 
-    indexes->part_values = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(metadata_snapshot, data, parts, filter_dag.predicate, context);
-    MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(indexes->part_offset_condition, filter_dag.predicate, context);
+    indexes->part_values = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(metadata_snapshot, data, parts, filter_actions_dag, context);
+    MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(indexes->part_offset_condition, filter_actions_dag, context);
 
     indexes->use_skip_indexes = settings[Setting::use_skip_indexes];
     if (query_info.isFinal() && !settings[Setting::use_skip_indexes_if_final])
@@ -1769,20 +1766,17 @@ static void buildIndexes(
         {
 #if USE_USEARCH
             if (const auto * vector_similarity_index = typeid_cast<const MergeTreeIndexVectorSimilarity *>(index_helper.get()))
-                condition = vector_similarity_index->createIndexCondition(filter_dag.predicate, context, vector_search_parameters);
+                condition = vector_similarity_index->createIndexCondition(filter_actions_dag, context, vector_search_parameters);
 #endif
             if (const auto * legacy_vector_similarity_index = typeid_cast<const MergeTreeIndexLegacyVectorSimilarity *>(index_helper.get()))
-                condition = legacy_vector_similarity_index->createIndexCondition(filter_dag.predicate, context);
+                condition = legacy_vector_similarity_index->createIndexCondition(filter_actions_dag, context);
 
             if (!condition)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown vector search index {}", index_helper->index.name);
         }
         else
         {
-            if (!filter_dag.predicate)
-                continue;
-
-            condition = index_helper->createIndexCondition(filter_dag.predicate, context);
+            condition = index_helper->createIndexCondition(filter_actions_dag, context);
         }
 
         if (!condition->alwaysUnknownOrTrue())
@@ -1841,7 +1835,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     const SelectQueryInfo & query_info_,
     ContextPtr context_,
     size_t num_streams,
-    PartitionIdToMaxBlockPtr max_block_numbers_to_read,
+    std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
     const MergeTreeData & data,
     const Names & all_column_names,
     LoggerPtr log,
@@ -1895,7 +1889,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
     size_t total_marks_pk = 0;
     size_t parts_before_pk = 0;
-    bool add_index_stat_row_for_pk_expand = false;
 
     {
         MergeTreeDataSelectExecutor::filterPartsByPartition(
@@ -1940,19 +1933,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             num_streams,
             result.index_stats,
             indexes->use_skip_indexes,
-            find_exact_ranges,
-            query_info_.isFinal());
+            find_exact_ranges);
 
         MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(result.parts_with_ranges, query_info_, context_, log);
-
-        if (indexes->use_skip_indexes && !indexes->skip_indexes.useful_indices.empty()  && query_info_.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode])
-        {
-            result.parts_with_ranges = findPKRangesForFinalAfterSkipIndex(primary_key,
-                                                                          metadata_snapshot->getSortingKey(),
-                                                                          result.parts_with_ranges,
-                                                                          log);
-            add_index_stat_row_for_pk_expand = true;
-        }
     }
 
     size_t sum_marks_pk = total_marks_pk;
@@ -1969,15 +1952,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         sum_ranges += part.ranges.size();
         sum_marks += part.getMarksCount();
         sum_rows += part.getRowsCount();
-    }
-
-    if (add_index_stat_row_for_pk_expand)
-    {
-        result.index_stats.emplace_back(ReadFromMergeTree::IndexStat{
-            .type = ReadFromMergeTree::IndexType::PrimaryKeyExpand,
-            .description = "Selects all granules that intersect by PK values with the previous skip indexes selection",
-            .num_parts_after = result.parts_with_ranges.size(),
-            .num_granules_after = sum_marks});
     }
 
     result.total_parts = total_parts;
@@ -2135,7 +2109,7 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
     {
         std::unordered_map<String, size_t> partition_rows;
         for (const auto & part : prepared_parts)
-            partition_rows[part->info.getPartitionId()] += part->rows_count;
+            partition_rows[part->info.partition_id] += part->rows_count;
         size_t sum_rows = 0;
         size_t max_rows = 0;
         for (const auto & [_, rows] : partition_rows)
@@ -2261,7 +2235,7 @@ Pipe ReadFromMergeTree::groupStreamsByPartition(AnalysisResult & result, std::op
             end = std::find_if(
                 end,
                 parts_with_ranges.end(),
-                [&end](const auto & part) { return end->data_part->info.getPartitionId() != part.data_part->info.getPartitionId(); });
+                [&end](const auto & part) { return end->data_part->info.partition_id != part.data_part->info.partition_id; });
 
         RangesInDataParts partition_parts{std::make_move_iterator(begin), std::make_move_iterator(end)};
 
@@ -2310,7 +2284,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         for (const auto & part : result.parts_with_ranges)
         {
             partition_names.emplace_back(
-                fmt::format("{}.{}", data.getStorageID().getFullNameNotQuoted(), part.data_part->info.getPartitionId()));
+                fmt::format("{}.{}", data.getStorageID().getFullNameNotQuoted(), part.data_part->info.partition_id));
         }
         context->getQueryContext()->addQueryAccessInfo(partition_names);
     }
@@ -2453,8 +2427,6 @@ static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
             return "PrimaryKey";
         case ReadFromMergeTree::IndexType::Skip:
             return "Skip";
-        case ReadFromMergeTree::IndexType::PrimaryKeyExpand:
-            return "PrimaryKeyExpand";
     }
 }
 

@@ -8,6 +8,7 @@
 #include <Coordination/Defines.h>
 #include <Common/Config/ConfigReloader.h>
 #include <filesystem>
+#include <IO/UseSSL.h>
 #include <Core/ServerUUID.h>
 #include <Common/logger_useful.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
@@ -311,6 +312,8 @@ try
     setJemallocBackgroundThreads(true);
 #endif
     Poco::Logger * log = &logger();
+
+    UseSSL use_ssl;
 
     MainThreadStatus::getInstance();
 

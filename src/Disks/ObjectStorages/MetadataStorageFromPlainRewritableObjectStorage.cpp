@@ -163,7 +163,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
 
                     /// Load the list of files inside the directory.
                     fs::path full_remote_path = object_storage->getCommonKeyPrefix() / remote_path;
-                    size_t full_prefix_length = full_remote_path.string().size() + 1; /// common/key/prefix/randomlygenerated/
+                    size_t prefix_length = remote_path.string().size() + 1; /// randomlygenerated/
                     for (auto dir_iterator = object_storage->iterate(full_remote_path, 0); dir_iterator->isValid(); dir_iterator->next())
                     {
                         auto remote_file = dir_iterator->current();
@@ -178,8 +178,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
                         }
 
                         /// Check that the file is a direct child.
-                        chassert(full_prefix_length < remote_file_path.size());
-                        if (std::string_view(remote_file_path.data() + full_prefix_length) == filename)
+                        if (remote_file_path.substr(prefix_length) == filename)
                             files.insert(std::move(filename));
                     }
 

@@ -12,7 +12,6 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Poco/JSON/Object.h>
-#include <Core/Settings.h>
 
 namespace DB
 {
@@ -20,10 +19,6 @@ namespace StorageObjectStorageSetting
 {
 extern const StorageObjectStorageSettingsBool allow_experimental_delta_kernel_rs;
 extern const StorageObjectStorageSettingsBool delta_lake_read_schema_same_as_table_schema;
-}
-namespace Setting
-{
-extern const SettingsBool allow_experimental_delta_kernel_rs;
 }
 
 struct DeltaLakePartitionColumn
@@ -65,20 +60,12 @@ public:
     {
 #if USE_DELTA_KERNEL_RS
         auto configuration_ptr = configuration.lock();
-        const auto & storage_settings_ref = configuration_ptr->getSettingsRef();
-        const auto & query_settings_ref = local_context->getSettingsRef();
-
-        bool enable_delta_kernel = storage_settings_ref[StorageObjectStorageSetting::allow_experimental_delta_kernel_rs];
-        if (query_settings_ref[Setting::allow_experimental_delta_kernel_rs].changed)
-            enable_delta_kernel = query_settings_ref[Setting::allow_experimental_delta_kernel_rs].value;
-
-        if (enable_delta_kernel)
-        {
+        const auto & settings_ref = configuration_ptr->getSettingsRef();
+        if (settings_ref[StorageObjectStorageSetting::allow_experimental_delta_kernel_rs])
             return std::make_unique<DeltaLakeMetadataDeltaKernel>(
                 object_storage,
                 configuration,
-                storage_settings_ref[StorageObjectStorageSetting::delta_lake_read_schema_same_as_table_schema]);
-        }
+                settings_ref[StorageObjectStorageSetting::delta_lake_read_schema_same_as_table_schema]);
         else
             return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
 #else
