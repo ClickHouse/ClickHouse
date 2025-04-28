@@ -2077,24 +2077,24 @@ def test_partition_pruning(started_cluster, storage_type):
         print(
             "Unprunned: ",
             instance.query(
-                f"SELECT ProfileEvents['IcebergPartitionPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id1}' AND type = 'QueryFinish'"
+                f"SELECT ProfileEvents['IcebergPartitionPrunedFiles'] FROM system.query_log WHERE query_id = '{query_id1}' AND type = 'QueryFinish'"
             ),
         )
         print(
             "Prunned: ",
             instance.query(
-                f"SELECT ProfileEvents['IcebergPartitionPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
+                f"SELECT ProfileEvents['IcebergPartitionPrunedFiles'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
             ),
         )
 
         assert 0 == int(
             instance.query(
-                f"SELECT ProfileEvents['IcebergPartitionPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id1}' AND type = 'QueryFinish'"
+                f"SELECT ProfileEvents['IcebergPartitionPrunedFiles'] FROM system.query_log WHERE query_id = '{query_id1}' AND type = 'QueryFinish'"
             )
         )
         return int(
             instance.query(
-                f"SELECT ProfileEvents['IcebergPartitionPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
+                f"SELECT ProfileEvents['IcebergPartitionPrunedFiles'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
             )
         )
 
@@ -2745,24 +2745,24 @@ def test_minmax_pruning(started_cluster, storage_type):
         print(
             "Unprunned: ",
             instance.query(
-                f"SELECT ProfileEvents['IcebergMinMaxIndexPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id1}' AND type = 'QueryFinish'"
+                f"SELECT ProfileEvents['IcebergMinMaxIndexPrunedFiles'] FROM system.query_log WHERE query_id = '{query_id1}' AND type = 'QueryFinish'"
             ),
         )
         print(
             "Prunned: ",
             instance.query(
-                f"SELECT ProfileEvents['IcebergMinMaxIndexPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
+                f"SELECT ProfileEvents['IcebergMinMaxIndexPrunedFiles'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
             ),
         )
 
         assert 0 == int(
             instance.query(
-                f"SELECT ProfileEvents['IcebergMinMaxIndexPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id1}' AND type = 'QueryFinish'"
+                f"SELECT ProfileEvents['IcebergMinMaxIndexPrunedFiles'] FROM system.query_log WHERE query_id = '{query_id1}' AND type = 'QueryFinish'"
             )
         )
         return int(
             instance.query(
-                f"SELECT ProfileEvents['IcebergMinMaxIndexPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
+                f"SELECT ProfileEvents['IcebergMinMaxIndexPrunedFiles'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
             )
         )
 
@@ -3047,24 +3047,24 @@ def test_minmax_pruning_with_null(started_cluster, storage_type):
         print(
             "Unprunned: ",
             instance.query(
-                f"SELECT ProfileEvents['IcebergMinMaxIndexPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id1}' AND type = 'QueryFinish'"
+                f"SELECT ProfileEvents['IcebergMinMaxIndexPrunedFiles'] FROM system.query_log WHERE query_id = '{query_id1}' AND type = 'QueryFinish'"
             ),
         )
         print(
             "Prunned: ",
             instance.query(
-                f"SELECT ProfileEvents['IcebergMinMaxIndexPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
+                f"SELECT ProfileEvents['IcebergMinMaxIndexPrunedFiles'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
             ),
         )
 
         assert 0 == int(
             instance.query(
-                f"SELECT ProfileEvents['IcebergMinMaxIndexPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id1}' AND type = 'QueryFinish'"
+                f"SELECT ProfileEvents['IcebergMinMaxIndexPrunedFiles'] FROM system.query_log WHERE query_id = '{query_id1}' AND type = 'QueryFinish'"
             )
         )
         return int(
             instance.query(
-                f"SELECT ProfileEvents['IcebergMinMaxIndexPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
+                f"SELECT ProfileEvents['IcebergMinMaxIndexPrunedFiles'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
             )
         )
 

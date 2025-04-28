@@ -68,6 +68,7 @@ ORDER BY name;
 
 SELECT sum(s.1), sum(s.2), sum(s.3), sum(s.4), groupUniqArray(s.5) FROM t_sparse_mutations_3;
 
+SET mutations_sync=2;
 ALTER TABLE t_sparse_mutations_3 MODIFY COLUMN s Tuple(Nullable(UInt64), Nullable(UInt64), Nullable(UInt64), Nullable(UInt64), Nullable(String));
 
 SELECT

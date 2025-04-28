@@ -100,7 +100,7 @@ void registerTableFunctionMergeTreeProjection(TableFunctionFactory & factory)
         {
             .description = "Reading directly from MergeTree projection",
             .examples = {{"mergeTreeProjection", "SELECT * FROM mergeTreeProjection(currentDatabase(), mt_table, proj_name)", ""}},
-            .category = "",
+            .category = FunctionDocumentation::Category::TableFunction
         },
         .allow_readonly = true,
     });

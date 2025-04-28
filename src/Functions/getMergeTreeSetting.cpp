@@ -92,7 +92,7 @@ Returns the current value of merge tree setting.
         .examples = {
             {"getMergeTreeSetting", "SELECT getMergeTreeSetting('index_granularity');", "8192"},
         },
-        .category{"Other"}}, FunctionFactory::Case::Sensitive);
+        .category = FunctionDocumentation::Category::Other}, FunctionFactory::Case::Sensitive);
 }
 
 }

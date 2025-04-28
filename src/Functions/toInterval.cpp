@@ -79,7 +79,7 @@ private:
 REGISTER_FUNCTION(ToInterval)
 {
     factory.registerFunction<FunctionToInterval>(
-        FunctionDocumentation{.description = R"(Creates an interval from a value and a unit.)"});
+        FunctionDocumentation{.description = R"(Creates an interval from a value and a unit.)", .category = FunctionDocumentation::Category::TypeConversion});
 }
 
 }

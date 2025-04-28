@@ -180,23 +180,51 @@ namespace DB
         auto scale = datetime64_type->getScale();
         bool need_rescale = scale % 3;
         auto rescale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(3 - scale % 3);
-        for (size_t value_i = start; value_i < end; ++value_i)
+        if (null_bytemap)
         {
-            if (null_bytemap && (*null_bytemap)[value_i])
+            for (size_t value_i = start; value_i < end; ++value_i)
             {
-                status = builder.AppendNull();
+                if ((*null_bytemap)[value_i])
+                {
+                    status = builder.AppendNull();
+                }
+                else
+                {
+                    auto value = static_cast<Int64>(column[value_i].safeGet<DecimalField<DateTime64>>().getValue());
+                    if (need_rescale)
+                    {
+                        if (common::mulOverflow(value, rescale_multiplier, value))
+                            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+                    }
+                    status = builder.Append(value);
+                }
+                checkStatus(status, write_column->getName(), format_name);
             }
-            else
+        }
+        else if (!need_rescale)
+        {
+            PaddedPODArray<Int64> values;
+            values.reserve(end - start);
+
+            for (size_t value_i = start; value_i < end; ++value_i)
+            {
+                values.emplace_back(static_cast<Int64>(column[value_i].safeGet<DecimalField<DateTime64>>().getValue()));
+            }
+
+            status = builder.AppendValues(values.data(), values.size());
+            checkStatus(status, write_column->getName(), format_name);
+        }
+        else
+        {
+            for (size_t value_i = start; value_i < end; ++value_i)
             {
                 auto value = static_cast<Int64>(column[value_i].safeGet<DecimalField<DateTime64>>().getValue());
-                if (need_rescale)
-                {
-                    if (common::mulOverflow(value, rescale_multiplier, value))
-                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
-                }
+                if (common::mulOverflow(value, rescale_multiplier, value))
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+
                 status = builder.Append(value);
+                checkStatus(status, write_column->getName(), format_name);
             }
-            checkStatus(status, write_column->getName(), format_name);
         }
     }
 
@@ -439,6 +467,7 @@ namespace DB
         /// AppendIndices in DictionaryBuilder works only with int64_t data, so we cannot use
         /// fillArrowArray here and should copy all indexes to int64_t container.
         PaddedPODArray<Int64> indexes;
+        indexes.reserve(end - start);
         if (mapping)
             indexes = extractIndexesWithRemapping(column_lc->getIndexesPtr(), mapping, start, end, is_nullable);
         else
@@ -499,18 +528,30 @@ namespace DB
         ArrowBuilder & builder = assert_cast<ArrowBuilder &>(*array_builder);
         arrow::Status status;
 
-        for (size_t string_i = start; string_i < end; ++string_i)
+        if (null_bytemap)
         {
-            if (null_bytemap && (*null_bytemap)[string_i])
+            for (size_t string_i = start; string_i < end; ++string_i)
             {
-                status = builder.AppendNull();
+                if ((*null_bytemap)[string_i])
+                {
+                    status = builder.AppendNull();
+                }
+                else
+                {
+                    std::string_view string_ref = internal_column.getDataAt(string_i).toView();
+                    status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
+                }
+                checkStatus(status, write_column->getName(), format_name);
             }
-            else
+        }
+        else
+        {
+            for (size_t string_i = start; string_i < end; ++string_i)
             {
                 std::string_view string_ref = internal_column.getDataAt(string_i).toView();
                 status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
+                checkStatus(status, write_column->getName(), format_name);
             }
-            checkStatus(status, write_column->getName(), format_name);
         }
     }
 
@@ -585,12 +626,20 @@ namespace DB
         arrow::UInt16Builder & builder = assert_cast<arrow::UInt16Builder &>(*array_builder);
         arrow::Status status;
 
-        for (size_t value_i = start; value_i < end; ++value_i)
+        if (null_bytemap)
         {
-            if (null_bytemap && (*null_bytemap)[value_i])
-                status = builder.AppendNull();
-            else
-                status = builder.Append(internal_data[value_i]);
+            for (size_t value_i = start; value_i < end; ++value_i)
+            {
+                if ((*null_bytemap)[value_i])
+                    status = builder.AppendNull();
+                else
+                    status = builder.Append(internal_data[value_i]);
+                checkStatus(status, write_column->getName(), format_name);
+            }
+        }
+        else
+        {
+            status = builder.AppendValues(internal_data.data() + start, end - start);
             checkStatus(status, write_column->getName(), format_name);
         }
     }
@@ -607,13 +656,21 @@ namespace DB
         arrow::UInt32Builder & builder = assert_cast<arrow::UInt32Builder &>(*array_builder);
         arrow::Status status;
 
-        for (size_t value_i = start; value_i < end; ++value_i)
+        if (null_bytemap)
         {
-            if (null_bytemap && (*null_bytemap)[value_i])
-                status = builder.AppendNull();
-            else
-                status = builder.Append(internal_data[value_i]);
+            for (size_t value_i = start; value_i < end; ++value_i)
+            {
+                if ((*null_bytemap)[value_i])
+                    status = builder.AppendNull();
+                else
+                    status = builder.Append(internal_data[value_i]);
 
+                checkStatus(status, write_column->getName(), format_name);
+            }
+        }
+        else
+        {
+            status = builder.AppendValues(internal_data.data() + start, end - start);
             checkStatus(status, write_column->getName(), format_name);
         }
     }
@@ -630,12 +687,20 @@ namespace DB
         arrow::Date32Builder & builder = assert_cast<arrow::Date32Builder &>(*array_builder);
         arrow::Status status;
 
-        for (size_t value_i = start; value_i < end; ++value_i)
+        if (null_bytemap)
         {
-            if (null_bytemap && (*null_bytemap)[value_i])
-                status = builder.AppendNull();
-            else
-                status = builder.Append(internal_data[value_i]);
+            for (size_t value_i = start; value_i < end; ++value_i)
+            {
+                if ((*null_bytemap)[value_i])
+                    status = builder.AppendNull();
+                else
+                    status = builder.Append(internal_data[value_i]);
+                checkStatus(status, write_column->getName(), format_name);
+            }
+        }
+        else
+        {
+            status = builder.AppendValues(internal_data.data() + start, end - start);
             checkStatus(status, write_column->getName(), format_name);
         }
     }
@@ -653,19 +718,30 @@ namespace DB
         ArrowBuilder & builder = assert_cast<ArrowBuilder &>(*array_builder);
         arrow::Status status;
 
-        for (size_t value_i = start; value_i < end; ++value_i)
+        if (null_bytemap)
         {
-            if (null_bytemap && (*null_bytemap)[value_i])
-                status = builder.AppendNull();
-            else
+            for (size_t value_i = start; value_i < end; ++value_i)
+            {
+                if ((*null_bytemap)[value_i])
+                    status = builder.AppendNull();
+                else
+                {
+                    FieldType element = FieldType(column.getElement(value_i).value);
+                    status = builder.Append(ArrowDecimalType(reinterpret_cast<const uint8_t *>(&element))); // TODO: try copy column
+                }
+
+                checkStatus(status, write_column->getName(), format_name);
+            }
+        }
+        else
+        {
+            for (size_t value_i = start; value_i < end; ++value_i)
             {
                 FieldType element = FieldType(column.getElement(value_i).value);
-                status = builder.Append(ArrowDecimalType(reinterpret_cast<const uint8_t *>(&element))); // TODO: try copy column
+                status = builder.Append(ArrowDecimalType(reinterpret_cast<const uint8_t *>(&element)));
+                checkStatus(status, write_column->getName(), format_name);
             }
-
-            checkStatus(status, write_column->getName(), format_name);
         }
-        checkStatus(status, write_column->getName(), format_name);
     }
 
     template <typename ColumnType>

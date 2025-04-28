@@ -72,7 +72,7 @@ namespace
                 res_columns[8]->insert(documentation.argumentsAsString());
                 res_columns[9]->insert(documentation.returned_value);
                 res_columns[10]->insert(documentation.examplesAsString());
-                res_columns[11]->insert(documentation.category);
+                res_columns[11]->insert(documentation.categoryAsString());
             }
         }
         else
@@ -88,7 +88,7 @@ namespace
 }
 
 
-std::vector<std::pair<String, Int8>> getOriginEnumsAndValues()
+std::vector<std::pair<String, Int8>> getOriginEnumsValues()
 {
     return std::vector<std::pair<String, Int8>>{
         {"System", static_cast<Int8>(FunctionOrigin::SYSTEM)},
@@ -106,7 +106,7 @@ ColumnsDescription StorageSystemFunctions::getColumnsDescription()
         {"case_insensitive", std::make_shared<DataTypeUInt8>(), "Whether the function name can be used case-insensitively."},
         {"alias_to", std::make_shared<DataTypeString>(), "The original function name, if the function name is an alias."},
         {"create_query", std::make_shared<DataTypeString>(), "Obsolete."},
-        {"origin", std::make_shared<DataTypeEnum8>(getOriginEnumsAndValues()), "Obsolete."},
+        {"origin", std::make_shared<DataTypeEnum8>(getOriginEnumsValues()), "Obsolete."},
         {"description", std::make_shared<DataTypeString>(), "A high-level description what the function does."},
         {"syntax", std::make_shared<DataTypeString>(), "Signature of the function."},
         {"arguments", std::make_shared<DataTypeString>(), "What arguments does the function take."},

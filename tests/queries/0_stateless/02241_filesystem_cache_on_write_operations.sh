@@ -12,7 +12,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     echo "Using storage policy: $STORAGE_POLICY"
 
     $CLICKHOUSE_CLIENT --echo --query "DROP TABLE IF EXISTS test_02241"
-    $CLICKHOUSE_CLIENT --echo --query "CREATE TABLE test_02241 (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='$STORAGE_POLICY', min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization = 1"
+    $CLICKHOUSE_CLIENT --echo --query "CREATE TABLE test_02241 (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='$STORAGE_POLICY', min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false, min_bytes_for_full_part_storage=0, ratio_of_defaults_for_sparse_serialization = 1"
     $CLICKHOUSE_CLIENT --echo --query "SYSTEM STOP MERGES test_02241"
 
     $CLICKHOUSE_CLIENT --echo --query "SYSTEM DROP FILESYSTEM CACHE"

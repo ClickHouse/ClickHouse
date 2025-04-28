@@ -69,6 +69,7 @@
 #cmakedefine01 USE_PROMETHEUS_PROTOBUFS
 #cmakedefine01 USE_MONGODB
 #cmakedefine01 USE_NUMACTL
+#cmakedefine01 USE_JWT_CPP
 #cmakedefine01 USE_FUZZING_MODE
 #cmakedefine01 USE_BUZZHOUSE
 #cmakedefine01 USE_DELTA_KERNEL_RS
