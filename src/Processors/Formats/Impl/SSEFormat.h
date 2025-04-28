@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Port.h>
@@ -8,6 +9,7 @@
 #include "IO/Progress.h"
 #include "IO/WriteBufferFromString.h"
 #include "IO/WriteHelpers.h"
+#include "Processors/Formats/Impl/CSVRowOutputFormat.h"
 #include "Processors/Formats/Impl/JSONEachRowWithProgressRowOutputFormat.h"
 
 
@@ -18,14 +20,14 @@ template <typename Format, bool support_progress>
 class SSEFormat : public IRowOutputFormat
 {
 public:
-    SSEFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & fs) 
+    SSEFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & ) 
     : IRowOutputFormat(header_, out_)
-    , json_format(json_buffer, getPort(IOutputFormat::PortKind::Main).getHeader(), fs)
+    // , json_format(json_buffer, getPort(IOutputFormat::PortKind::Main).getHeader(), fs)
     {
-        json_format.auto_flush = false;
+        // json_format->auto_flush = false;
     }
 
-    String getName() const override { return "SSEFormat"; }
+    String getName() const override { return json_format->getName() + "EventStream"; }
 
     std::string getContentType() const override { return "text/event-stream"; }
 
@@ -36,12 +38,12 @@ protected:
 
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override 
     {
-        json_format.writeField(column, serialization, row_num);
+        json_format->writeField(column, serialization, row_num);
     }
 
     void writeFieldDelimiter() override 
     {
-        json_format.writeFieldDelimiter();
+        json_format->writeFieldDelimiter();
     }
 
     void writeRowStartDelimiter() override 
@@ -49,18 +51,18 @@ protected:
         json_buffer.restart();
         writeCString("event: results\n", json_buffer);
         writeCString("data: ", json_buffer);
-        json_format.writeRowStartDelimiter();
+        json_format->writeRowStartDelimiter();
     }
 
     void writeRowEndDelimiter() override 
     {
-        json_format.writeRowEndDelimiter();
+        json_format->writeRowEndDelimiter();
         writeCString("\n\n", json_buffer);
         flushBuffer();
     }
     void writeRowBetweenDelimiter() override 
     {
-        json_format.writeRowBetweenDelimiter();
+        json_format->writeRowBetweenDelimiter();
     }
 
     void writePrefix() override 
@@ -68,7 +70,7 @@ protected:
         json_buffer.restart();
         writeCString("event: prefix\n", json_buffer);
         writeCString("data: ", json_buffer);
-        json_format.writePrefix();
+        json_format->writePrefix();
         writeCString("\n\n", json_buffer);
         flushBuffer();
     }
@@ -77,7 +79,7 @@ protected:
         json_buffer.restart();
         writeCString("event: suffix\n", json_buffer);
         writeCString("data: ", json_buffer);
-        json_format.writeSuffix();
+        json_format->writeSuffix();
         writeCString("\n\n", json_buffer);
         flushBuffer();
     }
@@ -98,7 +100,7 @@ protected:
         json_buffer.restart();
         writeCString("event: progress\n", json_buffer);
         writeCString("data: ", json_buffer);
-        json_format.writeProgress(value);
+        json_format->writeProgress(value);
         writeCString("\n\n", json_buffer);
         flushBuffer();
     }
@@ -112,7 +114,7 @@ protected:
         json_buffer.restart();
         writeCString("event: min_extreme\n", json_buffer);
         writeCString("data: ", json_buffer);
-        json_format.writeMinExtreme(columns,row_num);
+        json_format->writeMinExtreme(columns,row_num);
         writeCString("\n\n", json_buffer);
         flushBuffer();
     }
@@ -126,7 +128,7 @@ protected:
         json_buffer.restart();
         writeCString("event: max_extreme\n", json_buffer);
         writeCString("data: ", json_buffer);
-        json_format.writeMaxExtreme(columns,row_num);
+        json_format->writeMaxExtreme(columns,row_num);
         writeCString("\n\n", json_buffer);
         flushBuffer();
     }
@@ -140,7 +142,7 @@ protected:
         json_buffer.restart();
         writeCString("event: totals\n", json_buffer);
         writeCString("data: ", json_buffer);
-        json_format.writeTotals(columns, row_num);
+        json_format->writeTotals(columns, row_num);
         writeCString("\n\n", json_buffer);
         flushBuffer();
     }
@@ -150,24 +152,24 @@ protected:
         json_buffer.restart();
         writeCString("event: finalize\n", json_buffer);
         writeCString("data: ", json_buffer);
-        json_format.finalizeImpl();
+        json_format->finalizeImpl();
         writeCString("\n\n", json_buffer);
         flushBuffer();
     }
 
     void resetFormatterImpl() override
     {
-        json_format.resetFormatterImpl();
+        json_format->resetFormatterImpl();
     }
 
     void setRowsBeforeLimit(size_t rows_before_limit_) override
     {
-        json_format.setRowsBeforeLimit(rows_before_limit_);
+        json_format->setRowsBeforeLimit(rows_before_limit_);
     }
 
     void setRowsBeforeAggregation(size_t rows_before_aggregation_) override
     {
-        json_format.setRowsBeforeAggregation(rows_before_aggregation_);
+        json_format->setRowsBeforeAggregation(rows_before_aggregation_);
     }
 
 private:
@@ -177,12 +179,47 @@ private:
         auto &res = json_buffer.str();
         out.write(res.data(), res.size());
         out.next();
-        json_format.flush();
+        json_format->flush();
         json_buffer.restart();
     }
 
+protected:
     WriteBufferFromOwnString json_buffer;
-    Format json_format;
+    std::shared_ptr<Format> json_format;
+};
+
+
+class SSEFormatJSON : public SSEFormat<JSONEachRowRowOutputFormat, false> 
+{
+public:
+    SSEFormatJSON(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_) 
+    : SSEFormat<JSONEachRowRowOutputFormat, false>(out_, header_, format_settings_)
+    {
+        json_format = std::make_shared<JSONEachRowRowOutputFormat>(json_buffer, header_, format_settings_);
+    }
+
+};
+
+class SSEFormatJSONWithProgress : public SSEFormat<JSONEachRowWithProgressRowOutputFormat, true> 
+{
+public:
+    SSEFormatJSONWithProgress(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_) 
+    : SSEFormat<JSONEachRowWithProgressRowOutputFormat, true>(out_, header_, format_settings_)
+    {
+        json_format = std::make_shared<JSONEachRowWithProgressRowOutputFormat>(json_buffer, header_, format_settings_);
+    }
+
+};
+
+class SSEFormatCSV : public SSEFormat<CSVRowOutputFormat, true> 
+{
+public:
+SSEFormatCSV(WriteBuffer & out_, const Block & header_, bool with_names_, bool with_types_, const FormatSettings & format_settings_) 
+    : SSEFormat<CSVRowOutputFormat, true>(out_, header_, format_settings_)
+    {
+        json_format = std::make_shared<CSVRowOutputFormat>(json_buffer, header_, with_names_, with_types_, format_settings_);
+    }
+
 };
 
 }
