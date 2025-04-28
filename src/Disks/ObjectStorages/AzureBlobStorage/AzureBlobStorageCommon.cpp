@@ -479,6 +479,8 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractCo
 
     settings->check_objects_after_upload = config.getBool(config_prefix + ".check_objects_after_upload", settings_ref[Setting::azure_check_objects_after_upload]);
 
+g
+#if USE_AZURE_BLOB_STORAGE
     if (config.has(config_prefix + ".curl_ip_resolve"))
     {
         using CurlOptions = Azure::Core::Http::CurlTransportOptions;
@@ -491,6 +493,7 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractCo
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value for option 'curl_ip_resolve': {}. Expected one of 'ipv4' or 'ipv6'", value);
     }
+#endif
 
     return settings;
 }
@@ -527,7 +530,7 @@ void AzureSettingsByEndpoint::loadFromConfig(
 
                 if (!config.has(endpoint_path))
                 {
-                    /// Error, shouldnt hit this todo:: throw error
+                    /// Error, shouldn't hit this todo:: throw error
                     continue;
                 }
             }
@@ -559,10 +562,6 @@ std::optional<AzureBlobStorage::RequestSettings> AzureSettingsByEndpoint::getSet
 
     return {};
 }
-
-
-
-
 
 }
 
