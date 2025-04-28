@@ -77,10 +77,7 @@ if (USE_MUSL)
     set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -D_LIBCPP_HAS_MUSL_LIBC=1")
 endif ()
 
-if(CCACHE_EXECUTABLE MATCHES "/sccache$")
-    message(STATUS "Using RUSTC_WRAPPER: ${CCACHE_EXECUTABLE}")
-    set(RUSTCWRAPPER "${CCACHE_EXECUTABLE}")
-elseif(CCACHE_EXECUTABLE MATCHES "/chcache$")
+if(CCACHE_EXECUTABLE MATCHES "/chcache$")
     message(STATUS "Using RUSTC_WRAPPER: ${CCACHE_EXECUTABLE}")
     set(RUSTCWRAPPER "${CCACHE_EXECUTABLE}")
 else()
@@ -161,7 +158,7 @@ function(clickhouse_config_crate_flags target_name)
     corrosion_set_env_vars(${target_name} "RUSTDOCFLAGS=${RUSTFLAGS}")
 
     # sccache seems to be broken and mixes up builds
-    if ("${RUSTCWRAPPER}" STREQUAL "chcache")
+    if (NOT "${RUSTCWRAPPER}" STREQUAL "")
        corrosion_set_env_vars(${target_name} "CARGO_BUILD_RUSTC_WRAPPER=${RUSTCWRAPPER}")
     endif()
 
