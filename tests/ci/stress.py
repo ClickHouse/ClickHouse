@@ -22,18 +22,9 @@ def get_options(i: int, upgrade_check: bool) -> str:
         options.append("--order=random")
 
     if i % 3 == 2 and not upgrade_check:
-        client_options.extend([
-            "enable_deflate_qpl_codec=1",
-            "enable_zstd_qat_codec=1",
-            # For Replicated database
-            "distributed_ddl_output_mode=none",
-            "database_replicated_always_detach_permanently=1",
-        ])
-        options.extend([
-            "--replicated-database",
-            "--database",
-            f"test_{i}",
-        ])
+        options.append(f'''--db-engine="Replicated('/test/db/test_{i}', 's1', 'r1')"''')
+        client_options.append("enable_deflate_qpl_codec=1")
+        client_options.append("enable_zstd_qat_codec=1")
 
     # If database name is not specified, new database is created for each functional test.
     # Run some threads with one database for all tests.
@@ -172,13 +163,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
         timeout=60,
     )
     # Ensure that process exists
-    if (
-        call(
-            "kill -0 $(cat /var/run/clickhouse-server/clickhouse-server.pid)",
-            shell=True,
-        )
-        != 0
-    ):
+    if call("kill -0 $(cat /var/run/clickhouse-server/clickhouse-server.pid)", shell=True) != 0:
         raise ServerDied("clickhouse-server process does not exist")
     # Sometimes there is a message `Child process was stopped by signal 19` in logs after stopping gdb
     call_with_retry(

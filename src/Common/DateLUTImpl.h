@@ -5,6 +5,7 @@
 #include <base/types.h>
 
 #include <ctime>
+#include <cassert>
 #include <string>
 #include <type_traits>
 
@@ -283,7 +284,7 @@ private:
     DateOrTime roundDown(DateOrTime x, Divisor divisor) const
     {
         static_assert(std::is_integral_v<DateOrTime> && std::is_integral_v<Divisor>);
-        chassert(divisor > 0);
+        assert(divisor > 0);
 
         if (offset_is_whole_number_of_hours_during_epoch) [[likely]]
         {

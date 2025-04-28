@@ -171,17 +171,12 @@ String FieldVisitorToString::operator() (const Object & x) const
 {
     /// We don't support Object literals in a form of {"a" : ...}.
     /// So we write Object as a String containing valid JSON.
-    return formatQuoted(convertObjectToString(x));
-}
-
-String convertObjectToString(const Object & object)
-{
     WriteBufferFromOwnString wb;
 
     wb << '{';
-    for (auto it = object.begin(); it != object.end(); ++it)
+    for (auto it = x.begin(); it != x.end(); ++it)
     {
-        if (it != object.begin())
+        if (it != x.begin())
             wb << ", ";
 
         writeDoubleQuoted(it->first, wb);
@@ -189,7 +184,7 @@ String convertObjectToString(const Object & object)
     }
     wb << '}';
 
-    return wb.str();
+    return formatQuoted(wb.str());
 }
 
 String convertFieldToString(const Field & field)

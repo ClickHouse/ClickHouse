@@ -2,6 +2,7 @@
 
 #include "ArrowBufferedStreams.h"
 #if USE_ARROW || USE_ORC || USE_PARQUET
+#include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromString.h>
@@ -12,6 +13,8 @@
 #include <arrow/result.h>
 #include <arrow/memory_pool_internal.h>
 #include <Core/Settings.h>
+
+#include <sys/stat.h>
 
 
 namespace DB

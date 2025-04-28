@@ -15,11 +15,10 @@
 
 #if USE_SSL
 #    include <openssl/evp.h>
-#    include <openssl/ripemd.h>
-#    include <openssl/sha.h>
 #    include <openssl/md4.h>
 #    include <openssl/md5.h>
-#    include <Common/OpenSSLHelpers.h>
+#    include <openssl/ripemd.h>
+#    include <openssl/sha.h>
 #endif
 
 #if USE_SHA3IUF
@@ -35,163 +34,173 @@ extern "C" {
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int OPENSSL_ERROR;
-    extern const int LOGICAL_ERROR;
+extern const int ILLEGAL_COLUMN;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
 #if USE_SSL
-using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
-
-/// Initializes a context with the right provider in the constructor.
-/// Apply() then only copies it (once per new thread), this is faster than re-creating the context every time.
-template <typename ProviderImpl>
-class OpenSSLProvider
-{
-public:
-    static constexpr auto name = ProviderImpl::name;
-    static constexpr auto length = ProviderImpl::length;
-
-    OpenSSLProvider()
-        : ctx_template(EVP_MD_CTX_new(), &EVP_MD_CTX_free)
-    {
-        if (!ctx_template)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
-
-        if (EVP_DigestInit_ex(ctx_template.get(), ProviderImpl::provider(), nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
-    }
-
-    void apply(const char * begin, size_t size, unsigned char * out_char_data)
-    {
-        if (!ctx_template)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "No context provided");
-
-        thread_local EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
-
-        if (EVP_MD_CTX_copy_ex(ctx.get(), ctx_template.get()) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_copy_ex failed: {}", getOpenSSLErrors());
-
-        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed: {}", getOpenSSLErrors());
-
-        if (EVP_DigestFinal_ex(ctx.get(), out_char_data, nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed: {}", getOpenSSLErrors());
-    }
-
-private:
-    EVP_MD_CTX_ptr ctx_template;
-};
 
 struct MD4Impl
 {
     static constexpr auto name = "MD4";
-    static constexpr const EVP_MD * (*provider)() = &EVP_md4;
     enum
     {
         length = MD4_DIGEST_LENGTH
     };
+
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    {
+        MD4_CTX ctx;
+        MD4_Init(&ctx);
+        MD4_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+        MD4_Final(out_char_data, &ctx);
+    }
 };
 
 struct MD5Impl
 {
     static constexpr auto name = "MD5";
-    static constexpr const EVP_MD * (*provider)() = &EVP_md5;
     enum
     {
         length = MD5_DIGEST_LENGTH
     };
+
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    {
+        MD5_CTX ctx;
+        MD5_Init(&ctx);
+        MD5_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+        MD5_Final(out_char_data, &ctx);
+    }
 };
 
 struct SHA1Impl
 {
     static constexpr auto name = "SHA1";
-    static constexpr const EVP_MD * (*provider)() = &EVP_sha1;
     enum
     {
         length = SHA_DIGEST_LENGTH
     };
+
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    {
+        SHA_CTX ctx;
+        SHA1_Init(&ctx);
+        SHA1_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+        SHA1_Final(out_char_data, &ctx);
+    }
 };
 
 struct SHA224Impl
 {
     static constexpr auto name = "SHA224";
-    static constexpr const EVP_MD * (*provider)() = &EVP_sha224;
     enum
     {
         length = SHA224_DIGEST_LENGTH
     };
 
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    {
+        SHA256_CTX ctx;
+        SHA224_Init(&ctx);
+        SHA224_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+        SHA224_Final(out_char_data, &ctx);
+    }
 };
 
 struct SHA256Impl
 {
     static constexpr auto name = "SHA256";
-    static constexpr const EVP_MD * (*provider)() = &EVP_sha256;
     enum
     {
         length = SHA256_DIGEST_LENGTH
     };
+
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    {
+        SHA256_CTX ctx;
+        SHA256_Init(&ctx);
+        SHA256_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+        SHA256_Final(out_char_data, &ctx);
+    }
 };
 
 struct SHA384Impl
 {
     static constexpr auto name = "SHA384";
-    static constexpr const EVP_MD * (*provider)() = &EVP_sha384;
     enum
     {
         length = SHA384_DIGEST_LENGTH
     };
+
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    {
+        SHA512_CTX ctx;
+        SHA384_Init(&ctx);
+        SHA384_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+        SHA384_Final(out_char_data, &ctx);
+    }
 };
 
 struct SHA512Impl
 {
     static constexpr auto name = "SHA512";
-    static constexpr const EVP_MD * (*provider)() = &EVP_sha512;
     enum
     {
-        length = SHA512_DIGEST_LENGTH
+        length = 64
     };
+
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    {
+        SHA512_CTX ctx;
+        SHA512_Init(&ctx);
+        SHA512_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+        SHA512_Final(out_char_data, &ctx);
+    }
 };
 
 struct SHA512Impl256
 {
     static constexpr auto name = "SHA512_256";
-    static constexpr const EVP_MD * (*provider)() = &EVP_sha512_256;
     enum
     {
-        length = SHA256_DIGEST_LENGTH
+        length = 32
     };
+
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    {
+        /// Here, we use the EVP interface that is common to both BoringSSL and OpenSSL. Though BoringSSL is the default
+        /// SSL library that we use, for S390X architecture only OpenSSL is supported. But the SHA512-256, SHA512_256_Init,
+        /// SHA512_256_Update, SHA512_256_Final methods to calculate hash (similar to the other SHA functions) aren't available
+        /// in the current version of OpenSSL that we use which necessitates the use of the EVP interface.
+        auto * md_ctx = EVP_MD_CTX_create();
+        EVP_DigestInit_ex(md_ctx, EVP_sha512_256(), nullptr /*engine*/);
+        EVP_DigestUpdate(md_ctx, begin, size);
+        EVP_DigestFinal_ex(md_ctx, out_char_data, nullptr /*size*/);
+        EVP_MD_CTX_destroy(md_ctx);
+    }
 };
 
 struct RIPEMD160Impl
 {
     static constexpr auto name = "RIPEMD160";
-    static constexpr const EVP_MD * (*provider)() = &EVP_ripemd160;
     enum
     {
         length = RIPEMD160_DIGEST_LENGTH
     };
-};
-#endif
 
-template <typename Impl>
-class GenericProvider
-{
-public:
-    static constexpr auto name = Impl::name;
-    static constexpr auto length = Impl::length;
-
-    void apply(const char* begin, size_t size, unsigned char* out_char_data)
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
-        Impl::apply(begin, size, out_char_data);
+        RIPEMD160_CTX ctx;
+        RIPEMD160_Init(&ctx);
+        RIPEMD160_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+        RIPEMD160_Final(out_char_data, &ctx);
     }
 };
+#endif
 
 #if USE_BLAKE3
 struct ImplBLAKE3
@@ -202,7 +211,7 @@ struct ImplBLAKE3
         length = 32
     };
 
-    static void apply(const char * begin, size_t size, unsigned char * out_char_data)
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
         static_assert(LLVM_BLAKE3_OUT_LEN == ImplBLAKE3::length);
         auto & result = *reinterpret_cast<std::array<uint8_t, LLVM_BLAKE3_OUT_LEN> *>(out_char_data);
@@ -225,7 +234,7 @@ struct Keccak256Impl
         length = 32
     };
 
-    static void apply(const char * begin, size_t size, unsigned char * out_char_data)
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
         sha3_HashBuffer(256, SHA3_FLAGS_KECCAK, begin, size, out_char_data, Keccak256Impl::length);
     }
@@ -258,8 +267,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto hasher = Impl();
-
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(arguments[0].column.get()))
         {
             auto col_to = ColumnFixedString::create(Impl::length);
@@ -270,10 +277,9 @@ public:
             chars_to.resize(input_rows_count * Impl::length);
 
             ColumnString::Offset current_offset = 0;
-
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                hasher.apply(
+                Impl::apply(
                     reinterpret_cast<const char *>(&data[current_offset]),
                     offsets[i] - current_offset - 1,
                     reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
@@ -283,7 +289,6 @@ public:
 
             return col_to;
         }
-
         if (const ColumnFixedString * col_from_fix = checkAndGetColumn<ColumnFixedString>(arguments[0].column.get()))
         {
             auto col_to = ColumnFixedString::create(Impl::length);
@@ -293,15 +298,11 @@ public:
             chars_to.resize(input_rows_count * Impl::length);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                hasher.apply(
-                    reinterpret_cast<const char *>(&data[i * length]),
-                    length,
-                    reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length])
-                );
+                Impl::apply(
+                    reinterpret_cast<const char *>(&data[i * length]), length, reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
             }
             return col_to;
         }
-
         if (const ColumnIPv6 * col_from_ip = checkAndGetColumn<ColumnIPv6>(arguments[0].column.get()))
         {
             auto col_to = ColumnFixedString::create(Impl::length);
@@ -311,11 +312,7 @@ public:
             chars_to.resize(input_rows_count * Impl::length);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                hasher.apply(
-                    reinterpret_cast<const char *>(&data[i]),
-                    length,
-                    reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length])
-                );
+                Impl::apply(reinterpret_cast<const char *>(&data[i]), length, reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
             }
             return col_to;
         }
@@ -328,15 +325,15 @@ public:
 REGISTER_FUNCTION(HashFixedStrings)
 {
 #    if USE_SSL
-    using FunctionMD4 = FunctionStringHashFixedString<OpenSSLProvider<MD4Impl>>;
-    using FunctionMD5 = FunctionStringHashFixedString<OpenSSLProvider<MD5Impl>>;
-    using FunctionSHA1 = FunctionStringHashFixedString<OpenSSLProvider<SHA1Impl>>;
-    using FunctionSHA224 = FunctionStringHashFixedString<OpenSSLProvider<SHA224Impl>>;
-    using FunctionSHA256 = FunctionStringHashFixedString<OpenSSLProvider<SHA256Impl>>;
-    using FunctionSHA384 = FunctionStringHashFixedString<OpenSSLProvider<SHA384Impl>>;
-    using FunctionSHA512 = FunctionStringHashFixedString<OpenSSLProvider<SHA512Impl>>;
-    using FunctionSHA512_256 = FunctionStringHashFixedString<OpenSSLProvider<SHA512Impl256>>;
-    using FunctionRIPEMD160 = FunctionStringHashFixedString<OpenSSLProvider<RIPEMD160Impl>>;
+    using FunctionMD4 = FunctionStringHashFixedString<MD4Impl>;
+    using FunctionMD5 = FunctionStringHashFixedString<MD5Impl>;
+    using FunctionSHA1 = FunctionStringHashFixedString<SHA1Impl>;
+    using FunctionSHA224 = FunctionStringHashFixedString<SHA224Impl>;
+    using FunctionSHA256 = FunctionStringHashFixedString<SHA256Impl>;
+    using FunctionSHA384 = FunctionStringHashFixedString<SHA384Impl>;
+    using FunctionSHA512 = FunctionStringHashFixedString<SHA512Impl>;
+    using FunctionSHA512_256 = FunctionStringHashFixedString<SHA512Impl256>;
+    using FunctionRIPEMD160 = FunctionStringHashFixedString<RIPEMD160Impl>;
 
     factory.registerFunction<FunctionRIPEMD160>(FunctionDocumentation{
         .description = R"(Calculates the RIPEMD-160 hash of the given string.)",
@@ -469,7 +466,7 @@ REGISTER_FUNCTION(HashFixedStrings)
 #    endif
 
 #    if USE_BLAKE3
-    using FunctionBLAKE3 = FunctionStringHashFixedString<GenericProvider<ImplBLAKE3>>;
+    using FunctionBLAKE3 = FunctionStringHashFixedString<ImplBLAKE3>;
     factory.registerFunction<FunctionBLAKE3>(FunctionDocumentation{
         .description = R"(
     Calculates BLAKE3 hash string and returns the resulting set of bytes as FixedString.
@@ -482,7 +479,7 @@ REGISTER_FUNCTION(HashFixedStrings)
 #    endif
 
 #   if USE_SHA3IUF
-    using FunctionKeccak256 = FunctionStringHashFixedString<GenericProvider<Keccak256Impl>>;
+    using FunctionKeccak256 = FunctionStringHashFixedString<Keccak256Impl>;
     factory.registerFunction<FunctionKeccak256>(FunctionDocumentation{
         .description = R"(Calculates the Keccak-256 cryptographic hash of the given string.
         This hash function is widely used in blockchain applications, particularly Ethereum.)",

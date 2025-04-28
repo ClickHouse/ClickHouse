@@ -2,7 +2,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/DateLUTImpl.h>
 #include <Core/ProtocolDefines.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -121,7 +120,7 @@ std::optional<MergeTreePartInfo> MergeTreePartInfo::tryParsePartName(
 
     MergeTreePartInfo part_info;
 
-    part_info.setPartitionId(partition_id);
+    part_info.partition_id = std::move(partition_id);
     part_info.min_block = min_block_num;
     part_info.max_block = max_block_num;
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas, long
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -15,8 +14,6 @@ $CLICKHOUSE_CLIENT --query "
         arr Array(Tuple(DateTime, UInt64, String, String)) TTL dt + INTERVAL 3 MONTHS
     )
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_rename_alter', '1') ORDER BY id;
-
-    INSERT INTO t_rename_alter (id) VALUES (1);
 "
 
 function insert1()
