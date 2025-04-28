@@ -537,8 +537,3 @@
 00443_optimize_final_vertical_merge
 01660_join_or_any
 01801_s3_cluster
-
-    Tests listed after this tag are always disabled
-###FLAKY###
-
-02968_file_log_multiple_read

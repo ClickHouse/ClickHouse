@@ -3208,32 +3208,6 @@ def try_get_skip_list(base_dir, name, remove_comment=True):
     return test_names_to_skip
 
 
-def get_blacklisted_tests(blacklist_path):
-    regular_tests = []
-    flaky_tests = []
-
-    if not os.path.exists(blacklist_path):
-        return regular_tests, flaky_tests
-
-    with open(blacklist_path, "r", encoding="utf-8") as fd:
-        lines = fd.read().split("\n")
-
-    current_list = regular_tests
-    for line in lines:
-        if line == "" or line[0] == " ":
-            continue
-
-        line = line.strip()
-
-        if line == "###FLAKY###":
-            current_list = flaky_tests
-            continue
-
-        current_list.append(line)
-
-    return regular_tests, flaky_tests
-
-
 def main(args):
     exit_code = multiprocessing.Value("i", 0)
     server_died = multiprocessing.Event()
@@ -3345,11 +3319,10 @@ def main(args):
     blacklist_check = []
 
     if args.no_parallel_replicas is True:
-        blacklist, flaky_list = get_blacklisted_tests(
-            os.path.join(base_dir, "../parallel_replicas_blacklist.txt")
+        blacklist = try_get_skip_list(
+            base_dir, "../parallel_replicas_blacklist.txt"
         )
         blacklist_check.extend(blacklist)
-        skip_list.extend(flaky_list)
 
     for suite in sorted(os.listdir(base_dir), key=suite_key_func):
         if server_died.is_set():
