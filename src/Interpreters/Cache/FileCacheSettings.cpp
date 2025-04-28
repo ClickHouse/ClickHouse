@@ -204,7 +204,7 @@ void FileCacheSettings::loadFromCollection(const NamedCollection & collection)
 
 void FileCacheSettings::validate()
 {
-    auto settings = *this;
+    auto & settings = *this;
 
     if (!settings[FileCacheSetting::path].changed)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`path` is required parameter of cache configuration");
