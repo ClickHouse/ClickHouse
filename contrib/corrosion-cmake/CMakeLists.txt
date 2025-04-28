@@ -160,8 +160,8 @@ function(clickhouse_config_crate_flags target_name)
     corrosion_set_env_vars(${target_name} "RUSTFLAGS=${RUSTFLAGS}")
     corrosion_set_env_vars(${target_name} "RUSTDOCFLAGS=${RUSTFLAGS}")
 
-    # Disabled because sccache seems to be broken and mixes up builds
-    if (NOT "${RUSTCWRAPPER}" STREQUAL "")
+    # sccache seems to be broken and mixes up builds
+    if ("${RUSTCWRAPPER}" STREQUAL "chcache")
        corrosion_set_env_vars(${target_name} "CARGO_BUILD_RUSTC_WRAPPER=${RUSTCWRAPPER}")
     endif()
 
