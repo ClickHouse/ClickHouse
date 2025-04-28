@@ -3,6 +3,7 @@
 #include <csignal>
 #include <iostream>
 #include <iomanip>
+#include <mutex>
 #include <optional>
 #include <random>
 #include <string_view>
@@ -89,7 +90,7 @@ public:
             const String & query_to_execute_,
             size_t max_consecutive_errors_,
             bool continue_on_errors_,
-            bool reconnect_,
+            size_t reconnect_,
             bool display_client_side_time_,
             bool print_stacktrace_,
             const Settings & settings_)
@@ -147,6 +148,9 @@ public:
                 comparison_info_total.emplace_back(std::make_shared<Stats>());
             }
         }
+
+        // Initialize queries_per_connection to track queries for each connection
+        queries_per_connection.resize(connections.size(), 0);
 
         global_context->makeGlobalContext();
         global_context->setSettings(settings);
@@ -217,7 +221,7 @@ private:
     String query_to_execute;
     bool continue_on_errors;
     size_t max_consecutive_errors;
-    bool reconnect;
+    size_t reconnect;
     bool display_client_side_time;
     bool print_stacktrace;
     const Settings & settings;
@@ -234,6 +238,9 @@ private:
     std::atomic<bool> shutdown{false};
 
     std::atomic<size_t> queries_executed{0};
+
+    std::mutex queries_per_connection_mutex;
+    std::vector<size_t> queries_per_connection TSA_GUARDED_BY(queries_per_connection_mutex);
 
     struct Stats
     {
@@ -313,7 +320,9 @@ private:
         std::lock_guard lock(mutex);
 
         log << "\nQueries executed: " << num;
-        if (queries.size() > 1)
+        if (max_iterations > 1)
+            log << " (" << (num * 100.0 / max_iterations) << "%)";
+        else if (queries.size() > 1)
             log << " (" << (num * 100.0 / queries.size()) << "%)";
         log << ".\n" << flush;
     }
@@ -466,14 +475,18 @@ private:
     {
         Stopwatch watch;
 
-        ConnectionPool::Entry entry = connections[connection_index]->get(
-            ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings));
+        ConnectionPool::Entry entry = connections[connection_index]->get(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings));
 
-        if (reconnect)
+        bool should_reconnect = false;
+        {
+            std::lock_guard lock(queries_per_connection_mutex);
+            should_reconnect = reconnect > 0 && (++queries_per_connection[connection_index] % reconnect == 0);
+        }
+
+        if (should_reconnect)
             entry->disconnect();
 
-        RemoteQueryExecutor executor(
-            *entry, query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
+        RemoteQueryExecutor executor(*entry, query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
 
         if (!query_id.empty())
             executor.setQueryId(query_id);
@@ -636,7 +649,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("query_id_prefix", value<std::string>()->default_value(""), "")
             ("max-consecutive-errors", value<size_t>()->default_value(0), "set number of allowed consecutive errors")
             ("ignore-error,continue_on_errors", "continue testing even if a query fails")
-            ("reconnect", "establish new connection for every query")
+            ("reconnect", value<size_t>()->default_value(1), "control reconnection behaviour: 0 (never reconnect), 1 (reconnect for every query), or N (reconnect after every N queries)")
             ("client-side-time", "display the time including network communication instead of server-side time; note that for server versions before 22.8 we always display client-side time")
         ;
 
@@ -737,7 +750,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["query"].as<std::string>(),
             options["max-consecutive-errors"].as<size_t>(),
             options.count("ignore-error"),
-            options.count("reconnect"),
+            options["reconnect"].as<size_t>(),
             options.count("client-side-time"),
             print_stacktrace,
             settings);

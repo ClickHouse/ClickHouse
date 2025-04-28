@@ -117,7 +117,7 @@ Example:
 )",
     .examples{
         {"typical", "SELECT UTCTimestamp();", ""}},
-    .category{"Dates and Times"}}, FunctionFactory::Case::Insensitive);
+    .category = FunctionDocumentation::Category::DateAndTime}, FunctionFactory::Case::Insensitive);
     factory.registerAlias("UTC_timestamp", UTCTimestampOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }
 

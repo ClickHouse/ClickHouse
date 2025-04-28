@@ -982,6 +982,7 @@ class SettingsRandomizer:
         "max_joined_block_size_rows": lambda: random.randint(8000, 100000),
         "max_threads": lambda: 32 if random.random() < 0.03 else random.randint(1, 3),
         "optimize_append_index": lambda: random.randint(0, 1),
+        "use_hedged_requests": lambda: random.randint(0, 1),
         "optimize_if_chain_to_multiif": lambda: random.randint(0, 1),
         "optimize_if_transform_strings_to_enum": lambda: random.randint(0, 1),
         "optimize_read_in_order": lambda: random.randint(0, 1),
@@ -999,10 +1000,7 @@ class SettingsRandomizer:
             0.2, 0.5, 1, 10 * 1024 * 1024 * 1024
         ),
         "local_filesystem_read_method": lambda: random.choice(
-            # Allow to use uring only when running on Linux
-            ["read", "pread", "mmap", "pread_threadpool", "io_uring"]
-            if platform.system().lower() == "linux"
-            else ["read", "pread", "mmap", "pread_threadpool"]
+            ["read", "pread", "mmap", "pread_threadpool"]
         ),
         "remote_filesystem_read_method": lambda: random.choice(["read", "threadpool"]),
         "local_filesystem_read_prefetch": lambda: random.randint(0, 1),
@@ -1574,7 +1572,7 @@ class TestCase:
                 stderr += str(stdfd.read(), errors="replace", encoding="utf-8")
 
         if debug_log:
-            debug_log = "\n".join(debug_log.splitlines()[:100])
+            debug_log = "\n".join(debug_log.splitlines()[-100:])
 
         if proc:
             if proc.returncode is None:
@@ -2348,13 +2346,11 @@ class TestSuite:
                 _ = x
                 return True
 
-        self.all_tests: List[str] = self.get_tests_list(
-            self.tests_in_suite_key_func, filter_func
-        )
+        all_tests = list(self.get_selected_tests(filter_func))
 
         all_tags_and_random_settings_limits = (
             self.read_test_tags_and_random_settings_limits(
-                self.suite_path, self.all_tests
+                self.suite_path, all_tests
             )
         )
         self.all_tags: Dict[str, Set[str]] = all_tags_and_random_settings_limits[0]
@@ -2363,6 +2359,10 @@ class TestSuite:
         )
         self.sequential_tests = []
         self.parallel_tests = []
+
+        self.all_tests = self.apply_test_runs(all_tests)
+        self.all_tests.sort(key=self.tests_in_suite_key_func)
+
         for test_name in self.all_tests:
             if self.is_sequential_test(test_name):
                 if not args.no_sequential:
@@ -2370,6 +2370,19 @@ class TestSuite:
             else:
                 if not args.no_parallel:
                     self.parallel_tests.append(test_name)
+
+    def apply_test_runs(self, all_tests):
+        test_runs = self.args.test_runs
+        long_test_runs = max(int(self.args.test_runs * self.args.long_test_runs_ratio), 1)
+
+        all_tests = map(lambda test: [test] * (long_test_runs if self.is_long_test(test) else test_runs), all_tests)
+        all_tests = [item for sublist in all_tests for item in sublist]
+        return all_tests
+
+    def is_long_test(self, test_name):
+        if test_name not in self.all_tags:
+            return False
+        return "long" in self.all_tags[test_name]
 
     def is_sequential_test(self, test_name):
         if args.sequential:
@@ -2384,16 +2397,6 @@ class TestSuite:
             or ("sequential" in self.all_tags[test_name])
             or ("stateful" in self.all_tags[test_name])
         )
-
-    def get_tests_list(self, sort_key, filter_func):
-        """
-        Return list of tests file names to run
-        """
-
-        all_tests = list(self.get_selected_tests(filter_func))
-        all_tests = all_tests * self.args.test_runs
-        all_tests.sort(key=sort_key)
-        return all_tests
 
     def get_selected_tests(self, filter_func):
         """
@@ -3549,6 +3552,13 @@ def parse_args():
         nargs="?",
         type=int,
         help="Run each test many times (useful for e.g. flaky check)",
+    )
+    parser.add_argument(
+        "--long-test-runs-ratio",
+        default=0.1,
+        nargs="?",
+        type=float,
+        help="Ratio from --test-runs for long tests",
     )
     parser.add_argument(
         "-U",
