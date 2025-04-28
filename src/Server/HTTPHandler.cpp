@@ -304,7 +304,6 @@ void HTTPHandler::processQuery(
     // IS EVENT STREAM ENABLED
     bool is_event_stream_enabled = isEventStreamRequest(request);
     LOG_DEBUG(log, "Is event stream enabled: {}", is_event_stream_enabled);
-        
 
     used_output.out_holder =
     std::make_shared<WriteBufferFromHTTPServerResponse>(
@@ -312,9 +311,8 @@ void HTTPHandler::processQuery(
         request.getMethod() == HTTPRequest::HTTP_HEAD,
         write_event);
 
-    if (is_event_stream_enabled) {
+    if (is_event_stream_enabled)
         writeEventStreamHeader(response);
-    }
 
 
     used_output.out_maybe_compressed = used_output.out_holder;
@@ -811,13 +809,13 @@ void HTTPHandler::releaseOrCloseSession(const String & session_id, bool close_se
 
 bool HTTPHandler::isEventStreamRequest(const HTTPServerRequest & request) const {
     const auto &accept_values = request.getAll("Accept");
-    for (const auto &accept_value : accept_values) {
-        if (startsWith(accept_value, "text/event-stream")) {
+    for (const auto &accept_value : accept_values)
+    {
+        if (startsWith(accept_value, "text/event-stream")) 
             return true;
-        }
     }
 
-    return false;   
+    return false;
 }
 
 void HTTPHandler::writeEventStreamHeader(HTTPServerResponse & response) {

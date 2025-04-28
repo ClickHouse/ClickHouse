@@ -187,7 +187,7 @@ private:
     void releaseOrCloseSession(const String & session_id, bool close_session);
 
     static void pushDelayedResults(Output & used_output);
-    
+
     bool isEventStreamRequest(const HTTPServerRequest & request) const;
 
     void writeEventStreamHeader(HTTPServerResponse & response);

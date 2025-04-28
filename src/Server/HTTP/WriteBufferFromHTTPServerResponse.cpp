@@ -171,7 +171,7 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
     //      onProgressSSE(progress);
     //      return;
     // }
-    
+
     /// Cannot add new headers if body was started to send.
     if (headers_finished_sending)
         return;
@@ -188,7 +188,7 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
     }
 }
 
-void WriteBufferFromHTTPServerResponse::onProgressSSE(const Progress & progress) 
+void WriteBufferFromHTTPServerResponse::onProgressSSE(const Progress & progress)
 {
     LOG_DEBUG(getLogger("WriteBufferFromHTTPServerResponse"), "onProgressSSE here");
     accumulated_progress.incrementPiecewiseAtomically(progress);
@@ -201,13 +201,11 @@ void WriteBufferFromHTTPServerResponse::onProgressSSE(const Progress & progress)
         accumulated_progress.writeJSON(progress_string_writer);
         progress_string_writer.finalize();
 
-        
         auto ostr = response.send();
         ostr->write("event: progress\n", 16);
         ostr->write("data: ", 6);
         ostr->write(progress_string_writer.str().data(), progress_string_writer.str().size());
         ostr->write("\n\n", 2);
-        
         next();
     }
 }

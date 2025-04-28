@@ -10,7 +10,7 @@ namespace DB
 
 void registerOutputFormatSSE(FormatFactory & factory)
 {
-    
+
     factory.registerOutputFormat("JSONEachRowWithProgressEventStream", [](
         WriteBuffer & buf,
         const Block & sample,
@@ -23,13 +23,13 @@ void registerOutputFormatSSE(FormatFactory & factory)
         sse_settings.json.quote_64bit_integers = true;
         sse_settings.json.quote_64bit_floats = true;
         sse_settings.json.serialize_as_strings = false;
-        return std::make_shared<SSEFormatJSONWithProgress>(buf, sample, sse_settings); 
+        return std::make_shared<SSEFormatJSONWithProgress>(buf, sample, sse_settings);
     });
 
     factory.registerOutputFormat("JSONEachRowEventStream", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & )
+        const FormatSettings &)
     {
         FormatSettings sse_settings;
         sse_settings.json.array_of_rows = false;
