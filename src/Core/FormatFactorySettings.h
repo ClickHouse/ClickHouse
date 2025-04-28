@@ -1312,9 +1312,9 @@ Set the quoting rule for identifiers in SHOW CREATE query
     DECLARE(IdentifierQuotingStyle, show_create_query_identifier_quoting_style, IdentifierQuotingStyle::Backticks, R"(
 Set the quoting style for identifiers in SHOW CREATE query
 )", 0) \
-    DECLARE(UInt64, input_format_max_block_size_bytes, DEFAULT_INSERT_BLOCK_SIZE * 256, R"(
+    DECLARE(UInt64, input_format_max_block_size_bytes, 0, R"(
 Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.
-0 means no limit.
+0 means no limit in bytes.
 )", 0) \
 
 // End of FORMAT_FACTORY_SETTINGS
