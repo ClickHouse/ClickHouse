@@ -616,7 +616,13 @@ MutableColumnPtr ColumnUniqueFCBlockDF::prepareForInsert(const MutableColumnPtr 
     sorted_column = column_to_modify->permute(sorted_permutation, 0);
 
     auto* column_data = static_cast<ColumnUInt64 &>(*mapping).getData().data();
-    memcpy(column_data, sorted_permutation.data(), sizeof(UInt64) * mapping->size());
+    for (size_t i = 0; i < sorted_permutation.size(); ++i)
+    {
+        if (sorted_permutation[i] < mapping->size())
+        {
+            column_data[sorted_permutation[i]] = i;
+        }
+    }
 
     return mapping;
 }

@@ -54,8 +54,6 @@ public:
     /// Uses thread-safe cache.
     virtual const UInt64 * tryGetSavedHash() const = 0;
 
-    size_t size() const override { return getNestedNotNullableColumn()->size(); }
-
     /// Appends new value at the end of column (column's size is increased by 1).
     /// Is used to transform raw strings to Blocks (for example, inside input format parsers)
     virtual size_t uniqueInsert(const Field & x) = 0;

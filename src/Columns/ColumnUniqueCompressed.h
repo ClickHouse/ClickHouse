@@ -48,6 +48,8 @@ public:
     void nestedRemoveNullable() override { is_nullable = false; }
     bool nestedCanBeInsideNullable() const override { return true; }
 
+    size_t size() const override { return data_column->size(); }
+
     bool isCollationSupported() const override { return true; }
 
     bool haveIndexesChanged() const override;

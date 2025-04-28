@@ -191,3 +191,41 @@ TEST(ColumnUniqueCompressed, DeserializationFCBlockDF)
         EXPECT_EQ((*other_column)[index].safeGet<String>(), (*column_unique_compressed)[i].safeGet<String>());
     }
 }
+
+TEST(ColumnUniqueCompressed, ReindexFCBlockDF)
+{
+    const std::vector<std::string> data = {
+        "block",
+        "blocking",
+        "blockings",
+        "sort",
+        "sorted",
+    };
+
+    auto strings_column = ColumnString::create();
+    for (const auto & str : data)
+    {
+        strings_column->insert(str);
+    }
+
+    auto unique_compressed_column = getNotEmptyColumnUniqueCompressedFCBlockDF();
+
+    std::vector<std::string> old_values;
+    for (size_t i = 0; i < unique_compressed_column->size(); ++i)
+    {
+        old_values.push_back((*unique_compressed_column)[i].safeGet<String>());
+    }
+
+    EXPECT_FALSE(unique_compressed_column->haveIndexesChanged());
+    unique_compressed_column->uniqueInsertRangeFrom(*strings_column, 0, strings_column->size());
+    EXPECT_TRUE(unique_compressed_column->haveIndexesChanged());
+
+    auto mapping = unique_compressed_column->detachChangedIndexes();
+    EXPECT_FALSE(unique_compressed_column->haveIndexesChanged());
+
+    for (size_t i = 0; i < old_values.size(); ++i)
+    {
+        const UInt64 pos = unique_compressed_column->getOrFindValueIndex(old_values[i]).value();
+        EXPECT_EQ(pos, mapping->get64(i));
+    }
+}

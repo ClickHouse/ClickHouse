@@ -59,6 +59,8 @@ public:
     void nestedRemoveNullable() override;
     bool nestedCanBeInsideNullable() const override { return getNestedColumn()->canBeInsideNullable(); }
 
+    size_t size() const override { return column_holder->size(); }
+
     bool haveIndexesChanged() const override { return false; }
     MutableColumnPtr detachChangedIndexes() override
     {
