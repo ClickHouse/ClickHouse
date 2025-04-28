@@ -2381,6 +2381,7 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
                 entry.znode_name,
                 buf.str(),
                 entry.create_time,
+                entry.finish_time,
                 entry.block_numbers,
                 parts_to_mutate,
                 status.is_done,

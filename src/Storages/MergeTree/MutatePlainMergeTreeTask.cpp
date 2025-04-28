@@ -98,7 +98,10 @@ bool MutatePlainMergeTreeTask::executeStep()
             try
             {
                 if (mutate_task->execute())
+                {
+                    storage.updateMutationEntriesFinishTime(future_part);
                     return true;
+                }
 
                 new_part = mutate_task->getFuture().get();
                 auto & data_part_storage = new_part->getDataPartStorage();

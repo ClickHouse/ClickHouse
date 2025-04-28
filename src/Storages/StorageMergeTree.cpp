@@ -618,6 +618,7 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
             {
                 if (!entry.latest_failed_part.empty() && result_part->part_info.contains(entry.latest_failed_part_info))
                 {
+                    entry.finish_time = time(nullptr);
                     entry.latest_failed_part.clear();
                     entry.latest_failed_part_info = MergeTreePartInfo();
                     entry.latest_fail_time = 0;
@@ -629,6 +630,7 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
             }
             else
             {
+                entry.finish_time = 0;
                 entry.latest_failed_part = failed_part->name;
                 entry.latest_failed_part_info = failed_part->info;
                 entry.latest_fail_time = time(nullptr);
@@ -646,6 +648,24 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
     std::unique_lock lock(mutation_wait_mutex);
     mutation_wait_event.notify_all();
 }
+
+void StorageMergeTree::updateMutationEntriesFinishTime(FutureMergedMutatedPartPtr result_part)
+{
+    Int64 sources_data_version = result_part->parts.at(0)->info.getDataVersion();
+    Int64 result_data_version = result_part->part_info.getDataVersion();
+    if (sources_data_version != result_data_version)
+    {
+        std::lock_guard lock(currently_processing_in_background_mutex);
+        auto mutations_begin_it = current_mutations_by_version.upper_bound(sources_data_version);
+        auto mutations_end_it = current_mutations_by_version.upper_bound(result_data_version);
+
+        for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
+        {
+            MergeTreeMutationEntry & entry = it->second;
+            entry.finish_time = time(nullptr);
+        }
+    }
+ }
 
 void StorageMergeTree::waitForMutation(Int64 version, bool wait_for_another_mutation)
 {
@@ -810,7 +830,7 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
             return result;
         }
     }
-
+    result.finish_time = time(nullptr);
     result.is_done = true;
     return result;
 }
@@ -875,6 +895,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 entry.file_name,
                 command.ast->formatWithSecretsOneLine(),
                 entry.create_time,
+                entry.finish_time,
                 block_numbers_map,
                 parts_to_do_names,
                 /* is_done = */parts_to_do_names.empty(),
@@ -1576,6 +1597,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
             if (!entry.is_done)
             {
                 entry.is_done = true;
+                entry.finish_time = time(nullptr);
                 decrementMutationsCounters(mutation_counters, *entry.commands);
             }
 
