@@ -54,7 +54,8 @@ bool ParserCreateDriverFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
     if (!function_name_p.parse(pos, function_name, expected))
         return false;
 
-    if (s_lparen.ignore(pos, expected)) {
+    if (s_lparen.ignore(pos, expected))
+    {
         function_params_p.parse(pos, function_params, expected);
 
         if (!s_rparen.ignore(pos, expected))

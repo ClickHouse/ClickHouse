@@ -254,7 +254,7 @@ UserDefinedExecutableFunctionPtr UserDefinedDriverFunctionFactory::createUserDef
     const auto & code = query.getFunctionBody();
     if (command_arguments.empty())
     {
-        command += ' \"' + code + '\"';
+        command += " \"" + code + '\"';
     }
     else
     {

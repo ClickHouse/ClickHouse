@@ -50,7 +50,8 @@ void ASTCreateDriverFunctionQuery::formatImpl(
 
     ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getFunctionName()) << (settings.hilite ? hilite_none : "");
 
-    if (function_params) {
+    if (function_params)
+    {
         ostr << "(";
         function_params->format(ostr, settings, state, frame);
         ostr << ")";
