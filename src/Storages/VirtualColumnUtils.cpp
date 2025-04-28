@@ -2,7 +2,6 @@
 #include <stack>
 
 #include <Storages/VirtualColumnUtils.h>
-#include <absl/container/flat_hash_set.h>
 #include "Formats/NumpyDataTypes.h"
 
 #include <Core/NamesAndTypes.h>
@@ -154,27 +153,6 @@ static auto makeExtractor()
     return KeyValuePairExtractorBuilder().withItemDelimiters({'/'}).withKeyValueDelimiter('=').buildWithReferenceMap();
 }
 
-HivePartitioningKeysAndValues parseHivePartitioningKeysAndValuesRegex(const String & path)
-{
-    const static RE2 pattern_re("([^/]+)=([^/]*)/");
-    re2::StringPiece input_piece(path);
-
-    HivePartitioningKeysAndValues result;
-    std::string_view key;
-    std::string_view value;
-
-    while (RE2::FindAndConsume(&input_piece, pattern_re, &key, &value))
-    {
-        auto it = result.find(key);
-        if (it != result.end() && it->second != value)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Path '{}' to file with enabled hive-style partitioning contains duplicated partition key {} with different values, only unique keys are allowed", path, key);
-
-        auto col_name = key;
-        result[col_name] = value;
-    }
-    return result;
-}
-
 HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & path)
 {
     static auto extractor = makeExtractor();
@@ -203,45 +181,6 @@ HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & 
     }
 
     return key_values;
-}
-
-std::pair<ColumnPtr, ColumnPtr> parseHivePartitioningKeysAndValuesOldExtractkv(const String & path)
-{
-    static auto extractor = KeyValuePairExtractorBuilder().withItemDelimiters({'/'}).withKeyValueDelimiter('=').buildWithoutEscaping();
-
-    auto keys = ColumnString::create();
-    auto values = ColumnString::create();
-
-    // cutting the filename to prevent malformed filenames that contain key-value-pairs from being extracted
-    // not sure if we actually need to do that, but just in case. Plus, the previous regex impl took care of it
-    const auto last_slash_pos = path.find_last_of('/');
-
-    if (last_slash_pos == std::string::npos)
-    {
-        // nothing to extract, there is no path, just a filename
-        return std::make_pair(std::move(keys), std::move(values));
-    }
-
-    std::string_view path_without_filename(path.data(), last_slash_pos);
-
-    extractor.extract(path_without_filename, keys, values);
-
-    keys->validate();
-    values->validate();
-
-    absl::flat_hash_set<StringRef> check_for_duplicates_set;
-
-    for (auto i = 0u; i < keys->size(); i++)
-    {
-        auto [_, inserted] = check_for_duplicates_set.insert(keys->getDataAt(i));
-
-        if (!inserted)
-        {
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Path '{}' to file with enabled hive-style partitioning contains duplicated partition key {} with different values, only unique keys are allowed", path, keys->getDataAt(i).toString());
-        }
-    }
-
-    return std::make_pair(std::move(keys), std::move(values));
 }
 
 VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & storage_columns, const ContextPtr & context, const std::string & path, std::optional<FormatSettings> format_settings_)
