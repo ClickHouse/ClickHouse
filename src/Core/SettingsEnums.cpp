@@ -287,7 +287,8 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"rest", DatabaseDataLakeCatalogType::ICEBERG_REST},
      {"unity", DatabaseDataLakeCatalogType::UNITY},
-     {"glue", DatabaseDataLakeCatalogType::GLUE}})
+     {"glue", DatabaseDataLakeCatalogType::GLUE},
+     {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE}})
 
 IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,
