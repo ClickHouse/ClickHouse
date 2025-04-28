@@ -2747,8 +2747,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
     auto function_name = function_node_ptr->getFunctionName();
 
-    LOG_INFO(getLogger("Igor"), "Function name: {}", function_name);
-    LOG_INFO(getLogger("Igor"), "isNameOfInFunction: {}", isNameOfInFunction(function_name));
+    // LOG_INFO(getLogger("Igor"), "Function name: {}", function_name);
+    // LOG_INFO(getLogger("Igor"), "isNameOfInFunction: {}", isNameOfInFunction(function_name));
 
     /// Resolve function parameters
 
