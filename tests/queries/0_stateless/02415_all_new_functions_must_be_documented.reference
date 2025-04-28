@@ -243,6 +243,7 @@ defaultValueOfTypeName
 degrees
 demangle
 divide
+divideOrNull
 dotProduct
 dumpColumnStructure
 e
@@ -372,6 +373,7 @@ initcapUTF8
 initialQueryID
 initializeAggregation
 intDiv
+intDivOrNull
 intDivOrZero
 intExp10
 intExp2
@@ -437,6 +439,7 @@ minSampleSizeConversion
 minus
 modulo
 moduloLegacy
+moduloOrNull
 moduloOrZero
 monthName
 multiFuzzyMatchAllIndices

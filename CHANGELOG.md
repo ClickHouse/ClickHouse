@@ -14,7 +14,7 @@
 
 # 2025 Changelog
 
-### <a id="254"></a> ClickHouse release 25.4 LTS, 2025-04-22
+### <a id="254"></a> ClickHouse release 25.4, 2025-04-22
 
 #### Backward Incompatible Change
 * Check if all columns in a materialized view match the target table when `allow_materialized_view_with_bad_select` is `false`. [#74481](https://github.com/ClickHouse/ClickHouse/pull/74481) ([Christoph Wurm](https://github.com/cwurm)).
@@ -114,7 +114,7 @@
 
 #### Bug Fix (user-visible misbehavior in an official stable release)
 * Fix incorrect projection analysis when `count(Nullable)` is used in aggregate projections. This fixes [#74495](https://github.com/ClickHouse/ClickHouse/issues/74495) . This PR also adds some logs around projection analysis to clarify why a projection is used or why not. [#74498](https://github.com/ClickHouse/ClickHouse/pull/74498) ([Amos Bird](https://github.com/amosbird)).
-* Fix "Part <...> does not contain in snapshot of previous virtual parts. (PART_IS_TEMPORARILY_LOCKED)" during DETACH PART. [#76039](https://github.com/ClickHouse/ClickHouse/pull/76039) ([Aleksei Filatov](https://github.com/aalexfvk)).
+* Fix `Part <...> does not contain in snapshot of previous virtual parts. (PART_IS_TEMPORARILY_LOCKED)` during `DETACH PART`. [#76039](https://github.com/ClickHouse/ClickHouse/pull/76039) ([Aleksei Filatov](https://github.com/aalexfvk)).
 * Fix not working skip indexes with expression with literals in analyzer and remove trivial casts during indexes analysis. [#77229](https://github.com/ClickHouse/ClickHouse/pull/77229) ([Pavel Kruglov](https://github.com/Avogar)).
 * Fix a bug when `close_session` query parameter didn't have any effect leading to named sessions being closed only after `session_timeout`. [#77336](https://github.com/ClickHouse/ClickHouse/pull/77336) ([Alexey Katsman](https://github.com/alexkats)).
 * Fixed receiving messages from NATS server without attached Materialized Views. [#77392](https://github.com/ClickHouse/ClickHouse/pull/77392) ([Dmitry Novikov](https://github.com/dmitry-sles-novikov)).

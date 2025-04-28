@@ -45,7 +45,7 @@ for i in {1..100}; do
     ")"
 
     # Non retriable errors
-    if [[ $FileSync -ne 8 ]]; then
+    if [[ $FileSync -ne 9 ]]; then
         echo "FileSync: $FileSync != 8" >&2
         exit 2
     fi

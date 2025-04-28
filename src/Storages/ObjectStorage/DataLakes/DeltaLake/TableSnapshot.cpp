@@ -124,13 +124,18 @@ public:
             if (have_scan_data_res)
             {
                 std::unique_lock lock(next_mutex);
-                if (!shutdown.load() && data_files.size() >= list_batch_size)
+                if (!shutdown.load() && list_batch_size && data_files.size() >= list_batch_size)
                 {
-                    schedule_next_batch_cv.wait(lock, [&]() { return (data_files.size() < list_batch_size) || shutdown.load(); });
+                    LOG_TEST(log, "List batch size is {}/{}", data_files.size(), list_batch_size);
+
+                    schedule_next_batch_cv.wait(
+                        lock,
+                        [&]() { return (data_files.size() < list_batch_size) || shutdown.load(); });
                 }
             }
             else
             {
+                LOG_TEST(log, "All data files were listed");
                 {
                     std::lock_guard lock(next_mutex);
                     iterator_finished = true;
