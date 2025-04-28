@@ -208,7 +208,8 @@ public:
         ffi::KernelBoolSlice selection_vector_res = KernelUtils::unwrapResult(
             ffi::selection_vector_from_scan_metadata(scan_metadata, context->engine.get()),
             "selection_vector_from_scan");
-        free_bool_slice(selection_vector_res);
+        ffi::free_bool_slice(selection_vector_res);
+        ffi::free_scan_metadata(scan_metadata);
     }
 
     static void scanCallback(
