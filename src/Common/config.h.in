@@ -2,6 +2,7 @@
 
 #pragma once
 
+#cmakedefine01 USE_ARROWFLIGHT
 #cmakedefine01 CLICKHOUSE_CLOUD
 #cmakedefine01 USE_CPUID
 #cmakedefine01 USE_BASE64

@@ -7,6 +7,10 @@
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <arrow/array.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
+#include <base/range.h>
 
 namespace DB
 {
@@ -25,11 +29,10 @@ ArrowFlightSource::ArrowFlightSource(
     const std::string & query_,
     const Block & sample_block_,
     const std::vector<std::string> & column_names_,
-    UInt64 max_block_size_)
+    UInt64 /*max_block_size_*/)
     : ISource(sample_block_.cloneEmpty())
     , client(std::move(client_))
     , query(query_)
-    , max_block_size(max_block_size_)
     , sample_block(sample_block_)
     , column_names(column_names_)
 {
@@ -41,8 +44,28 @@ void ArrowFlightSource::initializeStream()
     arrow::flight::FlightCallOptions options;
     arrow::flight::FlightDescriptor descriptor = arrow::flight::FlightDescriptor::Command(query);
 
-    arrow::flight::Ticket ticket;
-    ticket.ticket = query;
+    auto flight_info_result = client->GetFlightInfo(options, descriptor);
+    if (!flight_info_result.ok())
+    {
+        throw Exception(
+            ErrorCodes::ARROWFLIGHT_FETCH_SCHEMA_ERROR,
+            "Failed to get FlightInfo from Arrow Flight server: {}",
+            flight_info_result.status().ToString()
+        );
+    }
+
+    std::unique_ptr<arrow::flight::FlightInfo> flight_info = std::move(flight_info_result).ValueOrDie();
+
+    if (flight_info->endpoints().empty())
+    {
+        throw Exception(
+            ErrorCodes::ARROWFLIGHT_FETCH_SCHEMA_ERROR,
+            "FlightInfo returned with no endpoints"
+        );
+    }
+
+    arrow::flight::Ticket ticket = flight_info->endpoints()[0].ticket;
+
     auto result = client->DoGet(options, ticket);
     if (!result.ok())
     {
@@ -88,66 +111,25 @@ Chunk ArrowFlightSource::generate()
         return {};
     }
 
-    MutableColumns columns = sample_block.cloneEmptyColumns();
-    
-    fillChunk(columns, batch);
+    MutableColumns columns;
+
+    ArrowColumnToCHColumn converter(
+        sample_block,
+        "Arrow",
+        true /* allow_missing_columns */,
+        true /* null_as_default */,
+        FormatSettings::DateTimeOverflowBehavior::Throw,
+        false /* case_insensitive_matching */,
+        false /* is_stream */
+    );
+
+    auto table = arrow::Table::FromRecordBatches({batch}).ValueOrDie();
+    auto ch_chunk = converter.arrowTableToCHChunk(table, batch->num_rows());
+    for (auto & col : ch_chunk.getColumns())
+        columns.push_back(IColumn::mutate(col->cloneResized(batch->num_rows())));
 
     Chunk filled_chunk(std::move(columns), batch->num_rows());
     return filled_chunk;
-}
-
-void ArrowFlightSource::fillChunk(MutableColumns & columns, std::shared_ptr<arrow::RecordBatch> & batch)
-{
-    for (int col_idx = 0; col_idx < batch->num_columns(); ++col_idx)
-    {
-        auto & column = columns[col_idx];
-        const auto & arrow_column = batch->column(col_idx);
-
-        for (int64_t row_idx = 0; row_idx < arrow_column->length(); ++row_idx)
-        {
-            if (arrow_column->IsNull(row_idx))
-            {
-                column->insertDefault();
-            }
-            else
-            {
-                switch (arrow_column->type()->id())
-                {
-                    case arrow::Type::STRING:
-                    {
-                        const auto & str_array = std::static_pointer_cast<arrow::StringArray>(arrow_column);
-                        column->insertData(str_array->GetView(row_idx).data(), str_array->GetView(row_idx).size());
-                        break;
-                    }
-                    case arrow::Type::INT64:
-                    {
-                        const auto & int_array = std::static_pointer_cast<arrow::Int64Array>(arrow_column);
-                        column->insert(Field(int_array->Value(row_idx)));
-                        break;
-                    }
-                    case arrow::Type::FLOAT:
-                    {
-                        const auto & float_array = std::static_pointer_cast<arrow::DoubleArray>(arrow_column);
-                        column->insert(Field(float_array->Value(row_idx)));
-                        break;
-                    }
-                    case arrow::Type::BOOL:
-                    {
-                        const auto & bool_array = std::static_pointer_cast<arrow::BooleanArray>(arrow_column);
-                        column->insert(Field(bool_array->Value(row_idx)));
-                        break;
-                    }
-                    // TODO: add more types support
-                    default:
-                        throw Exception(
-                            ErrorCodes::NOT_IMPLEMENTED,
-                            "Arrow type {} not implemented",
-                            arrow_column->type()->ToString()
-                        );
-                }
-            }
-        }
-    }
 }
 
 }
