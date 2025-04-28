@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-merge-tree-settings, no-random-settings, no-fasttest, no-parallel, no-shared-catalog
+# Tags: no-random-merge-tree-settings, no-random-settings, no-fasttest, no-parallel, no-shared-catalog, no-shared-merge-tree
 # FIXME no-shared-catalog: STOP MERGES will only stop them on the current replica, the second one will continue to merge
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
