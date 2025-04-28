@@ -193,6 +193,9 @@ fn hash_preprocessed_compiler_output(compiler: String, args: &Vec<String>) -> St
     preprocess_args.remove(output_flag_index);
     preprocess_args.remove(output_flag_index);
 
+    let input_flag_index = preprocess_args.iter().position(|x| x == "-c").unwrap();
+    preprocess_args.remove(input_flag_index);
+
     let output = std::process::Command::new(compiler)
         .args(preprocess_args)
         .output()
