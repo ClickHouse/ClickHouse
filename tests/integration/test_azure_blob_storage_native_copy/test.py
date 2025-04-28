@@ -114,6 +114,11 @@ def cluster():
             main_configs=[path],
             with_azurite=True,
         )
+        cluster.add_instance(
+            "node4",
+            main_configs=[path],
+            with_azurite=True,
+        )
         cluster.start()
 
         yield cluster
@@ -154,7 +159,6 @@ def azure_query(
                 node.query(query_on_retry)
             continue
 
-
 def test_backup_restore_on_merge_tree_same_container(cluster):
     node1 = cluster.instances["node1"]
     azure_query(
@@ -167,7 +171,7 @@ def test_backup_restore_on_merge_tree_same_container(cluster):
     print("BACKUP DEST", backup_destination)
     azure_query(
         node1,
-        f"BACKUP TABLE test_simple_merge_tree TO {backup_destination} SETTINGS allow_azure_native_copy = 1",
+        f"BACKUP TABLE test_simple_merge_tree TO {backup_destination}",
     )
 
     assert node1.contains_in_log("using native copy")
@@ -254,3 +258,22 @@ def test_backup_restore_on_merge_tree_native_copy_async(cluster):
 
     azure_query(node3, f"DROP TABLE test_simple_merge_tree_async")
     azure_query(node3, f"DROP TABLE test_simple_merge_tree_async_restored")
+
+def test_backup_restore_native_copy_disabled_in_query(cluster):
+    node4 = cluster.instances["node4"]
+    azure_query(
+        node4,
+        f"CREATE TABLE test_simple_merge_tree_native_copy_disabled_in_query(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_azure'",
+    )
+    azure_query(
+        node4, f"INSERT INTO test_simple_merge_tree_native_copy_disabled_in_query VALUES (1, 'a')"
+    )
+
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_merge_tree_native_copy_disabled_in_query_backup')"
+    print("BACKUP DEST", backup_destination)
+    azure_query(
+        node4,
+        f"BACKUP TABLE test_simple_merge_tree_native_copy_disabled_in_query TO {backup_destination} SETTINGS allow_azure_native_copy = 0",
+    )
+
+    assert not node4.contains_in_log("using native copy")
