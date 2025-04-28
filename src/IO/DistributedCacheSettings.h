@@ -15,6 +15,7 @@ struct DistributedCacheSettings
 
     size_t wait_connection_from_pool_milliseconds = 100;
     size_t connect_max_tries = 100;
+    size_t read_request_max_tries = 100;
     size_t read_alignment = 0;
     size_t max_unacked_inflight_packets = ::DistributedCache::MAX_UNACKED_INFLIGHT_PACKETS;
     size_t data_packet_ack_window = ::DistributedCache::ACK_DATA_PACKET_WINDOW;
@@ -22,6 +23,9 @@ struct DistributedCacheSettings
     DistributedCachePoolBehaviourOnLimit pool_behaviour_on_limit = DistributedCachePoolBehaviourOnLimit::ALLOCATE_NEW_BYPASSING_POOL;
     size_t receive_response_wait_milliseconds = 10000;
     size_t receive_timeout_milliseconds = 1000;
+    bool discard_connection_if_unread_data = true;
+
+    size_t min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE;
 
     DistributedCacheLogMode log_mode = DistributedCacheLogMode::LOG_ON_ERROR;
 

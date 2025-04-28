@@ -19,11 +19,10 @@ def only_docs(changed_files):
     return True
 
 
-ONLY_DOCS_JOBS = [
+DO_NOT_TEST_JOBS = [
     JobNames.STYLE_CHECK,
     JobNames.DOCKER_BUILDS_ARM,
     JobNames.DOCKER_BUILDS_AMD,
-    JobNames.Docs,
 ]
 
 PRELIMINARY_JOBS = [
@@ -56,10 +55,7 @@ def should_skip_job(job_name):
         print("WARNING: no changed files found for PR - do not filter jobs")
         return False, ""
 
-    if only_docs(changed_files) and job_name not in ONLY_DOCS_JOBS:
-        return True, "Docs only update"
-
-    if Labels.DO_NOT_TEST in _info_cache.pr_labels and job_name not in ONLY_DOCS_JOBS:
+    if Labels.DO_NOT_TEST in _info_cache.pr_labels and job_name not in DO_NOT_TEST_JOBS:
         return True, f"Skipped, labeled with '{Labels.DO_NOT_TEST}'"
 
     if Labels.NO_FAST_TESTS in _info_cache.pr_labels and job_name in PRELIMINARY_JOBS:
