@@ -258,7 +258,7 @@ private:
 
     TopicPartitionSet getLockedTopicPartitions(zkutil::ZooKeeper & keeper_to_use);
     TopicPartitions getAvailableTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & all_topic_partitions);
-    UInt32 active_replica_count;
+    std::atomic<UInt32> active_replica_count{0};
     std::optional<LockedTopicPartitionInfo> createLocksInfo(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & partition_to_lock);
 
     // Takes lock over topic partitions and sets the committed offset in topic_partitions.
