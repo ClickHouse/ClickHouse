@@ -303,13 +303,13 @@ void HTTPHandler::processQuery(
 
     // IS EVENT STREAM ENABLED
     bool is_event_stream_enabled = isEventStreamRequest(request);
-    LOG_DEBUG(log, "Is event stream enabled: {}", is_event_stream_enabled);
 
     used_output.out_holder =
     std::make_shared<WriteBufferFromHTTPServerResponse>(
         response,
         request.getMethod() == HTTPRequest::HTTP_HEAD,
-        write_event);
+        write_event,
+        is_event_stream_enabled);
 
     if (is_event_stream_enabled)
         writeEventStreamHeader(response);

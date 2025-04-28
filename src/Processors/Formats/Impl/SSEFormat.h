@@ -178,7 +178,8 @@ private:
     void flushBuffer(bool is_empty)
     {
         auto & res = buffer.str();
-        if (!is_empty) {
+        if (!is_empty)
+        {
             out.write(res.data(), res.size());
             out.next();
         }
