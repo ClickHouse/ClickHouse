@@ -143,8 +143,8 @@ std::pair<std::string_view, std::string_view> clickhouse_client_args[] = {{"h", 
 bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
 {
     for (const auto & [alias, name] : clickhouse_short_names)
-    if (app_suffix == name
-        && !argv.empty() && (alias == argv[0] || endsWith(argv[0], "/" + std::string(alias))))
+        if (app_suffix == name
+            && !argv.empty() && (alias == argv[0] || endsWith(argv[0], "/" + std::string(alias))))
             return true;
 
     /// Use app if the first arg 'app' is passed (the arg should be quietly removed)
@@ -179,6 +179,7 @@ extern "C"
     {
         return nullptr;
     }
+
     void * dlmopen(long, const char *, int) // NOLINT
     {
         return nullptr;
@@ -188,6 +189,7 @@ extern "C"
     {
         return 0;
     }
+
     const char * dlerror()
     {
         return "ClickHouse does not allow dynamic library loading";
