@@ -20,7 +20,7 @@ shard_configs = {
 nodes = {
     node_name: cluster.add_instance(
         node_name,
-        main_configs=[shard_config, "config/config_discovery_path.xml"],
+        main_configs=[shard_config, "config/config_discovery_path.xml", "config/macros.xml"],
         stay_alive=True,
         with_zookeeper=True,
     )
@@ -122,3 +122,11 @@ def test_cluster_discovery_startup_and_stop(start_cluster):
 
     # cleanup
     nodes["node0"].query("DROP TABLE tbl ON CLUSTER 'test_auto_cluster' SYNC")
+
+
+def test_cluster_discovery_macros(start_cluster):
+    # check macros
+    res = nodes["node_observer"].query(
+        "SELECT sum(number) FROM clusterAllReplicas('{autocluster}', system.numbers) WHERE number=1"
+    )
+    assert res.strip() == "5"
