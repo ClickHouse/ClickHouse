@@ -448,7 +448,9 @@ class Result(MetaClasses.Serializable):
                     # Run shell command in a specified directory with logging and verbosity
                     exit_code = Shell.run(command_, verbose=True, log_file=log_file)
                     if with_info or (with_info_on_failure and exit_code != 0):
-                        with open(log_file, "r") as f:
+                        with open(
+                            log_file, "r", encoding="utf-8", errors="ignore"
+                        ) as f:
                             error_infos.append(f.read().strip())
                     res = exit_code == 0
 
