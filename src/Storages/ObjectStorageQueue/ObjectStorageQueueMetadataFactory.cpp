@@ -39,7 +39,7 @@ ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFa
     return it->second.metadata;
 }
 
-void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_path, const StorageID & storage_id, bool remove_metadata_if_no_registered)
+void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_path, const StorageID & storage_id)
 {
     std::lock_guard lock(mutex);
     auto it = metadata_by_path.find(zookeeper_path);
@@ -49,21 +49,40 @@ void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_pat
 
     *it->second.ref_count -= 1;
 
+    size_t registry_size;
     try
     {
-        const auto registry_size = it->second.metadata->unregister(
-            storage_id,
-            /* active */ false,
-            remove_metadata_if_no_registered);
-
+        registry_size = it->second.metadata->unregister(storage_id, false);
         LOG_TRACE(log, "Remaining registry size: {}", registry_size);
+    }
+    catch (const zkutil::KeeperException & e)
+    {
+        if (!Coordination::isHardwareError(e.code))
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        /// Any non-zero value would do.
+        registry_size = 1;
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
+        /// Any non-zero value would do.
+        registry_size = 1;
     }
 
-    if (*it->second.ref_count == 0)
+    if (registry_size == 0)
+    {
+        auto zk_client = Context::getGlobalContextInstance()->getZooKeeper();
+        auto code = zk_client->tryRemoveRecursive(it->first);
+        if (code != Coordination::Error::ZOK
+            && !Coordination::isHardwareError(code))
+        {
+            LOG_ERROR(log, "Unexpected error while removing metadata: {}, path: {}", code, it->first);
+        }
+    }
+
+    if (!it->second.ref_count)
         metadata_by_path.erase(it);
 }
 

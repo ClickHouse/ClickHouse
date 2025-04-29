@@ -13,12 +13,6 @@ class ExpressionStep : public ITransformingStep
 {
 public:
     explicit ExpressionStep(const Header & input_header_, ActionsDAG actions_dag_);
-
-    ExpressionStep(const ExpressionStep & other)
-        : ITransformingStep(other)
-        , actions_dag(other.actions_dag.clone())
-    {}
-
     String getName() const override { return "Expression"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
@@ -33,12 +27,7 @@ public:
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
-    static QueryPlanStepPtr deserialize(Deserialization & ctx);
-
-    QueryPlanStepPtr clone() const override;
-
-    bool hasCorrelatedExpressions() const override { return actions_dag.hasCorrelatedColumns(); }
-    void decorrelateActions() { actions_dag.decorrelate(); }
+    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
     void updateOutputHeader() override;

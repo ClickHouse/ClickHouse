@@ -215,9 +215,7 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             ┌─kv────────────────────┐
             │ {'age':'a\\x0A\\n\\0'} │
             └───────────────────────┘
-            ```)",
-            .category = FunctionDocumentation::Category::Map
-        }
+            ```)"}
     );
 
     factory.registerFunction<ExtractKeyValuePairs<NameExtractKeyValuePairsWithEscaping, true>>(
@@ -246,9 +244,7 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             ┌─kv───────────────┐
             │ {'age':'a\n\n\0'} │
             └──────────────────┘
-            ```)",
-            .category = FunctionDocumentation::Category::Map
-        }
+            ```)"}
     );
     factory.registerAlias("str_to_map", NameExtractKeyValuePairs::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("mapFromString", NameExtractKeyValuePairs::name);

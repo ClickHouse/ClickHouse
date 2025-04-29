@@ -1,6 +1,5 @@
 #pragma once
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
-#include <Processors/QueryPlan/PartsSplitter.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/SelectQueryInfo.h>
@@ -12,8 +11,7 @@
 namespace DB
 {
 
-struct LazilyReadInfo;
-using LazilyReadInfoPtr = std::shared_ptr<LazilyReadInfo>;
+using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
 class Pipe;
 
@@ -69,7 +67,6 @@ public:
         Partition,
         PrimaryKey,
         Skip,
-        PrimaryKeyExpand,
     };
 
     /// This is a struct with information about applied indexes.
@@ -91,7 +88,6 @@ public:
     struct AnalysisResult
     {
         RangesInDataParts parts_with_ranges;
-        SplitPartsByRanges split_parts;
         MergeTreeDataSelectSamplingData sampling;
         IndexStats index_stats;
         Names column_names_to_read;
@@ -122,16 +118,13 @@ public:
         const ContextPtr & context_,
         size_t max_block_size_,
         size_t num_streams_,
-        PartitionIdToMaxBlockPtr max_block_numbers_to_read_,
+        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
         LoggerPtr log_,
         AnalysisResultPtr analyzed_result_ptr_,
         bool enable_parallel_reading_,
         std::optional<MergeTreeAllRangesCallback> all_ranges_callback_ = std::nullopt,
         std::optional<MergeTreeReadTaskCallback> read_task_callback_ = std::nullopt,
         std::optional<size_t> number_of_current_replica_ = std::nullopt);
-
-    ReadFromMergeTree(const ReadFromMergeTree &) = default;
-    ReadFromMergeTree(ReadFromMergeTree &&) = default;
 
     std::unique_ptr<ReadFromMergeTree> createLocalParallelReplicasReadingStep(
         AnalysisResultPtr analyzed_result_ptr_,
@@ -141,8 +134,6 @@ public:
 
     static constexpr auto name = "ReadFromMergeTree";
     String getName() const override { return name; }
-
-    QueryPlanStepPtr clone() const override;
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
@@ -183,7 +174,7 @@ public:
         const SelectQueryInfo & query_info,
         ContextPtr context,
         size_t num_streams,
-        PartitionIdToMaxBlockPtr max_block_numbers_to_read,
+        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
         const MergeTreeData & data,
         const Names & all_column_names,
         LoggerPtr log,
@@ -195,7 +186,6 @@ public:
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
-    const LazilyReadInfoPtr & getLazilyReadInfo() const { return lazily_read_info; }
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit, std::optional<ActionsDAG> virtual_row_conversion_);
@@ -204,7 +194,6 @@ public:
     const SortDescription & getSortDescription() const override { return result_sort_description; }
 
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
-    void updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_read_info_value);
     bool isQueryWithSampling() const;
 
     /// Returns true if the optimization is applicable (and applies it then).
@@ -235,7 +224,6 @@ private:
     Names all_column_names;
 
     const MergeTreeData & data;
-    LazilyReadInfoPtr lazily_read_info;
     ExpressionActionsSettings actions_settings;
 
     const MergeTreeReadTask::BlockSizeParams block_size;
@@ -248,7 +236,7 @@ private:
     /// Used for aggregation optimization (see DB::QueryPlanOptimizations::tryAggregateEachPartitionIndependently).
     bool output_each_partition_through_separate_port = false;
 
-    PartitionIdToMaxBlockPtr max_block_numbers_to_read;
+    std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read;
 
     /// Pre-computed value, needed to trigger sets creating for PK
     mutable std::optional<Indexes> indexes;
@@ -270,8 +258,6 @@ private:
     Pipe spreadMarkRanges(RangesInDataParts && parts_with_ranges, size_t num_streams, AnalysisResult & result, std::optional<ActionsDAG> & result_projection);
 
     Pipe groupStreamsByPartition(AnalysisResult & result, std::optional<ActionsDAG> & result_projection);
-
-    Pipe readByLayers(const RangesInDataParts & parts_with_ranges, SplitPartsByRanges split_parts, const Names & column_names, const InputOrderInfoPtr & input_order_info);
 
     Pipe spreadMarkRangesAmongStreams(RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & column_names);
 

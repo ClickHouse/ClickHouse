@@ -287,7 +287,6 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             treat_local_as_remote,
             treat_local_port_as_remote,
             secure,
-            /* bind_host= */ "",
             /* priority= */ Priority{1},
             /* cluster_name= */ "",
             /* cluster_secret= */ ""
