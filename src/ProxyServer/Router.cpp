@@ -6,6 +6,7 @@
 #include <Poco/Exception.h>
 
 #include <ProxyServer/ActiveConnections.h>
+#include <ProxyServer/ConnectionsManager.h>
 #include <ProxyServer/RoundRobin.h>
 #include <ProxyServer/Rules.h>
 #include <ProxyServer/ServerConfig.h>
@@ -16,11 +17,12 @@ namespace Proxy
 namespace
 {
 
-Action getActionByRule(std::shared_ptr<DefaultRule> rule, std::string && rule_id, const Servers & servers)
+Action getActionByRule(
+    std::shared_ptr<DefaultRule> rule, std::string && rule_id, const Servers & servers, GlobalConnectionsCounter * global_counter)
 {
     if (rule->action.type == RuleActionType::Reject)
     {
-        return {.type = RuleActionType::Reject};
+        return Action(RuleActionType::Reject, {}, rule->connections_manager, global_counter);
     }
 
     if (!rule->load_balancer)
@@ -29,7 +31,7 @@ Action getActionByRule(std::shared_ptr<DefaultRule> rule, std::string && rule_id
         throw std::runtime_error(fmt::format("no balancer found for rule #{}", rule_id));
     }
 
-    const auto route_to = rule->load_balancer->select(rule->connections_manager);
+    const auto route_to = rule->load_balancer->select(*rule->connections_manager);
     if (!route_to.has_value())
     {
         // unlikely
@@ -43,9 +45,62 @@ Action getActionByRule(std::shared_ptr<DefaultRule> rule, std::string && rule_id
         throw std::runtime_error(fmt::format("balancer returned the server that is not in the servers container. rule #{}", rule_id));
     }
 
-    return {.type = RuleActionType::Route, .route_to = {iter->second}};
+    return Action(RuleActionType::Route, {iter->second}, rule->connections_manager, global_counter);
 }
 
+}
+
+Action::Action(
+    RuleActionType type_,
+    std::optional<ServerConfig> route_to_,
+    std::shared_ptr<ActiveConnectionsManager> connections_manager_,
+    GlobalConnectionsCounter * global_counter_)
+    : type(type_)
+    , route_to(std::move(route_to_))
+    , global_counter(global_counter_)
+{
+    if (connections_manager_)
+    {
+        connections_manager = std::optional(std::weak_ptr<ActiveConnectionsManager>(connections_manager_));
+    }
+}
+
+Action::~Action()
+{
+    disconnect();
+}
+
+RuleActionType Action::getType()
+{
+    return type;
+}
+
+const std::optional<ServerConfig> & Action::getRouteTo()
+{
+    return route_to;
+}
+
+void Action::disconnect()
+{
+    if (disconnected || !route_to.has_value() || !global_counter)
+        return;
+    disconnected = true;
+
+    if (!connections_manager.has_value())
+    {
+        global_counter->updateConnectionCount(*route_to, -1);
+        return;
+    }
+
+    auto connection_manager_ptr = connections_manager->lock();
+    if (connection_manager_ptr)
+    {
+        connection_manager_ptr->removeConnection(*route_to);
+    }
+    else
+    {
+        global_counter->updateConnectionCount(*route_to, -1);
+    }
 }
 
 Router::Router(const Poco::Util::AbstractConfiguration & cfg)
@@ -73,22 +128,22 @@ Action Router::route(const std::string & user, const std::string & hostname, con
         if (!rule->host.empty() && rule->host != hostname)
             continue;
 
-        return getActionByRule(rule, std::to_string(rule_index), config.servers);
+        return getActionByRule(rule, std::to_string(rule_index), config.servers, &connections_counter);
     }
 
     if (config.default_rule)
     {
-        return getActionByRule(config.default_rule, "default", config.servers);
+        return getActionByRule(config.default_rule, "default", config.servers, &connections_counter);
     }
 
-    return {.type = RuleActionType::Reject};
+    return Action(RuleActionType::Reject, {}, nullptr, nullptr);
 }
 
 void Router::notifyConnectionFinished(std::weak_ptr<DefaultRule> rule, const ServerConfig & server)
 {
     if (!rule.expired())
     {
-        rule.lock()->connections_manager.removeConnection(server);
+        rule.lock()->connections_manager->removeConnection(server);
     }
     else
     {

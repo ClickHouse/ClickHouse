@@ -35,7 +35,7 @@ struct DefaultRule
     RuleAction action;
     LoadBalancingPolicy policy;
     std::unique_ptr<ILoadBalancer> load_balancer;
-    ActiveConnectionsManager connections_manager;
+    std::shared_ptr<ActiveConnectionsManager> connections_manager;
 
     DefaultRule() = default;
     DefaultRule(DefaultRule&&) = default;

@@ -135,7 +135,7 @@ try
             }
             rule_servers.push_back(iter->second);
         }
-        rule->connections_manager = ActiveConnectionsManager(rule_servers, global_counter);
+        rule->connections_manager = std::make_shared<ActiveConnectionsManager>(rule_servers, global_counter);
     }
 
     return rule;

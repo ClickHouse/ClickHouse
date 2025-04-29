@@ -75,7 +75,7 @@ void TCPHandler::runImpl()
     try
     {
         receiveHello();
-        if (rejected)
+        if (action->getType() == RuleActionType::Reject)
         {
             try
             {
@@ -92,10 +92,11 @@ void TCPHandler::runImpl()
             catch (...)
             {
                 LOG_ERROR(log, "Error finalizing client output buffer");
-            }        
+            }
             return;
         }
         startRedirection();
+        action->disconnect();
     }
     catch (const DB::Exception & _)
     {
@@ -196,17 +197,16 @@ void TCPHandler::receiveHello()
         (!default_database.empty() ? ", database: " + default_database : ""),
         (!user.empty() ? ", user: " + user : ""));
 
-    auto action = router->route(user, hostname, default_database);
+    action = router->route(user, hostname, default_database);
 
-    switch (action.type)
+    switch (action->getType())
     {
         case RuleActionType::Reject: {
-            rejected = true;
             LOG_DEBUG(log, "Rejecting connection via router rules");
+
             return;
         }
         case RuleActionType::Route: {
-            rejected = false;
             client_connection = ClientConnection{
                 .user = std::move(user),
                 .password = std::move(password),
@@ -218,9 +218,7 @@ void TCPHandler::receiveHello()
                 .client_version_patch = client_version_patch,
                 .client_tcp_protocol_version = client_tcp_protocol_version};
 
-            assigned_server = std::move(*action.route_to);
-
-            LOG_DEBUG(log, "Redirecting connection to {}:{}", assigned_server.host, assigned_server.tcp_port);
+            LOG_DEBUG(log, "Redirecting connection to {}:{}", action->getRouteTo()->host, action->getRouteTo()->tcp_port);
 
             connect();
             // sendHello();
@@ -230,6 +228,8 @@ void TCPHandler::receiveHello()
 
 void TCPHandler::connect()
 {
+    const auto & assigned_server = action->getRouteTo().value();
+
     auto addresses = DB::DNSResolver::instance().resolveAddressList(assigned_server.host, assigned_server.tcp_port);
     const auto connection_timeout = DB::DBMS_DEFAULT_CONNECT_TIMEOUT_SEC; // TODO: move to config
 
@@ -309,6 +309,8 @@ void TCPHandler::sendHello()
 
 void TCPHandler::startRedirection()
 {
+    const auto & assigned_server = action->getRouteTo().value();
+
     constexpr size_t buffer_size = 64 * 1024;
     char buffer[buffer_size];
 

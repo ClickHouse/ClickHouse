@@ -57,14 +57,13 @@ private:
 
     RouterPtr router;
 
-    bool rejected;
+    std::optional<Action> action;
 
     ClientConnection client_connection;
     std::unique_ptr<Poco::Net::StreamSocket> mid_socket;
     /// Streams for reading/writing from/to server connection socket.
     std::shared_ptr<DB::ReadBufferFromPocoSocketChunked> mid_in;
     std::shared_ptr<DB::WriteBufferFromPocoSocketChunked> mid_out;
-    ServerConfig assigned_server;
 
     void runImpl();
 
