@@ -2,8 +2,6 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/EnabledQuota.h>
-#include <Columns/IColumn.h>
-#include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -19,7 +17,8 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTLiteral.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/queryToString.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
@@ -110,7 +109,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const Settings & settings_,
     DataKind data_kind_)
     : query(query_->clone())
-    , query_str(query->formatWithSecretsOneLine())
+    , query_str(queryToString(query))
     , user_id(user_id_)
     , current_roles(current_roles_)
     , settings(settings_)
@@ -761,7 +760,7 @@ String serializeQuery(const IAST & query, size_t max_length)
 {
     return query.hasSecretParts()
         ? query.formatForLogging(max_length)
-        : wipeSensitiveDataAndCutToLength(query.formatWithSecretsOneLine(), max_length);
+        : wipeSensitiveDataAndCutToLength(serializeAST(query), max_length);
 }
 
 }
@@ -924,7 +923,7 @@ try
             normalized_query_hash,
             key.query,
             pipeline,
-            interpreter.get(),
+            interpreter,
             internal,
             query_database,
             query_table,
@@ -946,7 +945,7 @@ try
         throw;
     }
 
-    auto finish_entries = [&](QueryPipeline && pileline_, size_t num_rows, size_t num_bytes)
+    auto finish_entries = [&](size_t num_rows, size_t num_bytes)
     {
         for (const auto & entry : data->entries)
         {
@@ -963,7 +962,9 @@ try
         LOG_DEBUG(log, "Flushed {} rows, {} bytes for query '{}'", num_rows, num_bytes, key.query_str);
         queue_shard_flush_time_history.updateWithCurrentTime();
 
-        logQueryFinish(query_log_elem, insert_context, key.query, std::move(pileline_), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, internal);
+        bool pulling_pipeline = false;
+        logQueryFinish(
+            query_log_elem, insert_context, key.query, pipeline, pulling_pipeline, query_span, QueryCacheUsage::None, internal);
     };
 
     try
@@ -980,8 +981,8 @@ try
 
         if (chunk.getNumRows() == 0)
         {
-            pipeline.cancel(); // this just cancels the processors
-            finish_entries(std::move(pipeline), /*num_rows=*/ 0, /*num_bytes=*/ 0);
+            finish_entries(/*num_rows=*/ 0, /*num_bytes=*/ 0);
+            pipeline.cancel();
             return;
         }
 
@@ -994,7 +995,7 @@ try
         CompletedPipelineExecutor completed_executor(pipeline);
         completed_executor.execute();
 
-        finish_entries(std::move(pipeline), num_rows, num_bytes);
+        finish_entries(num_rows, num_bytes);
     }
     catch (...)
     {
@@ -1065,14 +1066,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         return 0;
     };
 
-
-    StreamingFormatExecutor executor(
-        header,
-        format,
-        std::move(on_error),
-        data->size_in_bytes,
-        data->entries.size(),
-        std::move(adding_defaults_transform));
+    StreamingFormatExecutor executor(header, format, std::move(on_error), std::move(adding_defaults_transform));
     auto chunk_info = std::make_shared<AsyncInsertInfo>();
 
     for (const auto & entry : data->entries)
@@ -1088,7 +1082,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         executor.setQueryParameters(entry->query_parameters);
 
         size_t num_bytes = bytes->size();
-        size_t num_rows = executor.execute(*buffer, num_bytes);
+        size_t num_rows = executor.execute(*buffer);
 
         total_rows += num_rows;
 
@@ -1167,7 +1161,7 @@ template <typename E>
 void AsynchronousInsertQueue::finishWithException(
     const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & exception)
 {
-    tryLogCurrentException("AsynchronousInsertQueue", fmt::format("Failed insertion for query '{}'", query->formatForLogging()));
+    tryLogCurrentException("AsynchronousInsertQueue", fmt::format("Failed insertion for query '{}'", queryToString(query)));
 
     for (const auto & entry : entries)
     {

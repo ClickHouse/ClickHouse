@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
+#include <Parsers/queryToString.h>
 #include <base/hex.h>
 
 namespace DB
@@ -173,7 +174,7 @@ void StorageSystemProjectionParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(static_cast<UInt32>(min_max_time.second));
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(parent_part->info.getPartitionId());
+            columns[res_index++]->insert(parent_part->info.partition_id);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(parent_part->info.min_block);
         if (columns_mask[src_index++])
@@ -262,7 +263,7 @@ void StorageSystemProjectionParts::processNextStorage(
         if (columns_mask[src_index++])
         {
             if (part->default_codec)
-                columns[res_index++]->insert(part->default_codec->getCodecDesc()->formatForLogging());
+                columns[res_index++]->insert(queryToString(part->default_codec->getCodecDesc()));
             else
                 columns[res_index++]->insertDefault();
         }

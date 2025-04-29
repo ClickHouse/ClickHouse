@@ -1,9 +1,7 @@
 ---
-description: 'Step-by-step guide for building ClickHouse from source on Linux systems'
-sidebar_label: 'Build on Linux'
-sidebar_position: 10
 slug: /development/build
-title: 'How to Build ClickHouse on Linux'
+sidebar_position: 10
+sidebar_label: Build on Linux
 ---
 
 # How to Build ClickHouse on Linux
@@ -20,40 +18,38 @@ ClickHouse can be build on the following platforms:
 - s390/x (experimental)
 - RISC-V 64 (experimental)
 
-## Assumptions {#assumptions}
+## Assumptions
 
 The following tutorial is based on Ubuntu Linux but it should also work on any other Linux distribution with appropriate changes.
 The minimum recommended Ubuntu version for development is 24.04 LTS.
 
 The tutorial assumes that you have the ClickHouse repository and all submodules locally checked out.
 
-## Install Prerequisites {#install-prerequisites}
-
-First, see the generic [prerequisites documentation](developer-instruction.md).
+## Install Prerequisites
 
 ClickHouse uses CMake and Ninja for building.
 
 You can optionally install ccache to let the build reuse already compiled object files.
 
-```bash
+``` bash
 sudo apt-get update
 sudo apt-get install git cmake ccache python3 ninja-build nasm yasm gawk lsb-release wget software-properties-common gnupg
 ```
 
-## Install the Clang compiler {#install-the-clang-compiler}
+## Install the Clang compiler
 
 To install Clang on Ubuntu/Debian, use LLVM's automatic installation script from [here](https://apt.llvm.org/).
 
-```bash
+``` bash
 sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 ```
 
 For other Linux distributions, check if you can install any of LLVM's [prebuild packages](https://releases.llvm.org/download.html).
 
-As of March 2025, Clang 19 or higher is required.
+As of January 2025, Clang 18 or higher is required.
 GCC or other compilers are not supported.
 
-## Install the Rust compiler (optional) {#install-the-rust-compiler-optional}
+## Install the Rust compiler (optional)
 
 :::note
 Rust is an optional dependency of ClickHouse.
@@ -71,7 +67,7 @@ rustup toolchain install nightly-2024-12-01
 rustup default nightly-2024-12-01
 rustup component add rust-src
 ```
-## Build ClickHouse {#build-clickhouse}
+## Build ClickHouse
 
 We recommend to create a separate directory `build` inside `ClickHouse` which contains all build artifacts:
 
@@ -124,7 +120,7 @@ cmake --build build  # compile
 ```
 :::
 
-## Running the ClickHouse Executable {#running-the-clickhouse-executable}
+## Running the ClickHouse Executable
 
 After the build completed successfully, you find the executable in `ClickHouse/<build_dir>/programs/`:
 
@@ -139,7 +135,7 @@ If you get `Connection refused` message on macOS or FreeBSD, try specifying host
 clickhouse client --host 127.0.0.1
 ```
 
-## Advanced Options {#advanced-options}
+## Advanced Options
 
 ### Minimal Build {#minimal-build}
 
@@ -157,7 +153,7 @@ Rust requires an internet connection. To disable Rust support:
 cmake -DENABLE_RUST=OFF
 ```
 
-### Running the ClickHouse Executable {#running-the-clickhouse-executable-1}
+### Running the ClickHouse Executable
 
 You can replace the production version of ClickHouse binary installed in your system with the compiled ClickHouse binary.
 To do that, install ClickHouse on your machine following the instructions from the official website.
@@ -176,9 +172,9 @@ You can also run your custom-built ClickHouse binary with the config file from t
 ```bash
 sudo service clickhouse-server stop
 sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
-```
+````
 
-### Building on Any Linux {#building-on-any-linux}
+### Building on Any Linux
 
 Install prerequisites on OpenSUSE Tumbleweed:
 
@@ -201,20 +197,19 @@ cmake -S . -B build
 cmake --build build
 ```
 
-### Building in docker {#building-in-docker}
+### Building in docker
 
-You can run any build locally in an environment similar to CI using:
+We use the docker image `clickhouse/binary-builder` for builds in CI.
+It contains everything necessary to build the binary and packages.
+There is a script `docker/packager/packager` to ease the image usage:
 
 ```bash
-python -m ci.praktika "BUILD_JOB_NAME"
+# define a directory for the output artifacts
+output_dir="build_results"
+# a simplest build
+./docker/packager/packager --package-type=binary --output-dir "$output_dir"
+# build debian packages
+./docker/packager/packager --package-type=deb --output-dir "$output_dir"
+# by default, debian packages use thin LTO, so we can override it to speed up the build
+CMAKE_FLAGS='-DENABLE_THINLTO=' ./docker/packager/packager --package-type=deb --output-dir "./$(git rev-parse --show-cdup)/build_results"
 ```
-where BUILD_JOB_NAME is the job name as shown in the CI report, e.g., "Build (arm_release)", "Build (amd_debug)"
-
-This command pulls the appropriate Docker image `clickhouse/binary-builder` with all required dependencies,
-and runs the build script inside it: `./ci/jobs/build_clickhouse.py`
-
-The build output will be placed in `./ci/tmp/`.
-
-It works on both AMD and ARM architectures and requires no additional dependencies other than Docker.
-
-

@@ -4,12 +4,12 @@
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/IStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 
 #include <memory>
 namespace DB
@@ -18,8 +18,6 @@ namespace DB
 class ReadBufferIterator;
 class SchemaCache;
 class NamedCollection;
-struct StorageObjectStorageSettings;
-using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
 
 namespace ErrorCodes
 {
@@ -71,7 +69,6 @@ public:
         LoadingStrictnessLevel mode,
         bool distributed_processing_ = false,
         ASTPtr partition_by_ = nullptr,
-        bool is_table_function_ = false,
         bool lazy_init = false);
 
     String getName() const override;
@@ -141,10 +138,6 @@ public:
 
     void updateExternalDynamicMetadata(ContextPtr) override;
 
-    IDataLakeMetadata * getExternalMetadata() const;
-
-    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
-    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 protected:
     String getPathSample(ContextPtr context);
 
@@ -160,7 +153,6 @@ protected:
     const std::optional<FormatSettings> format_settings;
     const ASTPtr partition_by;
     const bool distributed_processing;
-    bool update_configuration_on_read;
 
     LoggerPtr log;
 };
@@ -176,11 +168,11 @@ public:
     using Paths = std::vector<Path>;
 
     static void initialize(
-        Configuration & configuration_to_initialize,
+        Configuration & configuration,
         ASTs & engine_args,
         ContextPtr local_context,
         bool with_table_structure,
-        StorageObjectStorageSettingsPtr settings);
+        StorageObjectStorageSettings * settings);
 
     /// Storage type: s3, hdfs, azure, local.
     virtual ObjectStorageType getType() const = 0;
@@ -227,23 +219,18 @@ public:
 
     virtual bool isDataLakeConfiguration() const { return false; }
 
-    virtual std::optional<size_t> totalRows() { return {}; }
-    virtual std::optional<size_t> totalBytes() { return {}; }
+    virtual void implementPartitionPruning(const ActionsDAG &) { }
 
     virtual bool hasExternalDynamicMetadata() { return false; }
 
-    virtual IDataLakeMetadata * getExternalMetadata() const { return nullptr; }
+    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String&) const { return {}; }
 
-    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String &) const { return {}; }
-
-    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String &) const { return {}; }
+    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String&) const { return {}; }
 
     virtual ColumnsDescription updateAndGetCurrentSchema(ObjectStoragePtr, ContextPtr)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateAndGetCurrentSchema is not supported by storage {}", getEngineName());
     }
-
-    virtual void modifyFormatSettings(FormatSettings &) const {}
 
     virtual ReadFromFormatInfo prepareReadingFromFormat(
         ObjectStoragePtr object_storage,
@@ -255,12 +242,7 @@ public:
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
 
     virtual bool supportsFileIterator() const { return false; }
-    virtual bool supportsWrites() const { return true; }
-
-    virtual ObjectIterator iterate(
-        const ActionsDAG * /* filter_dag */,
-        std::function<void(FileProgress)> /* callback */,
-        size_t /* list_batch_size */)
+    virtual ObjectIterator iterate()
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }
@@ -271,7 +253,6 @@ public:
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
 
-    const StorageObjectStorageSettings & getSettingsRef() const;
 
 protected:
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
@@ -281,7 +262,8 @@ protected:
 
     bool initialized = false;
 
-    StorageObjectStorageSettingsPtr storage_settings;
+    bool allow_dynamic_metadata_for_data_lakes = false;
+    bool allow_experimental_delta_kernel_rs = false;
 };
 
 }

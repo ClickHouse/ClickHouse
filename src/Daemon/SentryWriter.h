@@ -1,7 +1,5 @@
 #pragma once
 
-#include "config.h"
-
 #include <string>
 #include <Common/StackTrace.h>
 
@@ -51,13 +49,12 @@ public:
     ~SentryWriter();
 
 private:
-    explicit SentryWriter(Poco::Util::LayeredConfiguration & config);
-
-#if USE_SENTRY
     static std::unique_ptr<SentryWriter> instance;
     bool initialized = false;
     bool anonymize = false;
     std::string server_data_path;
+
+    explicit SentryWriter(Poco::Util::LayeredConfiguration & config);
 
     enum Type
     {
@@ -74,5 +71,4 @@ private:
         const FramePointers & frame_pointers,
         size_t offset,
         size_t size);
-#endif
 };

@@ -1,16 +1,15 @@
 ---
-description: 'Documentation for the RawBLOB format'
-keywords: ['RawBLOB']
+title : RawBLOB
 slug: /interfaces/formats/RawBLOB
-title: 'RawBLOB'
+keywords : [RawBLOB]
 ---
 
-## Description {#description}
+## Description
 
-The `RawBLOB` formats reads all input data to a single value. It is possible to parse only a table with a single field of type [`String`](/sql-reference/data-types/string.md) or similar.
+The `RawBLOB` formats reads all input data to a single value. It is possible to parse only a table with a single field of type [`String`](/docs/sql-reference/data-types/string.md) or similar.
 The result is output as a binary format without delimiters and escaping. If more than one value is output, the format is ambiguous, and it will be impossible to read the data back.
 
-### Raw Formats Comparison {#raw-formats-comparison}
+### Raw Formats Comparison
 
 Below is a comparison of the formats `RawBLOB` and [`TabSeparatedRaw`](./TabSeparated/TabSeparatedRaw.md).
 
@@ -38,7 +37,7 @@ When empty data is passed to the `RawBLOB` input, ClickHouse throws an exception
 Code: 108. DB::Exception: No data to insert
 ```
 
-## Example Usage {#example-usage}
+## Example Usage
 
 ```bash title="Query"
 $ clickhouse-client --query "CREATE TABLE {some_table} (a String) ENGINE = Memory;"
@@ -50,4 +49,4 @@ $ clickhouse-client --query "SELECT * FROM {some_table} FORMAT RawBLOB" | md5sum
 f9725a22f9191e064120d718e26862a9  -
 ```
 
-## Format Settings {#format-settings}
+## Format Settings

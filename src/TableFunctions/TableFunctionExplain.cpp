@@ -1,20 +1,19 @@
-#include <Analyzer/TableFunctionNode.h>
 #include <Core/Settings.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/InterpreterExplainQuery.h>
-#include <Interpreters/InterpreterSetQuery.h>
-#include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Parsers/queryToString.h>
 #include <Storages/StorageValues.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/InterpreterExplainQuery.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -88,7 +87,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
     if (!kind_literal || kind_literal->value.getType() != Field::Types::String)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table function '{}' requires a String argument for EXPLAIN kind, got '{}'",
-            getName(), kind_arg->formatForErrorMessage());
+            getName(), queryToString(kind_arg));
 
     ASTExplainQuery::ExplainKind kind = ASTExplainQuery::fromString(kind_literal->value.safeGet<String>());
     auto explain_query = std::make_shared<ASTExplainQuery>(kind);
@@ -97,7 +96,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
     if (!settings_arg || settings_arg->value.getType() != Field::Types::String)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table function '{}' requires a serialized string settings argument, got '{}'",
-            getName(), function->arguments->children[1]->formatForErrorMessage());
+            getName(), queryToString(function->arguments->children[1]));
 
     const auto & settings_str = settings_arg->value.safeGet<String>();
     if (!settings_str.empty())
@@ -119,7 +118,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
         if (!subquery)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Table function '{}' requires a subquery argument, got '{}'",
-                getName(), subquery_arg->formatForErrorMessage());
+                getName(), queryToString(subquery_arg));
 
         if (subquery->children.empty())
             throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
@@ -130,7 +129,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
         if (!query_arg->as<ASTSelectWithUnionQuery>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Table function '{}' requires a EXPLAIN's SELECT query argument, got '{}'",
-                getName(), query_arg->formatForErrorMessage());
+                getName(), queryToString(query_arg));
 
         explain_query->setExplainedQuery(query_arg);
     }
@@ -193,7 +192,7 @@ InterpreterExplainQuery TableFunctionExplain::getInterpreter(ContextPtr context)
     if (!query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function '{}' requires a explain query argument", getName());
 
-    return InterpreterExplainQuery(query, context, SelectQueryOptions{});
+    return InterpreterExplainQuery(query, context);
 }
 
 }
@@ -208,8 +207,7 @@ void registerTableFunctionExplain(TableFunctionFactory & factory)
                 Example:
                 [example:1]
                 )",
-            .examples={{"1", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'", ""}},
-            .category = FunctionDocumentation::Category::TableFunction
+            .examples={{"1", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'", ""}}
         }});
 }
 

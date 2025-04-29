@@ -1,12 +1,11 @@
 ---
-description: 'Documentation for the CustomSeparatedIgnoreSpacesWithNames format'
-keywords: ['CustomSeparatedIgnoreSpacesWithNames']
+title : CustomSeparatedIgnoreSpacesWithNames
 slug: /interfaces/formats/CustomSeparatedIgnoreSpacesWithNames
-title: 'CustomSeparatedIgnoreSpacesWithNames'
+keywords : [CustomSeparatedIgnoreSpacesWithNames]
 ---
 
-## Description {#description}
+## Description
 
-## Example Usage {#example-usage}
+## Example Usage
 
-## Format Settings {#format-settings}
+## Format Settings

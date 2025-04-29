@@ -78,17 +78,13 @@ void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams &
     if (!params.isCollectionAndUseEnabled())
         return;
 
-    const auto ht_size = hash_joins.at(0)->data->getTotalRowCount();
-    if (!std::ranges::all_of(hash_joins, [&](const auto & hash_join) { return hash_join->data->getTotalRowCount() == ht_size; }))
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "HashJoin instances have different sizes");
-
-    const auto source_rows = std::accumulate(
-        hash_joins.begin(),
-        hash_joins.end(),
-        0ull,
-        [](auto acc, const auto & hash_join) { return acc + hash_join->data->getJoinedData()->rows_to_join; });
-    if (ht_size)
-        DB::getHashTablesStatistics<DB::HashJoinEntry>().update({.ht_size = ht_size, .source_rows = source_rows}, params);
+    std::vector<size_t> sizes(hash_joins.size());
+    for (size_t i = 0; i < hash_joins.size(); ++i)
+        sizes[i] = hash_joins[i]->data->getTotalRowCount();
+    const auto median_size = sizes.begin() + sizes.size() / 2; // not precisely though...
+    std::nth_element(sizes.begin(), median_size, sizes.end());
+    if (auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull))
+        DB::getHashTablesStatistics().update(sum_of_sizes, *median_size, params);
 }
 
 UInt32 toPowerOfTwo(UInt32 x)
@@ -105,11 +101,11 @@ HashJoin::RightTableDataPtr getData(const std::shared_ptr<ConcurrentHashJoin::In
 
 void reserveSpaceInHashMaps(HashJoin & hash_join, size_t ind, const StatsCollectingParams & stats_collecting_params, size_t slots)
 {
-    if (auto hint = getSizeHint(stats_collecting_params))
+    if (auto hint = getSizeHint(stats_collecting_params, slots))
     {
         /// Hash map is shared between all `HashJoin` instances, so the `median_size` is actually the total size
         /// we need to preallocate in all buckets of all hash maps.
-        const size_t reserve_size = hint->ht_size;
+        const size_t reserve_size = hint->median_size;
 
         /// Each `HashJoin` instance will "own" a subset of buckets during the build phase. Because of that
         /// we preallocate space only in the specific buckets of each `HashJoin` instance.
@@ -156,7 +152,6 @@ ConcurrentHashJoin::ConcurrentHashJoin(
     bool any_take_last_row_)
     : table_join(table_join_)
     , slots(toPowerOfTwo(std::min<UInt32>(static_cast<UInt32>(slots_), 256)))
-    , any_take_last_row(any_take_last_row_)
     , pool(std::make_unique<ThreadPool>(
           CurrentMetrics::ConcurrentHashJoinPoolThreads,
           CurrentMetrics::ConcurrentHashJoinPoolThreadsActive,
@@ -209,8 +204,7 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
         if (!hash_joins[0]->data->twoLevelMapIsUsed())
             return;
 
-        if (build_phase_finished)
-            updateStatistics(hash_joins, stats_collecting_params);
+        updateStatistics(hash_joins, stats_collecting_params);
 
         for (size_t i = 0; i < slots; ++i)
         {
@@ -256,7 +250,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     size_t blocks_left = 0;
     for (const auto & block : dispatched_blocks)
     {
-        if (block.rows())
+        if (block)
         {
             ++blocks_left;
         }
@@ -270,7 +264,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
             auto & hash_join = hash_joins[i];
             auto & dispatched_block = dispatched_blocks[i];
 
-            if (dispatched_block.rows())
+            if (dispatched_block)
             {
                 /// if current hash_join is already processed by another thread, skip it and try later
                 std::unique_lock<std::mutex> lock(hash_join->mutex, std::try_to_lock);
@@ -584,11 +578,7 @@ IQueryTreeNode::HashState preCalculateCacheKey(const QueryTreeNodePtr & right_ta
 
 UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode::HashState hash)
 {
-    // This condition is always true for ConcurrentHashJoin (see `TableJoin::allowParallelHashJoin()`),
-    // but this method is called from generic code.
-    if (!table_join || !table_join->oneDisjunct())
-        return 0;
-
+    chassert(table_join && table_join->oneDisjunct());
     const auto keys
         = NameOrderedSet{table_join->getClauses().at(0).key_names_right.begin(), table_join->getClauses().at(0).key_names_right.end()};
     for (const auto & name : keys)
@@ -648,8 +638,6 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
             hash_joins[i]->data->getUsedFlags() = hash_joins[0]->data->getUsedFlags();
         }
     }
-
-    build_phase_finished = true;
 }
 }
 

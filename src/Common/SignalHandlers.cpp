@@ -201,12 +201,6 @@ static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
 
     char buf[signal_pipe_buf_size];
     auto & signal_pipe = HandledSignals::instance().signal_pipe;
-
-    /// Signal pipe can be already closed in BaseDaemon::~BaseDaemon, but
-    /// sanitizerDeathCallback() can be called on exit handlers.
-    if (signal_pipe.fds_rw[1] == -1)
-        return;
-
     WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
 
     const StackTrace stack_trace;
@@ -585,8 +579,10 @@ try
         /// Advice the user to send it manually.
         if (std::string_view(VERSION_OFFICIAL).contains("official build"))
         {
+            const auto & date_lut = DateLUT::instance();
+
             /// Approximate support period, upper bound.
-            if (time(nullptr) - makeDate(DateLUT::instance(), 2000 + VERSION_MAJOR, VERSION_MINOR, 1) < (365 + 30) * 86400)
+            if (time(nullptr) - date_lut.makeDate(2000 + VERSION_MAJOR, VERSION_MINOR, 1) < (365 + 30) * 86400)
             {
                 LOG_FATAL(log, "Report this error to https://github.com/ClickHouse/ClickHouse/issues");
             }

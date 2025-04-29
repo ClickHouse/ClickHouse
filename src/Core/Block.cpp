@@ -3,7 +3,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
 #include <Core/Block.h>
-#include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <IO/Operators.h>
@@ -17,7 +16,6 @@
 #include <ranges>
 
 #include <boost/algorithm/string.hpp>
-#include <fmt/ranges.h>
 
 
 namespace DB
@@ -299,7 +297,7 @@ const ColumnWithTypeAndName & Block::safeGetByPosition(size_t position) const
 }
 
 
-const ColumnWithTypeAndName * Block::findByName(std::string_view name, bool case_insensitive) const
+const ColumnWithTypeAndName * Block::findByName(const std::string & name, bool case_insensitive) const
 {
     if (case_insensitive)
     {
@@ -317,11 +315,6 @@ const ColumnWithTypeAndName * Block::findByName(std::string_view name, bool case
         return nullptr;
     }
     return &data[it->second];
-}
-
-const ColumnWithTypeAndName * Block::findByName(const std::string & name, bool case_insensitive) const
-{
-    return findByName(std::string_view{name}, case_insensitive);
 }
 
 std::optional<ColumnWithTypeAndName> Block::findSubcolumnByName(const std::string & name) const
@@ -391,22 +384,23 @@ ColumnWithTypeAndName Block::getColumnOrSubcolumnByName(const std::string & name
 bool Block::has(const std::string & name, bool case_insensitive) const
 {
     if (case_insensitive)
-        return std::ranges::find_if(data, [&](const auto & column) { return boost::iequals(column.name, name); }) != data.end();
-    else
-        return index_by_name.find(name) != index_by_name.end();
+        return std::find_if(data.begin(), data.end(), [&](const auto & column) { return boost::iequals(column.name, name); })
+            != data.end();
+
+    return index_by_name.end() != index_by_name.find(name);
 }
 
 
-size_t Block::getPositionByName(const std::string & name, bool case_insensitive) const
+size_t Block::getPositionByName(const std::string & name) const
 {
-    auto matcher
-        = [&](const auto & column) { return case_insensitive ? boost::iequals(column.name, name) : boost::equals(column.name, name); };
-    auto found = std::find_if(data.begin(), data.end(), matcher);
-    if (found == data.end())
-        throw Exception(
-            ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Not found column {} in block. There are only columns: {}", name, dumpNames());
-    return found - data.begin();
+    auto it = index_by_name.find(name);
+    if (index_by_name.end() == it)
+        throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Not found column {} in block. There are only columns: {}",
+            name, dumpNames());
+
+    return it->second;
 }
+
 
 void Block::checkNumberOfRows(bool allow_null_columns) const
 {
