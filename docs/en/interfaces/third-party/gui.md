@@ -56,7 +56,7 @@ Features:
 - 🔒 Secure connection to ClickHouse with TLS support
 - 📱 Responsive web interface for all devices
 
-[ClickHouse Schema Flow Visualizer - sorce code](https://github.com/FulgerX2007/clickhouse-schemaflow-visualizer)
+[ClickHouse Schema Flow Visualizer - source code](https://github.com/FulgerX2007/clickhouse-schemaflow-visualizer)
 
 ### Tabix {#tabix}
 
