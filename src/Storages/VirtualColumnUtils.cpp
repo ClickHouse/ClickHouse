@@ -170,19 +170,19 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
 {
     VirtualColumnsDescription desc;
 
-    auto add_virtual = [&](const NameAndTypePair & pair, bool prefer_virtual_column) /// By using prefer_virtual_column we define whether we will overwrite the storage column with the virtual one
+    auto add_virtual = [&](const NameAndTypePair & pair, bool allow_duplicate)
     {
         const auto & name = pair.getNameInStorage();
         const auto & type = pair.getTypeInStorage();
         if (storage_columns.has(name))
         {
-            if (!prefer_virtual_column)
+            if (!allow_duplicate)
                 return;
 
             if (storage_columns.size() == 1)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot use hive partitioning for file {}: it contains only partition columns. Disable use_hive_partitioning setting to read/write this file", path);
+
             auto local_type = storage_columns.get(name).type;
-            storage_columns.remove(name);
             desc.addEphemeral(name, local_type, "");
             return;
         }

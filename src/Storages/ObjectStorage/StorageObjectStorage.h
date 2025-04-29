@@ -14,13 +14,13 @@
 #include <memory>
 namespace DB
 {
-
 class ReadBufferIterator;
 class SchemaCache;
 class NamedCollection;
 struct StorageObjectStorageSettings;
 using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
 struct PartitionStrategy;
+struct FileLikeStorageFilepathGenerator;
 
 namespace ErrorCodes
 {
@@ -146,9 +146,6 @@ public:
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
-    StorageInMemoryMetadata getInMemoryMetadata() const override;
-
-    StorageMetadataPtr getInMemoryMetadataPtr() const override;
 protected:
     String getPathSample(ContextPtr context);
 
@@ -166,9 +163,6 @@ protected:
     bool update_configuration_on_read;
 
     LoggerPtr log;
-
-private:
-    StorageMetadataPtr metadata_with_partition_columns;
 };
 
 class StorageObjectStorage::Configuration
@@ -282,6 +276,7 @@ public:
      */
     bool partition_columns_in_data_file = false;
     std::shared_ptr<PartitionStrategy> partition_strategy;
+    std::shared_ptr<FileLikeStorageFilepathGenerator> partitioned_filepath_generator;
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
 

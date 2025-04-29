@@ -130,10 +130,6 @@ StorageObjectStorage::StorageObjectStorage(
         }
     };
 
-    StorageInMemoryMetadata metadata;
-    metadata.setConstraints(constraints_);
-    metadata.setComment(comment);
-
     NamesAndTypesList partition_columns;
 
     // perhaps it is worth adding some extra safeguards for cases like
@@ -141,14 +137,6 @@ StorageObjectStorage::StorageObjectStorage(
     // create table s3_table engine=s3(partition_strategy='hive'); -- partition strategy set, but no partition expression
     if (configuration->partition_strategy)
     {
-        /*
-         * I am assuming it is impossible to have a `partition by` clause without specifying the schema and the format
-         */
-        chassert(!columns.empty());
-        chassert(!configuration->format.empty());
-        metadata.setColumns(columns);
-
-        metadata_with_partition_columns = std::make_shared<const StorageInMemoryMetadata>(metadata);
         partition_columns = configuration->partition_strategy->getPartitionColumns();
     }
 
@@ -157,11 +145,19 @@ StorageObjectStorage::StorageObjectStorage(
 
     std::string sample_path;
 
+    StorageInMemoryMetadata metadata;
+    metadata.setConstraints(constraints_);
+    metadata.setComment(comment);
+
     if (needs_to_resolve_schema_or_format)
     {
         ColumnsDescription resolved_columns;
         resolveSchemaAndFormat(resolved_columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
         metadata.setColumns(resolved_columns);
+    }
+    else
+    {
+        metadata.setColumns(columns);
     }
 
     configuration->check(context);
@@ -263,33 +259,6 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
 {
     configuration->update(object_storage, query_context);
     return configuration->totalBytes();
-}
-
-StorageInMemoryMetadata StorageObjectStorage::getInMemoryMetadata() const
-{
-    /// If the table is partitioned, there is a chance the partition columns are treated as virtual columns (e.g, hive partitioning).
-    /// In this case, the instance metadata ptr does not have the partition columns. This is a problem if we want to support writes
-    /// since `IStorage::getInMemoryMetadata` is used to determine the table schema for insert queries.
-    /// Perhaps an alternative would be: do not remove partition columns from storage metadata?
-    if (configuration->partition_strategy)
-    {
-        return *metadata_with_partition_columns;
-    }
-
-    return IStorage::getInMemoryMetadata();
-}
-
-StorageMetadataPtr StorageObjectStorage::getInMemoryMetadataPtr() const
-{
-    /// If the table is partitioned, there is a chance the partition columns are treated as virtual columns (e.g, hive partitioning).
-    /// In this case, the instance metadata ptr does not have the partition columns. This is a problem if we want to support writes
-    /// since `IStorage::getInMemoryMetadata` is used to determine the table schema for insert queries.
-    if (configuration->partition_strategy)
-    {
-        return metadata_with_partition_columns;
-    }
-
-    return IStorage::getInMemoryMetadataPtr();
 }
 
 namespace

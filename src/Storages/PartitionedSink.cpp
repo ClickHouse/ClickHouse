@@ -21,7 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;
-    extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
 PartitionedSink::PartitionedSink(
@@ -60,7 +60,7 @@ void PartitionedSink::consume(Chunk & source_chunk)
 
     if (columns_to_consume.empty())
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        throw Exception(ErrorCodes::INCORRECT_DATA,
                         "No column to write as all columns are specified as partition columns. "
                         "Consider setting `partition_columns_in_data_file=1`");
     }
