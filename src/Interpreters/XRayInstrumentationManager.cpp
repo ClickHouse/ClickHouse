@@ -351,7 +351,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
         element.event_time_microseconds = Decimal64(now_us);
         /// TODO for Alina: fill the duration once the exit event is triggered
         /// by doing end_time - start_time.
-        /// element.duration = ?;
+        /// element.duration_microseconds = ?;
         element.query_id = CurrentThread::isInitialized() ? CurrentThread::getQueryId() : "";
         element.function_id = FuncId;
         log->add(std::move(element));

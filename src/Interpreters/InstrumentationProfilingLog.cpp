@@ -23,7 +23,7 @@ ColumnsDescription InstrumentationProfilingLogElement::getColumnsDescription()
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Timestamp of the sampling moment with microseconds precision"},
         {"name", std::make_shared<DataTypeString>(), "Name of the instrumented function."},
         {"tid", std::make_shared<DataTypeUInt64>(), "Thread ID."},
-        {"duration", std::make_shared<DataTypeUInt64>(), "Time the function was running for."},
+        {"duration_microseconds", std::make_shared<DataTypeUInt64>(), "Time the function was running for in microseconds."},
         {"query_id", std::make_shared<DataTypeString>(), "Query identifier that can be used to get details about a query that was running from the query_log system table."},
         {"function_id", std::make_shared<DataTypeInt32>(), "ID assigned to the function in xray_instr_map section of elf-binary."},
     };
@@ -39,7 +39,7 @@ void InstrumentationProfilingLogElement::appendToBlock(MutableColumns & columns)
     columns[i++]->insert(event_time_microseconds);
     columns[i++]->insert(function_name);
     columns[i++]->insert(tid);
-    columns[i++]->insert(duration);
+    columns[i++]->insert(duration_microseconds);
     columns[i++]->insert(query_id);
     columns[i++]->insert(function_id);
 }
