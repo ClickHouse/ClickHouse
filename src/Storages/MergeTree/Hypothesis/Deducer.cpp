@@ -1,23 +1,28 @@
 #include "Deducer.hpp"
 #include <iterator>
+#include <string_view>
 
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <base/StringRef.h>
 #include <Poco/Exception.h>
 #include "Common/Logger.h"
+#include "Common/Volnitsky.h"
 #include "Common/logger_useful.h"
+#include "Columns/ColumnArray.h"
+#include "Columns/ColumnString.h"
+#include "Columns/ColumnVector.h"
 #include "Columns/IColumn.h"
 #include "Columns/IColumn_fwd.h"
 #include "Core/ColumnWithTypeAndName.h"
+#include "Core/ColumnsWithTypeAndName.h"
+#include "DataTypes/DataTypeArray.h"
+#include "DataTypes/DataTypeString.h"
+#include "DataTypes/DataTypesNumber.h"
+#include "Functions/FunctionFactory.h"
 #include "Interpreters/Context.h"
 #include "Interpreters/InterpreterSelectQuery.h"
-#include "Parsers/ParserQuery.h"
-#include "Parsers/TokenIterator.h"
 #include "Processors/Executors/PullingPipelineExecutor.h"
-#include "Processors/Sources/SourceFromSingleChunk.h"
-#include "QueryPipeline/Pipe.h"
-#include "QueryPipeline/QueryPipelineBuilder.h"
 #include "Storages/MergeTree/Hypothesis/Token.hpp"
 
 namespace
@@ -77,111 +82,111 @@ private:
     std::vector<std::vector<ColumnEntry>> entries;
 };
 
-DB::Block executeQuery(std::string_view query_text, const DB::Block & input, DB::ContextPtr context)
+std::vector<DB::ColumnPtr> transformBlock(
+    const DB::Block & block,
+    const std::vector<std::pair<size_t, size_t>> col_transformer_pairs,
+    const std::vector<DB::FunctionBasePtr> & transformers_fn,
+    size_t rows)
 {
-    DB::Tokens tokens(query_text.data(), query_text.data() + query_text.size());
-    DB::IParser::Pos token_iterator(tokens, 100, 100);
-    DB::ParserQuery parser(query_text.data() + query_text.size(), false, true);
-    DB::ASTPtr query;
-    DB::Expected expected;
-    if (!parser.parse(token_iterator, query, expected))
+    auto data_type_string = std::make_shared<DB::DataTypeString>();
+    std::vector<DB::ColumnPtr> result;
+    for (const auto & [col, transformer_idx] : col_transformer_pairs)
     {
-        throw Poco::Exception(fmt::format("Bad query: {}", query_text));
+        DB::ColumnsWithTypeAndName arguments{block.getByPosition(col).cloneEmpty()};
+        arguments.front().column = block.getByPosition(col).column->cut(0, rows);
+
+        auto res = transformers_fn[transformer_idx]->execute(arguments, data_type_string, rows, false);
+        result.push_back(res);
     }
-    DB::Block block(input.cloneWithoutColumns());
-    block.setColumns(input.getColumns());
-    DB::Pipe pipe(std::make_shared<DB::SourceFromSingleChunk>(std::move(block)));
-    DB::InterpreterSelectQuery select(query, context, std::move(pipe), DB::SelectQueryOptions());
-    auto pipeline_builder = select.buildQueryPipeline();
-    auto pipeline = DB::QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
-    DB::PullingPipelineExecutor executor(pipeline);
-    DB::Block res;
-    if (!executor.pull(res))
-    {
-        throw Poco::Exception("Hypothesis pipeline is broken");
-    }
-    if (executor.pull(res))
-    {
-        throw Poco::Exception("More data is not expected");
-    }
-    return res;
+    return result;
 }
 
 void fillColumnsEntries(const DB::Block & block, size_t deduce_col_idx, std::vector<ColumnEntries> & column_entries_vec, LoggerPtr)
 {
-    auto deduce_col_name = block.getByPosition(deduce_col_idx).name;
     DB::ContextPtr context = DB::Context::getGlobalContextInstance();
-    // TODO(azakarka) aho corasick
+    // input: n columns
+    // output: nxm columns of transformers
+    auto data_type_string = std::make_shared<DB::DataTypeString>();
+    auto data_type_array_of_strings = std::make_shared<DB::DataTypeArray>(data_type_string);
+    auto data_type_array_of_ints = std::make_shared<DB::DataTypeArray>(std::make_shared<DB::DataTypeUInt32>());
+    auto & function_factory = DB::FunctionFactory::instance();
+
+    std::vector<DB::FunctionBasePtr> transformers_fn;
+    {
+        DB::ColumnsWithTypeAndName arguments{DB::ColumnWithTypeAndName(data_type_string, /*name_=*/"test")};
+        for (const auto & transformer : transformers)
+        {
+            transformers_fn.push_back(function_factory.get(transformer, context)->build(arguments));
+        }
+    }
+    std::vector<std::pair<size_t, size_t>> permited_pairs;
     for (size_t col = 0; col < block.columns(); ++col)
     {
         if (col == deduce_col_idx)
         {
             continue;
         }
-        auto col_name = block.getByPosition(col).name;
-
-        // multisearch stage
-        std::string multisearch_query;
-        for (size_t i = 0; i < transformers.size(); ++i)
-        {
-            multisearch_query += fmt::format("{}({})", transformers[i], block.getByPosition(col).name);
-            if (i + 1 != transformers.size())
-                multisearch_query += ", ";
-        }
-        multisearch_query = fmt::format("multiSearchAllPositions({}, [{}]) as __inds", deduce_col_name, multisearch_query);
-        auto multisearch_res = executeQuery(multisearch_query, block, context);
         for (size_t transformer_idx = 0; transformer_idx < transformers.size(); ++transformer_idx)
         {
-            // collect indexes
+            permited_pairs.emplace_back(col, transformer_idx);
+        }
+    }
+    {
+        std::vector<DB::ColumnPtr> all_transformed = transformBlock(block, permited_pairs, transformers_fn, 1);
+        auto needles_col = DB::ColumnString::create();
+        for (const auto & column : all_transformed)
+        {
+            auto str = column->getDataAt(0);
+            needles_col->insertData(str.data, str.size);
+        }
+        auto offsets_col = DB::ColumnVector<DB::ColumnArray::Offset>::create();
+        offsets_col->insertValue(all_transformed.size());
+        auto needles_arr = DB::ColumnArray::create(std::move(needles_col), std::move(offsets_col));
+        DB::ColumnsWithTypeAndName multi_search_args{
+            block.getByPosition(deduce_col_idx).cloneEmpty(), DB::ColumnWithTypeAndName(data_type_array_of_strings, "needles")};
+        multi_search_args.front().column = block.getByPosition(deduce_col_idx).column->cut(0, 1);
+        multi_search_args.back().column = needles_arr->getPtr();
 
-            DB::ColumnWithTypeAndName occurence_col;
+        auto multi_search_fn = function_factory.get("multiSearchAllPositions", context)->build(multi_search_args);
+        auto search_res = multi_search_fn->execute(multi_search_args, data_type_array_of_ints, 1, false);
+        const DB::ColumnArray * array_col = typeid_cast<const DB::ColumnArray *>(search_res.get());
+        const DB::ColumnVector<UInt64> * data_col = typeid_cast<const DB::ColumnVector<UInt64> *>(&array_col->getData());
+        std::vector<std::pair<size_t, size_t>> new_permited_pairs;
+        for (size_t i = 0; i < permited_pairs.size(); ++i)
+        {
+            size_t occurence_idx = data_col->getUInt(i);
+            if (occurence_idx != 0)
             {
-                auto tmp_res
-                    = executeQuery(fmt::format("arrayElement(__inds, {}) as __idx", transformer_idx + 1), multisearch_res, context);
-                occurence_col = tmp_res.getByPosition(0);
+                new_permited_pairs.push_back(permited_pairs[i]);
             }
-            // check if all have occurence
+        }
+        permited_pairs = std::move(new_permited_pairs);
+    }
+    auto transformed = transformBlock(block, permited_pairs, transformers_fn, block.rows());
+    for (size_t i = 0; i < permited_pairs.size(); ++i)
+    {
+        const auto [col, transformer_idx] = permited_pairs[i];
+        for (size_t row = 0; row < block.rows(); ++row)
+        {
+            std::string_view haystack = block.getByPosition(deduce_col_idx).column->getDataAt(row).toView();
+            std::string_view needle = transformed[i]->getDataAt(row).toView();
+            DB::Volnitsky searcher(needle.data(), needle.size());
+            size_t last_occurence = 0;
+            while (true)
             {
-                auto tmp_res = executeQuery("sum(__idx = 0) > 0 as __should_skip", DB::Block({occurence_col}), context);
-                if (tmp_res.getByName("__should_skip").column->getBool(0))
+                const char * stop = searcher.search(haystack.data() + last_occurence, haystack.size() - last_occurence);
+                last_occurence = stop - haystack.data();
+                if (last_occurence == haystack.size())
                 {
-                    continue;
+                    break;
                 }
-            }
-            DB::ColumnPtr length_col;
-            {
-                auto tmp_res = executeQuery(fmt::format("length({}({}))", transformers[transformer_idx], col_name), block, context);
-                length_col = tmp_res.getByPosition(0).column;
-            }
-            for (size_t row = 0; row < block.rows(); ++row)
-            {
-                auto occurence_idx = occurence_col.column->getUInt(row);
-                auto len = length_col->getUInt(row);
-                while (true)
-                {
-                    column_entries_vec[row].addEntry(
-                        ColumnEntries::ColumnEntry{.length = len, .col_idx = col, .transformer_idx = transformer_idx}, occurence_idx - 1);
-                    auto transformer_expr = fmt::format("{}({})", transformers[transformer_idx], col_name);
-                    auto res = executeQuery(
-                        fmt::format(
-                            "position({}, {}, {}), length({})", deduce_col_name, transformer_expr, occurence_idx + 1, transformer_expr),
-                        block,
-                        context);
-                    // TODO fixme later:
-                    if (auto new_pos = res.getByPosition(0).column->getUInt(row); new_pos == 0)
-                    {
-                        break;
-                    }
-                    else
-                    {
-                        occurence_idx = new_pos;
-                        len = res.getByPosition(1).column->getUInt(row);
-                    }
-                }
+                column_entries_vec[row].addEntry(
+                    ColumnEntries::ColumnEntry{.length = needle.size(), .col_idx = col, .transformer_idx = transformer_idx},
+                    last_occurence);
+                ++last_occurence;
             }
         }
     }
-
     for (size_t row = 0; row < block.rows(); ++row)
     {
         column_entries_vec[row].sortEntries();

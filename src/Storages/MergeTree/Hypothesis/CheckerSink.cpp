@@ -52,10 +52,10 @@ void CheckerSink::consume(Chunk & chunk)
 
         {
             // Some testing
-            std::string query_text = fmt::format("sum({} = {}) as res", hypothesis.toString(), hypothesis.getName());
+            std::string query_text = fmt::format("min({} = {}) = 1 as res", hypothesis.toString(), hypothesis.getName());
             Tokens tokens(query_text.data(), query_text.data() + query_text.size());
             IParser::Pos token_iterator(tokens, 100, 100);
-            ParserQuery parser(query_text.data() + query_text.size(), false, true);
+            ParserQuery parser(query_text.data() + query_text.size(), false, /*implicit_select_=*/true);
             ASTPtr query;
             Expected expected;
             if (!parser.parse(token_iterator, query, expected))
@@ -76,7 +76,7 @@ void CheckerSink::consume(Chunk & chunk)
                 LOG_ERROR(log, "Hypothesis pipeline is broken");
                 return;
             }
-            is_ok = res.getByName("res").column->getUInt(0) == chunk.getNumRows();
+            is_ok = res.getByName("res").column->getBool(0);
         }
         if (!is_ok)
         {
