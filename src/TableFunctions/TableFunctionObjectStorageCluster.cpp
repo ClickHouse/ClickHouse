@@ -70,9 +70,11 @@ void registerTableFunctionObjectStorageCluster(TableFunctionFactory & factory)
     {
         .documentation = {
             .description=R"(The table function can be used to read the data stored on S3 in parallel for many nodes in a specified cluster.)",
-            .examples{{"s3Cluster", "SELECT * FROM  s3Cluster(cluster, url, format, structure)", ""}}},
-            .allow_readonly = false
-        }
+            .examples{{"s3Cluster", "SELECT * FROM  s3Cluster(cluster, url, format, structure)", ""}},
+            .category = FunctionDocumentation::Category::TableFunction
+        },
+        .allow_readonly = false
+    }
     );
 #endif
 
@@ -84,9 +86,11 @@ void registerTableFunctionObjectStorageCluster(TableFunctionFactory & factory)
             .examples{{
                 "azureBlobStorageCluster",
                 "SELECT * FROM  azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, "
-                "[account_name, account_key, format, compression, structure])", ""}}},
-            .allow_readonly = false
-        }
+                "[account_name, account_key, format, compression, structure])", ""}},
+            .category = FunctionDocumentation::Category::TableFunction
+        },
+        .allow_readonly = false
+    }
     );
 #endif
 
@@ -95,9 +99,11 @@ void registerTableFunctionObjectStorageCluster(TableFunctionFactory & factory)
     {
         .documentation = {
             .description=R"(The table function can be used to read the data stored on HDFS in parallel for many nodes in a specified cluster.)",
-            .examples{{"HDFSCluster", "SELECT * FROM HDFSCluster(cluster, uri, format)", ""}}},
-            .allow_readonly = false
-        }
+            .examples{{"HDFSCluster", "SELECT * FROM HDFSCluster(cluster, uri, format)", ""}},
+            .category = FunctionDocumentation::Category::TableFunction
+        },
+        .allow_readonly = false
+    }
     );
 #endif
 
@@ -115,7 +121,7 @@ void registerTableFunctionIcebergCluster(TableFunctionFactory & factory)
         {.documentation
          = {.description = R"(The table function can be used to read the Iceberg table stored on S3 object store in parallel for many nodes in a specified cluster.)",
             .examples{{"icebergS3Cluster", "SELECT * FROM icebergS3Cluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])", ""}},
-            .category{""}},
+            .category = FunctionDocumentation::Category::TableFunction},
          .allow_readonly = false});
 #endif
 
@@ -124,7 +130,7 @@ void registerTableFunctionIcebergCluster(TableFunctionFactory & factory)
         {.documentation
          = {.description = R"(The table function can be used to read the Iceberg table stored on Azure object store in parallel for many nodes in a specified cluster.)",
             .examples{{"icebergAzureCluster", "SELECT * FROM icebergAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])", ""}},
-            .category{""}},
+            .category = FunctionDocumentation::Category::TableFunction},
          .allow_readonly = false});
 #endif
 
@@ -133,7 +139,7 @@ void registerTableFunctionIcebergCluster(TableFunctionFactory & factory)
         {.documentation
          = {.description = R"(The table function can be used to read the Iceberg table stored on HDFS virtual filesystem in parallel for many nodes in a specified cluster.)",
             .examples{{"icebergHDFSCluster", "SELECT * FROM icebergHDFSCluster(cluster, uri, [format], [structure], [compression_method])", ""}},
-            .category{""}},
+            .category = FunctionDocumentation::Category::TableFunction},
          .allow_readonly = false});
 #endif
 }
@@ -147,7 +153,7 @@ void registerTableFunctionDeltaLakeCluster(TableFunctionFactory & factory)
         {.documentation
          = {.description = R"(The table function can be used to read the DeltaLake table stored on object store in parallel for many nodes in a specified cluster.)",
             .examples{{"deltaLakeCluster", "SELECT * FROM deltaLakeCluster(cluster, url, access_key_id, secret_access_key)", ""}},
-            .category{""}},
+            .category = FunctionDocumentation::Category::TableFunction},
          .allow_readonly = false});
 }
 #endif
@@ -158,7 +164,7 @@ void registerTableFunctionHudiCluster(TableFunctionFactory & factory)
         {.documentation
          = {.description = R"(The table function can be used to read the Hudi table stored on object store in parallel for many nodes in a specified cluster.)",
             .examples{{"hudiCluster", "SELECT * FROM hudiCluster(cluster, url, access_key_id, secret_access_key)", ""}},
-            .category{""}},
+            .category = FunctionDocumentation::Category::TableFunction},
          .allow_readonly = false});
 }
 #endif
