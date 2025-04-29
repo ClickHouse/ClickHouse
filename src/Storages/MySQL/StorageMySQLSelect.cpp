@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/MySQLSource.h>
@@ -92,7 +93,7 @@ Pipe StorageMySQLSelect::read(
         query_for_columns += backQuoteMySQL(column) + ", ";
     }
     query_for_columns = query_for_columns.substr(0, query_for_columns.size() - 2);
-    query_for_columns += " FROM (" + select_query + ") as t";
+    query_for_columns += " FROM (" + select_query + ") AS t";
     LOG_TRACE(log, "Query: {}", query_for_columns);
 
     Block sample_block;
@@ -143,7 +144,6 @@ StorageMySQLSelect::Configuration StorageMySQLSelect::getConfiguration(ASTs stor
 ColumnsDescription
 StorageMySQLSelect::doQueryResultStructure(mysqlxx::PoolWithFailover & pool_, const String & select_query, const ContextPtr & context_)
 {
-    // const auto & settings = context->getSettingsRef();
     auto limited_select = "(" + select_query + ") LIMIT 0";
     auto conn = pool_.get();
     auto query = conn->query(limited_select);
@@ -157,15 +157,15 @@ StorageMySQLSelect::doQueryResultStructure(mysqlxx::PoolWithFailover & pool_, co
     const auto & settings = context_->getSettingsRef();
     for (size_t i = 0; i < field_cnt; ++i)
     {
-        auto* field = query_res.getField(i);
-        ColumnDescription column_description(query_res.getFieldName(i), convertMySQLDataType(
-            settings[Setting::mysql_datatypes_support_level],
-            field));
+        auto * field = query_res.getField(i);
+        ColumnDescription column_description(
+            query_res.getFieldName(i), convertMySQLDataType(settings[Setting::mysql_datatypes_support_level], field));
         columns.add(column_description);
     }
 
     // Preserve correctness of mysqlxx usage in case of force majeure related to "LIMIT 0"
-    while (query_res.fetch()) {
+    while (query_res.fetch())
+    {
         // do nothing
     }
     return columns;

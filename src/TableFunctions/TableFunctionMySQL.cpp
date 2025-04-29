@@ -112,7 +112,7 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
         if (auto * maybe_select_ast = args[2]->as<ASTSubquery>())
         {
             // Simply convert it to a string literal, thus fallthrough into the next "if"
-            args[2] = std::make_shared<ASTLiteral>(maybe_select_ast->formatForAnything());
+            args[2] = std::make_shared<ASTLiteral>(maybe_select_ast->formatWithSecretsOneLine());
         }
         auto maybe_select_ast = args[2];
         if (auto * maybe_select_lit = maybe_select_ast->as<ASTLiteral>())
@@ -127,7 +127,7 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
                     auto select_cfg = StorageMySQLSelect::getConfiguration(args, context);
                     configuration = select_cfg;
                     pool.emplace(createMySQLPoolWithFailover(
-                        select_cfg.database, select_cfg.addresses, select_cfg.username, select_cfg.password, mysql_settings));
+                        select_cfg.database, select_cfg.addresses, select_cfg.username, select_cfg.password, "", "", "", mysql_settings));
                     return;
                 }
             }

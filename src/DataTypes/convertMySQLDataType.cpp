@@ -144,7 +144,8 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
     return res;
 }
 
-DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,  MYSQL_FIELD* field) {
+DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support, MYSQL_FIELD * field)
+{
     bool is_nullable = !(field->flags & NOT_NULL_FLAG);
     bool is_unsigned = (field->flags & UNSIGNED_FLAG);
 
@@ -254,7 +255,8 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support, 
     }
 
     // If type conversion conditions weren't met (e.g. DECIMAL), fallback to String
-    if (!data_type) {
+    if (!data_type)
+    {
         data_type = std::make_shared<DataTypeString>();
     }
 

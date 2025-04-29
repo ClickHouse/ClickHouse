@@ -21,8 +21,8 @@ class NamedCollection;
  * However, it only provides interface to read result of SELECT query being directly passed to MySQL remote database.
  * Primarily developed to be used by table function `mysql` for alternative syntax with query passing.
  */
-  class StorageMySQLSelect final : public IStorage, WithContext
-  {
+class StorageMySQLSelect final : public IStorage, WithContext
+{
 public:
     StorageMySQLSelect(
         const StorageID & table_id_,
@@ -62,10 +62,8 @@ public:
     static Configuration getConfiguration(ASTs storage_args, ContextPtr context_);
 
     // Performs a query to MySQL and returns the structure of the result.
-    static ColumnsDescription doQueryResultStructure(
-        mysqlxx::PoolWithFailover & pool_,
-        const String & select_query,
-        const ContextPtr & context_);
+    static ColumnsDescription
+    doQueryResultStructure(mysqlxx::PoolWithFailover & pool_, const String & select_query, const ContextPtr & context_);
 
 private:
     std::string remote_database_name;
