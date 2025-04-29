@@ -54,8 +54,29 @@ using FunctionStringBytesEntropy = FunctionStringBytes<StringBytesEntropyImpl, N
 
 REGISTER_FUNCTION(StringBytesEntropy)
 {
-    factory.registerFunction<FunctionStringBytesEntropy>(
-        FunctionDocumentation{.description = R"(Calculates Shannon's entropy of byte distribution in a string.)"});
+    FunctionDocumentation::Description description = "Calculates Shannon's entropy of byte distribution in a string.";
+    FunctionDocumentation::Syntax syntax = "stringBytesEntropy(s);";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "The string to analyze. [String](../../sql-reference/data-types/string.md))"}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = "The Shannon entropy of the byte distribution. [Float64](../../sql-reference/data-types/float.md).";
+    FunctionDocumentation::Examples examples = {
+        {"Example",
+         "SELECT stringBytesEntropy('Hello, world!');",
+         "3.180832987205441"}
+    };
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+
+    FunctionDocumentation function_documentation = {
+        .description = description,
+        .syntax = syntax,
+        .arguments = arguments,
+        .returned_value = returned_value,
+        .examples = examples,
+        .category = category
+    };
+
+    factory.registerFunction<FunctionStringBytesEntropy>(function_documentation);
 }
 
 }

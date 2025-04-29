@@ -45,8 +45,29 @@ using FunctionStringBytesUniq = FunctionStringBytes<StringBytesUniqImpl, NameStr
 
 REGISTER_FUNCTION(StringBytesUniq)
 {
-    factory.registerFunction<FunctionStringBytesUniq>(
-        FunctionDocumentation{.description = R"(Counts the number of distinct bytes in a string.)"});
+    FunctionDocumentation::Description description = "Counts the number of distinct bytes in a string.";
+    FunctionDocumentation::Syntax syntax = "stringBytesUniq(s);";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "The string to analyze. [String](../../sql-reference/data-types/string.md)"}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = "The number of distinct bytes in the string. [UInt16](../../sql-reference/data-types/int-uint.md).";
+    FunctionDocumentation::Examples examples = {
+        {"Example",
+         "SELECT stringBytesUniq('Hello, world!');",
+         "10"}
+    };
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+
+    FunctionDocumentation function_documentation = {
+        .description = description,
+        .syntax = syntax,
+        .arguments = arguments,
+        .returned_value = returned_value,
+        .examples = examples,
+        .category = category
+    };
+
+    factory.registerFunction<FunctionStringBytesUniq>(function_documentation);
 }
 
 }
