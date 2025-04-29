@@ -16,22 +16,16 @@ namespace DB
 struct InstrumentationProfilingLogElement
 {
     String function_name;
-    String category;
-    String phase;
-    UInt64 pid{};
     UInt64 tid{};
-    UInt64 timestamp{};
     time_t event_time{};
+    UInt64 event_time_microseconds{};
+    UInt64 duration{};
     String query_id;
     Int32 function_id{};
 
     static std::string name() { return "InstrumentationProfilingLog"; }
-
     static ColumnsDescription getColumnsDescription();
-
-    static NamesAndTypesList getNamesAndTypes();
-    static NamesAndAliases getNamesAndAliases();
-    static const char * getTableName() { return "instrumentation_profiling_log"; }
+    static NamesAndAliases getNamesAndAliases() { return {}; }
 
     void appendToBlock(MutableColumns & columns) const;
 };
