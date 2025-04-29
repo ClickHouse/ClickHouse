@@ -198,6 +198,8 @@ public:
     Block getTotals() { return std::move(totals); }
     Block getExtremes() { return std::move(extremes); }
 
+    ContextPtr getContext() const { return context; }
+
     /// Set callback for progress. It will be called on Progress packet.
     void setProgressCallback(ProgressCallback callback);
 
