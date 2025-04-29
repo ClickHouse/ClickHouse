@@ -10,8 +10,9 @@ from pathlib import Path
 
 import yaml
 from clickhouse_driver import Client
-from praktika.result import Result
-from praktika.utils import Shell, Utils
+
+from ci.praktika.result import Result
+from ci.praktika.utils import Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
 

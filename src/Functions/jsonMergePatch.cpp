@@ -171,9 +171,7 @@ namespace
 REGISTER_FUNCTION(JSONMergePatch)
 {
     factory.registerFunction<FunctionJSONMergePatch>(FunctionDocumentation{
-        .description="Returns the merged JSON object string, which is formed by merging multiple JSON objects.",
-        .category = FunctionDocumentation::Category::JSON
-        });
+        .description="Returns the merged JSON object string, which is formed by merging multiple JSON objects."});
 
     factory.registerAlias("jsonMergePatch", "JSONMergePatch");
 }

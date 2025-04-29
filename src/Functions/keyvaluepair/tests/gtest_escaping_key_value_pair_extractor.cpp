@@ -1,4 +1,5 @@
 #include <Functions/keyvaluepair/impl/KeyValuePairExtractorBuilder.h>
+#include <Functions/keyvaluepair/impl/KeyValuePairExtractor.h>
 
 #include <Columns/ColumnString.h>
 
@@ -18,12 +19,12 @@ TEST(extractKVPairEscapingKeyValuePairExtractor, EscapeSequences)
 {
     using namespace std::literals;
 
-    auto extractor = KeyValuePairExtractorBuilder().buildWithEscaping();
+    auto extractor = KeyValuePairExtractorBuilder().withEscaping().build();
 
     auto keys = ColumnString::create();
     auto values = ColumnString::create();
 
-    auto pairs_count = extractor.extract(R"(key1:a\xFF key2:a\n\t\r)"sv, keys, values);
+    auto pairs_count = extractor->extract(R"(key1:a\xFF key2:a\n\t\r)"sv, keys, values);
 
     ASSERT_EQ(pairs_count, 2u);
     ASSERT_EQ(keys->size(), pairs_count);
