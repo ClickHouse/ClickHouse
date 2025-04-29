@@ -171,7 +171,7 @@ StorageObjectStorage::StorageObjectStorage(
     if (!failed_init
         && sample_path.empty()
         && context->getSettingsRef()[Setting::use_hive_partitioning]
-        && !configuration->withPartitionWildcard())
+        && !configuration->partition_strategy)
     {
         if (do_lazy_init)
             do_init();
@@ -267,7 +267,10 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
 
 StorageInMemoryMetadata StorageObjectStorage::getInMemoryMetadata() const
 {
-    // todo fix this
+    /// If the table is partitioned, there is a chance the partition columns are treated as virtual columns (e.g, hive partitioning).
+    /// In this case, the instance metadata ptr does not have the partition columns. This is a problem if we want to support writes
+    /// since `IStorage::getInMemoryMetadata` is used to determine the table schema for insert queries.
+    /// Perhaps an alternative would be: do not remove partition columns from storage metadata?
     if (configuration->partition_strategy)
     {
         return *metadata_with_partition_columns;
@@ -278,6 +281,9 @@ StorageInMemoryMetadata StorageObjectStorage::getInMemoryMetadata() const
 
 StorageMetadataPtr StorageObjectStorage::getInMemoryMetadataPtr() const
 {
+    /// If the table is partitioned, there is a chance the partition columns are treated as virtual columns (e.g, hive partitioning).
+    /// In this case, the instance metadata ptr does not have the partition columns. This is a problem if we want to support writes
+    /// since `IStorage::getInMemoryMetadata` is used to determine the table schema for insert queries.
     if (configuration->partition_strategy)
     {
         return metadata_with_partition_columns;
@@ -489,7 +495,7 @@ SinkToStoragePtr StorageObjectStorage::write(
     if (!configuration->partition_strategy && configuration->withGlobsIgnorePartitionWildcard())
     {
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                        "Path '{}' contains globs, so the table is in readonly mode",
+                        "Non partitioned table with path '{}' that contains globs, the table is in readonly mode",
                         configuration->getPath());
     }
 
