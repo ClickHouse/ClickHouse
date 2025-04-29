@@ -148,7 +148,7 @@ StorageObjectStorageSink::~StorageObjectStorageSink()
 
 SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String & partition_id)
 {
-    auto file_path = partition_strategy->getWritingPath(configuration->getPathWithoutGlobs(), partition_id);
+    auto file_path = partition_strategy->getWritingPath(configuration->getPath(), partition_id);
 
     validateNamespace(configuration->getNamespace(), configuration);
     validateKey(file_path);

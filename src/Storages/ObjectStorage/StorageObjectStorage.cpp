@@ -226,8 +226,6 @@ void StorageObjectStorage::Configuration::updatePartitionStrategy(ASTPtr partiti
         withPartitionWildcard(),
         partition_strategy_name,
         partition_columns_in_data_file);
-
-    setPath(partition_strategy->getReadingPath(getPath()));
 }
 
 bool StorageObjectStorage::hasExternalDynamicMetadata() const
@@ -423,9 +421,16 @@ void StorageObjectStorage::read(
 
     configuration->modifyFormatSettings(modified_format_settings.value());
 
+    auto configuration_clone = configuration->clone();
+
+    if (configuration->partition_strategy)
+    {
+        configuration_clone->setPath(configuration->partition_strategy->getReadingPath(configuration->getPath()));
+    }
+
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,
-        configuration,
+        configuration_clone,
         fmt::format("{}({})", getName(), getStorageID().getFullTableName()),
         column_names,
         getVirtualsList(),
@@ -502,6 +507,7 @@ void StorageObjectStorage::truncate(
                         configuration->getPath());
     }
 
+    // todo arthur
     if (configuration->withGlobs())
     {
         throw Exception(
@@ -715,6 +721,7 @@ bool StorageObjectStorage::Configuration::isNamespaceWithGlobs() const
     return getNamespace().find_first_of("*?{") != std::string::npos;
 }
 
+    // todo arthur
 std::string StorageObjectStorage::Configuration::getPathWithoutGlobs() const
 {
     return getPath().substr(0, getPath().find_first_of("*?{"));

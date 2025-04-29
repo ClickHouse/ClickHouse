@@ -147,6 +147,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     }
 
     std::unique_ptr<IObjectIterator> iterator;
+    // todo arthur
     if (configuration->isPathWithGlobs())
     {
         auto path = configuration->getPath();
