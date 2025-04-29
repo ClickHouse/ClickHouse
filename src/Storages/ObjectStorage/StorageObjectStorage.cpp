@@ -30,8 +30,6 @@
 
 #include <Poco/Logger.h>
 
-#include "Common/tests/gtest_global_context.h"
-
 namespace DB
 {
 namespace Setting
