@@ -71,6 +71,6 @@ def test_start_and_stop_replica_send(started_cluster):
     node1.query("INSERT INTO local_table VALUES (0, 'node1')")
     node2.query("INSERT INTO local_table VALUES (1)")
 
-    assert node3.query("SELECT COUNT() FROM distributed_table_unavailable_or_exception").rstrip() == "2"
-    assert node3.query("SELECT COUNT() FROM distributed_table_unavailable SETTINGS skip_unavailable_shards_mode='unavailable_or_exception'").rstrip() == "2"
+    assert node3.query("SELECT Name FROM distributed_table_unavailable_or_exception").rstrip() == "2"
+    assert node3.query("SELECT Name FROM distributed_table_unavailable SETTINGS skip_unavailable_shards_mode='unavailable_or_exception'").rstrip() == "2"
 
