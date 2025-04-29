@@ -13,6 +13,12 @@
                     <port>9000</port>
                 </replica>
             </shard>
+            <shard>
+                <replica>
+                    <host>node3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
         </test_cluster>
     </remote_servers>
 </clickhouse>
