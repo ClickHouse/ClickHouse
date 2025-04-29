@@ -1,8 +1,16 @@
 #include "Hypothesis.hpp"
+#include <memory>
+#include <Parsers/IAST.h>
+#include <Poco/Exception.h>
 #include "IO/ReadHelpers.h"
 #include "IO/WriteBuffer.h"
 #include "IO/WriteBufferFromString.h"
 #include "IO/WriteHelpers.h"
+#include "Parsers/ASTExpressionList.h"
+#include "Parsers/ASTFunction.h"
+#include "Parsers/ASTIdentifier.h"
+#include "Parsers/ASTLiteral.h"
+#include "Parsers/ExpressionListParsers.h"
 #include "Storages/MergeTree/Hypothesis/Token.hpp"
 
 namespace DB::Hypothesis
@@ -16,39 +24,52 @@ std::string Hypothesis::toString() const
 }
 
 
-void Hypothesis::readText(ReadBuffer & buf)
+void Hypothesis::parseText(IParser::Pos & pos)
 {
-    assertString("concat(", buf);
-    while (true)
+    ParserExpressionList parser(false);
+    ASTPtr node;
+    Expected expected;
+    parser.parse(pos, node, expected);
+    auto expr_list = std::static_pointer_cast<ASTExpressionList>(node);
+    if (expr_list->children.size() != 1)
     {
-        char next;
-        buf.peek(next);
-        if (next == '\'')
-        {
-            std::string res;
-            readQuotedString(res, buf);
-            this->tokens.emplace_back(new ConstToken(std::move(res)));
-        }
-        else
-        {
-            std::string transformer_name;
-            std::string col_name;
-            readStringUntilWhitespace(transformer_name, buf);
-            assertChar(' ', buf);
-            assertChar('(', buf);
-            readStringUntilWhitespace(col_name, buf);
-            assertChar(' ', buf);
-            assertChar(')', buf);
-            this->tokens.emplace_back(new TransformerToken(transformer_name, col_name));
-        }
-        assertChar(' ', buf);
-        if (!buf.peek(next) || next == ')')
-        {
-            break;
-        }
-        assertChar(',', buf);
+        throw Poco::Exception("Only one expression is allowed");
     }
-    assertChar(')', buf);
+    auto tmp_concat_fn = expr_list->children[0];
+    if (tmp_concat_fn->getID() != "Function_concat")
+    {
+        throw Poco::Exception("Only concat is supported");
+    }
+    auto concat_fn = std::static_pointer_cast<ASTFunction>(tmp_concat_fn);
+    auto args = std::static_pointer_cast<ASTExpressionList>(concat_fn->children.at(0));
+    for (const auto & arg : args->children)
+    {
+        if (arg->getID().starts_with("Identifier"))
+        {
+            auto identifier = std::static_pointer_cast<ASTIdentifier>(arg);
+            this->tokens.emplace_back(createTransformerToken("identity", identifier->name()));
+            continue;
+        }
+        if (arg->getID().starts_with("Literal"))
+        {
+            auto literal = std::static_pointer_cast<ASTLiteral>(arg);
+            this->tokens.emplace_back(createConstToken(literal->value.safeGet<String>()));
+            continue;
+        }
+        if (arg->getID().starts_with("Function"))
+        {
+            auto function = std::static_pointer_cast<ASTFunction>(arg);
+            auto function_args = std::static_pointer_cast<ASTExpressionList>(function->arguments);
+            if (function_args->children.size() != 1)
+            {
+                throw Poco::Exception("Currently only transformers are supported");
+            }
+            auto identifier = std::static_pointer_cast<ASTIdentifier>(function_args->children.at(0));
+            this->tokens.emplace_back(createTransformerToken(function->name, identifier->name()));
+            continue;
+        }
+        throw Poco::Exception("Unknown argument for concat: {}", arg->dumpTree());
+    }
 }
 
 void Hypothesis::writeText(WriteBuffer & buf) const
@@ -62,10 +83,8 @@ void Hypothesis::writeText(WriteBuffer & buf) const
             case TokenType::Transformer: {
                 auto transformer = static_pointer_cast<const TransformerToken>(token);
                 writeString(transformer->getTransformerName(), buf);
-                writeChar(' ', buf);
                 writeChar('(', buf);
                 writeString(transformer->getColumnName(), buf);
-                writeChar(' ', buf);
                 writeChar(')', buf);
             }
             break;
@@ -77,12 +96,11 @@ void Hypothesis::writeText(WriteBuffer & buf) const
         }
         if (idx + 1 != tokens.size())
         {
-            writeChar(' ', buf);
             writeChar(',', buf);
+            writeChar(' ', buf);
         }
         ++idx;
     }
-    writeChar(' ', buf);
     writeChar(')', buf);
 }
 
@@ -142,8 +160,12 @@ void HypothesisList::readText(ReadBuffer & buf)
         {
             assertChar('-', buf);
             assertChar(' ', buf);
+            std::string text;
+            readStringUntilNewlineInto(text, buf);
+            Tokens tokens(text.data(), text.data() + text.size());
+            IParser::Pos pos(tokens, 100, 100);
             Hypothesis hypothesis(col_name);
-            hypothesis.readText(buf);
+            hypothesis.parseText(pos);
             this->push_back(std::move(hypothesis));
             assertChar('\n', buf);
         }

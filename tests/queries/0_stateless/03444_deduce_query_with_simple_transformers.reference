@@ -1,5 +1,5 @@
-all_1_1_0 (state Active)	concat(identity (val2 ) ,\',\' ,identity (val1 ) ,\',\' ,identity (val3 ) )
-all_2_2_0 (state Active)	concat(identity (val2 ) ,identity (val1 ) ,identity (val3 ) ); concat(identity (val2 ) ,lower (val1 ) ,identity (val3 ) ); concat(identity (val2 ) ,trimBoth (val1 ) ,identity (val3 ) ); concat(identity (val2 ) ,\'some_constant_string\' ,identity (val3 ) )
-all_1_1_0 (state Active)	concat(base64Encode (base ) )
-all_2_2_0 (state Active)	concat(upper (base ) )
+all_1_1_0 (state Active)	concat(identity(val2), \',\', identity(val1), \',\', identity(val3))
+all_2_2_0 (state Active)	concat(identity(val2), identity(val1), identity(val3)); concat(identity(val2), lower(val1), identity(val3)); concat(identity(val2), trimBoth(val1), identity(val3)); concat(identity(val2), \'some_constant_string\', identity(val3))
+all_1_1_0 (state Active)	concat(base64Encode(base))
+all_2_2_0 (state Active)	concat(upper(base))
 all_1_1_0 (state Active)	None

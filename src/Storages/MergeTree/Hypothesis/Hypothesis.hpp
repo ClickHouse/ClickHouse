@@ -1,6 +1,7 @@
 #pragma once
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+#include "Parsers/IParser.h"
 #include "Token.hpp"
 
 #include <list>
@@ -30,7 +31,7 @@ public:
 
     std::string toString() const;
 
-    void readText(ReadBuffer & buf);
+    void parseText(IParser::Pos & pos);
     void writeText(WriteBuffer & buf) const;
 
     bool operator==(const Hypothesis & other) const;
