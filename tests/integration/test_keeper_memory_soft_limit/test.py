@@ -43,6 +43,8 @@ def started_cluster():
 
 
 def test_soft_limit_create(started_cluster):
+    if node.is_built_with_sanitizer():
+        pytest.skip("Disabled for sanitizers")
     started_cluster.wait_zookeeper_to_start()
     node_zk = get_connection_zk("zoo1")
     try:
