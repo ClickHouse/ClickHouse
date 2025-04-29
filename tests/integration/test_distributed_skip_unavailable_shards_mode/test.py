@@ -64,6 +64,10 @@ SETTINGS skip_unavailable_shards_mode='unavailable_or_exception';
 """
         )
 
+        node1.query("INSERT INTO default.local_table VALUES (1)")
+        node2.query("INSERT INTO default.local_table VALUES (2)")
+        node3.query("INSERT INTO default.local_table VALUES (3)")
+
         yield cluster
 
     finally:
@@ -83,10 +87,6 @@ def exception_raised(f):
         assert False, "exception expected"
 
 def test_skip_unavailable_shards_mode(started_cluster):
-    node1.query("INSERT INTO default.local_table VALUES (1)")
-    node2.query("INSERT INTO default.local_table VALUES (2)")
-    node3.query("INSERT INTO default.local_table VALUES (3)")
-
     assert split_and_sort(node1.query("SELECT ID, MayThrow FROM default.distributed_table_unavailable_or_exception")) == ["1\t0", "3\t0"]
 
     exception_raised(lambda _: node1.query("SELECT ID, MayThrow FROM default.distributed_table_unavailable"))
