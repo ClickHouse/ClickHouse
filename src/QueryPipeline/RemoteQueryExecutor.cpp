@@ -664,6 +664,8 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
         case Protocol::Server::Exception:
+            got_exception_from_replica = true;
+
             if (context->getSettingsRef()[Setting::skip_unavailable_shards] && context->getSettingsRef()[Setting::skip_unavailable_shards_mode] == SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION)
             {
                 LOG_ERROR(log,
@@ -674,7 +676,6 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
                 return ReadResult(Block{});
             }
 
-            got_exception_from_replica = true;
             packet.exception->rethrow();
             break;
 
@@ -830,6 +831,17 @@ void RemoteQueryExecutor::finish()
 
             case Protocol::Server::Exception:
                 got_exception_from_replica = true;
+
+                if (context->getSettingsRef()[Setting::skip_unavailable_shards] && context->getSettingsRef()[Setting::skip_unavailable_shards_mode] == SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION)
+                {
+                    LOG_ERROR(log,
+                        "Ignoring exception from connection(s) {} due to `skip_unavailable_shards_mode` setting: {}",
+                        connections->dumpAddresses(),
+                        packet.exception->displayText());
+    
+                    break;
+                }
+
                 packet.exception->rethrow();
                 break;
 
