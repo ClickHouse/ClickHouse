@@ -108,8 +108,8 @@ public:
     {
         scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(), engine.get(), /* predicate */{}), "scan");
         scan_data_iterator = KernelUtils::unwrapResult(
-            ffi::kernel_scan_data_init(engine.get(), scan.get()),
-            "kernel_scan_data_init");
+            ffi::scan_metadata_iter_init(engine.get(), scan.get()),
+            "scan_metadata_iter_init");
     }
 
     void scanDataFunc()
@@ -118,8 +118,8 @@ public:
         while (!shutdown.load())
         {
             bool have_scan_data_res = KernelUtils::unwrapResult(
-                ffi::kernel_scan_data_next(scan_data_iterator.get(), this, visitData),
-                "kernel_scan_data_next");
+                ffi::scan_metadata_next(scan_data_iterator.get(), this, visitData),
+                "scan_metadata_next");
 
             if (have_scan_data_res)
             {
@@ -204,14 +204,10 @@ public:
 
     static void visitData(
         void * engine_context,
-        ffi::ExclusiveEngineData * engine_data,
-        const struct ffi::KernelBoolSlice selection_vec,
-        const ffi::CTransforms * transforms)
+        ffi::SharedScanMetadata * scan_metadata)
     {
-        ffi::visit_scan_data(engine_data, selection_vec, transforms, engine_context, Iterator::scanCallback);
-
-        ffi::free_bool_slice(selection_vec);
-        ffi::free_engine_data(engine_data);
+        ffi::visit_scan_metadata(scan_metadata, engine_context, Iterator::scanCallback);
+        ffi::free_scan_metadata(scan_metadata);
     }
 
     static void scanCallback(
@@ -220,6 +216,7 @@ public:
         int64_t size,
         const ffi::Stats * stats,
         const ffi::DvInfo * /* dv_info */,
+        const ffi::Expression * /* transform */,
         const struct ffi::CStringMap * partition_map)
     {
         auto * context = static_cast<TableSnapshot::Iterator *>(engine_context);
@@ -300,7 +297,7 @@ public:
 
 private:
     using KernelScan = KernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
-    using KernelScanDataIterator = KernelPointerWrapper<ffi::SharedScanDataIterator, ffi::free_kernel_scan_data>;
+    using KernelScanDataIterator = KernelPointerWrapper<ffi::SharedScanMetadataIterator, ffi::free_scan_metadata_iter>;
 
     const KernelExternEngine & engine;
     const KernelSnapshot & snapshot;
@@ -395,7 +392,7 @@ void TableSnapshot::initSnapshotImpl() const
     read_schema = getReadSchemaFromSnapshot(scan_state.get());
     LOG_TRACE(log, "Table read schema: {}", fmt::join(read_schema.getNames(), ", "));
 
-    partition_columns = getPartitionColumnsFromSnapshot(scan_state.get());
+    partition_columns = getPartitionColumnsFromSnapshot(snapshot.get());
     LOG_TRACE(log, "Partition columns: {}", fmt::join(partition_columns, ", "));
 }
 
