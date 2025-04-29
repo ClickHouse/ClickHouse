@@ -81,6 +81,9 @@ addQuarters
 addSeconds
 addWeeks
 addYears
+addressToLine
+addressToLineWithInlines
+addressToSymbol
 age
 alphaTokens
 and
@@ -115,6 +118,7 @@ bitmaskToList
 blockNumber
 blockSerializedSize
 blockSize
+buildId
 byteSize
 caseWithExpression
 catboostEvaluate
