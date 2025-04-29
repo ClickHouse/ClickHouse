@@ -326,4 +326,10 @@ IMPLEMENT_SETTING_ENUM(
     {{"lat_lon", GeoToH3ArgumentOrder::LAT_LON},
      {"lon_lat", GeoToH3ArgumentOrder::LON_LAT}})
 
+IMPLEMENT_SETTING_ENUM(
+    SkipUnavailableShardsMode, 
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"unavailable", SkipUnavailableShardsMode::UNAVAILABLE},
+    {"unavailable_or_exception", SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION}})
+
 }
