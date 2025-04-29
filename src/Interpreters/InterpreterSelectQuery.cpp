@@ -1138,6 +1138,7 @@ BlockIO InterpreterSelectQuery::execute()
     QueryPlan query_plan;
 
     buildQueryPlan(query_plan);
+    query_plan.checkLimits(context);
 
     auto builder = query_plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
 

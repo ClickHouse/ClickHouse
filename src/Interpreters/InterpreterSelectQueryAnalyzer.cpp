@@ -280,6 +280,7 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 {
     planner.buildQueryPlanIfNeeded();
     auto & query_plan = planner.getQueryPlan();
+    query_plan.checkLimits(context);
 
     QueryPlanOptimizationSettings optimization_settings(context);
     BuildQueryPipelineSettings build_pipeline_settings(context);

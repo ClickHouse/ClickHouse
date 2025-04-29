@@ -2422,6 +2422,11 @@ The restriction is checked for each processed chunk of data, applied only to the
 deepest table expression and when reading from a remote server, checked only on
 the remote server.
 )", 0) \
+    DECLARE(UInt64, max_estimated_rows_to_read, 0, R"(
+The maximum allowable number of estimated rows to be scanned from a table during query execution.
+This estimation corresponds to the calculation result derived from the `EXPLAIN ESTIMATE` command output.
+The constraint is enforced post query plan generation, following completion of the query optimization phase.
+)", 0) \
     DECLARE(OverflowMode, read_overflow_mode, OverflowMode::THROW, R"(
 What to do when the limit is exceeded.
 )", 0) \

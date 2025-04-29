@@ -6,6 +6,7 @@
 #include <Columns/IColumn_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Parsers/IAST_fwd.h>
+#include "base/types.h"
 
 #include <list>
 #include <memory>
@@ -108,6 +109,8 @@ public:
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const;
     void explainEstimate(MutableColumns & columns) const;
 
+    void checkLimits(const ContextPtr & context) const;
+
     /// Do not allow to change the table while the pipeline alive.
     void addTableLock(TableLockHolder lock) { resources.table_locks.emplace_back(std::move(lock)); }
     void addInterpreterContext(std::shared_ptr<const Context> context) { resources.interpreter_context.emplace_back(std::move(context)); }
@@ -143,6 +146,19 @@ public:
     QueryPlan clone() const;
 
 private:
+    struct EstimateCounters
+    {
+        std::string database_name;
+        std::string table_name;
+        UInt64 parts = 0;
+        UInt64 rows = 0;
+        UInt64 marks = 0;
+    };
+
+    using CountersPtr = std::shared_ptr<EstimateCounters>;
+
+    std::unordered_map<std::string, CountersPtr> buildExplainEstimation() const;
+
     struct SerializationFlags;
 
     void serialize(WriteBuffer & out, const SerializationFlags & flags) const;
