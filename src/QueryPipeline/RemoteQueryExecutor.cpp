@@ -835,7 +835,7 @@ void RemoteQueryExecutor::finish()
                         "Ignoring exception from connection(s) {} due to `skip_unavailable_shards_mode` setting: {}",
                         connections->dumpAddresses(),
                         packet.exception->displayText());
-    
+
                     break;
                 }
 
