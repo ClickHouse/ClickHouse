@@ -282,8 +282,12 @@ IMPLEMENT_SETTING_ENUM(
      {"StochasticSimple", MergeSelectorAlgorithm::STOCHASTIC_SIMPLE},
      {"Trivial", MergeSelectorAlgorithm::TRIVIAL}})
 
-IMPLEMENT_SETTING_ENUM(DatabaseDataLakeCatalogType, ErrorCodes::BAD_ARGUMENTS,
-                       {{"rest", DatabaseDataLakeCatalogType::ICEBERG_REST},
-                        {"unity", DatabaseDataLakeCatalogType::UNITY}})
+IMPLEMENT_SETTING_ENUM(
+    DatabaseDataLakeCatalogType,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"rest", DatabaseDataLakeCatalogType::ICEBERG_REST},
+     {"unity", DatabaseDataLakeCatalogType::UNITY},
+     {"glue", DatabaseDataLakeCatalogType::GLUE},
+     {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE}})
 
 }

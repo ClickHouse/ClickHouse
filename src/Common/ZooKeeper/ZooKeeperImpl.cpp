@@ -46,6 +46,8 @@ namespace ProfileEvents
     extern const Event ZooKeeperRemove;
     extern const Event ZooKeeperExists;
     extern const Event ZooKeeperMulti;
+    extern const Event ZooKeeperMultiRead;
+    extern const Event ZooKeeperMultiWrite;
     extern const Event ZooKeeperReconfig;
     extern const Event ZooKeeperGet;
     extern const Event ZooKeeperSet;
@@ -1640,8 +1642,14 @@ void ZooKeeper::multi(
     request_info.request = std::make_shared<ZooKeeperMultiRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const MultiResponse &>(response)); };
 
+    bool is_read_request = request_info.request->isReadRequest();
     pushRequest(std::move(request_info));
+
     ProfileEvents::increment(ProfileEvents::ZooKeeperMulti);
+    if (is_read_request)
+        ProfileEvents::increment(ProfileEvents::ZooKeeperMultiRead);
+    else
+        ProfileEvents::increment(ProfileEvents::ZooKeeperMultiWrite);
 }
 
 

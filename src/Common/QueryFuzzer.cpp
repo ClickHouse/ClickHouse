@@ -146,6 +146,8 @@ Field QueryFuzzer::getRandomField(int type)
 
 Field QueryFuzzer::fuzzField(Field field)
 {
+    checkIterationLimit();
+
     const auto type = field.getType();
 
     int type_index = -1;
@@ -363,6 +365,8 @@ void QueryFuzzer::fuzzOrderByList(IAST * ast, const size_t nproj)
         return;
     }
 
+    checkIterationLimit();
+
     auto * list = assert_cast<ASTExpressionList *>(ast);
 
     /// Permute list
@@ -413,6 +417,8 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
     {
         return;
     }
+
+    checkIterationLimit();
 
     auto * impl = assert_cast<ASTExpressionList *>(ast);
 
@@ -477,6 +483,8 @@ void QueryFuzzer::fuzzNullsAction(NullsAction & action)
 
 void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
 {
+    checkIterationLimit();
+
     switch (fuzz_rand() % 40)
     {
         case 0: {
@@ -624,6 +632,8 @@ void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
 
 DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
 {
+    checkIterationLimit();
+
     /// Do not replace Array/Tuple/etc. with not Array/Tuple too often.
     const auto * type_array = typeid_cast<const DataTypeArray *>(type.get());
     if (type_array && fuzz_rand() % 4 != 0)
@@ -699,6 +709,8 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
 
 DataTypePtr QueryFuzzer::getRandomType()
 {
+    checkIterationLimit();
+
     static const std::vector<TypeIndex> & random_types
         = {TypeIndex::UInt8,       TypeIndex::UInt16,         TypeIndex::UInt32,   TypeIndex::UInt64,     TypeIndex::UInt128,
            TypeIndex::UInt256,     TypeIndex::Int8,           TypeIndex::Int16,    TypeIndex::Int32,      TypeIndex::Int64,
@@ -935,6 +947,8 @@ void QueryFuzzer::notifyQueryFailed(ASTPtr ast)
 
 ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
 {
+    checkIterationLimit();
+
     const auto * l = child->as<ASTLiteral>();
     chassert(l);
     const auto type = l->value.getType();
@@ -1073,6 +1087,13 @@ struct ScopedIncrement
     ~ScopedIncrement() { --counter; }
 };
 
+void QueryFuzzer::checkIterationLimit()
+{
+    if (++iteration_count > iteration_limit)
+        throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
+            "AST complexity limit exceeded while fuzzing ({})", iteration_count);
+}
+
 static const Strings comparison_comparators
     = {"equals", "notEquals", "greater", "greaterOrEquals", "less", "lessOrEquals", "isNotDistinctFrom"};
 
@@ -1096,14 +1117,14 @@ ASTPtr QueryFuzzer::setIdentifierAliasOrNot(ASTPtr & exp)
         }
         else if (!alias.empty())
         {
-            ASTIdentifier * ident;
+            ASTIdentifier * id;
             const int next_action = fuzz_rand() % 30;
 
-            if (next_action == 0 && (ident = typeid_cast<ASTIdentifier *>(exp.get())))
+            if (next_action == 0 && (id = typeid_cast<ASTIdentifier *>(exp.get())) && !id->name_parts.empty())
             {
                 /// Move alias to the end of the identifier (most of the time) or somewhere else
-                Strings clone_parts = ident->name_parts;
-                const int index = (fuzz_rand() % 2) == 0 ? (ident->name_parts.size() - 1) : (fuzz_rand() % ident->name_parts.size());
+                Strings clone_parts = id->name_parts;
+                const int index = (fuzz_rand() % 2) == 0 ? (id->name_parts.size() - 1) : (fuzz_rand() % id->name_parts.size());
 
                 clone_parts[index] = alias;
                 return std::make_shared<ASTIdentifier>(std::move(clone_parts));
@@ -1122,7 +1143,12 @@ ASTPtr QueryFuzzer::setIdentifierAliasOrNot(ASTPtr & exp)
     return exp;
 }
 
-static const auto identifier_lambda = [](std::pair<std::string, ASTPtr> & p) { return typeid_cast<ASTIdentifier *>(p.second.get()); };
+static const auto identifier_lambda = [](std::pair<std::string, ASTPtr> & p)
+{
+    /// No query parameters identifiers at this moment
+    const auto * id = typeid_cast<ASTIdentifier *>(p.second.get());
+    return id && !id->name_parts.empty() && !id->isParam();
+};
 
 ASTPtr QueryFuzzer::generatePredicate()
 {
@@ -1351,7 +1377,7 @@ static String getOldALias(const ASTPtr & input)
     }
     else
     {
-        chassert(0);
+        chassert(false);
         return "";
     }
 }
@@ -1412,7 +1438,7 @@ ASTPtr QueryFuzzer::addJoinClause()
             }
             else
             {
-                chassert(0);
+                chassert(false);
             }
         }
         else
@@ -1441,8 +1467,7 @@ ASTPtr QueryFuzzer::addJoinClause()
             std::advance(rand_col2, fuzz_rand() % to_search.size());
 
             const String id1_alias = id1->tryGetAlias();
-            const String & nidentifier = (id1_alias.empty() || (fuzz_rand() % 2 == 0)) ?
-            (id1->shortName().empty() ? id1->name() : id1->shortName()) : id1_alias;
+            const String & nidentifier = (id1_alias.empty() || (fuzz_rand() % 2 == 0)) ? id1->shortName() : id1_alias;
             ASTPtr exp1 = std::make_shared<ASTIdentifier>(Strings{next_alias, nidentifier});
             ASTPtr exp2 = rand_col2->second->clone();
 
@@ -1500,6 +1525,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     if (!ast)
         return;
 
+    checkIterationLimit();
+
     // Check for exceeding max depth.
     ScopedIncrement depth_increment(current_ast_depth);
     if (current_ast_depth > 500)
@@ -1524,7 +1551,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             current_ast_depth,
             debug_visited_nodes.size(),
             (*debug_top_ast)->dumpTree());
-        assert(false);
+        std::abort();
     }
 
     // The fuzzing.
@@ -2165,6 +2192,7 @@ void QueryFuzzer::collectFuzzInfoRecurse(ASTPtr ast)
 void QueryFuzzer::fuzzMain(ASTPtr & ast)
 {
     current_ast_depth = 0;
+    iteration_count = 0;
     debug_visited_nodes.clear();
     debug_top_ast = &ast;
 

@@ -81,7 +81,7 @@ public:
     template <typename Iterator>
     NamesAndTypesList(Iterator begin, Iterator end) : std::list<NameAndTypePair>(begin, end) {}
 
-    void readText(ReadBuffer & buf);
+    void readText(ReadBuffer & buf, bool check_eof = true);
     void writeText(WriteBuffer & buf) const;
 
     String toString() const;

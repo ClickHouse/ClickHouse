@@ -363,6 +363,8 @@ enum class DatabaseDataLakeCatalogType : uint8_t
 {
     ICEBERG_REST,
     UNITY,
+    GLUE,
+    ICEBERG_HIVE,
 };
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)

@@ -25,7 +25,7 @@ Columns:
 
 Find the sizes of allocations that contributed the most to the current overall memory usage.
 
-``` sql
+```sql
 SELECT
     *,
     allocations - deallocations AS active_allocations,
@@ -36,7 +36,7 @@ ORDER BY allocated_bytes DESC
 LIMIT 10
 ```
 
-``` text
+```text
 ┌─index─┬─large─┬─────size─┬─allocactions─┬─deallocations─┬─active_allocations─┬─allocated_bytes─┐
 │    82 │     1 │ 50331648 │            1 │             0 │                  1 │        50331648 │
 │    10 │     0 │      192 │       512336 │        370710 │             141626 │        27192192 │

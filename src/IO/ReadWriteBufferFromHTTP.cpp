@@ -34,12 +34,12 @@ bool isRetriableError(const Poco::Net::HTTPResponse::HTTPStatus http_status) noe
         non_retriable_errors.begin(), non_retriable_errors.end(), [&](const auto status) { return http_status != status; });
 }
 
-Poco::URI getUriAfterRedirect(const Poco::URI & prev_uri, Poco::Net::HTTPResponse & response)
+Poco::URI getUriAfterRedirect(const Poco::URI & prev_uri, Poco::Net::HTTPResponse & response, bool enable_url_encoding)
 {
     chassert(DB::isRedirect(response.getStatus()));
 
     auto location = response.get("Location");
-    auto location_uri = Poco::URI(location);
+    auto location_uri = Poco::URI(location, enable_url_encoding);
     if (!location_uri.isRelative())
         return location_uri;
     /// Location header contains relative path. So we need to concatenate it
@@ -194,6 +194,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     const RemoteHostFilter * remote_host_filter_,
     size_t buffer_size_,
     size_t max_redirects_,
+    bool enable_url_encoding_,
     OutStreamCallback out_stream_callback_,
     bool use_external_buffer_,
     bool http_skip_not_found_url_,
@@ -211,6 +212,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     , remote_host_filter(remote_host_filter_)
     , buffer_size(buffer_size_)
     , max_redirects(max_redirects_)
+    , enable_url_encoding(enable_url_encoding_)
     , use_external_buffer(use_external_buffer_)
     , http_skip_not_found_url(http_skip_not_found_url_)
     , out_stream_callback(std::move(out_stream_callback_))
@@ -288,7 +290,7 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callWithRedirects(
 
     while (isRedirect(response.getStatus()))
     {
-        Poco::URI uri_redirect = getUriAfterRedirect(current_uri, response);
+        Poco::URI uri_redirect = getUriAfterRedirect(current_uri, response, enable_url_encoding);
         ++redirects;
         if (redirects > max_redirects)
             throw Exception(
@@ -826,6 +828,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTP
         remote_host_filter,
         buffer_size,
         max_redirects,
+        enable_url_encoding,
         out_stream_callback,
         use_external_buffer,
         http_skip_not_found_url,

@@ -14,7 +14,7 @@ If there is only one unique value, it returns it. If there are zero or at least 
 
 **Syntax**
 
-``` sql
+```sql
 singleValueOrNull(x)
 ```
 
@@ -31,7 +31,7 @@ singleValueOrNull(x)
 
 Query:
 
-``` sql
+```sql
 CREATE TABLE test (x UInt8 NULL) ENGINE=Log;
 INSERT INTO test (x) VALUES (NULL), (NULL), (5), (NULL), (NULL);
 SELECT singleValueOrNull(x) FROM test;
