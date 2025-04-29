@@ -46,11 +46,6 @@ NamesAndAliases InstrumentationProfilingLogElement::getNamesAndAliases()
     return NamesAndAliases{};
 }
 
-void InstrumentationProfilingLog::shutdown()
-{
-    stopFlushThread();
-}
-
 void InstrumentationProfilingLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
