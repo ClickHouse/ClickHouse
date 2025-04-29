@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <type_traits>
 #include <typeinfo>
+#include <iostream>
 
 namespace DB
 {
@@ -418,8 +419,17 @@ protected:
                             });
 
                             // erase excess elements
+                            /* Here I first copy elements to erase into separate vector, and then erase them by value.
+                               It's slower than to erase then by iterators. Previously I tried applying nth_element
+                               to a vector of iterators and then erase, but it seems that they were invalidating after erase.
+                               TODO Maybe there is a way not to invalidate them?
+                            */
+                            std::vector<std::remove_const_t<std::remove_reference_t<decltype(data.begin()->getKey())>>> elements_to_erase;
+                            elements_to_erase.reserve(data_iterators.size() - limit_offset_plus_length);
                             for (size_t i = limit_offset_plus_length; i < data_iterators.size(); ++i)
-                                data.erase(data_iterators[i]->getKey());
+                                elements_to_erase.push_back(data_iterators[i]->getKey());
+                            for (const auto element : elements_to_erase)
+                                data.erase(element);
 
                             // renew iterator
                             it = data.find(key_holder);
