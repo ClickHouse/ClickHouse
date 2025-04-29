@@ -498,7 +498,8 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
         QueryPlanOptimizations::addStepsToBuildSets(optimization_settings, *this, *root, nodes);
 }
 
-std::unordered_map<std::string, QueryPlan::CountersPtr> QueryPlan::buildExplainEstimation() const {
+std::unordered_map<std::string, QueryPlan::CountersPtr> QueryPlan::buildExplainEstimation() const
+{
     checkInitialized();
 
     std::unordered_map<std::string, CountersPtr> counters;
@@ -550,14 +551,16 @@ void QueryPlan::checkLimits(const Context & context) const
     const auto & settings = context.getSettingsRef();
     const auto max_rows = settings[Setting::max_estimated_rows_to_read];
 
-    if (max_rows == 0) {
+    if (max_rows == 0)
+    {
         return;
     }
 
     const auto counters = buildExplainEstimation();
     const auto rows_limit = SizeLimits(max_rows, 0, OverflowMode::THROW);
 
-    for (const auto & counter: counters) {
+    for (const auto & counter: counters)
+    {
         const auto rows = counter.second->rows;
         rows_limit.check(rows, 0, "rows (controlled by 'max_estimated_rows_to_read' setting)", ErrorCodes::TOO_MANY_ROWS);
     }
