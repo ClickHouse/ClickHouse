@@ -291,7 +291,7 @@ IMPLEMENT_SETTING_ENUM(
      {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE}})
 
 IMPLEMENT_SETTING_ENUM(
-    SkipUnavailableShardsMode, 
+    SkipUnavailableShardsMode,
     ErrorCodes::BAD_ARGUMENTS,
     {{"unavailable", SkipUnavailableShardsMode::UNAVAILABLE},
     {"unavailable_or_exception", SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION}})
