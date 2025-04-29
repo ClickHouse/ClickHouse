@@ -168,6 +168,8 @@ namespace Setting
     extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsFloat min_os_cpu_wait_time_ratio_to_throw;
     extern const SettingsFloat max_os_cpu_wait_time_ratio_to_throw;
+    extern const SettingsBool enable_writes_to_query_cache_disk;
+    extern const SettingsBool enable_reads_from_query_cache_disk;
 }
 
 namespace ServerSetting
@@ -1411,7 +1413,7 @@ static BlockIO executeQueryImpl(
                 if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache])
                 {
                     QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles());
-                    QueryResultCacheReader reader = query_result_cache->createReader(key);
+                    QueryResultCacheReader reader = query_result_cache->createReader(key, settings[Setting::enable_reads_from_query_cache_disk]);
                     if (reader.hasCacheEntryForKey())
                     {
                         QueryPipeline pipeline;
@@ -1563,7 +1565,8 @@ static BlockIO executeQueryImpl(
                                                  settings[Setting::query_cache_squash_partial_results],
                                                  settings[Setting::max_block_size],
                                                  settings[Setting::query_cache_max_size_in_bytes],
-                                                 settings[Setting::query_cache_max_entries]));
+                                                 settings[Setting::query_cache_max_entries],
+                                                 settings[Setting::enable_writes_to_query_cache_disk]));
                                 res.pipeline.writeResultIntoQueryResultCache(query_result_cache_writer);
                                 query_result_cache_usage = QueryResultCacheUsage::Write;
                             }

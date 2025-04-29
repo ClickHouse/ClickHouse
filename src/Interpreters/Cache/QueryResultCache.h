@@ -10,7 +10,10 @@
 #include <Processors/Sources/SourceFromChunks.h>
 #include <QueryPipeline/Pipe.h>
 #include <base/UUID.h>
+#include <Disks/IDisk.h>
 
+#include <atomic>
+#include <memory>
 #include <optional>
 
 namespace DB
@@ -36,7 +39,7 @@ class QueryResultCacheReader;
 /// returned. In order to still obtain sufficiently up-to-date query results, a expiry time (TTL) must be specified for each cache entry
 /// after which it becomes stale and is ignored. Stale entries are removed opportunistically from the cache, they are only evicted when a
 /// new entry is inserted and the cache has insufficient capacity.
-class QueryResultCache
+class QueryResultCache : public std::enable_shared_from_this<QueryResultCache>
 {
 public:
     /// Key + Entry represents a query result in the cache.
@@ -58,7 +61,7 @@ public:
         /// Additional stuff data stored in the key, not hashed:
 
         /// Result metadata for constructing the pipe.
-        const Block header;
+        Block header;
 
         /// The id and current roles of the user who executed the query.
         /// These members are necessary to ensure that a (non-shared, see below) entry can only be written and read by the same user with
@@ -73,27 +76,27 @@ public:
         /// If the associated entry can be read by other users. In general, sharing is a bad idea: First, it is unlikely that different
         /// users pose the same queries. Second, sharing potentially breaches security. E.g. User A should not be able to bypass row
         /// policies on some table by running the same queries as user B for whom no row policies exist.
-        const bool is_shared;
+        bool is_shared;
 
         /// When does the entry expire?
-        const std::chrono::time_point<std::chrono::system_clock> expires_at;
+        std::chrono::time_point<std::chrono::system_clock> expires_at;
 
         /// Are the chunks in the entry compressed?
         /// (we could theoretically apply compression also to the totals and extremes but it's an obscure use case)
-        const bool is_compressed;
+        bool is_compressed;
 
         /// The SELECT query as plain string, displayed in SYSTEM.QUERY_CACHE. Stored explicitly, i.e. not constructed from the AST, for the
         /// sole reason that QueryResultCache-related SETTINGS are pruned from the AST (see removeQueryResultCacheSettings()) which would otherwise look
         /// ugly in SYSTEM.QUERY_CACHE.
-        const String query_string;
+        String query_string;
 
         /// ID of the query.
-        const String query_id;
+        String query_id;
 
         /// A tag (namespace) for distinguish multiple entries of the same query.
         /// This member has currently no use besides that SYSTEM.QUERY_CACHE can populate the 'tag' column conveniently without having to
         /// compute the tag from the query AST.
-        const String tag;
+        String tag;
 
         /// Ctor to construct a Key for writing into query result cache.
         Key(ASTPtr ast_,
@@ -112,8 +115,25 @@ public:
             const Settings & settings,
             const String & query_id_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
+        
+        explicit Key(IASTHash ast_hash_);
+
+        Key(IASTHash ast_hash_,
+            Block header_,
+            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+            bool is_shared_,
+            std::chrono::time_point<std::chrono::system_clock> expires_at_,
+            bool is_compressed_,
+            String & query_string_,
+            String & query_id_,
+            String & tag_);
 
         bool operator==(const Key & other) const;
+
+        void serialize(WriteBuffer & buf) const;
+        void deserialize(ReadBuffer & buf);
+
+        String getKeyPath() const;
     };
 
     struct Entry
@@ -123,7 +143,11 @@ public:
         std::optional<Chunk> extremes = std::nullopt;
     };
 
-private:
+    struct DiskEntry
+    {
+        size_t bytes_on_disk;
+    };
+
     struct KeyHasher
     {
         size_t operator()(const Key & key) const;
@@ -134,27 +158,59 @@ private:
         size_t operator()(const Entry & entry) const;
     };
 
+    struct QueryResultCacheDiskEntryWeight
+    {
+        size_t operator()(const DiskEntry & entry) const;
+    };
+
     struct IsStale
     {
         bool operator()(const Key & key) const;
     };
 
-public:
     /// query --> query result
     using Cache = CacheBase<Key, Entry, KeyHasher, QueryResultCacheEntryWeight>;
 
-    QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
+    using DiskCache = CacheBase<Key, DiskEntry, KeyHasher, QueryResultCacheDiskEntryWeight>;
 
-    void updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
+    QueryResultCache(
+        size_t max_size_in_bytes, 
+        size_t max_entries,
+        size_t max_entry_size_in_bytes_,
+        size_t max_entry_size_in_rows_,
+        size_t max_disk_size_in_bytes, 
+        size_t max_disk_entries,
+        DiskPtr & disk_,
+        const String & path_);
 
-    QueryResultCacheReader createReader(const Key & key);
+    ~QueryResultCache();
+
+    void updateConfiguration(
+        size_t max_size_in_bytes,
+        size_t max_entries,
+        size_t max_entry_size_in_bytes_,
+        size_t max_entry_size_in_rows_,
+        size_t max_disk_size_in_bytes, 
+        size_t max_disk_entries);
+
+    QueryResultCacheReader createReader(const Key & key, bool enable_reads_from_query_cache_disk);
     QueryResultCacheWriter createWriter(
         const Key & key,
         std::chrono::milliseconds min_query_runtime,
         bool squash_partial_results,
         size_t max_block_size,
         size_t max_query_result_cache_size_in_bytes_quota,
-        size_t max_query_result_cache_entries_quota);
+        size_t max_query_result_cache_entries_quota,
+        bool enable_writes_to_query_cache_disk);
+
+    void writeMemory(const Key & key, const QueryResultCache::Cache::MappedPtr & entry);
+
+    void writeDisk(const Key & key, const QueryResultCache::Cache::MappedPtr & entry);
+
+    std::optional<QueryResultCache::Cache::KeyMapped> readFromMemory(const Key & key);
+    std::optional<QueryResultCache::Cache::KeyMapped> readFromDisk(const Key & key);
+
+    bool isStale(const Key & key);
 
     void clear(const std::optional<String> & tag);
 
@@ -168,7 +224,24 @@ public:
     std::vector<QueryResultCache::Cache::KeyMapped> dump() const;
 
 private:
-    Cache cache; /// has its own locking --> not protected by mutex
+    void serializeEntry(const Key & key, const QueryResultCache::Cache::MappedPtr & entry) const;
+    std::tuple<Block, QueryResultCache::Cache::MappedPtr, QueryResultCache::DiskCache::MappedPtr> deserializeEntry(const Key & key);
+
+    void compressEntry(const QueryResultCache::Cache::MappedPtr & entry);
+
+    void loadEntrysFromDisk();
+
+    bool checkAccess(const Key & entry_key, const Key & key) const;
+
+    // Cache cache; /// has its own locking --> not protected by mutex
+    Cache memory_cache;
+
+    DiskCache disk_cache;
+    DiskPtr disk;
+    std::filesystem::path path;
+    size_t max_compress_block_size = 1024 * 1024;
+
+    std::atomic_bool shutdown = false;
 
     mutable std::mutex mutex;
 
@@ -180,10 +253,14 @@ private:
     size_t max_entry_size_in_bytes TSA_GUARDED_BY(mutex) = 0;
     size_t max_entry_size_in_rows TSA_GUARDED_BY(mutex) = 0;
 
+    LoggerPtr logger = getLogger("QueryResultCache");
+
     friend class StorageSystemQueryResultCache;
     friend class QueryResultCacheWriter;
     friend class QueryResultCacheReader;
 };
+
+using QueryResultCachePtr = std::shared_ptr<QueryResultCache>;
 
 /// Buffers multiple partial query result chunks (buffer()) and eventually stores them as cache entry (finalizeWrite()).
 ///
@@ -214,7 +291,7 @@ private:
     using Cache = QueryResultCache::Cache;
 
     std::mutex mutex;
-    Cache & cache;
+    QueryResultCachePtr cache;
     const QueryResultCache::Key key;
     const size_t max_entry_size_in_bytes;
     const size_t max_entry_size_in_rows;
@@ -222,19 +299,21 @@ private:
     const std::chrono::milliseconds min_query_runtime;
     const bool squash_partial_results;
     const size_t max_block_size;
-    Cache::MappedPtr query_result TSA_GUARDED_BY(mutex) = std::make_shared<QueryResultCache::Entry>();
+    const bool enable_writes_to_query_cache_disk;
+    std::shared_ptr<QueryResultCache::Entry> query_result TSA_GUARDED_BY(mutex) = std::make_shared<QueryResultCache::Entry>();
     std::atomic<bool> skip_insert = false;
     bool was_finalized = false;
     LoggerPtr logger = getLogger("QueryResultCache");
 
     QueryResultCacheWriter(
-        Cache & cache_,
+        QueryResultCachePtr cache_,
         const Cache::Key & key_,
         size_t max_entry_size_in_bytes_,
         size_t max_entry_size_in_rows_,
         std::chrono::milliseconds min_query_runtime_,
         bool squash_partial_results_,
-        size_t max_block_size_);
+        size_t max_block_size_,
+        bool enable_writes_to_query_cache_disk_);
 
     friend class QueryResultCache; /// for createWriter()
 };
@@ -252,16 +331,13 @@ public:
 private:
     using Cache = QueryResultCache::Cache;
 
-    QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &);
-    void buildSourceFromChunks(Block header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
+    QueryResultCacheReader(QueryResultCachePtr cache_, const Cache::Key & key, bool enable_reads_from_query_cache_disk, const std::lock_guard<std::mutex> &);
+    void buildSourceFromChunks(Block header, Chunks && chunks, std::optional<Chunk> & totals, std::optional<Chunk> & extremes);
     std::unique_ptr<SourceFromChunks> source_from_chunks;
     std::unique_ptr<SourceFromChunks> source_from_chunks_totals;
     std::unique_ptr<SourceFromChunks> source_from_chunks_extremes;
     LoggerPtr logger = getLogger("QueryResultCache");
     friend class QueryResultCache; /// for createReader()
 };
-
-
-using QueryResultCachePtr = std::shared_ptr<QueryResultCache>;
 
 }
