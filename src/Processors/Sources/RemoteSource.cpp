@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
-#include "Core/Settings.h"
 
 namespace DB
 {
@@ -14,11 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-namespace Setting
-{
-    extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
 }
 
 RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_, bool async_read_, bool async_query_sending_)
@@ -184,40 +178,32 @@ std::optional<Chunk> RemoteSource::tryGenerate()
 
     Block block;
 
-    try {
-        if (async_read)
+    if (async_read)
+    {
+        auto res = query_executor->readAsync();
+
+        if (res.getType() == RemoteQueryExecutor::ReadResult::Type::Nothing)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got an empty packet from the RemoteQueryExecutor. This is a bug");
+
+        if (res.getType() == RemoteQueryExecutor::ReadResult::Type::FileDescriptor)
         {
-            auto res = query_executor->readAsync();
+            fd = res.getFileDescriptor();
+            is_async_state = true;
+            return Chunk();
+        }
 
-            if (res.getType() == RemoteQueryExecutor::ReadResult::Type::Nothing)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got an empty packet from the RemoteQueryExecutor. This is a bug");
-
-            if (res.getType() == RemoteQueryExecutor::ReadResult::Type::FileDescriptor)
-            {
-                fd = res.getFileDescriptor();
-                is_async_state = true;
-                return Chunk();
-            }
-
-            if (res.getType() == RemoteQueryExecutor::ReadResult::Type::ParallelReplicasToken)
-            {
-                is_async_state = false;
-                return Chunk();
-            }
-
+        if (res.getType() == RemoteQueryExecutor::ReadResult::Type::ParallelReplicasToken)
+        {
             is_async_state = false;
+            return Chunk();
+        }
 
-            block = res.getBlock();
-        }
-        else
-            block = query_executor->readBlock();
-    } catch(...) {
-        auto mode = query_executor->getContext()->getSettingsRef()[Setting::skip_unavailable_shards_mode];
-        if (mode != SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION) {
-            throw;
-        }
-        block = Block();
+        is_async_state = false;
+
+        block = res.getBlock();
     }
+    else
+        block = query_executor->readBlock();
 
     if (!block)
     {
