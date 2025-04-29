@@ -421,4 +421,13 @@ enum class GeoToH3ArgumentOrder : uint8_t
 
 DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
 
+/// The setting for executing distributed subqueries inside IN or JOIN sections.
+enum class SkipUnavailableShardsMode : uint8_t
+{
+    UNAVAILABLE = 0,
+    UNAVAILABLE_OR_EXCEPTION,
+};
+
+DECLARE_SETTING_ENUM(SkipUnavailableShardsMode)
+
 }

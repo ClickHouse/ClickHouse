@@ -1083,6 +1083,9 @@ Possible values:
     If a shard is unavailable, ClickHouse throws an exception.
 )", 0) \
     \
+    DECLARE(SkipUnavailableShardsMode, skip_unavailable_shards_mode, SkipUnavailableShardsMode::UNAVAILABLE, R"(
+TODO
+)", 0) \
     DECLARE(UInt64, parallel_distributed_insert_select, 0, R"(
 Enables parallel distributed `INSERT ... SELECT` query.
 
