@@ -1058,19 +1058,7 @@ See also:
     DECLARE(Bool, skip_unavailable_shards, false, R"(
 Enables or disables silently skipping of unavailable shards.
 
-Shard is considered unavailable if all its replicas are unavailable. A replica is unavailable in the following cases:
-
-- ClickHouse can't connect to replica for any reason.
-
-    When connecting to a replica, ClickHouse performs several attempts. If all these attempts fail, the replica is considered unavailable.
-
-- Replica can't be resolved through DNS.
-
-    If replica's hostname can't be resolved through DNS, it can indicate the following situations:
-
-    - Replica's host has no DNS record. It can occur in systems with dynamic DNS, for example, [Kubernetes](https://kubernetes.io), where nodes can be unresolvable during downtime, and this is not an error.
-
-    - Configuration error. ClickHouse configuration file contains a wrong hostname.
+The behavior of this setting is controlled by the `skip_unavailable_shards_mode` parameter.
 
 Possible values:
 
@@ -1084,7 +1072,21 @@ Possible values:
 )", 0) \
     \
     DECLARE(SkipUnavailableShardsMode, skip_unavailable_shards_mode, SkipUnavailableShardsMode::UNAVAILABLE, R"(
-TODO
+Specifies the behavior of ClickHouse when `skip_unavailable_shards` is enabled.
+
+Possible values:
+
+- `unavailable` — When `skip_unavailable_shards=1`, ClickHouse will ignore connection-related exceptions and continue processing the query. This mode is compatible with the legacy behavior of `skip_unavailable_shards`.
+
+- `unavailable_or_exception` — When `skip_unavailable_shards=1`, ClickHouse will ignore all exceptions from remote instances, including those not related to connection issues.
+
+Examples:
+
+- If `skip_unavailable_shards=0`, ClickHouse will throw an exception when a shard is unavailable.
+
+- If `skip_unavailable_shards=1` and `skip_unavailable_shards_mode=unavailable`, ClickHouse will ignore connection-related exceptions and continue processing the query.
+
+- If `skip_unavailable_shards=1` and `skip_unavailable_shards_mode=unavailable_or_exception`, ClickHouse will ignore all exceptions from remote instances, regardless of their nature.
 )", 0) \
     DECLARE(UInt64, parallel_distributed_insert_select, 0, R"(
 Enables parallel distributed `INSERT ... SELECT` query.

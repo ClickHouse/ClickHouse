@@ -665,7 +665,11 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
 
         case Protocol::Server::Exception:
             if (context->getSettingsRef()[Setting::skip_unavailable_shards] && context->getSettingsRef()[Setting::skip_unavailable_shards_mode] == SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION) {
-                finished = true;
+                LOG_ERROR(log, 
+                    "Ignoring exception from connection(s) {} due to `skip_unavailable_shards_mode` setting: {}", 
+                    connections->dumpAddresses(), 
+                    packet.exception->displayText());
+
                 return ReadResult(Block{});
             }
 
