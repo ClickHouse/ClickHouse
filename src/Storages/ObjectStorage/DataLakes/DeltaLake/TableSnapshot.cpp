@@ -283,7 +283,7 @@ public:
         LOG_TEST(
             context->log,
             "Scanned file: {}, size: {}, num records: {}, partition columns: {}",
-            full_path, size, stats->num_records, partitions_info.size());
+            full_path, size, stats ? DB::toString(stats->num_records) : "Unknown", partitions_info.size());
 
         DB::ObjectInfoPtr object;
         if (partitions_info.empty())
