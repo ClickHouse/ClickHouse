@@ -64,6 +64,7 @@ def test_soft_limit_create(started_cluster):
 
         txn.create("/test_soft_limit/node_1000001" + str(i), b"abcde")
         txn.commit()
+        assert "0\n"  == node.query("select sum(ProfileEvent_ZooKeeperHardwareExceptions) from system.metric_log")
         return
 
     raise Exception("all records are inserted but no error occurs")
