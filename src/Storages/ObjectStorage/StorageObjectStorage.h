@@ -20,7 +20,6 @@ class NamedCollection;
 struct StorageObjectStorageSettings;
 using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
 struct PartitionStrategy;
-struct FileLikeStorageFilepathGenerator;
 
 namespace ErrorCodes
 {
@@ -276,7 +275,6 @@ public:
      */
     bool partition_columns_in_data_file = false;
     std::shared_ptr<PartitionStrategy> partition_strategy;
-    std::shared_ptr<FileLikeStorageFilepathGenerator> partitioned_filepath_generator;
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
 
