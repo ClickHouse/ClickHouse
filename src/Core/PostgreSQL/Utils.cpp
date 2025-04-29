@@ -8,15 +8,29 @@
 namespace postgres
 {
 
-ConnectionInfo formatConnectionString(String dbname, String host, UInt16 port, String user, String password, UInt64 timeout)
+ConnectionInfo formatConnectionString(
+    String dbname,
+    String host,
+    UInt16 port,
+    String user,
+    String password,
+    String sslcert,
+    String sslkey,
+    String sslrootcert,
+    UInt64 timeout)
 {
     DB::WriteBufferFromOwnString out;
-    out << "dbname=" << DB::quote << dbname
-        << " host=" << DB::quote << host
-        << " port=" << port
-        << " user=" << DB::quote << user
-        << " password=" << DB::quote << password
-        << " connect_timeout=" << timeout;
+    out << "dbname=" << DB::quote << dbname << " host=" << DB::quote << host << " port=" << port << " user=" << DB::quote << user
+        << " password=" << DB::quote << password << " connect_timeout=" << timeout;
+
+    if (!sslcert.empty())
+        out << " sslcert=" << DB::quote << sslcert << DB::quote;
+
+    if (!sslkey.empty())
+        out << " sslkey=" << DB::quote << sslkey << DB::quote;
+
+    if (!sslrootcert.empty())
+        out << " sslrootcert=" << DB::quote << sslrootcert << DB::quote;
     return {out.str(), host + ':' + DB::toString(port)};
 }
 
