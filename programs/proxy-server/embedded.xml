@@ -1,0 +1,31 @@
+<!-- Config that is used when proxy server is run without config file. -->
+<clickhouse>
+    <logger>
+        <level>trace</level>
+        <console>true</console>
+    </logger>
+
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+
+    <storage>
+        <servers>
+            <server>
+                <key>server</key>
+                <host>127.0.0.1</host>
+                <http-port>8124</http-port>
+                <tcp-port>9001</tcp-port>
+            </server>
+        </servers>
+    </storage>
+
+    <routing>
+        <default>
+             <action>
+                <route_to>
+                    <server>server</server>
+                </route_to>
+            </action>
+        </default>
+    </routing>
+</clickhouse>
