@@ -9,18 +9,13 @@ CREATE TABLE company(
 );
 
 INSERT INTO company (id) VALUES
-    (0),
     (1),
     (2),
     (3),
     (4),
-    (5),
-    (6),
-    (7),
-    (8),
-    (9)
+    (5)
 ;
 
-SELECT count() FROM company;
-SELECT count() FROM company SETTINGS max_estimated_rows_to_read=9; -- { serverError TOO_MANY_ROWS }
-SELECT count() FROM company SETTINGS max_estimated_rows_to_read=10;
+SELECT * FROM company;
+SELECT * FROM company SETTINGS max_estimated_rows_to_read=4; -- { serverError TOO_MANY_ROWS }
+SELECT * FROM company SETTINGS max_estimated_rows_to_read=5;

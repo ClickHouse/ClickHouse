@@ -280,14 +280,13 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 {
     planner.buildQueryPlanIfNeeded();
     auto & query_plan = planner.getQueryPlan();
-    query_plan.checkLimits(context);
 
     QueryPlanOptimizationSettings optimization_settings(context);
     BuildQueryPipelineSettings build_pipeline_settings(context);
 
     query_plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
-    return std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings));
+    return std::move(*query_plan.buildQueryPipeline(*context, optimization_settings, build_pipeline_settings));
 }
 
 void InterpreterSelectQueryAnalyzer::addStorageLimits(const StorageLimitsList & storage_limits)

@@ -170,6 +170,7 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
 }
 
 QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
+    const Context & context,
     const QueryPlanOptimizationSettings & optimization_settings,
     const BuildQueryPipelineSettings & build_pipeline_settings,
     bool do_optimize)
@@ -219,6 +220,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     last_pipeline->addResources(std::move(resources));
     last_pipeline->setConcurrencyControl(getConcurrencyControl());
 
+    this->checkLimits(context);
     return last_pipeline;
 }
 
@@ -543,9 +545,9 @@ void QueryPlan::explainEstimate(MutableColumns & columns) const
     }
 }
 
-void QueryPlan::checkLimits(const ContextPtr & context) const
+void QueryPlan::checkLimits(const Context & context) const
 {
-    const auto & settings = context->getSettingsRef();
+    const auto & settings = context.getSettingsRef();
     const auto max_rows = settings[Setting::max_estimated_rows_to_read];
 
     if (max_rows == 0) {
