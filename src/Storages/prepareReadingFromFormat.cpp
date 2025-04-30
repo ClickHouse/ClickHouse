@@ -21,11 +21,11 @@ ReadFromFormatInfo prepareReadingFromFormat(
     bool supports_subset_of_columns,
     const NamesAndTypesList & columns_to_read_from_file_path)
 {
-    std::unordered_set<std::string> columns_to_read_from_file_path_set;
+    std::unordered_map<std::string, NameAndTypePair> columns_to_read_from_file_path_map;
 
     for (const auto & column : columns_to_read_from_file_path)
     {
-        columns_to_read_from_file_path_set.insert(column.name);
+        columns_to_read_from_file_path_map.insert(std::make_pair(column.name, column));
     }
 
     ReadFromFormatInfo info;
@@ -35,11 +35,11 @@ ReadFromFormatInfo prepareReadingFromFormat(
     {
         if (auto virtual_column = storage_snapshot->virtual_columns->tryGet(column_name))
             info.requested_virtual_columns.emplace_back(std::move(*virtual_column));
-        else if (!columns_to_read_from_file_path_set.contains(column_name))
+        else if (columns_to_read_from_file_path_map.contains(column_name))
+            info.hive_partition_columns_to_read_from_file_path.emplace_back(columns_to_read_from_file_path_map[column_name]);
+        else
             columns_to_read.push_back(column_name);
     }
-
-    info.hive_partition_columns_to_read_from_file_path = columns_to_read_from_file_path;
 
     /// Create header for Source that will contain all requested columns including virtual columns at the end
     /// (because they will be added to the chunk after reading regular columns).
