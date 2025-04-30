@@ -541,10 +541,33 @@ class _ResultS3:
     def copy_result_to_s3(cls, result, clean=False):
         result.dump()
         env = _Environment.get()
-        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}"
+        result_file_path = result.file_name()
+        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{Path(result_file_path).name}"
         if clean:
             S3.delete(s3_path)
-        url = S3.copy_file_to_s3(s3_path=s3_path, local_path=result.file_name())
+        archive_file = Utils.compress_file(result_file_path, no_strict=True)
+        archive_type = archive_file.split(".")[-1]
+        content_encoding = ""
+        if archive_type == "gz":
+            content_encoding = "gzip"
+        elif archive_type == "zst":
+            content_encoding = "zstd"
+        elif archive_type == "br":
+            content_encoding = "br"
+        else:
+            if archive_type:
+                print(
+                    f"WARNING: Not supported compress codec: [{archive_type}] - skip compress"
+                )
+                archive_file = result_file_path
+
+        url = S3.copy_file_to_s3(
+            s3_path=s3_path,
+            local_path=archive_file,
+            text=True,
+            content_encoding=content_encoding,
+            with_rename=True,
+        )
         return url
 
     @classmethod
