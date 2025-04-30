@@ -5,7 +5,7 @@ from pathlib import Path
 from ci.jobs.scripts.log_cluster import LogClusterBuildProfileQueries
 from ci.praktika.info import Info
 from ci.praktika.result import Result
-from ci.praktika.utils import Shell, Utils
+from ci.praktika.utils import Shell
 
 temp_dir = "./ci/tmp"
 build_dir = "./ci/tmp/build"
@@ -36,7 +36,7 @@ def check():
         assert build_type
         LogClusterBuildProfileQueries().insert_profile_data(
             build_name=build_type,
-            start_time=Utils.timestamp_to_str(check_start_time),
+            start_time=check_start_time,
             file=profile_data_file,
         )
         LogClusterBuildProfileQueries().insert_build_size_data(
