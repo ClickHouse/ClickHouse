@@ -2,8 +2,9 @@ import time
 import traceback
 
 import requests
-from praktika.info import Info
-from praktika.secret import Secret
+
+from ci.praktika.info import Info
+from ci.praktika.secret import Secret
 
 
 class LogCluster:
@@ -24,10 +25,11 @@ class LogCluster:
 
     def is_ready(self):
         if not self.url:
-            self.url = Secret.Config(
+            url = Secret.Config(
                 name=self.URL_SECRET,
                 type=Secret.Type.AWS_SSM_VAR,
             ).get_value()
+            self.url = "https://" + url.removeprefix("https://")
         passwd = Secret.Config(
             name=self.PASSWD_SECRET,
             type=Secret.Type.AWS_SSM_VAR,
@@ -47,7 +49,7 @@ class LogCluster:
         }
         try:
             response = requests.post(
-                url="https://" + self.url,
+                url=self.url,
                 params=params,
                 data="",
                 headers=self._auth,

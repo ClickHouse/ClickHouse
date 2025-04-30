@@ -141,7 +141,10 @@ class JobConfigs:
             ],
             with_git_submodules=True,
         ),
-        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/build_post_hook.py"],
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
+            "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+        ],
     ).parametrize(
         parameter=[
             BuildTypes.AMD_DEBUG,
@@ -239,7 +242,10 @@ class JobConfigs:
             ],
             with_git_submodules=True,
         ),
-        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/build_post_hook.py"],
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
+            "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+        ],
     ).parametrize(
         parameter=[
             BuildTypes.AMD_DARWIN,
