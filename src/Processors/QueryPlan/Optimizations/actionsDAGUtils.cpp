@@ -434,4 +434,66 @@ void applyActionsToSortDescription(
     description.resize(prefix_size);
 }
 
+std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *>> resolveMatchedInputs(
+    const MatchedTrees::Matches & matches,
+    const std::unordered_set<const ActionsDAG::Node *> & allowed_inputs,
+    const ActionsDAG::NodeRawConstPtrs & nodes)
+{
+    struct Frame
+    {
+        const ActionsDAG::Node * node;
+        size_t next_child_to_visit = 0;
+    };
+
+    std::stack<Frame> stack;
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> new_inputs;
+
+    for (const auto * node : nodes)
+    {
+        if (visited.contains(node))
+            continue;
+
+        stack.push({.node = node});
+
+        while (!stack.empty())
+        {
+            auto & frame = stack.top();
+
+            if (frame.next_child_to_visit == 0)
+            {
+                auto jt = matches.find(frame.node);
+                if (jt != matches.end())
+                {
+                    const auto & match = jt->second;
+                    if (match.node && !match.monotonicity && allowed_inputs.contains(match.node))
+                    {
+                        visited.insert(frame.node);
+                        new_inputs[frame.node] = match.node;
+                        stack.pop();
+                        continue;
+                    }
+                }
+            }
+
+            if (frame.next_child_to_visit < frame.node->children.size())
+            {
+                stack.push({.node = frame.node->children[frame.next_child_to_visit]});
+                ++frame.next_child_to_visit;
+                continue;
+            }
+
+            /// Not a match and there is no matched child.
+            if (frame.node->type == ActionsDAG::ActionType::INPUT)
+                return std::nullopt;
+
+            /// Not a match, but all children matched.
+            visited.insert(frame.node);
+            stack.pop();
+        }
+    }
+
+    return new_inputs;
+}
+
 }
