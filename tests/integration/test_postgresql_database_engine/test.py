@@ -46,10 +46,38 @@ def started_cluster():
         conn = get_postgres_conn(cluster.postgres_ip, cluster.postgres_port)
         cursor = conn.cursor()
         create_postgres_db(cursor, "postgres_database")
+
+        conn = get_postgres_conn(cluster.postgres_mtls_ip, cluster.postgres_port, mtls=True)
+        cursor = conn.cursor()
+        create_postgres_db(cursor, "postgres_database")
         yield cluster
 
     finally:
         cluster.shutdown()
+
+
+def test_postgresql_mtls(started_cluster):
+    # connect to the database
+    conn = get_postgres_conn(
+        started_cluster.postgres_mtls_ip,
+        started_cluster.postgres_port,
+        database=True,
+        mtls=True,
+    )
+    cursor = conn.cursor()
+
+    node1.query(
+        f"CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1-mtls:5432', 'postgres_database', 'postgres', '{pg_pass}')"
+    )
+    assert "postgres_database" in node1.query("SHOW DATABASES")
+
+    create_postgres_table(cursor, "test_table")
+    assert "test_table" in node1.query("SHOW TABLES FROM postgres_database")
+
+    node1.query("DROP DATABASE postgres_database")
+    assert "postgres_database" not in node1.query("SHOW DATABASES")
+
+    drop_postgres_table(cursor, "test_table")
 
 
 def test_postgres_database_engine_with_postgres_ddl(started_cluster):
