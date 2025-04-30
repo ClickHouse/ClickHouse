@@ -7,7 +7,8 @@ ENGINE = MergeTree ORDER BY (a, b)
 SETTINGS
     index_granularity = 3,
     min_bytes_for_wide_part = 0,
-    ratio_of_defaults_for_sparse_serialization = 1.0;
+    ratio_of_defaults_for_sparse_serialization = 1.0,
+    compact_parts_max_granules_to_buffer = 1;
 
 SYSTEM STOP MERGES t_merge_tree_index;
 
@@ -25,7 +26,8 @@ ENGINE = MergeTree ORDER BY (a, b)
 SETTINGS
     index_granularity = 3,
     min_bytes_for_wide_part = '1G',
-    ratio_of_defaults_for_sparse_serialization = 1.0;
+    ratio_of_defaults_for_sparse_serialization = 1.0,
+    compact_parts_max_granules_to_buffer = 1;
 
 SYSTEM STOP MERGES t_merge_tree_index;
 

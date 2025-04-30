@@ -95,7 +95,7 @@ Connection::Connection(const String & host_, UInt16 port_,
     const String & user_, const String & password_,
     const String & proto_send_chunked_, const String & proto_recv_chunked_,
     [[maybe_unused]] const SSHKey & ssh_private_key_,
-    const String & jwt_,
+    [[maybe_unused]] const String & jwt_,
     const String & quota_key_,
     const String & cluster_,
     const String & cluster_secret_,
@@ -110,7 +110,9 @@ Connection::Connection(const String & host_, UInt16 port_,
     , ssh_private_key(ssh_private_key_)
 #endif
     , quota_key(quota_key_)
+#if USE_JWT_CPP && USE_SSL
     , jwt(jwt_)
+#endif
     , cluster(cluster_)
     , cluster_secret(cluster_secret_)
     , client_name(client_name_)
@@ -446,11 +448,13 @@ void Connection::sendHello([[maybe_unused]] const Poco::Timespan & handshake_tim
         performHandshakeForSSHAuth(handshake_timeout);
     }
 #endif
+#if USE_JWT_CPP && USE_SSL
     else if (!jwt.empty())
     {
         writeStringBinary(EncodedUserInfo::JWT_AUTHENTICAION_MARKER, *out);
         writeStringBinary(jwt, *out);
     }
+#endif
     else
     {
         writeStringBinary(user, *out);
