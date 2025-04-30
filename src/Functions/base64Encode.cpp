@@ -13,7 +13,7 @@ REGISTER_FUNCTION(Base64Encode)
     FunctionDocumentation::Arguments arguments = {{"plaintext", "String column or constant."}};
     FunctionDocumentation::ReturnedValue returned_value = "A string containing the encoded value of the argument.";
     FunctionDocumentation::Examples examples = {{"Example", "SELECT base64Encode('clickhouse')", "Y2xpY2tob3VzZQ=="}};
-    FunctionDocumentation::Category category = {"Strings"};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
 
     factory.registerFunction<FunctionBase64Conversion<Base64Encode<Base64Variant::Normal>>>({description, syntax, arguments, returned_value, examples, category});
 
