@@ -59,7 +59,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int INVALID_JOIN_ON_EXPRESSION;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace Setting
@@ -105,25 +104,11 @@ struct JoinInfoBuildContext
             {
                 auto & column_node = join_using_node->as<ColumnNode &>();
                 auto & column_node_sources = column_node.getExpressionOrThrow()->as<ListNode &>();
-
-                const auto column_left = column_node_sources.getNodes().at(0);
-                if (!column_left->as<ColumnNode>())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "JOIN USING clause expected column identifier. Actual {}",
-                        column_left->formatASTForErrorMessage());
-
                 changed_types.emplace(
-                    planner_context_->getColumnNodeIdentifierOrThrow(column_left),
+                    planner_context_->getColumnNodeIdentifierOrThrow(column_node_sources.getNodes().at(0)),
                     column_node.getColumnType());
-
-                const auto column_right = column_node_sources.getNodes().at(1);
-                if (!column_right->as<ColumnNode>())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "JOIN USING clause expected column identifier. Actual {}",
-                        column_right->formatASTForErrorMessage());
-
                 changed_types.emplace(
-                    planner_context_->getColumnNodeIdentifierOrThrow(column_right),
+                    planner_context_->getColumnNodeIdentifierOrThrow(column_node_sources.getNodes().at(1)),
                     column_node.getColumnType());
             }
         }

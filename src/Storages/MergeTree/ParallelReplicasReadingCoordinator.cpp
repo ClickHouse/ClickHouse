@@ -357,7 +357,7 @@ DefaultCoordinator::~DefaultCoordinator()
 {
     try
     {
-        LOG_TRACE(log, "Coordination done: {}", toString(stats));
+        LOG_DEBUG(log, "Coordination done: {}", toString(stats));
     }
     catch (...)
     {
@@ -402,7 +402,7 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
     if (mark_segment_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Zero value provided for `mark_segment_size`");
 
-    LOG_TRACE(log, "Reading state is fully initialized: {}, mark_segment_size: {}", fmt::join(all_parts_to_read, "; "), mark_segment_size);
+    LOG_DEBUG(log, "Reading state is fully initialized: {}, mark_segment_size: {}", fmt::join(all_parts_to_read, "; "), mark_segment_size);
 }
 
 void DefaultCoordinator::markReplicaAsUnavailable(size_t replica_number)
@@ -440,13 +440,13 @@ void DefaultCoordinator::setProgressCallback()
         progress.total_rows_to_read = total_rows_to_read;
         progress_callback(progress);
 
-        LOG_TRACE(log, "Total rows to read: {}", total_rows_to_read);
+        LOG_DEBUG(log, "Total rows to read: {}", total_rows_to_read);
     }
 }
 
 void DefaultCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
-    LOG_TRACE(log, "Initial request: {}", announcement.describe());
+    LOG_DEBUG(log, "Initial request: {}", announcement.describe());
 
     const auto replica_num = announcement.replica_num;
 
@@ -462,7 +462,7 @@ void DefaultCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate announcement received for replica number {}", replica_num);
     replica_status[replica_num].is_announcement_received = true;
 
-    LOG_TRACE(log, "Sent initial requests: {} Replicas count: {}", sent_initial_requests, replicas_count);
+    LOG_DEBUG(log, "Sent initial requests: {} Replicas count: {}", sent_initial_requests, replicas_count);
 
     if (sent_initial_requests == replicas_count - unavailable_replicas_count)
         setProgressCallback();
@@ -834,7 +834,7 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
 
     sortResponseRanges(response.description);
 
-    LOG_TRACE(
+    LOG_DEBUG(
         log,
         "Going to respond to replica {} with {}; mine_marks={}, stolen_by_hash={}, stolen_rest={}",
         request.replica_num,
@@ -856,7 +856,7 @@ public:
     {}
     ~InOrderCoordinator() override
     {
-        LOG_TRACE(log, "Coordination done: {}", toString(stats));
+        LOG_DEBUG(log, "Coordination done: {}", toString(stats));
     }
 
     ParallelReadResponse handleRequest([[ maybe_unused ]]  ParallelReadRequest request) override;
@@ -962,7 +962,7 @@ void InOrderCoordinator<mode>::doHandleInitialAllRangesAnnouncement(InitialAllRa
 
         total_rows_to_read += new_rows_to_read;
 
-        LOG_TRACE(log, "Updated total rows to read: added {} rows, total {} rows", new_rows_to_read, total_rows_to_read);
+        LOG_DEBUG(log, "Updated total rows to read: added {} rows, total {} rows", new_rows_to_read, total_rows_to_read);
     }
 }
 

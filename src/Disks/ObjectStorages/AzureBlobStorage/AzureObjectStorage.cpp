@@ -71,10 +71,10 @@ private:
         if (client->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureListObjects);
 
-        chassert(batch.empty());
+        batch.clear();
+        auto outcome = client->ListBlobs(options);
         auto blob_list_response = client->ListBlobs(options);
         auto blobs_list = blob_list_response.Blobs;
-        batch.reserve(blobs_list.size());
 
         for (const auto & blob : blobs_list)
         {

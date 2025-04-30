@@ -1,11 +1,12 @@
 #pragma once
 
+#include <exception>
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
-#include <Common/threadPoolCallbackRunner.h>
+
 
 namespace DB
 {
@@ -93,6 +94,13 @@ public:
 
     auto merge(const UniqExactSet & other, ThreadPool * thread_pool = nullptr, std::atomic<bool> * is_cancelled = nullptr)
     {
+        /// If the size is large, we may convert the singleLevelHash to twoLevelHash and merge in parallel.
+        if (other.size() > 40000)
+        {
+            if (isSingleLevel())
+                convertToTwoLevel();
+        }
+
         if (isSingleLevel() && other.isTwoLevel())
             convertToTwoLevel();
 
@@ -114,16 +122,17 @@ public:
             }
             else
             {
-                ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, "UniqExactMerger");
                 try
                 {
                     auto next_bucket_to_merge = std::make_shared<std::atomic_uint32_t>(0);
 
                     auto thread_func = [&lhs, &rhs, next_bucket_to_merge, is_cancelled, thread_group = CurrentThread::getGroup()]()
                     {
+                        ThreadGroupSwitcher switcher(thread_group, "UniqExactMerger");
+
                         while (true)
                         {
-                            if (is_cancelled->load())
+                            if (is_cancelled->load(std::memory_order_seq_cst))
                                 return;
 
                             const auto bucket = next_bucket_to_merge->fetch_add(1);
@@ -134,13 +143,13 @@ public:
                     };
 
                     for (size_t i = 0; i < std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS); ++i)
-                        runner(thread_func, Priority{});
-                    runner.waitForAllToFinishAndRethrowFirstError();
+                        thread_pool->scheduleOrThrowOnError(thread_func);
+                    thread_pool->wait();
                 }
                 catch (...)
                 {
-                    is_cancelled->store(true);
-                    runner.waitForAllToFinishAndRethrowFirstError();
+                    thread_pool->wait();
+                    throw;
                 }
             }
         }
