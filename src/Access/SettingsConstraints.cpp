@@ -179,11 +179,9 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
             check(current_settings, value, source);
         }
 
-        /// Don't need to check disallowed_values here because they make constraints more restrictive
-        /// and don't allow to bypass constraints from config by creating a user with custom constraints.
-        /// For example if the the value `1` is disallowed for some setting, in the default profile, checking
-        /// the constraint here would prevent us from being able to create another profile where the value `1`
-        /// is allowed for the same setting, if we were to need it.
+        /// Don't check disallowed_values here in the profile elements because they make constrains more restrictive
+        /// and don't allow to bypass constraints from config by creating a user with custom constraints. The check
+        /// for disallowed values are instead implemented in SettingsConstraints::Checker::check.
 
         SettingConstraintWritability new_value = SettingConstraintWritability::WRITABLE;
         SettingConstraintWritability old_value = SettingConstraintWritability::WRITABLE;
