@@ -720,6 +720,7 @@ bool Client::buzzHouse()
                     const auto & t2 = test_content
                         ? t1
                         : rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_to_test_format));
+                    const bool use_optimize = test_content && t1.get().supportsOptimize() && rg.nextMediumNumber() < 21;
 
                     if (test_content)
                     {
@@ -732,32 +733,38 @@ bool Client::buzzHouse()
                         qo.processFirstOracleQueryResult(!have_error, *external_integrations);
                     }
 
-                    sq2.Clear();
-                    qo.generateExportQuery(rg, gen, test_content, t1, sq2);
-                    BuzzHouse::SQLQueryToString(full_query, sq2);
-                    outf << full_query << std::endl;
-                    server_up &= processBuzzHouseQuery(full_query);
+                    if (!use_optimize)
+                    {
+                        sq2.Clear();
+                        qo.generateExportQuery(rg, gen, test_content, t1, sq2);
+                        BuzzHouse::SQLQueryToString(full_query, sq2);
+                        outf << full_query << std::endl;
+                        server_up &= processBuzzHouseQuery(full_query);
+                    }
 
                     if (test_content)
                     {
-                        /// Clear table, before inserting data again, when testing for correctness
+                        /// The intermediate step could be either clearing or optimizing the table
                         qo.setIntermediateStepSuccess(!have_error);
 
                         sq3.Clear();
                         full_query.resize(0);
-                        qo.generateClearQuery(t1, sq3);
+                        qo.dumpOracleIntermediateStep(rg, gen, t1, use_optimize, sq3);
                         BuzzHouse::SQLQueryToString(full_query, sq3);
                         outf << full_query << std::endl;
                         server_up &= processBuzzHouseQuery(full_query);
                         qo.setIntermediateStepSuccess(!have_error);
                     }
 
-                    sq4.Clear();
-                    full_query.resize(0);
-                    qo.generateImportQuery(rg, gen, t2, sq2, sq4);
-                    BuzzHouse::SQLQueryToString(full_query, sq4);
-                    outf << full_query << std::endl;
-                    server_up &= processBuzzHouseQuery(full_query);
+                    if (!use_optimize)
+                    {
+                        sq4.Clear();
+                        full_query.resize(0);
+                        qo.generateImportQuery(rg, gen, t2, sq2, sq4);
+                        BuzzHouse::SQLQueryToString(full_query, sq4);
+                        outf << full_query << std::endl;
+                        server_up &= processBuzzHouseQuery(full_query);
+                    }
 
                     if (test_content)
                     {

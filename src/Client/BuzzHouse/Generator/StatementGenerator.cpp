@@ -464,11 +464,10 @@ void StatementGenerator::generateNextTablePartition(RandomGenerator & rg, const 
     }
 }
 
-static const auto optimize_table_lambda = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily(); };
+static const auto optimize_table_lambda = [](const SQLTable & t) { return t.isAttached() && t.supportsOptimize(); };
 
-void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * ot)
+void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg, const SQLTable & t, bool force_final, OptimizeTable * ot)
 {
-    const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(optimize_table_lambda));
     const std::optional<String> & cluster = t.getCluster();
 
     t.setName(ot->mutable_est(), false);
@@ -507,11 +506,16 @@ void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, Optimiz
     {
         ot->mutable_cluster()->set_cluster(cluster.value());
     }
-    ot->set_final((t.supportsFinal() || t.isMergeTreeFamily()) && rg.nextSmallNumber() < 3);
+    ot->set_final((t.supportsFinal() || t.isMergeTreeFamily()) && (force_final || rg.nextSmallNumber() < 3));
     if (rg.nextSmallNumber() < 3)
     {
         generateSettingValues(rg, serverSettings, ot->mutable_setting_values());
     }
+}
+
+void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * ot)
+{
+    generateNextOptimizeTableInternal(rg, rg.pickRandomly(filterCollection<SQLTable>(optimize_table_lambda)), false, ot);
 }
 
 void StatementGenerator::generateNextCheckTable(RandomGenerator & rg, CheckTable * ct)

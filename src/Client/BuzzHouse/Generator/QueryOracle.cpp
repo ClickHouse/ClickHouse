@@ -298,15 +298,26 @@ void QueryOracle::generateExportQuery(
     jtf->set_final(t.supportsFinal());
 }
 
-void QueryOracle::generateClearQuery(const SQLTable & t, SQLQuery & sq3)
+void QueryOracle::dumpOracleIntermediateStep(
+    RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const bool use_optimize, SQLQuery & sq3)
 {
-    const std::optional<String> & cluster = t.getCluster();
-    Truncate * trunc = sq3.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_trunc();
+    SQLQueryInner * sq = sq3.mutable_single_query()->mutable_explain()->mutable_inner_query();
 
-    t.setName(trunc->mutable_est(), false);
-    if (cluster.has_value())
+    if (use_optimize)
     {
-        trunc->mutable_cluster()->set_cluster(cluster.value());
+        gen.generateNextOptimizeTableInternal(rg, t, true, sq->mutable_opt());
+    }
+    else
+    {
+        /// Truncate table, then insert everything again
+        const std::optional<String> & cluster = t.getCluster();
+        Truncate * trunc = sq->mutable_trunc();
+
+        t.setName(trunc->mutable_est(), false);
+        if (cluster.has_value())
+        {
+            trunc->mutable_cluster()->set_cluster(cluster.value());
+        }
     }
 }
 
