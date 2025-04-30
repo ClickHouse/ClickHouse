@@ -5,7 +5,7 @@ from pathlib import Path
 from ci.jobs.scripts.log_cluster import LogClusterBuildProfileQueries
 from ci.praktika.info import Info
 from ci.praktika.result import Result
-from ci.praktika.utils import Shell
+from ci.praktika.utils import Shell, Utils
 
 temp_dir = "./ci/tmp"
 build_dir = "./ci/tmp/build"
@@ -31,7 +31,9 @@ def check():
                 ):
                     with open(profile_source, "rb") as ps_fd:
                         profile_fd.write(ps_fd.read())
-        check_start_time = Result.from_fs(Info().job_name)
+        check_start_time = Utils.timestamp_to_str(
+            Result.from_fs(Info().job_name).start_time
+        )
         build_type = Info().job_name.split("(")[1].rstrip(")")
         assert build_type
         LogClusterBuildProfileQueries().insert_profile_data(
@@ -50,10 +52,13 @@ def check():
             file=profiles_dir / "binary_symbols.txt",
         )
     except Exception as e:
+        print(f"ERROR: Failed to upload build profile data:")
         traceback.print_exc()
-        print(f"ERROR: Failed to upload build profile data. ex: [{e}]")
         sys.exit(1)
 
 
 if __name__ == "__main__":
-    check()
+    if Info().pr_number == 0:
+        check()
+    else:
+        print("Not applicable for PRs")

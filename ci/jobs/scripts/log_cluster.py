@@ -123,17 +123,17 @@ class LogClusterBuildProfileQueries:
     def insert_profile_data(self, build_name, start_time, file):
         query = self._profile_query(build_name, start_time)
         with open(file, "rb") as data_fd:
-            assert self._log_cluster.do_query(query, data=data_fd, timeout=20)
+            assert self._log_cluster.do_query(query, data=data_fd, timeout=50)
 
     def insert_build_size_data(self, build_name, start_time, file):
         query = self._build_size_query(build_name, start_time)
         with open(file, "rb") as data_fd:
-            assert self._log_cluster.do_query(query, data=data_fd, timeout=20)
+            assert self._log_cluster.do_query(query, data=data_fd, timeout=50)
 
     def insert_binary_symbol_data(self, build_name, start_time, file):
         query = self._binary_symbol_query(build_name, start_time)
         with open(file, "rb") as data_fd:
-            assert self._log_cluster.do_query(query, data=data_fd, timeout=20)
+            assert self._log_cluster.do_query(query, data=data_fd, timeout=50)
 
     def _profile_query(self, build_name, start_time):
         return f"""INSERT INTO build_time_trace
