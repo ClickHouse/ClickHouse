@@ -75,8 +75,8 @@ Reloads all registered [executable user defined functions](/sql-reference/functi
 **Syntax**
 
 ```sql
-RELOAD FUNCTIONS [ON CLUSTER cluster_name]
-RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
+SYSTEM RELOAD FUNCTIONS [ON CLUSTER cluster_name]
+SYSTEM RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
 ```
 
 ## RELOAD ASYNCHRONOUS METRICS {#reload-asynchronous-metrics}
@@ -84,7 +84,7 @@ RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
 Re-calculates all [asynchronous metrics](../../operations/system-tables/asynchronous_metrics.md). Since asynchronous metrics are periodically updated based on setting [asynchronous_metrics_update_period_s](../../operations/server-configuration-parameters/settings.md), updating them manually using this statement is typically not necessary.
 
 ```sql
-RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
+SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 ```
 
 ## DROP DNS CACHE {#drop-dns-cache}

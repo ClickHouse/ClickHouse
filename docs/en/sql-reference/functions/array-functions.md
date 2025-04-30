@@ -892,7 +892,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 
 Returns the array \[1, 2, 3, ..., length (arr) \]
 
-This function is normally used with ARRAY JOIN. It allows counting something just once for each array after applying ARRAY JOIN. Example:
+This function is normally used with `ARRAY JOIN`. It allows counting something just once for each array after applying `ARRAY JOIN`. Example:
 
 ```sql
 SELECT

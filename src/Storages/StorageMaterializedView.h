@@ -104,6 +104,8 @@ public:
     void finalizeRestoreFromBackup() override;
     bool supportsBackupPartition() const override;
 
+    static String generateInnerTableName(const StorageID & view_id);
+
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
