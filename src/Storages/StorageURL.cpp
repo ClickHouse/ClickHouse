@@ -421,7 +421,7 @@ StorageURLSource::StorageURLSource(
             if (need_only_count)
                 input_format->needOnlyCount();
 
-          builder.init(Pipe(input_format));
+            builder.init(Pipe(input_format));
 
             if (columns_description.hasDefaults())
             {
@@ -555,6 +555,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
                            .withHostFilter(&context_->getRemoteHostFilter())
                            .withBufSize(settings[Setting::max_read_buffer_size])
                            .withRedirects(settings[Setting::max_http_get_redirects])
+                           .withEnableUrlEncoding(settings[Setting::enable_url_encoding])
                            .withOutCallback(callback)
                            .withSkipNotFound(skip_url_not_found_error)
                            .withHeaders(headers)

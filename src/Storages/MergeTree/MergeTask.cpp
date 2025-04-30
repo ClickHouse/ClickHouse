@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/MergeTask.h>
+#include <Storages/MergeTree/MergedPartOffsets.h>
 
 #include <memory>
 #include <fmt/format.h>
@@ -77,6 +78,8 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric TemporaryFilesForMerge;
+    extern const Metric NonAbortedMergeFailures;
+    extern const Metric TotalMergeFailures;
 }
 
 namespace DB
@@ -234,7 +237,7 @@ static void addMissedColumnsToSerializationInfos(
 
 bool MergeTask::GlobalRuntimeContext::isCancelled() const
 {
-    return (future_part ? merges_blocker->isCancelledForPartition(future_part->part_info.partition_id) : merges_blocker->isCancelled())
+    return (future_part ? merges_blocker->isCancelledForPartition(future_part->part_info.getPartitionId()) : merges_blocker->isCancelled())
         || merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed);
 }
 
@@ -633,7 +636,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         ttl_merges_blocker = global_ctx->ttl_merges_blocker,
         need_remove = ctx->need_remove_expired_values,
         merge_list_element = global_ctx->merge_list_element_ptr,
-        partition_id = global_ctx->future_part->part_info.partition_id]() -> bool
+        partition_id = global_ctx->future_part->part_info.getPartitionId()]() -> bool
     {
         return merges_blocker->isCancelledForPartition(partition_id)
             || (need_remove && ttl_merges_blocker->isCancelled())
@@ -874,7 +877,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeMergeProjections() cons
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
 {
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
-    UInt64 step_time_ms = (*global_ctx->data->getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds();
+    UInt64 step_time_ms
+        = (*global_ctx->data->getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds();
 
     do
     {
@@ -884,6 +888,16 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
         {
             finalize();
             return false;
+        }
+
+        /// Record _part_offset mapping and remove unneeded column
+        if (global_ctx->merged_part_offsets && global_ctx->parent_part == nullptr)
+        {
+            chassert(block.has("_part_index"));
+            auto part_index_column = block.getByName("_part_index").column->convertToFullColumnIfSparse();
+            const auto & index_data = assert_cast<const ColumnUInt64 &>(*part_index_column).getData();
+            global_ctx->merged_part_offsets->insert(index_data.begin(), index_data.end());
+            block.erase("_part_index");
         }
 
         global_ctx->rows_written += block.rows();
@@ -1039,7 +1053,8 @@ private:
     const bool is_result_sparse;
 };
 
-MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & column_name) const
+MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline
+MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & column_name) const
 {
     /// Read from all parts
     std::vector<QueryPlanPtr> plans;
@@ -1051,8 +1066,9 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline MergeTask::Vertic
             *plan_for_part,
             *global_ctx->data,
             global_ctx->storage_snapshot,
-            global_ctx->future_part->parts[part_num],
+            RangesInDataPart(global_ctx->future_part->parts[part_num], part_num, 0),
             global_ctx->alter_conversions[part_num],
+            global_ctx->merged_part_offsets,
             Names{column_name},
             global_ctx->input_rows_filtered,
             /*apply_deleted_mask=*/ true,
@@ -1277,6 +1293,9 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             ReadableSize(global_ctx->merge_list_element_ptr->bytes_read_uncompressed / elapsed_seconds));
     }
 
+    if (global_ctx->merged_part_offsets && !global_ctx->projections_to_merge.empty())
+        global_ctx->merged_part_offsets->flush();
+
     for (const auto & projection : global_ctx->projections_to_merge)
     {
         MergeTreeData::DataPartsVector projection_parts = global_ctx->projections_to_merge_parts[projection->name];
@@ -1315,6 +1334,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             projection_merging_params,
             global_ctx->need_prefix,
             global_ctx->new_data_part.get(),
+            projection->with_parent_part_offset ? global_ctx->merged_part_offsets : nullptr,
             ".proj",
             NO_TRANSACTION_PTR,
             global_ctx->data,
@@ -1322,6 +1342,12 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             global_ctx->merges_blocker,
             global_ctx->ttl_merges_blocker));
     }
+
+    /// merge projections with _part_offset first so that we can release offset mapping earlier.
+    std::sort(
+        ctx->tasks_for_projections.begin(),
+        ctx->tasks_for_projections.end(),
+        [](const auto & l, const auto & r) { return l->global_ctx->merged_part_offsets && !r->global_ctx->merged_part_offsets; });
 
     /// We will iterate through projections and execute them
     ctx->projections_iterator = ctx->tasks_for_projections.begin();
@@ -1334,6 +1360,10 @@ bool MergeTask::MergeProjectionsStage::executeProjections() const
 {
     if (ctx->projections_iterator == ctx->tasks_for_projections.end())
         return false;
+
+    /// Release offset mapping when all projections with _part_offset has been merged.
+    if (global_ctx->merged_part_offsets && !(*ctx->projections_iterator)->global_ctx->merged_part_offsets)
+        *global_ctx->merged_part_offsets = {};
 
     if ((*ctx->projections_iterator)->execute())
         return true;
@@ -1473,6 +1503,7 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForAllColumns() const
 
 
 bool MergeTask::execute()
+try
 {
     chassert(stages_iterator != stages.end());
     const auto & current_stage = *stages_iterator;
@@ -1502,6 +1533,16 @@ bool MergeTask::execute()
 
     (*stages_iterator)->setRuntimeContext(std::move(next_stage_context), global_ctx);
     return true;
+}
+catch (...)
+{
+    const auto error_code = getCurrentExceptionCode();
+    if (error_code != ErrorCodes::ABORTED)
+    {
+        CurrentMetrics::add(CurrentMetrics::NonAbortedMergeFailures);
+    }
+    CurrentMetrics::add(CurrentMetrics::TotalMergeFailures);
+    throw;
 }
 
 void MergeTask::cancel() noexcept
@@ -1746,6 +1787,20 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     global_ctx->horizontal_stage_progress = std::make_unique<MergeStageProgress>(
         ctx->column_sizes ? ctx->column_sizes->keyColumnsWeight() : 1.0);
 
+    Names merging_column_names = global_ctx->merging_columns.getNames();
+    for (const auto * projection : global_ctx->projections_to_merge)
+    {
+        /// If projection needs part offset mapping, add _part_index column to build this mapping
+        if (projection->with_parent_part_offset && global_ctx->metadata_snapshot->hasSortingKey())
+        {
+            chassert(global_ctx->merged_part_offsets == nullptr);
+            chassert(std::find(merging_column_names.begin(), merging_column_names.end(), "_part_index") == merging_column_names.end());
+            global_ctx->merged_part_offsets = std::make_shared<MergedPartOffsets>(global_ctx->future_part->parts.size());
+            merging_column_names.push_back("_part_index");
+            break;
+        }
+    }
+
     /// Read from all parts
     std::vector<QueryPlanPtr> plans;
     for (size_t i = 0; i < global_ctx->future_part->parts.size(); ++i)
@@ -1759,9 +1814,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             *plan_for_part,
             *global_ctx->data,
             global_ctx->storage_snapshot,
-            global_ctx->future_part->parts[i],
+            RangesInDataPart(global_ctx->future_part->parts[i], i, 0),
             global_ctx->alter_conversions[i],
-            global_ctx->merging_columns.getNames(),
+            global_ctx->merged_part_offsets,
+            merging_column_names,
             global_ctx->input_rows_filtered,
             /*apply_deleted_mask=*/ true,
             /*filter=*/ std::nullopt,

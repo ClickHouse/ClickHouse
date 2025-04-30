@@ -48,7 +48,7 @@ namespace ErrorCodes
 /** These settings represent fine tunes for internal details of MergeTree storages
   * and should not be changed by the user without a reason.
   */
-#define MERGE_TREE_SETTINGS(DECLARE, ALIAS) \
+#define MERGE_TREE_SETTINGS(DECLARE, DECLARE_WITH_ALIAS) \
     DECLARE(UInt64, min_compress_block_size, 0, R"(
     Minimum size of blocks of uncompressed data required for compression when
     writing the next mark. You can also specify this setting in the global settings
@@ -252,6 +252,10 @@ namespace ErrorCodes
     This mode allows to use significantly less memory for storing discriminators
     in parts when there is mostly one variant or a lot of NULL values.
     )", 0) \
+    DECLARE(Bool, write_marks_for_substreams_in_compact_parts, true, R"(
+    Enables writing marks per each substream instead of per each column in Compact parts.
+    It allows to read individual subcolumns from the data part efficiently.
+    )", 0) \
     \
     /** Merge selector settings. */ \
     DECLARE(UInt64, merge_selector_blurry_base_scale_factor, 0, R"(
@@ -284,11 +288,11 @@ namespace ErrorCodes
     DECLARE(UInt64, max_bytes_to_merge_at_max_space_in_pool, 150ULL * 1024 * 1024 * 1024, R"(
     The maximum total parts size (in bytes) to be merged into one part, if there
     are enough resources available. Corresponds roughly to the maximum possible
-    part size created by an automatic background merge.
+    part size created by an automatic background merge. (0 means merges will be disabled)
 
     Possible values:
 
-    - Any positive integer.
+    - Any non-negative integer.
 
     The merge scheduler periodically analyzes the sizes and number of parts in
     partitions, and if there are enough free resources in the pool, it starts
@@ -1566,9 +1570,9 @@ namespace ErrorCodes
     DECLARE(Bool, disable_fetch_partition_for_zero_copy_replication, true, R"(
     Disable FETCH PARTITION query for zero copy replication.
     )", 0) \
-    DECLARE(Bool, enable_block_number_column, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_block_number_column, false, R"(
     Enable persisting column _block_number for each row.
-    )", 0) ALIAS(allow_experimental_block_number_column) \
+    )", 0, allow_experimental_block_number_column) \
     DECLARE(Bool, enable_block_offset_column, false, R"(
     Persists virtual column `_block_number` on merges.
     )", 0) \
@@ -2095,11 +2099,11 @@ void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
     }
 }
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) MergeTreeSettings##TYPE NAME = &MergeTreeSettingsImpl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) MergeTreeSettings##TYPE NAME = &MergeTreeSettingsImpl ::NAME;
 
 namespace MergeTreeSetting
 {
-    LIST_OF_MERGE_TREE_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)  /// NOLINT(misc-use-internal-linkage)
+    LIST_OF_MERGE_TREE_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)  /// NOLINT(misc-use-internal-linkage)
 }
 
 #undef INITIALIZE_SETTING_EXTERN

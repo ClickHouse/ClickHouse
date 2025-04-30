@@ -3,7 +3,6 @@
 #include <DataTypes/ObjectUtils.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 #include <Core/Settings.h>
@@ -56,8 +55,6 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric PartMutation;
-    extern const Metric TotalMergeFailures;
-    extern const Metric NonAbortedMergeFailures;
 }
 
 namespace DB
@@ -707,7 +704,7 @@ static NameSet collectFilesToSkip(
     const Block & updated_header,
     const std::set<MergeTreeIndexPtr> & indices_to_recalc,
     const String & mrk_extension,
-    const std::set<ProjectionDescriptionRawPtr> & projections_to_skip,
+    const std::vector<ProjectionDescriptionRawPtr> & projections_to_skip,
     const std::set<ColumnStatisticsPartPtr> & stats_to_recalc)
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
@@ -1104,7 +1101,7 @@ struct MutationContext
 
     bool checkOperationIsNotCanceled() const
     {
-        if (new_data_part ? merges_blocker->isCancelledForPartition(new_data_part->info.partition_id) : merges_blocker->isCancelled()
+        if (new_data_part ? merges_blocker->isCancelledForPartition(new_data_part->info.getPartitionId()) : merges_blocker->isCancelled()
             || (*mutate_entry)->is_cancelled)
         {
             throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
@@ -2100,50 +2097,37 @@ bool MutateTask::execute()
     Stopwatch watch;
     SCOPE_EXIT({ ctx->execute_elapsed_ns += watch.elapsedNanoseconds(); });
 
-    try
+    switch (state)
     {
-        switch (state)
+        case State::NEED_PREPARE:
         {
-            case State::NEED_PREPARE:
-            {
-                if (!prepare())
-                    return false;
-
-                state = State::NEED_EXECUTE;
-                return true;
-            }
-            case State::NEED_EXECUTE:
-            {
-                ctx->checkOperationIsNotCanceled();
-
-                if (task->executeStep())
-                    return true;
-
-                // The `new_data_part` is a shared pointer and must be moved to allow
-                // part deletion in case it is needed in `MutateFromLogEntryTask::finalize`.
-                //
-                // `tryRemovePartImmediately` requires `std::shared_ptr::unique() == true`
-                // to delete the part timely. When there are multiple shared pointers,
-                // only the part state is changed to `Deleting`.
-                //
-                // Fetching a byte-identical part (in case of checksum mismatches) will fail with
-                // `Part ... should be deleted after previous attempt before fetch`.
-                promise.set_value(std::move(ctx->new_data_part));
+            if (!prepare())
                 return false;
-            }
+
+            state = State::NEED_EXECUTE;
+            return true;
         }
-        return false;
-    }
-    catch (...)
-    {
-        const auto error_code = getCurrentExceptionCode();
-        if (error_code != ErrorCodes::ABORTED)
+        case State::NEED_EXECUTE:
         {
-            CurrentMetrics::add(CurrentMetrics::NonAbortedMergeFailures);
+            ctx->checkOperationIsNotCanceled();
+
+            if (task->executeStep())
+                return true;
+
+            // The `new_data_part` is a shared pointer and must be moved to allow
+            // part deletion in case it is needed in `MutateFromLogEntryTask::finalize`.
+            //
+            // `tryRemovePartImmediately` requires `std::shared_ptr::unique() == true`
+            // to delete the part timely. When there are multiple shared pointers,
+            // only the part state is changed to `Deleting`.
+            //
+            // Fetching a byte-identical part (in case of checksum mismatches) will fail with
+            // `Part ... should be deleted after previous attempt before fetch`.
+            promise.set_value(std::move(ctx->new_data_part));
+            return false;
         }
-        CurrentMetrics::add(CurrentMetrics::TotalMergeFailures);
-        throw;
     }
+    return false;
 }
 
 void MutateTask::cancel() noexcept
@@ -2205,7 +2189,7 @@ static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, con
     if (command.partition)
     {
         auto command_partition_id = part->storage.getPartitionIDFromQuery(command.partition, context);
-        if (part->info.partition_id != command_partition_id)
+        if (part->info.getPartitionId() != command_partition_id)
             return true;
     }
 
@@ -2485,8 +2469,7 @@ bool MutateTask::prepare()
             lightweight_mutation_projection_mode == LightweightMutationProjectionMode::DROP
             || lightweight_mutation_projection_mode == LightweightMutationProjectionMode::THROW;
 
-        std::set<ProjectionDescriptionRawPtr> projections_to_skip_container;
-        auto * projections_to_skip = &projections_to_skip_container;
+        std::vector<ProjectionDescriptionRawPtr> projections_to_skip;
 
         bool should_create_projections = !(lightweight_delete_mode && lightweight_delete_drops_projections);
         /// Under lightweight delete mode, if option is drop, projections_to_recalc should be empty.
@@ -2497,12 +2480,12 @@ bool MutateTask::prepare()
                 ctx->metadata_snapshot,
                 ctx->materialized_projections);
 
-            projections_to_skip = &ctx->projections_to_recalc;
+            projections_to_skip.assign(ctx->projections_to_recalc.begin(), ctx->projections_to_recalc.end());
         }
         else
         {
             for (const auto & projection : ctx->metadata_snapshot->getProjections())
-                projections_to_skip->insert(&projection);
+                projections_to_skip.emplace_back(&projection);
         }
 
         ctx->stats_to_recalc = MutationHelpers::getStatisticsToRecalculate(ctx->metadata_snapshot, ctx->materialized_statistics);
@@ -2513,7 +2496,7 @@ bool MutateTask::prepare()
             ctx->updated_header,
             ctx->indices_to_recalc,
             ctx->mrk_extension,
-            *projections_to_skip,
+            projections_to_skip,
             ctx->stats_to_recalc);
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
