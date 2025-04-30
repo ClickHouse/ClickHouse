@@ -169,6 +169,11 @@ size_t KeyMetadata::alignFileSize(size_t file_size) const
     return cache_metadata->alignFileSize(file_size);
 }
 
+bool KeyMetadata::useRealDiskSize() const
+{
+    return cache_metadata->useRealDiskSize();
+}
+
 CacheMetadata::CacheMetadata(
     const std::string & path_,
     size_t background_download_queue_size_limit_,
@@ -189,6 +194,11 @@ CacheMetadata::CacheMetadata(
 size_t CacheMetadata::alignFileSize(size_t file_size) const
 {
     return ::DB::alignFileSize(path_stat, file_size);
+}
+
+bool CacheMetadata::useRealDiskSize() const
+{
+    return use_real_disk_size;
 }
 
 String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind)
