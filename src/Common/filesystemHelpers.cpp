@@ -63,9 +63,9 @@ struct statvfs getStatVFS(String path)
     return fs;
 }
 
-size_t alignFileSize(const struct statvfs& fs, size_t file_size)
+size_t alignFileSize(const struct statvfs & stat, size_t file_size)
 {
-    size_t aligned_file_size = ((file_size + fs.f_bsize - 1) / fs.f_bsize) * fs.f_bsize;
+    size_t aligned_file_size = ((file_size + stat.f_bsize - 1) / stat.f_bsize) * stat.f_bsize;
     return aligned_file_size;
 }
 
