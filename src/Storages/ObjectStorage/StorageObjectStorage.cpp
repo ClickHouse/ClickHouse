@@ -3,7 +3,10 @@
 
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/EscapingRuleUtils.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -127,26 +130,16 @@ StorageObjectStorage::StorageObjectStorage(
         }
     };
 
-    NamesAndTypesList partition_columns;
-
-    // perhaps it is worth adding some extra safeguards for cases like
-    // create table s3_table engine=s3('{_partition_id}'); -- partition id wildcard set, but no partition expression
-    // create table s3_table engine=s3(partition_strategy='hive'); -- partition strategy set, but no partition expression
-    if (configuration->partition_strategy)
-    {
-        partition_columns = configuration->partition_strategy->getPartitionColumns();
-    }
-
     if (!do_lazy_init)
         do_init();
 
     std::string sample_path;
-
     ColumnsDescription columns{columns_};
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
     configuration->check(context);
 
     StorageInMemoryMetadata metadata;
+    // todo arthur perhaps set partition key description? What if we don't have partition by?
     metadata.setColumns(columns);
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
@@ -172,7 +165,39 @@ StorageObjectStorage::StorageObjectStorage(
         }
     }
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context, sample_path, format_settings, partition_columns));
+    /// todo this is weird, perhaps the strategy should be initialized here after all
+    if (configuration->partition_strategy)
+    {
+        if (!configuration->partition_columns_in_data_file)
+        {
+            hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
+        }
+    }
+    /// if partition strrategy hasn't been initialized is because `partition by` is not present in the query
+    /// but maybe the query is: `select * from s3('table_root/**.parquet')` (no schema) and data is hive partitioned
+    /// therefore, we still need to build `hive_partition_columns_to_read_from_file_path` using the sample_path
+    /// todo broken for empty table, but this is an existing problem
+    else if (context->getSettingsRef()[Setting::use_hive_partitioning])
+    {
+        const auto hive_map = VirtualColumnUtils::parseHivePartitioningKeysAndValues(sample_path);
+
+        for (const auto & item : hive_map)
+        {
+            const std::string key(item.first);
+            const std::string value(item.second);
+
+            auto type = tryInferDataTypeByEscapingRule(value, format_settings ? *format_settings : getFormatSettings(context), FormatSettings::EscapingRule::Raw);
+
+            if (type == nullptr)
+                type = std::make_shared<DataTypeString>();
+            if (type->canBeInsideLowCardinality())
+                hive_partition_columns_to_read_from_file_path.emplace_back(key, std::make_shared<DataTypeLowCardinality>(type));
+            else
+                hive_partition_columns_to_read_from_file_path.emplace_back(key, type);
+        }
+    }
+
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
     setInMemoryMetadata(metadata);
 }
 
@@ -368,9 +393,10 @@ ReadFromFormatInfo StorageObjectStorage::Configuration::prepareReadingFromFormat
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
     bool supports_subset_of_columns,
-    ContextPtr local_context)
+    ContextPtr local_context,
+    const NamesAndTypesList & hive_partition_columns_to_read_from_file_path_)
 {
-    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns);
+    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns, hive_partition_columns_to_read_from_file_path_);
 }
 
 std::optional<ColumnsDescription> StorageObjectStorage::Configuration::tryGetTableStructureFromMetadata() const
@@ -401,7 +427,7 @@ void StorageObjectStorage::read(
     }
 
     auto read_from_format_info = configuration->prepareReadingFromFormat(
-        object_storage, column_names, storage_snapshot, supportsSubsetOfColumns(local_context) || configuration->partition_strategy, local_context);
+        object_storage, column_names, storage_snapshot, supportsSubsetOfColumns(local_context), local_context, hive_partition_columns_to_read_from_file_path);
 
     const bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];
@@ -413,11 +439,11 @@ void StorageObjectStorage::read(
     configuration->modifyFormatSettings(modified_format_settings.value());
 
     auto configuration_clone = configuration->clone();
-    //
-    // if (configuration->partition_strategy)
-    // {
-    //     configuration_clone->setPath(configuration->partition_strategy->getReadingPath(configuration->getPath()));
-    // }
+
+    if (configuration->partition_strategy)
+    {
+        configuration_clone->setPath(configuration->partition_strategy->getReadingPath(configuration->getPath()));
+    }
 
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,
@@ -470,6 +496,7 @@ SinkToStoragePtr StorageObjectStorage::write(
         return std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, format_settings, sample_block, local_context);
     }
 
+    // todo arthur this looks wrong, should probably be a clone. In case of collision, will alter reading path
     auto paths = configuration->getPaths();
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front(), paths.size()))
     {

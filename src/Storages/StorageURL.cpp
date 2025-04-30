@@ -57,6 +57,9 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Poco/Net/HTTPRequest.h>
 
+#include "Formats/EscapingRuleUtils.h"
+#include "Interpreters/convertFieldToType.h"
+
 namespace ProfileEvents
 {
     extern const Event EngineFileLikeReadFiles;
@@ -81,6 +84,7 @@ namespace Setting
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsInt64 zstd_window_log_max;
+    extern const SettingsBool use_hive_partitioning;
 }
 
 namespace ErrorCodes
@@ -193,8 +197,28 @@ IStorageURLBase::IStorageURLBase(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
 
-    auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(
-        storage_metadata.columns, context_, getSampleURI(uri, context_), format_settings);
+    if (context_->getSettingsRef()[Setting::use_hive_partitioning])
+    {
+        const auto hive_map = VirtualColumnUtils::parseHivePartitioningKeysAndValues(getSampleURI(uri, context_));
+
+        for (const auto & item : hive_map)
+        {
+            const std::string key(item.first);
+            const std::string value(item.second);
+
+            auto type = tryInferDataTypeByEscapingRule(value, format_settings ? *format_settings : getFormatSettings(context_), FormatSettings::EscapingRule::Raw);
+
+            if (type == nullptr)
+                type = std::make_shared<DataTypeString>();
+            if (type->canBeInsideLowCardinality())
+                hive_partition_columns_to_read_from_file_path.emplace_back(key, std::make_shared<DataTypeLowCardinality>(type));
+            else
+                hive_partition_columns_to_read_from_file_path.emplace_back(key, type);
+        }
+    }
+
+    // todo arthur it is needed
+    auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns);
     if (!storage_metadata.getColumns().has("_headers"))
     {
         virtual_columns_desc.addEphemeral(
@@ -344,6 +368,7 @@ StorageURLSource::StorageURLSource(
     , format_settings(format_settings_)
     , headers(getHeaders(headers_))
     , need_only_count(need_only_count_)
+    , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
 {
     /// Lazy initialization. We should not perform requests in constructor, because we need to do it in query pipeline.
     initialize = [=, this]()
@@ -481,6 +506,21 @@ Chunk StorageURLSource::generate()
                     .size = current_file_size,
                 },
                 getContext());
+
+            // the order is important, it must be added after virtual columns..
+            if (!hive_partition_columns_to_read_from_file_path.empty())
+            {
+                auto hive_map = VirtualColumnUtils::parseHivePartitioningKeysAndValues(curr_uri.getPath());
+                for (const auto & column : hive_partition_columns_to_read_from_file_path)
+                {
+                    if (auto it = hive_map.find(column.getNameInStorage()); it != hive_map.end())
+                    {
+                        auto chunk_column = column.type->createColumnConst(chunk.getNumRows(), convertFieldToType(Field(it->second), *column.type))->convertToFullColumnIfConst();
+                        chunk.addColumn(std::move(chunk_column));
+                    }
+                }
+            }
+
             chassert(dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get()));
             if (need_headers_virtual_column)
             {
@@ -1136,7 +1176,7 @@ void IStorageURLBase::read(
     size_t num_streams)
 {
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context), hive_partition_columns_to_read_from_file_path);
 
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];

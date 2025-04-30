@@ -8,6 +8,7 @@
 #include <Storages/VirtualColumnUtils.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/ExpressionActions.h>
@@ -71,6 +72,10 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include "DataTypes/DataTypeString.h"
+#include "DataTypes/DataTypeLowCardinality.h"
+#include "Formats/EscapingRuleUtils.h"
+
 namespace ProfileEvents
 {
     extern const Event CreatedReadBufferOrdinary;
@@ -104,6 +109,7 @@ namespace Setting
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool enable_parsing_to_custom_serialization;
+    extern const SettingsBool use_hive_partitioning;
 }
 
 namespace ErrorCodes
@@ -1139,7 +1145,42 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     storage_metadata.setConstraints(args.constraints);
     storage_metadata.setComment(args.comment);
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), paths.empty() ? "" : paths[0], format_settings));
+    auto sample_path = paths.empty() ? "" : paths[0];
+
+    // /// todo this is weird, perhaps the strategy should be initialized here after all
+    // if (configuration->partition_strategy)
+    // {
+    //     if (!configuration->partition_columns_in_data_file)
+    //     {
+    //         hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
+    //     }
+    // }
+    /// if partition strrategy hasn't been initialized is because `partition by` is not present in the query
+    /// but maybe the query is: `select * from s3('table_root/**.parquet')` (no schema) and data is hive partitioned
+    /// therefore, we still need to build `hive_partition_columns_to_read_from_file_path` using the sample_path
+    /// todo broken for empty table, but this is an existing problem
+    if (args.getContext()->getSettingsRef()[Setting::use_hive_partitioning])
+    {
+        const auto hive_map = VirtualColumnUtils::parseHivePartitioningKeysAndValues(sample_path);
+
+        for (const auto & item : hive_map)
+        {
+            const std::string key(item.first);
+            const std::string value(item.second);
+
+            auto type = tryInferDataTypeByEscapingRule(value, format_settings ? *format_settings : getFormatSettings(args.getContext()), FormatSettings::EscapingRule::Raw);
+
+            if (type == nullptr)
+                type = std::make_shared<DataTypeString>();
+            if (type->canBeInsideLowCardinality())
+                hive_partition_columns_to_read_from_file_path.emplace_back(key, std::make_shared<DataTypeLowCardinality>(type));
+            else
+                hive_partition_columns_to_read_from_file_path.emplace_back(key, type);
+        }
+    }
+
+    // todo arthur it is needed
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -1214,6 +1255,7 @@ StorageFileSource::StorageFileSource(
     , requested_virtual_columns(info.requested_virtual_columns)
     , block_for_format(info.format_header)
     , serialization_hints(info.serialization_hints)
+    , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
 {
@@ -1496,6 +1538,20 @@ Chunk StorageFileSource::generate()
                     .last_modified = current_file_last_modified
                 }, getContext());
 
+            // the order is important, it must be added after virtual columns..
+            if (!hive_partition_columns_to_read_from_file_path.empty())
+            {
+                auto hive_map = VirtualColumnUtils::parseHivePartitioningKeysAndValues(current_path);
+                for (const auto & column : hive_partition_columns_to_read_from_file_path)
+                {
+                    if (auto it = hive_map.find(column.getNameInStorage()); it != hive_map.end())
+                    {
+                        auto chunk_column = column.type->createColumnConst(chunk.getNumRows(), convertFieldToType(Field(it->second), *column.type))->convertToFullColumnIfConst();
+                        chunk.addColumn(std::move(chunk_column));
+                    }
+                }
+            }
+
             return chunk;
         }
 
@@ -1637,7 +1693,7 @@ void StorageFile::read(
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, context, supportsSubsetOfColumns(context));
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, context, supportsSubsetOfColumns(context), hive_partition_columns_to_read_from_file_path);
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && context->getSettingsRef()[Setting::optimize_count_from_files];
 

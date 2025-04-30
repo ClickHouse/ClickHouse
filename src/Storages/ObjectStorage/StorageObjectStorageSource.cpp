@@ -27,6 +27,7 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheKey.h>
+#include <Interpreters/convertFieldToType.h>
 
 #include <fmt/ranges.h>
 
@@ -252,15 +253,31 @@ Chunk StorageObjectStorageSource::generate()
 
             chassert(object_info->metadata);
 
+            const auto path = getUniqueStoragePathIdentifier(*configuration, *object_info, false);
+
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
                 read_from_format_info.requested_virtual_columns,
-                {.path = getUniqueStoragePathIdentifier(*configuration, *object_info, false),
+                {.path = path,
                  .size = object_info->isArchive() ? object_info->fileSizeInArchive() : object_info->metadata->size_bytes,
                  .filename = &filename,
                  .last_modified = object_info->metadata->last_modified,
                  .etag = &(object_info->metadata->etag)},
                 read_context);
+
+            // the order is important, it must be added after virtual columns..
+            if (!read_from_format_info.hive_partition_columns_to_read_from_file_path.empty())
+            {
+                auto hive_map = VirtualColumnUtils::parseHivePartitioningKeysAndValues(path);
+                for (const auto & column : read_from_format_info.hive_partition_columns_to_read_from_file_path)
+                {
+                    if (auto it = hive_map.find(column.getNameInStorage()); it != hive_map.end())
+                    {
+                        auto chunk_column = column.type->createColumnConst(chunk.getNumRows(), convertFieldToType(Field(it->second), *column.type))->convertToFullColumnIfConst();
+                        chunk.addColumn(std::move(chunk_column));
+                    }
+                }
+            }
 
             if (chunk_size && chunk.hasColumns())
             {

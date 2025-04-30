@@ -103,6 +103,7 @@ protected:
     String http_method; /// For insert can choose Put instead of default Post.
     ASTPtr partition_by;
     bool distributed_processing;
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 
     virtual std::string getReadMethod() const;
 
@@ -232,6 +233,7 @@ private:
     HTTPHeaderEntries headers;
     bool need_only_count;
     size_t total_rows_in_file = 0;
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 
     Poco::Net::HTTPBasicCredentials credentials;
 

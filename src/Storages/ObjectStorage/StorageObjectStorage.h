@@ -160,6 +160,7 @@ protected:
     const std::optional<FormatSettings> format_settings;
     const bool distributed_processing;
     bool update_configuration_on_read;
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 
     LoggerPtr log;
 };
@@ -251,7 +252,8 @@ public:
         const Strings & requested_columns,
         const StorageSnapshotPtr & storage_snapshot,
         bool supports_subset_of_columns,
-        ContextPtr local_context);
+        ContextPtr local_context,
+        const NamesAndTypesList & hive_partition_columns_to_read_from_file_path_ = {});
 
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
 

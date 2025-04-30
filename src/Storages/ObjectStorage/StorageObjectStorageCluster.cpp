@@ -8,6 +8,7 @@
 #include <Formats/FormatFactory.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
+#include <Storages/PartitionStrategy.h>
 
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -76,7 +77,8 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     if (sample_path.empty() && context_->getSettingsRef()[Setting::use_hive_partitioning])
         sample_path = getPathSample(metadata, context_);
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context_, sample_path));
+    // todo arthur do we need to do anything at all? I mean..
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
     setInMemoryMetadata(metadata);
 }
 

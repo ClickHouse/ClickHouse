@@ -183,24 +183,16 @@ HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & 
     return key_values;
 }
 
-VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & storage_columns, const ContextPtr & context, const std::string & path, std::optional<FormatSettings> format_settings_, const NamesAndTypesList & partition_columns)
+VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & storage_columns)
 {
     VirtualColumnsDescription desc;
 
-    auto add_virtual = [&](const NameAndTypePair & pair, bool allow_duplicate)
+    auto add_virtual = [&](const NameAndTypePair & pair)
     {
         const auto & name = pair.getNameInStorage();
         const auto & type = pair.getTypeInStorage();
         if (storage_columns.has(name))
         {
-            if (!allow_duplicate)
-                return;
-
-            if (storage_columns.size() == 1)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot use hive partitioning for file {}: it contains only partition columns. Disable use_hive_partitioning setting to read/write this file", path);
-
-            auto local_type = storage_columns.get(name).type;
-            desc.addEphemeral(name, local_type, "");
             return;
         }
 
@@ -208,38 +200,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
     };
 
     for (const auto & item : getCommonVirtualsForFileLikeStorage())
-        add_virtual(item, false);
-
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
-    {
-        if (!partition_columns.empty())
-        {
-            for (const auto & column : partition_columns)
-            {
-                add_virtual({column.name, column.type}, true);
-            }
-        }
-        else
-        {
-            const auto map = parseHivePartitioningKeysAndValues(path);
-            auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
-
-            for (const auto & item : map)
-            {
-                const std::string key(item.first);
-                const std::string value(item.second);
-
-                auto type = tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Raw);
-
-                if (type == nullptr)
-                    type = std::make_shared<DataTypeString>();
-                if (type->canBeInsideLowCardinality())
-                    add_virtual({key, std::make_shared<DataTypeLowCardinality>(type)}, true);
-                else
-                    add_virtual({key, type}, true);
-            }
-        }
-    }
+        add_virtual(item);
 
     return desc;
 }
@@ -315,12 +276,8 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
 
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
-    VirtualsForFileLikeStorage virtual_values, ContextPtr context)
+    VirtualsForFileLikeStorage virtual_values, ContextPtr )
 {
-    HivePartitioningKeysAndValues hive_map;
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
-        hive_map = parseHivePartitioningKeysAndValues(virtual_values.path);
-
     for (const auto & virtual_column : requested_virtual_columns)
     {
         if (virtual_column.name == "_path")
@@ -353,10 +310,6 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                 chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), virtual_values.last_modified->epochTime())->convertToFullColumnIfConst());
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
-        }
-        else if (auto it = hive_map.find(virtual_column.getNameInStorage()); it != hive_map.end())
-        {
-            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), convertFieldToType(Field(it->second), *virtual_column.type))->convertToFullColumnIfConst());
         }
         else if (virtual_column.name == "_etag")
         {

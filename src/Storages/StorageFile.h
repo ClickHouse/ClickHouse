@@ -201,6 +201,7 @@ private:
     FileRenamer file_renamer;
     bool was_renamed = false;
     bool distributed_processing = false;
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 };
 
 class StorageFileSource : public SourceWithKeyCondition, WithContext
@@ -301,6 +302,7 @@ private:
     NamesAndTypesList requested_virtual_columns;
     Block block_for_format;
     SerializationInfoByName serialization_hints;
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 
     UInt64 max_block_size;
 

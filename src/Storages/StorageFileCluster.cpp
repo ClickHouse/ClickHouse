@@ -59,7 +59,8 @@ StorageFileCluster::StorageFileCluster(
     }
 
     storage_metadata.setConstraints(constraints_);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context, paths.empty() ? "" : paths[0]));
+    // todo arthur why is it needed?
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
     setInMemoryMetadata(storage_metadata);
 }
 
