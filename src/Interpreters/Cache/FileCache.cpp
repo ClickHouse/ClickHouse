@@ -1112,7 +1112,7 @@ bool FileCache::tryReserve(
             query_context->add(file_segment.getKeyMetadata(), file_segment.offset(), size, user, cache_lock);
     }
 
-    file_segment.reserved_size += size;
+    file_segment.reserved_size = queue_iterator->getEntry()->getSize();
     chassert(file_segment.reserved_size == queue_iterator->getEntry()->getSize());
 
     if (main_priority->getSize(cache_lock) > (1ull << 63))

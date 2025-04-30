@@ -508,9 +508,9 @@ void LRUFileCachePriority::LRUIterator::incrementSize(size_t size, const CachePr
         cache_priority->log,
         "Incrementing size with {} in LRU queue for entry {}",
         size, entry->toString());
-
-    cache_priority->updateSize(size);
+    size_t prev_size = entry->getSize();
     entry->increaseSize(size);
+    cache_priority->updateSize(entry->getSize() - prev_size);
     cache_priority->check(lock);
 }
 
@@ -525,9 +525,10 @@ void LRUFileCachePriority::LRUIterator::decrementSize(size_t size)
 
     chassert(size);
     chassert(entry->getSize() >= size);
-
-    cache_priority->updateSize(-size);
+    size_t prev_size = entry->getSize();
     entry->decreaseSize(size);
+    size_t diff_size = prev_size - entry->getSize();
+    cache_priority->updateSize(-diff_size);
 }
 
 size_t LRUFileCachePriority::LRUIterator::increasePriority(const CachePriorityGuard::Lock & lock)
