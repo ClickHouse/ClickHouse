@@ -327,7 +327,7 @@ private:
     void generateNextInsert(RandomGenerator & rg, bool in_parallel, Insert * ins);
     void generateNextDelete(RandomGenerator & rg, LightDelete * del);
     void generateNextTruncate(RandomGenerator & rg, Truncate * trunc);
-    void generateNextOptimizeTableInternal(RandomGenerator & rg, const SQLTable & t, bool force_final, OptimizeTable * ot);
+    void generateNextOptimizeTableInternal(RandomGenerator & rg, const SQLTable & t, bool strict, OptimizeTable * ot);
     void generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * ot);
     void generateNextCheckTable(RandomGenerator & rg, CheckTable * ct);
     void generateNextDescTable(RandomGenerator & rg, DescTable * dt);

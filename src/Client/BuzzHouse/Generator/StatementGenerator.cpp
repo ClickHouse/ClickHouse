@@ -466,7 +466,7 @@ void StatementGenerator::generateNextTablePartition(RandomGenerator & rg, const 
 
 static const auto optimize_table_lambda = [](const SQLTable & t) { return t.isAttached() && t.supportsOptimize(); };
 
-void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg, const SQLTable & t, bool force_final, OptimizeTable * ot)
+void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg, const SQLTable & t, bool strict, OptimizeTable * ot)
 {
     const std::optional<String> & cluster = t.getCluster();
 
@@ -479,7 +479,7 @@ void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg,
         }
         ot->set_cleanup(rg.nextSmallNumber() < 3);
     }
-    if (rg.nextSmallNumber() < 4)
+    if (!strict && rg.nextSmallNumber() < 4)
     {
         const uint32_t noption = rg.nextMediumNumber();
         DeduplicateExpr * dde = ot->mutable_dedup();
@@ -506,7 +506,7 @@ void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg,
     {
         ot->mutable_cluster()->set_cluster(cluster.value());
     }
-    ot->set_final((t.supportsFinal() || t.isMergeTreeFamily()) && (force_final || rg.nextSmallNumber() < 3));
+    ot->set_final((t.supportsFinal() || t.isMergeTreeFamily()) && (strict || rg.nextSmallNumber() < 3));
     if (rg.nextSmallNumber() < 3)
     {
         generateSettingValues(rg, serverSettings, ot->mutable_setting_values());
