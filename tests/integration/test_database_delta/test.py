@@ -191,7 +191,7 @@ create database complex_schema
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
 settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}
         """,
-        settings={"allow_experimental_database_unity_catalog": "1"},
+        settings={"allow_experimental_database_unity_catalog": "1", "allow_experimental_delta_kernel_rs" : "0"},
     )
 
     complex_schema_tables = list(
