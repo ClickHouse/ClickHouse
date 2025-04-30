@@ -72,9 +72,8 @@ public:
         const auto storage_type = configuration_ptr->getType();
         const bool supports_delta_kernel = storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Local;
 
-        bool enable_delta_kernel = storage_settings_ref[StorageObjectStorageSetting::allow_experimental_delta_kernel_rs];
-        if (query_settings_ref[Setting::allow_experimental_delta_kernel_rs].changed)
-            enable_delta_kernel = query_settings_ref[Setting::allow_experimental_delta_kernel_rs].value;
+        bool enable_delta_kernel = storage_settings_ref[StorageObjectStorageSetting::allow_experimental_delta_kernel_rs]
+            || query_settings_ref[Setting::allow_experimental_delta_kernel_rs];
 
         if (supports_delta_kernel && enable_delta_kernel)
         {
