@@ -548,7 +548,8 @@ JoinPtr JoinStepLogical::convertToPhysical(
     UInt64 max_entries_for_hash_table_stats,
     String initial_query_id,
     std::chrono::milliseconds lock_acquire_timeout,
-    const ExpressionActionsSettings & actions_settings)
+    const ExpressionActionsSettings & actions_settings,
+    std::optional<UInt64> rhs_size_estimation)
 {
     auto table_join = std::make_shared<TableJoin>(join_settings, use_nulls,
         Context::getGlobalContextInstance()->getGlobalTemporaryVolume(),
@@ -736,7 +737,8 @@ JoinPtr JoinStepLogical::convertToPhysical(
     {
         table_join->swapSides();
         std::swap(left_sample_block, right_sample_block);
-        std::swap(hash_table_key_hash_left, hash_table_key_hash_right);
+        if (hash_table_key_hashes)
+            std::swap(hash_table_key_hashes->key_hash_left, hash_table_key_hashes->key_hash_right);
     }
 
     JoinAlgorithmSettings algo_settings(
@@ -747,7 +749,13 @@ JoinPtr JoinStepLogical::convertToPhysical(
         lock_acquire_timeout);
 
     auto join_algorithm_ptr = chooseJoinAlgorithm(
-        table_join, prepared_join_storage, left_sample_block, right_sample_block, algo_settings, hash_table_key_hash_right.value_or(0));
+        table_join,
+        prepared_join_storage,
+        left_sample_block,
+        right_sample_block,
+        algo_settings,
+        hash_table_key_hashes ? hash_table_key_hashes->key_hash_right : 0,
+        rhs_size_estimation);
     runtime_info_description.emplace_back("Algorithm", join_algorithm_ptr->getName());
     return join_algorithm_ptr;
 }
