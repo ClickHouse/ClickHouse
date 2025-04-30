@@ -60,20 +60,29 @@ size_t IFileCachePriority::Entry::getSize() const
 void IFileCachePriority::Entry::setSize(size_t size_)
 {
     size.store(size_);
-    aligned_size.store(key_metadata->alignFileSize(size.load()));
+    if (use_real_disk_size)
+    {
+        aligned_size.store(key_metadata->alignFileSize(size.load()));
+    }
 }
 
 void IFileCachePriority::Entry::increaseSize(size_t size_)
 {
-    size.fetch_add(size_);
-    aligned_size.store(key_metadata->alignFileSize(size.load()));
+    size += size_;
+    if (use_real_disk_size)
+    {
+        aligned_size.store(key_metadata->alignFileSize(size.load()));
+    }
 }
 
 void IFileCachePriority::Entry::decreaseSize(size_t size_)
 {
     chassert(size.load() >= size_);
-    size.fetch_sub(size_);
-    aligned_size.store(key_metadata->alignFileSize(size.load()));
+    size -= size_;
+    if (use_real_disk_size)
+    {
+        aligned_size.store(key_metadata->alignFileSize(size.load()));
+    }
 }
 
 void IFileCachePriority::check(const CachePriorityGuard::Lock & lock) const
