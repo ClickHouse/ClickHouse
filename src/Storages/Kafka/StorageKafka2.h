@@ -242,6 +242,7 @@ private:
         NoPartitions,
         NoMessages,
         KeeperSessionEnded,
+        NoMetadata
     };
 
     std::optional<StallReason> streamToViews(size_t idx);

@@ -398,6 +398,44 @@ void consumerGracefulStop(
     drainConsumer(consumer, drain_timeout, log, std::move(error_handler));
 }
 
+void consumerStopWithoutRebalance(
+    cppkafka::Consumer & consumer, const std::chrono::milliseconds drain_timeout, const LoggerPtr & log, ErrorHandler error_handler)
+{
+    consumer.set_revocation_callback(
+        [](const cppkafka::TopicPartitionList &)
+        {
+            // we don't care during the destruction
+        });
+
+    consumer.set_assignment_callback(
+        [](const cppkafka::TopicPartitionList &)
+        {
+            // we don't care during the destruction
+        });
+
+    try
+    {
+        auto assignment = consumer.get_assignment();
+
+        if (!assignment.empty())
+        {
+            consumer.pause_partitions(assignment);
+
+            for (const auto& partition : assignment)
+            {
+                // that call disables the forwarding of the messages to the customer queue
+                consumer.get_partition_queue(partition);
+            }
+        }
+    }
+    catch (const cppkafka::HandleException & e)
+    {
+        LOG_ERROR(log, "Error during pause (consumerGracefulStop): {}", e.what());
+    }
+
+    drainConsumer(consumer, drain_timeout, log, std::move(error_handler));
+}
+
 // Needed to drain rest of the messages / queued callback calls from the consumer after unsubscribe, otherwise consumer
 // will hang on destruction. Partition queues doesn't have to be attached as events are not handled by those queues.
 // see https://github.com/edenhill/librdkafka/issues/2077

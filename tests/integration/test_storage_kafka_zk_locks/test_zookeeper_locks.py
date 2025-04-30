@@ -60,7 +60,7 @@ def test_zookeeper_partition_locks(kafka_cluster):
     for pid in range(3):
         kafka_produce(kafka_cluster, "zk_locks_topic", [f"msg_{pid}"], retries=5)
 
-    time.sleep(5)
+    time.sleep(30)
 
     with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
         base = "/clickhouse/test/zk_locks/topic_partition_locks"

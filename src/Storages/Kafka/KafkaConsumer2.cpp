@@ -59,7 +59,7 @@ KafkaConsumer2::KafkaConsumer2(
 
 KafkaConsumer2::~KafkaConsumer2()
 {
-    StorageKafkaUtils::consumerGracefulStop(*consumer, DRAIN_TIMEOUT_MS, log);
+    StorageKafkaUtils::consumerStopWithoutRebalance(*consumer, DRAIN_TIMEOUT_MS, log);
 }
 
 void KafkaConsumer2::pollEvents()
@@ -263,7 +263,7 @@ KafkaConsumer2::TopicPartitions KafkaConsumer2::getAllTopicPartitions() const
                 {
                     .topic = topic_metadata.get_name(),
                     .partition_id = static_cast<int32_t>(partition_metadata.get_id()),
-                    .offset =  INVALID_OFFSET
+                    .offset = INVALID_OFFSET
                 }
             );
         }

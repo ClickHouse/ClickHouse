@@ -1194,7 +1194,7 @@ void StorageKafka2::threadFunc(size_t idx)
     {
         // Keeper related problems should be solved relatively fast, it makes sense wait less time
         if (maybe_stall_reason.has_value()
-            && (*maybe_stall_reason == StallReason::KeeperSessionEnded || *maybe_stall_reason == StallReason::CouldNotAcquireLocks))
+            && (*maybe_stall_reason == StallReason::KeeperSessionEnded || *maybe_stall_reason == StallReason::CouldNotAcquireLocks || *maybe_stall_reason == StallReason::NoMetadata))
             task->holder->scheduleAfter(KAFKA_RESCHEDULE_MS / 10);
         else
             task->holder->scheduleAfter(KAFKA_RESCHEDULE_MS);
@@ -1232,10 +1232,17 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
                 LOG_TEST(log, "Got new zookeeper");
             }
 
+            auto all_topic_partitions = consumer->getAllTopicPartitions();
+            if (all_topic_partitions.empty())
+            {
+                LOG_DEBUG(log, "Couldn't create an assignment");
+                return StallReason::NoMetadata;
+            }
+
             updatePermanentLocks(*consumer_info.keeper, consumer->getAllTopicPartitions(), consumer_info.permanent_locks, consumer_info.permanent_locks_changed);
             if (consumer_info.poll_count >= TMP_LOCKS_REFRESH_POLLS)
             {
-                updateTemporaryLocks(*consumer_info.keeper, consumer_info.consumer->getAllTopicPartitions(), consumer_info.tmp_locks, consumer_info.tmp_locks_quota);
+                updateTemporaryLocks(*consumer_info.keeper, consumer->getAllTopicPartitions(), consumer_info.tmp_locks, consumer_info.tmp_locks_quota);
                 consumer_info.poll_count = 0;
             }
             else if (consumer_info.permanent_locks_changed)
