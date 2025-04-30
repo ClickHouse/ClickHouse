@@ -4625,7 +4625,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
               */
             alias_column_to_resolve = column_name_to_column_node[alias_column_to_resolve_name];
 
-            IdentifierResolveScope alias_column_resolve_scope(alias_column_to_resolve, nullptr /*parent_scope*/);
+            IdentifierResolveScope alias_column_resolve_scope(alias_column_to_resolve, &scope /*parent_scope*/);
             alias_column_resolve_scope.column_name_to_column_node = std::move(column_name_to_column_node);
             alias_column_resolve_scope.context = scope.context;
 
