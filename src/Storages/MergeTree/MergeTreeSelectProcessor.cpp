@@ -303,6 +303,9 @@ void MergeTreeSelectProcessor::injectLazilyReadColumns(
     bool create_empty_column_lazy = false;
     for (auto column_with_type_and_name : lazily_read_info->lazily_read_columns)
     {
+        if (block.has(column_with_type_and_name.name))
+            continue;
+
         if (create_empty_column_lazy)
             column_with_type_and_name.column = ColumnLazy::create(columns[0]->size());
         else
