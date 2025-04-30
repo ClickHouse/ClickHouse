@@ -99,7 +99,6 @@ bool MutatePlainMergeTreeTask::executeStep()
             {
                 if (mutate_task->execute())
                 {
-                    storage.updateMutationEntriesFinishTime(future_part);
                     return true;
                 }
 

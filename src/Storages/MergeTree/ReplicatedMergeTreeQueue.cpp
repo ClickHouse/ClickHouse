@@ -494,6 +494,8 @@ void ReplicatedMergeTreeQueue::removeCoveredPartsFromMutations(const String & pa
         if (status.parts_to_do.size() == 0)
             some_mutations_are_probably_done = true;
 
+        status.finish_time = time(nullptr);
+
         if (!status.latest_failed_part.empty() && part_info.contains(status.latest_failed_part_info))
         {
             status.latest_failed_part.clear();
@@ -2334,6 +2336,7 @@ std::optional<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getIncompleteMu
     const MutationStatus & status = current_mutation_it->second;
     MergeTreeMutationStatus result
     {
+        .finish_time = status.finish_time,
         .is_done = status.is_done,
         .latest_failed_part = status.latest_failed_part,
         .latest_fail_time = status.latest_fail_time,
@@ -2381,7 +2384,7 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
                 entry.znode_name,
                 buf.str(),
                 entry.create_time,
-                entry.finish_time,
+                status.finish_time,
                 entry.block_numbers,
                 parts_to_mutate,
                 status.is_done,
