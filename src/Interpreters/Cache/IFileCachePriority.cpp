@@ -76,8 +76,6 @@ void IFileCachePriority::Entry::decreaseSize(size_t size_)
     aligned_size.store(key_metadata->alignFileSize(size.load()));
 }
 
-
-
 void IFileCachePriority::check(const CachePriorityGuard::Lock & lock) const
 {
     if (getSize(lock) > max_size || getElementsCount(lock) > max_elements)

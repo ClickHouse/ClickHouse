@@ -407,7 +407,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(
     for (const auto & queue_entry : queue)
     {
         /// entry.size == 0 means entry was invalidated.
-        if (queue_entry->size != 0 && queue_entry->key == entry.key && queue_entry->offset == entry.offset)
+        if (queue_entry->getSize() != 0 && queue_entry->key == entry.key && queue_entry->offset == entry.offset)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Attempt to add duplicate queue entry to queue: {}",

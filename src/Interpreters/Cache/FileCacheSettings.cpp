@@ -52,7 +52,7 @@ namespace ErrorCodes
     DECLARE(Bool, write_cache_per_user_id_directory, false, "Internal ClickHouse Cloud setting", 0) \
     DECLARE(Bool, allow_dynamic_cache_resize, false, "Allow dynamic resize of filesystem cache", 0) \
     DECLARE(Double, max_size_ratio_to_total_space, 0, "Ratio of `max_size` to total disk space", 0) \
-    DECLARE(Bool, use_real_disk_size, false, "Enables to count real cache size, by aligning file size with filesystem block size", 0)
+    DECLARE(Bool, use_real_disk_size, false, "Enables accounting for real cache size, by aligning file size with filesystem block size", 0)
 
 DECLARE_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS)
