@@ -84,7 +84,7 @@ StorageObjectStorage::StorageObjectStorage(
     ObjectStoragePtr object_storage_,
     ContextPtr context,
     const StorageID & table_id_,
-    const ColumnsDescription & columns,
+    const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
     std::optional<FormatSettings> format_settings_,
@@ -99,8 +99,7 @@ StorageObjectStorage::StorageObjectStorage(
     , distributed_processing(distributed_processing_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
-    bool needs_to_resolve_schema_or_format = columns.empty() || configuration->format == "auto";
-    bool do_lazy_init = lazy_init && !needs_to_resolve_schema_or_format;
+    bool do_lazy_init = lazy_init && !columns_.empty() && !configuration->format.empty();
     update_configuration_on_read = !is_table_function_ || do_lazy_init;
     bool failed_init = false;
     auto do_init = [&]()
@@ -116,7 +115,7 @@ StorageObjectStorage::StorageObjectStorage(
         {
             // If we don't have format or schema yet, we can't ignore failed configuration update,
             // because relevant configuration is crucial for format and schema inference
-            if (mode <= LoadingStrictnessLevel::CREATE || needs_to_resolve_schema_or_format)
+            if (mode <= LoadingStrictnessLevel::CREATE || columns_.empty() || configuration->format == "auto")
             {
                 throw;
             }
@@ -143,22 +142,14 @@ StorageObjectStorage::StorageObjectStorage(
 
     std::string sample_path;
 
+    ColumnsDescription columns{columns_};
+    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
+    configuration->check(context);
+
     StorageInMemoryMetadata metadata;
+    metadata.setColumns(columns);
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
-
-    if (needs_to_resolve_schema_or_format)
-    {
-        ColumnsDescription resolved_columns;
-        resolveSchemaAndFormat(resolved_columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
-        metadata.setColumns(resolved_columns);
-    }
-    else
-    {
-        metadata.setColumns(columns);
-    }
-
-    configuration->check(context);
 
     /// FIXME: We need to call getPathSample() lazily on select
     /// in case it failed to be initialized in constructor.
@@ -422,11 +413,11 @@ void StorageObjectStorage::read(
     configuration->modifyFormatSettings(modified_format_settings.value());
 
     auto configuration_clone = configuration->clone();
-
-    if (configuration->partition_strategy)
-    {
-        configuration_clone->setPath(configuration->partition_strategy->getReadingPath(configuration->getPath()));
-    }
+    //
+    // if (configuration->partition_strategy)
+    // {
+    //     configuration_clone->setPath(configuration->partition_strategy->getReadingPath(configuration->getPath()));
+    // }
 
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,
