@@ -11,7 +11,8 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-std::optional<HashTablesStatistics::Entry> HashTablesStatistics::getSizeHint(const Params & params)
+template <typename Entry>
+std::optional<Entry> HashTablesStatistics<Entry>::getSizeHint(const Params & params)
 {
     if (!params.isCollectionAndUseEnabled())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Collection and use of the statistics should be enabled.");
@@ -20,19 +21,15 @@ std::optional<HashTablesStatistics::Entry> HashTablesStatistics::getSizeHint(con
     const auto cache = getHashTableStatsCache(params, lock);
     if (const auto hint = cache->get(params.key))
     {
-        LOG_TRACE(
-            getLogger("HashTablesStatistics"),
-            "An entry for key={} found in cache: sum_of_sizes={}, median_size={}",
-            params.key,
-            hint->sum_of_sizes,
-            hint->median_size);
+        LOG_TRACE(getLogger("HashTablesStatistics"), "An entry for key={} found in cache: {}", params.key, hint->dump());
         return *hint;
     }
     return std::nullopt;
 }
 
 /// Collection and use of the statistics should be enabled.
-void HashTablesStatistics::update(size_t sum_of_sizes, size_t median_size, const Params & params)
+template <typename Entry>
+void HashTablesStatistics<Entry>::update(const Entry & new_entry, const Params & params)
 {
     if (!params.isCollectionAndUseEnabled())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Collection and use of the statistics should be enabled.");
@@ -41,20 +38,15 @@ void HashTablesStatistics::update(size_t sum_of_sizes, size_t median_size, const
     const auto cache = getHashTableStatsCache(params, lock);
     const auto hint = cache->get(params.key);
     // We'll maintain the maximum among all the observed values until another prediction is much lower (that should indicate some change)
-    if (!hint || sum_of_sizes < hint->sum_of_sizes / 2 || hint->sum_of_sizes < sum_of_sizes || median_size < hint->median_size / 2
-        || hint->median_size < median_size)
+    if (!hint || hint->shouldBeUpdated(new_entry))
     {
-        LOG_TRACE(
-            getLogger("HashTablesStatistics"),
-            "Statistics updated for key={}: new sum_of_sizes={}, median_size={}",
-            params.key,
-            sum_of_sizes,
-            median_size);
-        cache->set(params.key, std::make_shared<Entry>(Entry{.sum_of_sizes = sum_of_sizes, .median_size = median_size}));
+        LOG_TRACE(getLogger("HashTablesStatistics"), "Statistics updated for key={}: {}", params.key, new_entry.dump());
+        cache->set(params.key, std::make_shared<Entry>(new_entry));
     }
 }
 
-std::optional<HashTablesCacheStatistics> HashTablesStatistics::getCacheStats() const
+template <typename Entry>
+std::optional<HashTablesCacheStatistics> HashTablesStatistics<Entry>::getCacheStats() const
 {
     std::lock_guard lock(mutex);
     if (hash_table_stats)
@@ -67,29 +59,38 @@ std::optional<HashTablesCacheStatistics> HashTablesStatistics::getCacheStats() c
     return std::nullopt;
 }
 
-HashTablesStatistics::CachePtr HashTablesStatistics::getHashTableStatsCache(const Params & params, const std::lock_guard<std::mutex> &)
+template <typename Entry>
+HashTablesStatistics<Entry>::CachePtr
+HashTablesStatistics<Entry>::getHashTableStatsCache(const Params & params, const std::lock_guard<std::mutex> &)
 {
     if (!hash_table_stats)
         hash_table_stats = std::make_shared<Cache>(params.max_entries_for_hash_table_stats * sizeof(Entry));
     return hash_table_stats;
 }
 
-HashTablesStatistics & getHashTablesStatistics()
-{
-    static HashTablesStatistics hash_tables_stats;
-    return hash_tables_stats;
-}
-
 std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics()
 {
-    return getHashTablesStatistics().getCacheStats();
+    HashTablesCacheStatistics res{};
+    if (auto aggr_stats = getHashTablesStatistics<AggregationEntry>().getCacheStats())
+    {
+        res.entries += aggr_stats->entries;
+        res.hits += aggr_stats->hits;
+        res.misses += aggr_stats->misses;
+    }
+    if (auto hash_join_stats = getHashTablesStatistics<HashJoinEntry>().getCacheStats())
+    {
+        res.entries += hash_join_stats->entries;
+        res.hits += hash_join_stats->hits;
+        res.misses += hash_join_stats->misses;
+    }
+    return res;
 }
 
-std::optional<HashTablesStatistics::Entry> getSizeHint(const DB::StatsCollectingParams & stats_collecting_params, size_t tables_cnt)
+std::optional<AggregationEntry> getSizeHint(const DB::StatsCollectingParams & stats_collecting_params, size_t tables_cnt)
 {
     if (stats_collecting_params.isCollectionAndUseEnabled())
     {
-        if (auto hint = DB::getHashTablesStatistics().getSizeHint(stats_collecting_params))
+        if (auto hint = DB::getHashTablesStatistics<AggregationEntry>().getSizeHint(stats_collecting_params))
         {
             const auto lower_limit = hint->sum_of_sizes / tables_cnt;
             const auto upper_limit = stats_collecting_params.max_size_to_preallocate / tables_cnt;
@@ -109,10 +110,34 @@ std::optional<HashTablesStatistics::Entry> getSizeHint(const DB::StatsCollecting
             /// https://github.com/ClickHouse/ClickHouse/issues/44402#issuecomment-1359920703
             else if ((tables_cnt > 1 && hint->sum_of_sizes > 100'000) || hint->sum_of_sizes > 500'000)
             {
-                return HashTablesStatistics::Entry{hint->sum_of_sizes, std::max(lower_limit, hint->median_size)};
+                return AggregationEntry{hint->sum_of_sizes, std::max(lower_limit, hint->median_size)};
             }
         }
     }
     return std::nullopt;
 }
+
+std::optional<HashJoinEntry> getSizeHint(const DB::StatsCollectingParams & stats_collecting_params)
+{
+    if (stats_collecting_params.isCollectionAndUseEnabled())
+    {
+        if (auto hint = DB::getHashTablesStatistics<HashJoinEntry>().getSizeHint(stats_collecting_params))
+        {
+            if (hint->ht_size > stats_collecting_params.max_size_to_preallocate)
+            {
+                LOG_TRACE(
+                    getLogger("HashTablesStatistics"),
+                    "No space were preallocated in hash tables because 'max_size_to_preallocate' has too small value: {}, should be at "
+                    "least {}",
+                    stats_collecting_params.max_size_to_preallocate,
+                    hint->ht_size);
+            }
+            return hint;
+        }
+    }
+    return std::nullopt;
+}
+
+template class HashTablesStatistics<AggregationEntry>;
+template class HashTablesStatistics<HashJoinEntry>;
 }
