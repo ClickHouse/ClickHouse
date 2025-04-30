@@ -1,7 +1,3 @@
-#include <algorithm>
-#include <future>
-#include <numeric>
-#include <optional>
 #include <Poco/Util/Application.h>
 #include <Core/Settings.h>
 
@@ -42,6 +38,10 @@
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 
+#include <algorithm>
+#include <future>
+#include <numeric>
+#include <optional>
 
 namespace ProfileEvents
 {
@@ -140,7 +140,7 @@ void updateStatistics(const DB::ManyAggregatedDataVariants & data_variants, cons
     const auto median_size = sizes.begin() + sizes.size() / 2; // not precisely though...
     std::nth_element(sizes.begin(), median_size, sizes.end());
     const auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull);
-    DB::getHashTablesStatistics().update(sum_of_sizes, *median_size, params);
+    DB::getHashTablesStatistics<DB::AggregationEntry>().update({.sum_of_sizes = sum_of_sizes, .median_size = *median_size}, params);
 }
 
 DB::ColumnNumbers calculateKeysPositions(const DB::Block & header, const DB::Aggregator::Params & params)
