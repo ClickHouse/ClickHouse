@@ -37,12 +37,22 @@ void IQueryPlanStep::updateInputHeader(Header input_header, size_t idx)
     updateOutputHeader();
 }
 
+bool IQueryPlanStep::hasCorrelatedExpressions() const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot check {} plan step for correlated expressions", getName());
+}
+
 const Header & IQueryPlanStep::getOutputHeader() const
 {
     if (!hasOutputHeader())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryPlanStep {} does not have output stream.", getName());
 
     return *output_header;
+}
+
+QueryPlanStepPtr IQueryPlanStep::clone() const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot clone {} plan step", getName());
 }
 
 const SortDescription & IQueryPlanStep::getSortDescription() const

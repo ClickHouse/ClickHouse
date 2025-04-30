@@ -17,10 +17,7 @@ def started_cluster(request):
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node",
-            main_configs=[
-                "configs/named_collections.xml",
-                "configs/feature_flag.xml",
-            ],
+            main_configs=["configs/named_collections.xml"],
             user_configs=["configs/users.xml"],
             with_mongo=True,
         )

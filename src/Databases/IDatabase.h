@@ -21,12 +21,14 @@
 namespace DB
 {
 
+
 struct Settings;
 struct ConstraintsDescription;
 struct IndicesDescription;
 struct StorageInMemoryMetadata;
 struct StorageID;
 class ASTCreateQuery;
+struct AlterCommand;
 class AlterCommands;
 class SettingsChanges;
 using DictionariesWithID = std::vector<std::pair<String, UUID>>;
@@ -243,6 +245,8 @@ public:
     /// Throws exception when table exists.
     virtual void checkMetadataFilenameAvailability(const String & /*table_name*/) const {}
 
+    /// Check if the table name exceeds the max allowed length
+    virtual void checkTableNameLength(const String & /*table_name*/) const {}
 
     /// Get the table for work. Return nullptr if there is no table.
     virtual StoragePtr tryGetTable(const String & name, ContextPtr context) const = 0;
@@ -370,6 +374,9 @@ public:
         std::lock_guard lock{mutex};
         return database_name;
     }
+
+    // Alter comment of database.
+    virtual void alterDatabaseComment(const AlterCommand &);
 
     /// Get UUID of database.
     virtual UUID getUUID() const { return UUIDHelpers::Nil; }

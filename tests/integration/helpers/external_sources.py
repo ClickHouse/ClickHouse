@@ -173,7 +173,6 @@ class SourceMongo(ExternalSource):
         user,
         password,
         secure=False,
-        legacy=False,
     ):
         ExternalSource.__init__(
             self,
@@ -186,13 +185,10 @@ class SourceMongo(ExternalSource):
             password,
         )
         self.secure = secure
-        self.legacy = legacy
 
     def get_source_str(self, table_name):
         options = ""
-        if self.secure and self.legacy:
-            options = "<options>ssl=true</options>"
-        if self.secure and not self.legacy:
+        if self.secure:
             options = "<options>tls=true&amp;tlsAllowInvalidCertificates=true</options>"
 
         return """
@@ -266,9 +262,7 @@ class SourceMongoURI(SourceMongo):
 
     def get_source_str(self, table_name):
         options = ""
-        if self.secure and self.legacy:
-            options = "ssl=true"
-        if self.secure and not self.legacy:
+        if self.secure:
             options = "tls=true&amp;tlsAllowInvalidCertificates=true"
 
         return """
@@ -496,11 +490,12 @@ class SourceHTTPBase(ExternalSource):
             [
                 "bash",
                 "-c",
-                "python3 /http_server.py --data-path={tbl} --schema={schema} --host={host} --port={port} --cert-path=/fake_cert.pem".format(
+                "python3 /http_server.py --data-path={tbl} --schema={schema} --host={host} --port={port} --cert-path=/fake_cert.pem {logs}".format(
                     tbl=path,
                     schema=self._get_schema(),
                     host=self.docker_hostname,
                     port=self.http_port,
+                    logs='>> /var/log/clickhouse-server/http_server.py.log 2>&1'
                 ),
             ],
             detach=True,

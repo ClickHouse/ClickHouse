@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2985
+personal_ws-1.1 en 3238 
 AArch
 ACLs
 ALTERs
@@ -201,6 +201,7 @@ ContextLockWait
 Contrib
 CountMin
 Covid
+Cramer
 Cramer's
 Criteo
 Crotty
@@ -523,8 +524,6 @@ KafkaWrites
 Kahan
 Kaser
 Keccak
-blockchains
-keccak
 KeeperAliveConnections
 KeeperMap
 KeeperOutstandingRequests
@@ -796,7 +795,6 @@ ParallelParsingInputFormat
 ParallelParsingInputFormatThreads
 ParallelParsingInputFormatThreadsActive
 ParallelReplicasMode
-Parametrized
 ParquetCompression
 ParquetMetadata
 ParquetVersion
@@ -873,6 +871,8 @@ QueryCacheBytes
 QueryCacheEntries
 QueryCacheHits
 QueryCacheMisses
+QueryConditionCacheHits
+QueryConditionCacheMisses
 QueryPreempted
 QueryResultCacheNondeterministicFunctionHandling
 QueryResultCacheSystemTableHandling
@@ -986,6 +986,7 @@ SelfManaged
 Sematext
 SendExternalTables
 SendScalars
+ServerSettings
 SetOperationMode
 ShareAlike
 ShareSet
@@ -999,6 +1000,7 @@ Simhash
 SimpleAggregateFunction
 SimpleState
 SipHash
+Smirnov
 Smirnov's
 Smirnov'test
 Soundex
@@ -1037,6 +1039,7 @@ SummingMergeTree
 SuperSet
 Superset
 SupersetDocker
+SvelteKit
 SystemLogParameters
 SystemReplicasThreads
 SystemReplicasThreadsActive
@@ -1075,6 +1078,7 @@ TablesLoaderForegroundThreads
 TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
 TargetSpecific
+Tauri
 Telegraf
 TemplateIgnoreSpaces
 TemporaryFilesForAggregation
@@ -1084,6 +1088,7 @@ TemporaryFilesUnknown
 Testflows
 Tgz
 Theil's
+Theils
 ThreadMonotonic
 ThreadPoolFSReaderThreads
 ThreadPoolFSReaderThreadsActive
@@ -1140,7 +1145,6 @@ URLHash
 URLHierarchy
 URLPathHierarchy
 USearch
-USearch
 UTCTimestamp
 UUIDNumToString
 UUIDStringToNum
@@ -1174,6 +1178,7 @@ VirtualBox
 Vose
 WALs
 WSFG
+Welch
 Welch's
 Werror
 Wether
@@ -1300,6 +1305,8 @@ arrayJoin
 arrayLast
 arrayLastIndex
 arrayLastOrNull
+arrayLevenshteinDistance
+arrayLevenshteinDistanceWeighted
 arrayMap
 arrayMax
 arrayMin
@@ -1327,6 +1334,7 @@ arrayShiftLeft
 arrayShiftRight
 arrayShingles
 arrayShuffle
+arraySimilarity
 arraySlice
 arraySort
 arraySplit
@@ -1341,6 +1349,7 @@ arrayZipUnaligned
 ascii
 asin
 asinh
+aspell
 assumeNotNull
 async
 asynch
@@ -1422,6 +1431,7 @@ blake
 blockNumber
 blockSerializedSize
 blockSize
+blockchains
 blockinfo
 blockreader
 blocksize
@@ -1455,6 +1465,7 @@ capnproto
 cardinalities
 cardinality
 cartesian
+caseWithExpression
 cassandra
 catboost
 catboostEvaluate
@@ -1485,6 +1496,7 @@ charset
 charsets
 chartdb
 chconn
+chdb
 cheatsheet
 checkouting
 checksummed
@@ -1518,12 +1530,12 @@ codec
 codecs
 codepoint
 codepoints
+codespell
 collapsingmergetree
 combinator
 combinators
 compareSubstrings
 comparising
-composable
 composable
 compressability
 concat
@@ -1638,6 +1650,7 @@ dbal
 dbeaver
 dbgen
 dbms
+dbpedia
 ddl
 deallocated
 deallocation
@@ -1714,6 +1727,7 @@ distinctdynamictypes
 distinctjsonpaths
 distro
 divideDecimal
+divideOrNull
 dmesg
 doesnt
 domainRFC
@@ -1873,8 +1887,10 @@ geospatial
 getClientHTTPHeader
 getMacro
 getMaxTableNameLengthForDatabase
+getMergeTreeSetting
 getOSKernelVersion
 getServerPort
+getServerSetting
 getSetting
 getSettingOrDefault
 getSizeOfEnumType
@@ -1988,8 +2004,8 @@ html
 http
 https
 hudi
-hudi
 hudiCluster
+hyperparameter
 hyperscan
 hypot
 hyvor
@@ -2023,6 +2039,7 @@ inodes
 instantiation
 instantiations
 intDiv
+intDivOrNull
 intDivOrZero
 intExp
 intHash
@@ -2087,6 +2104,8 @@ kRing
 kafka
 kafkaMurmurHash
 kafkacat
+kbytes
+keccak
 keepalive
 keepermap
 kerberized
@@ -2218,6 +2237,7 @@ mebibytes
 memtable
 memtables
 mergeTreeIndex
+mergeTreeProjection
 mergeable
 mergetree
 messageID
@@ -2246,6 +2266,7 @@ mmap
 mmapped
 modularization
 moduli
+moduloOrNull
 moduloOrZero
 mongoc
 mongocxx
@@ -2301,6 +2322,7 @@ musqldump
 mutex
 mydb
 myfilter
+mypy
 mysql
 mysqldump
 mysqljs
@@ -2458,6 +2480,7 @@ positionCaseInsensitive
 positionCaseInsensitiveUTF
 positionUTF
 positiveModulo
+positiveModuloOrNull
 postfix
 postfixes
 postgres
@@ -2560,6 +2583,7 @@ quantiletdigest
 quantiletdigestweighted
 quantiletiming
 quantiletimingweighted
+quantized
 quartile
 queryID
 queryString
@@ -2691,6 +2715,7 @@ runningConcurrency
 runningDifference
 runningDifferenceStartingWithFirstValue
 runtime
+runtimes
 russian
 rustc
 rustup
@@ -2758,6 +2783,10 @@ socketcache
 soundex
 sparkBar
 sparkbar
+sparseGrams
+sparseGramsHashes
+sparseGramsHashesUTF
+sparseGramsUTF
 sparsehash
 speedscope
 splitBy
@@ -2807,6 +2836,8 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
+stringBytesEntropy
+stringBytesUniq
 stringCompare
 stringJaccardIndex
 stringJaccardIndexUTF
@@ -2935,6 +2966,7 @@ timeZoneOffset
 timezones
 tinylog
 tmp
+tmpfs
 toBFloat
 toBool
 toColumnTypeName
@@ -3231,10 +3263,3 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
-Cramer
-Smirnov
-Theils
-Welch
-chdb
-SvelteKit
-Tauri

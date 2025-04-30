@@ -68,7 +68,7 @@ bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
     return true;
 }
 
-std::shared_ptr<PartitionIdToMaxBlock> getMaxAddedBlocks(ReadFromMergeTree * reading)
+PartitionIdToMaxBlockPtr getMaxAddedBlocks(ReadFromMergeTree * reading)
 {
     ContextPtr context = reading->getContext();
 
@@ -226,20 +226,25 @@ bool analyzeProjectionCandidate(
     const RangesInDataParts & parts_with_ranges,
     const SelectQueryInfo & query_info,
     const ContextPtr & context,
-    const std::shared_ptr<PartitionIdToMaxBlock> & max_added_blocks,
+    const PartitionIdToMaxBlockPtr & max_added_blocks,
     const ActionsDAG * dag)
 {
-    MergeTreeData::DataPartsVector projection_parts;
-    MergeTreeData::DataPartsVector normal_parts;
+    RangesInDataParts projection_parts;
+    RangesInDataParts normal_parts;
 
     for (const auto & part_with_ranges : parts_with_ranges)
     {
         const auto & created_projections = part_with_ranges.data_part->getProjectionParts();
         auto it = created_projections.find(candidate.projection->name);
         if (it != created_projections.end() && !it->second->is_broken)
-            projection_parts.push_back(it->second);
+        {
+            projection_parts.push_back(
+                RangesInDataPart(it->second, part_with_ranges.part_index_in_query, part_with_ranges.part_starting_offset_in_query));
+        }
         else
-            normal_parts.push_back(part_with_ranges.data_part);
+        {
+            normal_parts.push_back(part_with_ranges);
+        }
     }
 
     if (projection_parts.empty())

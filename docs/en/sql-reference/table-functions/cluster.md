@@ -19,7 +19,7 @@ All available clusters are listed in the [system.clusters](../../operations/syst
 
 **Syntax**
 
-``` sql
+```sql
 cluster(['cluster_name', db.table, sharding_key])
 cluster(['cluster_name', db, table, sharding_key])
 clusterAllReplicas(['cluster_name', db.table, sharding_key])

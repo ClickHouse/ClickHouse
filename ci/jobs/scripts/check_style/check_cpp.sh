@@ -82,6 +82,7 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::keeper_profile_events
     ProfileEvents::CountersIncrement
     ProfileEvents::size
+    ProfileEvents::checkCPUOverload
 
     CurrentMetrics::add
     CurrentMetrics::sub
@@ -221,6 +222,7 @@ std_cerr_cout_excludes=(
     src/Loggers/Loggers.cpp
     src/Common/GWPAsan.cpp
     src/Common/ProgressIndication.h
+    src/IO/Ask.cpp
 )
 sources_with_std_cerr_cout=( $(
     find $ROOT_PATH/{src,base} -name '*.h' -or -name '*.cpp' | \
