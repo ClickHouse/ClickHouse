@@ -76,8 +76,8 @@ public:
     /// no refreshes will run.
     void start();
     void stop();
-    void start_replicated();
-    void stop_replicated(const String & reason);
+    void startReplicated();
+    void stopReplicated(const String & reason);
 
     /// Schedule task immediately
     void run();

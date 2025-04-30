@@ -720,11 +720,11 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::START_REPLICATED_VIEW:
             for (const auto & task : getRefreshTasks())
-                task->start_replicated();
+                task->startReplicated();
             break;
         case Type::STOP_REPLICATED_VIEW:
             for (const auto & task : getRefreshTasks())
-                task->stop_replicated("SYSTEM STOP REPLICATED VIEW");
+                task->stopReplicated("SYSTEM STOP REPLICATED VIEW");
             break;
         case Type::REFRESH_VIEW:
             for (const auto & task : getRefreshTasks())

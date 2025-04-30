@@ -169,7 +169,7 @@ void RefreshTask::startup()
 void RefreshTask::finalizeRestoreFromBackup()
 {
     if (coordination.coordinated)
-        start_replicated();
+        startReplicated();
     else
         start();
 }
@@ -303,7 +303,7 @@ void RefreshTask::stop()
     scheduleRefresh(guard);
 }
 
-void RefreshTask::start_replicated()
+void RefreshTask::startReplicated()
 {
     if (!coordination.coordinated)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Refreshable materialized view is not coordinated.");
@@ -314,7 +314,7 @@ void RefreshTask::start_replicated()
         throw Coordination::Exception::fromPath(code, path);
 }
 
-void RefreshTask::stop_replicated(const String & reason)
+void RefreshTask::stopReplicated(const String & reason)
 {
     if (!coordination.coordinated)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Refreshable materialized view is not coordinated.");
