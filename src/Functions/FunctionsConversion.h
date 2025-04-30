@@ -2642,7 +2642,7 @@ public:
                     "Second argument only make sense for DateTime (time zone, optional) and Decimal (scale).",
                     getName(), arguments.size());
 
-            if (!isStringOrFixedString(arguments[0].type) && !isUInt32(arguments[0].type))
+            if (!isStringOrFixedString(arguments[0].type) && !isInteger(*arguments[0].type))
             {
                 if (this->getName().contains("OrZero") || this->getName().contains("OrNull"))
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}. "
@@ -2714,14 +2714,38 @@ public:
             return ConvertThroughParsing<DataTypeFixedString, ConvertToDataType, Name, exception_mode, parsing_mode>::execute(
                 arguments, result_type, input_rows_count, scale);
         }
-        else if (checkAndGetDataType<DataTypeUInt32>(from_type))
+        else if (isInteger(*from_type))
         {
-
-            ColumnPtr nested_column = ConvertImpl<DataTypeUInt32, ConvertToDataType, Name, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(
+            ColumnPtr nested_column;
+            if(checkAndGetDataType<DataTypeUInt64>(from_type))
+            {
+                // We are not supporting uint64 to DateTime conversion, return default value
+                auto temp_nested_column = DataTypeUInt32().createColumn();
+                temp_nested_column->insertManyDefaults(1);
+                auto null_map = ColumnUInt8::create(1, 1);
+                return ColumnNullable::create(std::move(temp_nested_column), std::move(null_map));
+            }
+            else if(checkAndGetDataType<DataTypeUInt32>(from_type))
+            {
+                nested_column = ConvertImpl<DataTypeUInt32, ConvertToDataType, Name, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(
                 arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag, scale);
-            auto null_map = ColumnUInt8::create(nested_column->size(), 0);
-            ColumnPtr result = ColumnNullable::create(nested_column, std::move(null_map));
-            return result;
+            }
+            if(checkAndGetDataType<DataTypeUInt16>(from_type))
+            {
+                nested_column = ConvertImpl<DataTypeUInt16, ConvertToDataType, Name, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(
+                arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag, scale);
+            }
+            if(checkAndGetDataType<DataTypeUInt8>(from_type))
+            {
+                nested_column = ConvertImpl<DataTypeUInt8, ConvertToDataType, Name, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(
+                arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag, scale);
+            }
+            if (nested_column != nullptr)
+            {
+                auto null_map = ColumnUInt8::create(nested_column->size(), 0);
+                ColumnPtr result = ColumnNullable::create(nested_column, std::move(null_map));
+                return result;
+            }
         }
 
         return nullptr;
