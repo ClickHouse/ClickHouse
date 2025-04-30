@@ -188,7 +188,7 @@ bool isStorageTouchedByMutations(
             if (command.partition)
             {
                 const String partition_id = storage_from_part->getPartitionIDFromQuery(command.partition, context);
-                if (partition_id == source_part->info.partition_id)
+                if (partition_id == source_part->info.getPartitionId())
                     all_commands_can_be_skipped = false;
             }
             else
@@ -1283,8 +1283,9 @@ void MutationsInterpreter::Source::read(
             plan,
             *data,
             storage_snapshot,
-            part,
+            RangesInDataPart(part),
             alter_conversions,
+            nullptr,
             required_columns,
             nullptr,
             apply_deleted_mask_,

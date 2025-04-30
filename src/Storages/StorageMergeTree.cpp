@@ -323,7 +323,7 @@ std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr) const
 std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr local_context) const
 {
     auto parts = getVisibleDataPartsVector(local_context);
-    return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, parts);
+    return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts));
 }
 
 std::optional<UInt64> StorageMergeTree::totalBytes(ContextPtr) const
@@ -1456,7 +1456,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     auto is_cancelled = [&merges_blocker = merger_mutator.merges_blocker](const MergeMutateSelectedEntryPtr & entry)
     {
         if (entry->future_part)
-            return merges_blocker.isCancelledForPartition(entry->future_part->part_info.partition_id);
+            return merges_blocker.isCancelledForPartition(entry->future_part->part_info.getPartitionId());
 
         return merges_blocker.isCancelled();
     };
@@ -1681,7 +1681,7 @@ bool StorageMergeTree::optimize(
         std::unordered_set<String> partition_ids;
 
         for (const DataPartPtr & part : data_parts)
-            partition_ids.emplace(part->info.partition_id);
+            partition_ids.emplace(part->info.getPartitionId());
 
         for (const String & partition_id : partition_ids)
         {
@@ -2212,7 +2212,7 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
 
         results.push_back(PartitionCommandResultInfo{
             .command_type = "ATTACH_PART",
-            .partition_id = loaded_parts[i]->info.partition_id,
+            .partition_id = loaded_parts[i]->info.getPartitionId(),
             .part_name = loaded_parts[i]->name,
             .old_part_name = old_name,
         });
@@ -2322,7 +2322,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     MergeTreePartInfo drop_range;
     if (replace)
     {
-        drop_range.partition_id = partition_id;
+        drop_range.setPartitionId(partition_id);
         drop_range.min_block = 0;
         drop_range.max_block = increment.get(); // there will be a "hole" in block numbers
         drop_range.level = std::numeric_limits<decltype(drop_range.level)>::max();
