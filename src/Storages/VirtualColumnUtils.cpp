@@ -276,7 +276,7 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
 
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
-    VirtualsForFileLikeStorage virtual_values, ContextPtr )
+    VirtualsForFileLikeStorage virtual_values, ContextPtr)
 {
     for (const auto & virtual_column : requested_virtual_columns)
     {
