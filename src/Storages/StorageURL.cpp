@@ -199,7 +199,9 @@ IStorageURLBase::IStorageURLBase(
 
     if (context_->getSettingsRef()[Setting::use_hive_partitioning])
     {
-        const auto hive_map = VirtualColumnUtils::parseHivePartitioningKeysAndValues(getSampleURI(uri, context_));
+        // todo arthur this needs to live!!
+        const auto path = getSampleURI(uri, context_);
+        const auto hive_map = VirtualColumnUtils::parseHivePartitioningKeysAndValues(path);
 
         for (const auto & item : hive_map)
         {
@@ -510,7 +512,8 @@ Chunk StorageURLSource::generate()
             // the order is important, it must be added after virtual columns..
             if (!hive_partition_columns_to_read_from_file_path.empty())
             {
-                auto hive_map = VirtualColumnUtils::parseHivePartitioningKeysAndValues(curr_uri.getPath());
+                auto path = curr_uri.getPath();
+                auto hive_map = VirtualColumnUtils::parseHivePartitioningKeysAndValues(path);
                 for (const auto & column : hive_partition_columns_to_read_from_file_path)
                 {
                     if (auto it = hive_map.find(column.getNameInStorage()); it != hive_map.end())
