@@ -65,6 +65,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Common/ThreadFuzzer.h>
+#include <base/memory_access_tracing.h>
 #include <base/coverage.h>
 #include <csignal>
 #include <algorithm>
@@ -839,7 +840,16 @@ BlockIO InterpreterSystemQuery::execute()
             unloadPrimaryKeys();
             break;
         }
-
+        case Type::ENABLE_MEMORY_ACCESS_COVERAGE:
+        {
+            enableMemoryAccessesCoverage();
+            break;
+        }
+        case Type::DISABLE_MEMORY_ACCESS_COVERAGE:
+        {
+            disableMemoryAccessesCoverage();
+            break;
+        }
 #if USE_JEMALLOC
         case Type::JEMALLOC_PURGE:
         {
@@ -1756,6 +1766,8 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::WAIT_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::RESET_COVERAGE:
+        case Type::ENABLE_MEMORY_ACCESS_COVERAGE: // TODO: think about it
+        case Type::DISABLE_MEMORY_ACCESS_COVERAGE:
         case Type::UNKNOWN:
         case Type::END: break;
     }

@@ -376,6 +376,7 @@ void DiskLocal::writeFileUsingBlobWritingFunction(const String & path, WriteMode
 __attribute__((no_sanitize("all")))
 void DiskLocal::removeFile(const String & path)
 {
+    // TODO: maybe here too
     auto fs_path = fs::path(disk_path) / path;
     if (0 != unlink(fs_path.c_str()))
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, fs_path, "Cannot unlink file {}", fs_path);
@@ -384,15 +385,14 @@ void DiskLocal::removeFile(const String & path)
 __attribute__((no_sanitize("all")))
 void DiskLocal::removeFileIfExists(const String & path)
 {
-    ENABLE_TRACE = 0;
+    auto current_enable_trace = ENABLE_TRACE; // TODO: explore this problem
     auto fs_path = fs::path(disk_path) / path;
-    std::cout << "removeFileIfExists " << fs_path.c_str() << std::endl;
     if (0 != unlink(fs_path.c_str()))
     {
         if (errno != ENOENT)
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, fs_path, "Cannot unlink file {}", fs_path);
     }
-    ENABLE_TRACE = 1; // fix
+    ENABLE_TRACE = current_enable_trace;
 }
 
 void DiskLocal::removeDirectory(const String & path)

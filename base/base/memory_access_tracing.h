@@ -6,10 +6,14 @@
 
 extern int ENABLE_TRACE;
 
-/// Get the number of memory accesses since application start or last reset
+extern int FAULT;
+
 uint64_t getMemoryAccessCount();
 
-/// Reset the memory access counter
 void resetMemoryAccessCount();
+
+void enableMemoryAccessesCoverage();
+
+void disableMemoryAccessesCoverage();
 
 #endif
