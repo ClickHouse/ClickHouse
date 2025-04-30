@@ -193,7 +193,9 @@ private:
     SSHKey ssh_private_key;
 #endif
     String quota_key;
+#if USE_JWT_CPP && USE_SSL
     String jwt;
+#endif
 
     /// For inter-server authorization
     String cluster;

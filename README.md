@@ -52,7 +52,7 @@ Upcoming meetups
 * [Austin Meetup](https://www.meetup.com/clickhouse-austin-user-group/events/307289908) - May 13, 2025
 * [London Meetup](https://www.meetup.com/clickhouse-london-user-group/events/306047172/) - May 14, 2025
 * [Istanbul Meetup](https://www.meetup.com/clickhouse-turkiye-meetup-group/events/306978337/) - May 15, 2025
-* [Shenzhen Meetup](hhttps://www.huodongxing.com/event/7803892350511) - May 17, 2025
+* [Shenzhen Meetup](https://www.huodongxing.com/event/7803892350511) - May 17, 2025
 
 Recent meetups
 * [Kuala Lumper Meetup with CNCF](https://www.meetup.com/clickhouse-malaysia-meetup-group/events/306697678/) - April 16, 2025

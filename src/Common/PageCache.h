@@ -87,7 +87,7 @@ extern template class CacheBase<UInt128, PageCacheCell, UInt128TrivialHash, Page
 ///
 /// Implementation should be careful to always use MemoryTrackerBlockerInThread for all operations
 /// that lock the mutex or allocate memory. Otherwise we'll can deadlock when MemoryTracker calls
-/// autoResize().
+/// autoResize.
 class PageCache
 {
 private:
@@ -123,7 +123,7 @@ public:
 
     bool contains(const PageCacheKey & key, bool inject_eviction) const;
 
-    void autoResize(size_t memory_usage, size_t memory_limit);
+    void autoResize(Int64 memory_usage, size_t memory_limit);
 
     void clear();
     size_t sizeInBytes() const;

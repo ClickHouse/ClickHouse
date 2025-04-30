@@ -192,7 +192,7 @@ The series are stored in Keeper nodes under the path, which can be configured in
 │         1 │      4 │   4 │                        7 │
 └───────────┴────────┴─────┴──────────────────────────┘
                   )"}},
-        .category{"Other"}
+        .category = FunctionDocumentation::Category::Other
     });
 }
 

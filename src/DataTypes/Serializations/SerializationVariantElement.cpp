@@ -29,7 +29,7 @@ struct SerializationVariantElement::DeserializeBinaryBulkStateVariantElement : p
     ColumnPtr variant;
     ISerialization::DeserializeBinaryBulkStatePtr discriminators_state;
     ISerialization::DeserializeBinaryBulkStatePtr variant_element_state;
-    size_t num_rows_read = 0;
+    size_t discriminators_size = 0;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
@@ -46,6 +46,13 @@ void SerializationVariantElement::enumerateStreams(
     const DB::ISerialization::SubstreamData & data) const
 {
     /// We will need stream for discriminators during deserialization.
+    if (settings.use_specialized_prefixes_substreams)
+    {
+        settings.path.push_back(Substream::VariantDiscriminatorsPrefix);
+        callback(settings.path);
+        settings.path.pop_back();
+    }
+
     settings.path.push_back(Substream::VariantDiscriminators);
     callback(settings.path);
     settings.path.pop_back();
@@ -122,7 +129,10 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
 
         /// If we started to read a new column, reinitialize discriminators column in deserialization state.
         if (!variant_element_state->discriminators || result_column->empty())
+        {
             variant_element_state->discriminators = ColumnVariant::ColumnDiscriminators::create();
+            variant_element_state->discriminators_size = 0;
+        }
 
         /// Deserialize discriminators according to serialization mode.
         if (discriminators_state->mode.value == SerializationVariant::DiscriminatorsSerializationMode::BASIC)
@@ -159,13 +169,13 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
 
     settings.path.pop_back();
 
-    /// Deserialization state saves `num_rows_read` to track rows processed in previous deserialization.
-    /// Whether discriminators are cached or not, `num_rows_read` serves as the starting offset
+    /// Deserialization state saves the size of discriminators to track rows processed in previous deserialization.
+    /// Whether discriminators are cached or not, this size serves as the starting offset
     /// for new discriminators.
-    /// Must reset `num_rows_read` to 0 when upper layer re-initiates read with an empty column.
+    /// Must reset it to 0 when upper layer re-initiates read with an empty column.
     if (result_column->empty())
-        variant_element_state->num_rows_read = 0;
-    size_t discriminators_offset = variant_element_state->num_rows_read;
+        variant_element_state->discriminators_size = 0;
+    size_t discriminators_offset = variant_element_state->discriminators_size;
 
     if (!variant_rows_offset)
     {
@@ -190,7 +200,8 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     }
 
     /// We could read less than limit discriminators, but we will need actual number of read rows later.
-    size_t num_new_discriminators = variant_element_state->discriminators->size() - variant_element_state->num_rows_read;
+    size_t num_new_discriminators = variant_element_state->discriminators->size() - variant_element_state->discriminators_size;
+    variant_element_state->discriminators_size = variant_element_state->discriminators->size();
 
     /// Iterate through new discriminators to calculate the limit for our variant
     /// if we didn't do it during discriminators deserialization.
@@ -252,7 +263,6 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     if (variant_limit == 0 || variant_element_state->variant->empty())
     {
         mutable_column->insertManyDefaults(num_new_discriminators);
-        variant_element_state->num_rows_read = result_column->size();
         return;
     }
 
@@ -277,8 +287,6 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
                 mutable_column->insertDefault();
         }
     }
-
-    variant_element_state->num_rows_read = result_column->size();
 }
 
 std::pair<size_t, size_t> SerializationVariantElement::deserializeCompactDiscriminators(

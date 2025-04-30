@@ -7,8 +7,8 @@ drop table if exists ttl_02265;
 drop table if exists ttl_02265_r2;
 
 -- The bug is appears only for Wide part.
-create table ttl_02265    (date Date, key Int, value String TTL date + interval 1 month) engine=ReplicatedMergeTree('/clickhouse/tables/{database}/ttl_02265', 'r1') order by key partition by date settings min_bytes_for_wide_part=0;
-create table ttl_02265_r2 (date Date, key Int, value String TTL date + interval 1 month) engine=ReplicatedMergeTree('/clickhouse/tables/{database}/ttl_02265', 'r2') order by key partition by date settings min_bytes_for_wide_part=0;
+create table ttl_02265    (date Date, key Int, value String TTL date + interval 1 month) engine=ReplicatedMergeTree('/clickhouse/tables/{database}/ttl_02265', 'r1') order by key partition by date settings min_bytes_for_wide_part=0, min_bytes_for_full_part_storage=0;
+create table ttl_02265_r2 (date Date, key Int, value String TTL date + interval 1 month) engine=ReplicatedMergeTree('/clickhouse/tables/{database}/ttl_02265', 'r2') order by key partition by date settings min_bytes_for_wide_part=0, min_bytes_for_full_part_storage=0;
 
 -- after, 20100101_0_0_0 will have ttl.txt and value.bin
 insert into ttl_02265 values ('2010-01-01', 2010, 'foo');

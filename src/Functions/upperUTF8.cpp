@@ -30,7 +30,7 @@ REGISTER_FUNCTION(UpperUTF8)
     FunctionDocumentation::Examples examples = {
         {"first", "SELECT upperUTF8('München') as Upperutf8;", "MÜNCHEN"},
     };
-    FunctionDocumentation::Category category = {"Strings"};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
 
     factory.registerFunction<FunctionUpperUTF8>({description, syntax, arguments, returned_value, examples, category});
 }

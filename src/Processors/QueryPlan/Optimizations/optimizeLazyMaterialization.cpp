@@ -25,9 +25,6 @@ static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
     if (reading->isQueryWithSampling())
         return false;
 
-    if (reading->isParallelReadingEnabled())
-        return false;
-
     return true;
 }
 

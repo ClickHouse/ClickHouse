@@ -841,6 +841,14 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             exception_from_job = std::current_exception();
             thread_trace_context.root_span.addAttribute(exception_from_job);
 
+            /// Log LOGICAL_ERRORs from jobs here to make sure they are captured at least once.
+            /// While this might lead to multiple log messages for the same error,
+            /// it's preferable to potentially missing the error entirely.
+            if (DB::getExceptionErrorCode(exception_from_job) == DB::ErrorCodes::LOGICAL_ERROR)
+            {
+                DB::tryLogException(exception_from_job, __PRETTY_FUNCTION__);
+            }
+
             /// job should be reset before decrementing scheduled_jobs to
             /// ensure that the Job destroyed before wait() returns.
             job_data.reset();

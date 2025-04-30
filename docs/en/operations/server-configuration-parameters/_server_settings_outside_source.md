@@ -510,23 +510,23 @@ Example:
 
 ```xml
 <http_options_response>
-        <header>
+     <header>
             <name>Access-Control-Allow-Origin</name>
             <value>*</value>
-        </header>
-        <header>
-            <name>Access-Control-Allow-Headers</name>
-            <value>origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization</value>
-        </header>
-        <header>
-            <name>Access-Control-Allow-Methods</name>
-            <value>POST, GET, OPTIONS</value>
-        </header>
-        <header>
-            <name>Access-Control-Max-Age</name>
-            <value>86400</value>
-        </header>
-    </http_options_response>
+     </header>
+     <header>
+          <name>Access-Control-Allow-Headers</name>
+          <value>origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization</value>
+     </header>
+     <header>
+          <name>Access-Control-Allow-Methods</name>
+          <value>POST, GET, OPTIONS</value>
+     </header>
+     <header>
+          <name>Access-Control-Max-Age</name>
+          <value>86400</value>
+     </header>
+</http_options_response>
 ```
 
 ## hsts_max_age {#hsts_max_age}
