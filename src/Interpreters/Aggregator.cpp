@@ -213,7 +213,7 @@ Aggregator::Params::Params(
     float min_hit_rate_to_use_consecutive_keys_optimization_,
     const StatsCollectingParams & stats_collecting_params_,
     size_t limit_offset_plus_length_,
-    std::optional<std::vector<std::pair<UInt64, SortDirection>>> optimization_indexes_)
+    std::optional<std::vector<std::tuple<UInt64, SortDirection, std::string>>> optimization_indexes_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)

@@ -480,7 +480,7 @@ void addFilterStep(
 // if the first one is a subset of the second one.
 // Example: (GROUP BY a, b, c ORDER BY c, a) => {2, 0}.
 // The second elements of pairs are sort directions.
-std::optional<std::vector<std::pair<UInt64, SortDirection>>> findOptimizationSublistIndexes(const QueryTreeNodes& group_by_nodes, const QueryTreeNodes& order_by_nodes)
+std::optional<std::vector<std::tuple<UInt64, SortDirection, std::string>>> findOptimizationSublistIndexes(const QueryTreeNodes& group_by_nodes, const QueryTreeNodes& order_by_nodes)
 {
     if (order_by_nodes.empty())
         return std::nullopt;
@@ -488,14 +488,18 @@ std::optional<std::vector<std::pair<UInt64, SortDirection>>> findOptimizationSub
     if (group_by_nodes.size() != 1) // MVP. TODO allow more than one expression
         return std::nullopt;
 
-    std::vector<std::pair<UInt64, SortDirection>> result(order_by_nodes.size());
+    std::vector<std::tuple<UInt64, SortDirection, std::string>> result(order_by_nodes.size());
     std::unordered_map<std::string, size_t> index_of_group_by_expression;
+    std::unordered_map<std::string, std::string> type_of_group_by_expression;
     for (size_t i = 0; i < group_by_nodes.size(); ++i)
     {
         if (group_by_nodes[i]->getNodeType() != QueryTreeNodeType::COLUMN)
             continue; // MVP
         const auto& group_by_node_typed = group_by_nodes[i]->template as<ColumnNode &>();
         index_of_group_by_expression[group_by_node_typed.getColumnName()] = i;
+        const DataTypePtr & column_type = group_by_node_typed.getColumnType();
+        if (column_type != nullptr)
+            type_of_group_by_expression[group_by_node_typed.getColumnName()] = column_type->getName();
     }
 
     for (size_t i = 0; i < order_by_nodes.size(); ++i)
@@ -509,8 +513,7 @@ std::optional<std::vector<std::pair<UInt64, SortDirection>>> findOptimizationSub
         auto group_by_map_iter = index_of_group_by_expression.find(order_by_column_name);
         if (group_by_map_iter == index_of_group_by_expression.end())
             return std::nullopt;
-        result[i].first = group_by_map_iter->second;
-        result[i].second = order_by_node_typed.getSortDirection();
+        result[i] = {group_by_map_iter->second, order_by_node_typed.getSortDirection(), type_of_group_by_expression[order_by_column_name]};
     }
     return result;
 }
@@ -538,7 +541,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
             aggregate_description.argument_names.clear();
     }
 
-    std::optional<std::vector<std::pair<UInt64, SortDirection>>> optimization_indexes;
+    std::optional<std::vector<std::tuple<UInt64, SortDirection, std::string>>> optimization_indexes;
     if (!query_node.isGroupByWithTotals())
     {
         const auto& group_by_nodes = query_node.getGroupBy().getNodes();
