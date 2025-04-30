@@ -269,7 +269,13 @@ bool checkCorrelatedColumn(
 
     while (scope_to_check != nullptr)
     {
+        /// Check if column source is in the FROM section of the current scope (query).
         if (scope_to_check->registered_table_expression_nodes.contains(column_source))
+            break;
+
+        /// Previous check wouldn't work in the case of resolution of alias columns.
+        /// In that case table expression is not registered yet and table expression data is being computed.
+        if (scope_to_check->table_expressions_in_resolve_process.contains(column_source.get()))
             break;
 
         if (isQueryOrUnionNode(scope_to_check->scope_node))
