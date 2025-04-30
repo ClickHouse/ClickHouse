@@ -1,19 +1,13 @@
 #include "PageCache.h"
 
-#include <unistd.h>
 #include <sys/mman.h>
 #include <Common/Allocator.h>
-#include <Common/logger_useful.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/formatReadable.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
-#include <base/hex.h>
-#include <base/errnoToString.h>
-#include <base/getPageSize.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadHelpers.h>
+
 
 namespace ProfileEvents
 {
@@ -47,10 +41,15 @@ std::string PageCacheKey::toString() const
     return fmt::format("{}:{}:{}{}{}", path, offset, size, file_version.empty() ? "" : ":", file_version);
 }
 
-PageCache::PageCache(size_t default_block_size_, size_t default_lookahead_blocks_, std::chrono::milliseconds history_window_, const String & cache_policy, double size_ratio, size_t min_size_in_bytes_, size_t max_size_in_bytes_, double free_memory_ratio_, size_t num_shards)
-    : default_block_size(default_block_size_)
-    , default_lookahead_blocks(default_lookahead_blocks_)
-    , min_size_in_bytes(min_size_in_bytes_)
+PageCache::PageCache(
+    std::chrono::milliseconds history_window_,
+    const String & cache_policy,
+    double size_ratio,
+    size_t min_size_in_bytes_,
+    size_t max_size_in_bytes_,
+    double free_memory_ratio_,
+    size_t num_shards)
+    : min_size_in_bytes(min_size_in_bytes_)
     , max_size_in_bytes(max_size_in_bytes_)
     , free_memory_ratio(free_memory_ratio_)
     , history_window(history_window_)
@@ -63,7 +62,7 @@ PageCache::PageCache(size_t default_block_size_, size_t default_lookahead_blocks
 
 PageCache::MappedPtr PageCache::getOrSet(const PageCacheKey & key, bool detached_if_missing, bool inject_eviction, std::function<void(const MappedPtr &)> load)
 {
-    /// Prevent MemoryTracker from calling autoResize() while we may be holding the mutex.
+    /// Prevent MemoryTracker from calling autoResize while we may be holding the mutex.
     MemoryTrackerBlockerInThread blocker(VariableContext::Global);
 
     Key key_hash = key.hash();
@@ -92,7 +91,7 @@ PageCache::MappedPtr PageCache::getOrSet(const PageCacheKey & key, bool detached
         std::tie(result, miss) = shard.getOrSet(key_hash, [&]() -> MappedPtr
         {
             /// At this point CacheBase is not holding the mutex, so it's ok to let MemoryTracker
-            /// call autoResize().
+            /// call autoResize.
             blocker.reset();
 
             MappedPtr cell;
@@ -140,12 +139,13 @@ void PageCache::Shard::onRemoveOverflowWeightLoss(size_t weight_loss)
     ProfileEvents::increment(ProfileEvents::PageCacheWeightLost, weight_loss);
 }
 
-void PageCache::autoResize(size_t memory_usage, size_t memory_limit)
+void PageCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
 {
     /// Avoid recursion when called from MemoryTracker.
     MemoryTrackerBlockerInThread blocker(VariableContext::Global);
 
     size_t cache_size = sizeInBytes();
+    size_t memory_usage = size_t(std::max(memory_usage_signed, Int64(0)));
 
     size_t peak;
     {
