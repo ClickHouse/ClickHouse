@@ -100,6 +100,7 @@ CorrelatedPlanStepMap buildCorrelatedPlanStepMap(QueryPlan & correlated_query_pl
 
 struct DecorrelationContext
 {
+    const CorrelatedSubquery & correlated_subquery;
     const PlannerContextPtr & planner_context;
     QueryPlan query_plan; // LHS plan
     QueryPlan correlated_query_plan;
@@ -217,14 +218,73 @@ QueryPlan decorrelateQueryPlan(
 
         return result_plan;
     }
-    if (auto * aggeregating_step = typeid_cast<AggregatingStep *>(node->step.get()))
+    if ([[maybe_unused]] auto * aggeregating_step = typeid_cast<AggregatingStep *>(node->step.get()))
     {
-        
+        auto decorrelated_query_plan = decorrelateQueryPlan(context, node->children.front());
+        auto input_header = decorrelated_query_plan.getCurrentHeader();
+
+        if (aggeregating_step->isGroupingSets())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Decorrelation of GROUP BY GROUPING SETS is not supported yet");
+
+        auto new_aggregator_params = aggeregating_step->getAggregatorParameters();
+
+        for (const auto & correlated_column_identifier : context.correlated_subquery.correlated_column_identifiers)
+        {
+            new_aggregator_params.keys.push_back(correlated_column_identifier);
+        }
+        new_aggregator_params.keys_size = new_aggregator_params.keys.size();
+
+        auto result_step = std::make_unique<AggregatingStep>(
+            std::move(input_header),
+            std::move(new_aggregator_params),
+            aggeregating_step->getGroupingSetsParamsList(),
+            aggeregating_step->getFinal(),
+            aggeregating_step->getMaxBlockSize(),
+            aggeregating_step->getMaxBlockSizeForAggregationInOrder(),
+            aggeregating_step->getMergeThreads(),
+            aggeregating_step->getTemporaryDataMergeThreads(),
+            false /*storage_has_evenly_distributed_read_*/,
+            aggeregating_step->isGroupByUseNulls(),
+            SortDescription{} /*sort_description_for_merging_*/,
+            SortDescription{} /*group_by_sort_description_*/,
+            aggeregating_step->shouldProduceResultsInBucketOrder(),
+            aggeregating_step->usingMemoryBoundMerging(),
+            aggeregating_step->explicitSortingRequired()
+        );
+        result_step->setStepDescription(aggeregating_step->getStepDescription());
+
+        decorrelated_query_plan.addStep(std::move(result_step));
+
+        return decorrelated_query_plan;
     }
     throw Exception(
         ErrorCodes::NOT_IMPLEMENTED,
         "Cannot decorrelate query, because '{}' step is not supported",
         node->step->getName());
+}
+
+void buildRenamingForScalarSubquery(
+    QueryPlan & query_plan,
+    const CorrelatedSubquery & correlated_subquery
+)
+{
+    ActionsDAG dag(query_plan.getCurrentHeader().getNamesAndTypesList());
+    const auto * result_node = &dag.findInOutputs(correlated_subquery.action_node_name);
+
+    ActionsDAG::NodeRawConstPtrs new_outputs{ result_node };
+    new_outputs.reserve(correlated_subquery.correlated_column_identifiers.size() + 1);
+
+    for (const auto & column_name : correlated_subquery.correlated_column_identifiers)
+    {
+        new_outputs.push_back(&dag.addAlias(dag.findInOutputs(column_name), fmt::format("{}.{}", correlated_subquery.action_node_name, column_name)));
+    }
+    new_outputs.push_back(result_node);
+
+    dag.getOutputs() = std::move(new_outputs);
+
+    auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(dag));
+    expression_step->setStepDescription("Create renaming actions for scalar subquery");
+    query_plan.addStep(std::move(expression_step));
 }
 
 void buildExistsResultExpression(
@@ -467,6 +527,7 @@ void buildQueryPlanForCorrelatedSubquery(
             auto correlated_step_map = buildCorrelatedPlanStepMap(correlated_query_plan);
 
             DecorrelationContext context{
+                .correlated_subquery = correlated_subquery,
                 .planner_context = planner_context,
                 .query_plan = std::move(query_plan),
                 .correlated_query_plan = std::move(subquery_planner).extractQueryPlan(),
@@ -474,6 +535,7 @@ void buildQueryPlanForCorrelatedSubquery(
             };
 
             auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
+            buildRenamingForScalarSubquery(decorrelated_plan, correlated_subquery);
 
             /// Use LEFT OUTER JOIN to produce the result plan.
             query_plan = buildLogicalJoin(
@@ -505,6 +567,7 @@ void buildQueryPlanForCorrelatedSubquery(
             auto correlated_step_map = buildCorrelatedPlanStepMap(correlated_query_plan);
 
             DecorrelationContext context{
+                .correlated_subquery = correlated_subquery,
                 .planner_context = planner_context,
                 .query_plan = std::move(query_plan),
                 .correlated_query_plan = std::move(subquery_planner).extractQueryPlan(),
