@@ -381,7 +381,7 @@ void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_n
 void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name) const
 {
     const String table_metadata_path = getObjectMetadataPath(to_table_name);
-    if (db_disk->existsFile(table_metadata_path))
+    if (fs::exists(table_metadata_path))
     {
         fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
 
