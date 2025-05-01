@@ -7,7 +7,7 @@ title: 'ARRAY JOIN Clause'
 
 # ARRAY JOIN Clause
 
-It is a common operation for tables that contain an array column to produce a new table that has a column with each individual array element of that initial column, while values of other columns are duplicated. This is the basic case of what `ARRAY JOIN` clause does.
+It is a common operation for tables that contain an array column to produce a new table that has a row with each individual array element of that initial column, while values of other columns are duplicated. This is the basic case of what `ARRAY JOIN` clause does.
 
 Its name comes from the fact that it can be looked at as executing `JOIN` with an array or nested data structure. The intent is similar to the [arrayJoin](/sql-reference/functions/array-join) function, but the clause functionality is broader.
 

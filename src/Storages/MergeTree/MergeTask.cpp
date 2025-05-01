@@ -237,7 +237,7 @@ static void addMissedColumnsToSerializationInfos(
 
 bool MergeTask::GlobalRuntimeContext::isCancelled() const
 {
-    return (future_part ? merges_blocker->isCancelledForPartition(future_part->part_info.partition_id) : merges_blocker->isCancelled())
+    return (future_part ? merges_blocker->isCancelledForPartition(future_part->part_info.getPartitionId()) : merges_blocker->isCancelled())
         || merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed);
 }
 
@@ -636,7 +636,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         ttl_merges_blocker = global_ctx->ttl_merges_blocker,
         need_remove = ctx->need_remove_expired_values,
         merge_list_element = global_ctx->merge_list_element_ptr,
-        partition_id = global_ctx->future_part->part_info.partition_id]() -> bool
+        partition_id = global_ctx->future_part->part_info.getPartitionId()]() -> bool
     {
         return merges_blocker->isCancelledForPartition(partition_id)
             || (need_remove && ttl_merges_blocker->isCancelled())
@@ -1066,10 +1066,9 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
             *plan_for_part,
             *global_ctx->data,
             global_ctx->storage_snapshot,
-            global_ctx->future_part->parts[part_num],
+            RangesInDataPart(global_ctx->future_part->parts[part_num], part_num, 0),
             global_ctx->alter_conversions[part_num],
             global_ctx->merged_part_offsets,
-            part_num,
             Names{column_name},
             global_ctx->input_rows_filtered,
             /*apply_deleted_mask=*/ true,
@@ -1815,10 +1814,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             *plan_for_part,
             *global_ctx->data,
             global_ctx->storage_snapshot,
-            global_ctx->future_part->parts[i],
+            RangesInDataPart(global_ctx->future_part->parts[i], i, 0),
             global_ctx->alter_conversions[i],
             global_ctx->merged_part_offsets,
-            i,
             merging_column_names,
             global_ctx->input_rows_filtered,
             /*apply_deleted_mask=*/ true,
