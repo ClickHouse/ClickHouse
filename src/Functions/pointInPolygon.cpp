@@ -430,6 +430,20 @@ private:
             && WhichDataType(static_cast<const DataTypeArray &>(type).getNestedType()).isArray();
     }
 
+    bool isThreeDimensionalArray(const IDataType & type) const
+    {
+        const auto * level1 = checkAndGetDataType<DataTypeArray>(&type);
+        if (!level1)
+            return false;
+
+        const auto * level2 = checkAndGetDataType<DataTypeArray>(level1->getNestedType().get());
+        if (!level2)
+            return false;
+
+        const auto * level3 = checkAndGetDataType<DataTypeArray>(level2->getNestedType().get());
+        return level3 != nullptr;
+    }
+
     /// Implementation methods to check point-in-polygon on the fly (for non-const polygons).
 
     bool isInsideRing(
