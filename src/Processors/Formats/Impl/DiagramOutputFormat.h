@@ -89,7 +89,7 @@ protected:
     {
         static const size_t BRAILE_BLOCK_HEIGHT = 4;
         static const size_t BRAILE_BLOCK_WIDTH = 2;
-        static const size_t EXPEXTED_COLUMN_NUMBER = 2;
+        static const size_t EXPECTED_COLUMN_NUMBER = 2;
         static const size_t FIELD_SIZE = 11;
         static const size_t MAX_COLOR_MODULE = 256;
         static const size_t DEFAULT_HEIGHT = 30;

@@ -86,11 +86,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"force_exchange_kind", "", "", "New experimental setting."},
             {"allow_experimental_delta_kernel_rs", false, false, "New setting"},
             {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
-            {"diagram_output_format_diagram_type", "SCATTER", "SCATTER", "Allow to set the type of diagram"},
-            {"diagram_output_format_title", "", "", "Allow to set the title of plot"},
-            {"diagram_output_format_is_ascii_set", false, false, "Allow to set the charset for printing plot"},
-            {"diagram_output_format_limit_height", -1, -1, "Allow to limit num of rows in plot"},
-            {"diagram_output_format_limit_width", -1, -1, "Allow to limit num of columns in plot"},
+            {"output_format_diagram_type", "SCATTER", "SCATTER", "Allow to set the type of diagram"},
+            {"output_format_diagram_title", "", "", "Allow to set the title of plot"},
+            {"output_format_diagram_is_ascii_set", false, false, "Allow to set the charset for printing plot"},
+            {"output_format_diagram_limit_height", -1, -1, "Allow to limit num of rows in plot"},
+            {"output_format_diagram_limit_width", -1, -1, "Allow to limit num of columns in plot"},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {

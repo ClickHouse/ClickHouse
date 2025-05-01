@@ -6,6 +6,9 @@
 #include <Interpreters/sortBlock.h>
 #include <Processors/Formats/Impl/DiagramOutputFormat.h>
 #include <Common/UTF8Helpers.h>
+#include <Core/Block.h>
+#include <Columns/IColumn.h>
+#include <Processors/Port.h>
 
 namespace DB
 {
@@ -76,8 +79,7 @@ DiagramSymbols ascii_diagram_symbols{"+", "+", "+", "+", "+", "+", "+", "+", "+"
 
 void DiagramOutputFormat::write()
 {
-    if (!diagram_type.contains(format_settings.diagram.diagram_type))
-        throw Exception(ErrorCodes::UNKNOWN_SETTING, "No such diagram type.");
+    /// TODO: Case insensitive.
     switch (diagram_type.at(format_settings.diagram.diagram_type))
     {
         case DiagramType::SCATTER:
@@ -98,6 +100,13 @@ void DiagramOutputFormat::write()
 DiagramOutputFormat::DiagramOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
     : IOutputFormat(header_, out_), format_settings{format_settings_}, serializations(header_.getSerializations())
 {
+    if (!diagram_type.contains(format_settings.diagram.diagram_type))
+        throw Exception(ErrorCodes::UNKNOWN_SETTING, "No such diagram type.");
+
+    if (header_.columns() != DiagramConstants::EXPECTED_COLUMN_NUMBER)
+        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Diagram output format expects exactly 2 columns (x, y), got {}", header_.columns());
+    /// TODO: Check data types.
+
     is_ascii_symbols = format_settings_.diagram.is_ascii_symbols;
     height = DiagramConstants::DEFAULT_HEIGHT;
     width = DiagramConstants::DEFAULT_WIEDTH;
@@ -127,9 +136,7 @@ void DiagramOutputFormat::writeScatter()
     Float64 min_y = std::numeric_limits<Float64>::max();
     for (const auto & chunk : chunks)
     {
-        if (chunk.getNumColumns() != DiagramConstants::EXPEXTED_COLUMN_NUMBER)
-            throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Incorrect number of columns");
-
+        chassert(chunk.getNumColumns() == 2);
         const auto x_column = chunk.getColumns()[0];
         const auto y_column = chunk.getColumns()[1];
 
@@ -238,10 +245,7 @@ void DiagramOutputFormat::writeHistogram()
     Float64 min_y = std::numeric_limits<Float64>::max();
     for (const auto & chunk : chunks)
     {
-        if (chunk.getNumColumns() != DiagramConstants::EXPEXTED_COLUMN_NUMBER)
-            throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Incorrect number of columns");
-
-        const auto x_column = chunk.getColumns()[0];
+        chassert(chunk.getNumColumns() == 2);
         const auto y_column = chunk.getColumns()[1];
         if (!y_column->isNumeric())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Data type of Y column isn't numeric.");
@@ -320,9 +324,7 @@ void DiagramOutputFormat::writeHeatMap()
     Float64 min_y = std::numeric_limits<Float64>::max();
     for (const auto & chunk : chunks)
     {
-        if (chunk.getNumColumns() != DiagramConstants::EXPEXTED_COLUMN_NUMBER)
-            throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Incorrect number of columns");
-
+        chassert(chunk.getNumColumns() == 2);
         const auto x_column = chunk.getColumns()[0];
         const auto y_column = chunk.getColumns()[1];
 
@@ -435,8 +437,7 @@ void DiagramOutputFormat::writeLineplot()
     Float64 min_y = std::numeric_limits<Float64>::max();
     for (auto & chunk : chunks)
     {
-        if (chunk.getNumColumns() != DiagramConstants::EXPEXTED_COLUMN_NUMBER)
-            throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Incorrect number of columns");
+        chassert(chunk.getNumColumns() == 2);
         const auto x_column = chunk.getColumns()[0];
         const auto y_column = chunk.getColumns()[1];
 
