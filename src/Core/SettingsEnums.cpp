@@ -149,7 +149,7 @@ IMPLEMENT_SETTING_ENUM(DistributedDDLOutputMode, ErrorCodes::BAD_ARGUMENTS,
 IMPLEMENT_SETTING_ENUM(StreamingHandleErrorMode, ErrorCodes::BAD_ARGUMENTS,
     {{"default",      StreamingHandleErrorMode::DEFAULT},
      {"stream",       StreamingHandleErrorMode::STREAM},
-     {"dead_letter_queue", StreamingHandleErrorMode::DEAD_LETTER_QUEUE}})
+     {"dead_letter",  StreamingHandleErrorMode::DEAD_LETTER}})
 
 IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS,
     {{"enable",          ShortCircuitFunctionEvaluation::ENABLE},

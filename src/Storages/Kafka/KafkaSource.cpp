@@ -5,7 +5,7 @@
 #include <Formats/FormatFactory.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DeadLetterQueue.h>
+#include <Interpreters/DeadLetter.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/Kafka/KafkaConsumer.h>
@@ -135,7 +135,7 @@ Chunk KafkaSource::generateImpl()
                 }
                 return 1;
             }
-            case StreamingHandleErrorMode::DEAD_LETTER_QUEUE:
+            case StreamingHandleErrorMode::DEAD_LETTER:
             {
                 exception_message = e.message();
                 for (size_t i = 0; i < result_columns.size(); ++i)
@@ -248,16 +248,16 @@ Chunk KafkaSource::generateImpl()
                 const auto time_now = std::chrono::system_clock::now();
                 auto storage_id = storage.getStorageID();
 
-                auto dead_letter_queue = context->getDeadLetterQueue();
-                dead_letter_queue->add(DeadLetterQueueElement{
-                        .stream_type = DeadLetterQueueElement::StreamType::Kafka,
+                auto dead_letter = context->getDeadLetter();
+                dead_letter->add(DeadLetterElement{
+                        .stream_type = DeadLetterElement::StreamType::Kafka,
                         .event_time = timeInSeconds(time_now),
                         .event_time_microseconds = timeInMicroseconds(time_now),
                         .database_name = storage_id.database_name,
                         .table_name = storage_id.table_name,
                         .raw_message = consumer->currentPayload(),
                         .error = exception_message.value(),
-                        .details = DeadLetterQueueElement::KafkaDetails{
+                        .details = DeadLetterElement::KafkaDetails{
                             .topic_name = consumer->currentTopic(),
                             .partition = consumer->currentPartition(),
                             .offset = consumer->currentPartition(),
@@ -277,7 +277,7 @@ Chunk KafkaSource::generateImpl()
         else
         {
             // We came here in case of tombstone (or sometimes zero-length) messages, and it is not something abnormal
-            // TODO: it seems like in case of StreamingHandleErrorMode::STREAM or DEAD_LETTER_QUEUE
+            // TODO: it seems like in case of StreamingHandleErrorMode::STREAM or DEAD_LETTER
             //  we may need to process those differently
             //  currently we just skip them with note in logs.
             consumer->storeLastReadMessageOffset();

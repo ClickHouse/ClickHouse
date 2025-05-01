@@ -8,7 +8,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/DeadLetterQueue.h>
+#include <Interpreters/DeadLetter.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>

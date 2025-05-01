@@ -21,7 +21,7 @@ if is_arm():
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/kafka.xml", "configs/dead_letter_queue.xml"],
+    main_configs=["configs/kafka.xml", "configs/dead_letter.xml"],
     with_kafka=True,
 )
 
@@ -52,7 +52,7 @@ def view_test(expected_num_messages, *_):
 
 
 # check_method for bad_messages_parsing_mode
-def dead_letter_queue_test(expected_num_messages, topic_name):
+def dead_letter_test(expected_num_messages, topic_name):
     # we have a problem:
     #  it make sense to flush logs when data already processed,
     #  but since nothing goes to target MV we don't know when it happens
@@ -64,7 +64,7 @@ def dead_letter_queue_test(expected_num_messages, topic_name):
         time.sleep(0.1)
         rows = int(
             instance.query(
-                f"SELECT count() FROM system.dead_letter_queue WHERE kafka_topic_name = '{topic_name}'"
+                f"SELECT count() FROM system.dead_letter WHERE kafka_topic_name = '{topic_name}'"
             )
         )
         if rows == expected_num_messages:
@@ -73,9 +73,9 @@ def dead_letter_queue_test(expected_num_messages, topic_name):
     assert rows == expected_num_messages
 
     result = instance.query(
-        f"SELECT * FROM system.dead_letter_queue WHERE kafka_topic_name = '{topic_name}' FORMAT Vertical"
+        f"SELECT * FROM system.dead_letter WHERE kafka_topic_name = '{topic_name}' FORMAT Vertical"
     )
-    logging.debug(f"system.dead_letter_queue contains {result}")
+    logging.debug(f"system.dead_letter contains {result}")
 
     # nothing goes to target table
     view_test(0)
@@ -235,12 +235,12 @@ def test_bad_messages_parsing_stream(kafka_cluster):
     )
 
 
-def test_bad_messages_parsing_dead_letter_queue(kafka_cluster):
+def test_bad_messages_parsing_dead_letter(kafka_cluster):
     bad_messages_parsing_mode(
         kafka_cluster,
-        "dead_letter_queue",
+        "dead_letter",
         "CREATE MATERIALIZED VIEW view Engine=Log AS SELECT key FROM kafka",
-        dead_letter_queue_test,
+        dead_letter_test,
     )
 
 
