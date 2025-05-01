@@ -569,7 +569,25 @@ private:
         return true;
     }
 
-    /// Implementation methods to create boost::geometry::polygon for subsequent preprocessing.
+    bool isInsideMultiPolygon(Float64 point_x, Float64 point_y, const IColumn & multi_polygon_column, size_t i) const
+    {
+        const auto & array_col = static_cast<const ColumnArray &>(multi_polygon_column);
+        size_t polys_begin = array_col.getOffsets()[i - 1];
+        size_t polys_end = array_col.getOffsets()[i];
+
+        const auto & nested_array_col = static_cast<const ColumnArray &>(array_col.getData());
+
+        for (size_t j = polys_begin; j < polys_end; ++j)
+        {
+            if (isInsidePolygonWithHoles(point_x, point_y, nested_array_col, j))
+                return true;
+        }
+
+        return false;
+    }
+
+
+    /// Implementation methods to create bg::polygon for subsequent preprocessing.
     /// They are used to optimize matching for constant polygons. Preprocessing may take significant amount of time.
 
     template <typename T>
@@ -672,12 +690,12 @@ private:
         }
     }
 
-    void parseConstPolygonFromSingleColumn(const ColumnsWithTypeAndName & arguments, Polygon & out_polygon) const
+    void parseConstPolygonFromSingleColumn(const ColumnWithTypeAndName & argument, Polygon & out_polygon) const
     {
-        if (isTwoDimensionalArray(*arguments[1].type))
+        if (isTwoDimensionalArray(*argument.type))
         {
             ColumnPtr polygon_column_float64 = castColumn(
-                arguments[1],
+                argument,
                 std::make_shared<DataTypeArray>(
                     std::make_shared<DataTypeArray>(
                         std::make_shared<DataTypeTuple>(DataTypes{
@@ -692,7 +710,7 @@ private:
         else
         {
             ColumnPtr polygon_column_float64 = castColumn(
-                arguments[1],
+                argument,
                 std::make_shared<DataTypeArray>(
                     std::make_shared<DataTypeTuple>(DataTypes{
                         std::make_shared<DataTypeFloat64>(),
@@ -708,20 +726,72 @@ private:
     void NO_SANITIZE_UNDEFINED parseConstPolygon(const ColumnsWithTypeAndName & arguments, Polygon & out_polygon) const
     {
         if (arguments.size() == 2)
-            parseConstPolygonFromSingleColumn(arguments, out_polygon);
+            parseConstPolygonFromSingleColumn(arguments[1], out_polygon);
         else
             parseConstPolygonWithHolesFromMultipleColumns(arguments, out_polygon);
 
         /// Fix orientation and close rings. It's required for subsequent processing.
-        boost::geometry::correct(out_polygon);
+        bg::correct(out_polygon);
 
 #if !defined(__clang_analyzer__) /// It does not like boost.
         if (validate)
         {
             std::string failure_message;
-            auto is_valid = boost::geometry::is_valid(out_polygon, failure_message);
+            auto is_valid = bg::is_valid(out_polygon, failure_message);
             if (!is_valid)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Polygon is not valid: {}", failure_message);
+        }
+#endif
+    }
+
+    void parseConstMultiPolygonFromSingleColumn(const ColumnWithTypeAndName & argument, MultiPolygon & out_multi_polygon) const
+    {
+        ColumnPtr multi_polygon_column_float64 = castColumn(
+            argument,
+            std::make_shared<DataTypeArray>(
+              std::make_shared<DataTypeArray>(
+                std::make_shared<DataTypeArray>(
+                std::make_shared<DataTypeTuple>(
+                  DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()})))));
+
+        const ColumnConst & column_const = typeid_cast<const ColumnConst &>(*multi_polygon_column_float64);
+        const auto & array_col = static_cast<const ColumnArray &>(column_const.getDataColumn()); // depth-1 (polygons)
+        const auto & nested_array_col = static_cast<const ColumnArray &>(array_col.getData());
+
+        size_t polygons_count = nested_array_col.size();
+        for (size_t i = 0; i < polygons_count; ++i)
+        {
+            out_multi_polygon.emplace_back();
+            parseConstPolygonWithHolesFromSingleColumn(nested_array_col, i, out_multi_polygon.back());
+        }
+    }
+
+    void parseConstMultiPolygonFromMultipleColumns(const ColumnsWithTypeAndName & arguments, MultiPolygon & out_multi_polygon) const
+    {
+        for (size_t arg_pos = 1; arg_pos < arguments.size(); ++arg_pos)
+        {
+            out_multi_polygon.emplace_back();
+            parseConstPolygonFromSingleColumn(arguments[arg_pos], out_multi_polygon.back());
+        }
+    }
+
+    void NO_SANITIZE_UNDEFINED parseConstMultiPolygon(const ColumnsWithTypeAndName & arguments, MultiPolygon & out_multi_polygon) const
+    {
+        if (arguments.size() == 2)
+            parseConstMultiPolygonFromSingleColumn(arguments[1], out_multi_polygon);
+        else
+            parseConstMultiPolygonFromMultipleColumns(arguments, out_multi_polygon);
+
+
+        /// Fix orientation and close rings. It's required for subsequent processing.
+        bg::correct(out_multi_polygon);
+
+#if !defined(__clang_analyzer__)
+        if (validate)
+        {
+            std::string failure_message;
+            if (!bg::is_valid(out_multi_polygon, failure_message))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "MultiPolygon is not valid: {}", failure_message);
         }
 #endif
     }
@@ -731,7 +801,10 @@ private:
 
 REGISTER_FUNCTION(PointInPolygon)
 {
-    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid<Float64>>>();
+    using PointInPolygonWithGridF64 = PointInPolygonWithGrid<Float64>;
+    using PointInMultiPolygonRTreeWithGrid = PointInMultiPolygonRTree<PointInPolygonWithGridF64>;
+
+    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGridF64, PointInMultiPolygonRTreeWithGrid>>();
 }
 
 }
