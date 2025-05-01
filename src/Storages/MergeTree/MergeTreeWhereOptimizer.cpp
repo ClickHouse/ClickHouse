@@ -15,7 +15,6 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
-#include <base/map.h>
 #include <Common/typeid_cast.h>
 
 namespace DB

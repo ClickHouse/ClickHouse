@@ -4,7 +4,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionAdaptors.h>
-#include <base/map.h>
 #include "reverse.h"
 
 #include <ranges>

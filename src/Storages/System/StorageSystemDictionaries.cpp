@@ -15,7 +15,6 @@
 #include <Columns/ColumnString.h>
 #include <Core/Names.h>
 
-#include <base/map.h>
 
 #include <ranges>
 

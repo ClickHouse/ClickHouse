@@ -13,7 +13,6 @@
 #include <Poco/ByteOrder.h>
 #include <Common/formatIPv6.h>
 #include <base/itoa.h>
-#include <base/map.h>
 #include <base/range.h>
 #include <base/sort.h>
 #include <Dictionaries/ClickHouseDictionarySource.h>

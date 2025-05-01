@@ -49,7 +49,6 @@
 #include <Interpreters/castColumn.h>
 #include <base/TypeList.h>
 #include <base/TypeLists.h>
-#include <base/map.h>
 #include <base/types.h>
 #include <base/wide_integer_to_string.h>
 #include <Common/Arena.h>

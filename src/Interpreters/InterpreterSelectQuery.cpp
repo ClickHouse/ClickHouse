@@ -95,7 +95,6 @@
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 #include <QueryPipeline/SizeLimits.h>
-#include <base/map.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/NaNUtils.h>

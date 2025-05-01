@@ -22,7 +22,6 @@
 #include <Functions/identity.h>
 #include <Functions/FunctionFactory.h>
 
-#include <base/map.h>
 
 #include <ranges>
 

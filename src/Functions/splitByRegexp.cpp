@@ -6,7 +6,6 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/Regexps.h>
 #include <Common/StringUtils.h>
-#include <base/map.h>
 #include <Common/assert_cast.h>
 
 #include <ranges>

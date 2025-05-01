@@ -16,7 +16,6 @@
 #include <Core/ServerUUID.h>
 #include <Interpreters/Context.h>
 #include <base/getFQDNOrHostName.h>
-#include <base/map.h>
 #include <base/sort.h>
 
 #include <Poco/Net/NetException.h>

@@ -1,4 +1,3 @@
-#include <base/map.h>
 #include <base/range.h>
 #include <Common/StringUtils.h>
 #include <Columns/ColumnTuple.h>
