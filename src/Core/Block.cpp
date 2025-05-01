@@ -61,21 +61,27 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
         return ReturnType(true);
 
     const IColumn * actual_column = actual.column.get();
+    const IColumn * expected_column = expected.column.get();
 
-    /// If we allow to materialize, and expected column is not const or sparse, then unwrap actual column.
+    /// If we allow to materialize columns, omit Const and Sparse columns.
     if (allow_materialize)
     {
-        if (!isColumnConst(*expected.column))
-            if (const auto * column_const = typeid_cast<const ColumnConst *>(actual_column))
-                actual_column = &column_const->getDataColumn();
+        if (const auto * column_const = typeid_cast<const ColumnConst *>(actual_column))
+            actual_column = &column_const->getDataColumn();
 
-        if (!expected.column->isSparse())
-            if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(actual_column))
-                actual_column = &column_sparse->getValuesColumn();
+        if (const auto * column_const = typeid_cast<const ColumnConst *>(expected_column))
+            expected_column = &column_const->getDataColumn();
+
+        if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(actual_column))
+            actual_column = &column_sparse->getValuesColumn();
+
+        if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(expected_column))
+            expected_column = &column_sparse->getValuesColumn();
     }
 
     const auto * actual_column_maybe_agg = typeid_cast<const ColumnAggregateFunction *>(actual_column);
-    const auto * expected_column_maybe_agg = typeid_cast<const ColumnAggregateFunction *>(expected.column.get());
+    const auto * expected_column_maybe_agg = typeid_cast<const ColumnAggregateFunction *>(expected_column);
+
     if (actual_column_maybe_agg && expected_column_maybe_agg)
     {
         if (!actual_column_maybe_agg->getAggregateFunction()->haveSameStateRepresentation(*expected_column_maybe_agg->getAggregateFunction()))
@@ -85,12 +91,15 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
                     actual.dumpStructure(),
                     expected.dumpStructure());
     }
-    else if (actual_column->getName() != expected.column->getName())
+    else if (actual_column->getName() != expected_column->getName())
+    {
         return onError<ReturnType>(code,
                 "Block structure mismatch in {} stream: different columns:\n{}\n{}",
                 context_description,
                 actual.dumpStructure(),
                 expected.dumpStructure());
+
+    }
 
     if (isColumnConst(*actual.column) && isColumnConst(*expected.column)
         && !actual.column->empty() && !expected.column->empty()) /// don't check values in empty columns
@@ -290,7 +299,7 @@ const ColumnWithTypeAndName & Block::safeGetByPosition(size_t position) const
 }
 
 
-const ColumnWithTypeAndName * Block::findByName(const std::string & name, bool case_insensitive) const
+const ColumnWithTypeAndName * Block::findByName(std::string_view name, bool case_insensitive) const
 {
     if (case_insensitive)
     {
@@ -308,6 +317,11 @@ const ColumnWithTypeAndName * Block::findByName(const std::string & name, bool c
         return nullptr;
     }
     return &data[it->second];
+}
+
+const ColumnWithTypeAndName * Block::findByName(const std::string & name, bool case_insensitive) const
+{
+    return findByName(std::string_view{name}, case_insensitive);
 }
 
 std::optional<ColumnWithTypeAndName> Block::findSubcolumnByName(const std::string & name) const

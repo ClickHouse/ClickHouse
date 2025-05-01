@@ -331,9 +331,7 @@ def main():
             "clickhouse-local --version",
         ]
         results.append(
-            Result.from_commands_run(
-                name="Install ClickHouse", command=commands, with_log=True
-            )
+            Result.from_commands_run(name="Install ClickHouse", command=commands)
         )
         res = results[-1].is_ok()
 
@@ -352,7 +350,7 @@ def main():
             ]
             results.append(
                 Result.from_commands_run(
-                    name="Install Reference ClickHouse", command=commands, with_log=True
+                    name="Install Reference ClickHouse", command=commands
                 )
             )
             res = results[-1].is_ok()
@@ -421,9 +419,7 @@ def main():
             f"cp -R {temp_dir}/coordination0 {perf_left}/coordination",
             f"cp -R {temp_dir}/coordination0 {perf_right}/coordination",
         ]
-        results.append(
-            Result.from_commands_run(name="Configure", command=commands, with_log=True)
-        )
+        results.append(Result.from_commands_run(name="Configure", command=commands))
         res = results[-1].is_ok()
 
     leftCH = CHServer(is_left=True)
@@ -524,7 +520,6 @@ def main():
             Result.from_commands_run(
                 name="Report",
                 command=commands,
-                with_log=True,
                 workdir=perf_wd,
             )
         )

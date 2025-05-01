@@ -160,15 +160,19 @@ ColumnDependencies getAllColumnDependencies(
 }
 
 
-bool isStorageTouchedByMutations(
+IsStorageTouched isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
     ContextPtr context)
 {
+    static constexpr IsStorageTouched no_rows = {.any_rows_affected = false, .all_rows_affected = false};
+    static constexpr IsStorageTouched all_rows = {.any_rows_affected = true, .all_rows_affected = true};
+    static constexpr IsStorageTouched some_rows = {.any_rows_affected = true, .all_rows_affected = false};
+
     if (commands.empty())
-        return false;
+        return no_rows;
 
     auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part, mutations_snapshot);
     bool all_commands_can_be_skipped = true;
@@ -178,17 +182,17 @@ bool isStorageTouchedByMutations(
         if (command.type == MutationCommand::APPLY_DELETED_MASK)
         {
             if (source_part->hasLightweightDelete())
-                return true;
+                return some_rows;
         }
         else
         {
             if (!command.predicate) /// The command touches all rows.
-                return true;
+                return all_rows;
 
             if (command.partition)
             {
                 const String partition_id = storage_from_part->getPartitionIDFromQuery(command.partition, context);
-                if (partition_id == source_part->info.partition_id)
+                if (partition_id == source_part->info.getPartitionId())
                     all_commands_can_be_skipped = false;
             }
             else
@@ -199,7 +203,7 @@ bool isStorageTouchedByMutations(
     }
 
     if (all_commands_can_be_skipped)
-        return false;
+        return no_rows;
 
     std::optional<InterpreterSelectQuery> interpreter_select_query;
     BlockIO io;
@@ -229,7 +233,7 @@ bool isStorageTouchedByMutations(
     while (block.rows() == 0 && executor.pull(block));
 
     if (!block.rows())
-        return false;
+        return no_rows;
     if (block.rows() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "count() expression returned {} rows, not 1", block.rows());
 
@@ -237,7 +241,11 @@ bool isStorageTouchedByMutations(
     while (executor.pull(tmp_block));
 
     auto count = (*block.getByName("count()").column)[0].safeGet<UInt64>();
-    return count != 0;
+
+    IsStorageTouched result;
+    result.any_rows_affected = (count != 0);
+    result.all_rows_affected = (count == source_part->rows_count);
+    return result;
 }
 
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
@@ -1283,8 +1291,9 @@ void MutationsInterpreter::Source::read(
             plan,
             *data,
             storage_snapshot,
-            part,
+            RangesInDataPart(part),
             alter_conversions,
+            nullptr,
             required_columns,
             nullptr,
             apply_deleted_mask_,
