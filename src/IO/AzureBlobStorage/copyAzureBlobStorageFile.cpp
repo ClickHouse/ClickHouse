@@ -346,11 +346,12 @@ void copyAzureBlobStorageFile(
     const String & dest_blob,
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings,
     const ReadSettings & read_settings,
+    bool same_credentials,
     ThreadPoolCallbackRunnerUnsafe<void> schedule)
 {
     auto log = getLogger("copyAzureBlobStorageFile");
 
-    if (settings->use_native_copy)
+    if (settings->use_native_copy && same_credentials)
     {
         LOG_TRACE(log, "Copying Blob: {} from Container: {} using native copy", src_container_for_logging, src_blob);
         ProfileEvents::increment(ProfileEvents::AzureCopyObject);
@@ -359,6 +360,7 @@ void copyAzureBlobStorageFile(
 
         auto block_blob_client_src = src_client->GetBlockBlobClient(src_blob);
         auto block_blob_client_dest = dest_client->GetBlockBlobClient(dest_blob);
+
         auto source_uri = block_blob_client_src.GetUrl();
 
         if (size < settings->max_single_part_copy_size)

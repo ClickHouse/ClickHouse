@@ -4,17 +4,17 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <azure/storage/blobs.hpp>
+#include <azure/core/response.hpp>
 #include <azure/storage/blobs/blob_client.hpp>
 #include <azure/storage/blobs/blob_options.hpp>
 #include <azure/storage/blobs/blob_service_client.hpp>
 #include <azure/core/http/curl_transport.hpp>
-#include <azure/identity/managed_identity_credential.hpp>
-#include <azure/identity/workload_identity_credential.hpp>
 
 #endif
 
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/strong_typedef.h>
 #include <filesystem>
@@ -132,13 +132,6 @@ private:
 using ContainerClient = ContainerClientWrapper;
 using ServiceClient = Azure::Storage::Blobs::BlobServiceClient;
 using BlobClientOptions = Azure::Storage::Blobs::BlobClientOptions;
-using ConnectionString = StrongTypedef<String, struct ConnectionStringTag>;
-
-using AuthMethod = std::variant<
-    ConnectionString,
-    std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>,
-    std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
-    std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>;
 
 struct ConnectionParams
 {

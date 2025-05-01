@@ -30,6 +30,7 @@ void copyAzureBlobStorageFile(
     const String & dest_blob,
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings,
     const ReadSettings & read_settings,
+    bool same_credentials = true,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {});
 
 

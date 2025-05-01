@@ -5,6 +5,9 @@
 #include <azure/identity/managed_identity_credential.hpp>
 #include <azure/identity/workload_identity_credential.hpp>
 #include <azure/storage/blobs/blob_options.hpp>
+#include <azure/storage/blobs/blob_responses.hpp>
+#include <azure/storage/blobs/rest_client.hpp>
+#include <azure/core/credentials/credentials.hpp>
 
 #endif
 

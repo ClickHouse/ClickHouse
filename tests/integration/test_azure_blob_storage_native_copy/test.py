@@ -44,11 +44,9 @@ def generate_config(port):
                         <type>object_storage</type>
                         <object_storage_type>azure_blob_storage</object_storage_type>
                         <use_native_copy>true</use_native_copy>
-                        <storage_account_url>http://azurite1:{port}/devstoreaccount1/</storage_account_url>
+                        <connection_string>DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:{port}/devstoreaccount1;</connection_string>
                         <container_name>othercontainer</container_name>
                         <skip_access_check>false</skip_access_check>
-                        <account_name>devstoreaccount1</account_name>
-                        <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
                     </disk_azure_other_bucket>
                     <disk_azure_cache>
                         <type>cache</type>
@@ -57,6 +55,17 @@ def generate_config(port):
                         <max_size>1000000000</max_size>
                         <cache_on_write_operations>1</cache_on_write_operations>
                     </disk_azure_cache>
+                    <disk_azure_different_auth>
+                        <metadata_type>local</metadata_type>
+                        <type>object_storage</type>
+                        <object_storage_type>azure_blob_storage</object_storage_type>
+                        <use_native_copy>true</use_native_copy>
+                        <storage_account_url>http://azurite1:{port}/devstoreaccount1/</storage_account_url>
+                        <container_name>othercontainer</container_name>
+                        <skip_access_check>false</skip_access_check>
+                        <account_name>devstoreaccount1</account_name>
+                        <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
+                    </disk_azure_different_auth>
                 </disks>
                 <policies>
                     <policy_azure>
@@ -80,12 +89,20 @@ def generate_config(port):
                             </main>
                         </volumes>
                     </policy_azure_cache>
+                    <policy_azure_different_auth>
+                        <volumes>
+                            <main>
+                                <disk>disk_azure_different_auth</disk>
+                            </main>
+                        </volumes>
+                    </policy_azure_different_auth>
                 </policies>
             </storage_configuration>
             <backups>
                 <allowed_disk>disk_azure</allowed_disk>
                 <allowed_disk>disk_azure_cache</allowed_disk>
                 <allowed_disk>disk_azure_other_bucket</allowed_disk>
+                <allowed_disk>disk_azure_different_auth</allowed_disk>
             </backups>
         </clickhouse>
         """
@@ -274,6 +291,25 @@ def test_backup_restore_native_copy_disabled_in_query(cluster):
     azure_query(
         node4,
         f"BACKUP TABLE test_simple_merge_tree_native_copy_disabled_in_query TO {backup_destination} SETTINGS allow_azure_native_copy = 0",
+    )
+
+    assert not node4.contains_in_log("using native copy")
+
+def test_backup_restore_native_copy_disabled_due_to_different_auth(cluster):
+    node4 = cluster.instances["node4"]
+    azure_query(
+        node4,
+        f"CREATE TABLE test_simple_merge_tree_native_copy_disabled_due_to_different_auth(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_azure_different_auth'",
+    )
+    azure_query(
+        node4, f"INSERT INTO test_simple_merge_tree_native_copy_disabled_due_to_different_auth VALUES (1, 'a')"
+    )
+
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_merge_tree_native_copy_disabled_due_to_different_auth_backup')"
+    print("BACKUP DEST", backup_destination)
+    azure_query(
+        node4,
+        f"BACKUP TABLE test_simple_merge_tree_native_copy_disabled_due_to_different_auth TO {backup_destination}",
     )
 
     assert not node4.contains_in_log("using native copy")

@@ -43,6 +43,7 @@ BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
 
     object_storage = std::make_unique<AzureObjectStorage>(
         "BackupReaderAzureBlobStorage",
+        connection_params.auth_method,
         std::move(client_ptr),
         std::move(settings_ptr),
         connection_params.getContainer(),
@@ -103,6 +104,7 @@ void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup,
                 /* dest_path */ dst_blob_path[0],
                 settings,
                 read_settings,
+                connection_params.auth_method == destination_disk->getObjectStorage()->getAzureBlobStorageAuthMethod(),
                 threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupRDAzure"));
 
             return file_size;
@@ -138,6 +140,7 @@ BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
 
     object_storage = std::make_unique<AzureObjectStorage>(
         "BackupWriterAzureBlobStorage",
+        connection_params.auth_method,
         std::move(client_ptr),
         std::move(settings_ptr),
         connection_params.getContainer(),
@@ -178,6 +181,7 @@ void BackupWriterAzureBlobStorage::copyFileFromDisk(
                 fs::path(blob_path) / path_in_backup,
                 settings,
                 read_settings,
+                src_disk->getObjectStorage()->getAzureBlobStorageAuthMethod() == connection_params.auth_method,
                 threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"));
             return; /// copied!
         }
@@ -201,6 +205,7 @@ void BackupWriterAzureBlobStorage::copyFile(const String & destination, const St
        /* dest_path */ destination,
        settings,
        read_settings,
+       true,
        threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"));
 }
 
