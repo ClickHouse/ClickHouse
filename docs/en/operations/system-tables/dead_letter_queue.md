@@ -1,9 +1,12 @@
 ---
+description: 'System table containing information about messages
+  received via a streaming engine and parsed with errors.'
+keywords: ['system table', 'dead_letter_queue']
 slug: /en/operations/system-tables/dead_letter_queue
+title: 'system.dead_letter_queue'
 ---
-# dead_letter_queue
 
-Contains information about messages received via a streaming engine and parsed with an errors. Currently implemented for Kafka and RabbitMQ.
+Contains information about messages received via a streaming engine and parsed with errors. Currently implemented for Kafka and RabbitMQ.
 
 Logging is enabled by specifying `dead_letter_queue` for the engine specific `handle_error_mode` setting.
 
@@ -47,24 +50,82 @@ Result:
 Row 1:
 ──────
 stream_type:                   Kafka
-event_date:                    2024-10-02
-event_time:                    2024-10-02 16:39:18
-event_time_microseconds:       2024-10-02 16:39:18.603790
+event_date:                    2025-05-01
+event_time:                    2025-05-01 10:34:53
+event_time_microseconds:       2025-05-01 10:34:53.910773
 database_name:                 default
 table_name:                    kafka
-error:                         Message has too many segments. Most likely, data was corrupted: (at row 1)
+error:                         Cannot parse input: expected '\t' before: 'qwertyuiop': (at row 1)
+:
+Row 1:
+Column 0,   name: key,   type: UInt64, ERROR: text "qwertyuiop" is not like UInt64
+
 
 raw_message:                   qwertyuiop
-kafka_topic_name:              CapnProto_dead_letter_queue_err_1733481607
+kafka_topic_name:              TSV_dead_letter_queue_err_1746095689
 kafka_partition:               0
 kafka_offset:                  0
-kafka_key:                     CapnProto_dead_letter_queue_err_1733481607_key_72
+kafka_key:
 rabbitmq_exchange_name:
 rabbitmq_message_id:
 rabbitmq_message_timestamp:    1970-01-01 00:00:00
 rabbitmq_message_redelivered:  0
 rabbitmq_message_delivery_tag: 0
 rabbitmq_channel_id:
+
+Row 2:
+──────
+stream_type:                   Kafka
+event_date:                    2025-05-01
+event_time:                    2025-05-01 10:34:53
+event_time_microseconds:       2025-05-01 10:34:53.910944
+database_name:                 default
+table_name:                    kafka
+error:                         Cannot parse input: expected '\t' before: 'asdfghjkl': (at row 1)
+:
+Row 1:
+Column 0,   name: key,   type: UInt64, ERROR: text "asdfghjkl" is not like UInt64
+
+
+raw_message:                   asdfghjkl
+kafka_topic_name:              TSV_dead_letter_queue_err_1746095689
+kafka_partition:               0
+kafka_offset:                  0
+kafka_key:
+rabbitmq_exchange_name:
+rabbitmq_message_id:
+rabbitmq_message_timestamp:    1970-01-01 00:00:00
+rabbitmq_message_redelivered:  0
+rabbitmq_message_delivery_tag: 0
+rabbitmq_channel_id:
+
+Row 3:
+──────
+stream_type:                   Kafka
+event_date:                    2025-05-01
+event_time:                    2025-05-01 10:34:53
+event_time_microseconds:       2025-05-01 10:34:53.911092
+database_name:                 default
+table_name:                    kafka
+error:                         Cannot parse input: expected '\t' before: 'zxcvbnm': (at row 1)
+:
+Row 1:
+Column 0,   name: key,   type: UInt64, ERROR: text "zxcvbnm" is not like UInt64
+
+
+raw_message:                   zxcvbnm
+kafka_topic_name:              TSV_dead_letter_queue_err_1746095689
+kafka_partition:               0
+kafka_offset:                  0
+kafka_key:
+rabbitmq_exchange_name:
+rabbitmq_message_id:
+rabbitmq_message_timestamp:    1970-01-01 00:00:00
+rabbitmq_message_redelivered:  0
+rabbitmq_message_delivery_tag: 0
+rabbitmq_channel_id:
+ (test.py:78, dead_letter_queue_test)
+
 ```
 
 **See Also**
