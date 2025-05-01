@@ -136,8 +136,9 @@ ColumnLowCardinality::ColumnLowCardinality(MutableColumnPtr && column_unique_, M
 void ColumnLowCardinality::insert(const Field & x)
 {
     compactIfSharedDictionary();
+    const size_t pos = getDictionary().uniqueInsert(x);
     reindexIfNeeded();
-    idx.insertPosition(getDictionary().uniqueInsert(x));
+    idx.insertPosition(pos);
 }
 
 bool ColumnLowCardinality::tryInsert(const Field & x)
@@ -999,7 +1000,7 @@ void ColumnLowCardinality::reindexIfNeeded()
     {
         auto mapping = dictionary.getColumnUnique().detachChangedIndexes();
         auto old_indexes = idx.detachPositions();
-        auto new_indexes = old_indexes->index(*mapping, 0);
+        auto new_indexes = mapping->index(*old_indexes, 0);
         idx.attachPositions(IColumn::mutate(std::move(new_indexes)));
     }
 }

@@ -29,7 +29,6 @@ class ColumnUniqueFCBlockDF final : public COWHelper<IColumnUnique, ColumnUnique
 
 private:
     ColumnUniqueFCBlockDF(const ColumnPtr & string_column, size_t block_size, bool is_nullable);
-    explicit ColumnUniqueFCBlockDF(const IDataType & data_type);
     ColumnUniqueFCBlockDF(const ColumnUniqueFCBlockDF & other);
 
 public:

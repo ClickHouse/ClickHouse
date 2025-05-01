@@ -1,10 +1,13 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnUniqueCompressed.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include <gtest/gtest.h>
+
+#include <vector>
 
 using namespace DB;
 
@@ -61,4 +64,29 @@ TEST(ColumnLowCardinality, Clone)
 
     ASSERT_TRUE(assert_cast<const ColumnLowCardinality &>(*nullable_column).nestedIsNullable());
     ASSERT_FALSE(assert_cast<const ColumnLowCardinality &>(*column).nestedIsNullable());
+}
+
+TEST(ColumnLowCardinality, CompressedDictionary)
+{
+    MutableColumnPtr indexes = ColumnUInt8::create();
+    MutableColumnPtr dictionary = ColumnUniqueFCBlockDF::create(ColumnString::create(), 4, false);
+    auto low_cardinality_column = ColumnLowCardinality::create(std::move(dictionary), std::move(indexes));
+
+
+    std::vector<String> data = {
+        "banana",
+        "banner",
+        "apple",
+        "application",
+    };
+
+    for (const auto & str : data)
+    {
+        low_cardinality_column->insert(str);
+    }
+
+    for (size_t i = 0; i < data.size(); ++i)
+    {
+        EXPECT_EQ((*low_cardinality_column)[i].safeGet<String>(), data[i]);
+    }
 }
