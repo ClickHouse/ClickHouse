@@ -2,7 +2,6 @@
 #include <Functions/PolygonUtils.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <boost/geometry.hpp>
 #include <boost/geometry/core/tag.hpp>
 #include <boost/geometry/core/tags.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
@@ -66,7 +65,7 @@ template <typename G>
 concept MultiPolygonGeometry = std::is_same_v<typename bg::traits::tag<G>::type, bg::multi_polygon_tag>;
 
 template <class Ring>
-static inline void sipHashRing(SipHash & hash, const Ring & ring)
+inline void sipHashRing(SipHash & hash, const Ring & ring)
 {
     static_assert(std::contiguous_iterator<decltype(ring.data())>, "sipHashRing expects a container with contiguous storage (e.g. std::vector).");
 
@@ -357,7 +356,7 @@ public:
         ///
         /// Or, a polygon without holes can be represented by 1d array:
         /// [(outer_x_1, outer_y_1, ...)]
-        
+        ///
         /// A multi-polygon is represented by 3d array:
         /// [[[[(outer_x_1, outer_y_1, ...)], [(hole1_x_1, hole1_y_1), ...], ...], ...]
 
