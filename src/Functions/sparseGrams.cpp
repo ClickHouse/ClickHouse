@@ -267,7 +267,7 @@ are strictly greater than those of any (n-1)-gram inside the substring.)",
             {"max_ngram_length", "The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'"},
         },
         .returned_value{"An array of selected substrings"},
-        .category{"String"}
+        .category = FunctionDocumentation::Category::String
     };
     const FunctionDocumentation hashes_description{
         .description = R"(Finds hashes of all substrings of a given string that have a length of at least `n`,

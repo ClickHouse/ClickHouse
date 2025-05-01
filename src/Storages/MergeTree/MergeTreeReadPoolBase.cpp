@@ -154,6 +154,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
         }
 
         read_task_info.part_index_in_query = part_with_ranges.part_index_in_query;
+        read_task_info.part_starting_offset_in_query = part_with_ranges.part_starting_offset_in_query;
         read_task_info.alter_conversions = MergeTreeData::getAlterConversionsForPart(part_with_ranges.data_part, mutations_snapshot, getContext());
         read_task_info.read_hints = part_with_ranges.read_hints;
 
@@ -189,6 +190,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
 
         read_task_info.const_virtual_fields = shared_virtual_fields;
         read_task_info.const_virtual_fields.emplace("_part_index", read_task_info.part_index_in_query);
+        read_task_info.const_virtual_fields.emplace("_part_starting_offset", read_task_info.part_starting_offset_in_query);
 
         if (pool_settings.preferred_block_size_bytes > 0)
         {
