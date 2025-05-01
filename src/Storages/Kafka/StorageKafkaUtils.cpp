@@ -430,10 +430,24 @@ void consumerStopWithoutRebalance(
     }
     catch (const cppkafka::HandleException & e)
     {
-        LOG_ERROR(log, "Error during pause (consumerGracefulStop): {}", e.what());
+        LOG_ERROR(log, "Error during pause (consumerStopWithoutRebalance): {}", e.what());
     }
 
     drainConsumer(consumer, drain_timeout, log, std::move(error_handler));
+
+    try
+    {
+        auto assignment = consumer.get_assignment();
+        if (!assignment.empty())
+        {
+            consumer.resume_partitions(assignment);
+        }
+        consumer.unassign();
+    }
+    catch (const cppkafka::HandleException & e)
+    {
+        LOG_ERROR(log, "Error during pause (consumerStopWithoutRebalance): {}", e.what());
+    }
 }
 
 // Needed to drain rest of the messages / queued callback calls from the consumer after unsubscribe, otherwise consumer
