@@ -88,8 +88,8 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , current_buffer_id(getRandomASCIIString(8))
     , allow_seeks_after_first_read(allow_seeks_after_first_read_)
     , use_external_buffer(use_external_buffer_)
-    , cache_log(cache_log_)
     , query_context_holder(cache_->getQueryContextHolder(query_id, settings_))
+    , cache_log(settings.enable_filesystem_cache_log ? cache_log_ : nullptr)
     , info(cache_key_, source_file_path_, implementation_buffer_creator_, use_external_buffer_, settings_, read_until_position_ ? read_until_position_.value() : file_size_)
 {
 }

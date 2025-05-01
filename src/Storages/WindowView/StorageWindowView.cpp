@@ -6,6 +6,7 @@
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InterpreterAlterQuery.h>
@@ -29,7 +30,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTWatchQuery.h>
-#include <Parsers/formatAST.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sources/BlocksSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -48,6 +48,7 @@
 #include <Processors/Sinks/EmptySink.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
@@ -131,14 +132,14 @@ namespace
                     if (!data.window_function)
                     {
                         if (data.check_duplicate_window)
-                            data.serialized_window_function = serializeAST(*temp_node);
+                            data.serialized_window_function = temp_node->formatWithSecretsOneLine();
                         t->name = "windowID";
                         data.window_function = t->clone();
                         data.window_function->setAlias("");
                     }
                     else
                     {
-                        if (data.check_duplicate_window && serializeAST(*temp_node) != data.serialized_window_function)
+                        if (data.check_duplicate_window && temp_node->formatWithSecretsOneLine() != data.serialized_window_function)
                             throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW, "WINDOW VIEW only support ONE TIME WINDOW FUNCTION");
                         t->name = "windowID";
                     }
@@ -497,8 +498,6 @@ void StorageWindowView::alter(
     InterpreterCreateQuery create_interpreter(inner_create_query, create_context);
     create_interpreter.setInternal(true);
     create_interpreter.execute();
-
-    DatabaseCatalog::instance().addViewDependency(select_table_id, table_id);
 
     shutdown_called = false;
 
@@ -1701,8 +1700,6 @@ void StorageWindowView::startup()
 {
     if (disabled_due_to_analyzer)
         return;
-
-    DatabaseCatalog::instance().addViewDependency(select_table_id, getStorageID());
 
     fire_task->activate();
     clean_cache_task->activate();

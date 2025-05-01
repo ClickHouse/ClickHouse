@@ -9,6 +9,7 @@ export CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE:="test"}
 export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL:="warning"}
 
 # Unique zookeeper path (based on test name and current database) to avoid overlaps
+# NOTE: does not work for *.expect tests
 export CLICKHOUSE_TEST_PATH="${BASH_SOURCE[1]}"
 CLICKHOUSE_TEST_NAME="$(basename "$CLICKHOUSE_TEST_PATH" .sh)"
 export CLICKHOUSE_TEST_NAME
@@ -31,6 +32,7 @@ export CLICKHOUSE_BINARY=${CLICKHOUSE_BINARY:="$(command -v clickhouse)"}
 [ -x "$CLICKHOUSE_BINARY" ] && CLICKHOUSE_CLIENT_BINARY=${CLICKHOUSE_CLIENT_BINARY:=$CLICKHOUSE_BINARY client}
 export CLICKHOUSE_CLIENT_BINARY=${CLICKHOUSE_CLIENT_BINARY:=$CLICKHOUSE_BINARY-client}
 export CLICKHOUSE_CLIENT_OPT="${CLICKHOUSE_CLIENT_OPT0:-} ${CLICKHOUSE_CLIENT_OPT:-}"
+export CLICKHOUSE_CLIENT_EXPECT_OPT="${CLICKHOUSE_CLIENT_OPT} --disable_suggestion --enable-progress-table-toggle 0 --progress no --output-format-pretty-color 0 --highlight 0"
 export CLICKHOUSE_CLIENT=${CLICKHOUSE_CLIENT:="$CLICKHOUSE_CLIENT_BINARY ${CLICKHOUSE_CLIENT_OPT:-}"}
 # local
 [ -x "${CLICKHOUSE_BINARY}-local" ] && CLICKHOUSE_LOCAL=${CLICKHOUSE_LOCAL:="${CLICKHOUSE_BINARY}-local"}
@@ -60,6 +62,7 @@ export CLICKHOUSE_USER_FILES_UNIQUE=${CLICKHOUSE_USER_FILES_UNIQUE:="${CLICKHOUS
 export USER_FILES_PATH=$CLICKHOUSE_USER_FILES
 
 export CLICKHOUSE_SCHEMA_FILES=${CLICKHOUSE_SCHEMA_FILES:="/var/lib/clickhouse/format_schemas"}
+export CLICKHOUSE_DISKS_FILES=${CLICKHOUSE_DISKS_FILES:="/var/lib/clickhouse/disks"}
 
 [ -x "${CLICKHOUSE_BINARY}-extract-from-config" ] && CLICKHOUSE_EXTRACT_CONFIG=${CLICKHOUSE_EXTRACT_CONFIG:="$CLICKHOUSE_BINARY-extract-from-config --config=$CLICKHOUSE_CONFIG"}
 [ -x "${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_EXTRACT_CONFIG=${CLICKHOUSE_EXTRACT_CONFIG:="$CLICKHOUSE_BINARY extract-from-config --config=$CLICKHOUSE_CONFIG"}
@@ -140,7 +143,7 @@ export MYSQL_CLIENT_CLICKHOUSE_USER=${MYSQL_CLIENT_CLICKHOUSE_USER:="default"}
 [ -n "${CLICKHOUSE_HOST:-}" ] && MYSQL_CLIENT_OPT0+=" --host ${CLICKHOUSE_HOST} "
 [ -n "${CLICKHOUSE_PORT_MYSQL:-}" ] && MYSQL_CLIENT_OPT0+=" --port ${CLICKHOUSE_PORT_MYSQL} "
 [ -n "${CLICKHOUSE_DATABASE:-}" ] && MYSQL_CLIENT_OPT0+=" --database ${CLICKHOUSE_DATABASE} "
-MYSQL_CLIENT_OPT0+=" --user ${MYSQL_CLIENT_CLICKHOUSE_USER} "
+MYSQL_CLIENT_OPT0+=" --user ${MYSQL_CLIENT_CLICKHOUSE_USER} --no-auto-rehash "
 export MYSQL_CLIENT_OPT="${MYSQL_CLIENT_OPT0:-} ${MYSQL_CLIENT_OPT:-}"
 export MYSQL_CLIENT=${MYSQL_CLIENT:="$MYSQL_CLIENT_BINARY ${MYSQL_CLIENT_OPT:-}"}
 
@@ -150,14 +153,14 @@ function clickhouse_client_removed_host_parameter()
 {
     # removing only `--host=value` and `--host value` (removing '-hvalue' feels to dangerous) with python regex.
     # bash regex magic is arcane, but version dependant and weak; sed or awk are not really portable.
-    $(echo "$CLICKHOUSE_CLIENT"  | python3 -c "import sys, re; print(re.sub('--host(\s+|=)[^\s]+', '', sys.stdin.read()))") "$@"
+    $(echo "$CLICKHOUSE_CLIENT"  | python3 -c "import sys, re; print(re.sub(r'--host(\s+|=)[^\s]+', '', sys.stdin.read()))") "$@"
 }
 
 function wait_for_queries_to_finish()
 {
     local max_tries="${1:-20}"
     # Wait for all queries to finish (query may still be running if a thread is killed by timeout)
-    num_tries=0
+    local num_tries=0
     while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database=currentDatabase() AND query NOT LIKE '%system.processes%'") -ne 0 ]]; do
         sleep 0.5;
         num_tries=$((num_tries+1))
@@ -210,3 +213,30 @@ function run_with_error()
 
     return 0
 }
+
+# BASH_XTRACEFD is supported only since 4.1
+if [[ -n $CLICKHOUSE_BASH_TRACING_FILE ]] && [[ ${BASH_VERSINFO[0]} -gt 4 || (${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 1) ]]; then
+    exec 3>"$CLICKHOUSE_BASH_TRACING_FILE"
+    # It will be also nice to have stderr in the tracing output, but:
+    # - exec 2>&3
+    #
+    #   This will not preserve it in the stderr, and even though explicit
+    #   stderr handling in tests will work, the check for non-empty stderr will
+    #   not work at least
+    #
+    # - exec 2> >(stdbuf -o0 -e0 -i0 tee -a "$CLICKHOUSE_BASH_TRACING_FILE" >&2)
+    #
+    #   The problem with duplicating stderr with tee is bufferization, even
+    #   with "tee -a" (opens with O_APPEND) and stdbuf I still got stderr after tracing
+    #
+    #   I've also tried unbuffer but it does not work
+    #
+    # But anyway it is useful even without stderr!
+    #
+    # Note, that we can redirect stderr into separate file, this should work,
+    # but we will have to add a code to handle this in clickhouse-test wrapper,
+    # but let's keep things simple for now.
+    BASH_XTRACEFD=3
+    export PS4='+ [\D{%Y-%m-%d %H:%M:%S}] [:${LINENO}] '
+    set -x
+fi

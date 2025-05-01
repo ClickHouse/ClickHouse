@@ -7,12 +7,17 @@
 #include <QueryPipeline/RemoteInserter.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/formatReadable.h>
 #include <Common/quoteString.h>
+#include <Disks/IDisk.h>
 #include <base/defines.h>
+#include <Interpreters/Context.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromFile.h>
 
 #include <fmt/ranges.h>
+#include <filesystem>
+#include <ranges>
 
 namespace CurrentMetrics
 {
@@ -121,7 +126,9 @@ void DistributedAsyncInsertBatch::send(const SettingsChanges & settings_changes,
         }
         else
         {
-            e.addMessage(fmt::format("While sending a batch of {} files, files: {}", files.size(), fmt::join(files, "\n")));
+            e.addMessage(fmt::format("While sending a batch of {} files, files: {}",
+                files.size(),
+                fmt::join(files | std::ranges::views::take(8), "\n")));
             throw;
         }
     }
@@ -136,7 +143,10 @@ void DistributedAsyncInsertBatch::send(const SettingsChanges & settings_changes,
     }
     else if (!batch_marked_as_broken)
     {
-        LOG_ERROR(parent.log, "Marking a batch of {} files as broken, files: {}", files.size(), fmt::join(files, "\n"));
+        LOG_ERROR(parent.log,
+            "Marking a batch of {} files as broken, files: {}",
+            files.size(),
+            fmt::join(files | std::ranges::views::take(8), "\n"));
 
         for (const auto & file : files)
             parent.markAsBroken(file);

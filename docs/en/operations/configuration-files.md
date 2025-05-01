@@ -1,8 +1,10 @@
 ---
-slug: /operations/configuration-files
+description: 'This page explains how ClickHouse server can be configured with configuration
+  files in XML or YAML syntax.'
+sidebar_label: 'Configuration Files'
 sidebar_position: 50
-sidebar_label: Configuration Files
-title: Configuration Files
+slug: /operations/configuration-files
+title: 'Configuration Files'
 ---
 
 :::note
@@ -101,7 +103,7 @@ Example with `$MAX_QUERY_SIZE = 150000`:
 
 which is equal to
 
-``` xml
+```xml
 <clickhouse>
     <profiles>
         <default>
@@ -113,7 +115,7 @@ which is equal to
 
 The same is possible using `from_zk` (ZooKeeper node):
 
-``` xml
+```xml
 <clickhouse>
     <postgresql_port from_zk="/zk_configs/postgresql_port"/>
 </clickhouse>
@@ -130,7 +132,7 @@ The same is possible using `from_zk` (ZooKeeper node):
 which is equal to
 
 
-``` xml
+```xml
 <clickhouse>
     <postgresql_port>9005</postgresql_port>
 </clickhouse>
@@ -144,7 +146,7 @@ The element takes on the value of the environment variable or ZooKeeper node if 
 
 Previous example but assuming `MAX_QUERY_SIZE` is not set:
 
-``` xml
+```xml
 <clickhouse>
     <profiles>
         <default>
@@ -156,7 +158,7 @@ Previous example but assuming `MAX_QUERY_SIZE` is not set:
 
 Result:
 
-``` xml
+```xml
 <clickhouse>
     <profiles>
         <default>
@@ -288,11 +290,11 @@ To encrypt a value, you can use the (example) program `encrypt_decrypt`:
 
 Example:
 
-``` bash
+```bash
 ./encrypt_decrypt /etc/clickhouse-server/config.xml -e AES_128_GCM_SIV abcd
 ```
 
-``` text
+```text
 961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85
 ```
 
@@ -326,11 +328,11 @@ Note that configuration files are first [merged](#merging) taking into account s
 
 For example, you can have separate config file for each user like this:
 
-``` bash
+```bash
 $ cat /etc/clickhouse-server/users.d/alice.xml
 ```
 
-``` xml
+```xml
 <clickhouse>
     <users>
       <alice>
@@ -352,17 +354,17 @@ Here you can see default config written in YAML: [config.yaml.example](https://g
 There are some differences between YAML and XML formats in terms of ClickHouse configurations. Here are some tips for writing a configuration in YAML format.
 
 An XML tag with a text value is represented by a YAML key-value pair
-``` yaml
+```yaml
 key: value
 ```
 
 Corresponding XML:
-``` xml
+```xml
 <key>value</key>
 ```
 
 A nested XML node is represented by a YAML map:
-``` yaml
+```yaml
 map_key:
   key1: val1
   key2: val2
@@ -370,7 +372,7 @@ map_key:
 ```
 
 Corresponding XML:
-``` xml
+```xml
 <map_key>
     <key1>val1</key1>
     <key2>val2</key2>
@@ -379,7 +381,7 @@ Corresponding XML:
 ```
 
 To create the same XML tag multiple times, use a YAML sequence:
-``` yaml
+```yaml
 seq_key:
   - val1
   - val2
@@ -405,7 +407,7 @@ Corresponding XML:
 ```
 
 To provide an XML attribute, you can use an attribute key with a `@` prefix. Note that `@` is reserved by YAML standard, so must be wrapped in double quotes:
-``` yaml
+```yaml
 map:
   "@attr1": value1
   "@attr2": value2
@@ -413,14 +415,14 @@ map:
 ```
 
 Corresponding XML:
-``` xml
+```xml
 <map attr1="value1" attr2="value2">
     <key>123</key>
 </map>
 ```
 
 It is also possible to use attributes in YAML sequence:
-``` yaml
+```yaml
 seq:
   - "@attr1": value1
   - "@attr2": value2
@@ -429,7 +431,7 @@ seq:
 ```
 
 Corresponding XML:
-``` xml
+```xml
 <seq attr1="value1" attr2="value2">123</seq>
 <seq attr1="value1" attr2="value2">abc</seq>
 ```
