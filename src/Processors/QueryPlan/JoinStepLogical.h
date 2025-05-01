@@ -109,6 +109,8 @@ public:
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
+    QueryPlanStepPtr clone() const override;
+
 protected:
     void updateOutputHeader() override;
 
