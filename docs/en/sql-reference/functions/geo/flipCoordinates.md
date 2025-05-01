@@ -14,7 +14,7 @@ The `flipCoordinates` function swaps the order of coordinates in a point, ring, 
 flipCoordinates(coordinates)
 ```
 
-### Input Parameters
+### Input Parameters {#input-parameters}
 
 - `coordinates` — A tuple representing a point `(x, y)`, or an array of such tuples representing a ring, polygon, or multipolygon. Supported input types include:
   - **Point**: A tuple `(x, y)` where `x` and `y` are numeric values.
@@ -22,16 +22,16 @@ flipCoordinates(coordinates)
   - **Polygon**: An array of rings `[ring1, ring2, ...]`, where each ring is an array of points.
   - **Multipolygon**: An array of polygons `[polygon1, polygon2, ...]`.
 
-### Returned Value
+### Returned Value {#returned-value}
 
 The function returns the input with the coordinates flipped. For example:
 - A point `(x, y)` becomes `(y, x)`.
 - A ring `[(x1, y1), (x2, y2)]` becomes `[(y1, x1), (y2, x2)]`.
 - Nested structures like polygons and multipolygons are processed recursively.
 
-### Examples
+### Examples {#examples}
 
-#### Example 1: Flipping a Single Point
+#### Example 1: Flipping a Single Point {#example-1}
 ```sql
 SELECT flipCoordinates((10, 20)) AS flipped_point
 ```
@@ -42,7 +42,7 @@ SELECT flipCoordinates((10, 20)) AS flipped_point
 └───────────────┘
 ```
 
-#### Example 2: Flipping an Array of Points (Ring)
+#### Example 2: Flipping an Array of Points (Ring) {#example-2}
 ```sql
 SELECT flipCoordinates([(10, 20), (30, 40)]) AS flipped_ring
 ```
@@ -53,7 +53,7 @@ SELECT flipCoordinates([(10, 20), (30, 40)]) AS flipped_ring
 └───────────────────────────┘
 ```
 
-#### Example 3: Flipping a Polygon
+#### Example 3: Flipping a Polygon {#example-3}
 ```sql
 SELECT flipCoordinates([[(10, 20), (30, 40)], [(50, 60), (70, 80)]]) AS flipped_polygon
 ```
@@ -64,7 +64,7 @@ SELECT flipCoordinates([[(10, 20), (30, 40)], [(50, 60), (70, 80)]]) AS flipped_
 └──────────────────────────────────────────────┘
 ```
 
-#### Example 4: Flipping a Multipolygon
+#### Example 4: Flipping a Multipolygon {#example-4}
 ```sql
 SELECT flipCoordinates([[[10, 20], [30, 40]], [[50, 60], [70, 80]]]) AS flipped_multipolygon
 ```
