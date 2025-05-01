@@ -1,4 +1,5 @@
--- Tags: no-fasttest, no-ordinary-database
+-- Tags: no-fasttest, no-ordinary-database, no-parallel
+-- no-parallel: SQL functions are not per-database, they are global
 
 -- Tests that vector search queries work with reference vectors of different data types.
 
