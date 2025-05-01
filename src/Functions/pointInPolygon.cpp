@@ -3,6 +3,8 @@
 #include <Functions/FunctionHelpers.h>
 
 #include <boost/geometry.hpp>
+#include <boost/geometry/core/tag.hpp>
+#include <boost/geometry/core/tags.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
@@ -49,29 +51,57 @@ namespace ErrorCodes
 namespace
 {
 
-using CoordinateType = Float64;
-using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
-using Polygon = boost::geometry::model::polygon<Point, false>;
-using Box = boost::geometry::model::box<Point>;
+namespace bg = boost::geometry;
 
-template <typename Polygon>
-UInt128 sipHash128(Polygon && polygon)
+using CoordinateType = Float64;
+using Point = bg::model::d2::point_xy<CoordinateType>;
+using Polygon = bg::model::polygon<Point, false>;
+using MultiPolygon = bg::model::multi_polygon<Polygon>;
+using Box = bg::model::box<Point>;
+
+template <typename G>
+concept PolygonGeometry = std::is_same_v<typename bg::traits::tag<G>::type, bg::polygon_tag>;
+
+template <typename G>
+concept MultiPolygonGeometry = std::is_same_v<typename bg::traits::tag<G>::type, bg::multi_polygon_tag>;
+
+template <class Ring>
+static inline void sipHashRing(SipHash & hash, const Ring & ring)
+{
+    static_assert(std::contiguous_iterator<decltype(ring.data())>, "sipHashRing expects a container with contiguous storage (e.g. std::vector).");
+
+    UInt32 size = static_cast<UInt32>(ring.size());
+    hash.update(size);
+    hash.update(reinterpret_cast<const char *>(ring.data()), size * sizeof(ring[0]));
+}
+
+template <PolygonGeometry Polygon>
+UInt128 sipHash128(const Polygon & polygon)
 {
     SipHash hash;
 
-    auto hash_ring = [&hash](const auto & ring)
-    {
-        UInt32 size = static_cast<UInt32>(ring.size());
-        hash.update(size);
-        hash.update(reinterpret_cast<const char *>(ring.data()), size * sizeof(ring[0]));
-    };
-
-    hash_ring(polygon.outer());
+    sipHashRing(hash, polygon.outer());
 
     const auto & inners = polygon.inners();
-    hash.update(inners.size());
-    for (auto & inner : inners)
-        hash_ring(inner);
+    hash.update(static_cast<UInt32>(inners.size()));
+    for (const auto & inner_ring : inners)
+        sipHashRing(hash, inner_ring);
+
+    return hash.get128();
+}
+
+template <MultiPolygonGeometry MultiPolygon>
+UInt128 sipHash128(const MultiPolygon & multi_polygon)
+{
+    SipHash hash;
+
+    hash.update(static_cast<UInt32>(multi_polygon.size()));
+
+    for (const auto & component : multi_polygon)
+    {
+        UInt128 component_hash = sipHash128(component);
+        hash.update(component_hash);
+    }
 
     return hash.get128();
 }
