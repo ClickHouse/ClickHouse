@@ -13,6 +13,8 @@
 #include <Columns/ColumnString.h>
 #include <Interpreters/castColumn.h>
 
+#include <ranges>
+
 namespace DB
 {
 
@@ -112,7 +114,8 @@ public:
 private:
     ColumnPtr executeImplArray(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
     {
-        DataTypePtr common_type = getLeastSupertype(collections::map(arguments, [](auto & arg) { return arg.type; }));
+        DataTypePtr common_type
+            = getLeastSupertype(DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & arg) { return arg.type; })});
 
         Columns preprocessed_columns(2);
         for (size_t i = 0; i < 2; ++i)

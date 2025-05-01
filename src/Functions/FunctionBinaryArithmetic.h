@@ -64,6 +64,7 @@
 #endif
 
 #include <cassert>
+#include <ranges>
 
 namespace DB
 {
@@ -2854,7 +2855,7 @@ public:
 
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
                 function,
-                collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+                DataTypes{std::from_range_t{}, arguments | std::views::transform([](const auto & elem) { return elem.type; })},
                 return_type);
         }
         auto function = division_by_nullable
@@ -2863,9 +2864,8 @@ public:
 
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
             function,
-            collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+            DataTypes{std::from_range_t{}, arguments | std::views::transform([](const auto & elem) { return elem.type; })},
             return_type);
-
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

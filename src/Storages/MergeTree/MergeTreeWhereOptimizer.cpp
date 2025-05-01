@@ -1,20 +1,22 @@
+#include <algorithm>
+#include <ranges>
 #include <Core/Settings.h>
+#include <DataTypes/NestedUtils.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
-#include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/KeyCondition.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Parsers/ASTSelectQuery.h>
+#include <Interpreters/misc.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
-#include <Interpreters/misc.h>
-#include <Common/typeid_cast.h>
-#include <DataTypes/NestedUtils.h>
-#include <Interpreters/ActionsDAG.h>
+#include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <base/map.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -67,8 +69,9 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     const std::optional<NameSet> & supported_columns_,
     LoggerPtr log_)
     : estimator(estimator_)
-    , table_columns{collections::map<std::unordered_set>(
-        metadata_snapshot->getColumns().getAllPhysical(), [](const NameAndTypePair & col) { return col.name; })}
+    , table_columns(
+          std::from_range_t{},
+          metadata_snapshot->getColumns().getAllPhysical() | std::views::transform([](const auto & col) { return col.name; }))
     , queried_columns{queried_columns_}
     , supported_columns{supported_columns_}
     , sorting_key_names{NameSet(

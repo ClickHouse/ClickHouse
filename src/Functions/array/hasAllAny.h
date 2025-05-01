@@ -17,6 +17,7 @@
 #include <Interpreters/castColumn.h>
 #include <Common/typeid_cast.h>
 
+#include <ranges>
 
 namespace DB
 {
@@ -63,7 +64,8 @@ public:
     {
         size_t num_args = arguments.size();
 
-        DataTypePtr common_type = getLeastSupertype(collections::map(arguments, [](auto & arg) { return arg.type; }));
+        DataTypePtr common_type
+            = getLeastSupertype(DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })});
 
         Columns preprocessed_columns(num_args);
         for (size_t i = 0; i < num_args; ++i)
