@@ -1,4 +1,5 @@
 #include "ArrowColumnToCHColumn.h"
+#include "Common/Exception.h"
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
 
@@ -477,55 +478,23 @@ static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::
         std::shared_ptr<arrow::Buffer> buffer = chunk.value_data();
         const size_t chunk_length = chunk.length();
 
-        if (chunk_length == 0)
-            continue;
-        const size_t null_count = chunk.null_count();
-        if (null_count == 0)
+        for (size_t offset_i = 0; offset_i != chunk_length; ++offset_i)
         {
-            for (size_t offset_i = 0; offset_i != chunk_length; ++offset_i)
+            auto * raw_data = buffer->mutable_data() + chunk.value_offset(offset_i);
+            if (chunk.IsNull(offset_i))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Geometry nullable columns are not supported");
+            ReadBuffer in_buffer(reinterpret_cast<char*>(raw_data), chunk.value_length(offset_i), 0);
+            GeometricObject result_object;
+            switch (geo_metadata.encoding)
             {
-                auto * raw_data = buffer->mutable_data() + chunk.value_offset(offset_i);
-                ReadBuffer in_buffer(reinterpret_cast<char*>(raw_data), chunk.value_length(offset_i), 0);
-                GeometricObject result_object;
-                switch (geo_metadata.encoding)
-                {
-                    case GeoEncoding::WKB:
-                        result_object = parseWKBFormat(in_buffer);
-                        break;
-                    case GeoEncoding::WKT:
-                        result_object = parseWKTFormat(in_buffer);
-                        break;
-                }
-                column_builder.appendObject(result_object);
+                case GeoEncoding::WKB:
+                    result_object = parseWKBFormat(in_buffer);
+                    break;
+                case GeoEncoding::WKT:
+                    result_object = parseWKTFormat(in_buffer);
+                    break;
             }
-        }
-        else
-        {
-            for (size_t offset_i = 0; offset_i != chunk_length; ++offset_i)
-            {
-                if (!chunk.IsNull(offset_i) && buffer)
-                {
-                    auto * raw_data = buffer->mutable_data() + chunk.value_offset(offset_i);
-                    ReadBuffer in_buffer(reinterpret_cast<char*>(raw_data), chunk.value_length(offset_i), 0);
-                    GeometricObject result_object;
-                    switch (geo_metadata.encoding)
-                    {
-                        case GeoEncoding::WKB:
-                            result_object = parseWKBFormat(in_buffer);
-                            break;
-                        case GeoEncoding::WKT:
-                            result_object = parseWKTFormat(in_buffer);
-                            break;
-                        default:
-                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "foo");
-                    }
-                    column_builder.appendObject(result_object);
-                }
-                else 
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Geo parquet does not support null input data");
-                }
-            }
+            column_builder.appendObject(result_object);
         }
     }
 
