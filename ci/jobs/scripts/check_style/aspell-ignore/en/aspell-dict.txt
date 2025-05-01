@@ -986,6 +986,7 @@ SelfManaged
 Sematext
 SendExternalTables
 SendScalars
+ServerSettings
 SetOperationMode
 ShareAlike
 ShareSet
@@ -1304,6 +1305,8 @@ arrayJoin
 arrayLast
 arrayLastIndex
 arrayLastOrNull
+arrayLevenshteinDistance
+arrayLevenshteinDistanceWeighted
 arrayMap
 arrayMax
 arrayMin
@@ -1331,6 +1334,7 @@ arrayShiftLeft
 arrayShiftRight
 arrayShingles
 arrayShuffle
+arraySimilarity
 arraySlice
 arraySort
 arraySplit
@@ -1345,6 +1349,7 @@ arrayZipUnaligned
 ascii
 asin
 asinh
+aspell
 assumeNotNull
 async
 asynch
@@ -1525,6 +1530,7 @@ codec
 codecs
 codepoint
 codepoints
+codespell
 collapsingmergetree
 combinator
 combinators
@@ -1644,6 +1650,7 @@ dbal
 dbeaver
 dbgen
 dbms
+dbpedia
 ddl
 deallocated
 deallocation
@@ -1720,6 +1727,7 @@ distinctdynamictypes
 distinctjsonpaths
 distro
 divideDecimal
+divideOrNull
 dmesg
 doesnt
 domainRFC
@@ -1879,8 +1887,10 @@ geospatial
 getClientHTTPHeader
 getMacro
 getMaxTableNameLengthForDatabase
+getMergeTreeSetting
 getOSKernelVersion
 getServerPort
+getServerSetting
 getSetting
 getSettingOrDefault
 getSizeOfEnumType
@@ -1995,6 +2005,7 @@ http
 https
 hudi
 hudiCluster
+hyperparameter
 hyperscan
 hypot
 hyvor
@@ -2028,6 +2039,7 @@ inodes
 instantiation
 instantiations
 intDiv
+intDivOrNull
 intDivOrZero
 intExp
 intHash
@@ -2092,8 +2104,8 @@ kRing
 kafka
 kafkaMurmurHash
 kafkacat
-keccak
 kbytes
+keccak
 keepalive
 keepermap
 kerberized
@@ -2225,6 +2237,7 @@ mebibytes
 memtable
 memtables
 mergeTreeIndex
+mergeTreeProjection
 mergeable
 mergetree
 messageID
@@ -2253,6 +2266,7 @@ mmap
 mmapped
 modularization
 moduli
+moduloOrNull
 moduloOrZero
 mongoc
 mongocxx
@@ -2308,6 +2322,7 @@ musqldump
 mutex
 mydb
 myfilter
+mypy
 mysql
 mysqldump
 mysqljs
@@ -2465,6 +2480,7 @@ positionCaseInsensitive
 positionCaseInsensitiveUTF
 positionUTF
 positiveModulo
+positiveModuloOrNull
 postfix
 postfixes
 postgres
@@ -2567,6 +2583,7 @@ quantiletdigest
 quantiletdigestweighted
 quantiletiming
 quantiletimingweighted
+quantized
 quartile
 queryID
 queryString
@@ -2698,6 +2715,7 @@ runningConcurrency
 runningDifference
 runningDifferenceStartingWithFirstValue
 runtime
+runtimes
 russian
 rustc
 rustup
@@ -2765,6 +2783,10 @@ socketcache
 soundex
 sparkBar
 sparkbar
+sparseGrams
+sparseGramsHashes
+sparseGramsHashesUTF
+sparseGramsUTF
 sparsehash
 speedscope
 splitBy
@@ -2814,6 +2836,8 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
+stringBytesEntropy
+stringBytesUniq
 stringCompare
 stringJaccardIndex
 stringJaccardIndexUTF
@@ -2942,6 +2966,7 @@ timeZoneOffset
 timezones
 tinylog
 tmp
+tmpfs
 toBFloat
 toBool
 toColumnTypeName
@@ -3069,7 +3094,6 @@ tryPunycodeDecode
 tskv
 tsv
 tui
-tmpfs
 tukey
 tumbleEnd
 tumbleStart

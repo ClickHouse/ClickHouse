@@ -16,8 +16,14 @@ class QueryPlan;
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
+struct IsStorageTouched
+{
+    bool any_rows_affected = false;
+    bool all_rows_affected = false;
+};
+
 /// Return false if the data isn't going to be changed by mutations.
-bool isStorageTouchedByMutations(
+IsStorageTouched isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,

@@ -10,7 +10,6 @@
 
 #include <Interpreters/Context.h>
 
-#include <Functions/keyvaluepair/impl/KeyValuePairExtractor.h>
 #include <Functions/keyvaluepair/impl/KeyValuePairExtractorBuilder.h>
 #include <Functions/keyvaluepair/ArgumentExtractor.h>
 
@@ -28,11 +27,6 @@ class ExtractKeyValuePairs : public IFunction
     auto getExtractor(const ArgumentExtractor::ParsedArguments & parsed_arguments) const
     {
         auto builder = KeyValuePairExtractorBuilder();
-
-        if constexpr (WITH_ESCAPING)
-        {
-            builder.withEscaping();
-        }
 
         if (parsed_arguments.key_value_delimiter)
         {
@@ -56,10 +50,17 @@ class ExtractKeyValuePairs : public IFunction
             builder.withMaxNumberOfPairs(context->getSettingsRef()[Setting::extract_key_value_pairs_max_pairs_per_row]);
         }
 
-        return builder.build();
+        if constexpr (WITH_ESCAPING)
+        {
+            return builder.buildWithEscaping();
+        }
+        else
+        {
+            return builder.buildWithoutEscaping();
+        }
     }
 
-    ColumnPtr extract(ColumnPtr data_column, std::shared_ptr<KeyValuePairExtractor> extractor, size_t input_rows_count) const
+    ColumnPtr extract(ColumnPtr data_column, auto & extractor, size_t input_rows_count) const
     {
         auto offsets = ColumnUInt64::create();
 
@@ -72,7 +73,7 @@ class ExtractKeyValuePairs : public IFunction
         {
             auto row = data_column->getDataAt(i).toView();
 
-            auto pairs_count = extractor->extract(row, keys, values);
+            auto pairs_count = extractor.extract(row, keys, values);
 
             offset += pairs_count;
 
@@ -215,7 +216,9 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             ┌─kv────────────────────┐
             │ {'age':'a\\x0A\\n\\0'} │
             └───────────────────────┘
-            ```)"}
+            ```)",
+            .category = FunctionDocumentation::Category::Map
+        }
     );
 
     factory.registerFunction<ExtractKeyValuePairs<NameExtractKeyValuePairsWithEscaping, true>>(
@@ -244,7 +247,9 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             ┌─kv───────────────┐
             │ {'age':'a\n\n\0'} │
             └──────────────────┘
-            ```)"}
+            ```)",
+            .category = FunctionDocumentation::Category::Map
+        }
     );
     factory.registerAlias("str_to_map", NameExtractKeyValuePairs::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("mapFromString", NameExtractKeyValuePairs::name);
