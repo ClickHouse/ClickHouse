@@ -40,6 +40,7 @@ namespace ErrorCodes
 {
 
 extern const int NOT_IMPLEMENTED;
+extern const int LOGICAL_ERROR;
 
 }
 
@@ -464,7 +465,7 @@ void addStepForResultRenaming(
             ErrorCodes::LOGICAL_ERROR,
             "Expected to get only 1 result column of correlated subquery, but got {}",
             subquery_result_columns.size());
-    
+
     const auto & result_column = subquery_result_columns[0];
     auto expected_result_type = correlated_subquery.query_tree->getResultType();
     if (!expected_result_type->equals(*result_column.type))
@@ -475,7 +476,7 @@ void addStepForResultRenaming(
             result_column.type->getName());
 
     ActionsDAG dag(subquery_result_columns);
-    
+
     const auto * alias_node = &dag.addAlias(*dag.getOutputs()[0], correlated_subquery.action_node_name);
     dag.getOutputs() = { alias_node };
 
