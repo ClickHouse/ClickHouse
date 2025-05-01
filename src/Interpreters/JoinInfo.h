@@ -84,6 +84,11 @@ struct JoinExpressionActions
         );
     }
 
+    bool hasCorrelatedExpressions() const noexcept
+    {
+        return left_pre_join_actions->hasCorrelatedColumns() || right_pre_join_actions->hasCorrelatedColumns() || post_join_actions->hasCorrelatedColumns();
+    }
+
     ActionsDAGPtr left_pre_join_actions;
     ActionsDAGPtr right_pre_join_actions;
     ActionsDAGPtr post_join_actions;

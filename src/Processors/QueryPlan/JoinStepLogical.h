@@ -110,6 +110,7 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
     QueryPlanStepPtr clone() const override;
+    bool hasCorrelatedExpressions() const override { return expression_actions.hasCorrelatedExpressions(); }
 
 protected:
     void updateOutputHeader() override;
