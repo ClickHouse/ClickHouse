@@ -11,7 +11,6 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <Formats/FormatSettings.h>
-#include <Formats/JSONUtils.h>
 
 namespace DB
 {
@@ -30,7 +29,7 @@ static constexpr size_t MAX_ARRAYS_SIZE = 1ULL << 40;
 
 void SerializationArray::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const Array & a = field.safeGet<Array>();
+    const Array & a = field.safeGet<const Array &>();
     writeVarUInt(a.size(), ostr);
     for (const auto & i : a)
     {
@@ -52,7 +51,7 @@ void SerializationArray::deserializeBinary(Field & field, ReadBuffer & istr, con
             settings.binary.max_binary_string_size);
 
     field = Array();
-    Array & arr = field.safeGet<Array>();
+    Array & arr = field.safeGet<Array &>();
     arr.reserve(size);
     for (size_t i = 0; i < size; ++i)
         nested->deserializeBinary(arr.emplace_back(), istr, settings);
@@ -212,7 +211,7 @@ DataTypePtr SerializationArray::SubcolumnCreator::create(const DataTypePtr & pre
     return std::make_shared<DataTypeArray>(prev);
 }
 
-SerializationPtr SerializationArray::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
+SerializationPtr SerializationArray::SubcolumnCreator::create(const SerializationPtr & prev) const
 {
     return std::make_shared<SerializationArray>(prev);
 }
@@ -338,20 +337,12 @@ void SerializationArray::serializeBinaryBulkWithMultipleStreams(
 
     if (limit == 0 || nested_limit)
         nested->serializeBinaryBulkWithMultipleStreams(column_array.getData(), nested_offset, nested_limit, settings, state);
-    /// Even if there is no data to write, we still have to call nested serialization,
-    /// because we might need to call the stream getter for all existing substreams even
-    /// if nothing is written there. It's needed in Compact parts when we write
-    /// marks per substreams inside the stream getter.
-    else
-        nested->serializeBinaryBulkWithMultipleStreams(column_array.getData(), column_array.getData().size(), 0, settings, state);
-
     settings.path.pop_back();
 }
 
 
 void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -360,7 +351,6 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     auto mutable_column = column->assumeMutable();
     ColumnArray & column_array = typeid_cast<ColumnArray &>(*mutable_column);
     size_t prev_last_offset = column_array.getOffsets().back();
-    size_t prev_offset_size = column_array.getOffsets().size();
 
     settings.path.push_back(Substream::ArraySizes);
 
@@ -371,28 +361,11 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     else if (auto * stream = settings.getter(settings.path))
     {
         if (settings.position_independent_encoding)
-            deserializeArraySizesPositionIndependent(column_array, *stream, rows_offset + limit);
+            deserializeArraySizesPositionIndependent(column_array, *stream, limit);
         else
-            SerializationNumber<ColumnArray::Offset>().deserializeBinaryBulk(column_array.getOffsetsColumn(), *stream, 0, rows_offset + limit, 0);
+            SerializationNumber<ColumnArray::Offset>().deserializeBinaryBulk(column_array.getOffsetsColumn(), *stream, limit, 0);
 
-        /// The length of the offset column added to the stream cache is limit + rows_offset.
         addToSubstreamsCache(cache, settings.path, arrayOffsetsToSizes(column_array.getOffsetsColumn()));
-    }
-
-    size_t skipped_nested_rows = 0;
-
-    /// Convert offsets array by removing the first rows_offset number of elements.
-    if (rows_offset)
-    {
-        ColumnArray::Offsets & offset_values = column_array.getOffsets();
-
-        size_t skipped_idx = std::min(prev_offset_size + rows_offset, offset_values.size()) - 1;
-        skipped_nested_rows = offset_values[skipped_idx] - prev_last_offset;
-
-        for (auto i = prev_offset_size; i + rows_offset < offset_values.size(); ++i)
-            offset_values[i] = offset_values[i + rows_offset] - skipped_nested_rows;
-
-        column_array.getOffsetsPtr()->assumeMutable()->popBack(rows_offset);
     }
 
     settings.path.back() = Substream::ArrayElements;
@@ -403,7 +376,7 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     /// Number of values corresponding with `offset_values` must be read.
     size_t last_offset = offset_values.back();
     if (last_offset < prev_last_offset)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Array elements column is longer (>{}) than the last offset ({})", prev_last_offset, last_offset);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Nested column is longer than last offset");
     size_t nested_limit = last_offset - prev_last_offset;
 
     if (unlikely(nested_limit > MAX_ARRAYS_SIZE))
@@ -412,8 +385,7 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     /// Adjust value size hint. Divide it to the average array size.
     settings.avg_value_size_hint = nested_limit ? settings.avg_value_size_hint / nested_limit * offset_values.size() : 0;
 
-    nested->deserializeBinaryBulkWithMultipleStreams(
-        nested_column, skipped_nested_rows, nested_limit, settings, state, cache);
+    nested->deserializeBinaryBulkWithMultipleStreams(nested_column, nested_limit, settings, state, cache);
 
     settings.path.pop_back();
 
@@ -634,57 +606,37 @@ void SerializationArray::serializeTextJSONPretty(const IColumn & column, size_t 
     {
         if (i != offset)
             writeCString(",\n", ostr);
-        writeChar(settings.json.pretty_print_indent, (indent + 1) * settings.json.pretty_print_indent_multiplier, ostr);
+        writeChar(' ', (indent + 1) * 4, ostr);
         nested->serializeTextJSONPretty(nested_column, i, ostr, settings, indent + 1);
     }
     writeChar('\n', ostr);
-    writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
+    writeChar(' ', indent * 4, ostr);
     writeChar(']', ostr);
-}
-
-
-template <typename ReturnType>
-ReturnType SerializationArray::deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    auto deserialize_nested = [&settings, this](IColumn & nested_column, ReadBuffer & buf) -> ReturnType
-    {
-        if constexpr (std::is_same_v<ReturnType, void>)
-        {
-            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
-                SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(nested_column, buf, settings, nested);
-            else
-                nested->deserializeTextJSON(nested_column, buf, settings);
-        }
-        else
-        {
-            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
-                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(nested_column, buf, settings, nested);
-            return nested->tryDeserializeTextJSON(nested_column, buf, settings);
-        }
-    };
-
-    if (settings.json.empty_as_default)
-        return deserializeTextImpl<ReturnType>(column, istr,
-            [&deserialize_nested, &istr](IColumn & nested_column) -> ReturnType
-            {
-                return JSONUtils::deserializeEmpyStringAsDefaultOrNested<ReturnType>(nested_column, istr, deserialize_nested);
-            }, false);
-    return deserializeTextImpl<ReturnType>(
-        column,
-        istr,
-        [&deserialize_nested, &istr](IColumn & nested_column) -> ReturnType { return deserialize_nested(nested_column, istr); },
-        false);
 }
 
 
 void SerializationArray::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeTextJSONImpl<void>(column, istr, settings);
+    deserializeTextImpl(column, istr,
+        [&](IColumn & nested_column)
+        {
+            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
+                SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(nested_column, istr, settings, nested);
+            else
+                nested->deserializeTextJSON(nested_column, istr, settings);
+        }, false);
 }
 
 bool SerializationArray::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    return deserializeTextJSONImpl<bool>(column, istr, settings);
+    auto read_nested = [&](IColumn & nested_column)
+    {
+        if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
+            return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(nested_column, istr, settings, nested);
+        return nested->tryDeserializeTextJSON(nested_column, istr, settings);
+    };
+
+    return deserializeTextImpl<bool>(column, istr, std::move(read_nested), false);
 }
 
 
@@ -766,15 +718,17 @@ bool SerializationArray::tryDeserializeTextCSV(IColumn & column, ReadBuffer & is
 
         return deserializeTextImpl<bool>(column, rb, read_nested, true);
     }
-
-    auto read_nested = [&](IColumn & nested_column)
+    else
     {
-        if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
-            return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(nested_column, rb, settings, nested);
-        return nested->tryDeserializeTextQuoted(nested_column, rb, settings);
-    };
+        auto read_nested = [&](IColumn & nested_column)
+        {
+            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
+                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(nested_column, rb, settings, nested);
+            return nested->tryDeserializeTextQuoted(nested_column, rb, settings);
+        };
 
-    return deserializeTextImpl<bool>(column, rb, read_nested, true);
+        return deserializeTextImpl<bool>(column, rb, read_nested, true);
+    }
 }
 
 }

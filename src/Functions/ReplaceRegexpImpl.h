@@ -13,6 +13,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -204,11 +205,7 @@ struct ReplaceRegexpImpl
         size_t input_rows_count)
     {
         if (needle.empty())
-        {
-            res_data.assign(haystack_data);
-            res_offsets.assign(haystack_offsets);
-            return;
-        }
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
 
         ColumnString::Offset res_offset = 0;
         res_data.reserve(haystack_data.size());
@@ -243,7 +240,7 @@ struct ReplaceRegexpImpl
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            size_t from = haystack_offsets[i - 1];
+            size_t from = i > 0 ? haystack_offsets[i - 1] : 0;
 
             const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + from);
             const size_t hs_length = static_cast<unsigned>(haystack_offsets[i] - from - 1);
@@ -274,24 +271,17 @@ struct ReplaceRegexpImpl
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            size_t hs_from = haystack_offsets[i - 1];
+            size_t hs_from = i > 0 ? haystack_offsets[i - 1] : 0;
             const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + hs_from);
             const size_t hs_length = static_cast<unsigned>(haystack_offsets[i] - hs_from - 1);
 
-            size_t ndl_from = needle_offsets[i - 1];
+            size_t ndl_from = i > 0 ? needle_offsets[i - 1] : 0;
             const char * ndl_data = reinterpret_cast<const char *>(needle_data.data() + ndl_from);
             const size_t ndl_length = static_cast<unsigned>(needle_offsets[i] - ndl_from - 1);
             std::string_view needle(ndl_data, ndl_length);
 
             if (needle.empty())
-            {
-                res_data.insert(res_data.end(), hs_data, hs_data + hs_length);
-                res_data.push_back(0);
-
-                res_offset += hs_length + 1;
-                res_offsets[i] = res_offset;
-                continue;
-            }
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
 
             re2::RE2 searcher(needle, regexp_options);
             if (!searcher.ok())
@@ -318,11 +308,7 @@ struct ReplaceRegexpImpl
         assert(haystack_offsets.size() == replacement_offsets.size());
 
         if (needle.empty())
-        {
-            res_data.assign(haystack_data);
-            res_offsets.assign(haystack_offsets);
-            return;
-        }
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
 
         ColumnString::Offset res_offset = 0;
         res_data.reserve(haystack_data.size());
@@ -339,11 +325,11 @@ struct ReplaceRegexpImpl
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            size_t hs_from = haystack_offsets[i - 1];
+            size_t hs_from = i > 0 ? haystack_offsets[i - 1] : 0;
             const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + hs_from);
             const size_t hs_length = static_cast<unsigned>(haystack_offsets[i] - hs_from - 1);
 
-            size_t repl_from = replacement_offsets[i - 1];
+            size_t repl_from = i > 0 ? replacement_offsets[i - 1] : 0;
             const char * repl_data = reinterpret_cast<const char *>(replacement_data.data() + repl_from);
             const size_t repl_length = static_cast<unsigned>(replacement_offsets[i] - repl_from - 1);
             std::string_view replacement(repl_data, repl_length);
@@ -378,25 +364,19 @@ struct ReplaceRegexpImpl
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            size_t hs_from = haystack_offsets[i - 1];
+            size_t hs_from = i > 0 ? haystack_offsets[i - 1] : 0;
             const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + hs_from);
             const size_t hs_length = static_cast<unsigned>(haystack_offsets[i] - hs_from - 1);
 
-            size_t ndl_from = needle_offsets[i - 1];
+            size_t ndl_from = i > 0 ? needle_offsets[i - 1] : 0;
             const char * ndl_data = reinterpret_cast<const char *>(needle_data.data() + ndl_from);
             const size_t ndl_length = static_cast<unsigned>(needle_offsets[i] - ndl_from - 1);
             std::string_view needle(ndl_data, ndl_length);
 
             if (needle.empty())
-            {
-                res_data.insert(res_data.end(), hs_data, hs_data + hs_length);
-                res_data.push_back(0);
-                res_offsets[i] = res_offsets[i - 1] + hs_length + 1;
-                res_offset = res_offsets[i];
-                continue;
-            }
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
 
-            size_t repl_from = replacement_offsets[i - 1];
+            size_t repl_from = i > 0 ? replacement_offsets[i - 1] : 0;
             const char * repl_data = reinterpret_cast<const char *>(replacement_data.data() + repl_from);
             const size_t repl_length = static_cast<unsigned>(replacement_offsets[i] - repl_from - 1);
             std::string_view replacement(repl_data, repl_length);
@@ -423,21 +403,7 @@ struct ReplaceRegexpImpl
         size_t input_rows_count)
     {
         if (needle.empty())
-        {
-            chassert(input_rows_count == haystack_data.size() / n);
-            /// Since ColumnFixedString does not have a zero byte at the end, while ColumnString does,
-            /// we need to split haystack_data into strings of length n, add 1 zero byte to the end of each string
-            /// and then copy to res_data, ref: ColumnString.h and ColumnFixedString.h
-            res_data.reserve(haystack_data.size() + input_rows_count);
-            res_offsets.resize(input_rows_count);
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                res_data.insert(res_data.end(), haystack_data.begin() + i * n, haystack_data.begin() + (i + 1) * n);
-                res_data.push_back(0);
-                res_offsets[i] = res_offsets[i - 1] + n + 1;
-            }
-            return;
-        }
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
 
         ColumnString::Offset res_offset = 0;
         res_data.reserve(haystack_data.size());

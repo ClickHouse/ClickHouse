@@ -16,11 +16,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ColumnNode::ColumnNode(
-    NameAndTypePair column_,
-    QueryTreeNodePtr expression_node_,
-    QueryTreeNodeWeakPtr column_source_
-)
+ColumnNode::ColumnNode(NameAndTypePair column_, QueryTreeNodePtr expression_node_, QueryTreeNodeWeakPtr column_source_)
     : IQueryTreeNode(children_size, weak_pointers_size)
     , column(std::move(column_))
 {
@@ -28,12 +24,10 @@ ColumnNode::ColumnNode(
     getSourceWeakPointer() = std::move(column_source_);
 }
 
-ColumnNode::ColumnNode(
-    NameAndTypePair column_,
-    QueryTreeNodeWeakPtr column_source_
-)
+ColumnNode::ColumnNode(NameAndTypePair column_, QueryTreeNodeWeakPtr column_source_)
     : ColumnNode(std::move(column_), nullptr /*expression_node*/, std::move(column_source_))
-{}
+{
+}
 
 QueryTreeNodePtr ColumnNode::getColumnSource() const
 {

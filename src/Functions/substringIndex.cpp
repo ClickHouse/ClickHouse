@@ -68,11 +68,6 @@ namespace
             return std::make_shared<DataTypeString>();
         }
 
-        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-        {
-            return std::make_shared<DataTypeString>();
-        }
-
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             ColumnPtr column_string = arguments[0].column;
@@ -266,26 +261,28 @@ namespace
                 }
                 return {begin, static_cast<size_t>(pos - begin - delim.size())};
             }
-
-            Int64 total = 0;
-            while (pos < end && end != (pos = searcher->search(pos, end - pos)))
+            else
             {
-                pos += delim.size();
-                ++total;
-            }
+                Int64 total = 0;
+                while (pos < end && end != (pos = searcher->search(pos, end - pos)))
+                {
+                    pos += delim.size();
+                    ++total;
+                }
 
-            if (total + count < 0)
-                return str_ref;
+                if (total + count < 0)
+                    return str_ref;
 
-            pos = begin;
-            Int64 i = 0;
-            Int64 count_from_left = total + 1 + count;
-            while (i < count_from_left && pos < end && end != (pos = searcher->search(pos, end - pos)))
-            {
-                pos += delim.size();
-                ++i;
+                pos = begin;
+                Int64 i = 0;
+                Int64 count_from_left = total + 1 + count;
+                while (i < count_from_left && pos < end && end != (pos = searcher->search(pos, end - pos)))
+                {
+                    pos += delim.size();
+                    ++i;
+                }
+                return {pos, static_cast<size_t>(end - pos)};
             }
-            return {pos, static_cast<size_t>(end - pos)};
         }
 
         static StringRef substringIndex(const StringRef & str_ref, char delim, Int64 count)

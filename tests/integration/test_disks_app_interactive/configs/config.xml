@@ -1,6 +1,3 @@
 <clickhouse>
     <path>/var/lib/clickhouse/</path>
-    <logger>
-        <clickhouse-disks>/clickhouse-disks-interactive.log</clickhouse-disks>
-    </logger>
 </clickhouse>

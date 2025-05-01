@@ -12,10 +12,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool final;
-}
 
 namespace
 {
@@ -28,7 +24,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings()[Setting::final])
+        if (!getSettings().final)
             return;
 
         const auto * query_node = node->as<QueryNode>();

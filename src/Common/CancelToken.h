@@ -3,6 +3,8 @@
 #include <base/types.h>
 #include <base/defines.h>
 
+#include <Common/Exception.h>
+
 #ifdef OS_LINUX /// Because of futex
 
 #include <atomic>

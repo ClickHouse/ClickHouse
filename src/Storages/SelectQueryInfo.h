@@ -2,9 +2,12 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
+#include <Core/Names.h>
 #include <Core/SortDescription.h>
-#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/AggregateDescription.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/PreparedSets.h>
+#include <Planner/PlannerContext.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 
 #include <memory>
@@ -17,6 +20,9 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 struct PrewhereInfo;
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
+
+struct FilterInfo;
+using FilterInfoPtr = std::shared_ptr<FilterInfo>;
 
 struct FilterDAGInfo;
 using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
@@ -32,12 +38,6 @@ using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
 
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
-
-class PlannerContext;
-using PlannerContextPtr = std::shared_ptr<PlannerContext>;
-
-class PreparedSets;
-using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
 
 struct PrewhereInfo
 {
@@ -75,6 +75,15 @@ struct PrewhereInfo
 
         return prewhere_info;
     }
+};
+
+/// Helper struct to store all the information about the filter expression.
+struct FilterInfo
+{
+    ExpressionActionsPtr alias_actions;
+    ExpressionActionsPtr actions;
+    String column_name;
+    bool do_remove_column = false;
 };
 
 /// Same as FilterInfo, but with ActionsDAG.
@@ -136,7 +145,9 @@ using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
   */
 struct SelectQueryInfo
 {
-    SelectQueryInfo();
+    SelectQueryInfo()
+        : prepared_sets(std::make_shared<PreparedSets>())
+    {}
 
     ASTPtr query;
     ASTPtr view_query; /// Optimized VIEW query
@@ -150,6 +161,8 @@ struct SelectQueryInfo
     /// Storage table expression
     /// It's guaranteed to be present in JOIN TREE of `query_tree`
     QueryTreeNodePtr table_expression;
+
+    bool current_table_chosen_for_reading_with_parallel_replicas = false;
 
     /// Table expression modifiers for storage
     std::optional<TableExpressionModifiers> table_expression_modifiers;
@@ -181,6 +194,8 @@ struct SelectQueryInfo
 
     /// It is needed for PK analysis based on row_level_policy and additional_filters.
     ASTs filter_asts;
+
+    ASTPtr parallel_replica_custom_key_ast;
 
     /// Filter actions dag for current storage
     std::shared_ptr<const ActionsDAG> filter_actions_dag;

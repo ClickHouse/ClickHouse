@@ -137,7 +137,7 @@ private:
         if (constant_node_value.getType() != Field::Types::Which::Tuple)
             return {};
 
-        const auto & constant_tuple = constant_node_value.safeGet<Tuple>();
+        const auto & constant_tuple = constant_node_value.safeGet<const Tuple &>();
 
         const auto & function_arguments_nodes = function_node_typed.getArguments().getNodes();
         size_t function_arguments_nodes_size = function_arguments_nodes.size();
@@ -155,7 +155,8 @@ private:
 
         if (function_arguments_nodes_size == 1)
         {
-            auto comparison_argument_constant_node = std::make_shared<ConstantNode>(constant_tuple[0], tuple_data_type_elements[0]);
+            auto comparison_argument_constant_value = std::make_shared<ConstantValue>(constant_tuple[0], tuple_data_type_elements[0]);
+            auto comparison_argument_constant_node = std::make_shared<ConstantNode>(std::move(comparison_argument_constant_value));
             return makeComparisonFunction(function_arguments_nodes[0], std::move(comparison_argument_constant_node), comparison_function_name);
         }
 
@@ -164,7 +165,8 @@ private:
 
         for (size_t i = 0; i < function_arguments_nodes_size; ++i)
         {
-            auto equals_argument_constant_node = std::make_shared<ConstantNode>(constant_tuple[i], tuple_data_type_elements[i]);
+            auto equals_argument_constant_value = std::make_shared<ConstantValue>(constant_tuple[i], tuple_data_type_elements[i]);
+            auto equals_argument_constant_node = std::make_shared<ConstantNode>(std::move(equals_argument_constant_value));
             auto equals_function = makeEqualsFunction(function_arguments_nodes[i], std::move(equals_argument_constant_node));
             tuple_arguments_equals_functions.push_back(std::move(equals_function));
         }

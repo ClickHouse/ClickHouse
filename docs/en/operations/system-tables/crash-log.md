@@ -1,13 +1,7 @@
 ---
-description: 'System table containing information about stack traces for fatal errors.'
-keywords: ['system table', 'crash_log']
-slug: /operations/system-tables/crash-log
-title: 'system.crash_log'
+slug: /en/operations/system-tables/crash-log
 ---
-
-import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
-
-<SystemTableCloud/>
+# crash_log
 
 Contains information about stack traces for fatal errors. The table does not exist in the database by default, it is created only when fatal errors occur.
 
@@ -30,13 +24,13 @@ Columns:
 
 Query:
 
-```sql
+``` sql
 SELECT * FROM system.crash_log ORDER BY event_time DESC LIMIT 1;
 ```
 
 Result (not full):
 
-```text
+``` text
 Row 1:
 ──────
 hostname:     clickhouse.eu-central1.internal

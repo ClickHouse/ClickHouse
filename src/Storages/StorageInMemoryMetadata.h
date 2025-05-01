@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Access/Common/SQLSecurityDefs.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnDependency.h>
 #include <Storages/ColumnsDescription.h>
@@ -10,14 +11,12 @@
 #include <Storages/KeyDescription.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/TTLDescription.h>
+#include <Storages/MaterializedView/RefreshSchedule.h>
 
 #include <Common/MultiVersion.h>
 
 namespace DB
 {
-
-class ClientInfo;
-class ASTSQLSecurity;
 
 /// Common metadata for all storages. Contains all possible parts of CREATE
 /// query from all storages, but only some subset used.
@@ -123,7 +122,7 @@ struct StorageInMemoryMetadata
     /// Returns a copy of the context with the correct user from SQL security options.
     /// If the SQL security wasn't set, this is equivalent to `Context::createCopy(context)`.
     /// The context from this function must be used every time whenever views execute any read/write operations or subqueries.
-    ContextMutablePtr getSQLSecurityOverriddenContext(ContextPtr context, const ClientInfo * client_info = nullptr) const;
+    ContextMutablePtr getSQLSecurityOverriddenContext(ContextPtr context) const;
 
     /// Returns combined set of columns
     const ColumnsDescription & getColumns() const;
@@ -144,9 +143,6 @@ struct StorageInMemoryMetadata
 
     /// Returns true if there is set table TTL, any column TTL or any move TTL.
     bool hasAnyTTL() const { return hasAnyColumnTTL() || hasAnyTableTTL(); }
-
-    /// Returns true if only rows TTL is set, not even rows where.
-    bool hasOnlyRowsTTL() const;
 
     /// Common tables TTLs (for rows and moves).
     TTLTableDescription getTableTTLs() const;
@@ -188,9 +184,6 @@ struct StorageInMemoryMetadata
     /// Block with ordinary + materialized columns.
     Block getSampleBlock() const;
 
-    /// Block with ordinary + materialized columns + subcolumns.
-    Block getSampleBlockWithSubcolumns() const;
-
     /// Block with ordinary + ephemeral.
     Block getSampleBlockInsertable() const;
 
@@ -226,9 +219,6 @@ struct StorageInMemoryMetadata
     /// Returns columns names in sorting key specified by user in ORDER BY
     /// expression. For example: 'a', 'x * y', 'toStartOfMonth(date)', etc.
     Names getSortingKeyColumns() const;
-    /// Returns reverse indicators of columns in sorting key specified by user in ORDER BY
-    /// expression. For example: ('a' DESC, 'x * y', 'toStartOfMonth(date)' DESC) -> {1, 0, 1}.
-    std::vector<bool> getSortingKeyReverseFlags() const;
 
     /// Returns column names that need to be read for FINAL to work.
     Names getColumnsRequiredForFinal() const { return getColumnsRequiredForSortingKey(); }

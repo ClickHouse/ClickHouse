@@ -5,7 +5,9 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 
-#include <Columns/IColumn_fwd.h>
+#include <Columns/IColumn.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnArray.h>
 
 #include <Dictionaries/IDictionary.h>
 

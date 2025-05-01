@@ -21,27 +21,17 @@
 
 using namespace DB;
 
-static SharedContextHolder shared_context;
-static ContextMutablePtr context;
-static std::string env_format_name;
 
-static std::string getFormatNameFromEnv()
-{
-    if (char * name = std::getenv("FORMAT_NAME"))
-        return std::string(name);
-
-    return "";
-}
+ContextMutablePtr context;
 
 extern "C" int LLVMFuzzerInitialize(int *, char ***)
 {
     if (context)
         return true;
 
-    shared_context = Context::createShared();
+    SharedContextHolder shared_context = Context::createShared();
     context = Context::createGlobal(shared_context.get());
     context->makeGlobalContext();
-    env_format_name = getFormatNameFromEnv();
 
     MainThreadStatus::getInstance();
 
@@ -104,12 +94,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 
         DB::ReadBufferFromMemory in(data, size);
 
-        String format = env_format_name;
-        if (format.empty())
-        {
-            readStringUntilNewlineInto(format, in);
-            assertChar('\n', in);
-        }
+        String format;
+        readStringUntilNewlineInto(format, in);
+        assertChar('\n', in);
 
         String structure;
         readStringUntilNewlineInto(structure, in);
@@ -129,7 +116,6 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         }
 
         InputFormatPtr input_format = context->getInputFormat(format, in, header, 13 /* small block size */);
-        assert(input_format->getName() == format);
 
         QueryPipeline pipeline(Pipe(std::move(input_format)));
         PullingPipelineExecutor executor(pipeline);

@@ -1,5 +1,4 @@
--- Tags: long, replica, no-replicated-database, no-shared-merge-tree
--- no-shared-merge-tree: depends on max_replicated_merges_in_queue
+-- Tags: long, replica, no-replicated-database
 
 SET replication_alter_partitions_sync = 2;
 

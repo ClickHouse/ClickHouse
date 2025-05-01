@@ -5,10 +5,10 @@ import random
 import string
 import time
 
-import minio
 import pytest
-
 from helpers.cluster import ClickHouseCluster
+import minio
+
 
 cluster = ClickHouseCluster(__file__)
 

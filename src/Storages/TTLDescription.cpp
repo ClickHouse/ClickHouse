@@ -1,11 +1,9 @@
 #include <Storages/TTLDescription.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Compression/CompressionFactory.h>
 #include <Core/Settings.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
@@ -21,18 +19,11 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/queryToString.h>
 
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_codecs;
-    extern const SettingsBool allow_suspicious_codecs;
-    extern const SettingsBool allow_suspicious_ttl_expressions;
-    extern const SettingsBool enable_zstd_qat_codec;
-    extern const SettingsBool enable_deflate_qpl_codec;
-}
 
 namespace ErrorCodes
 {
@@ -175,7 +166,7 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
 static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndTypesList & columns, const ContextPtr & context)
 {
     ExpressionAndSets result;
-    auto ttl_string = ast->formatWithSecretsOneLine();
+    auto ttl_string = queryToString(ast);
     auto context_copy = Context::createCopy(context);
     /// FIXME All code here will work with old analyzer, however for TTL
     /// with subqueries it's possible that new analyzer will be enabled in ::read method
@@ -193,7 +184,7 @@ static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndType
     dag.getOutputs() = {col};
     dag.removeUnusedActions();
 
-    result.expression = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context_copy));
+    result.expression = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings::fromContext(context_copy));
     result.sets = analyzer.getPreparedSets();
 
     return result;
@@ -257,9 +248,7 @@ TTLDescription TTLDescription::getTTLFromAST(
             if (ASTPtr where_expr_ast = ttl_element->where())
             {
                 result.where_expression_ast = where_expr_ast->clone();
-
-                ASTPtr ast = where_expr_ast->clone();
-                where_expression = buildExpressionAndSets(ast, columns.getAllPhysical(), context).expression;
+                where_expression = buildExpressionAndSets(where_expr_ast, columns.getAllPhysical(), context).expression;
                 result.where_expression_columns = where_expression->getRequiredColumnsWithTypes();
                 result.where_result_column = where_expression->getSampleBlock().safeGetByPosition(0).name;
             }
@@ -277,7 +266,7 @@ TTLDescription TTLDescription::getTTLFromAST(
             for (size_t i = 0; i < ttl_element->group_by_key.size(); ++i)
             {
                 if (ttl_element->group_by_key[i]->getColumnName() != pk_columns[i])
-                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key {} {}", ttl_element->group_by_key[i]->getColumnName(), pk_columns[i]);
+                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key");
 
                 used_primary_key_columns_set.insert(pk_columns[i]);
             }
@@ -350,11 +339,11 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             result.recompression_codec =
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                    ttl_element->recompression_codec, {}, !context->getSettingsRef()[Setting::allow_suspicious_codecs], context->getSettingsRef()[Setting::allow_experimental_codecs], context->getSettingsRef()[Setting::enable_deflate_qpl_codec], context->getSettingsRef()[Setting::enable_zstd_qat_codec]);
+                    ttl_element->recompression_codec, {}, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, context->getSettingsRef().enable_deflate_qpl_codec, context->getSettingsRef().enable_zstd_qat_codec);
         }
     }
 
-    checkTTLExpression(expression, result.result_column, is_attach || context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
+    checkTTLExpression(expression, result.result_column, is_attach || context->getSettingsRef().allow_suspicious_ttl_expressions);
     return result;
 }
 
@@ -436,8 +425,7 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     return result;
 }
 
-TTLTableDescription TTLTableDescription::parse(
-    const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_attach)
+TTLTableDescription TTLTableDescription::parse(const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key)
 {
     TTLTableDescription result;
     if (str.empty())
@@ -447,7 +435,7 @@ TTLTableDescription TTLTableDescription::parse(
     ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     FunctionNameNormalizer::visit(ast.get());
 
-    return getTTLForTableFromAST(ast, columns, context, primary_key, is_attach);
+    return getTTLForTableFromAST(ast, columns, context, primary_key, context->getSettingsRef().allow_suspicious_ttl_expressions);
 }
 
 }

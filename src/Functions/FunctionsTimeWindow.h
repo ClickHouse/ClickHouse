@@ -76,9 +76,13 @@ template<> \
                 auto val = t * DecimalUtils::scaleMultiplier<DateTime64>((DEF_SCALE) - scale); \
                 if (delta == 1) \
                     return val; \
-                return val - (val % delta); \
+                else \
+                    return val - (val % delta); \
             } \
-            return t - (t % (delta * DecimalUtils::scaleMultiplier<DateTime64>(scale - (DEF_SCALE)))) ; \
+            else \
+            { \
+                return t - (t % (delta * DecimalUtils::scaleMultiplier<DateTime64>(scale - (DEF_SCALE)))) ; \
+            } \
         } \
     };
     TRANSFORM_SUBSECONDS(Millisecond, 3)
@@ -132,8 +136,11 @@ template <> \
         static NO_SANITIZE_UNDEFINED Int64 execute(Int64 t, UInt64 delta, const UInt32 scale) \
         { \
             if (scale < (DEF_SCALE)) \
+            { \
                 return t + delta * DecimalUtils::scaleMultiplier<DateTime64>((DEF_SCALE) - scale); \
-            return t + delta * DecimalUtils::scaleMultiplier<DateTime64>(scale - (DEF_SCALE)); \
+            } \
+            else \
+                return t + delta * DecimalUtils::scaleMultiplier<DateTime64>(scale - (DEF_SCALE)); \
         } \
     };
     ADD_SUBSECONDS(Millisecond, 3)

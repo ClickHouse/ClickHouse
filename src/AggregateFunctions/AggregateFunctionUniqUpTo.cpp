@@ -324,28 +324,30 @@ AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, c
         WhichDataType which(argument_type);
         if (res)
             return res;
-        if (which.isDate())
+        else if (which.isDate())
             return std::make_shared<AggregateFunctionUniqUpTo<DataTypeDate::FieldType>>(threshold, argument_types, params);
-        if (which.isDate32())
+        else if (which.isDate32())
             return std::make_shared<AggregateFunctionUniqUpTo<DataTypeDate32::FieldType>>(threshold, argument_types, params);
-        if (which.isDateTime())
+        else if (which.isDateTime())
             return std::make_shared<AggregateFunctionUniqUpTo<DataTypeDateTime::FieldType>>(threshold, argument_types, params);
-        if (which.isStringOrFixedString())
+        else if (which.isStringOrFixedString())
             return std::make_shared<AggregateFunctionUniqUpTo<String>>(threshold, argument_types, params);
-        if (which.isUUID())
+        else if (which.isUUID())
             return std::make_shared<AggregateFunctionUniqUpTo<DataTypeUUID::FieldType>>(threshold, argument_types, params);
-        if (which.isTuple())
+        else if (which.isTuple())
         {
             if (use_exact_hash_function)
                 return std::make_shared<AggregateFunctionUniqUpToVariadic<true, true>>(argument_types, params, threshold);
-            return std::make_shared<AggregateFunctionUniqUpToVariadic<false, true>>(argument_types, params, threshold);
+            else
+                return std::make_shared<AggregateFunctionUniqUpToVariadic<false, true>>(argument_types, params, threshold);
         }
     }
 
     /// "Variadic" method also works as a fallback generic case for single argument.
     if (use_exact_hash_function)
         return std::make_shared<AggregateFunctionUniqUpToVariadic<true, false>>(argument_types, params, threshold);
-    return std::make_shared<AggregateFunctionUniqUpToVariadic<false, false>>(argument_types, params, threshold);
+    else
+        return std::make_shared<AggregateFunctionUniqUpToVariadic<false, false>>(argument_types, params, threshold);
 }
 
 }

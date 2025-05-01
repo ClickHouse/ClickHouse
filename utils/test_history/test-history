@@ -3,13 +3,12 @@
 
 # Note: should work with python 2 and 3
 
-import argparse
-import datetime
-import sys
-
-import tabulate
 from github import Github
+import datetime
+import tabulate
+import argparse
 from termcolor import colored
+import sys
 
 COLORMAP = {
     "success": colored("success", "green"),

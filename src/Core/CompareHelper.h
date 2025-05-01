@@ -2,8 +2,8 @@
 
 #include <base/defines.h>
 #include <base/types.h>
-#include <Common/NaNUtils.h>
 
+#include <cmath>
 
 namespace DB
 {
@@ -13,7 +13,7 @@ namespace DB
   * Floating-point numbers are compared this way that NaNs always end up at the end
   *  (if you don't do this, the sort would not work at all).
   */
-template <typename T, typename U = T>
+template <class T, class U = T>
 struct CompareHelper
 {
     static constexpr bool less(T a, U b, int /*nan_direction_hint*/) { return a < b; }
@@ -29,13 +29,13 @@ struct CompareHelper
     static constexpr int compare(T a, U b, int /*nan_direction_hint*/) { return a > b ? 1 : (a < b ? -1 : 0); }
 };
 
-template <typename T>
+template <class T>
 struct FloatCompareHelper
 {
     static constexpr bool less(T a, T b, int nan_direction_hint)
     {
-        const bool isnan_a = isNaN(a);
-        const bool isnan_b = isNaN(b);
+        const bool isnan_a = std::isnan(a);
+        const bool isnan_b = std::isnan(b);
 
         if (isnan_a && isnan_b)
             return false;
@@ -49,8 +49,8 @@ struct FloatCompareHelper
 
     static constexpr bool greater(T a, T b, int nan_direction_hint)
     {
-        const bool isnan_a = isNaN(a);
-        const bool isnan_b = isNaN(b);
+        const bool isnan_a = std::isnan(a);
+        const bool isnan_b = std::isnan(b);
 
         if (isnan_a && isnan_b)
             return false;
@@ -66,8 +66,8 @@ struct FloatCompareHelper
 
     static constexpr int compare(T a, T b, int nan_direction_hint)
     {
-        const bool isnan_a = isNaN(a);
-        const bool isnan_b = isNaN(b);
+        const bool isnan_a = std::isnan(a);
+        const bool isnan_b = std::isnan(b);
 
         if (unlikely(isnan_a || isnan_b))
         {
@@ -82,15 +82,9 @@ struct FloatCompareHelper
 };
 
 template <typename U>
-struct CompareHelper<BFloat16, U> : public FloatCompareHelper<BFloat16>
-{
-};
-
-template <typename U>
 struct CompareHelper<Float32, U> : public FloatCompareHelper<Float32>
 {
 };
-
 template <typename U>
 struct CompareHelper<Float64, U> : public FloatCompareHelper<Float64>
 {

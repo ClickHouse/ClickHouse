@@ -9,8 +9,7 @@
 namespace DB
 {
 
-class CustomSeparatedFormatReader;
-class CustomSeparatedRowInputFormat final : public RowInputFormatWithNamesAndTypes<CustomSeparatedFormatReader>
+class CustomSeparatedRowInputFormat final : public RowInputFormatWithNamesAndTypes
 {
 public:
     CustomSeparatedRowInputFormat(
@@ -78,6 +77,7 @@ public:
     std::vector<String> readRowForHeaderDetection() override { return readRowImpl<ReadFieldMode::AS_POSSIBLE_STRING>(); }
 
     bool checkForEndOfRow() override;
+    bool allowVariableNumberOfColumns() const override { return format_settings.custom.allow_variable_number_of_columns; }
 
     bool checkForSuffixImpl(bool check_eof);
     void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(*buf, true); }

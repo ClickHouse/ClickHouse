@@ -2,19 +2,13 @@
 
 #include <Core/Block.h>
 
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/Set.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/ActionsDAG.h>
 
 namespace DB
 {
-
-class IAST;
-class Field;
-class FutureSet;
-using FutureSetPtr = std::shared_ptr<FutureSet>;
-class PreparedSets;
-using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
-struct Settings;
 
 /** Context of RPNBuilderTree.
   *
@@ -38,7 +32,10 @@ public:
     }
 
     /// Get query context settings
-    const Settings & getSettings() const;
+    const Settings & getSettings() const
+    {
+        return query_context->getSettingsRef();
+    }
 
     /** Get block with constants.
       * Valid only for AST tree.

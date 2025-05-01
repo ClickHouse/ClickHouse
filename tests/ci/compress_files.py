@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-import logging
 import subprocess
+import logging
+
 from pathlib import Path
 from typing import Optional
+
 
 PIGZ = Path("/usr/bin/pigz")
 SUFFIX = ".zst"

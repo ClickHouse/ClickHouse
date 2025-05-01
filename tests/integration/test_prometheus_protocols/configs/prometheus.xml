@@ -16,24 +16,6 @@
                     <table>default.prometheus</table>
                 </handler>
             </my_rule_2>
-
-            <my_rule_3>
-                <url>/read_auth_ok</url>
-                <handler>
-                    <type>remote_read</type>
-                    <table>default.prometheus</table>
-                    <user>default</user>
-                </handler>
-            </my_rule_3>
-
-            <my_rule_4>
-                <url>/read_auth_fail</url>
-                <handler>
-                    <type>remote_read</type>
-                    <table>default.prometheus</table>
-                    <user>no_such_user</user>
-                </handler>
-            </my_rule_4>
         </handlers>
     </prometheus>
 </clickhouse>

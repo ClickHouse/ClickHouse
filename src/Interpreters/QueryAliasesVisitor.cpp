@@ -3,6 +3,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/ASTSubquery.h>
 #include <Common/quoteString.h>
 
@@ -22,7 +23,7 @@ namespace
     PreformattedMessage wrongAliasMessage(const ASTPtr & ast, const ASTPtr & prev_ast, const String & alias)
     {
         return PreformattedMessage::create("Different expressions with the same alias {}:\n{}\nand\n{}\n",
-                                           backQuoteIfNeed(alias), ast->formatForErrorMessage(), prev_ast->formatForErrorMessage());
+                                           backQuoteIfNeed(alias), serializeAST(*ast), serializeAST(*prev_ast));
     }
 
 }
@@ -121,7 +122,7 @@ void QueryAliasesMatcher<T>::visitOther(const ASTPtr & ast, Data & data)
     if (!alias.empty())
     {
         if (aliases.contains(alias) && ast->getTreeHash(/*ignore_aliases=*/ true) != aliases[alias]->getTreeHash(/*ignore_aliases=*/ true))
-                throw Exception(wrongAliasMessage(ast, aliases[alias], alias), ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
+            throw Exception(wrongAliasMessage(ast, aliases[alias], alias), ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
 
         aliases[alias] = ast;
     }

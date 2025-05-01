@@ -13,11 +13,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
-}
-
 SerializationDateTime64::SerializationDateTime64(
     UInt32 scale_, const TimezoneMixin & time_zone_)
     : SerializationDecimalBase<DateTime64>(DecimalUtils::max_precision<DateTime64>, scale_)
@@ -31,10 +26,7 @@ void SerializationDateTime64::serializeText(const IColumn & column, size_t row_n
     switch (settings.date_time_output_format)
     {
         case FormatSettings::DateTimeOutputFormat::Simple:
-            if (settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands)
-                writeDateTimeTextCutTrailingZerosAlignToGroupOfThousands(value, scale, ostr, time_zone);
-            else
-                writeDateTimeText(value, scale, ostr, time_zone);
+            writeDateTimeText(value, scale, ostr, time_zone);
             return;
         case FormatSettings::DateTimeOutputFormat::UnixTimestamp:
             writeDateTimeUnixTimestamp(value, scale, ostr);
@@ -248,12 +240,6 @@ void SerializationDateTime64::deserializeTextCSV(IColumn & column, ReadBuffer & 
             readCSVString(datetime_str, istr, settings.csv);
             ReadBufferFromString buf(datetime_str);
             readText(x, scale, buf, settings, time_zone, utc_time_zone);
-            if (!buf.eof())
-                throw Exception(
-                    ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
-                    "Unexpected data '{}' after parsed DateTime64 value '{}'",
-                    String(buf.position(), buf.buffer().end()),
-                    String(buf.buffer().begin(), buf.position()));
         }
     }
 

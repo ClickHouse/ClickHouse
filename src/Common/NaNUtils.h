@@ -3,24 +3,24 @@
 #include <cmath>
 #include <limits>
 #include <type_traits>
-#include <base/DecomposedFloat.h>
 
 
 template <typename T>
 inline bool isNaN(T x)
 {
     /// To be sure, that this function is zero-cost for non-floating point types.
-    if constexpr (is_floating_point<T>)
-        return DecomposedFloat(x).isNaN();
+    if constexpr (std::is_floating_point_v<T>)
+        return std::isnan(x);
     else
         return false;
 }
 
+
 template <typename T>
 inline bool isFinite(T x)
 {
-    if constexpr (is_floating_point<T>)
-        return DecomposedFloat(x).isFinite();
+    if constexpr (std::is_floating_point_v<T>)
+        return std::isfinite(x);
     else
         return true;
 }
@@ -28,7 +28,7 @@ inline bool isFinite(T x)
 template <typename T>
 bool canConvertTo(Float64 x)
 {
-    if constexpr (is_floating_point<T>)
+    if constexpr (std::is_floating_point_v<T>)
         return true;
     if (!isFinite(x))
         return false;
@@ -45,13 +45,4 @@ T NaNOrZero()
         return std::numeric_limits<T>::quiet_NaN();
     else
         return {};
-}
-
-template <typename T>
-bool signBit(T x)
-{
-    if constexpr (is_floating_point<T>)
-        return DecomposedFloat(x).isNegative();
-    else
-        return x < 0;
 }

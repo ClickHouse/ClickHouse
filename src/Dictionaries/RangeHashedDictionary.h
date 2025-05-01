@@ -7,11 +7,9 @@
 
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
-#include <Core/Block_fwd.h>
-#include <Core/callOnTypeIndex.h>
-#include <Common/ArenaUtils.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/IntervalTree.h>
+#include <Common/ArenaUtils.h>
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
@@ -30,6 +28,7 @@
 
 #include <Columns/ColumnNullable.h>
 
+#include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
 
 namespace DB
@@ -299,8 +298,7 @@ namespace impl
             using Types = std::decay_t<decltype(types)>;
             using DataType = typename Types::LeftType;
 
-            if constexpr ((IsDataTypeDecimalOrNumber<DataType> || IsDataTypeDateOrDateTime<DataType> || IsDataTypeEnum<DataType>)
-                && !std::is_same_v<DataType, DataTypeBFloat16>)
+            if constexpr (IsDataTypeDecimalOrNumber<DataType> || IsDataTypeDateOrDateTime<DataType> || IsDataTypeEnum<DataType>)
             {
                 using ColumnType = typename DataType::ColumnType;
                 func(TypePair<ColumnType, void>());
@@ -543,7 +541,6 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
     {
         QueryPipeline pipeline(source_ptr->loadAll());
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
         Block block;
 
         while (executor.pull(block))
@@ -695,7 +692,6 @@ void RangeHashedDictionary<dictionary_key_type>::updateData()
     {
         QueryPipeline pipeline(source_ptr->loadUpdatedAll());
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
         Block block;
 

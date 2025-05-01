@@ -3,7 +3,7 @@
 CREATE TABLE landing (n Int64) engine=MergeTree order by n;
 CREATE TABLE target  (n Int64) engine=MergeTree order by n;
 CREATE MATERIALIZED VIEW landing_to_target TO target AS
-    SELECT n + throwIf(n == 3333) AS n
+    SELECT n + throwIf(n == 3333)
     FROM landing;
 
 INSERT INTO landing SELECT * FROM numbers(10000); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
@@ -67,7 +67,7 @@ SET implicit_transaction=False;
 SELECT 'Looking_at_transaction_id_True' FORMAT Null SETTINGS implicit_transaction=1;
 -- Verify that the transaction_id column is NOT populated without transaction
 SELECT 'Looking_at_transaction_id_False' FORMAT Null SETTINGS implicit_transaction=0;
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT
     'implicit_True',

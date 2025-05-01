@@ -1,7 +1,6 @@
 #pragma once
 
 #include <functional>
-#include <Core/Field.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ParallelReadBuffer.h>
@@ -77,7 +76,6 @@ private:
 
     const size_t buffer_size;
     const size_t max_redirects;
-    const bool enable_url_encoding;
 
     const bool use_external_buffer;
     const bool http_skip_not_found_url;
@@ -92,9 +90,6 @@ private:
     std::unique_ptr<ReadBuffer> impl;
 
     std::vector<Poco::Net::HTTPCookie> cookies;
-
-    std::map<String, String> response_headers;
-
     HTTPHeaderEntries http_header_entries;
     std::function<void(size_t)> next_callback;
 
@@ -155,7 +150,6 @@ public:
         const RemoteHostFilter * remote_host_filter_,
         size_t buffer_size_,
         size_t max_redirects_,
-        bool enable_url_encoding_,
         OutStreamCallback out_stream_callback_,
         bool use_external_buffer_,
         bool http_skip_not_found_url_,
@@ -193,8 +187,6 @@ public:
 
     HTTPFileInfo getFileInfo();
     static HTTPFileInfo parseFileInfo(const Poco::Net::HTTPResponse & response, size_t requested_range_begin);
-
-    Map getResponseHeaders() const;
 };
 
 using ReadWriteBufferFromHTTPPtr = std::unique_ptr<ReadWriteBufferFromHTTP>;
@@ -210,7 +202,6 @@ class BuilderRWBufferFromHTTP
     const RemoteHostFilter * remote_host_filter = nullptr;
     size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
     size_t max_redirects = 0;
-    bool enable_url_encoding = false;
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = nullptr;
     bool use_external_buffer = false;
     bool http_skip_not_found_url = false;
@@ -238,7 +229,6 @@ public:
     setterMember(withHostFilter, remote_host_filter)
     setterMember(withBufSize, buffer_size)
     setterMember(withRedirects, max_redirects)
-    setterMember(withEnableUrlEncoding, enable_url_encoding)
     setterMember(withOutCallback, out_stream_callback)
     setterMember(withHeaders, http_header_entries)
     setterMember(withExternalBuf, use_external_buffer)
@@ -260,7 +250,6 @@ public:
             remote_host_filter,
             buffer_size,
             max_redirects,
-            enable_url_encoding,
             out_stream_callback,
             use_external_buffer,
             http_skip_not_found_url,

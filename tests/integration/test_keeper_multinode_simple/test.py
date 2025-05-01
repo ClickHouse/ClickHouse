@@ -1,9 +1,11 @@
-import time
-
 import pytest
-
-import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
+import random
+import string
+import os
+import time
+from multiprocessing.dummy import Pool
 from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
 
@@ -23,6 +25,8 @@ node3 = cluster.add_instance(
     main_configs=["configs/enable_keeper3.xml", "configs/use_keeper.xml"],
     stay_alive=True,
 )
+
+from kazoo.client import KazooClient, KazooState
 
 
 @pytest.fixture(scope="module")
@@ -45,7 +49,11 @@ def wait_nodes():
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
+    _fake_zk_instance = KazooClient(
+        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
+    )
+    _fake_zk_instance.start()
+    return _fake_zk_instance
 
 
 def test_read_write_multinode(started_cluster):

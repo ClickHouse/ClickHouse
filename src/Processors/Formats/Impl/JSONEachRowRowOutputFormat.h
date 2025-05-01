@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Core/Block.h>
+#include <IO/WriteBuffer.h>
 #include <IO/PeekableWriteBuffer.h>
 #include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
 #include <Processors/Formats/RowOutputFormatWithExceptionHandlerAdaptor.h>
@@ -8,9 +10,6 @@
 
 namespace DB
 {
-
-class Block;
-class WriteBuffer;
 
 /** The stream for outputting data in JSON format, by object per line.
   */
