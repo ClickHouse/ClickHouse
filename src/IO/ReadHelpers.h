@@ -637,7 +637,7 @@ void readStringUntilEquals(String & s, ReadBuffer & buf);
 /** Read string in CSV format.
   * Parsing rules:
   * - string could be placed in quotes; quotes could be single: ' if FormatSettings::CSV::allow_single_quotes is true
-  *   or double: " if FormatSettings::CSV::allow_double_quotes is true;
+  *   or double: " if FormatSettings::CSV::allow_double_quotes is true or if FormatSettings::CSV::custom_quotes is set;
   * - or string could be unquoted - this is determined by first character;
   * - if string is unquoted, then:
   *     - If settings.custom_delimiter is not specified, it is read until next settings.delimiter, either until end of line (CR or LF) or until end of stream;

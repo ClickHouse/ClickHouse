@@ -106,6 +106,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.avro.output_rows_in_file = settings[Setting::output_format_avro_rows_in_file];
     format_settings.csv.allow_double_quotes = settings[Setting::format_csv_allow_double_quotes];
     format_settings.csv.allow_single_quotes = settings[Setting::format_csv_allow_single_quotes];
+    format_settings.csv.custom_quotes = settings[Setting::format_csv_custom_quotes];
     format_settings.csv.serialize_tuple_into_separate_columns = settings[Setting::output_format_csv_serialize_tuple_into_separate_columns];
     format_settings.csv.deserialize_separate_columns_into_tuple = settings[Setting::input_format_csv_deserialize_separate_columns_into_tuple];
     format_settings.csv.crlf_end_of_line = settings[Setting::output_format_csv_crlf_end_of_line];

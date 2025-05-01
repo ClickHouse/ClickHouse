@@ -23,6 +23,9 @@ If it is set to true, allow strings in single quotes.
     DECLARE(Bool, format_csv_allow_double_quotes, true, R"(
 If it is set to true, allow strings in double quotes.
 )", 0) \
+    DECLARE(Bool, format_csv_custom_quotes, '\0', R"(
+The character to use as quote charatacter in CSV data instead of standard single or double quotes.
+)", 0) \
     DECLARE(Bool, output_format_csv_serialize_tuple_into_separate_columns, true, R"(
 If it set to true, then Tuples in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost)
 )", 0) \

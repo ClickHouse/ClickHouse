@@ -1,0 +1,26 @@
+1	{"id":"Key1","name":"John","property":42}
+1	{"id":"Key2","name":"Bob","property":true}
+1	{"id":"Key3","name":"Alice","property":false}
+1	{"id":"Key4","name":"Charlie","property":"something"}
+2	{"id":"Key5","name":"Rudolf","property":17}
+3	{"id":"Key5","name":"Rudolf","property":17}
+4	{"id":"Key5","name":"Rudolf","property":"17"}
+5	{"name":"John","property":42}
+5	{"name":"Bob","property":true}
+6	{"id":"Key1","name":"John"}
+6	{"id":"Key2","name":"Bob"}
+7	{"id":"Key1","property":42}
+7	{"id":"Key2","property":true}
+8	{"id":"The,key,with\\"quotes","name":",;\'","property":null}
+9	{"f1":"Key3","f2":false,"f3":"Alice"}
+10	{}
+11	{"id":3,"name":"end quote missing","property":true}
+12	{"id":"foo","name":"bar","property":""}
+13	String
+14	{"col1":"Field1.0","col2":"Field1.1","col3":null}
+14	{"col1":"Field2.0","col2":null,"col3":"Field2.2"}
+14	{"col1":null,"col2":"Field3.1","col3":"Field3.2"}
+14	\N
+15	\N
+16	Nullable(String)
+17	{"col1":"fiel1","col2":"field$2","col3":42,"col4":null}

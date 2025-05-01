@@ -1109,6 +1109,62 @@ Result:
 - [output_format_json_quote_denormals](/operations/settings/formats#output_format_json_quote_denormals)
 
 
+### csvToJSONString {#csvtojsonstring}
+
+Parses a CSV-formatted string into its separate fields and transforms it into a JSON string.
+The first parameter has to be a string constant/literal describing the field names. This is, 
+essentially, the content of a CSV header using the same formatting and separators as the actual
+data. The second parameter is the CSV string that should be parsed into its separate fields. 
+The output then matches the field names to the parsed output fields.
+
+This function is useful if you have a [String](../data-types/string.md) column with still unparsed
+CSV data and need to extract its fields at runtime. The output can be used in conjunction with the
+JSON functions to access specific field information. Note that this processing is more robust
+than simply splitting the string by the delimiting character as it considers these delimiters also
+within quoted strings.
+
+The third function parameter is an optional [String](../data-types/string.md) and allows the
+overriding of CSV format settings per function invocation instance instead of using the query-level
+settings. 
+
+The standard [CSV format settings](../../interfaces/formats/CSV/CSV.md) apply to the CSV parsing 
+of this function.
+
+**Syntax**
+
+```sql
+csvToJSONString(fieldNames, csvString)
+csvToJSONString(fieldNames, csvString, options)
+```
+
+**Arguments**
+
+- `fieldNames` — The field names (essentially CSV header) that should be merged into the JSON output. You can omit fields from the output by providing an empty field name at its position, like `field1,,field3` to omit `field2` in the output. This parameter has to be a non-nullable [String](../data-types/string.md) constant.
+- `csvString` - The name of the [String](../data-types/string.md) column or literal that contains the CSV that should be parsed. The column can be nullable.
+- `options` - Allows overwriting CSV parsing options. There is one additional `detect_types` option that defaults to true. It allows to disable the automatic detection of native JSON data types in the output by setting it to false.
+
+**Returned value**
+
+- JSON representation of the CSV data as a [String](../data-types/string.md). The return value is only nullable if the input `csvString` is also nullable.
+
+**Example**
+
+Query:
+
+```sql
+SELECT csvToJSONString('name,age', 'John,42');
+SELECT csvToJSONString('name|age', 'Clark|15') SETTINGS format_csv_delimiter='|';
+SELECT csvToJSONString('name$age', 'Clark$15', 'format_csv_delimiter="$",detect_types=false');
+```
+
+Result:
+
+```text
+{"age":42,"name":"John"}
+{"age":15,"name":"Clark"}
+{"age":"15","name":"Clark"}
+```
+
 ### JSONArrayLength {#jsonarraylength}
 
 Returns the number of elements in the outermost JSON array. The function returns NULL if input JSON string is invalid.

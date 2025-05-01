@@ -901,6 +901,20 @@ concept WithResize = requires (T value)
     { value.size() } -> std::integral<>;
 };
 
+/**
+ * Checks if the given character is a quote character according to the CSV format settings.
+ * 
+ * @param c The character to check.
+ * @param settings The CSV format settings.
+ * @return True if the character is a quote character, false otherwise.
+ */
+bool isQuoteCharacter(char c, const FormatSettings::CSV & settings)
+{
+    return (settings.allow_single_quotes && c == '\'') 
+        || (settings.allow_double_quotes && c == '"')
+        || (settings.custom_quotes != '\0' && c == settings.custom_quotes);
+}
+
 template <typename Vector, bool include_quotes, bool allow_throw>
 void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
 {
@@ -916,7 +930,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
     if (custom_delimiter.empty() && maybe_quote == delimiter)
         return;
 
-    if ((settings.allow_single_quotes && maybe_quote == '\'') || (settings.allow_double_quotes && maybe_quote == '"'))
+    if (isQuoteCharacter(maybe_quote, settings))
     {
         if constexpr (include_quotes)
             s.push_back(maybe_quote);
@@ -1143,7 +1157,7 @@ String readCSVStringWithTwoPossibleDelimiters(PeekableReadBuffer & buf, const Fo
     String res;
 
     /// If value is quoted, use regular CSV reading since we need to read only data inside quotes.
-    if (!buf.eof() && ((settings.allow_single_quotes && *buf.position() == '\'') || (settings.allow_double_quotes && *buf.position() == '"')))
+    if (!buf.eof() && isQuoteCharacter(*buf.position(), settings))
         readCSVStringInto(res, buf, settings);
     else
         readCSVWithTwoPossibleDelimitersImpl(res, buf, first_delimiter, second_delimiter);
@@ -1156,7 +1170,7 @@ String readCSVFieldWithTwoPossibleDelimiters(PeekableReadBuffer & buf, const For
     String res;
 
     /// If value is quoted, use regular CSV reading since we need to read only data inside quotes.
-    if (!buf.eof() && ((settings.allow_single_quotes && *buf.position() == '\'') || (settings.allow_double_quotes && *buf.position() == '"')))
+    if (!buf.eof() && isQuoteCharacter(*buf.position(), settings))
          readCSVField(res, buf, settings);
     else
         readCSVWithTwoPossibleDelimitersImpl(res, buf, first_delimiter, second_delimiter);

@@ -949,6 +949,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
         {{"format_csv_delimiter", CHSetting(nastyStrings, {}, false)},
          {"format_csv_allow_single_quotes", CHSetting(trueOrFalse, {}, false)},
          {"format_csv_allow_double_quotes", CHSetting(trueOrFalse, {}, false)},
+         {"format_csv_custom_quotes", CHSetting(nastyStrings, {}, false)},
          {"format_csv_null_representation", CHSetting(nastyStrings, {}, false)},
          {"format_tsv_null_representation", CHSetting(nastyStrings, {}, false)},
          {"input_format_binary_decode_types_in_binary_format", CHSetting(trueOrFalse, {}, false)},
