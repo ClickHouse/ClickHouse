@@ -354,11 +354,11 @@ protected:
     template <typename T>
     struct MakeSignedType
     {
-        using type = std::conditional_t<
+        using type = typename std::conditional<
             std::is_unsigned_v<T> && std::is_integral_v<T>,
-            std::make_signed_t<T>,
-            T
-        >;
+            std::make_signed<T>,
+            std::type_identity<T>
+        >::type::type;
     };
 
     template <typename KeyHolder1, typename KeyHolder2>
