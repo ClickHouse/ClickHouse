@@ -420,8 +420,10 @@ void IPAddressDictionary::loadData()
         element_count += rows;
 
         const ColumnPtr key_column_ptr = block.safeGetByPosition(0).column;
-        const auto attribute_column_ptrs = std::views::iota(dict_struct.attributes.size())
-            | std::views::transform([&](const size_t attribute_idx) { return block.safeGetByPosition(attribute_idx + 1).column; });
+        const auto attribute_column_ptrs = Columns{
+            std::from_range_t{},
+            collections::range(0, dict_struct.attributes.size())
+                | std::views::transform([&](const size_t attribute_idx) { return block.safeGetByPosition(attribute_idx + 1).column; })};
 
         for (const auto row : collections::range(0, rows))
         {
