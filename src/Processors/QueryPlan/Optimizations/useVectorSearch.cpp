@@ -129,7 +129,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
         }
         else if (child->type == ActionsDAG::ActionType::COLUMN)
         {
-            /// Is it an Array(Float32) or Array(Float64) column?
+            /// Is it an Array(Float32), Array(Float64) or Array(BFloat16) column?
             const DataTypePtr & data_type = child->result_type;
             const auto * data_type_array = typeid_cast<const DataTypeArray *>(data_type.get());
             if (data_type_array == nullptr)
