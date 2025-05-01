@@ -472,7 +472,7 @@ cppkafka::Configuration StorageKafka2::getConsumerConfiguration(size_t consumer_
     auto kafka_config = KafkaConfigLoader::getConsumerConfiguration(*this, params);
     // It is disabled, because in case of no materialized views are attached, it can cause live memory leak. To enable it, a similar cleanup mechanism must be introduced as for StorageKafka.
     kafka_config.set("statistics.interval.ms", "0");
-    kafka_config.set("auto.offset.reset", "latest");
+    // kafka_config.set("auto.offset.reset", "latest");
     return kafka_config;
 }
 
