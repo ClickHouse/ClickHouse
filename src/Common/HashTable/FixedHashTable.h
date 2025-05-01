@@ -115,6 +115,12 @@ class FixedHashTable : private boost::noncopyable, protected Allocator, protecte
 {
     static constexpr size_t NUM_CELLS = 1ULL << (sizeof(Key) * 8);
 
+    /// We maintain min and max values inserted into the hash table to then limit the amount of cells to traverse to the [min; max] range.
+    /// Both values could be efficiently calculated only within `emplace` calls (and not when we populate the hash table in `read` method for example), so we update them only within `emplace` and track if any other method was called.
+    bool only_emplace_was_used_to_insert_data = true;
+    size_t min = NUM_CELLS - 1;
+    size_t max = 0;
+
 protected:
     friend class const_iterator;
     friend class iterator;
@@ -170,6 +176,8 @@ protected:
 
             /// Skip empty cells in the main buffer.
             const auto * buf_end = container->buf + container->NUM_CELLS;
+            if (container->canUseMinMaxOptimization())
+                buf_end = container->buf + container->max + 1;
             while (ptr < buf_end && ptr->isZero(*container))
                 ++ptr;
 
@@ -261,7 +269,7 @@ public:
             return true;
         }
 
-        inline const value_type & get() const
+        const value_type & get() const
         {
             if (!is_initialized || is_eof)
                 throw DB::Exception(DB::ErrorCodes::NO_AVAILABLE_DATA, "No available data");
@@ -297,12 +305,7 @@ public:
         if (!buf)
             return end();
 
-        const Cell * ptr = buf;
-        auto buf_end = buf + NUM_CELLS;
-        while (ptr < buf_end && ptr->isZero(*this))
-            ++ptr;
-
-        return const_iterator(this, ptr);
+        return const_iterator(this, firstPopulatedCell());
     }
 
     const_iterator cbegin() const { return begin(); }
@@ -312,18 +315,13 @@ public:
         if (!buf)
             return end();
 
-        Cell * ptr = buf;
-        auto buf_end = buf + NUM_CELLS;
-        while (ptr < buf_end && ptr->isZero(*this))
-            ++ptr;
-
-        return iterator(this, ptr);
+        return iterator(this, const_cast<Cell *>(firstPopulatedCell()));
     }
 
     const_iterator end() const
     {
         /// Avoid UBSan warning about adding zero to nullptr. It is valid in C++20 (and earlier) but not valid in C.
-        return const_iterator(this, buf ? buf + NUM_CELLS : buf);
+        return const_iterator(this, buf ? lastPopulatedCell() : buf);
     }
 
     const_iterator cend() const
@@ -333,7 +331,7 @@ public:
 
     iterator end()
     {
-        return iterator(this, buf ? buf + NUM_CELLS : buf);
+        return iterator(this, buf ? lastPopulatedCell() : buf);
     }
 
 
@@ -350,6 +348,8 @@ public:
 
         new (&buf[x]) Cell(x, *this);
         inserted = true;
+        if (x < min) min = x;
+        if (x > max) max = x;
         this->increaseSize();
     }
 
@@ -376,6 +376,26 @@ public:
 
     bool ALWAYS_INLINE has(const Key & x) const { return !buf[x].isZero(*this); }
     bool ALWAYS_INLINE has(const Key &, size_t hash_value) const { return !buf[hash_value].isZero(*this); }
+
+    /// Decide if we use the min/max optimization. `max < min` means the FixedHashtable is empty. The flag `only_emplace_was_used_to_insert_data`
+    /// will check if the FixedHashTable will only use `emplace()` to insert the raw data.
+    bool ALWAYS_INLINE canUseMinMaxOptimization() const { return ((max >= min) && only_emplace_was_used_to_insert_data); }
+
+    const Cell * ALWAYS_INLINE firstPopulatedCell() const
+    {
+        const Cell * ptr = buf;
+        if (!canUseMinMaxOptimization())
+        {
+            while (ptr < buf + NUM_CELLS && ptr->isZero(*this))
+                ++ptr;
+        }
+        else
+            ptr = buf + min;
+
+        return ptr;
+    }
+
+    Cell * ALWAYS_INLINE lastPopulatedCell() const { return canUseMinMaxOptimization() ? buf + max + 1 : buf + NUM_CELLS; }
 
     void write(DB::WriteBuffer & wb) const
     {
@@ -433,6 +453,7 @@ public:
             x.read(rb);
             new (&buf[place_value]) Cell(x, *this);
         }
+        only_emplace_was_used_to_insert_data = false;
     }
 
     void readText(DB::ReadBuffer & rb)
@@ -455,6 +476,7 @@ public:
             x.readText(rb);
             new (&buf[place_value]) Cell(x, *this);
         }
+        only_emplace_was_used_to_insert_data = false;
     }
 
     size_t size() const { return this->getSize(buf, *this, NUM_CELLS); }
@@ -493,7 +515,11 @@ public:
     }
 
     const Cell * data() const { return buf; }
-    Cell * data() { return buf; }
+    Cell * data()
+    {
+        only_emplace_was_used_to_insert_data = false;
+        return buf;
+    }
 
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
     size_t getCollisions() const { return 0; }

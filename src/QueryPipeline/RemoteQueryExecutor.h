@@ -1,14 +1,11 @@
 #pragma once
 
-#include <variant>
-
 #include <Client/ConnectionPool.h>
 #include <Client/IConnections.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
-#include <Common/TimerDescriptor.h>
 #include <sys/types.h>
 
 
@@ -31,7 +28,7 @@ class RemoteQueryExecutorReadContext;
 class ParallelReplicasReadingCoordinator;
 
 /// This is the same type as StorageS3Source::IteratorWrapper
-using TaskIterator = std::function<String()>;
+using TaskIterator = std::function<String(size_t)>;
 
 /// This class allows one to launch queries on remote replicas of one shard and get results
 class RemoteQueryExecutor
@@ -62,7 +59,8 @@ public:
         const Scalars & scalars_ = Scalars(),
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
-        std::optional<Extension> extension_ = std::nullopt);
+        std::optional<Extension> extension_ = std::nullopt,
+        ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr);
 
     /// Takes already set connection.
     RemoteQueryExecutor(
@@ -74,6 +72,7 @@ public:
         const Scalars & scalars_ = Scalars(),
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
+
         std::optional<Extension> extension_ = std::nullopt);
 
     /// Takes already set connection.
@@ -98,6 +97,7 @@ public:
         const Scalars & scalars_ = Scalars(),
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
+        std::shared_ptr<const QueryPlan> query_plan_ = nullptr,
         std::optional<Extension> extension_ = std::nullopt);
 
     /// Takes a pool and gets one or several connections from it.
@@ -110,6 +110,7 @@ public:
         const Scalars & scalars_ = Scalars(),
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
+        std::shared_ptr<const QueryPlan> query_plan_ = nullptr,
         std::optional<Extension> extension_ = std::nullopt,
         GetPriorityForLoadBalancing::Func priority_func = {});
 
@@ -218,9 +219,12 @@ public:
 
     IConnections & getConnections() { return *connections; }
 
-    bool needToSkipUnavailableShard() const { return context->getSettingsRef().skip_unavailable_shards && (0 == connections->size()); }
+    bool needToSkipUnavailableShard() const;
 
     bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
+
+    /// return true if parallel replica packet was processed
+    bool processParallelReplicaPacketIfAny();
 
 private:
     RemoteQueryExecutor(
@@ -230,6 +234,7 @@ private:
         const Scalars & scalars_,
         const Tables & external_tables_,
         QueryProcessingStage::Enum stage_,
+        std::shared_ptr<const QueryPlan> query_plan_,
         std::optional<Extension> extension_,
         GetPriorityForLoadBalancing::Func priority_func = {});
 
@@ -242,6 +247,7 @@ private:
     std::unique_ptr<ReadContext> read_context;
 
     const String query;
+    std::shared_ptr<const QueryPlan> query_plan;
     String query_id;
     ContextPtr context;
 
@@ -257,11 +263,6 @@ private:
     std::optional<Extension> extension;
     /// Initiator identifier for distributed task processing
     std::shared_ptr<TaskIterator> task_iterator;
-
-    /// This is needed only for parallel reading from replicas, because
-    /// we create a RemoteQueryExecutor per replica and have to store additional info
-    /// about the number of the current replica or the count of replicas at all.
-    IConnections::ReplicaInfo replica_info;
 
     /// Streams for reading from temporary tables and following sending of data
     /// to remote servers for GLOBAL-subqueries
@@ -303,6 +304,10 @@ private:
       */
     bool got_duplicated_part_uuids = false;
 
+#if defined(OS_LINUX)
+    bool packet_in_progress = false;
+#endif
+
     /// Parts uuids, collected from remote replicas
     std::vector<UUID> duplicated_part_uuids;
 
@@ -312,6 +317,8 @@ private:
     LoggerPtr log = nullptr;
 
     GetPriorityForLoadBalancing::Func priority_func;
+
+    const bool read_packet_type_separately = false;
 
     /// Send all scalars to remote servers
     void sendScalars();
@@ -344,9 +351,6 @@ private:
 
     /// Process packet for read and return data block if possible.
     ReadResult processPacket(Packet packet);
-
-    /// Reads packet by packet
-    Block readPackets();
 };
 
 }

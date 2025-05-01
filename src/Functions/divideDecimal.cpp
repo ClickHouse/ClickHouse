@@ -16,9 +16,10 @@ namespace
 struct DivideDecimalsImpl
 {
     static constexpr auto name = "divideDecimal";
+    static constexpr auto suitable_for_short_circuit = true;
 
     template <typename FirstType, typename SecondType>
-    static inline Decimal256
+    static Decimal256
     execute(FirstType a, SecondType b, UInt16 scale_a, UInt16 scale_b, UInt16 result_scale)
     {
         if (b.value == 0)
@@ -105,7 +106,10 @@ DB::Exception: Decimal result's scale is less than argument's one: While process
 │ -12 │ 2.1 │                                                       -5.7 │                                                   -5.71428 │
 └─────┴─────┴────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
 )"}
-    }});
+    },
+    .category = FunctionDocumentation::Category::TypeConversion
+    }
+    );
 }
 
 }

@@ -25,9 +25,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int DICTIONARY_ACCESS_DENIED;
     extern const int UNSUPPORTED_METHOD;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -224,7 +224,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
         if (dict_struct.has_expressions)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `executable` does not support attribute expressions");
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `executable` does not support attribute expressions");
 
         /// Executable dictionaries may execute arbitrary commands.
         /// It's OK for dictionaries created by administrator from xml-file, but
@@ -265,7 +265,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
             .command_termination_timeout_seconds = config.getUInt64(settings_config_prefix + ".command_termination_timeout", 10),
             .command_read_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_read_timeout", 10000),
             .command_write_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_write_timeout", 10000),
-            .stderr_reaction = parseExternalCommandStderrReaction(config.getString(settings_config_prefix + ".stderr_reaction", "none")),
+            .stderr_reaction = parseExternalCommandStderrReaction(config.getString(settings_config_prefix + ".stderr_reaction", "log_last")),
             .check_exit_code = config.getBool(settings_config_prefix + ".check_exit_code", true),
             .is_executable_pool = false,
             .send_chunk_header = config.getBool(settings_config_prefix + ".send_chunk_header", false),

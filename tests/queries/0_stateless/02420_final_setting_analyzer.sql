@@ -1,5 +1,5 @@
 -- { echoOn }
-set allow_experimental_analyzer=1;
+set enable_analyzer=1;
 SYSTEM STOP MERGES tbl;
 
 -- simple test case
@@ -102,3 +102,6 @@ insert into table_to_merge_c values (3,'c');
 -- expected output:
 -- 1 c, 2 a, 2 b, 3 c
 SELECT * FROM merge_table ORDER BY id, val;
+
+select sum(number) from numbers(10) settings final=1;
+select sum(number) from remote('127.0.0.{1,2}', numbers(10)) settings final=1;

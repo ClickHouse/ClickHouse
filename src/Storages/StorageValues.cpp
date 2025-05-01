@@ -3,6 +3,8 @@
 #include <Storages/StorageValues.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActions.h>
 #include <QueryPipeline/Pipe.h>
 
 
@@ -48,14 +50,14 @@ Pipe StorageValues::read(
 
     if (!prepared_pipe.empty())
     {
-        auto dag = std::make_shared<ActionsDAG>(prepared_pipe.getHeader().getColumnsWithTypeAndName());
+        ActionsDAG dag(prepared_pipe.getHeader().getColumnsWithTypeAndName());
         ActionsDAG::NodeRawConstPtrs outputs;
         outputs.reserve(column_names.size());
         for (const auto & name : column_names)
-            outputs.push_back(dag->getOutputs()[prepared_pipe.getHeader().getPositionByName(name)]);
+            outputs.push_back(dag.getOutputs()[prepared_pipe.getHeader().getPositionByName(name)]);
 
-        dag->getOutputs().swap(outputs);
-        auto expression = std::make_shared<ExpressionActions>(dag);
+        dag.getOutputs().swap(outputs);
+        auto expression = std::make_shared<ExpressionActions>(std::move(dag));
 
         prepared_pipe.addSimpleTransform([&](const Block & header)
         {
@@ -68,7 +70,7 @@ Pipe StorageValues::read(
     /// Get only required columns.
     Block block;
     for (const auto & name : column_names)
-        block.insert(res_block.getByName(name));
+        block.insert(res_block.getColumnOrSubcolumnByName(name));
 
     Chunk chunk(block.getColumns(), block.rows());
     return Pipe(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), std::move(chunk)));

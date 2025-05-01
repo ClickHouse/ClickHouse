@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-replicated-database, no-fasttest
+# Tags: zookeeper, no-replicated-database, no-fasttest, no-shared-merge-tree
 # Tag no-replicated-database: Requires investigation
+# no-shared-merge-tree: relies on zookeeper structure of rmt
 
 set -e
 

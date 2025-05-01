@@ -1,0 +1,47 @@
+-- Simple types
+-- { echoOn }
+SELECT x FROM format(JSONEachRow, 'x Date', '{"x":""}');
+1970-01-01
+SELECT x FROM format(JSONEachRow, 'x Date32', '{"x":""}');
+1970-01-01
+SELECT toTimeZone(x, 'UTC') FROM format(JSONEachRow, 'x DateTime', '{"x":""}');
+1970-01-01 00:00:00
+SELECT toTimeZone(x, 'UTC') FROM format(JSONEachRow, 'x DateTime64', '{"x":""}');
+1970-01-01 00:00:00.000
+SELECT x FROM format(JSONEachRow, 'x IPv4', '{"x":""}');
+0.0.0.0
+SELECT x FROM format(JSONEachRow, 'x IPv6', '{"x":""}');
+::
+SELECT x FROM format(JSONEachRow, 'x UUID', '{"x":""}');
+00000000-0000-0000-0000-000000000000
+-- { echoOn }
+SELECT COUNT(DISTINCT col) FROM table1;
+1
+-- { echoOn }
+SELECT * FROM table1 ORDER BY address ASC;
+::
+2001:db8:3333:4444:5555:6666:7777:8888
+-- Nullable
+-- { echoOn }
+SELECT x FROM format(JSONEachRow, 'x Nullable(IPv6)', '{"x":""}');
+\N
+-- Compound types
+SELECT x FROM format(JSONEachRow, 'x Array(UUID)', '{"x":["00000000-0000-0000-0000-000000000000","b15f852c-c41a-4fd6-9247-1929c841715e",""]}');
+['00000000-0000-0000-0000-000000000000','b15f852c-c41a-4fd6-9247-1929c841715e','00000000-0000-0000-0000-000000000000']
+SELECT x FROM format(JSONEachRow, 'x Array(Nullable(IPv6))', '{"x":["",""]}');
+[NULL,NULL]
+SELECT x FROM format(JSONEachRow, 'x Tuple(Date, IPv4, String)', '{"x":["", "", "abc"]}');
+('1970-01-01','0.0.0.0','abc')
+SELECT x FROM format(JSONEachRow, 'x Map(String, IPv6)', '{"x":{"abc": ""}}');
+{'abc':'::'}
+SELECT x FROM format(JSONEachRow, 'x Variant(Date, UUID)', '{"x":""}');
+\N
+-- Deep composition
+SELECT x FROM format(JSONEachRow, 'x Array(Array(IPv6))', '{"x":[["2001:db8:3333:4444:CCCC:DDDD:EEEE:FFFF", ""], ["", "2001:db8:3333:4444:5555:6666:7777:8888"]]}');
+[['2001:db8:3333:4444:cccc:dddd:eeee:ffff','::'],['::','2001:db8:3333:4444:5555:6666:7777:8888']]
+SELECT x FROM format(JSONEachRow, 'x Variant(Date, Array(UUID))', '{"x":["", "b15f852c-c41a-4fd6-9247-1929c841715e"]}');
+['00000000-0000-0000-0000-000000000000','b15f852c-c41a-4fd6-9247-1929c841715e']
+SELECT x FROM format(JSONEachRow, 'x Tuple(Array(UUID), Tuple(UUID, Map(String, IPv6)))', '{"x":[[""], ["",{"abc":""}]]}');
+(['00000000-0000-0000-0000-000000000000'],('00000000-0000-0000-0000-000000000000',{'abc':'::'}))
+SELECT x FROM format(JSONEachRow, 'x Map(Tuple(Date,IPv4), Variant(UUID,IPv6))', '{"x":{["",""]:""}}');
+{('1970-01-01','0.0.0.0'):NULL}

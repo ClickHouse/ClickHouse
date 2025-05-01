@@ -6,12 +6,12 @@
 namespace DB
 {
 
-void ASTUserNameWithHost::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTUserNameWithHost::formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << backQuoteIfNeed(base_name);
+    ostr << backQuoteIfNeed(base_name);
 
     if (!host_pattern.empty())
-        settings.ostr << "@" << backQuoteIfNeed(host_pattern);
+        ostr << "@" << backQuoteIfNeed(host_pattern);
 }
 
 String ASTUserNameWithHost::toString() const
@@ -35,15 +35,15 @@ void ASTUserNameWithHost::replace(const String name_)
 }
 
 
-void ASTUserNamesWithHost::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTUserNamesWithHost::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     assert(!names.empty());
     bool need_comma = false;
     for (const auto & name : names)
     {
         if (std::exchange(need_comma, true))
-            settings.ostr << ", ";
-        name->format(settings);
+            ostr << ", ";
+        name->format(ostr, settings);
     }
 }
 

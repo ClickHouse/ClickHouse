@@ -28,7 +28,7 @@ SELECT count() FROM minmax_compact WHERE i64 = 2;
 ALTER TABLE minmax_compact CLEAR INDEX idx IN PARTITION 1;
 ALTER TABLE minmax_compact CLEAR INDEX idx IN PARTITION 2;
 
-SELECT count() FROM minmax_compact WHERE i64 = 2; -- { serverError 158 }
+SELECT count() FROM minmax_compact WHERE i64 = 2; -- { serverError TOO_MANY_ROWS }
 
 set max_rows_to_read = 10;
 SELECT count() FROM minmax_compact WHERE i64 = 2;

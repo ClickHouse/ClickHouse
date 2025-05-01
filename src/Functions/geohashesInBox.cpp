@@ -35,22 +35,25 @@ public:
 
     size_t getNumberOfArguments() const override { return 5; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        validateArgumentType(*this, arguments, 0, isFloat, "float");
-        validateArgumentType(*this, arguments, 1, isFloat, "float");
-        validateArgumentType(*this, arguments, 2, isFloat, "float");
-        validateArgumentType(*this, arguments, 3, isFloat, "float");
-        validateArgumentType(*this, arguments, 4, isUInt8, "integer");
+        FunctionArgumentDescriptors args{
+            {"longitute_min", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
+            {"latitude_min", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
+            {"longitute_max", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
+            {"latitude_max", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
+            {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), nullptr, "UInt8"}
+        };
+        validateFunctionArguments(*this, arguments, args);
 
-        if (!(arguments[0]->equals(*arguments[1]) &&
-              arguments[0]->equals(*arguments[2]) &&
-              arguments[0]->equals(*arguments[3])))
+        if (!(arguments[0].type->equals(*arguments[1].type) &&
+              arguments[0].type->equals(*arguments[2].type) &&
+              arguments[0].type->equals(*arguments[3].type)))
         {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                             "Illegal type of argument of {} all coordinate arguments must have the same type, "
-                            "instead they are:{}, {}, {}, {}.", getName(), arguments[0]->getName(),
-                            arguments[1]->getName(), arguments[2]->getName(), arguments[3]->getName());
+                            "instead they are:{}, {}, {}, {}.", getName(), arguments[0].type->getName(),
+                            arguments[1].type->getName(), arguments[2].type->getName(), arguments[3].type->getName());
         }
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());

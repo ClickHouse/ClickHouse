@@ -9,8 +9,6 @@
 #include <Columns/ColumnString.h>
 #include <Common/HashTable/ClearableHashSet.h>
 #include <Common/ColumnsHashing.h>
-#include <Interpreters/AggregationCommon.h>
-#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -57,6 +55,11 @@ public:
                                 getName(), i + 1, arguments[i]->getName());
         }
 
+        return std::make_shared<DataTypeUInt32>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeUInt32>();
     }
 

@@ -42,6 +42,8 @@ public:
     bool canBeInsideLowCardinality() const override { return nested_data_type->canBeInsideLowCardinality(); }
     bool canBePromoted() const override { return nested_data_type->canBePromoted(); }
     ColumnPtr createColumnConst(size_t size, const Field & field) const override;
+    bool hasDynamicSubcolumnsData() const override { return nested_data_type->hasDynamicSubcolumns(); }
+    std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, bool throw_if_null) const override;
 
     const DataTypePtr & getNestedType() const { return nested_data_type; }
 
@@ -61,5 +63,7 @@ DataTypePtr makeNullableOrLowCardinalityNullable(const DataTypePtr & type);
 DataTypePtr makeNullableOrLowCardinalityNullableSafe(const DataTypePtr & type);
 /// Nullable(T) -> T, LowCardinality(Nullable(T)) -> T
 DataTypePtr removeNullableOrLowCardinalityNullable(const DataTypePtr & type);
+
+bool canContainNull(const IDataType & type);
 
 }

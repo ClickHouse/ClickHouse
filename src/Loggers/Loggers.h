@@ -23,6 +23,10 @@ public:
     /// Close log files. On next log write files will be reopened.
     void closeLogs(Poco::Logger & logger);
 
+    virtual ~Loggers() = default;
+
+protected:
+    virtual bool allowTextLog() const { return true; }
 
 private:
     Poco::AutoPtr<Poco::FileChannel> log_file;

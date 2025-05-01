@@ -7,4 +7,4 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-yes /keeper/api_version | head -n1000 | xargs -P30 -i $CLICKHOUSE_KEEPER_CLIENT -q 'get {}' > /dev/null
+yes /keeper/api_version | head -n1000 | xargs -P30 -i $CLICKHOUSE_KEEPER_CLIENT -q "get '{}'" > /dev/null

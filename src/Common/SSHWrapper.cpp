@@ -91,6 +91,8 @@ SSHKey::SSHKey(SSHKey && other) noexcept
 
 SSHKey & SSHKey::operator=(const SSHKey & other)
 {
+    if (&other == this)
+        return *this;
     ssh_key_free(key);
     key = ssh_key_dup(other.key);
     return *this;
@@ -127,7 +129,8 @@ String SSHKey::signString(std::string_view input) const
 
 bool SSHKey::verifySignature(std::string_view signature, std::string_view original) const
 {
-    SSHString sig(signature), orig(original);
+    SSHString sig(signature);
+    SSHString orig(original);
     int rc = pki_verify_string(key, sig.get(), orig.get());
     return rc == SSH_OK;
 }
@@ -166,9 +169,15 @@ String SSHKey::getKeyType() const
     return ssh_key_type_to_char(ssh_key_type(key));
 }
 
+void SSHKey::setNeedsDeallocation(bool needs_deallocation_)
+{
+    needs_deallocation = needs_deallocation_;
+}
+
 SSHKey::~SSHKey()
 {
-    ssh_key_free(key); // it's safe free from libssh
+    if (needs_deallocation)
+        ssh_key_free(key);
 }
 
 }

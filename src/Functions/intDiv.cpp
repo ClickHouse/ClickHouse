@@ -80,7 +80,7 @@ struct DivideIntegralByConstantImpl
 
 private:
     template <OpCase op_case>
-    static inline void apply(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t i)
+    static void apply(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t i)
     {
         if constexpr (op_case == OpCase::Vector)
             c[i] = Op::template apply<ResultType>(a[i], b[i]);
@@ -126,4 +126,11 @@ REGISTER_FUNCTION(IntDiv)
     factory.registerFunction<FunctionIntDiv>();
 }
 
+struct NameIntDivOrNull { static constexpr auto name = "intDivOrNull"; };
+using FunctionIntDivOrNull = BinaryArithmeticOverloadResolver<DivideIntegralOrNullImpl, NameIntDivOrNull, false>;
+
+REGISTER_FUNCTION(IntDivOrNull)
+{
+    factory.registerFunction<FunctionIntDivOrNull>();
+}
 }

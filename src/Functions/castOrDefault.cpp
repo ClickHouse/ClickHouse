@@ -1,3 +1,4 @@
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -23,6 +24,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool cast_keep_nullable;
+}
 
 namespace ErrorCodes
 {
@@ -41,10 +46,7 @@ public:
         return std::make_shared<FunctionCastOrDefault>(context);
     }
 
-    explicit FunctionCastOrDefault(ContextPtr context_)
-        : keep_nullable(context_->getSettingsRef().cast_keep_nullable)
-    {
-    }
+    explicit FunctionCastOrDefault(ContextPtr context_) : keep_nullable(context_->getSettingsRef()[Setting::cast_keep_nullable]) { }
 
     String getName() const override { return name; }
 
@@ -203,7 +205,7 @@ private:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args = {{"Value", nullptr, nullptr, nullptr}};
+        FunctionArgumentDescriptors mandatory_args = {{"Value", nullptr, nullptr, "any type"}};
         FunctionArgumentDescriptors optional_args;
 
         if (isDecimal(type) || isDateTime64(type))
@@ -212,9 +214,9 @@ private:
         if (isDateTimeOrDateTime64(type))
             optional_args.push_back({"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"});
 
-        optional_args.push_back({"default_value", nullptr, nullptr, nullptr});
+        optional_args.push_back({"default_value", nullptr, nullptr, "any type"});
 
-        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         size_t additional_argument_index = 1;
 
@@ -340,7 +342,7 @@ If the default value is not provided in the second argument, it is assumed to be
                 {"Successful conversion", "SELECT toUInt128OrDefault('1', 2::UInt128)", "1"},
                 {"Default value", "SELECT toUInt128OrDefault('upyachka', 123456789012345678901234567890::UInt128)", "123456789012345678901234567890"},
                 {"Implicit default value", "SELECT toUInt128OrDefault('upyachka')", "0"}},
-            .categories{"ConversionFunctions"}
+            .category = FunctionDocumentation::Category::TypeConversion
         });
     factory.registerFunction("toUInt256OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt256OrDefault", std::make_shared<DataTypeUInt256>()); });

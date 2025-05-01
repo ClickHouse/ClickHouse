@@ -55,9 +55,10 @@ public:
         DROP_PROJECTION,
         MATERIALIZE_PROJECTION,
 
-        ADD_STATISTIC,
-        DROP_STATISTIC,
-        MATERIALIZE_STATISTIC,
+        ADD_STATISTICS,
+        DROP_STATISTICS,
+        MODIFY_STATISTICS,
+        MATERIALIZE_STATISTICS,
 
         DROP_PARTITION,
         DROP_DETACHED_PARTITION,
@@ -78,9 +79,13 @@ public:
         NO_TYPE,
 
         MODIFY_DATABASE_SETTING,
+        MODIFY_DATABASE_COMMENT,
 
         MODIFY_COMMENT,
+
         MODIFY_SQL_SECURITY,
+
+        UNLOCK_SNAPSHOT,
     };
 
     Type type = NO_TYPE;
@@ -135,7 +140,7 @@ public:
      */
     IAST * projection = nullptr;
 
-    IAST * statistic_decl = nullptr;
+    IAST * statistics_decl = nullptr;
 
     /** Used in DROP PARTITION, ATTACH PARTITION FROM, FORGET PARTITION, UPDATE, DELETE queries.
      *  The value or ID of the partition is stored here.
@@ -180,7 +185,7 @@ public:
 
     bool clear_index = false;   /// for CLEAR INDEX (do not drop index from metadata)
 
-    bool clear_statistic = false;   /// for CLEAR STATISTIC (do not drop statistic from metadata)
+    bool clear_statistics = false;   /// for CLEAR STATISTICS (do not drop statistics from metadata)
 
     bool clear_projection = false;   /// for CLEAR PROJECTION (do not drop projection from metadata)
 
@@ -213,6 +218,9 @@ public:
     String to_database;
     String to_table;
 
+    String snapshot_name;
+    IAST * snapshot_desc;
+
     /// Which property user want to remove
     String remove_property;
 
@@ -225,7 +233,7 @@ public:
     static void setFormatAlterCommandsWithParentheses(bool value) { format_alter_commands_with_parentheses = value; }
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     void forEachPointerToChild(std::function<void(void**)> f) override;
 
@@ -250,6 +258,8 @@ public:
 
     bool isFreezeAlter() const;
 
+    bool isUnlockSnapshot() const;
+
     bool isAttachAlter() const;
 
     bool isFetchAlter() const;
@@ -272,7 +282,7 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Alter; }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     bool isOneCommandTypeOnly(const ASTAlterCommand::Type & type) const;
 

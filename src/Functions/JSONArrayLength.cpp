@@ -48,7 +48,7 @@ namespace
                 {"json", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
             };
 
-            validateFunctionArgumentTypes(*this, arguments, args);
+            validateFunctionArguments(*this, arguments, args);
             return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>());
         }
 
@@ -101,10 +101,12 @@ namespace
 REGISTER_FUNCTION(JSONArrayLength)
 {
     factory.registerFunction<FunctionJSONArrayLength>(FunctionDocumentation{
-        .description="Returns the number of elements in the outermost JSON array. The function returns NULL if input JSON string is invalid."});
+        .description="Returns the number of elements in the outermost JSON array. The function returns NULL if input JSON string is invalid.",
+        .category = FunctionDocumentation::Category::JSON
+    });
 
     /// For Spark compatibility.
-    factory.registerAlias("JSON_ARRAY_LENGTH", "JSONArrayLength", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("JSON_ARRAY_LENGTH", "JSONArrayLength", FunctionFactory::Case::Insensitive);
 }
 
 }

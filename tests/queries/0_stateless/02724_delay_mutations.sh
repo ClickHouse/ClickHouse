@@ -7,7 +7,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=./mergetree_mutations.lib
 . "$CURDIR"/mergetree_mutations.lib
 
-${CLICKHOUSE_CLIENT} -n --query "
+${CLICKHOUSE_CLIENT} --query "
+SET apply_mutations_on_fly = 0;
+
 DROP TABLE IF EXISTS t_delay_mutations SYNC;
 
 CREATE TABLE t_delay_mutations (id UInt64, v UInt64)
@@ -36,15 +38,15 @@ SELECT count() FROM system.mutations WHERE database = currentDatabase() AND tabl
 ${CLICKHOUSE_CLIENT} --query "SYSTEM START MERGES t_delay_mutations"
 wait_for_mutation "t_delay_mutations" "mutation_5.txt"
 
-${CLICKHOUSE_CLIENT} -n --query "
+${CLICKHOUSE_CLIENT} --query "
 SELECT * FROM t_delay_mutations ORDER BY id;
 SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_delay_mutations' AND NOT is_done;
 
 DROP TABLE IF EXISTS t_delay_mutations SYNC;
 "
 
-${CLICKHOUSE_CLIENT} -n --query "
-SYSTEM FLUSH LOGS;
+${CLICKHOUSE_CLIENT} --query "
+SYSTEM FLUSH LOGS query_log;
 
 SELECT
     query,

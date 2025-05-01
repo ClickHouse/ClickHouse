@@ -1,9 +1,10 @@
 #pragma once
 
+#include <Common/PODArray_fwd.h>
 #include <Core/Block.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Names.h>
 #include <Processors/Chunk.h>
-#include <Core/ColumnsWithTypeAndName.h>
 
 namespace DB
 {

@@ -1,5 +1,6 @@
 #include <Databases/DatabasesOverlay.h>
 
+#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -14,6 +15,8 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_TABLE;
 }
 
 DatabasesOverlay::DatabasesOverlay(const String & name_, ContextPtr context_)
@@ -61,7 +64,7 @@ void DatabasesOverlay::createTable(ContextPtr context_, const String & table_nam
     }
     throw Exception(
         ErrorCodes::LOGICAL_ERROR,
-        "There is no databases for CREATE TABLE `{}` query in database `{}` (engine {})",
+        "There are no databases for CREATE TABLE `{}` query in database `{}` (engine {})",
         table_name,
         getDatabaseName(),
         getEngineName());
@@ -79,7 +82,7 @@ void DatabasesOverlay::dropTable(ContextPtr context_, const String & table_name,
     }
     throw Exception(
         ErrorCodes::LOGICAL_ERROR,
-        "There is no databases for DROP TABLE `{}` query in database `{}` (engine {})",
+        "There are no databases for DROP TABLE `{}` query in database `{}` (engine {})",
         table_name,
         getDatabaseName(),
         getEngineName());
@@ -102,7 +105,7 @@ void DatabasesOverlay::attachTable(
     }
     throw Exception(
         ErrorCodes::LOGICAL_ERROR,
-        "There is no databases for ATTACH TABLE `{}` query in database `{}` (engine {})",
+        "There are no databases for ATTACH TABLE `{}` query in database `{}` (engine {})",
         table_name,
         getDatabaseName(),
         getEngineName());
@@ -118,10 +121,43 @@ StoragePtr DatabasesOverlay::detachTable(ContextPtr context_, const String & tab
     }
     throw Exception(
         ErrorCodes::LOGICAL_ERROR,
-        "There is no databases for DETACH TABLE `{}` query in database `{}` (engine {})",
+        "There are no databases for DETACH TABLE `{}` query in database `{}` (engine {})",
         table_name,
         getDatabaseName(),
         getEngineName());
+}
+
+void DatabasesOverlay::renameTable(
+    ContextPtr current_context,
+    const String & name,
+    IDatabase & to_database,
+    const String & to_name,
+    bool exchange,
+    bool dictionary)
+{
+    for (auto & db : databases)
+    {
+        if (db->isTableExist(name, current_context))
+        {
+            if (DatabasesOverlay * to_overlay_database = typeid_cast<DatabasesOverlay *>(&to_database))
+            {
+                /// Renaming from Overlay database inside itself or into another Overlay database.
+                /// Just use the first database in the overlay as a destination.
+                if (to_overlay_database->databases.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The destination Overlay database {} does not have any members", to_database.getDatabaseName());
+
+                db->renameTable(current_context, name, *to_overlay_database->databases[0], to_name, exchange, dictionary);
+            }
+            else
+            {
+                /// Renaming into a different type of database. E.g. from Overlay on top of Atomic database into just Atomic database.
+                db->renameTable(current_context, name, to_database, to_name, exchange, dictionary);
+            }
+
+            return;
+        }
+    }
+    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist", backQuote(getDatabaseName()), backQuote(name));
 }
 
 ASTPtr DatabasesOverlay::getCreateTableQueryImpl(const String & name, ContextPtr context_, bool throw_on_error) const
@@ -178,6 +214,18 @@ String DatabasesOverlay::getTableDataPath(const ASTCreateQuery & query) const
     return result;
 }
 
+UUID DatabasesOverlay::getUUID() const
+{
+    UUID result = UUIDHelpers::Nil;
+    for (const auto & db : databases)
+    {
+        result = db->getUUID();
+        if (result != UUIDHelpers::Nil)
+            break;
+    }
+    return result;
+}
+
 UUID DatabasesOverlay::tryGetTableUUID(const String & table_name) const
 {
     UUID result = UUIDHelpers::Nil;
@@ -208,7 +256,7 @@ void DatabasesOverlay::alterTable(ContextPtr local_context, const StorageID & ta
     }
     throw Exception(
         ErrorCodes::LOGICAL_ERROR,
-        "There is no databases for ALTER TABLE `{}` query in database `{}` (engine {})",
+        "There are no databases for ALTER TABLE `{}` query in database `{}` (engine {})",
         table_id.table_name,
         getDatabaseName(),
         getEngineName());
@@ -265,5 +313,252 @@ DatabaseTablesIteratorPtr DatabasesOverlay::getTablesIterator(ContextPtr context
     }
     return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());
 }
+
+bool DatabasesOverlay::canContainMergeTreeTables() const
+{
+    for (const auto & db : databases)
+        if (db->canContainMergeTreeTables())
+            return true;
+    return false;
+}
+
+bool DatabasesOverlay::canContainDistributedTables() const
+{
+    for (const auto & db : databases)
+        if (db->canContainDistributedTables())
+            return true;
+    return false;
+}
+
+void DatabasesOverlay::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode)
+{
+    for (auto & db : databases)
+        if (!db->isReadOnly())
+            db->loadStoredObjects(local_context, mode);
+}
+
+bool DatabasesOverlay::supportsLoadingInTopologicalOrder() const
+{
+    for (const auto & db : databases)
+        if (db->supportsLoadingInTopologicalOrder())
+            return true;
+    return false;
+}
+
+void DatabasesOverlay::beforeLoadingMetadata(ContextMutablePtr local_context, LoadingStrictnessLevel mode)
+{
+    for (auto & db : databases)
+        if (!db->isReadOnly())
+            db->beforeLoadingMetadata(local_context, mode);
+}
+
+void DatabasesOverlay::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup)
+{
+    for (auto & db : databases)
+        if (!db->isReadOnly())
+            db->loadTablesMetadata(local_context, metadata, is_startup);
+}
+
+void DatabasesOverlay::loadTableFromMetadata(
+    ContextMutablePtr local_context,
+    const String & file_path,
+    const QualifiedTableName & name,
+    const ASTPtr & ast,
+    LoadingStrictnessLevel mode)
+{
+    for (auto & db : databases)
+    {
+        if (db->isReadOnly())
+            continue;
+
+        try
+        {
+            db->loadTableFromMetadata(local_context, file_path, name, ast, mode);
+            return;
+        }
+        catch (...)
+        {
+            continue;
+        }
+    }
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "There are no databases capable of loading table `{}` from path `{}` in database `{}` (engine {})",
+        name.table,
+        file_path,
+        getDatabaseName(),
+        getEngineName());
+}
+
+LoadTaskPtr DatabasesOverlay::loadTableFromMetadataAsync(
+    AsyncLoader & async_loader,
+    LoadJobSet load_after,
+    ContextMutablePtr local_context,
+    const String & file_path,
+    const QualifiedTableName & name,
+    const ASTPtr & ast,
+    LoadingStrictnessLevel mode)
+{
+    for (auto & db : databases)
+    {
+        if (db->isReadOnly())
+            continue;
+
+        try
+        {
+            return db->loadTableFromMetadataAsync(async_loader, load_after, local_context, file_path, name, ast, mode);
+        }
+        catch (...)
+        {
+            continue;
+        }
+    }
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "There are no databases capable of loading table `{}` from path `{}` in database `{}` (engine {})",
+        name.table,
+        file_path,
+        getDatabaseName(),
+        getEngineName());
+}
+
+LoadTaskPtr DatabasesOverlay::startupTableAsync(
+    AsyncLoader & async_loader,
+    LoadJobSet startup_after,
+    const QualifiedTableName & name,
+    LoadingStrictnessLevel mode)
+{
+    for (auto & db : databases)
+    {
+        if (db->isReadOnly())
+            continue;
+
+        try
+        {
+            return db->startupTableAsync(async_loader, startup_after, name, mode);
+        }
+        catch (...)
+        {
+            continue;
+        }
+    }
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "There are no databases capable of starting up table `{}` in database `{}` (engine {})",
+        name.table,
+        getDatabaseName(),
+        getEngineName());
+}
+
+LoadTaskPtr DatabasesOverlay::startupDatabaseAsync(
+    AsyncLoader & async_loader,
+    LoadJobSet startup_after,
+    LoadingStrictnessLevel mode)
+{
+    for (auto & db : databases)
+    {
+        if (db->isReadOnly())
+            continue;
+
+        try
+        {
+            return db->startupDatabaseAsync(async_loader, startup_after, mode);
+        }
+        catch (...)
+        {
+            continue;
+        }
+    }
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "There are no databases capable of starting up asynchronously in database `{}` (engine {})",
+        getDatabaseName(),
+        getEngineName());
+}
+
+void DatabasesOverlay::waitTableStarted(const String & name) const
+{
+    for (const auto & db : databases)
+    {
+        if (db->isReadOnly())
+            continue;
+
+        try
+        {
+            db->waitTableStarted(name);
+            return;
+        }
+        catch (...)
+        {
+            continue;
+        }
+    }
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "There are no databases capable of waiting for table startup `{}` in database `{}` (engine {})",
+        name,
+        getDatabaseName(),
+        getEngineName());
+}
+
+void DatabasesOverlay::waitDatabaseStarted() const
+{
+    for (const auto & db : databases)
+    {
+        if (db->isReadOnly())
+            continue;
+
+        try
+        {
+            db->waitDatabaseStarted();
+            return;
+        }
+        catch (...)
+        {
+            continue;
+        }
+    }
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "There are no databases capable of waiting for startup in database `{}` (engine {})",
+        getDatabaseName(),
+        getEngineName());
+}
+
+void DatabasesOverlay::stopLoading()
+{
+    for (auto & db : databases)
+    {
+        if (db->isReadOnly())
+            continue;
+
+        try
+        {
+            db->stopLoading();
+            return;
+        }
+        catch (...)
+        {
+            continue;
+        }
+    }
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "There are no databases capable of stop loading in database `{}` (engine {})",
+        getDatabaseName(),
+        getEngineName());
+}
+
+void DatabasesOverlay::checkMetadataFilenameAvailability(const String & table_name) const
+{
+    for (const auto & db : databases)
+    {
+        if (db->isReadOnly())
+            continue;
+        db->checkMetadataFilenameAvailability(table_name);
+        return;
+    }
+}
+
 
 }

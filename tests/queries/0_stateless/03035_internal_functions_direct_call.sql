@@ -4,7 +4,7 @@
 
 SELECT __actionName(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT __actionName('aaa', 'aaa', 'aaa'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-SELECT __actionName('aaa', '') SETTINGS allow_experimental_analyzer = 1; -- { serverError BAD_ARGUMENTS }
+SELECT __actionName('aaa', '') SETTINGS enable_analyzer = 1; -- { serverError BAD_ARGUMENTS }
 SELECT __actionName('aaa', materialize('aaa')); -- { serverError BAD_ARGUMENTS,ILLEGAL_COLUMN }
 SELECT __actionName(materialize('aaa'), 'aaa'); -- { serverError ILLEGAL_COLUMN }
 SELECT __actionName('aaa', 'aaa');

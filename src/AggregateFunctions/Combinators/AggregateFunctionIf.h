@@ -183,9 +183,11 @@ public:
         AggregateDataPtr * places,
         size_t place_offset,
         const AggregateDataPtr * rhs,
+        ThreadPool & thread_pool,
+        std::atomic<bool> & is_cancelled,
         Arena * arena) const override
     {
-        nested_func->mergeBatch(row_begin, row_end, places, place_offset, rhs, arena);
+        nested_func->mergeBatch(row_begin, row_end, places, place_offset, rhs, thread_pool, is_cancelled, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override

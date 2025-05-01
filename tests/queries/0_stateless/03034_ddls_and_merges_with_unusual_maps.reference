@@ -1,0 +1,8 @@
+Map(Nothing, ...) is non-comparable --> not usable as primary key
+But Map(Nothing, ...) can be a non-primary-key, it is quite useless though ...
+Map(Float32, ...) and Map(LC(String)) are okay as primary key
+{1:'a'}	{'b':'b'}
+{2:'aa'}	{'bb':'bb'}
+Map(Float32, ...) and Map(LC(String)) as non-primary-key
+{1:'a'}	{'b':'b'}
+{3:'aaa'}	{'bb':'bb'}

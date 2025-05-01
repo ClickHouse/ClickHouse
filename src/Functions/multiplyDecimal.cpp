@@ -15,9 +15,10 @@ namespace
 struct MultiplyDecimalsImpl
 {
     static constexpr auto name = "multiplyDecimal";
+    static constexpr auto suitable_for_short_circuit = false;
 
     template <typename FirstType, typename SecondType>
-    static inline Decimal256
+    static Decimal256
     execute(FirstType a, SecondType b, UInt16 scale_a, UInt16 scale_b, UInt16 result_scale)
     {
         if (a.value == 0 || b.value == 0)
@@ -127,8 +128,9 @@ SELECT
 Received exception from server (version 22.11.1):
 Code: 407. DB::Exception: Received from localhost:9000. DB::Exception: Decimal math overflow: While processing toDecimal64(-12.647987876, 9) AS a, toDecimal64(123.967645643, 9) AS b, a * b. (DECIMAL_OVERFLOW)
 ```
-)"});
-
+    )",
+    .category = FunctionDocumentation::Category::TypeConversion
+    });
 }
 
 }

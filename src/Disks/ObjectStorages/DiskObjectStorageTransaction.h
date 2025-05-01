@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <Disks/IDiskTransaction.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
@@ -34,7 +35,7 @@ public:
     virtual std::string getInfoForLog() const = 0;
 };
 
-using DiskObjectStorageOperation = std::unique_ptr<IDiskObjectStorageOperation>;
+using DiskObjectStorageOperation = std::shared_ptr<IDiskObjectStorageOperation>;
 
 using DiskObjectStorageOperations = std::vector<DiskObjectStorageOperation>;
 
@@ -91,6 +92,8 @@ public:
     void replaceFile(const std::string & from_path, const std::string & to_path) override;
 
     void createFile(const String & path) override;
+
+    void truncateFile(const String & path, size_t size) override;
 
     void copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings &) override;
 

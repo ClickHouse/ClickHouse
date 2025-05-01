@@ -5,7 +5,7 @@
 namespace DB
 {
 
-class WriteBufferFromPointer;
+class NullWriteBuffer;
 
 /// Output format which is used in PullingPipelineExecutor.
 class PullingOutputFormat : public IOutputFormat
@@ -22,6 +22,7 @@ public:
     ProfileInfo & getProfileInfo() { return info; }
 
     void setRowsBeforeLimit(size_t rows_before_limit) override;
+    void setRowsBeforeAggregation(size_t rows_before_aggregation) override;
 
     bool expectMaterializedColumns() const override { return false; }
 
@@ -40,7 +41,7 @@ private:
     ProfileInfo info;
 
     /// Is not used.
-    static WriteBufferFromPointer out;
+    static NullWriteBuffer out;
 };
 
 }

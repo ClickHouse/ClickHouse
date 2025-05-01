@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Common/COW.h>
+#include <Columns/IColumn_fwd.h>
 #include <Core/Types_fwd.h>
 #include <base/demangle.h>
 #include <Common/typeid_cast.h>
-#include <Columns/IColumn.h>
+#include <Common/ThreadPool_fwd.h>
 
 #include <boost/noncopyable.hpp>
 #include <unordered_map>
@@ -92,12 +92,30 @@ public:
     struct ISubcolumnCreator
     {
         virtual DataTypePtr create(const DataTypePtr & prev) const = 0;
-        virtual SerializationPtr create(const SerializationPtr & prev) const = 0;
+        virtual SerializationPtr create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const = 0;
         virtual ColumnPtr create(const ColumnPtr & prev) const = 0;
         virtual ~ISubcolumnCreator() = default;
     };
 
     using SubcolumnCreatorPtr = std::shared_ptr<const ISubcolumnCreator>;
+
+    struct SerializeBinaryBulkState
+    {
+        virtual ~SerializeBinaryBulkState() = default;
+    };
+
+    struct DeserializeBinaryBulkState
+    {
+        DeserializeBinaryBulkState() = default;
+        DeserializeBinaryBulkState(const DeserializeBinaryBulkState &) = default;
+
+        virtual ~DeserializeBinaryBulkState() = default;
+
+        virtual std::shared_ptr<DeserializeBinaryBulkState> clone() const { return std::make_shared<DeserializeBinaryBulkState>(); }
+    };
+
+    using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
+    using DeserializeBinaryBulkStatePtr = std::shared_ptr<DeserializeBinaryBulkState>;
 
     struct SubstreamData
     {
@@ -125,10 +143,22 @@ public:
             return *this;
         }
 
+        SubstreamData & withDeserializeState(DeserializeBinaryBulkStatePtr deserialize_state_)
+        {
+            deserialize_state = std::move(deserialize_state_);
+            return *this;
+        }
+
         SerializationPtr serialization;
         DataTypePtr type;
         ColumnPtr column;
         SerializationInfoPtr serialization_info;
+
+        /// For types with dynamic subcolumns deserialize state contains information
+        /// about current dynamic structure. And this information can be useful
+        /// when we call enumerateStreams after deserializeBinaryBulkStatePrefix
+        /// to enumerate dynamic streams.
+        DeserializeBinaryBulkStatePtr deserialize_state;
     };
 
     struct Substream
@@ -146,19 +176,31 @@ public:
             NamedNullMap,
 
             DictionaryKeys,
+            DictionaryKeysPrefix,
             DictionaryIndexes,
 
             SparseElements,
             SparseOffsets,
 
-            ObjectStructure,
-            ObjectData,
+            DeprecatedObjectStructure,
+            DeprecatedObjectData,
 
             VariantDiscriminators,
+            VariantDiscriminatorsPrefix,
             NamedVariantDiscriminators,
             VariantOffsets,
             VariantElements,
             VariantElement,
+            VariantElementNullMap,
+
+            DynamicData,
+            DynamicStructure,
+
+            ObjectData,
+            ObjectTypedPath,
+            ObjectDynamicPath,
+            ObjectSharedData,
+            ObjectStructure,
 
             Regular,
         };
@@ -166,13 +208,16 @@ public:
         /// Types of substreams that can have arbitrary name.
         static const std::set<Type> named_types;
 
-        Type type;
+        Type type = Type::Regular;
 
         /// The name of a variant element type.
         String variant_element_name;
 
         /// Name of substream for type from 'named_types'.
         String name_of_substream;
+
+        /// Path name for Object type elements.
+        String object_path_name;
 
         /// Data for current substream.
         SubstreamData data;
@@ -183,6 +228,7 @@ public:
         /// Flag, that may help to traverse substream paths.
         mutable bool visited = false;
 
+        Substream() = default;
         Substream(Type type_) : type(type_) {} /// NOLINT
         String toString() const;
     };
@@ -202,6 +248,19 @@ public:
     {
         SubstreamPath path;
         bool position_independent_encoding = true;
+        /// If set to false, don't enumerate dynamic subcolumns
+        /// (such as dynamic types in Dynamic column or dynamic paths in JSON column).
+        /// It may be needed when dynamic subcolumns are processed separately.
+        bool enumerate_dynamic_streams = true;
+
+        /// If set to true, enumerate also specialized substreams for prefixes.
+        /// For example for discriminators in Variant column we should enumerate a separate
+        /// substream VariantDiscriminatorsPrefix together with substream VariantDiscriminators that is
+        /// used for discriminators data.
+        /// It's needed in compact parts when we write mark per each substream, because
+        /// all prefixes are serialized before the data and we need to separate streams for prefixes
+        /// and for data to be able to seek to them separately.
+        bool use_specialized_prefixes_substreams = false;
     };
 
     virtual void enumerateStreams(
@@ -218,19 +277,6 @@ public:
     using OutputStreamGetter = std::function<WriteBuffer*(const SubstreamPath &)>;
     using InputStreamGetter = std::function<ReadBuffer*(const SubstreamPath &)>;
 
-    struct SerializeBinaryBulkState
-    {
-        virtual ~SerializeBinaryBulkState() = default;
-    };
-
-    struct DeserializeBinaryBulkState
-    {
-        virtual ~DeserializeBinaryBulkState() = default;
-    };
-
-    using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
-    using DeserializeBinaryBulkStatePtr = std::shared_ptr<DeserializeBinaryBulkState>;
-
     struct SerializeBinaryBulkSettings
     {
         OutputStreamGetter getter;
@@ -240,6 +286,31 @@ public:
         bool low_cardinality_use_single_dictionary_for_part = true;
 
         bool position_independent_encoding = true;
+
+        bool use_compact_variant_discriminators_serialization = false;
+
+        enum class ObjectAndDynamicStatisticsMode
+        {
+            NONE,   /// Don't write statistics.
+            PREFIX, /// Write statistics in prefix.
+            SUFFIX, /// Write statistics in suffix.
+        };
+        ObjectAndDynamicStatisticsMode object_and_dynamic_write_statistics = ObjectAndDynamicStatisticsMode::NONE;
+
+        /// Use old V1 serialization of JSON and Dynamic types. Needed for compatibility.
+        bool use_v1_object_and_dynamic_serialization = false;
+
+        bool native_format = false;
+        const FormatSettings * format_settings = nullptr;
+
+        /// If set to true, all prefixes should be written to separate specialized substreams.
+        /// For example prefix for discriminators in Variant column should be written in a separate
+        /// substream VariantDiscriminatorsPrefix instead of substream VariantDiscriminators that is
+        /// used for discriminators data.
+        /// It's needed in compact parts when we write mark per each substream, because
+        /// all prefixes are serialized before the data and we need to separate streams for prefixes
+        /// and for data to be able to seek to them separately.
+        bool use_specialized_prefixes_substreams = false;
     };
 
     struct DeserializeBinaryBulkSettings
@@ -253,9 +324,28 @@ public:
         bool position_independent_encoding = true;
 
         bool native_format = false;
+        const FormatSettings * format_settings;
 
         /// If not zero, may be used to avoid reallocations while reading column of String type.
         double avg_value_size_hint = 0;
+
+        bool object_and_dynamic_read_statistics = false;
+
+        /// Callback that should be called when new dynamic subcolumns are discovered during prefix deserialization.
+        StreamCallback dynamic_subcolumns_callback;
+        /// Callback to start prefetches for specific substreams during prefixes deserialization.
+        StreamCallback prefixes_prefetch_callback;
+        /// ThreadPool that can be used to read prefixes of subcolumns in parallel.
+        ThreadPool * prefixes_deserialization_thread_pool = nullptr;
+
+        /// If set to true, all prefixes should be read from separate specialized substreams.
+        /// For example prefix for discriminators in Variant column should be read from a separate
+        /// substream VariantDiscriminatorsPrefix instead of substream VariantDiscriminators that is
+        /// used for discriminators data.
+        /// It's needed in compact parts when we write mark per each substream, because
+        /// all prefixes are serialized before the data and we need to separate streams for prefixes
+        /// and for data to be able to seek to them separately.
+        bool use_specialized_prefixes_substreams = false;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
@@ -270,10 +360,13 @@ public:
         SerializeBinaryBulkSettings & /*settings*/,
         SerializeBinaryBulkStatePtr & /*state*/) const {}
 
+    using SubstreamsDeserializeStatesCache = std::unordered_map<String, DeserializeBinaryBulkStatePtr>;
+
     /// Call before before deserializeBinaryBulkWithMultipleStreams chain to get DeserializeBinaryBulkStatePtr.
     virtual void deserializeBinaryBulkStatePrefix(
         DeserializeBinaryBulkSettings & /*settings*/,
-        DeserializeBinaryBulkStatePtr & /*state*/) const {}
+        DeserializeBinaryBulkStatePtr & /*state*/,
+        SubstreamsDeserializeStatesCache * /*cache*/) const {}
 
     /** 'offset' and 'limit' are used to specify range.
       * limit = 0 - means no limit.
@@ -289,8 +382,10 @@ public:
         SerializeBinaryBulkStatePtr & state) const;
 
     /// Read no more than limit values and append them into column.
+    /// If rows_offset is not 0, the deserialization process will skip the first rows_offset rows.
     virtual void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -299,7 +394,13 @@ public:
     /** Override these methods for data types that require just single stream (most of data types).
       */
     virtual void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const;
-    virtual void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const;
+    /// If rows_offset is not 0, the deserialization process will skip the first rows_offset rows.
+    virtual void deserializeBinaryBulk(
+        IColumn & column,
+        ReadBuffer & istr,
+        size_t rows_offset,
+        size_t limit,
+        double avg_value_size_hint) const;
 
     /** Serialization/deserialization of individual values.
       *
@@ -393,15 +494,34 @@ public:
     static void addToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column);
     static ColumnPtr getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
 
+    static void addToSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path, DeserializeBinaryBulkStatePtr state);
+    static DeserializeBinaryBulkStatePtr getFromSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path);
+
     static bool isSpecialCompressionAllowed(const SubstreamPath & path);
 
     static size_t getArrayLevel(const SubstreamPath & path);
     static bool hasSubcolumnForPath(const SubstreamPath & path, size_t prefix_len);
     static SubstreamData createFromPath(const SubstreamPath & path, size_t prefix_len);
 
+    /// Returns true if subcolumn doesn't actually stores any data in column and doesn't require a separate stream
+    /// for writing/reading data. For example, it's a null-map subcolumn of Variant type (it's always constructed from discriminators);.
+    static bool isEphemeralSubcolumn(const SubstreamPath & path, size_t prefix_len);
+
+    /// Returns true if stream with specified path corresponds to dynamic subcolumn.
+    static bool isDynamicSubcolumn(const SubstreamPath & path, size_t prefix_len);
+
+    static bool isLowCardinalityDictionarySubcolumn(const SubstreamPath & path);
+    static bool isDynamicOrObjectStructureSubcolumn(const SubstreamPath & path);
+
+    /// Return true if the specified path contains prefix that should be deserialized in deserializeBinaryBulkStatePrefix.
+    static bool hasPrefix(const SubstreamPath & path, bool use_specialized_prefixes_substreams = false);
+
 protected:
     template <typename State, typename StatePtr>
     State * checkAndGetState(const StatePtr & state) const;
+
+    template <typename State, typename StatePtr>
+    static State * checkAndGetState(const StatePtr & state, const ISerialization * serialization);
 
     [[noreturn]] void throwUnexpectedDataAfterParsedValue(IColumn & column, ReadBuffer & istr, const FormatSettings &, const String & type_name) const;
 };
@@ -414,9 +534,15 @@ using SubstreamType = ISerialization::Substream::Type;
 template <typename State, typename StatePtr>
 State * ISerialization::checkAndGetState(const StatePtr & state) const
 {
+    return checkAndGetState<State, StatePtr>(state, this);
+}
+
+template <typename State, typename StatePtr>
+State * ISerialization::checkAndGetState(const StatePtr & state, const ISerialization * serialization)
+{
     if (!state)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Got empty state for {}", demangle(typeid(*this).name()));
+            "Got empty state for {}", demangle(typeid(*serialization).name()));
 
     auto * state_concrete = typeid_cast<State *>(state.get());
     if (!state_concrete)
@@ -424,7 +550,7 @@ State * ISerialization::checkAndGetState(const StatePtr & state) const
         auto & state_ref = *state;
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Invalid State for {}. Expected: {}, got {}",
-                demangle(typeid(*this).name()),
+                demangle(typeid(*serialization).name()),
                 demangle(typeid(State).name()),
                 demangle(typeid(state_ref).name()));
     }

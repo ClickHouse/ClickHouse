@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 user_name="${CLICKHOUSE_DATABASE}_test_user_02947"
 
-$CLICKHOUSE_CLIENT -n -q "
+$CLICKHOUSE_CLIENT -q "
 DROP TABLE IF EXISTS t_merge_tree_index;
 DROP USER IF EXISTS $user_name;
 
@@ -22,7 +22,8 @@ SETTINGS
     index_granularity = 3,
     min_bytes_for_wide_part = 0,
     min_rows_for_wide_part = 6,
-    ratio_of_defaults_for_sparse_serialization = 0.9;
+    ratio_of_defaults_for_sparse_serialization = 0.9,
+    compact_parts_max_granules_to_buffer = 1;
 
 INSERT INTO t_merge_tree_index (a) VALUES (1);
 
@@ -44,7 +45,7 @@ $CLICKHOUSE_CLIENT --user "$user_name" --password "password" -q "SELECT arr.size
 $CLICKHOUSE_CLIENT --user "$user_name" --password "password" -q "SELECT b FROM mergeTreeIndex(currentDatabase(), t_merge_tree_index, with_marks = true)" 2>&1 | grep -m1 -o "ACCESS_DENIED" || echo "OK"
 $CLICKHOUSE_CLIENT --user "$user_name" --password "password" -q "SELECT b.mark FROM mergeTreeIndex(currentDatabase(), t_merge_tree_index, with_marks = true)" 2>&1 | grep -m1 -o "ACCESS_DENIED" || echo "OK"
 
-$CLICKHOUSE_CLIENT -n -q "
+$CLICKHOUSE_CLIENT -q "
 DROP TABLE IF EXISTS t_merge_tree_index;
 DROP USER IF EXISTS $user_name;
 "

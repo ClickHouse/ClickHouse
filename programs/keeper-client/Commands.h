@@ -24,7 +24,8 @@ public:
 
     String generateHelpString() const
     {
-        return fmt::vformat(getHelpMessage(), fmt::make_format_args(getName()));
+        String n = getName();
+        return fmt::vformat(getHelpMessage(), fmt::make_format_args(n));
     }
 
 };
@@ -184,7 +185,7 @@ class RMRCommand : public IKeeperClientCommand
 
     void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
 
-    String getHelpMessage() const override { return "{} <path> -- Recursively deletes path. Confirmation required"; }
+    String getHelpMessage() const override { return "{} <path> [limit] -- Recursively deletes path if the subtree size is smaller than the limit. Confirmation required (default limit = 100)"; }
 };
 
 class ReconfigCommand : public IKeeperClientCommand
@@ -263,6 +264,34 @@ class GetAllChildrenNumberCommand : public IKeeperClientCommand
     String getHelpMessage() const override
     {
         return "{} [path] -- Get all numbers of children nodes under a specific path";
+    }
+};
+
+class CPCommand : public IKeeperClientCommand
+{
+    String getName() const override { return "cp"; }
+
+    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+
+    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+
+    String getHelpMessage() const override
+    {
+        return "{} <src> <dest> -- Copies 'src' node to 'dest' path.";
+    }
+};
+
+class MVCommand : public IKeeperClientCommand
+{
+    String getName() const override { return "mv"; }
+
+    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+
+    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+
+    String getHelpMessage() const override
+    {
+        return "{} <src> <dest> -- Moves 'src' node to the 'dest' path.";
     }
 };
 

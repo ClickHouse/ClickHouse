@@ -32,11 +32,16 @@ public:
 
     const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const override { return data_part->getColumnsDescriptionWithCollectedNested(); }
 
+    const ColumnsSubstreams & getColumnsSubstreams() const override { return data_part->getColumnsSubstreams(); }
+
     std::optional<size_t> getColumnPosition(const String & column_name) const override { return data_part->getColumnPosition(column_name); }
 
     AlterConversionsPtr getAlterConversions() const override { return alter_conversions; }
 
-    String getColumnNameWithMinimumCompressedSize(bool with_subcolumns) const override { return data_part->getColumnNameWithMinimumCompressedSize(with_subcolumns); }
+    String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const override
+    {
+        return data_part->getColumnNameWithMinimumCompressedSize(available_columns);
+    }
 
     const MergeTreeDataPartChecksums & getChecksums() const override { return data_part->checksums; }
 
@@ -48,7 +53,7 @@ public:
 
     const MergeTreeIndexGranularityInfo & getIndexGranularityInfo() const override { return data_part->index_granularity_info; }
 
-    const MergeTreeIndexGranularity & getIndexGranularity() const override { return data_part->index_granularity; }
+    const MergeTreeIndexGranularity & getIndexGranularity() const override { return *data_part->index_granularity; }
 
     const SerializationInfoByName & getSerializationInfos() const override { return data_part->getSerializationInfos(); }
 

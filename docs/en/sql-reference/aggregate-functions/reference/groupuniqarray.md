@@ -1,6 +1,8 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/groupuniqarray
-sidebar_position: 111
+description: 'Creates an array from different argument values.'
+sidebar_position: 154
+slug: /sql-reference/aggregate-functions/reference/groupuniqarray
+title: 'groupUniqArray'
 ---
 
 # groupUniqArray

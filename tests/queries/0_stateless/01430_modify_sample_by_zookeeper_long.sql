@@ -8,7 +8,7 @@ SET max_block_size = 10;
 CREATE TABLE modify_sample (d Date DEFAULT '2000-01-01', x UInt8) ENGINE = MergeTree PARTITION BY d ORDER BY x;
 INSERT INTO modify_sample (x) SELECT toUInt8(number) AS x FROM system.numbers LIMIT 256;
 
-SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM modify_sample SAMPLE 0.1; -- { serverError 141 }
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM modify_sample SAMPLE 0.1; -- { serverError SAMPLING_NOT_SUPPORTED }
 
 ALTER TABLE modify_sample MODIFY SAMPLE BY x;
 SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM modify_sample SAMPLE 0.1;
@@ -17,7 +17,7 @@ CREATE TABLE modify_sample_replicated (d Date DEFAULT '2000-01-01', x UInt8, y U
 
 INSERT INTO modify_sample_replicated (x, y) SELECT toUInt8(number) AS x, toUInt64(number) as y FROM system.numbers LIMIT 256;
 
-SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM modify_sample_replicated SAMPLE 0.1; -- { serverError 141 }
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM modify_sample_replicated SAMPLE 0.1; -- { serverError SAMPLING_NOT_SUPPORTED }
 
 ALTER TABLE modify_sample_replicated MODIFY SAMPLE BY x;
 SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM modify_sample_replicated SAMPLE 0.1;
@@ -27,7 +27,7 @@ ATTACH TABLE modify_sample_replicated;
 
 SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM modify_sample_replicated SAMPLE 0.1;
 
-ALTER TABLE modify_sample_replicated MODIFY SAMPLE BY d;  -- { serverError 36 }
+ALTER TABLE modify_sample_replicated MODIFY SAMPLE BY d;  -- { serverError BAD_ARGUMENTS }
 ALTER TABLE modify_sample_replicated MODIFY SAMPLE BY y;
 
 SELECT count(), min(y), max(y), sum(y), uniqExact(y) FROM modify_sample_replicated SAMPLE 0.1;
@@ -40,7 +40,7 @@ SELECT count(), min(y), max(y), sum(y), uniqExact(y) FROM modify_sample_replicat
 set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE modify_sample_old (d Date DEFAULT '2000-01-01', x UInt8, y UInt64) ENGINE = MergeTree(d, (x, y), 8192);
 
-ALTER TABLE modify_sample_old MODIFY SAMPLE BY x; -- { serverError 36 }
+ALTER TABLE modify_sample_old MODIFY SAMPLE BY x; -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE modify_sample;
 

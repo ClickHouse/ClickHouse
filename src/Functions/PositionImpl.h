@@ -193,7 +193,8 @@ struct PositionImpl
         const std::string & needle,
         const ColumnPtr & start_pos,
         PaddedPODArray<UInt64> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null)
+        [[maybe_unused]] ColumnUInt8 * res_null,
+        size_t input_rows_count)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
         assert(!res_null);
@@ -214,13 +215,12 @@ struct PositionImpl
             }
 
             ColumnString::Offset prev_offset = 0;
-            size_t rows = haystack_offsets.size();
 
             if (const ColumnConst * start_pos_const = typeid_cast<const ColumnConst *>(&*start_pos))
             {
                 /// Needle is empty and start_pos is constant
                 UInt64 start = std::max(start_pos_const->getUInt(0), static_cast<UInt64>(1));
-                for (size_t i = 0; i < rows; ++i)
+                for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     size_t haystack_size = Impl::countChars(
                         reinterpret_cast<const char *>(pos), reinterpret_cast<const char *>(pos + haystack_offsets[i] - prev_offset - 1));
@@ -231,22 +231,20 @@ struct PositionImpl
                 }
                 return;
             }
-            else
+
+            /// Needle is empty and start_pos is not constant
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
-                /// Needle is empty and start_pos is not constant
-                for (size_t i = 0; i < rows; ++i)
-                {
-                    size_t haystack_size = Impl::countChars(
-                        reinterpret_cast<const char *>(pos), reinterpret_cast<const char *>(pos + haystack_offsets[i] - prev_offset - 1));
-                    UInt64 start = start_pos->getUInt(i);
-                    start = std::max(static_cast<UInt64>(1), start);
-                    res[i] = (start <= haystack_size + 1) ? start : 0;
+                size_t haystack_size = Impl::countChars(
+                    reinterpret_cast<const char *>(pos), reinterpret_cast<const char *>(pos + haystack_offsets[i] - prev_offset - 1));
+                UInt64 start = start_pos->getUInt(i);
+                start = std::max(static_cast<UInt64>(1), start);
+                res[i] = (start <= haystack_size + 1) ? start : 0;
 
-                    pos = begin + haystack_offsets[i];
-                    prev_offset = haystack_offsets[i];
-                }
-                return;
+                pos = begin + haystack_offsets[i];
+                prev_offset = haystack_offsets[i];
             }
+            return;
         }
 
         /// Current index in the array of strings.
@@ -359,7 +357,8 @@ struct PositionImpl
         const ColumnString::Offsets & needle_offsets,
         const ColumnPtr & start_pos,
         PaddedPODArray<UInt64> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null)
+        [[maybe_unused]] ColumnUInt8 * res_null,
+        size_t input_rows_count)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
         assert(!res_null);
@@ -367,16 +366,18 @@ struct PositionImpl
         ColumnString::Offset prev_haystack_offset = 0;
         ColumnString::Offset prev_needle_offset = 0;
 
-        size_t size = haystack_offsets.size();
-
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             size_t needle_size = needle_offsets[i] - prev_needle_offset - 1;
             size_t haystack_size = haystack_offsets[i] - prev_haystack_offset - 1;
 
+            size_t haystack_chars_size = Impl::countChars(
+                reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset]),
+                reinterpret_cast<const char *>(&haystack_data[haystack_offsets[i] - 1]));
+
             auto start = start_pos != nullptr ? std::max(start_pos->getUInt(i), UInt64(1)) : UInt64(1);
 
-            if (start > haystack_size + 1)
+            if (start > haystack_chars_size + 1)
             {
                 res[i] = 0;
             }
@@ -423,7 +424,8 @@ struct PositionImpl
         const ColumnString::Offsets & needle_offsets,
         const ColumnPtr & start_pos,
         PaddedPODArray<UInt64> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null)
+        [[maybe_unused]] ColumnUInt8 * res_null,
+        size_t input_rows_count)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
         assert(!res_null);
@@ -431,15 +433,15 @@ struct PositionImpl
         /// NOTE You could use haystack indexing. But this is a rare case.
         ColumnString::Offset prev_needle_offset = 0;
 
-        size_t size = needle_offsets.size();
+        size_t haystack_size = Impl::countChars(haystack.data(), haystack.data() + haystack.size());
 
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             size_t needle_size = needle_offsets[i] - prev_needle_offset - 1;
 
             auto start = start_pos != nullptr ? std::max(start_pos->getUInt(i), UInt64(1)) : UInt64(1);
 
-            if (start > haystack.size() + 1)
+            if (start > haystack_size + 1)
             {
                 res[i] = 0;
             }

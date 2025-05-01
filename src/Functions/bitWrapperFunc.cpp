@@ -21,13 +21,13 @@ struct BitWrapperFuncImpl
     using ResultType = UInt8;
     static constexpr const bool allow_string_or_fixed_string = false;
 
-    static inline ResultType NO_SANITIZE_UNDEFINED apply(A a [[maybe_unused]])
+    static ResultType NO_SANITIZE_UNDEFINED apply(A a [[maybe_unused]])
     {
         // Should be a logical error, but this function is callable from SQL.
         // Need to investigate this.
         if constexpr (!is_integer<A>)
             throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "It's a bug! Only integer types are supported by __bitWrapperFunc.");
-        return a == 0 ? static_cast<ResultType>(0b10) : static_cast<ResultType >(0b1);
+        return a == 0 ? static_cast<ResultType>(0b10) : static_cast<ResultType>(0b01);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -43,7 +43,7 @@ using FunctionBitWrapperFunc = FunctionUnaryArithmetic<BitWrapperFuncImpl, NameB
 template <> struct FunctionUnaryArithmeticMonotonicity<NameBitWrapperFunc>
 {
     static bool has() { return false; }
-    static IFunction::Monotonicity get(const Field &, const Field &)
+    static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
     {
         return {};
     }

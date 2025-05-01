@@ -38,8 +38,9 @@ struct AlterCommand
         DROP_CONSTRAINT,
         ADD_PROJECTION,
         DROP_PROJECTION,
-        ADD_STATISTIC,
-        DROP_STATISTIC,
+        ADD_STATISTICS,
+        DROP_STATISTICS,
+        MODIFY_STATISTICS,
         MODIFY_TTL,
         MODIFY_SETTING,
         RESET_SETTING,
@@ -48,6 +49,7 @@ struct AlterCommand
         RENAME_COLUMN,
         REMOVE_TTL,
         MODIFY_DATABASE_SETTING,
+        MODIFY_DATABASE_COMMENT,
         COMMENT_TABLE,
         REMOVE_SAMPLE_BY,
         MODIFY_SQL_SECURITY,
@@ -123,9 +125,9 @@ struct AlterCommand
     /// For ADD/DROP PROJECTION
     String projection_name;
 
-    ASTPtr statistic_decl = nullptr;
-    std::vector<String> statistic_columns;
-    String statistic_type;
+    ASTPtr statistics_decl = nullptr;
+    std::vector<String> statistics_columns;
+    std::vector<String> statistics_types;
 
     /// For MODIFY TTL
     ASTPtr ttl = nullptr;
@@ -234,8 +236,13 @@ public:
     /// additional mutation command (MATERIALIZE_TTL) will be returned.
     MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false) const;
 
-    /// Check if commands have any full-text index
-    static bool hasFullTextIndex(const StorageInMemoryMetadata & metadata);
+    /// Check if commands have any GIN index or a (legacy) full_text or inverted index
+    static bool hasGinIndex(const StorageInMemoryMetadata & metadata);
+    static bool hasLegacyFullTextIndex(const StorageInMemoryMetadata & metadata);
+    static bool hasLegacyInvertedIndex(const StorageInMemoryMetadata & metadata);
+
+    /// Check if commands have any vector similarity index
+    static bool hasVectorSimilarityIndex(const StorageInMemoryMetadata & metadata);
 };
 
 }

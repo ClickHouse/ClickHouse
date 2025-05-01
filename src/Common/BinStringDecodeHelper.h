@@ -5,7 +5,7 @@
 namespace DB
 {
 
-static void inline hexStringDecode(const char * pos, const char * end, char *& out, size_t word_size = 2)
+static void inline hexStringDecode(const char * pos, const char * end, char *& out, size_t word_size)
 {
     if ((end - pos) & 1)
     {
@@ -23,7 +23,7 @@ static void inline hexStringDecode(const char * pos, const char * end, char *& o
     ++out;
 }
 
-static void inline binStringDecode(const char * pos, const char * end, char *& out)
+static void inline binStringDecode(const char * pos, const char * end, char *& out, size_t word_size)
 {
     if (pos == end)
     {
@@ -53,7 +53,7 @@ static void inline binStringDecode(const char * pos, const char * end, char *& o
         ++out;
     }
 
-    assert((end - pos) % 8 == 0);
+    chassert((end - pos) % word_size == 0);
 
     while (end - pos != 0)
     {

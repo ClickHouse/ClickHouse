@@ -7,6 +7,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
+#include <base/int8_to_string.h>
 
 #include <Common/DateLUT.h>
 
@@ -54,7 +55,7 @@ public:
     {
         FunctionArgumentDescriptors args{{"days", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), nullptr, "Integer"}};
 
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArguments(*this, arguments, args);
 
         return std::make_shared<typename Traits::ReturnDataType>();
     }
@@ -115,7 +116,7 @@ Given the number of days passed since 1 January 0000 in the proleptic Gregorian 
 The calculation is the same as in MySQL's FROM_DAYS() function.
 )",
         .examples{{"typical", "SELECT fromDaysSinceYearZero(713569)", "2023-09-08"}},
-        .categories{"Dates and Times"}});
+        .category = FunctionDocumentation::Category::DateAndTime});
 
     factory.registerFunction<FunctionFromDaysSinceYearZero<DateTraits32>>(FunctionDocumentation{
         .description = R"(
@@ -123,9 +124,9 @@ Given the number of days passed since 1 January 0000 in the proleptic Gregorian 
 The calculation is the same as in MySQL's FROM_DAYS() function.
 )",
         .examples{{"typical", "SELECT fromDaysSinceYearZero32(713569)", "2023-09-08"}},
-        .categories{"Dates and Times"}});
+        .category = FunctionDocumentation::Category::DateAndTime});
 
-    factory.registerAlias("FROM_DAYS", FunctionFromDaysSinceYearZero<DateTraits>::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("FROM_DAYS", FunctionFromDaysSinceYearZero<DateTraits>::name, FunctionFactory::Case::Insensitive);
 }
 
 }

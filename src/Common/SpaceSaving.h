@@ -12,10 +12,6 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashMap.h>
 
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadBuffer.h>
-#include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 
 
@@ -131,12 +127,12 @@ public:
 
     ~SpaceSaving() { destroyElements(); }
 
-    inline size_t size() const
+    size_t size() const
     {
         return counter_list.size();
     }
 
-    inline size_t capacity() const
+    size_t capacity() const
     {
         return m_capacity;
     }

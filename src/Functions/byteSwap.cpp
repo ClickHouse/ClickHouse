@@ -10,6 +10,7 @@ extern const int NOT_IMPLEMENTED;
 
 namespace
 {
+
 template <typename T>
 requires std::is_integral_v<T>
 T byteSwap(T x)
@@ -29,7 +30,7 @@ T byteSwap(T x)
 template <typename T>
 T byteSwap(T)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "byteSwap() is not implemented for {} datatype", demangle(typeid(T).name()));
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "byteSwap is not implemented for {} datatype", demangle(typeid(T).name()));
 }
 
 template <typename T>
@@ -56,7 +57,7 @@ template <>
 struct FunctionUnaryArithmeticMonotonicity<NameByteSwap>
 {
     static bool has() { return false; }
-    static IFunction::Monotonicity get(const Field &, const Field &) { return {}; }
+    static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &) { return {}; }
 };
 
 REGISTER_FUNCTION(ByteSwap)
@@ -99,8 +100,8 @@ One use-case of this function is reversing IPv4s:
                 {"32-bit", "SELECT byteSwap(3351772109)", "3455829959"},
                 {"64-bit", "SELECT byteSwap(123294967295)", "18439412204227788800"},
             },
-            .categories{"Mathematical", "Arithmetic"}},
-        FunctionFactory::CaseInsensitive);
+            .category = FunctionDocumentation::Category::Arithmetic},
+        FunctionFactory::Case::Insensitive);
 }
 
 }

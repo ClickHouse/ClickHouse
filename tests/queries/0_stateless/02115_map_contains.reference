@@ -1,4 +1,0 @@
-SELECT has(`m.keys`, \'a\')
-FROM t_map_contains
-1
-0

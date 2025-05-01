@@ -6,11 +6,16 @@
 #include <IO/WriteBufferFromString.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/assert_cast.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 function_visible_width_behavior;
+}
 
 namespace ErrorCodes
 {
@@ -33,10 +38,7 @@ public:
         return std::make_shared<FunctionVisibleWidth>(context);
     }
 
-    explicit FunctionVisibleWidth(ContextPtr context)
-    {
-        behavior = context->getSettingsRef().function_visible_width_behavior;
-    }
+    explicit FunctionVisibleWidth(ContextPtr context) { behavior = context->getSettingsRef()[Setting::function_visible_width_behavior]; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
@@ -65,9 +67,8 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & src = arguments[0];
-        size_t size = input_rows_count;
 
-        auto res_col = ColumnUInt64::create(size);
+        auto res_col = ColumnUInt64::create(input_rows_count);
         auto & res_data = assert_cast<ColumnUInt64 &>(*res_col).getData();
 
         /// For simplicity reasons, the function is implemented by serializing into temporary buffer.
@@ -75,7 +76,7 @@ public:
         String tmp;
         FormatSettings format_settings;
         auto serialization = src.type->getDefaultSerialization();
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             {
                 WriteBufferFromString out(tmp);

@@ -19,18 +19,18 @@ public:
     size_t sum_index_columns = 0;
     size_t sum_ordinary_columns = 0;
 
-    ColumnSizeEstimator(ColumnToSize && map_, const Names & key_columns, const Names & ordinary_columns)
+    ColumnSizeEstimator(ColumnToSize && map_, const NamesAndTypesList & key_columns, const NamesAndTypesList & ordinary_columns)
         : map(std::move(map_))
     {
-        for (const auto & name : key_columns)
+        for (const auto & [name, _] : key_columns)
             if (!map.contains(name)) map[name] = 0;
-        for (const auto & name : ordinary_columns)
+        for (const auto & [name, _] : ordinary_columns)
             if (!map.contains(name)) map[name] = 0;
 
-        for (const auto & name : key_columns)
+        for (const auto & [name, _] : key_columns)
             sum_index_columns += map.at(name);
 
-        for (const auto & name : ordinary_columns)
+        for (const auto & [name, _] : ordinary_columns)
             sum_ordinary_columns += map.at(name);
 
         sum_total = std::max(static_cast<decltype(sum_index_columns)>(1), sum_index_columns + sum_ordinary_columns);

@@ -14,8 +14,8 @@ namespace ErrorCodes
 
 JSONCompactRowInputFormat::JSONCompactRowInputFormat(
     const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
-    : RowInputFormatWithNamesAndTypes(
-        header_, in_, params_, false, false, false, format_settings_, std::make_unique<JSONCompactFormatReader>(in_, format_settings_))
+    : RowInputFormatWithNamesAndTypes<JSONCompactFormatReader>(
+        header_, in_, params_, false, false, false, format_settings_, std::make_unique<JSONCompactFormatReader>(in_, format_settings_), false, false)
 {
 }
 

@@ -12,7 +12,10 @@ class StorageDummy final : public IStorage
 {
 public:
     StorageDummy(
-        const StorageID & table_id_, const ColumnsDescription & columns_, const StorageSnapshotPtr & original_storage_snapshot_ = nullptr);
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const StorageSnapshotPtr & original_storage_snapshot_ = nullptr,
+        bool supports_replication_ = false);
 
     std::string getName() const override { return "StorageDummy"; }
 
@@ -26,6 +29,7 @@ public:
     }
 
     bool supportsSubcolumns() const override { return true; }
+    bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
     bool canMoveConditionsToPrewhere() const override
     {
@@ -58,11 +62,14 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    bool supportsReplication() const override { return supports_replication; }
+
 private:
     const ColumnsDescription object_columns;
 
     /// The original storage snapshot which is replaced during planning. See collectFiltersForAnalysis for example.
     StorageSnapshotPtr original_storage_snapshot;
+    const bool supports_replication;
 };
 
 class ReadFromDummy final : public SourceStepWithFilter

@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 namespace ErrorCodes
 {
@@ -43,9 +44,9 @@ public:
     Endianness getEndianness() const { return endianness; }
 
     virtual NumpyDataTypeIndex getTypeIndex() const = 0;
-    virtual size_t getSize() const { throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Function getSize() is not implemented"); }
-    virtual void setSize(size_t) { throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Function setSize() is not implemented"); }
-    virtual String str() const { throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Function str() is not implemented"); }
+    virtual size_t getSize() const { throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Function getSize is not implemented"); }
+    virtual void setSize(size_t) { throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Function setSize is not implemented"); }
+    virtual String str() const { throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Function str is not implemented"); }
 
 protected:
     Endianness endianness;

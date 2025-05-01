@@ -138,7 +138,7 @@ class QuantileTDigest
             compress();
     }
 
-    inline bool canBeMerged(const BetterFloat & l_mean, const Value & r_mean)
+    bool canBeMerged(const BetterFloat & l_mean, const Value & r_mean)
     {
         return l_mean == r_mean || (!std::isinf(l_mean) && !std::isinf(r_mean));
     }
@@ -334,6 +334,18 @@ public:
         compress(); // Allows reading/writing TDigests with different epsilon/max_centroids params
     }
 
+    Float64 getCountEqual(Float64 value) const
+    {
+        Float64 result = 0;
+        for (const auto & c : centroids)
+        {
+            /// std::cerr << "c "<< c.mean << " "<< c.count << std::endl;
+            if (value == c.mean)
+                result += c.count;
+        }
+        return result;
+    }
+
     Float64 getCountLessThan(Float64 value) const
     {
         bool first = true;
@@ -379,7 +391,7 @@ public:
     ResultType getImpl(Float64 level)
     {
         if (centroids.empty())
-            return std::is_floating_point_v<ResultType> ? std::numeric_limits<ResultType>::quiet_NaN() : 0;
+            return is_floating_point<ResultType> ? std::numeric_limits<ResultType>::quiet_NaN() : 0;
 
         compress();
 
@@ -404,15 +416,10 @@ public:
 
                 if (x <= left)
                     return checkOverflow<ResultType>(prev_mean);
-                else if (x >= right)
+                if (x >= right)
                     return checkOverflow<ResultType>(c.mean);
-                else
-                    return checkOverflow<ResultType>(interpolate(
-                        static_cast<Value>(x),
-                        static_cast<Value>(left),
-                        prev_mean,
-                        static_cast<Value>(right),
-                        c.mean));
+                return checkOverflow<ResultType>(
+                    interpolate(static_cast<Value>(x), static_cast<Value>(left), prev_mean, static_cast<Value>(right), c.mean));
             }
 
             sum += c.count;

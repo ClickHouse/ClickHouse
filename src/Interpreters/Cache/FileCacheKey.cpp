@@ -1,6 +1,7 @@
 #include "FileCacheKey.h"
 
 #include <base/hex.h>
+#include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Core/UUID.h>
 
@@ -10,11 +11,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-}
-
-FileCacheKey::FileCacheKey(const std::string & path)
-    : key(sipHash128(path.data(), path.size()))
-{
 }
 
 FileCacheKey::FileCacheKey(const UInt128 & key_)
@@ -30,6 +26,16 @@ std::string FileCacheKey::toString() const
 FileCacheKey FileCacheKey::random()
 {
     return FileCacheKey(UUIDHelpers::generateV4().toUnderType());
+}
+
+FileCacheKey FileCacheKey::fromPath(const std::string & path)
+{
+    return FileCacheKey(sipHash128(path.data(), path.size()));
+}
+
+FileCacheKey FileCacheKey::fromKey(const UInt128 & key)
+{
+    return FileCacheKey(key);
 }
 
 FileCacheKey FileCacheKey::fromKeyString(const std::string & key_str)

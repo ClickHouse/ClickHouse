@@ -1,10 +1,11 @@
-#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Common/getRandomASCIIString.h>
-#include <IO/WriteHelpers.h>
+#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Storages/PartitionCommands.h>
+
 #include <ranges>
-#include <filesystem>
+#include <shared_mutex>
 
 
 namespace DB
@@ -20,19 +21,19 @@ const std::string & MetadataStorageFromDisk::getPath() const
     return disk->getPath();
 }
 
-bool MetadataStorageFromDisk::exists(const std::string & path) const
+bool MetadataStorageFromDisk::existsFile(const std::string & path) const
 {
-    return disk->exists(path);
+    return disk->existsFile(path);
 }
 
-bool MetadataStorageFromDisk::isFile(const std::string & path) const
+bool MetadataStorageFromDisk::existsDirectory(const std::string & path) const
 {
-    return disk->isFile(path);
+    return disk->existsDirectory(path);
 }
 
-bool MetadataStorageFromDisk::isDirectory(const std::string & path) const
+bool MetadataStorageFromDisk::existsFileOrDirectory(const std::string & path) const
 {
-    return disk->isDirectory(path);
+    return disk->existsFileOrDirectory(path);
 }
 
 Poco::Timestamp MetadataStorageFromDisk::getLastModified(const std::string & path) const
@@ -43,6 +44,11 @@ Poco::Timestamp MetadataStorageFromDisk::getLastModified(const std::string & pat
 time_t MetadataStorageFromDisk::getLastChanged(const std::string & path) const
 {
     return disk->getLastChanged(path);
+}
+
+bool MetadataStorageFromDisk::supportsPartitionCommand(const PartitionCommand & /*command*/) const
+{
+    return true;
 }
 
 uint64_t MetadataStorageFromDisk::getFileSize(const String & path) const
@@ -66,7 +72,7 @@ DirectoryIteratorPtr MetadataStorageFromDisk::iterateDirectory(const std::string
 
 std::string MetadataStorageFromDisk::readFileToString(const std::string & path) const
 {
-    auto buf = disk->readFile(path);
+    auto buf = disk->readFile(path, ReadSettings{});
     std::string result;
     readStringUntilEOF(result, *buf);
     return result;
@@ -254,6 +260,14 @@ void MetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & p
 UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromDiskTransaction::unlinkMetadata(const std::string & path)
 {
     auto operation = std::make_unique<UnlinkMetadataFileOperation>(path, *metadata_storage.getDisk(), metadata_storage);
+    auto result = operation->outcome;
+    addOperation(std::move(operation));
+    return result;
+}
+
+TruncateFileOperationOutcomePtr MetadataStorageFromDiskTransaction::truncateFile(const std::string & path, size_t target_size)
+{
+    auto operation = std::make_unique<TruncateMetadataFileOperation>(path, target_size, metadata_storage, *metadata_storage.getDisk());
     auto result = operation->outcome;
     addOperation(std::move(operation));
     return result;

@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 SET single_join_prefer_left_table = 0;
 SET optimize_move_to_prewhere = 0;
 
