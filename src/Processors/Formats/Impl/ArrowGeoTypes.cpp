@@ -9,8 +9,6 @@
 #include <rapidjson/document.h>
 #include <Common/Exception.h>
 
-#include <iostream>
-
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -253,7 +251,6 @@ void LineColumnBuilder::appendObject(const GeometricObject & object)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected point");
 
     const auto & line = std::get<Line>(object);
-    std::cerr << "append line " << line.size() << '\n';
     for (const auto & point : line)
     {
         point_column_builder.appendObject(point);
