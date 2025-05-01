@@ -151,6 +151,10 @@ public:
           * - polygon with a number of holes, each hole as a subsequent argument.
           * pointInPolygon((x, y), [[(x1, y1), (x2, y2), ...], [(x21, y21), (x22, y22), ...], ...])
           * - polygon with a number of holes, all as multidimensional array
+          * pointInPolygon((x, y), [[[(x1, y1), (x2, y2), ...], [(x21, y21), (x22, y22), ...], ...]])
+          * - multi polygon
+          * pointInPolygon((x, y), [[(x1, y1), (x2, y2), ...], [(x21, y21), (x22, y22), ...]], [[(x1, y1), (x2, y2), ...], [(x21, y21), (x22, y22), ...], ...])
+          * - multi polygon, each polygon as a subsequent argument.
           */
 
         auto validate_tuple = [this](size_t i, const DataTypeTuple * tuple)
@@ -173,31 +177,69 @@ public:
             }
         };
 
+
+        /// Validate the given first argument point (x, y) tuple.
         validate_tuple(0, checkAndGetDataType<DataTypeTuple>(arguments[0].get()));
+
+        auto getArrayDepthAndInnermostTuple = [this](const IDataType & type, size_t arg_pos) -> std::pair<size_t, const DataTypeTuple *>
+        {
+            const IDataType * current_type = &type;
+            size_t array_depth = 0;
+
+            while (WhichDataType(*current_type).isArray())
+            {
+                ++array_depth;
+                current_type = static_cast<const DataTypeArray *>(current_type)->getNestedType().get();
+            }
+
+            if (array_depth == 0 || array_depth > 3)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "{} must contain an array of tuples or an array of arrays of tuples or an array of arrays of arrays of tuples.",
+                    getMessagePrefix(arg_pos));
+
+            return {array_depth, checkAndGetDataType<DataTypeTuple>(current_type)};
+        };
+
+        auto [depth_first_polygon_argument, tuple_first_polygon_argument] = getArrayDepthAndInnermostTuple(*arguments[1], 1);
+
+        validate_tuple(1, tuple_first_polygon_argument); /// verify its innermost tuple
 
         if (arguments.size() == 2)
         {
-            const auto * array = checkAndGetDataType<DataTypeArray>(arguments[1].get());
-            if (array == nullptr)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} must contain an array of tuples or an array of arrays of tuples.", getMessagePrefix(1));
-
-            const auto * nested_array = checkAndGetDataType<DataTypeArray>(array->getNestedType().get());
-            if (nested_array != nullptr)
-            {
-                array = nested_array;
-            }
-
-            validate_tuple(1, checkAndGetDataType<DataTypeTuple>(array->getNestedType().get()));
+            /// depth 1  -> polygon without holes
+            /// depth 2  -> polygon with holes
+            /// depth 3  -> multi polygon
+            return std::make_shared<DataTypeUInt8>();
         }
-        else
-        {
-            for (size_t i = 1; i < arguments.size(); ++i)
-            {
-                const auto * array = checkAndGetDataType<DataTypeArray>(arguments[i].get());
-                if (array == nullptr)
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} must contain an array of tuples", getMessagePrefix(i));
 
-                validate_tuple(i, checkAndGetDataType<DataTypeTuple>(array->getNestedType().get()));
+        if (depth_first_polygon_argument == 3)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "{}: an array of arrays of arrays of tuples can be used only "
+                "when it is the sole polygon argument.",
+                getMessagePrefix(1));
+
+        for (size_t i = 2; i < arguments.size(); ++i)
+        {
+            auto [depth_current_argument, tuple_current_argument] = getArrayDepthAndInnermostTuple(*arguments[i], i);
+
+            validate_tuple(i, tuple_current_argument);
+
+            if (depth_first_polygon_argument == 2) /// Variadic multi polygon: first polygon given as 2-array
+            {
+                /// Every subsequent polygon argument must also be 2-array.
+                if (depth_current_argument != 2)
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "{} must be a array of arrays of tuples because an array of arrays of"
+                        " tuples of first polygon indicates that it is part of MultiPolygon.",
+                        getMessagePrefix(i));
+            }
+            else /// Polygon with holes case
+            {
+                if (depth_current_argument != 1)
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} must be a array of tuples.", getMessagePrefix(i));
             }
         }
 
