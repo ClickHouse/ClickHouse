@@ -58,7 +58,7 @@ do
         -- queryID() will be returned for each row, since the query above doesn't return anything we need to return a fake row
         union all
         select 1
-    ) limit 1 settings max_threads=1, http_make_head_request=0;
+    ) limit 1 settings max_threads=1;
     " 2>&1)
     ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
     RES=$(${CLICKHOUSE_CLIENT} -m --query "

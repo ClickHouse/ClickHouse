@@ -6,6 +6,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Interpreters/Context_fwd.h>
 

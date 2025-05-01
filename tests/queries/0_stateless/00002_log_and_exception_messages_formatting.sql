@@ -1,6 +1,5 @@
 -- Tags: no-parallel, no-fasttest, no-ubsan, no-batch, no-flaky-check
 -- no-parallel because we want to run this test when most of the other tests already passed
-
 -- This is not a regular test. It is intended to run once after other tests to validate certain statistics about the whole test runs.
 -- TODO: I advise to put in inside clickhouse-test instead.
 
@@ -77,7 +76,6 @@ create temporary table known_short_messages (s String) as select * from (select 
     '',
     '({}) Keys: {}',
     '({}) {}',
-    '{} failed: {}',
     'Aggregating',
     'Attempt to read after EOF.',
     'Attempt to read after eof',

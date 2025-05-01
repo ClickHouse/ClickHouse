@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Common/Exception.h>
 #include <IO/Operators.h>
 
@@ -58,10 +57,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 
     auto create_reader = [&](const NamesAndTypesList & columns_to_read, bool is_prewhere)
     {
-        auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(read_info->data_part, read_info->alter_conversions);
-
-        return createMergeTreeReader(
-            part_info,
+        return read_info->data_part->getReader(
             columns_to_read,
             extras.storage_snapshot,
             ranges,
@@ -69,6 +65,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             extras.uncompressed_cache,
             extras.mark_cache,
             is_prewhere ? nullptr : read_info->deserialization_prefixes_cache.get(),
+            read_info->alter_conversions,
             extras.reader_settings,
             extras.value_size_map,
             extras.profile_callback);

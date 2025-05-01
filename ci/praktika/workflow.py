@@ -30,7 +30,6 @@ class Workflow:
         artifacts: List[Artifact.Config] = field(default_factory=list)
         dockers: List[Docker.Config] = field(default_factory=list)
         secrets: List[Secret.Config] = field(default_factory=list)
-        enable_job_filtering_by_changes: bool = False
         enable_cache: bool = False
         enable_report: bool = False
         enable_merge_ready_status: bool = False
@@ -45,7 +44,6 @@ class Workflow:
         # If the Docker images specified in .dockers are intended to be built in a different workflow,
         #   their build process in this workflow can be disabled by setting this to True.
         disable_dockers_build: bool = False
-        set_latest_in_dockers_build: bool = False
 
         def is_event_pull_request(self):
             return self.event == Workflow.Event.PULL_REQUEST

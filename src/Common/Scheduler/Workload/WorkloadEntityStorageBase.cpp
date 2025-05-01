@@ -1,6 +1,6 @@
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
 
-#include <Common/Scheduler/WorkloadSettings.h>
+#include <Common/Scheduler/SchedulingSettings.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -311,6 +311,33 @@ bool WorkloadEntityStorageBase::has(const String & entity_name) const
     return tryGet(entity_name) != nullptr;
 }
 
+std::vector<String> WorkloadEntityStorageBase::getAllEntityNames() const
+{
+    std::vector<String> entity_names;
+
+    std::lock_guard lock(mutex);
+    entity_names.reserve(entities.size());
+
+    for (const auto & [name, _] : entities)
+        entity_names.emplace_back(name);
+
+    return entity_names;
+}
+
+std::vector<String> WorkloadEntityStorageBase::getAllEntityNames(WorkloadEntityType entity_type) const
+{
+    std::vector<String> entity_names;
+
+    std::lock_guard lock(mutex);
+    for (const auto & [name, entity] : entities)
+    {
+        if (getEntityType(entity) == entity_type)
+            entity_names.emplace_back(name);
+    }
+
+    return entity_names;
+}
+
 bool WorkloadEntityStorageBase::empty() const
 {
     std::lock_guard lock(mutex);
@@ -370,29 +397,8 @@ bool WorkloadEntityStorageBase::storeEntity(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second root is not allowed. You should probably add 'PARENT {}' clause.", root_name);
             }
 
-            WorkloadSettings io_validator;
-            io_validator.initFromChanges(WorkloadSettings::Unit::IOByte, workload->changes);
-
-            WorkloadSettings cpu_validator;
-            cpu_validator.initFromChanges(WorkloadSettings::Unit::CPUSlot, workload->changes);
-        }
-
-        // Validate resource
-        if (resource)
-        {
-            for (const auto & operation : resource->operations)
-            {
-                if (operation.mode == ASTCreateResourceQuery::AccessMode::MasterThread)
-                {
-                    if (!master_thread_resource.empty() && master_thread_resource != resource->getResourceName())
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second resource for MASTER THREAD is not allowed. Current resource name: '{}'.", master_thread_resource);
-                }
-                if (operation.mode == ASTCreateResourceQuery::AccessMode::WorkerThread)
-                {
-                    if (!worker_thread_resource.empty() && worker_thread_resource != resource->getResourceName())
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second resource for WORKER THREAD is not allowed. Current resource name: '{}'.", worker_thread_resource);
-                }
-            }
+            SchedulingSettings validator;
+            validator.updateFromChanges(workload->changes);
         }
 
         forEachReference(create_entity_query,
@@ -411,13 +417,12 @@ bool WorkloadEntityStorageBase::storeEntity(
                     }
                     case ReferenceType::ForResource:
                     {
-                        auto * target_resource = typeid_cast<ASTCreateResourceQuery *>(entities[target].get());
-                        if (target_resource == nullptr)
+                        if (typeid_cast<ASTCreateResourceQuery *>(entities[target].get()) == nullptr)
                             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload settings should reference resource in FOR clause, not '{}'.", target);
 
                         // Validate that we could parse the settings for specific resource
-                        WorkloadSettings validator;
-                        validator.initFromChanges(target_resource->unit, workload->changes, target);
+                        SchedulingSettings validator;
+                        validator.updateFromChanges(workload->changes, target);
                         break;
                     }
                 }
@@ -523,18 +528,6 @@ scope_guard WorkloadEntityStorageBase::getAllEntitiesAndSubscribe(const OnChange
     return result;
 }
 
-String WorkloadEntityStorageBase::getMasterThreadResourceName()
-{
-    std::lock_guard lock{mutex};
-    return master_thread_resource;
-}
-
-String WorkloadEntityStorageBase::getWorkerThreadResourceName()
-{
-    std::lock_guard lock{mutex};
-    return worker_thread_resource;
-}
-
 void WorkloadEntityStorageBase::unlockAndNotify(
     std::unique_lock<std::recursive_mutex> & lock,
     std::vector<Event> tx)
@@ -630,23 +623,10 @@ void WorkloadEntityStorageBase::applyEvent(
         LOG_DEBUG(log, "Create or replace workload entity: {}", event.entity->formatForLogging());
 
         auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(event.entity.get());
-        auto * resource = typeid_cast<ASTCreateResourceQuery *>(event.entity.get());
 
-        // Update root workload
+        // Validate workload
         if (workload && !workload->hasParent())
             root_name = workload->getWorkloadName();
-
-        // Update cpu resource
-        if (resource)
-        {
-            for (const auto & operation : resource->operations)
-            {
-                if (operation.mode == ASTCreateResourceQuery::AccessMode::MasterThread)
-                    master_thread_resource = resource->getResourceName();
-                if (operation.mode == ASTCreateResourceQuery::AccessMode::WorkerThread)
-                    worker_thread_resource = resource->getResourceName();
-            }
-        }
 
         // Remove references of a replaced entity (only for CREATE OR REPLACE)
         if (auto it = entities.find(event.name); it != entities.end())
@@ -667,12 +647,6 @@ void WorkloadEntityStorageBase::applyEvent(
 
         if (event.name == root_name)
             root_name.clear();
-
-        if (event.name == master_thread_resource)
-            master_thread_resource.clear();
-
-        if (event.name == worker_thread_resource)
-            worker_thread_resource.clear();
 
         // Clean up references
         removeReferences(it->second);

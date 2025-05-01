@@ -24,6 +24,7 @@
 #include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/ParserAttachAccessEntity.h>
 #include <Parsers/parseQuery.h>
+#include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
 
 namespace DB

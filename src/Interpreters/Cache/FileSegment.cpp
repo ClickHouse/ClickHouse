@@ -1121,12 +1121,9 @@ void FileSegment::increasePriority()
     if (it)
     {
         if (auto cache_lock = cache->tryLockCache())
-            it->increasePriority(cache_lock);
+            hits_count = it->increasePriority(cache_lock);
         else
             ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
-
-        /// Used only for system.filesystem_cache.
-        ++hits_count;
     }
 }
 
