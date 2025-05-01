@@ -25,8 +25,6 @@
 #include <Columns/ColumnNullable.h>
 
 #include <Common/FieldVisitorToString.h>
-#include "Analyzer/IQueryTreeNode.h"
-#include "base/defines.h"
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
