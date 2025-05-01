@@ -1,10 +1,7 @@
-#include <IO/Operators.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Common/CurrentThread.h>
-
-#include <fmt/format.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -37,22 +34,12 @@ void IQueryPlanStep::updateInputHeader(Header input_header, size_t idx)
     updateOutputHeader();
 }
 
-bool IQueryPlanStep::hasCorrelatedExpressions() const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot check {} plan step for correlated expressions", getName());
-}
-
 const Header & IQueryPlanStep::getOutputHeader() const
 {
     if (!hasOutputHeader())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryPlanStep {} does not have output stream.", getName());
 
     return *output_header;
-}
-
-QueryPlanStepPtr IQueryPlanStep::clone() const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot clone {} plan step", getName());
 }
 
 const SortDescription & IQueryPlanStep::getSortDescription() const
@@ -159,11 +146,6 @@ void IQueryPlanStep::describePipeline(const Processors & processors, FormatSetti
 void IQueryPlanStep::appendExtraProcessors(const Processors & extra_processors)
 {
     processors.insert(processors.end(), extra_processors.begin(), extra_processors.end());
-}
-
-String IQueryPlanStep::getUniqID() const
-{
-    return fmt::format("{}_{}", getName(), step_index);
 }
 
 void IQueryPlanStep::serialize(Serialization & /*ctx*/) const

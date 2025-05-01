@@ -6,7 +6,6 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Interpreters/ActionsDAG.h>
 
 
 namespace DB
@@ -14,6 +13,8 @@ namespace DB
 
 class KeyCondition;
 struct QueryIdHolder;
+
+using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
 /** Executes SELECT queries on data from the merge tree.
   */
@@ -33,7 +34,7 @@ public:
         ContextPtr context,
         UInt64 max_block_size,
         size_t num_streams,
-        PartitionIdToMaxBlockPtr max_block_numbers_to_read = nullptr,
+        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
         bool enable_parallel_reading = false) const;
 
     /// The same as read, but with specified set of parts.
@@ -46,7 +47,7 @@ public:
         ContextPtr context,
         UInt64 max_block_size,
         size_t num_streams,
-        PartitionIdToMaxBlockPtr max_block_numbers_to_read = nullptr,
+        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
         ReadFromMergeTree::AnalysisResultPtr merge_tree_select_result_ptr = nullptr,
         bool enable_parallel_reading = false) const;
 
@@ -61,7 +62,7 @@ public:
         const SelectQueryInfo & query_info,
         ContextPtr context,
         size_t num_streams,
-        PartitionIdToMaxBlockPtr max_block_numbers_to_read = nullptr) const;
+        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr) const;
 
     static MarkRanges markRangesFromPKRange(
         const MergeTreeData::DataPartPtr & part,
@@ -93,7 +94,6 @@ private:
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
-        VectorSimilarityIndexCache * vector_similarity_index_cache,
         LoggerPtr log);
 
     static MarkRanges filterMarksUsingMergedIndex(
@@ -105,7 +105,6 @@ private:
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
-        VectorSimilarityIndexCache * vector_similarity_index_cache,
         LoggerPtr log);
 
     struct PartFilterCounters
@@ -158,7 +157,7 @@ public:
 
     /// If possible, construct optional key condition from predicates containing _part_offset column.
     static void buildKeyConditionFromPartOffset(
-        std::optional<KeyCondition> & part_offset_condition, const ActionsDAG::Node * predicate, ContextPtr context);
+        std::optional<KeyCondition> & part_offset_condition, const ActionsDAG * filter_dag, ContextPtr context);
 
     /// If possible, filter using expression on virtual columns.
     /// Example: SELECT count() FROM table WHERE _part = 'part_name'
@@ -167,7 +166,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & data,
         const MergeTreeData::DataPartsVector & parts,
-        const ActionsDAG::Node * predicate,
+        const ActionsDAG * filter_dag,
         ContextPtr context);
 
     /// Filter parts using minmax index and partition key.
@@ -198,15 +197,7 @@ public:
         size_t num_streams,
         ReadFromMergeTree::IndexStats & index_stats,
         bool use_skip_indexes,
-        bool find_exact_ranges,
-        bool is_final_query);
-
-    /// Filter parts using query condition cache.
-    static void filterPartsByQueryConditionCache(
-        RangesInDataParts & parts_with_ranges,
-        const SelectQueryInfo & select_query_info,
-        const ContextPtr & context,
-        LoggerPtr log);
+        bool find_exact_ranges);
 
     /// Create expression for sampling.
     /// Also, calculate _sample_factor if needed.

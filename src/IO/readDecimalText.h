@@ -3,6 +3,8 @@
 #include <limits>
 #include <IO/ReadHelpers.h>
 #include <Common/intExp.h>
+#include <base/wide_integer_to_string.h>
+
 
 namespace DB
 {
@@ -160,9 +162,13 @@ inline ReturnType readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, u
     {
         if constexpr (throw_exception)
         {
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                "Decimal value is too big: {} digits were read: {}e{}. Expected to read decimal with scale {} and precision {}",
-                digits, convertFieldToString(x), exponent, scale, precision);
+            static constexpr auto pattern = "Decimal value is too big: {} digits were read: {}e{}."
+                                                    " Expected to read decimal with scale {} and precision {}";
+
+            if constexpr (is_big_int_v<typename T::NativeType>)
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, pattern, digits, x.value, exponent, scale, precision);
+            else
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, pattern, digits, x, exponent, scale, precision);
         }
         else
             return ReturnType(false);

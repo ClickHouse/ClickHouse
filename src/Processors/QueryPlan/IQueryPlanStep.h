@@ -6,6 +6,8 @@
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 
+#include <fmt/core.h>
+
 namespace DB
 {
 
@@ -29,17 +31,11 @@ using Headers = std::vector<Header>;
 
 struct ExplainPlanOptions;
 
-class IQueryPlanStep;
-using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
-
 /// Single step of query plan.
 class IQueryPlanStep
 {
 public:
     IQueryPlanStep();
-
-    IQueryPlanStep(const IQueryPlanStep &) = default;
-    IQueryPlanStep(IQueryPlanStep &&) = default;
 
     virtual ~IQueryPlanStep() = default;
 
@@ -68,10 +64,6 @@ public:
 
     virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/) const {}
     virtual void serialize(Serialization & /*ctx*/) const;
-    virtual bool isSerializable() const { return false; }
-
-    virtual QueryPlanStepPtr clone() const;
-
     virtual const SortDescription & getSortDescription() const;
 
     struct FormatSettings
@@ -105,13 +97,11 @@ public:
 
     /// Updates the input streams of the given step. Used during query plan optimizations.
     /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
-    String getUniqID() const;
+    String getUniqID() const { return fmt::format("{}_{}", getName(), step_index); }
 
     /// (e.g. you correctly remove / add columns).
     void updateInputHeaders(Headers input_headers_);
     void updateInputHeader(Header input_header, size_t idx = 0);
-
-    virtual bool hasCorrelatedExpressions() const;
 
 protected:
     virtual void updateOutputHeader() = 0;
@@ -132,4 +122,5 @@ private:
     size_t step_index = 0;
 };
 
+using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 }

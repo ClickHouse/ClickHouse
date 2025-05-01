@@ -1,0 +1,29 @@
+<clickhouse>
+    <logger>
+        <level>trace</level>
+        <log>/var/log/clickhouse-server/log.log</log>
+        <errorlog>/var/log/clickhouse-server/log.err.log</errorlog>
+        <size>1000M</size>
+        <count>10</count>
+        <stderr>/var/log/clickhouse-server/stderr.log</stderr>
+        <stdout>/var/log/clickhouse-server/stdout.log</stdout>
+    </logger>
+    <named_collections>
+        <postgres1>
+            <user>postgres</user>
+            <password>mysecretpassword</password>
+            <host>postgres1</host>
+            <port>5432</port>
+            <database>postgres_database</database>
+            <table>test_table</table>
+        </postgres1>
+        <postgres2>
+            <user>postgres</user>
+            <password>mysecretpassword</password>
+            <host>postgres1</host>
+            <port>1111</port>
+            <database>postgres_database</database>
+            <table>test_table</table>
+        </postgres2>
+    </named_collections>
+</clickhouse>

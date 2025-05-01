@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 
 #include <fmt/format.h>
-#include <fmt/ranges.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -74,7 +73,7 @@ void RangesInDataPartsDescription::deserialize(ReadBuffer & in)
         desc.deserialize(in);
 }
 
-void RangesInDataPartsDescription::merge(const RangesInDataPartsDescription & other)
+void RangesInDataPartsDescription::merge(RangesInDataPartsDescription & other)
 {
     for (const auto & desc : other)
         this->emplace_back(desc);

@@ -5,8 +5,6 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Common/noexcept_scope.h>
 
-#include <fmt/ranges.h>
-
 namespace DB
 {
 
@@ -369,7 +367,7 @@ String MergeTreeTransaction::dumpDescription() const
 
     for (const auto & part : removing_parts)
     {
-        String info = fmt::format("{} (created by {}, {})", part->name, part->version.getCreationTID(), part->version.creation_csn.load());
+        String info = fmt::format("{} (created by {}, {})", part->name, part->version.getCreationTID(), part->version.creation_csn);
         std::get<1>(storage_to_changes[&(part->storage)]).push_back(std::move(info));
         chassert(!part->version.creation_csn || part->version.creation_csn <= getSnapshot());
     }

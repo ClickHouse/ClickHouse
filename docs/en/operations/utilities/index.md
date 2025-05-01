@@ -1,10 +1,10 @@
 ---
-description: 'Page listing various useful ClickHouse tools and utilities.'
-keywords: ['tools', 'utilities']
-sidebar_label: 'List of tools and utilities'
-sidebar_position: 56
 slug: /operations/utilities/
-title: 'List of tools and utilities'
+sidebar_position: 56
+sidebar_label: List of tools and utilities
+title: List of tools and utilities
+description: "Page listing various useful ClickHouse tools and utilities."
+keywords: ["tools", "utilities"]
 ---
 
 | Tool/Utility | Description |

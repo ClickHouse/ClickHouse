@@ -1,19 +1,16 @@
 ---
-description: 'Allows to perform queries on data stored in a SQLite database.'
-sidebar_label: 'sqlite'
-sidebar_position: 185
 slug: /sql-reference/table-functions/sqlite
-title: 'sqlite'
+sidebar_position: 185
+sidebar_label: sqlite
+title: sqlite
 ---
 
-# sqlite Table Function
-
-Allows to perform queries on data stored in a [SQLite](../../engines/database-engines/sqlite.md) database.
+Allows to perform queries on a data stored in an [SQLite](../../engines/database-engines/sqlite.md) database.
 
 **Syntax**
 
-```sql
-sqlite('db_path', 'table_name')
+``` sql
+    sqlite('db_path', 'table_name')
 ```
 
 **Arguments**
@@ -29,13 +26,13 @@ sqlite('db_path', 'table_name')
 
 Query:
 
-```sql
+``` sql
 SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
 ```
 
 Result:
 
-```text
+``` text
 ┌─col1──┬─col2─┐
 │ line1 │    1 │
 │ line2 │    2 │

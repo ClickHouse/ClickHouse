@@ -4,7 +4,6 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-from helpers.config_cluster import minio_secret_key
 from minio.deleteobjects import DeleteObject
 
 cluster = ClickHouseCluster(__file__)
@@ -19,13 +18,8 @@ def start_cluster():
             "node1",
             main_configs=[
                 "configs/config.d/storage_configuration.xml",
-                "configs/config.d/include_from_path.xml",
-                "configs/config.d/include_from.xml",
                 "configs/config.d/remote_servers.xml",
             ],
-            env_variables={
-                "MINIO_SECRET": minio_secret_key,
-            },
             with_zookeeper=True,
             stay_alive=True,
             with_minio=True,
@@ -35,8 +29,6 @@ def start_cluster():
             "node2",
             main_configs=[
                 "configs/config.d/storage_configuration.xml",
-                "configs/config.d/include_from_path.xml",
-                "configs/config.d/include_from.xml",
                 "configs/config.d/remote_servers.xml",
             ],
             with_zookeeper=True,
@@ -167,14 +159,6 @@ def test_merge_tree_custom_disk_setting(start_cluster):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
-    zk_client = start_cluster.get_kazoo_client("zoo1")
-
-    if not zk_client.exists("/minio"):
-        zk_client.create("/minio")
-    if not zk_client.exists("/minio/access_key_id"):
-        zk_client.create("/minio/access_key_id")
-
-    zk_client.set("/minio/access_key_id", b"minio")
     node1.query(
         f"""
         DROP TABLE IF EXISTS {TABLE_NAME};
@@ -184,9 +168,9 @@ def test_merge_tree_custom_disk_setting(start_cluster):
         SETTINGS
             disk = disk(
                 type=s3,
-                include = 'include_endpoint',
-                access_key_id = 'from_zk /minio/access_key_id',
-                secret_access_key='from_env MINIO_SECRET');
+                endpoint='http://minio1:9001/root/data/',
+                access_key_id='minio',
+                secret_access_key='minio123');
     """
     )
 
@@ -215,7 +199,7 @@ def test_merge_tree_custom_disk_setting(start_cluster):
                 type=s3,
                 endpoint='http://minio1:9001/root/data/',
                 access_key_id='minio',
-                secret_access_key='{minio_secret_key}');
+                secret_access_key='minio123');
     """
     )
 
@@ -242,7 +226,7 @@ def test_merge_tree_custom_disk_setting(start_cluster):
                 type=s3,
                 endpoint='http://minio1:9001/root/data2/',
                 access_key_id='minio',
-                secret_access_key='{minio_secret_key}');
+                secret_access_key='minio123');
     """
     )
 
@@ -303,7 +287,7 @@ def test_merge_tree_custom_disk_setting(start_cluster):
                 type=s3,
                 endpoint='http://minio1:9001/root/data2/',
                 access_key_id='minio',
-                secret_access_key='{minio_secret_key}');
+                secret_access_key='minio123');
     """
     )
 
@@ -366,7 +350,7 @@ def test_merge_tree_nested_custom_disk_setting(start_cluster):
                     type=s3,
                     endpoint='http://minio1:9001/root/data/',
                     access_key_id='minio',
-                    secret_access_key='{minio_secret_key}'));
+                    secret_access_key='minio123'));
     """
     )
 
@@ -497,7 +481,7 @@ def test_merge_tree_setting_override(start_cluster):
                 type=s3,
                 endpoint='http://minio1:9001/root/data/',
                 access_key_id='minio',
-                secret_access_key='{minio_secret_key}');
+                secret_access_key='minio123');
     """
     )
 

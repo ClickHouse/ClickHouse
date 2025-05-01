@@ -8,6 +8,7 @@
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/extractKeyExpressionList.h>
 
@@ -176,7 +177,7 @@ String IndicesDescription::toString() const
     for (const auto & index : *this)
         list.children.push_back(index.definition_ast);
 
-    return list.formatWithSecretsOneLine();
+    return serializeAST(list);
 }
 
 
