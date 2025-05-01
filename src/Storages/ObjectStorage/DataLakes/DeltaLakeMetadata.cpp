@@ -505,7 +505,7 @@ struct DeltaLakeMetadataImpl
         std::shared_ptr<arrow::Table> table;
         THROW_ARROW_NOT_OK(reader->ReadTable(&table));
 
-        Chunk chunk = column_reader.arrowTableToCHChunk(table, reader->parquet_reader()->metadata()->num_rows());
+        Chunk chunk = column_reader.arrowTableToCHChunk(table, reader->parquet_reader()->metadata()->num_rows(), reader->parquet_reader()->metadata()->key_value_metadata());
         auto res_block = header.cloneWithColumns(chunk.detachColumns());
         res_block = Nested::flatten(res_block);
 
