@@ -417,6 +417,7 @@ private:
 
     void compactInplace();
     void compactIfSharedDictionary();
+    void reindexIfNeeded();
 
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator=nullptr) const;
 

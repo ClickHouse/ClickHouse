@@ -4,6 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/Arena.h>
+#include <Common/HashTable/HashSet.h>
 
 namespace DB
 {
@@ -266,14 +267,12 @@ bool ColumnUniqueFCBlockDF::tryUniqueInsert(const Field & x, size_t & index)
 
 MutableColumnPtr ColumnUniqueFCBlockDF::uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-
-
     ColumnPtr sorted_column;
     old_indexes_mapping = prepareForInsert(getDecompressedAll(), src.cut(start, length), sorted_column);
     calculateCompression(sorted_column);
 
     auto positions = ColumnVector<UInt64>::create();
-    for (size_t i = 0; i < length; ++i)
+    for (size_t i = start; i < start + length; ++i)
     {
         const StringRef data = src.getDataAt(i);
         const UInt64 pos = getPosToInsert(data);
@@ -325,74 +324,43 @@ size_t ColumnUniqueFCBlockDF::uniqueInsertFrom(const IColumn & src, size_t n)
 IColumnUnique::IndexesWithOverflow
 ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t start, size_t length, size_t max_dictionary_size)
 {
-    auto extracted_values_column = ColumnString::create();
-    extracted_values_column->insertRangeFrom(src, start, length);
-
-    IColumn::Permutation sorted_permutation;
-    extracted_values_column->getPermutation(
-        IColumn::PermutationSortDirection::Ascending,
-        IColumn::PermutationSortStability::Unstable,
-        0, /* limit */
-        -1, /* nan_direction_hint */
-        sorted_permutation);
-    auto src_values = extracted_values_column->permute(sorted_permutation, 0);
-    auto our_values = getDecompressedAll();
-
-    /// src_values and our_values are both sorted:
-    size_t our_ptr = 0;
-    size_t src_ptr = 0;
-    PaddedPODArray<size_t> added;
-    const size_t initial_size = our_values->size(); /// always at least 1 because of default value
-    MutableColumnPtr to_insert = ColumnString::create();
-    while (our_ptr < initial_size && src_ptr < src_values->size())
+    HashSet<StringRef> to_add_strings;
+    const auto is_already_present = [&to_add_strings, this](StringRef value)
     {
-        const StringRef our_value = our_values->getDataAt(our_ptr);
-        const StringRef src_value = src_values->getDataAt(src_ptr);
-        if (our_value < src_value)
-        {
-            ++our_ptr;
-        }
-        else if (our_value > src_value)
-        {
-            added.push_back(src_ptr);
-            to_insert->insertData(src_value.data, src_value.size);
-            ++src_ptr;
-        }
-        else
-        {
-            ++src_ptr;
-        }
+        const auto index = getOrFindValueIndex(value);
+        return index.has_value() || to_add_strings.contains(value);
+    };
 
-        if (initial_size + added.size() >= max_dictionary_size)
+    size_t partition_index = start;
+    for (size_t i = start; i < start + length; ++i)
+    {
+        partition_index = i;
+        const StringRef data = src.getDataAt(i);
+        if (size() + to_add_strings.size() >= max_dictionary_size)
         {
             break;
         }
-    }
-    while (src_ptr < src_values->size() && initial_size + added.size() < max_dictionary_size)
-    {
-        const StringRef value = src_values->getDataAt(src_ptr);
-        if (value > our_values->getDataAt(initial_size - 1))
+        if (!is_already_present(data))
         {
-            added.push_back(src_ptr);
-            ++src_ptr;
-            to_insert->insertData(value.data, value.size);
+            to_add_strings.insert(data);
         }
     }
 
+    auto values = getDecompressedAll();
+    auto to_add = src.cut(start, partition_index);
+
     ColumnPtr sorted_column;
-    old_indexes_mapping = prepareForInsert(our_values, std::move(to_insert), sorted_column);
+    old_indexes_mapping = prepareForInsert(values, to_add, sorted_column);
     calculateCompression(sorted_column);
 
-    auto indexes = ColumnVector<UInt64>::create();
-    for (const auto pos : added)
+    MutableColumnPtr indexes = ColumnVector<UInt64>::create();
+    for (size_t i = start; i < partition_index; ++i)
     {
-        indexes->insert(getPosToInsert(src_values->getDataAt(pos)));
+        indexes->insert(getPosToInsert(src.getDataAt(i)));
     }
 
-    auto overflow = src_values->cloneEmpty();
-    overflow->insertRangeFrom(*src_values, src_ptr, src_values->size() - src_ptr);
-
-    return IndexesWithOverflow{std::move(indexes), std::move(overflow)};
+    auto overflow = src.cut(partition_index, start + length - partition_index);
+    return {std::move(indexes), IColumn::mutate(std::move(overflow))};
 }
 
 size_t ColumnUniqueFCBlockDF::getNullValueIndex() const
