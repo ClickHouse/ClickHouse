@@ -159,6 +159,7 @@ void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_uuid"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_partition_id"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_partition_value"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_row_exists"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_sample_factor"}));
         }
         else if (t.isAnyS3Engine() || t.isFileEngine())
