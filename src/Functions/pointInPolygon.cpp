@@ -106,7 +106,7 @@ UInt128 sipHash128(const MultiPolygon & multi_polygon)
     return hash.get128();
 }
 
-template <typename PointInConstPolygonImpl>
+template <typename PointInConstPolygonImpl, typename PointInConstMultiPolygonImpl>
 class FunctionPointInPolygon : public IFunction
 {
 public:
@@ -116,7 +116,8 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionPointInPolygon<PointInConstPolygonImpl>>(context->getSettingsRef()[Setting::validate_polygons]);
+        return std::make_shared<FunctionPointInPolygon<PointInConstPolygonImpl, PointInConstMultiPolygonImpl>>(
+            context->getSettingsRef()[Setting::validate_polygons]);
     }
 
     String getName() const override
@@ -279,39 +280,74 @@ public:
 
         if (poly_is_const)
         {
-            Polygon polygon;
-            parseConstPolygon(arguments, polygon);
+            bool is_const_multi_polygon = (arguments.size() == 2 && isThreeDimensionalArray(*poly.type))
+                || (arguments.size() > 2 && isTwoDimensionalArray(*poly.type));
 
-            /// Polygons are preprocessed and saved in cache.
-            /// Preprocessing can be computationally heavy but dramatically speeds up matching.
-
-            using Pool = ObjectPoolMap<PointInConstPolygonImpl, UInt128>;
-            /// C++11 has thread-safe function-local static.
-            static Pool known_polygons;
-
-            auto factory = [&polygon]()
+            if (is_const_multi_polygon)
             {
-                auto ptr = std::make_unique<PointInConstPolygonImpl>(polygon);
+                MultiPolygon multi_polygon;
+                parseConstMultiPolygon(arguments, multi_polygon);
 
-                ProfileEvents::increment(ProfileEvents::PolygonsAddedToPool);
-                ProfileEvents::increment(ProfileEvents::PolygonsInPoolAllocatedBytes, ptr->getAllocatedBytes());
+                /// Polygons are preprocessed and saved in cache.
+                /// Preprocessing can be computationally heavy but dramatically speeds up matching.
 
-                return ptr.release();
-            };
+                using Pool = ObjectPoolMap<PointInConstMultiPolygonImpl, UInt128>;
 
-            auto impl = known_polygons.get(sipHash128(polygon), factory);
+                /// C++11 has thread-safe function-local static.
+                static Pool known_multi_polygons;
 
-            if (point_is_const)
-            {
-                bool is_in = impl->contains(tuple_columns[0]->getFloat64(0), tuple_columns[1]->getFloat64(0));
-                return result_type->createColumnConst(input_rows_count, is_in);
+                auto factory = [&multi_polygon]()
+                {
+                    auto ptr = std::make_unique<PointInConstMultiPolygonImpl>(multi_polygon);
+
+                    ProfileEvents::increment(ProfileEvents::PolygonsAddedToPool);
+                    ProfileEvents::increment(ProfileEvents::PolygonsInPoolAllocatedBytes, ptr->getAllocatedBytes());
+
+                    return ptr.release();
+                };
+
+                auto impl = known_multi_polygons.get(sipHash128(multi_polygon), factory);
+
+                if (point_is_const)
+                {
+                    bool is_in = impl->contains(tuple_columns[0]->getFloat64(0), tuple_columns[1]->getFloat64(0));
+                    return result_type->createColumnConst(input_rows_count, is_in);
+                }
+
+                return pointInPolygon(*tuple_columns[0], *tuple_columns[1], *impl);
             }
+            else // Kept for easier readability
+            {
+                Polygon polygon;
+                parseConstPolygon(arguments, polygon);
 
-            return pointInPolygon(*tuple_columns[0], *tuple_columns[1], *impl);
+                using Pool = ObjectPoolMap<PointInConstPolygonImpl, UInt128>;
+                static Pool known_polygons;
+
+                auto factory = [&polygon]()
+                {
+                    auto ptr = std::make_unique<PointInConstPolygonImpl>(polygon);
+
+                    ProfileEvents::increment(ProfileEvents::PolygonsAddedToPool);
+                    ProfileEvents::increment(ProfileEvents::PolygonsInPoolAllocatedBytes, ptr->getAllocatedBytes());
+
+                    return ptr.release();
+                };
+
+                auto impl = known_polygons.get(sipHash128(polygon), factory);
+
+                if (point_is_const)
+                {
+                    bool is_in = impl->contains(tuple_columns[0]->getFloat64(0), tuple_columns[1]->getFloat64(0));
+                    return result_type->createColumnConst(input_rows_count, is_in);
+                }
+
+                return pointInPolygon(*tuple_columns[0], *tuple_columns[1], *impl);
+            }
         }
 
         if (arguments.size() != 2)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multi-argument version of function {} works only with const polygon", getName());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multi-argument version of function {} works only with const Polygon/MultiPolygon", getName());
 
         auto res_column = ColumnVector<UInt8>::create(input_rows_count);
         auto & data = res_column->getData();
