@@ -542,7 +542,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     }
 
     std::optional<std::vector<std::tuple<UInt64, SortDirection, std::string>>> optimization_indexes;
-    if (!query_node.isGroupByWithTotals())
+    if (!query_node.isGroupByWithTotals() && !query_node.hasHaving())
     {
         const auto& group_by_nodes = query_node.getGroupBy().getNodes();
         const auto& order_by_nodes = query_node.getOrderBy().getNodes();

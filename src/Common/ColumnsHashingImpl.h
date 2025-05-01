@@ -352,12 +352,13 @@ protected:
     struct HasErase<T, ArgType, std::void_t<decltype(std::declval<T>().erase(std::declval<ArgType>()))>> : std::true_type {};
 
     template <typename T>
-    struct MakeSignedType {
-        using type = typename std::conditional_t<
+    struct MakeSignedType
+    {
+        using type = std::conditional_t<
             std::is_unsigned_v<T> && std::is_integral_v<T>,
-            std::make_signed<T>,
-            std::type_identity<T>
-        >::type;
+            std::make_signed_t<T>,
+            T
+        >;
     };
 
     template <typename KeyHolder1, typename KeyHolder2>
@@ -369,18 +370,17 @@ protected:
         assert(optimization_indexes.size() == 1); // MVP. TODO remove after supporting several expressions in findOptimizationSublistIndexes
 
         const std::string & type_name = std::get<2>(optimization_indexes[0]);
-        if (type_name == "Int8" || type_name == "Int16" || type_name == "Int32" || type_name == "Int64" || type_name == "Int128" || type_name == "Int256") {
+        if (type_name == "Int8" || type_name == "Int16" || type_name == "Int32" || type_name == "Int64" || type_name == "Int128" || type_name == "Int256")
+        {
             auto lhs_key_signed = static_cast<typename MakeSignedType<KeyHolder1>::type>(lhs_key);
             auto rhs_key_signed = static_cast<typename MakeSignedType<KeyHolder2>::type>(rhs_key);
-            if (std::get<1>(optimization_indexes[0]) == SortDirection::ASCENDING) {
+            if (std::get<1>(optimization_indexes[0]) == SortDirection::ASCENDING)
                 return lhs_key_signed < rhs_key_signed;
-            }
-            return rhs_key_signed < lhs_key_signed;                
+            return rhs_key_signed < lhs_key_signed;
         }
 
-        if (std::get<1>(optimization_indexes[0]) == SortDirection::ASCENDING) { // MVP. TODO support all types. Now only numeric types (int, float) are supported.
+        if (std::get<1>(optimization_indexes[0]) == SortDirection::ASCENDING) // MVP. TODO support all types. Now only numeric types (int, float) are supported.
             return lhs_key < rhs_key;
-        }
         return rhs_key < lhs_key;
     }
 
@@ -416,7 +416,7 @@ protected:
                        && !std::is_same_v<KeyHolder, UInt256>) { // MVP. TODO support all types
                 if (optimization_indexes && data.size() >= limit_offset_plus_length * 2)
                 {
-                    assert(optimization_indexes->size() == 1 && (*optimization_indexes)[0].first == 0); // TODO support arbitrary number of expressions in findOptimizationSublistIndexes
+                    assert(optimization_indexes->size() == 1 && std::get<0>((*optimization_indexes)[0]) == 0); // TODO support arbitrary number of expressions in findOptimizationSublistIndexes
                     if constexpr (HasBegin<Data>::value)
                     {
                         if constexpr (!std::is_same_v<decltype(data.begin()->getKey()), const VoidKey> && HasErase<Data, decltype(keyHolderGetKey(key_holder))>::value)
