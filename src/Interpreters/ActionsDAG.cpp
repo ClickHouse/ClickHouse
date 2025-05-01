@@ -210,7 +210,7 @@ ActionsDAG::ActionsDAG(const NamesAndTypesList & inputs_)
         outputs.push_back(&addInput(input.name, input.type));
 }
 
-ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_,  bool duplicate_const_columns)
+ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_, bool duplicate_const_columns)
 {
     for (const auto & input : inputs_)
     {
