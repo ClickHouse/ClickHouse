@@ -357,8 +357,28 @@ public:
         ///
         /// Or, a polygon without holes can be represented by 1d array:
         /// [(outer_x_1, outer_y_1, ...)]
+        
+        /// A multi-polygon is represented by 3d array:
+        /// [[[[(outer_x_1, outer_y_1, ...)], [(hole1_x_1, hole1_y_1), ...], ...], ...]
 
-        if (isTwoDimensionalArray(*arguments[1].type))
+        if (isThreeDimensionalArray(*arguments[1].type))
+        {
+            ColumnPtr multi_polygon_column_float64 = castColumn(
+                arguments[1],
+                std::make_shared<DataTypeArray>( // depth-1
+                    std::make_shared<DataTypeArray>( // depth-2
+                        std::make_shared<DataTypeArray>( // depth-3
+                            std::make_shared<DataTypeTuple>(
+                                DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()})))));
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                size_t point_index = point_is_const ? 0 : i;
+                data[i] = isInsideMultiPolygon(
+                    tuple_columns[0]->getFloat64(point_index), tuple_columns[1]->getFloat64(point_index), *multi_polygon_column_float64, i);
+            }
+        }
+        else if (isTwoDimensionalArray(*arguments[1].type))
         {
             /// We cast everything to Float64 in advance (in batch fashion)
             ///  to avoid casting with virtual calls in a loop.
@@ -366,8 +386,10 @@ public:
 
             ColumnPtr polygon_column_float64 = castColumn(
                 arguments[1],
-                std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(
-                    std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()}))));
+                std::make_shared<DataTypeArray>( // depth-1
+                  std::make_shared<DataTypeArray>( // depth-2
+                    std::make_shared<DataTypeTuple>(
+                      DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()}))));
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
