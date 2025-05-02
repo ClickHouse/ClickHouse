@@ -94,7 +94,6 @@ public:
 
     /// Returns parts in ascending order of the partition_id and block number.
     Strings getParts() const;
-    Strings getPartsWithLimit(size_t limit) const;
     std::vector<MergeTreePartInfo> getPartInfos() const;
 
     size_t size() const;

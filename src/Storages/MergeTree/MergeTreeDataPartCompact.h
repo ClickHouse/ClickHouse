@@ -49,7 +49,7 @@ protected:
      static void loadIndexGranularityImpl(
          MergeTreeIndexGranularityPtr & index_granularity_,
          const MergeTreeIndexGranularityInfo & index_granularity_info_,
-         size_t marks_per_granule,
+         size_t columns_count,
          const IDataPartStorage & data_part_storage_,
          const MergeTreeSettings & storage_settings);
 

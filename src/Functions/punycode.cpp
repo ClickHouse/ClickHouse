@@ -159,8 +159,7 @@ Computes a Punycode representation of a string.)",
 │ Mnchen-3ya │
 └────────────┘
             )"
-            }},
-        .category = FunctionDocumentation::Category::Encoding
+            }}
     });
 
     factory.registerFunction<FunctionPunycodeDecode>(FunctionDocumentation{
@@ -177,8 +176,7 @@ Computes a Punycode representation of a string. Throws an exception if the input
 │ München │
 └─────────┘
             )"
-            }},
-        .category = FunctionDocumentation::Category::Encoding
+            }}
     });
 
     factory.registerFunction<FunctionTryPunycodeDecode>(FunctionDocumentation{
@@ -195,10 +193,8 @@ Computes a Punycode representation of a string. Returns an empty string if the i
 │ München │
 └─────────┘
             )"
-            }},
-        .category = FunctionDocumentation::Category::Encoding
-
-});
+            }}
+    });
 }
 
 }

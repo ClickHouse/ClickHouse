@@ -102,12 +102,12 @@ void CoordinationSettingsImpl::loadFromConfig(const String & config_elem, const 
         max_requests_append_size = max_requests_batch_size;
 }
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
     CoordinationSettings##TYPE NAME = &CoordinationSettingsImpl ::NAME;
 
 namespace CoordinationSetting
 {
-LIST_OF_COORDINATION_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
+LIST_OF_COORDINATION_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
