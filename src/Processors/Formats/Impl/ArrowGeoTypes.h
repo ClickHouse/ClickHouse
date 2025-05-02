@@ -140,7 +140,6 @@ private:
 };
 
 GeometricObject parseWKBFormat(ReadBuffer & in_buffer);
-
 GeometricObject parseWKTFormat(ReadBuffer & in_buffer);
 
 }
