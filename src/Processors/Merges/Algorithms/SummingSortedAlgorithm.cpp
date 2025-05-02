@@ -99,7 +99,7 @@ struct SummingSortedAlgorithm::AggregateDescription
 };
 
 
-static bool isInSortingKey(const SortDescription & description, const std::string & name)
+static bool isInPrimaryKey(const SortDescription & description, const std::string & name)
 {
     for (const auto & desc : description)
         if (desc.column_name == name)
@@ -108,10 +108,10 @@ static bool isInSortingKey(const SortDescription & description, const std::strin
     return false;
 }
 
-static bool isInNames(const std::string & column_name, const Names & names)
+static bool isInPartitionKey(const std::string & column_name, const Names & partition_key_columns)
 {
-    auto is_in_partition_key = std::find(names.begin(), names.end(), column_name);
-    return is_in_partition_key != names.end();
+    auto is_in_partition_key = std::find(partition_key_columns.begin(), partition_key_columns.end(), column_name);
+    return is_in_partition_key != partition_key_columns.end();
 }
 
 
@@ -205,7 +205,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     const Block & header,
     const SortDescription & description,
     const Names & column_names_to_sum,
-    const Names & partition_and_sorting_required_columns)
+    const Names & partition_key_columns)
 {
     size_t num_columns = header.columns();
     SummingSortedAlgorithm::ColumnsDefinition def;
@@ -254,14 +254,16 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 continue;
             }
 
-            /// Are they inside the sorting key or partition key? Check both to ignore columns with order expression.
-            if (isInSortingKey(description, column.name) || isInNames(column.name, partition_and_sorting_required_columns))
+            /// Are they inside the primary key or partition key?
+            if (isInPrimaryKey(description, column.name) || isInPartitionKey(column.name, partition_key_columns))
             {
                 def.column_numbers_not_to_aggregate.push_back(i);
                 continue;
             }
 
-            if (column_names_to_sum.empty() || isInNames(column.name, column_names_to_sum))
+            if (column_names_to_sum.empty()
+                || column_names_to_sum.end() !=
+                   std::find(column_names_to_sum.begin(), column_names_to_sum.end(), column.name))
             {
                 // Create aggregator to sum this column
                 SummingSortedAlgorithm::AggregateDescription desc;
@@ -309,8 +311,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         /// no elements of map could be in primary key
         auto column_num_it = map.second.begin();
         for (; column_num_it != map.second.end(); ++column_num_it)
-            if (isInSortingKey(description, header.safeGetByPosition(*column_num_it).name)
-                || isInNames(header.safeGetByPosition(*column_num_it).name, partition_and_sorting_required_columns))
+            if (isInPrimaryKey(description, header.safeGetByPosition(*column_num_it).name))
                 break;
         if (column_num_it != map.second.end())
         {
@@ -511,8 +512,8 @@ void SummingSortedAlgorithm::SummingMergedData::initialize(const DB::Block & hea
     /// Just to make startGroup() simpler.
     if (def.allocates_memory_in_arena)
     {
-        def.arena = std::make_unique<Arena>();
-        def.arena_size = def.arena->allocatedBytes();
+        arena = std::make_unique<Arena>();
+        arena_size = arena->allocatedBytes();
     }
 }
 
@@ -526,10 +527,10 @@ void SummingSortedAlgorithm::SummingMergedData::startGroup(ColumnRawPtrs & raw_c
     for (auto & desc : def.columns_to_aggregate)
         desc.createState();
 
-    if (def.allocates_memory_in_arena && def.arena->allocatedBytes() > def.arena_size)
+    if (def.allocates_memory_in_arena && arena->allocatedBytes() > arena_size)
     {
-        def.arena = std::make_unique<Arena>();
-        def.arena_size = def.arena->allocatedBytes();
+        arena = std::make_unique<Arena>();
+        arena_size = arena->allocatedBytes();
     }
 
     if (def.maps_to_sum.empty())
@@ -570,7 +571,7 @@ void SummingSortedAlgorithm::SummingMergedData::finishGroup()
             {
                 try
                 {
-                    desc.function->insertResultInto(desc.state.data(), *desc.merged_column, def.arena.get());
+                    desc.function->insertResultInto(desc.state.data(), *desc.merged_column, arena.get());
 
                     /// Update zero status of current row
                     if (!desc.is_simple_agg_func_type && desc.column_numbers.size() == 1)
@@ -650,7 +651,7 @@ void SummingSortedAlgorithm::SummingMergedData::addRowImpl(ColumnRawPtrs & raw_c
             if (desc.column_numbers.size() == 1)
             {
                 auto & col = raw_columns[desc.column_numbers[0]];
-                desc.add_function(desc.function.get(), desc.state.data(), &col, row, def.arena.get());
+                desc.add_function(desc.function.get(), desc.state.data(), &col, row, arena.get());
             }
             else
             {
@@ -659,7 +660,7 @@ void SummingSortedAlgorithm::SummingMergedData::addRowImpl(ColumnRawPtrs & raw_c
                 for (size_t i = 0; i < desc.column_numbers.size(); ++i)
                     column_ptrs[i] = raw_columns[desc.column_numbers[i]];
 
-                desc.add_function(desc.function.get(), desc.state.data(), column_ptrs.data(), row, def.arena.get());
+                desc.add_function(desc.function.get(), desc.state.data(), column_ptrs.data(), row, arena.get());
             }
         }
     }
@@ -689,12 +690,11 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
     size_t num_inputs,
     SortDescription description_,
     const Names & column_names_to_sum,
-    const Names & partition_and_sorting_required_columns,
+    const Names & partition_key_columns,
     size_t max_block_size_rows,
     size_t max_block_size_bytes)
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, std::move(description_))
-    , columns_definition(
-          defineColumns(header_, description, column_names_to_sum, partition_and_sorting_required_columns))
+    , columns_definition(defineColumns(header_, description, column_names_to_sum, partition_key_columns))
     , merged_data(max_block_size_rows, max_block_size_bytes, columns_definition)
 {
 }

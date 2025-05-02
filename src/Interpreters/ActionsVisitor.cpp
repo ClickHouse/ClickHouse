@@ -55,6 +55,7 @@
 
 #include <Analyzer/QueryNode.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Parsers/queryToString.h>
 
 
 namespace DB

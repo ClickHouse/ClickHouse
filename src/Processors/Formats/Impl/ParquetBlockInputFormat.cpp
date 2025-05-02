@@ -25,7 +25,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Common/FieldAccurateComparison.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <Processors/Formats/Impl/Parquet/ParquetRecordReader.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Interpreters/convertFieldToType.h>
@@ -35,8 +35,6 @@
 namespace ProfileEvents
 {
     extern const Event ParquetFetchWaitTimeMicroseconds;
-    extern const Event ParquetReadRowGroups;
-    extern const Event ParquetPrunedRowGroups;
 }
 
 namespace CurrentMetrics
@@ -482,9 +480,9 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
             if (null_as_default)
             {
                 /// Make sure the range contains the default value.
-                if (!min.isNull() && accurateLess(default_value, min))
+                if (!min.isNull() && applyVisitor(FieldVisitorAccurateLess(), default_value, min))
                     min = default_value;
-                if (!max.isNull() && accurateLess(max, default_value))
+                if (!max.isNull() && applyVisitor(FieldVisitorAccurateLess(), max, default_value))
                     max = default_value;
             }
             else
@@ -746,7 +744,6 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
         if (key_condition_with_bloom_filter_data && skip_row_group_based_on_filters(row_group))
         {
-            ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups);
             continue;
         }
 
@@ -754,7 +751,6 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         if (row_group_batches.empty() || (!prefetch_group && row_group_batches.back().total_bytes_compressed >= min_bytes_for_seek))
             row_group_batches.emplace_back();
 
-        ProfileEvents::increment(ProfileEvents::ParquetReadRowGroups);
         row_group_batches.back().row_groups_idxs.push_back(row_group);
         row_group_batches.back().total_rows += metadata->RowGroup(row_group)->num_rows();
         auto row_group_size = metadata->RowGroup(row_group)->total_compressed_size();
@@ -1182,8 +1178,7 @@ NamesAndTypesList ParquetSchemaReader::readSchema()
         *schema,
         "Parquet",
         format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference,
-        format_settings.schema_inference_make_columns_nullable != 0,
-        format_settings.parquet.case_insensitive_column_matching);
+        format_settings.schema_inference_make_columns_nullable != 0);
     if (format_settings.schema_inference_make_columns_nullable == 1)
         return getNamesAndRecursivelyNullableTypes(header, format_settings);
     return header.getNamesAndTypesList();

@@ -2,11 +2,12 @@
 
 #include <Core/Block.h>
 #include <Processors/IProcessor.h>
+#include <QueryPipeline/Chain.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 
 namespace DB
 {
 
-class Chain;
 class EnabledQuota;
 struct StreamLocalLimits;
 
@@ -90,7 +91,7 @@ public:
     void addChains(std::vector<Chain> chains);
 
     /// Changes the number of output ports if needed. Adds (Strict)ResizeProcessor.
-    void resize(size_t num_streams, bool strict = false);
+    void resize(size_t num_streams, bool force = false, bool strict = false);
 
     using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
 

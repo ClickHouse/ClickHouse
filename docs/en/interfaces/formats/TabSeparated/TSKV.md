@@ -1,18 +1,17 @@
 ---
-alias: []
-description: 'Documentation for the TSKV format'
-input_format: true
-keywords: ['TSKV']
-output_format: true
+title : TSKV
 slug: /interfaces/formats/TSKV
-title: 'TSKV'
+keywords : [TSKV]
+input_format: true
+output_format: true
+alias: []
 ---
 
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description {#description}
+## Description
 
 Similar to the [`TabSeparated`](./TabSeparated.md) format, but outputs a value in `name=value` format. 
 Names are escaped the same way as in the [`TabSeparated`](./TabSeparated.md) format, and the `=` symbol is also escaped.
@@ -52,10 +51,10 @@ Complex values that could be specified in the table are not supported as default
 Parsing allows an additional field `tskv` to be added without the equal sign or a value. This field is ignored.
 
 During import, columns with unknown names will be skipped, 
-if setting [`input_format_skip_unknown_fields`](/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to `1`.
+if setting [`input_format_skip_unknown_fields`](/docs/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to `1`.
 
-[NULL](/sql-reference/syntax.md) is formatted as `\N`.
+[NULL](/docs/sql-reference/syntax.md) is formatted as `\N`.
 
-## Example Usage {#example-usage}
+## Example Usage
 
-## Format Settings {#format-settings}
+## Format Settings

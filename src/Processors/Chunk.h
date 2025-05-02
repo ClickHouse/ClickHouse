@@ -2,7 +2,6 @@
 
 #include <Columns/IColumn_fwd.h>
 #include <Common/CollectionOfDerived.h>
-#include <Core/Types_fwd.h>
 
 #include <memory>
 

@@ -106,10 +106,7 @@ DB::Exception: Decimal result's scale is less than argument's one: While process
 │ -12 │ 2.1 │                                                       -5.7 │                                                   -5.71428 │
 └─────┴─────┴────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
 )"}
-    },
-    .category = FunctionDocumentation::Category::TypeConversion
-    }
-    );
+    }});
 }
 
 }

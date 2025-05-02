@@ -7,8 +7,8 @@
 #include <Core/Protocol.h>
 
 #include <QueryPipeline/ProfileInfo.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 
+#include <QueryPipeline/Pipe.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/Progress.h>
 
@@ -25,7 +25,6 @@ namespace DB
 {
 
 class ClientInfo;
-struct FormatSettings;
 
 /// Packet that could be received from server.
 struct Packet
@@ -61,7 +60,6 @@ struct ExternalTableData
 using ExternalTableDataPtr = std::unique_ptr<ExternalTableData>;
 using ExternalTablesData = std::vector<ExternalTableDataPtr>;
 
-class QueryPlan;
 
 class IServerConnection : boost::noncopyable
 {
@@ -104,8 +102,6 @@ public:
         bool with_pending_data,
         const std::vector<String> & external_roles,
         std::function<void(const Progress &)> process_progress_callback) = 0;
-
-    virtual void sendQueryPlan(const QueryPlan & query_plan) = 0;
 
     virtual void sendCancel() = 0;
 

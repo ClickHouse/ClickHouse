@@ -105,8 +105,7 @@ REGISTER_FUNCTION(getMaxTableName)
             │                                         206 │
             └─────────────────────────────────────────────┘
             )"
-        }},
-        .category = FunctionDocumentation::Category::Other
+        }}
     });
 }
 

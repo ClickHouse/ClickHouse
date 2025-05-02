@@ -22,9 +22,8 @@
 #include <Core/AccurateComparison.h>
 
 #include <Common/typeid_cast.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/NaNUtils.h>
-#include <Common/FieldAccurateComparison.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/DateLUT.h>
@@ -533,9 +532,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     else if (const DataTypeVariant * type_variant = typeid_cast<const DataTypeVariant *>(&type))
     {
-        if (src.isNull())
-            return src;
-
         /// If we have type hint and Variant contains such type, no need to convert field.
         if (from_type_hint && type_variant->tryGetVariantDiscriminator(from_type_hint->getName()))
             return src;
@@ -545,14 +541,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         auto col = type_variant->createColumn();
         if (col->tryInsert(src))
             return src;
-
-        /// Otherwise try to convert field to any variant.
-        for (const auto & variant : type_variant->getVariants())
-        {
-            auto res = tryConvertFieldToType(src, *variant, from_type_hint, format_settings);
-            if (!res.isNull())
-                return res;
-        }
     }
     else if (isDynamic(type))
     {
@@ -678,7 +666,7 @@ std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const ID
 
     if (Field::isDecimal(from_value.getType()) && Field::isDecimal(result_value.getType()))
     {
-        bool is_equal = accurateEquals(from_value, result_value);
+        bool is_equal = applyVisitor(FieldVisitorAccurateEquals{}, from_value, result_value);
         return is_equal ? result_value : std::optional<Field>{};
     }
 

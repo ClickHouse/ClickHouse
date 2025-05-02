@@ -69,22 +69,20 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 
-#include <Planner/CollectColumnIdentifiers.h>
-#include <Planner/CollectSets.h>
-#include <Planner/CollectTableExpressionData.h>
 #include <Planner/findQueryForParallelReplicas.h>
-#include <Planner/PlannerActionsVisitor.h>
-#include <Planner/PlannerAggregation.h>
+#include <Planner/Utils.h>
 #include <Planner/PlannerContext.h>
-#include <Planner/PlannerCorrelatedSubqueries.h>
-#include <Planner/PlannerExpressionAnalysis.h>
+#include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerJoins.h>
-#include <Planner/PlannerJoinTree.h>
-#include <Planner/PlannerQueryProcessingInfo.h>
+#include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerSorting.h>
 #include <Planner/PlannerWindowFunctions.h>
-#include <Planner/Utils.h>
-
+#include <Planner/CollectSets.h>
+#include <Planner/CollectTableExpressionData.h>
+#include <Planner/PlannerJoinTree.h>
+#include <Planner/PlannerExpressionAnalysis.h>
+#include <Planner/CollectColumnIdentifiers.h>
+#include <Planner/PlannerQueryProcessingInfo.h>
 
 namespace ProfileEvents
 {
@@ -135,9 +133,6 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsBool optimize_group_by_constant_keys;
-    extern const SettingsUInt64 max_bytes_to_transfer;
-    extern const SettingsUInt64 max_rows_to_transfer;
-    extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
 namespace ServerSetting
@@ -400,19 +395,11 @@ void addExpressionStep(QueryPlan & query_plan,
     query_plan.addStep(std::move(expression_step));
 }
 
-void addFilterStep(
-    const PlannerContextPtr & planner_context,
-    QueryPlan & query_plan,
+void addFilterStep(QueryPlan & query_plan,
     FilterAnalysisResult & filter_analysis_result,
-    const SelectQueryOptions & select_query_options,
     const std::string & step_description,
     UsefulSets & useful_sets)
 {
-    for (const auto & correlated_subquery : filter_analysis_result.correlated_subtrees.subqueries)
-    {
-        buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options);
-    }
-
     auto actions = std::move(filter_analysis_result.filter_actions->dag);
     if (filter_analysis_result.filter_actions->project_input)
         actions.appendInputsForUnusedColumns(query_plan.getCurrentHeader());
@@ -593,6 +580,7 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
         settings[Setting::distributed_aggregation_memory_efficient] && (is_remote_storage || parallel_replicas_from_merge_tree)
             && !query_analysis_result.aggregation_with_rollup_or_cube_or_grouping_sets,
+        settings[Setting::max_threads],
         settings[Setting::aggregation_memory_efficient_merge_threads],
         query_analysis_result.aggregation_should_produce_results_in_order_of_bucket_number,
         settings[Setting::max_block_size],
@@ -718,7 +706,7 @@ void addSortingStep(QueryPlan & query_plan,
 {
     const auto & sort_description = query_analysis_result.sort_description;
     const auto & query_context = planner_context->getQueryContext();
-    SortingStep::Settings sort_settings(query_context->getSettingsRef());
+    SortingStep::Settings sort_settings(*query_context);
 
     auto sorting_step = std::make_unique<SortingStep>(
         query_plan.getCurrentHeader(),
@@ -754,17 +742,15 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     const PlannerContextPtr & planner_context,
     const QueryNode & query_node)
 {
+    const auto & sort_description = query_analysis_result.sort_description;
+
     NameSet column_names_with_fill;
     SortDescription fill_description;
 
-    const auto & header = query_plan.getCurrentHeader();
-
-    for (const auto & description : query_analysis_result.sort_description)
+    for (const auto & description : sort_description)
     {
         if (description.with_fill)
         {
-            if (!header.findByName(description.column_name))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Filling column {} is not present in the block {}", description.column_name, header.dumpNames());
             fill_description.push_back(description);
             column_names_with_fill.insert(description.column_name);
         }
@@ -778,7 +764,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     if (query_node.hasInterpolate())
     {
         ActionsDAG interpolate_actions_dag;
-        auto query_plan_columns = header.getColumnsWithTypeAndName();
+        auto query_plan_columns = query_plan.getCurrentHeader().getColumnsWithTypeAndName();
         for (auto & query_plan_column : query_plan_columns)
         {
             /// INTERPOLATE actions dag input columns must be non constant
@@ -807,17 +793,14 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
             {
                 auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
 
-                ColumnNodePtrWithHashSet empty_correlated_columns_set;
-                PlannerActionsVisitor planner_actions_visitor(planner_context, empty_correlated_columns_set);
-                auto [expression_to_interpolate_expression_nodes, expression_to_interpolate_correlated_subtrees] = planner_actions_visitor.visit(interpolate_actions_dag,
+                PlannerActionsVisitor planner_actions_visitor(planner_context);
+                auto expression_to_interpolate_expression_nodes = planner_actions_visitor.visit(interpolate_actions_dag,
                     interpolate_node_typed.getExpression());
-                expression_to_interpolate_correlated_subtrees.assertEmpty("in expression to interpolate");
                 if (expression_to_interpolate_expression_nodes.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression to interpolate expected to have single action node");
 
-                auto [interpolate_expression_nodes, interpolate_correlated_subtrees] = planner_actions_visitor.visit(interpolate_actions_dag,
+                auto interpolate_expression_nodes = planner_actions_visitor.visit(interpolate_actions_dag,
                     interpolate_node_typed.getInterpolateExpression());
-                interpolate_correlated_subtrees.assertEmpty("in interpolate expression");
                 if (interpolate_expression_nodes.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate expression expected to have single action node");
 
@@ -847,15 +830,9 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                 /// To fix this, we prepend a rename : 'Hello'_String -> s
                 if (const auto * /*constant_node*/ _ = interpolate_node_typed.getExpression()->as<const ConstantNode>())
                 {
-                    const auto & name = interpolate_node_typed.getExpressionName();
                     const auto * node = &rename_dag.addInput(alias_node->result_name, alias_node->result_type);
-                    node = &rename_dag.addAlias(*node, name);
+                    node = &rename_dag.addAlias(*node, interpolate_node_typed.getExpressionName());
                     rename_dag.getOutputs().push_back(node);
-
-                    /// Interpolate DAG should contain INPUT with same name to ensure a proper merging
-                    const auto & inputs = interpolate_actions_dag.getInputs();
-                    if (std::ranges::find_if(inputs, [&name](const auto & input){ return input->result_name == name; }) == inputs.end())
-                        interpolate_actions_dag.addInput(name, interpolate_node_typed.getExpression()->getResultType());
                 }
             }
 
@@ -872,8 +849,8 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
     auto filling_step = std::make_unique<FillingStep>(
-        header,
-        query_analysis_result.sort_description,
+        query_plan.getCurrentHeader(),
+        sort_description,
         std::move(fill_description),
         interpolate_description,
         settings[Setting::use_with_fill_by_sorting_prefix]);
@@ -1058,7 +1035,7 @@ void addWindowSteps(QueryPlan & query_plan,
         }
         if (need_sort)
         {
-            SortingStep::Settings sort_settings(query_context->getSettingsRef());
+            SortingStep::Settings sort_settings(*query_context);
 
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentHeader(),
@@ -1187,16 +1164,11 @@ void addBuildSubqueriesForSetsStepIfNeeded(
 
     if (!subqueries.empty())
     {
-        const auto & settings = planner_context->getQueryContext()->getSettingsRef();
-        SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
-        auto prepared_sets_cache = planner_context->getQueryContext()->getPreparedSetsCache();
-
         auto step = std::make_unique<DelayedCreatingSetsStep>(
             query_plan.getCurrentHeader(),
             std::move(subqueries),
-            network_transfer_limits,
-            prepared_sets_cache);
-        step->setStepDescription("DelayedCreatingSetsStep");
+            planner_context->getQueryContext());
+
         query_plan.addStep(std::move(step));
     }
 }
@@ -1376,7 +1348,23 @@ void Planner::buildPlanForUnionNode()
     }
 
     Block union_common_header = buildCommonHeaderForUnion(query_plans_headers, union_mode);
-    addConvertingToCommonHeaderActionsIfNeeded(query_plans, union_common_header, query_plans_headers);
+
+    for (size_t i = 0; i < queries_size; ++i)
+    {
+        auto & query_node_plan = query_plans[i];
+        if (blocksHaveEqualStructure(query_node_plan->getCurrentHeader(), union_common_header))
+            continue;
+
+        auto actions_dag = ActionsDAG::makeConvertingActions(
+            query_node_plan->getCurrentHeader().getColumnsWithTypeAndName(),
+            union_common_header.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Position);
+        auto converting_step = std::make_unique<ExpressionStep>(query_node_plan->getCurrentHeader(), std::move(actions_dag));
+        converting_step->setStepDescription("Conversion before UNION");
+        query_node_plan->addStep(std::move(converting_step));
+
+        query_plans_headers[i] = query_node_plan->getCurrentHeader();
+    }
 
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -1615,7 +1603,7 @@ void Planner::buildPlanForQueryNode()
     if (query_processing_info.isFirstStage())
     {
         if (expression_analysis_result.hasWhere())
-            addFilterStep(planner_context, query_plan, expression_analysis_result.getWhere(), select_query_options, "WHERE", useful_sets);
+            addFilterStep(query_plan, expression_analysis_result.getWhere(), "WHERE", useful_sets);
 
         if (expression_analysis_result.hasAggregation())
         {
@@ -1705,7 +1693,7 @@ void Planner::buildPlanForQueryNode()
             addCubeOrRollupStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info, query_node);
 
             if (!having_executed && expression_analysis_result.hasHaving())
-                addFilterStep(planner_context, query_plan, expression_analysis_result.getHaving(), select_query_options, "HAVING", useful_sets);
+                addFilterStep(query_plan, expression_analysis_result.getHaving(), "HAVING", useful_sets);
         }
 
         if (query_processing_info.isFromAggregationState())
@@ -1726,7 +1714,7 @@ void Planner::buildPlanForQueryNode()
             }
 
             if (expression_analysis_result.hasQualify())
-                addFilterStep(planner_context, query_plan, expression_analysis_result.getQualify(), select_query_options, "QUALIFY", useful_sets);
+                addFilterStep(query_plan, expression_analysis_result.getQualify(), "QUALIFY", useful_sets);
 
             auto & projection_analysis_result = expression_analysis_result.getProjection();
             addExpressionStep(query_plan, projection_analysis_result.projection_actions, "Projection", useful_sets);

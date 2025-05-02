@@ -2,8 +2,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
-#include <fmt/ranges.h>
-
 namespace DB
 {
 

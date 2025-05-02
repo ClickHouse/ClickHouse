@@ -1,8 +1,6 @@
 ---
-description: 'Documentation for WITH Clause'
-sidebar_label: 'WITH'
 slug: /sql-reference/statements/select/with
-title: 'WITH Clause'
+sidebar_label: WITH
 ---
 
 # WITH Clause
@@ -12,7 +10,7 @@ ClickHouse supports Common Table Expressions ([CTE](https://en.wikipedia.org/wik
 Please note that CTEs do not guarantee the same results in all places they are called because the query will be re-executed for each use case.
 
 An example of such behavior is below
-```sql
+``` sql
 with cte_numbers as
 (
     select
@@ -29,21 +27,21 @@ If CTEs were to pass exactly the results and not just a piece of code, you would
 
 However, due to the fact that we are referring `cte_numbers` twice, random numbers are generated each time and, accordingly, we see different random results, `280501, 392454, 261636, 196227` and so on...
 
-## Syntax {#syntax}
+## Syntax
 
-```sql
+``` sql
 WITH <expression> AS <identifier>
 ```
 or
-```sql
+``` sql
 WITH <identifier> AS <subquery expression>
 ```
 
-## Examples {#examples}
+## Examples
 
 **Example 1:** Using constant expression as "variable"
 
-```sql
+``` sql
 WITH '2019-08-01 15:23:00' as ts_upper_bound
 SELECT *
 FROM hits
@@ -54,7 +52,7 @@ WHERE
 
 **Example 2:** Evicting a sum(bytes) expression result from the SELECT clause column list
 
-```sql
+``` sql
 WITH sum(bytes) as s
 SELECT
     formatReadableSize(s),
@@ -66,7 +64,7 @@ ORDER BY s;
 
 **Example 3:** Using results of a scalar subquery
 
-```sql
+``` sql
 /* this example would return TOP 10 of most huge tables */
 WITH
     (
@@ -85,12 +83,12 @@ LIMIT 10;
 
 **Example 4:** Reusing expression in a subquery
 
-```sql
+``` sql
 WITH test1 AS (SELECT i + 1, j + 1 FROM test1)
 SELECT * FROM test1;
 ```
 
-## Recursive Queries {#recursive-queries}
+## Recursive Queries
 
 The optional RECURSIVE modifier allows for a WITH query to refer to its own output. Example:
 
@@ -105,14 +103,14 @@ UNION ALL
 SELECT sum(number) FROM test_table;
 ```
 
-```text
+``` text
 ┌─sum(number)─┐
 │        5050 │
 └─────────────┘
 ```
 
 :::note
-Recursive CTEs rely on the [new query analyzer](/operations/analyzer) introduced in version **`24.3`**. If you're using version **`24.3+`** and encounter a **`(UNKNOWN_TABLE)`** or **`(UNSUPPORTED_METHOD)`** exception, it suggests that the new analyzer is disabled on your instance, role, or profile. To activate the analyzer, enable the setting **`allow_experimental_analyzer`** or update the **`compatibility`** setting to a more recent version.
+Recursive CTEs rely on the [new query analyzer](/docs/operations/analyzer) introduced in version **`24.3`**. If you're using version **`24.3+`** and encounter a **`(UNKNOWN_TABLE)`** or **`(UNSUPPORTED_METHOD)`** exception, it suggests that the new analyzer is disabled on your instance, role, or profile. To activate the analyzer, enable the setting **`allow_experimental_analyzer`** or update the **`compatibility`** setting to a more recent version.
 Starting from version `24.8` the new analyzer has been fully promoted to production, and the setting `allow_experimental_analyzer` has been renamed to `enable_analyzer`.
 :::
 
@@ -166,7 +164,7 @@ SELECT * FROM search_tree;
 └────┴───────────┴───────────┘
 ```
 
-### Search order {#search-order}
+### Search order
 
 To create a depth-first order, we compute for each result row an array of rows that we have already visited:
 
@@ -218,7 +216,7 @@ SELECT * FROM search_tree ORDER BY depth;
 └────┴──────┴───────────┴─────────┴───────┘
 ```
 
-### Cycle detection {#cycle-detection}
+### Cycle detection
 
 First let's create graph table:
 
@@ -298,7 +296,7 @@ SELECT * FROM search_graph WHERE is_cycle ORDER BY from;
 └──────┴────┴────────┴──────────┴───────────────────────────┘
 ```
 
-### Infinite queries {#infinite-queries}
+### Infinite queries
 
 It is also possible to use infinite recursive CTE queries if `LIMIT` is used in outer query:
 

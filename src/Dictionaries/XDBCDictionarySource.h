@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <IO/ConnectionTimeouts.h>
+#include <Poco/Data/SessionPool.h>
 #include <Poco/URI.h>
 #include <BridgeHelper/XDBCBridgeHelper.h>
 #include "DictionaryStructure.h"
@@ -26,6 +27,7 @@ namespace DB
 class XDBCDictionarySource final : public IDictionarySource, WithContext
 {
 public:
+
     struct Configuration
     {
         const std::string db;

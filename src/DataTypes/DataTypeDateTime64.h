@@ -4,6 +4,8 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDecimalBase.h>
 
+class DateLUTImpl;
+
 namespace DB
 {
 

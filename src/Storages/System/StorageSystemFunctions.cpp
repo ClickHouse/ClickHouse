@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <Parsers/queryToString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
@@ -72,7 +73,7 @@ namespace
                 res_columns[8]->insert(documentation.argumentsAsString());
                 res_columns[9]->insert(documentation.returned_value);
                 res_columns[10]->insert(documentation.examplesAsString());
-                res_columns[11]->insert(documentation.categoryAsString());
+                res_columns[11]->insert(documentation.category);
             }
         }
         else
@@ -88,7 +89,7 @@ namespace
 }
 
 
-std::vector<std::pair<String, Int8>> getOriginEnumsValues()
+std::vector<std::pair<String, Int8>> getOriginEnumsAndValues()
 {
     return std::vector<std::pair<String, Int8>>{
         {"System", static_cast<Int8>(FunctionOrigin::SYSTEM)},
@@ -106,7 +107,7 @@ ColumnsDescription StorageSystemFunctions::getColumnsDescription()
         {"case_insensitive", std::make_shared<DataTypeUInt8>(), "Whether the function name can be used case-insensitively."},
         {"alias_to", std::make_shared<DataTypeString>(), "The original function name, if the function name is an alias."},
         {"create_query", std::make_shared<DataTypeString>(), "Obsolete."},
-        {"origin", std::make_shared<DataTypeEnum8>(getOriginEnumsValues()), "Obsolete."},
+        {"origin", std::make_shared<DataTypeEnum8>(getOriginEnumsAndValues()), "Obsolete."},
         {"description", std::make_shared<DataTypeString>(), "A high-level description what the function does."},
         {"syntax", std::make_shared<DataTypeString>(), "Signature of the function."},
         {"arguments", std::make_shared<DataTypeString>(), "What arguments does the function take."},
@@ -136,7 +137,7 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
     const auto & user_defined_sql_functions_names = user_defined_sql_functions_factory.getAllRegisteredNames();
     for (const auto & function_name : user_defined_sql_functions_names)
     {
-        auto create_query = user_defined_sql_functions_factory.get(function_name)->formatWithSecretsOneLine();
+        auto create_query = queryToString(user_defined_sql_functions_factory.get(function_name));
         fillRow(res_columns, function_name, 0, create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory);
     }
 

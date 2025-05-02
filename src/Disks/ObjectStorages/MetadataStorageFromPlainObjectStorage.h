@@ -18,7 +18,7 @@
 namespace DB
 {
 
-class InMemoryDirectoryPathMap;
+struct InMemoryDirectoryPathMap;
 struct UnlinkMetadataFileOperationOutcome;
 using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
 
@@ -87,7 +87,6 @@ public:
 
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
-    bool supportsPartitionCommand(const PartitionCommand & command) const override;
 
 protected:
     /// Get the object storage prefix for storing metadata files.
@@ -98,7 +97,6 @@ protected:
 
     ObjectMetadataEntryPtr getObjectMetadataEntryWithCache(const std::string & path) const;
 };
-
 
 class MetadataStorageFromPlainObjectStorageTransaction : public IMetadataTransaction, private MetadataOperationsHolder
 {
@@ -118,16 +116,10 @@ public:
 
     void addBlobToMetadata(const std::string & /* path */, ObjectStorageKey /* object_key */, uint64_t /* size_in_bytes */) override
     {
-        /// Noop
+        // Noop
     }
 
     void setLastModified(const String &, const Poco::Timestamp &) override
-    {
-        /// Noop
-    }
-
-    /// Required for MergeTree backups.
-    void setReadOnly(const std::string & /*path*/) override
     {
         /// Noop
     }
@@ -145,16 +137,10 @@ public:
     void unlinkFile(const std::string & path) override;
     void removeDirectory(const std::string & path) override;
 
-    /// Hard links are simulated using server-side copying.
-    void createHardLink(const std::string & path_from, const std::string & path_to) override;
-
-    void moveFile(const std::string & path_from, const std::string & path_to) override;
-
     UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
     void commit() override;
 
     bool supportsChmod() const override { return false; }
 };
-
 }
