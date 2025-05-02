@@ -1317,22 +1317,6 @@ static std::shared_ptr<arrow::ChunkedArray> createArrowColumn(const std::shared_
     return std::make_shared<arrow::ChunkedArray>(arrow::ArrayVector{arrow_array});
 }
 
-std::optional<rapidjson::Value> ArrowColumnToCHColumn::extractGeoMetadata(std::shared_ptr<const arrow::KeyValueMetadata> metadata)
-{
-    for (Int64 i = 0; i < metadata->size(); ++i)
-    {
-        if (metadata->key(i) == "geo")
-        {
-            const auto & value = metadata->value(i);
-            rapidjson::Document doc;
-            doc.Parse(value.c_str());
-
-            return doc.GetObject();
-        }
-    }
-    return std::nullopt;
-}
-
 Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
     const arrow::Schema & schema,
     std::shared_ptr<const arrow::KeyValueMetadata> metadata,
@@ -1426,13 +1410,13 @@ Chunk ArrowColumnToCHColumn::arrowTableToCHChunk(
         name_to_arrow_column[std::move(column_name)] = {std::move(arrow_column), std::move(arrow_field)};
     }
 
-    return arrowColumnsToCHChunk(name_to_arrow_column, num_rows, extractGeoMetadata(metadata), block_missing_values);
+    return arrowColumnsToCHChunk(name_to_arrow_column, num_rows, metadata, block_missing_values);
 }
 
 Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
     const NameToArrowColumn & name_to_arrow_column,
     size_t num_rows,
-    const std::optional<rapidjson::Value> & geo_metadata,
+    std::shared_ptr<const arrow::KeyValueMetadata> metadata,
     BlockMissingValues * block_missing_values)
 {
     ReadColumnFromArrowColumnSettings settings
@@ -1450,6 +1434,7 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
 
     std::unordered_map<String, std::pair<BlockPtr, std::shared_ptr<NestedColumnExtractHelper>>> nested_tables;
 #if USE_RAPIDJSON
+    auto geo_metadata = extractGeoMetadata(metadata);
     std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_metadata);
 #endif
 

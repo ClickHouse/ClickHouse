@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstdint>
-#include <rapidjson/document.h>
+
 #include "config.h"
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
@@ -53,8 +53,6 @@ public:
     };
 
 private:
-    static std::optional<rapidjson::Value> extractGeoMetadata(std::shared_ptr<const arrow::KeyValueMetadata> metadata);
-
     struct ArrowColumn
     {
         std::shared_ptr<arrow::ChunkedArray> column;
@@ -66,7 +64,7 @@ private:
     Chunk arrowColumnsToCHChunk(
         const NameToArrowColumn & name_to_arrow_column,
         size_t num_rows,
-        const std::optional<rapidjson::Value> & geo_metadata,
+        std::shared_ptr<const arrow::KeyValueMetadata> metadata,
         BlockMissingValues * block_missing_values);
 
     const Block & header;

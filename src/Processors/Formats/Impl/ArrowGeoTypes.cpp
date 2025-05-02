@@ -4,17 +4,12 @@
 #include <cstring>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
-#include <arrow/array/array_binary.h>
 #include <base/types.h>
 #include <Common/Exception.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-
-#if USE_RAPIDJSON
-#include <rapidjson/document.h>
-#endif
 
 namespace DB
 {
@@ -23,6 +18,24 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 }
+
+#if USE_RAPIDJSON && USE_ARROW
+std::optional<rapidjson::Value> extractGeoMetadata(std::shared_ptr<const arrow::KeyValueMetadata> metadata)
+{
+    for (Int64 i = 0; i < metadata->size(); ++i)
+    {
+        if (metadata->key(i) == "geo")
+        {
+            const auto & value = metadata->value(i);
+            rapidjson::Document doc;
+            doc.Parse(value.c_str());
+
+            return doc.GetObject();
+        }
+    }
+    return std::nullopt;
+}
+#endif
 
 #if USE_RAPIDJSON
 std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std::optional<rapidjson::Value> & geo_json)
