@@ -1,6 +1,5 @@
 #include "ArrowBlockInputFormat.h"
 #include <optional>
-#include <rapidjson/document.h>
 
 #if USE_ARROW
 
