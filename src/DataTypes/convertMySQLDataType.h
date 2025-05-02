@@ -1,4 +1,6 @@
 #pragma once
+#include "config.h"
+#if USE_MYSQL
 
 #include <string>
 #include <Core/MultiEnum.h>
@@ -16,3 +18,5 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support, 
 DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support, MYSQL_FIELD & field);
 
 }
+
+#endif

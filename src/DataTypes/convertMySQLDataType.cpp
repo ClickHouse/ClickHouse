@@ -1,3 +1,6 @@
+#include "config.h"
+#if USE_MYSQL
+
 #if __has_include(<mysql.h>)
 #include <mysql.h>
 #else
@@ -266,3 +269,5 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support, 
 }
 
 }
+
+#endif
