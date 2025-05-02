@@ -15,13 +15,12 @@
 #include <Analyzer/Utils.h>
 #include <Analyzer/WindowNode.h>
 
-#include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeSet.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/FieldToDataType.h>
 
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
-#include "Analyzer/IQueryTreeNode.h"
-#include <DataTypes/DataTypeTuple.h>
 
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>

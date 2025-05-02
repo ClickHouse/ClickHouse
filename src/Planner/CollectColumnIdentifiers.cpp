@@ -1,14 +1,13 @@
 #include <Planner/CollectColumnIdentifiers.h>
 
-#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/UnionNode.h>
+#include <Analyzer/Utils.h>
 
 #include <Planner/PlannerContext.h>
-#include "Analyzer/FunctionNode.h"
-#include "Analyzer/IQueryTreeNode.h"
-#include "Analyzer/QueryNode.h"
-#include "Analyzer/UnionNode.h"
-#include "Analyzer/Utils.h"
 
 
 namespace DB

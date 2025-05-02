@@ -5,7 +5,6 @@
 
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
-#include "Interpreters/Context_fwd.h"
 
 #include <Core/Joins.h>
 #include <Core/Settings.h>
@@ -219,7 +218,7 @@ QueryPlan decorrelateQueryPlan(
 
         return result_plan;
     }
-    if ([[maybe_unused]] auto * aggeregating_step = typeid_cast<AggregatingStep *>(node->step.get()))
+    if (auto * aggeregating_step = typeid_cast<AggregatingStep *>(node->step.get()))
     {
         auto decorrelated_query_plan = decorrelateQueryPlan(context, node->children.front());
         auto input_header = decorrelated_query_plan.getCurrentHeader();
