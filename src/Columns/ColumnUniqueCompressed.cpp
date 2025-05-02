@@ -124,7 +124,9 @@ ColumnUniqueFCBlockDF::ColumnUniqueFCBlockDF(const ColumnPtr & string_column, si
 
 ColumnUniqueFCBlockDF::ColumnUniqueFCBlockDF(const ColumnUniqueFCBlockDF & other)
     : data_column(other.data_column)
-    , common_prefix_lengths(other.common_prefix_lengths.begin(), other.common_prefix_lengths.end())
+    , common_prefix_lengths(other.common_prefix_lengths.begin(), other.common_prefix_lengths.end()),
+      block_size(other.block_size),
+      is_nullable(other.is_nullable)
 {
 }
 
@@ -239,8 +241,7 @@ std::optional<UInt64> ColumnUniqueFCBlockDF::getOrFindValueIndex(StringRef value
 
 MutableColumnPtr ColumnUniqueFCBlockDF::cloneEmpty() const
 {
-    /// the column always contains default value
-    return ColumnUniqueFCBlockDF::create(data_column->cloneResized(1), block_size, is_nullable);
+    return ColumnUniqueFCBlockDF::create(data_column->cloneEmpty(), block_size, is_nullable);
 }
 
 size_t ColumnUniqueFCBlockDF::uniqueInsert(const Field & x)
@@ -267,8 +268,18 @@ bool ColumnUniqueFCBlockDF::tryUniqueInsert(const Field & x, size_t & index)
 
 MutableColumnPtr ColumnUniqueFCBlockDF::uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
+    const ColumnString * src_column;
+    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&src))
+    {
+        src_column = typeid_cast<const ColumnString *>(&nullable_column->getNestedColumn());
+    }
+    else 
+    {
+        src_column = typeid_cast<const ColumnString *>(&src);
+    }
+
     ColumnPtr sorted_column;
-    old_indexes_mapping = prepareForInsert(getDecompressedAll(), src.cut(start, length), sorted_column);
+    old_indexes_mapping = prepareForInsert(getDecompressedAll(), src_column->cut(start, length), sorted_column);
     calculateCompression(sorted_column);
 
     auto positions = ColumnVector<UInt64>::create();
@@ -347,7 +358,18 @@ ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t
     }
 
     auto values = getDecompressedAll();
-    auto to_add = src.cut(start, partition_index);
+
+    const ColumnString * src_column;
+    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&src))
+    {
+        src_column = typeid_cast<const ColumnString *>(&nullable_column->getNestedColumn());
+    }
+    else 
+    {
+        src_column = typeid_cast<const ColumnString *>(&src);
+    }
+
+    auto to_add = src_column->cut(start, partition_index);
 
     ColumnPtr sorted_column;
     old_indexes_mapping = prepareForInsert(values, to_add, sorted_column);

@@ -90,3 +90,36 @@ TEST(ColumnLowCardinality, CompressedDictionary)
         EXPECT_EQ((*low_cardinality_column)[i].safeGet<String>(), data[i]);
     }
 }
+
+TEST(ColumnLowCardinality, CompressedDictionaryCompact)
+{
+    std::vector<String> data = {
+        "banana",
+        "banner",
+        "application",
+        "apple",
+        "fly",
+        "flying",
+        "fascinating",
+        "fantasy",
+        "arrow",
+        "amazing",
+    };
+
+    MutableColumnPtr indexes = ColumnUInt8::create();
+    MutableColumnPtr dictionary = ColumnUniqueFCBlockDF::create(ColumnString::create(), 4, false);
+    auto low_cardinality_column = ColumnLowCardinality::create(std::move(dictionary), std::move(indexes));
+
+    for (const auto & str : data)
+    {
+        low_cardinality_column->insert(str);
+    }
+
+    auto cut_column = low_cardinality_column->cutAndCompact(2, 6);
+
+    EXPECT_EQ(cut_column->size(), 6);
+    for (size_t i = 0; i < cut_column->size(); ++i)
+    {
+        EXPECT_EQ((*cut_column)[i].safeGet<String>(), data[i + 2]);
+    }
+}

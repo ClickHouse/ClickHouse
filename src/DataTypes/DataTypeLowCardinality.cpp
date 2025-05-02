@@ -1,6 +1,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnUnique.h>
+#include <Columns/ColumnUniqueCompressed.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/assert_cast.h>
@@ -74,7 +75,11 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
     WhichDataType which(type);
 
     if (which.isString())
-        return creator(static_cast<ColumnString *>(nullptr));
+    {
+        const size_t block_size = 4;
+        return ColumnUniqueFCBlockDF::create(ColumnString::create(), block_size, keys_type.isNullable());
+        //return creator(static_cast<ColumnString *>(nullptr));
+    }
     if (which.isFixedString())
         return creator(static_cast<ColumnFixedString *>(nullptr));
     if (which.isDate())
