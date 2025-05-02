@@ -114,8 +114,48 @@ static DB::ConfigurationPtr get_configuration(const std::string & config_path, b
     return DB::ConfigurationPtr(new Poco::Util::XMLConfiguration(config_xml));
 }
 
+static void printXmlLike(const Poco::Util::AbstractConfiguration & config, const std::string & key, std::ostream & out, int indent = 0)
+{
+    std::vector<std::string> subkeys;
+    config.keys(key, subkeys);
 
-static std::vector<std::string> extractFromConfig(const std::string & config_path, const std::string & key, bool process_zk_includes, bool ignore_errors, bool get_users)
+    std::string indent_str(indent, ' ');
+
+    std::string tag = key.substr(key.find_last_of('.') + 1);
+
+    if (subkeys.empty())
+    {
+        // leaf node
+        if (indent == 0)
+        {
+            out << config.getString(key);
+        }
+        else
+        {
+            out << indent_str << "<" << tag << ">" << config.getString(key) << "</" << tag << ">\n";
+        }
+        return;
+    }
+
+    out << indent_str << "<" << tag << ">\n";
+    for (const auto & subkey : subkeys)
+    {
+        std::string full_key = key.empty() ? subkey : key + "." + subkey;
+        printXmlLike(config, full_key, out, indent + 4);
+    }
+    out << indent_str << "</" << tag;
+    if (indent == 0)
+    {
+        // the last element
+        out << ">";
+    }
+    else
+    {
+        out << ">\n";
+    }
+}
+
+static std::vector<std::string> extractFromConfig(const std::string & config_path, const std::string & key, bool process_zk_includes, bool ignore_errors, bool get_users, bool pretty)
 {
     DB::ConfigurationPtr configuration = get_configuration(config_path, process_zk_includes, !ignore_errors);
 
@@ -137,9 +177,22 @@ static std::vector<std::string> extractFromConfig(const std::string & config_pat
         return extactFromConfigAccordingToGlobs(configuration, key, ignore_errors);
 
     /// Do not throw exception if not found.
-    if (ignore_errors)
-        return {configuration->getString(key, "")};
-    return {configuration->getString(key)};
+    if (!configuration->has(key))
+    {
+        if (!ignore_errors)
+            throw DB::Exception(DB::ErrorCodes::CANNOT_LOAD_CONFIG, "Not found: {}", key);
+        return {""};
+    }
+    if (pretty)
+    {
+        std::ostringstream oss;
+        printXmlLike(*configuration, key, oss);
+        return {oss.str()};
+    }
+    else
+    {
+        return {configuration->getString(key)};
+    }
 }
 
 #pragma clang diagnostic ignored "-Wunused-function"
@@ -151,6 +204,7 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
     bool process_zk_includes = false;
     bool ignore_errors = false;
     bool get_users = false;
+    bool pretty = false;
     std::string log_level;
     std::string config_path;
     std::string key;
@@ -164,6 +218,7 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
         ("process-zk-includes", po::bool_switch(&process_zk_includes),
          "if there are from_zk elements in config, connect to ZooKeeper and process them")
         ("try", po::bool_switch(&ignore_errors), "Do not warn about missing keys, missing users configurations or non existing file from include_from tag")
+        ("pretty", po::bool_switch(&pretty), "Pretty print for nested keys")
         ("users", po::bool_switch(&get_users), "Return values from users.xml config")
         ("log-level", po::value<std::string>(&log_level)->default_value("error"), "log level")
         ("config-file,c", po::value<std::string>(&config_path)->required(), "path to config file")
@@ -191,7 +246,7 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
         po::notify(options);
 
         setupLogging(log_level);
-        for (const auto & value : extractFromConfig(config_path, key, process_zk_includes, ignore_errors, get_users))
+        for (const auto & value : extractFromConfig(config_path, key, process_zk_includes, ignore_errors, get_users, pretty))
             std::cout << value << std::endl;
     }
     catch (...)
