@@ -7,12 +7,6 @@ slug: /getting-started/example-datasets/github
 title: 'Writing Queries in ClickHouse using GitHub Data'
 ---
 
-import Image from '@theme/IdealImage';
-import superset_github_lines_added_deleted from './images/superset-github-lines-added-deleted.png'
-import superset_commits_authors from './images/superset-commits-authors.png'
-import superset_authors_matrix from './images/superset-authors-matrix.png'
-import superset_authors_matrix_v2 from './images/superset-authors-matrix_v2.png'
-
 This dataset contains all of the commits and changes for the ClickHouse repository. It can be generated using the native `git-import` tool distributed with ClickHouse.
 
 The generated data provides a `tsv` file for each of the following tables:
@@ -538,11 +532,11 @@ This data visualizes well. Below we use Superset.
 
 **For lines added and deleted:**
 
-<Image img={superset_github_lines_added_deleted} alt="For lines added and deleted" size="md"/>
+![](./images/superset-github-lines-added-deleted.png)
 
 **For commits and authors:**
 
-<Image img={superset_commits_authors} alt="For commits and authors" size="md"/>
+![](./images/superset-commits-authors.png)
 
 ### List files with maximum number of authors {#list-files-with-maximum-number-of-authors}
 
@@ -1283,12 +1277,13 @@ LIMIT 100
 
 A Sankey chart (SuperSet) allows this to be visualized nicely. Note we increase our `LIMIT BY` to 3, to get the top 3 code removers for each author, to improve the variety in the visual.
 
-<Image img={superset_authors_matrix} alt="Superset authors matrix" size="md"/>
+
+![](./images/superset-authors-matrix.png)
 
 
 Alexey clearly likes removing other peoples code. Lets exclude him for a more balanced view of code removal.
 
-<Image img={superset_authors_matrix_v2} alt="Superset authors matrix v2" size="md"/>
+![](./images/superset-authors-matrix_v2.png)
 
 ### Who is the highest percentage contributor per day of week? {#who-is-the-highest-percentage-contributor-per-day-of-week}
 
@@ -2447,7 +2442,7 @@ LIMIT 20
 │              13 │ alesapin             │ #include <Disks/ObjectStorages/IMetadataStorage.h>            │
 │              14 │ alesapin             │                                                               │
 │              15 │ Alexey Milovidov     │ #include <DB/Databases/IDatabase.h>                           │
-│              16 │ Alexey Zatelepin     │ #include <Storages/MergeTree/ReplicatedMergeTreePartheckout er.h> │
+│              16 │ Alexey Zatelepin     │ #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h> │
 │              17 │ CurtizJ              │ #include <Storages/MergeTree/MergeTreeDataPart.h>             │
 │              18 │ Kirill Shvakov       │ #include <Parsers/ASTDropQuery.h>                             │
 │              19 │ s-kat                │ #include <Storages/MergeTree/PinnedPartUUIDs.h>               │

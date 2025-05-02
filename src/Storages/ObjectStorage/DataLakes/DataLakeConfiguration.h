@@ -17,6 +17,7 @@
 
 #include <memory>
 #include <string>
+#include <unordered_map>
 
 #include <Common/ErrorCodes.h>
 
@@ -64,6 +65,8 @@ public:
                     ErrorCodes::FORMAT_VERSION_TOO_OLD,
                     "Metadata is not consinsent with the one which was used to infer table schema. Please, retry the query.");
             }
+            if (!supportsFileIterator())
+                BaseStorageConfiguration::setPaths(current_metadata->getDataFiles());
         }
     }
 
@@ -79,12 +82,11 @@ public:
         return std::nullopt;
     }
 
-    std::optional<size_t> totalRows() override
+    void implementPartitionPruning(const ActionsDAG & filter_dag) override
     {
-        if (!current_metadata)
-            return {};
-
-        return current_metadata->totalRows();
+        if (!current_metadata || !current_metadata->supportsPartitionPruning())
+            return;
+        BaseStorageConfiguration::setPaths(current_metadata->makePartitionPruning(filter_dag));
     }
 
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & data_path) const override
@@ -113,19 +115,25 @@ public:
         ContextPtr context) override
     {
         BaseStorageConfiguration::update(object_storage, context);
-        updateMetadataObjectIfNeeded(object_storage, context);
+        if (updateMetadataObjectIfNeeded(object_storage, context))
+        {
+            if (!supportsFileIterator())
+                BaseStorageConfiguration::setPaths(current_metadata->getDataFiles());
+        }
+
         return ColumnsDescription{current_metadata->getTableSchema()};
     }
 
-    bool supportsFileIterator() const override { return true; }
-
-    ObjectIterator iterate(
-        const ActionsDAG * filter_dag,
-        IDataLakeMetadata::FileProgressCallback callback,
-        size_t list_batch_size) override
+    bool supportsFileIterator() const override
     {
         chassert(current_metadata);
-        return current_metadata->iterate(filter_dag, callback, list_batch_size);
+        return current_metadata->supportsFileIterator();
+    }
+
+    ObjectIterator iterate() override
+    {
+        chassert(current_metadata);
+        return current_metadata->iterate();
     }
 
     /// This is an awful temporary crutch,

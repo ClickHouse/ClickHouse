@@ -8,13 +8,12 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
-# Disable `with_remote_database_disk` as the test does not use the default Keeper.
 node1 = cluster.add_instance(
-    "node1", main_configs=["configs/enable_keeper1.xml"], stay_alive=True, with_remote_database_disk=False,
+    "node1", main_configs=["configs/enable_keeper1.xml"], stay_alive=True
 )
 
 node2 = cluster.add_instance(
-    "node2", main_configs=["configs/enable_keeper2.xml"], stay_alive=True, with_remote_database_disk=False,
+    "node2", main_configs=["configs/enable_keeper2.xml"], stay_alive=True
 )
 
 
@@ -52,7 +51,5 @@ def test_snapshot_on_exit(started_cluster):
         assert node2.contains_in_log("No existing snapshots")
     finally:
         if zk_conn:
-            if zk_conn.exists("/some_path"):
-                zk_conn.delete("/some_path")
             zk_conn.stop()
             zk_conn.close()

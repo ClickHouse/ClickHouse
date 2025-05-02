@@ -128,7 +128,7 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
         auto serialization = elem.type->getDefaultSerialization();
 
         serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-        serialization->deserializeBinaryBulkWithMultipleStreams(elem.column, 0, rows_to_read, settings, state, nullptr);
+        serialization->deserializeBinaryBulkWithMultipleStreams(elem.column, rows_to_read, settings, state, nullptr);
 
         if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(elem.column.get()))
             column_nullable->getExtremesNullLast(min_val, max_val);
@@ -301,18 +301,15 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     if (!filter_dag)
         return;
 
-    /// Clone ActionsDAG with re-generated column name for constants.
-    /// DAG from the query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
-    /// DAG from the skip indexes does not use it. This breaks matching by column name sometimes.
-    auto filter_actions_dag = cloneFilterDAGForIndexesAnalysis(*filter_dag);
     std::vector<FutureSetPtr> sets_to_prepare;
-    if (checkDAGUseless(*filter_actions_dag.getOutputs().at(0), context, sets_to_prepare))
+    if (checkDAGUseless(*filter_dag->getOutputs().at(0), context, sets_to_prepare))
         return;
     /// Try to run subqueries, don't use index if failed (e.g. if use_index_for_in_with_subqueries is disabled).
     for (auto & set : sets_to_prepare)
         if (!set->buildOrderedSetInplace(context))
             return;
 
+    auto filter_actions_dag = filter_dag->clone();
     const auto * filter_actions_dag_node = filter_actions_dag.getOutputs().at(0);
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;

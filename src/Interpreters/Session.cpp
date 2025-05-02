@@ -258,7 +258,6 @@ private:
                         key.second, toString(key.first), session.use_count());
 
                     session->timeout = std::chrono::steady_clock::duration{0};
-                    session->close_time_bucket = std::chrono::steady_clock::time_point{};
                     scheduleCloseSession(*session, lock);
                     continue;
                 }

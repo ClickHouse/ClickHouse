@@ -81,18 +81,15 @@ public:
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override;
 
-    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
-    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
+    std::optional<UInt64> totalRows(const Settings & settings) const override;
+    std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
     using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
     DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
 
-    static ColumnsDescription getColumnsDescriptionFromSourceTables(
-        const ContextPtr & query_context,
-        const String & source_database_name_or_regexp,
-        bool database_is_regexp,
-        const String & source_table_regexp,
-        size_t max_tables_to_look);
+    /// Returns a unified column structure among multiple tables.
+    /// Takes a function that invokes a callback for every table. NOTE: This is quite inconvenient.
+    static ColumnsDescription unifyColumnsDescription(std::function<void(std::function<void(const StoragePtr &)>)> for_each_table);
 
 private:
     /// (Database, Table, Lock, TableName)
@@ -123,24 +120,14 @@ private:
     DatabaseNameOrRegexp database_name_or_regexp;
 
     template <typename F>
-    StoragePtr traverseTablesUntil(F && predicate) const;
+    StoragePtr getFirstTable(F && predicate) const;
 
     template <typename F>
     void forEachTable(F && func) const;
 
-    template <typename F>
-    static StoragePtr traverseTablesUntilImpl(const ContextPtr & query_context, const IStorage * ignore_self, const DatabaseNameOrRegexp & database_name_or_regexp, F && predicate);
-
-    /// Returns a unified column structure among multiple tables.
-    static ColumnsDescription getColumnsDescriptionFromSourceTablesImpl(
-        const ContextPtr & context,
-        const DatabaseNameOrRegexp & database_name_or_regexp,
-        size_t max_tables_to_look,
-        const IStorage * ignore_self);
-
     ColumnSizeByName getColumnSizes() const override;
 
-    ColumnsDescription getColumnsDescriptionFromSourceTables(const ContextPtr & context) const;
+    ColumnsDescription getColumnsDescriptionFromSourceTables(size_t max_tables_to_look) const;
 
     static VirtualColumnsDescription createVirtuals();
 

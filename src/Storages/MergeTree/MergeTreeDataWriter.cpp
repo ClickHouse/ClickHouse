@@ -1,5 +1,4 @@
 #include <Columns/ColumnConst.h>
-#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/ObjectUtils.h>
@@ -404,14 +403,15 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
 
 Block MergeTreeDataWriter::mergeBlock(
     Block && block,
-    const StorageMetadataPtr & metadata_snapshot,
     SortDescription sort_description,
+    const Names & partition_key_columns,
     IColumn::Permutation *& permutation,
     const MergeTreeData::MergingParams & merging_params)
 {
     OpenTelemetry::SpanHolder span("MergeTreeDataWriter::mergeBlock");
 
     size_t block_size = block.rows();
+
     span.addAttribute("clickhouse.rows", block_size);
     span.addAttribute("clickhouse.columns", block.columns());
 
@@ -430,13 +430,10 @@ Block MergeTreeDataWriter::mergeBlock(
                     block, 1, sort_description, merging_params.sign_column,
                     false, block_size + 1, /*block_size_bytes=*/0, getLogger("MergeTreeDataWriter"), /*out_row_sources_buf_=*/ nullptr,
                     /*use_average_block_sizes=*/ false, /*throw_if_invalid_sign=*/ true);
-            case MergeTreeData::MergingParams::Summing: {
-                auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
-                required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
+            case MergeTreeData::MergingParams::Summing:
                 return std::make_shared<SummingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.columns_to_sum,
-                    required_columns, block_size + 1, /*block_size_bytes=*/0);
-            }
+                    partition_key_columns, block_size + 1, /*block_size_bytes=*/0);
             case MergeTreeData::MergingParams::Aggregating:
                 return std::make_shared<AggregatingSortedAlgorithm>(block, 1, sort_description, block_size + 1, /*block_size_bytes=*/0);
             case MergeTreeData::MergingParams::VersionedCollapsing:
@@ -609,10 +606,11 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         perm_ptr = &perm;
     }
 
+    Names partition_key_columns = metadata_snapshot->getPartitionKey().column_names;
     if (context->getSettingsRef()[Setting::optimize_on_insert])
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterMergingBlocksMicroseconds);
-        block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, data.merging_params);
+        block = mergeBlock(std::move(block), sort_description, partition_key_columns, perm_ptr, data.merging_params);
     }
 
     /// Size of part would not be greater than block.bytes() + epsilon
@@ -891,7 +889,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
 
         MergeTreeData::MergingParams projection_merging_params;
         projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
-        block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, projection_merging_params);
+        block = mergeBlock(std::move(block), sort_description, {}, perm_ptr, projection_merging_params);
     }
 
     /// This effectively chooses minimal compression method:

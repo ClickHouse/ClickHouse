@@ -276,7 +276,7 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
     return p.returncode == 0
 
 
-def run_rabbitmqctl(rabbitmq_id, cookie, command, timeout=90):
+def check_rabbitmq_is_available(rabbitmq_id, cookie, timeout=90):
     try:
         subprocess.check_output(
             docker_exec(
@@ -284,28 +284,24 @@ def run_rabbitmqctl(rabbitmq_id, cookie, command, timeout=90):
                 f"RABBITMQ_ERLANG_COOKIE={cookie}",
                 rabbitmq_id,
                 "rabbitmqctl",
-                command,
+                "await_startup",
             ),
             stderr=subprocess.STDOUT,
             timeout=timeout,
         )
+        return True
     except subprocess.CalledProcessError as e:
         # Raised if the command returns a non-zero exit code
         error_message = (
-            f"rabbitmqctl {command} failed with return code {e.returncode}. "
+            f"RabbitMQ startup failed with return code {e.returncode}. "
             f"Output: {e.output.decode(errors='replace')}"
         )
         raise RuntimeError(error_message)
     except subprocess.TimeoutExpired as e:
         # Raised if the command times out
         raise RuntimeError(
-            f"rabbitmqctl {command} timed out. Output: {e.output.decode(errors='replace')}"
+            f"RabbitMQ startup timed out. Output: {e.output.decode(errors='replace')}"
         )
-
-
-def check_rabbitmq_is_available(rabbitmq_id, cookie, timeout=90):
-    run_rabbitmqctl(rabbitmq_id, cookie, "await_startup", timeout)
-    return True
 
 
 def rabbitmq_debuginfo(rabbitmq_id, cookie):
@@ -1578,7 +1574,6 @@ class ClickHouseCluster:
         with_nginx=False,
         with_redis=False,
         with_minio=False,
-        with_remote_database_disk=False,  # Currently, there is no remote storage can be used for the database disk. We disabled it as default.
         with_azurite=False,
         with_cassandra=False,
         with_ldap=False,
@@ -1618,7 +1613,6 @@ class ClickHouseCluster:
         extra_args="",
         randomize_settings=True,
         use_docker_init_flag=False,
-        clickhouse_start_cmd=CLICKHOUSE_START_COMMAND,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
 
@@ -1641,16 +1635,6 @@ class ClickHouseCluster:
 
         if tag is None:
             tag = DOCKER_BASE_TAG
-        else:
-            if with_remote_database_disk:
-                raise Exception(
-                    f"Can't add instance '{name}': not support remote database disk with the old version {tag}"
-                )
-            with_remote_database_disk = False
-
-        if with_remote_database_disk is None:
-            with_remote_database_disk = False
-
         if not env_variables:
             env_variables = {}
         self.use_keeper = use_keeper
@@ -1663,7 +1647,7 @@ class ClickHouseCluster:
             "/var/lib/clickhouse/server_%h_%p_%m.profraw"
         )
 
-        clickhouse_start_command = clickhouse_start_cmd
+        clickhouse_start_command = CLICKHOUSE_START_COMMAND
         if clickhouse_log_file:
             clickhouse_start_command += " --log-file=" + clickhouse_log_file
         if clickhouse_error_log_file:
@@ -1697,7 +1681,6 @@ class ClickHouseCluster:
             with_mongo=with_mongo,
             with_redis=with_redis,
             with_minio=with_minio,
-            with_remote_database_disk=with_remote_database_disk,
             with_azurite=with_azurite,
             with_jdbc_bridge=with_jdbc_bridge,
             with_hive=with_hive,
@@ -2391,18 +2374,6 @@ class ClickHouseCluster:
                 time.sleep(0.5)
 
         raise RuntimeError("Cannot wait RabbitMQ container")
-
-    def stop_rabbitmq_app(self, timeout=120):
-        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "stop_app", timeout)
-
-    def start_rabbitmq_app(self, timeout=120):
-        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout)
-        self.wait_rabbitmq_to_start()
-
-    def reset_rabbitmq(self, timeout=120):
-        self.stop_rabbitmq_app()
-        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "reset", timeout)
-        self.start_rabbitmq_app()
 
     def wait_nats_is_available(self, max_retries=5):
         retries = 0
@@ -3393,7 +3364,6 @@ class ClickHouseInstance:
         with_mongo,
         with_redis,
         with_minio,
-        with_remote_database_disk,
         with_azurite,
         with_jdbc_bridge,
         with_hive,
@@ -3490,7 +3460,6 @@ class ClickHouseInstance:
         )
         self.with_redis = with_redis
         self.with_minio = with_minio
-        self.with_remote_database_disk = with_remote_database_disk
         self.with_azurite = with_azurite
         self.with_cassandra = with_cassandra
         self.with_ldap = with_ldap
@@ -4538,20 +4507,8 @@ class ClickHouseInstance:
         )
 
     def replace_in_config(self, path_to_config, replace, replacement):
-        # Do `sed 's/{replace}/{replacement}/g'`, but with some hacks to make it work when {replace}
-        # and {replacement} have quotes or slashes.
-        for d in "/|#-=+@^*~":
-            if d not in replace and d not in replacement:
-                delimiter = d
-                break
-        else:
-            raise Exception(
-                f"Couldn't find a suitable delimiter"
-            )
-        replace = shlex.quote(replace)
-        replacement = shlex.quote(replacement)
         self.exec_in_container(
-            ["bash", "-c", f"sed -i 's{delimiter}'{replace}'{delimiter}'{replacement}'{delimiter}g' {path_to_config}"]
+            ["bash", "-c", f"sed -i 's/{replace}/{replacement}/g' {path_to_config}"]
         )
 
     def create_dir(self):
@@ -4610,12 +4567,6 @@ class ClickHouseInstance:
             )
 
         write_embedded_config("0_common_instance_users.xml", users_d_dir)
-
-        if self.with_installed_binary:
-            # Ignore CPU overload in this case
-            write_embedded_config("0_common_min_cpu_busy_time.xml", self.config_d_dir)
-        else:
-            write_embedded_config("0_common_max_cpu_load.xml", users_d_dir)
 
         use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
         # If specific version was used there can be no

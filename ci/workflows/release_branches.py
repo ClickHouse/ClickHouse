@@ -41,6 +41,7 @@ workflow = Workflow.Config(
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
+        *ArtifactConfigs.performance_packages,
     ],
     dockers=DOCKERS,
     secrets=SECRETS,

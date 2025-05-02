@@ -21,6 +21,7 @@ using MergeTreeBlockSizePredictorPtr = std::shared_ptr<MergeTreeBlockSizePredict
 class IMergeTreeDataPart;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
+using VirtualFields = std::unordered_map<String, Field>;
 
 class DeserializationPrefixesCache;
 using DeserializationPrefixesCachePtr = std::shared_ptr<DeserializationPrefixesCache>;
@@ -95,7 +96,7 @@ public:
         MarkCache * mark_cache = nullptr;
         MergeTreeReaderSettings reader_settings{};
         StorageSnapshotPtr storage_snapshot{};
-        ValueSizeMap value_size_map{};
+        IMergeTreeReader::ValueSizeMap value_size_map{};
         ReadBufferFromFileBase::ProfileCallback profile_callback{};
     };
 

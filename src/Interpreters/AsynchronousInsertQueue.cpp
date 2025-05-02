@@ -19,7 +19,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
@@ -924,7 +923,7 @@ try
             normalized_query_hash,
             key.query,
             pipeline,
-            interpreter.get(),
+            interpreter,
             internal,
             query_database,
             query_table,
@@ -1067,14 +1066,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         return 0;
     };
 
-
-    StreamingFormatExecutor executor(
-        header,
-        format,
-        std::move(on_error),
-        data->size_in_bytes,
-        data->entries.size(),
-        std::move(adding_defaults_transform));
+    StreamingFormatExecutor executor(header, format, std::move(on_error), std::move(adding_defaults_transform));
     auto chunk_info = std::make_shared<AsyncInsertInfo>();
 
     for (const auto & entry : data->entries)
@@ -1090,7 +1082,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         executor.setQueryParameters(entry->query_parameters);
 
         size_t num_bytes = bytes->size();
-        size_t num_rows = executor.execute(*buffer, num_bytes);
+        size_t num_rows = executor.execute(*buffer);
 
         total_rows += num_rows;
 

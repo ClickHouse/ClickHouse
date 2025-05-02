@@ -265,6 +265,7 @@ private:
     template<bool from_row_list>
     void buildOutputFromBlocks();
 
+    template<bool join_data_sorted>
     void buildOutputFromRowRefLists();
 };
 

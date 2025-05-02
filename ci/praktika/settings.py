@@ -68,6 +68,7 @@ class _Settings:
     WORKFLOW_STATUS_FILE: str = f"{TEMP_DIR}/workflow_status.json"
     WORKFLOW_INPUTS_FILE: str = f"{TEMP_DIR}/workflow_inputs.json"
     ARTIFACT_URLS_FILE: str = f"{TEMP_DIR}/artifact_urls.json"
+    CUSTOM_DATA_FILE: str = "/tmp/custom_data.json"
 
     ######################################
     #        CI Cache settings           #
@@ -99,6 +100,9 @@ class _Settings:
     CI_DB_DB_NAME = ""
     CI_DB_TABLE_NAME = ""
     CI_DB_INSERT_TIMEOUT_SEC = 5
+    SUB_RESULT_NAMES_WITH_TESTS = [
+        "Tests",
+    ]
 
 
 _USER_DEFINED_SETTINGS = [
@@ -132,6 +136,7 @@ _USER_DEFINED_SETTINGS = [
     "CI_DB_DB_NAME",
     "CI_DB_TABLE_NAME",
     "CI_DB_INSERT_TIMEOUT_SEC",
+    "SUB_RESULT_NAMES_WITH_TESTS",
     "USE_CUSTOM_GH_AUTH",
     "SECRET_GH_APP_ID",
     "SECRET_GH_APP_PEM_KEY",

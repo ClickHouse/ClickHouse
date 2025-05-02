@@ -585,7 +585,10 @@ unset IFS
 # --memsuspend:
 #
 #   If the available memory falls below 2 * size, GNU parallel will suspend some of the running jobs.
+
+#TODO: check why parallel hangs locally
 parallel -v --joblog analyze/parallel-log.txt --memsuspend 15G --null < analyze/commands.txt 2>> analyze/errors.log
+#bash analyze/commands.txt 2>> analyze/errors.log
 
 clickhouse-local --query "
 -- Join the metric names back to the metric statistics we've calculated, and make
@@ -1146,7 +1149,7 @@ do
         # "socket.timeout: timed out".
         rg --no-filename --max-count=2 -i '\(Exception\|Error\):[^:]' "$log" \
             || rg --no-filename --max-count=2 -i '^[^ ]\+: ' "$log" \
-            || head -10 "$log"
+            || head -2 "$log"
     } | sed "s/^/$test\t/" >> run-errors.tsv ||:
 done
 }
