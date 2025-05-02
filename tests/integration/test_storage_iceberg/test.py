@@ -916,7 +916,7 @@ def test_evolved_schema_simple(
             ["d", "Array(Nullable(Int32))"],
             ["b", "Nullable(Float64)"],
             ["a", "Int32"],
-            ["c", "Decimal(9, 2)"],
+            ["c", "Decimal(12, 2)"],
             ["e", "Nullable(String)"],
         ],
         [
@@ -2994,3 +2994,95 @@ def test_minmax_pruning_with_null(started_cluster, storage_type):
     )
 
 
+
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_bucket_partition_pruning(started_cluster, storage_type):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = "test_bucket_partition_pruning_" + storage_type + "_" + get_uuid_str()
+
+    def execute_spark_query(query: str):
+        spark.sql(query)
+        default_upload_directory(
+            started_cluster,
+            storage_type,
+            f"/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
+        )
+        return
+
+    # Create the Iceberg table with bucket partitioning
+    execute_spark_query(
+        f"""
+        CREATE TABLE {TABLE_NAME} (
+            id INT,
+            name STRING,
+            value DOUBLE,
+            decimal_col DECIMAL(10, 2),
+            date_col DATE,
+            timestamp_col TIMESTAMP
+        )
+        USING iceberg
+        PARTITIONED BY (
+            bucket(4, id),
+            bucket(3, name),
+            bucket(5, decimal_col),
+            bucket(3, date_col),
+            bucket(4, timestamp_col)
+        )
+        OPTIONS('format-version'='2')
+        """
+    )
+
+    # Insert data into the table
+    execute_spark_query(
+        f"""
+        INSERT INTO {TABLE_NAME} VALUES
+        (1, 'Alice', 10.5, 123.45, DATE '2024-01-01', TIMESTAMP '2024-01-01 10:00:00'),
+        (2, 'Bob', 20.0, 234.56, DATE '2024-02-01', TIMESTAMP '2024-02-01 11:00:00'),
+        (3, 'Charlie', 30.5, 345.67, DATE '2024-03-01', TIMESTAMP '2024-03-01 12:00:00'),
+        (4, 'David', 40.0, 456.78, DATE '2024-04-01', TIMESTAMP '2024-04-01 13:00:00'),
+        (5, 'Eve', 50.5, 567.89, DATE '2024-05-01', TIMESTAMP '2024-05-01 14:00:00'),
+        (6, 'Frank', 60.0, 678.90, DATE '2024-06-01', TIMESTAMP '2024-06-01 15:00:00'),
+        (7, 'Grace', 70.5, 789.01, DATE '2024-07-01', TIMESTAMP '2024-07-01 16:00:00'),
+        (8, 'Hank', 80.0, 890.12, DATE '2024-08-01', TIMESTAMP '2024-08-01 17:00:00')
+        """
+    )
+
+    # Generate the ClickHouse table creation expression
+    creation_expression = get_creation_expression(
+        storage_type, TABLE_NAME, started_cluster, table_function=True
+    )
+
+    # Define a helper function to validate pruning
+    def check_validity_and_get_prunned_files(select_expression):
+        settings1 = {
+            "use_iceberg_partition_pruning": 0
+        }
+        settings2 = {
+            "use_iceberg_partition_pruning": 1
+        }
+        return check_validity_and_get_prunned_files_general(
+            instance, TABLE_NAME, settings1, settings2, 'IcebergPartitionPrunnedFiles', select_expression
+        )
+
+    # Define a list of SELECT queries to validate bucket partition pruning
+    queries = [
+        f"SELECT * FROM {creation_expression} WHERE id = 1 ORDER BY ALL",
+        f"SELECT * FROM {creation_expression} WHERE id IN (2, 3) ORDER BY ALL",
+        f"SELECT * FROM {creation_expression} WHERE name = 'Alice' ORDER BY ALL",
+        f"SELECT * FROM {creation_expression} WHERE name IN ('Bob', 'Charlie') ORDER BY ALL",
+        f"SELECT * FROM {creation_expression} WHERE date_col = '2024-01-01' ORDER BY ALL",
+        f"SELECT * FROM {creation_expression} WHERE timestamp_col = TIMESTAMP '2024-05-01 00:00:00' ORDER BY ALL",
+        # Queries with simple conjunctions (AND)
+        f"SELECT * FROM {creation_expression} WHERE id = 1 AND name = 'Alice' ORDER BY ALL",
+        f"SELECT * FROM {creation_expression} WHERE date_col = '2024-01-01' AND timestamp_col = TIMESTAMP '2024-01-01 10:00:00' ORDER BY ALL",
+        # Queries with simple disjunctions (OR)
+        f"SELECT * FROM {creation_expression} WHERE id = 1 OR name = 'Alice' ORDER BY ALL",
+        f"SELECT * FROM {creation_expression} WHERE date_col = '2024-01-01' OR timestamp_col = TIMESTAMP '2024-01-01 10:00:00' ORDER BY ALL",
+        f"SELECT * FROM {creation_expression} WHERE id = 1 OR name = 'Alice' AND date_col = '2024-01-01' ORDER BY ALL",
+    ]
+
+    # Perform SELECT queries in a loop
+    for query in queries:
+        assert check_validity_and_get_prunned_files(query) > 0
