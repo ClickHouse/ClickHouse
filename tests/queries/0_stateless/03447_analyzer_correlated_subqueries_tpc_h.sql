@@ -100,6 +100,7 @@ INSERT INTO lineitem SELECT * FROM generateRandom() LIMIT 1;
 
 set enable_analyzer = 1;
 set allow_experimental_correlated_subqueries = 1;
+SET enable_parallel_replicas = 0;
 
 -- Q2
 SELECT

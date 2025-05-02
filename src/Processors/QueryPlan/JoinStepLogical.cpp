@@ -892,10 +892,7 @@ std::unique_ptr<IQueryPlanStep> JoinStepLogical::deserialize(Deserialization & c
 QueryPlanStepPtr JoinStepLogical::clone() const
 {
     auto new_expression_actions = expression_actions.clone();
-    auto new_join_info = join_info;
-    new_join_info.expression.condition.fixReferences(new_expression_actions);
-    for (auto & condition : new_join_info.expression.disjunctive_conditions)
-        condition.fixReferences(new_expression_actions);
+    auto new_join_info = join_info.clone(new_expression_actions);
 
     auto result_step = std::make_unique<JoinStepLogical>(
         getInputHeaders().front(), getInputHeaders().back(),

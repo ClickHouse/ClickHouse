@@ -77,7 +77,7 @@ struct JoinExpressionActions
 
     JoinExpressionActions clone() const
     {
-        return JoinExpressionActions(
+        return  JoinExpressionActions(
             std::make_unique<ActionsDAG>(left_pre_join_actions->clone()),
             std::make_unique<ActionsDAG>(right_pre_join_actions->clone()),
             std::make_unique<ActionsDAG>(post_join_actions->clone())
@@ -117,7 +117,11 @@ public:
     void serialize(WriteBuffer & out, const ActionsDAGRawPtrs & dags) const;
     static JoinActionRef deserialize(ReadBuffer & in, const ActionsDAGRawPtrs & dags);
 
+    JoinActionRef clone(const ActionsDAG * actions_dag_) const;
+
 private:
+    JoinActionRef(const ActionsDAG * actions_dag_, const String & column_name_);
+
     const ActionsDAG * actions_dag = nullptr;
     String column_name;
 };
@@ -148,32 +152,10 @@ struct JoinCondition
     /// Unlike the join predicates, these conditions can be arbitrary expressions.
     std::vector<JoinActionRef> residual_conditions;
 
-    void fixReferences(const JoinExpressionActions & expression_actions)
-    {
-        for (auto & predicate : predicates)
-        {
-            predicate.left_node = JoinActionRef(&expression_actions.left_pre_join_actions->findInOutputs(predicate.left_node.getColumnName()), expression_actions.left_pre_join_actions.get());
-            predicate.right_node = JoinActionRef(&expression_actions.right_pre_join_actions->findInOutputs(predicate.right_node.getColumnName()), expression_actions.right_pre_join_actions.get());
-        }
-
-        for (auto & condition: left_filter_conditions)
-        {
-            condition = JoinActionRef(&expression_actions.left_pre_join_actions->findInOutputs(condition.getColumnName()), expression_actions.left_pre_join_actions.get());
-        }
-
-        for (auto & condition: right_filter_conditions)
-        {
-            condition = JoinActionRef(&expression_actions.right_pre_join_actions->findInOutputs(condition.getColumnName()), expression_actions.right_pre_join_actions.get());
-        }
-
-        for (auto & condition: residual_conditions)
-        {
-            condition = JoinActionRef(&expression_actions.post_join_actions->findInOutputs(condition.getColumnName()), expression_actions.post_join_actions.get());
-        }
-    }
-
     void serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const;
     static JoinCondition deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags);
+
+    JoinCondition clone(const JoinExpressionActions & expression_actions) const;
 };
 
 struct JoinExpression
@@ -192,6 +174,8 @@ struct JoinExpression
 
     void serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const;
     static JoinExpression deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags);
+
+    JoinExpression clone(const JoinExpressionActions & expression_copy) const;
 };
 
 struct JoinInfo
@@ -207,6 +191,11 @@ struct JoinInfo
 
     /// The locality of the join (e.g., LOCAL, GLOBAL)
     JoinLocality locality;
+
+    JoinInfo clone(const JoinExpressionActions & expression_actions) const
+    {
+        return JoinInfo{ expression.clone(expression_actions), kind, strictness, locality};
+    }
 
     void serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const;
     static JoinInfo deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags);
