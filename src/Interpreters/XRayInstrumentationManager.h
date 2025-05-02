@@ -11,6 +11,7 @@
 #include <list>
 #include <vector>
 #include <mutex>
+#include <shared_mutex>
 #include <variant>
 #include <xray/xray_interface.h>
 
@@ -88,7 +89,7 @@ private:
     static std::unordered_map<int32_t, HandlerTypeToIP> functionIdToHandlers;
 
     static inline std::mutex log_mutex;
-    static inline std::mutex shared_mutex;
+    static inline std::shared_mutex shared_mutex;
 };
 
 }
