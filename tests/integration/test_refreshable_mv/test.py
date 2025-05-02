@@ -63,7 +63,7 @@ def cleanup():
     global test_idx
     test_idx += 1
 
-        
+
 def test_refreshable_mv_in_replicated_db(started_cluster):
     for node in nodes:
         node.query(
@@ -383,7 +383,7 @@ def new_backup_destination():
     backup_name = f"backup{backup_id_counter}"
 
     return (
-        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'ClickHouse_Minio_P@ssw0rd')"
+        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')"
     )
 
 def do_test_backup(to_table):
