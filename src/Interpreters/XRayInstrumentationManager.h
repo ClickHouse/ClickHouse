@@ -18,9 +18,6 @@
 namespace DB
 {
 
-using XRayHandlerFunction = void(*)(int32_t, XRayEntryType);
-using InstrumentParameter = std::variant<String, Int64, Float64>;
-
 enum class HandlerType
 {
     Sleep,
@@ -28,6 +25,8 @@ enum class HandlerType
     Profile,
 };
 
+using XRayHandlerFunction = void(*)(int32_t, XRayEntryType);
+using InstrumentParameter = std::variant<String, Int64, Float64>;
 
 class XRayInstrumentationManager
 {
@@ -48,6 +47,7 @@ public:
     void unpatchFunction(const std::string & function_name, const std::string & handler_name);
 
     using InstrumentedFunctions = std::list<InstrumentedFunctionInfo>;
+    using HandlerTypeToIP = std::unordered_map<HandlerType, std::list<InstrumentedFunctionInfo>::iterator>;
     InstrumentedFunctions getInstrumentedFunctions()
     {
         std::lock_guard lock(functions_to_instrument_mutex);
@@ -84,8 +84,6 @@ private:
     static std::unordered_map<int64_t, std::string> xrayIdToFunctionName;
     std::list<InstrumentedFunctionInfo> instrumented_functions;
     //static std::unordered_map<int64_t, std::vector<std::list<InstrumentedFunctionInfo>::iterator>> functionIdToInstrumentPoint;
-
-    using HandlerTypeToIP = std::unordered_map<HandlerType, std::list<InstrumentedFunctionInfo>::iterator>;
     static std::unordered_map<int32_t, HandlerTypeToIP> functionIdToHandlers;
 
     static inline std::mutex log_mutex;

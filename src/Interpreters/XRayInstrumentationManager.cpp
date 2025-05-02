@@ -44,7 +44,8 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 }
 std::unordered_map<int64_t, std::string> XRayInstrumentationManager::xrayIdToFunctionName;
-std::unordered_map<std::string, XRayHandlerFunction> xrayHandlerNameToFunction;
+std::unordered_map<std::string, XRayHandlerFunction> XRayInstrumentationManager::xrayHandlerNameToFunction;
+std::unordered_map<int32_t, XRayInstrumentationManager::HandlerTypeToIP> XRayInstrumentationManager::functionIdToHandlers;
 
 void XRayInstrumentationManager::registerHandler(const std::string & name, XRayHandlerFunction handler)
 {
