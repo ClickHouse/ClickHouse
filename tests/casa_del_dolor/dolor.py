@@ -37,7 +37,7 @@ parser.add_argument('--time-between-shutdowns', type=ordered_pair, default=(20, 
 args = parser.parse_args()
 
 logging.basicConfig(filename=args.log_path, filemode='w',
-                    level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+                    level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', force=True)
 logger = logging.getLogger(__name__)
 
 # Set seed first
@@ -46,7 +46,7 @@ if seed == 0:
     import secrets
     seed = secrets.randbits(64) #64 - bit random integer
 random.seed(seed)
-logger.info("Using seed: ", seed)
+logger.info(f"Using seed: {seed}")
 
 # Set generator, at the moment only BuzzHouse is available
 generator = None
@@ -94,7 +94,7 @@ while True:
     lower_bound, upper_bound = args.time_between_shutdowns
     time.sleep(int(random.uniform(lower_bound, upper_bound)))
     kill_server = random.randint(1, 100) <= args.kill_server_prob
-    logger.info("Restart the server with", "kill" if kill_server else "manual shutdown")
+    logger.info(f"Restart the server with {"kill" if kill_server else "manual shutdown"}")
     server.restart_clickhouse(stop_start_wait_sec = 10, kill = kill_server)
 
 cluster.shutdown()
