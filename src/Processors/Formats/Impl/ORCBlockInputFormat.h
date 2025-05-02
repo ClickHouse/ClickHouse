@@ -1,5 +1,4 @@
 #pragma once
-#include <arrow/util/key_value_metadata.h>
 #include "config.h"
 #if USE_ORC
 

@@ -1,5 +1,4 @@
 #include "ORCBlockInputFormat.h"
-#include <arrow/util/key_value_metadata.h>
 #include "Common/Exception.h"
 
 #if USE_ORC
