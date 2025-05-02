@@ -22,6 +22,9 @@ extern const int BAD_ARGUMENTS;
 #if USE_RAPIDJSON && USE_ARROW
 std::optional<rapidjson::Value> extractGeoMetadata(std::shared_ptr<const arrow::KeyValueMetadata> metadata)
 {
+    if (!metadata)
+        return std::nullopt;
+
     for (Int64 i = 0; i < metadata->size(); ++i)
     {
         if (metadata->key(i) == "geo")
