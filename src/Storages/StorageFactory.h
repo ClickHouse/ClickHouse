@@ -50,6 +50,7 @@ public:
         const ConstraintsDescription & constraints;
         LoadingStrictnessLevel mode;
         const String & comment;
+        bool is_restore_from_backup = false;
 
         ContextMutablePtr getContext() const;
         ContextMutablePtr getLocalContext() const;
@@ -93,7 +94,8 @@ public:
         ContextMutablePtr context,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
-        LoadingStrictnessLevel mode) const;
+        LoadingStrictnessLevel mode,
+        bool is_restore_from_backup = false) const;
 
     /// Register a table engine by its name.
     /// No locking, you must register all engines before usage of get.
