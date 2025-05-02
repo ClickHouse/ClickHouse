@@ -144,14 +144,14 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
     return res;
 }
 
-DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support, MYSQL_FIELD * field)
+DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support, MYSQL_FIELD & field)
 {
-    bool is_nullable = !(field->flags & NOT_NULL_FLAG);
-    bool is_unsigned = (field->flags & UNSIGNED_FLAG);
+    bool is_nullable = !(field.flags & NOT_NULL_FLAG);
+    bool is_unsigned = (field.flags & UNSIGNED_FLAG);
 
     DataTypePtr data_type;
 
-    switch (field->type)
+    switch (field.type)
     {
         case enum_field_types::MYSQL_TYPE_TINY:
             if (is_unsigned)
@@ -184,13 +184,13 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support, 
             if (type_support.isSet(MySQLDataTypesSupport::DECIMAL))
             {
                 // MySQL DECIMAL includes space for sign and decimal point in length
-                auto precision = field->length;
-                if (field->decimals > 0)
+                auto precision = field.length;
+                if (field.decimals > 0)
                     precision -= 1; // Decimal point
-                if (!(field->flags & UNSIGNED_FLAG))
+                if (!(field.flags & UNSIGNED_FLAG))
                     precision -= 1; // Sign
 
-                data_type = createDecimal<DataTypeDecimal>(precision, field->decimals);
+                data_type = createDecimal<DataTypeDecimal>(precision, field.decimals);
             }
             break;
 
@@ -211,11 +211,11 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support, 
             {
                 data_type = std::make_shared<DataTypeDateTime>();
             }
-            else if (field->type == MYSQL_TYPE_TIMESTAMP && field->decimals == 0) // scale == field->decimals
+            else if (field.type == MYSQL_TYPE_TIMESTAMP && field.decimals == 0) // scale == field.decimals
             {
                 data_type = std::make_shared<DataTypeDateTime>();
             }
-            data_type = std::make_shared<DataTypeDateTime64>(field->decimals);
+            data_type = std::make_shared<DataTypeDateTime64>(field.decimals);
             break;
 
         case enum_field_types::MYSQL_TYPE_DATE:

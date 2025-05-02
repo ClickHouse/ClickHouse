@@ -157,7 +157,7 @@ StorageMySQLSelect::doQueryResultStructure(mysqlxx::PoolWithFailover & pool_, co
     const auto & settings = context_->getSettingsRef();
     for (size_t i = 0; i < field_cnt; ++i)
     {
-        auto * field = query_res.getField(i);
+        auto & field = query_res.getField(i);
         ColumnDescription column_description(
             query_res.getFieldName(i), convertMySQLDataType(settings[Setting::mysql_datatypes_support_level], field));
         columns.add(column_description);
