@@ -127,8 +127,7 @@ namespace DB
                     context,
                     table_name,
                     std::move(cached_columns),
-                    /*use_global_context=*/false,
-                    /*is_insert_query=*/is_insert_query);
+                    is_insert_query);
         }
         auto res = std::make_shared<StorageLoop>(
                 StorageID(getDatabaseName(), table_name),
@@ -149,8 +148,7 @@ namespace DB
                                                                                               "0"
                                                                                               "1"
                                                                                               "2"
-                                                                                              "0"}},
-                 .category = FunctionDocumentation::Category::TableFunction
+                                                                                              "0"}}
                         }});
     }
 

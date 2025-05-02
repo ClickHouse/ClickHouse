@@ -3,6 +3,7 @@
 #include <IO/AsynchronousReadBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ProfileEvents.h>
+#include <base/defines.h>
 #include <cerrno>
 
 

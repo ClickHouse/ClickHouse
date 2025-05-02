@@ -21,12 +21,10 @@ using MergeTreeBlockSizePredictorPtr = std::shared_ptr<MergeTreeBlockSizePredict
 class IMergeTreeDataPart;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
+using VirtualFields = std::unordered_map<String, Field>;
 
 class DeserializationPrefixesCache;
 using DeserializationPrefixesCachePtr = std::shared_ptr<DeserializationPrefixesCache>;
-
-class MergedPartOffsets;
-using MergedPartOffsetsPtr = std::shared_ptr<MergedPartOffsets>;
 
 enum class MergeTreeReadType : uint8_t
 {
@@ -68,12 +66,8 @@ struct MergeTreeReadTaskInfo
     DataPartPtr parent_part;
     /// For `part_index` virtual column
     size_t part_index_in_query;
-    /// For `part_starting_offset` virtual column
-    size_t part_starting_offset_in_query;
     /// Alter converversionss that should be applied on-fly for part.
     AlterConversionsPtr alter_conversions;
-    /// `_part_offset` mapping used to merge projections with `_part_offset`.
-    MergedPartOffsetsPtr merged_part_offsets;
     /// Prewhere steps that should be applied to execute on-fly mutations for part.
     PrewhereExprSteps mutation_steps;
     /// Column names to read during PREWHERE and WHERE
@@ -102,7 +96,7 @@ public:
         MarkCache * mark_cache = nullptr;
         MergeTreeReaderSettings reader_settings{};
         StorageSnapshotPtr storage_snapshot{};
-        ValueSizeMap value_size_map{};
+        IMergeTreeReader::ValueSizeMap value_size_map{};
         ReadBufferFromFileBase::ProfileCallback profile_callback{};
     };
 

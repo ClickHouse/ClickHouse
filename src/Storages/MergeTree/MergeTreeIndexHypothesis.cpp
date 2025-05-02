@@ -78,7 +78,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexHypothesis::createIndexAggregator(cons
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexHypothesis::createIndexCondition(
-    const ActionsDAG::Node *, ContextPtr) const
+    const ActionsDAG *, ContextPtr) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not supported");
 }

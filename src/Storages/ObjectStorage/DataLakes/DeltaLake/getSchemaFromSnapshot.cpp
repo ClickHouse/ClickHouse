@@ -5,7 +5,6 @@
 #include "KernelUtils.h"
 #include "KernelPointerWrapper.h"
 
-#include <base/scope_guard.h>
 #include <Core/TypeId.h>
 #include <Common/logger_useful.h>
 
@@ -79,25 +78,26 @@ class SchemaVisitorData
     friend class SchemaVisitor;
 
 public:
-    struct SchemaResult
-    {
-        DB::NamesAndTypesList names_and_types;
-        DB::NameToNameMap physical_names_map;
-    };
-    SchemaResult getSchemaResult();
+    DB::NamesAndTypesList getSchemaResult();
     const DB::Names & getPartitionColumns() const { return partition_columns; }
+
+    void initScanState(
+        ffi::SharedSnapshot * snapshot,
+        ffi::SharedExternEngine * engine)
+    {
+        if (!scan.get())
+            scan = KernelUtils::unwrapResult(ffi::scan(snapshot, engine, /* predicate */{}), "scan");
+        if (!scan_state.get())
+            scan_state = ffi::get_global_scan_state(scan.get());
+    }
 
 private:
     DB::DataTypes getDataTypesFromTypeList(size_t list_idx);
 
     struct Field
     {
-        Field(
-            const std::string & name_,
-            const DB::TypeIndex & type_,
-            bool nullable_,
-            const std::string & physical_name_)
-            : name(name_), type(type_), nullable(nullable_), physical_name(physical_name_) {}
+        Field(const std::string & name_, const DB::TypeIndex & type_, bool nullable_)
+            : name(name_), type(type_), nullable(nullable_) {}
 
         /// Column name.
         const std::string name;
@@ -105,10 +105,6 @@ private:
         const DB::TypeIndex type;
         /// Column nullability.
         const bool nullable;
-        /// In case of columnMapping.mode = 'name',
-        /// physical name of the column in parquet metadata
-        /// will be different from table schema column name.
-        const std::string physical_name;
 
         /// If type is complex (array, map, struct), whether it can contain nullable values.
         bool value_contains_null;
@@ -139,6 +135,8 @@ private:
     using KernelScan = KernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
     using KernelGlobalScanState = KernelPointerWrapper<ffi::SharedGlobalScanState, ffi::free_global_scan_state>;
 
+    KernelScan scan;
+    KernelGlobalScanState scan_state;
 };
 
 /**
@@ -149,32 +147,36 @@ private:
  */
 class SchemaVisitor
 {
-    using KernelSharedSchema = KernelPointerWrapper<ffi::SharedSchema, ffi::free_schema>;
+    using KernelSharedSchema = KernelPointerWrapper<ffi::SharedSchema, ffi::free_global_read_schema>;
     using KernelStringSliceIterator = KernelPointerWrapper<ffi::StringSliceIterator, ffi::free_string_slice_data>;
 public:
     static void visitTableSchema(ffi::SharedSnapshot * snapshot, SchemaVisitorData & data)
     {
-        KernelSharedSchema schema(ffi::logical_schema(snapshot));
         auto visitor = createVisitor(data);
-        [[maybe_unused]] size_t result = ffi::visit_schema(schema.get(), &visitor);
+        size_t result = ffi::visit_snapshot_schema(snapshot, &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
     }
 
     static void visitReadSchema(
-        ffi::SharedGlobalScanState * scan_state,
+        ffi::SharedSnapshot * snapshot,
+        ffi::SharedExternEngine * engine,
         SchemaVisitorData & data)
     {
-        KernelSharedSchema schema(ffi::get_global_read_schema(scan_state));
+        data.initScanState(snapshot, engine);
+        KernelSharedSchema schema = ffi::get_global_read_schema(data.scan_state.get());
+
         auto visitor = createVisitor(data);
-        [[maybe_unused]] size_t result = ffi::visit_schema(schema.get(), &visitor);
+        size_t result = ffi::visit_schema(schema.get(), &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
     }
 
     static void visitPartitionColumns(
         ffi::SharedSnapshot * snapshot,
+        ffi::SharedExternEngine * engine,
         SchemaVisitorData & data)
     {
-        KernelStringSliceIterator partition_columns_iter(ffi::get_partition_columns(snapshot));
+        data.initScanState(snapshot, engine);
+        KernelStringSliceIterator partition_columns_iter = ffi::get_partition_columns(data.scan_state.get());
         while (ffi::string_slice_next(partition_columns_iter.get(), &data, &visitPartitionColumn)) {}
     }
 
@@ -225,22 +227,13 @@ private:
         return id;
     }
 
-    static std::unique_ptr<std::string> extractPhysicalName(const ffi::CStringMap * metadata)
-    {
-        std::string * physical_name = static_cast<std::string *>(ffi::get_from_string_map(
-            metadata,
-            KernelUtils::toDeltaString("delta.columnMapping.physicalName"),
-            KernelUtils::allocateString));
-        return physical_name ? std::unique_ptr<std::string>(physical_name) : nullptr;
-    }
-
     template <DB::TypeIndex type, bool is_bool = false>
     static void simpleTypeVisitor(
         void * data,
         uintptr_t sibling_list_id,
         ffi::KernelStringSlice name,
         bool nullable,
-        const ffi::CStringMap * metadata)
+        const ffi::CStringMap * /* metadata */)
     {
         SchemaVisitorData * state = static_cast<SchemaVisitorData *>(data);
         auto it = state->type_lists.find(sibling_list_id);
@@ -252,15 +245,13 @@ private:
         }
 
         const std::string column_name(name.ptr, name.len);
-        const auto physical_name_ptr = extractPhysicalName(metadata);
-        const std::string physical_name = physical_name_ptr ? *physical_name_ptr : "";
 
         LOG_TEST(
             state->log,
-            "List id: {}, column name: {} (physical name: {}), type: {}, nullable: {}",
-            sibling_list_id, column_name, physical_name, type, nullable);
+            "List id: {}, column name: {}, type: {}, nullable: {}",
+            sibling_list_id, column_name, type, nullable);
 
-        SchemaVisitorData::Field field(column_name, std::move(type), nullable, physical_name);
+        SchemaVisitorData::Field field(column_name, std::move(type), nullable);
         field.is_bool = is_bool;
         it->second->push_back(std::move(field));
     }
@@ -270,7 +261,7 @@ private:
         uintptr_t sibling_list_id,
         ffi::KernelStringSlice name,
         bool nullable,
-        const ffi::CStringMap * metadata,
+        const ffi::CStringMap * /* metadata */,
         uint8_t precision,
         uint8_t scale)
     {
@@ -285,15 +276,13 @@ private:
         }
 
         const std::string column_name(name.ptr, name.len);
-        const auto physical_name_ptr = extractPhysicalName(metadata);
-        const std::string physical_name = physical_name_ptr ? *physical_name_ptr : "";
 
         LOG_TEST(
             state->log,
-            "List id: {}, column name: {} (physical name: {}), type: {}, nullable: {}",
-            sibling_list_id, column_name, physical_name, type, nullable);
+            "List id: {}, column name: {}, type: {}, nullable: {}",
+            sibling_list_id, column_name, type, nullable);
 
-        SchemaVisitorData::Field field(column_name, type, nullable, physical_name);
+        SchemaVisitorData::Field field(column_name, type, nullable);
         field.precision = precision;
         field.scale = scale;
         it->second->push_back(std::move(field));
@@ -307,7 +296,7 @@ private:
         const ffi::CStringMap * metadata,
         uintptr_t child_list_id)
     {
-        listBasedTypeVisitor<DB::TypeIndex::Array>(data, sibling_list_id, name, nullable, metadata, child_list_id);
+        return listBasedTypeVisitor<DB::TypeIndex::Array>(data, sibling_list_id, name, nullable, metadata, child_list_id);
     }
 
     static void tupleTypeVisitor(
@@ -318,7 +307,7 @@ private:
         const ffi::CStringMap * metadata,
         uintptr_t child_list_id)
     {
-        listBasedTypeVisitor<DB::TypeIndex::Tuple>(data, sibling_list_id, name, nullable, metadata, child_list_id);
+        return listBasedTypeVisitor<DB::TypeIndex::Tuple>(data, sibling_list_id, name, nullable, metadata, child_list_id);
     }
 
     static void mapTypeVisitor(
@@ -329,7 +318,7 @@ private:
         const ffi::CStringMap * metadata,
         uintptr_t child_list_id)
     {
-        listBasedTypeVisitor<DB::TypeIndex::Map>(data, sibling_list_id, name, nullable, metadata, child_list_id);
+        return listBasedTypeVisitor<DB::TypeIndex::Map>(data, sibling_list_id, name, nullable, metadata, child_list_id);
     }
 
     template <DB::TypeIndex type>
@@ -338,7 +327,7 @@ private:
         uintptr_t sibling_list_id,
         ffi::KernelStringSlice name,
         bool nullable,
-        const ffi::CStringMap * metadata,
+        const ffi::CStringMap * /* metadata */,
         uintptr_t child_list_id)
     {
         SchemaVisitorData * state = static_cast<SchemaVisitorData *>(data);
@@ -351,40 +340,31 @@ private:
         }
 
         const std::string column_name(name.ptr, name.len);
-        const auto physical_name_ptr = extractPhysicalName(metadata);
-        const std::string physical_name = physical_name_ptr ? *physical_name_ptr : "";
 
         LOG_TEST(
             state->log,
-            "List id: {}, column name: {} (physical name: {}), type: {}, "
+            "List id: {}, column name: {}, type: {}, "
             "nullable: {}, child list id: {}",
-            sibling_list_id, column_name, physical_name, type, nullable, child_list_id);
+            sibling_list_id, column_name, type, nullable, child_list_id);
 
-        SchemaVisitorData::Field field(column_name, std::move(type), nullable, physical_name);
+        SchemaVisitorData::Field field(column_name, std::move(type), nullable);
         field.child_list_id = child_list_id;
         it->second->push_back(field);
     }
 };
 
-SchemaVisitorData::SchemaResult SchemaVisitorData::getSchemaResult()
+DB::NamesAndTypesList SchemaVisitorData::getSchemaResult()
 {
     const auto types = getDataTypesFromTypeList(0);
     chassert(types.size() == type_lists[0]->size());
 
-    std::list<DB::NameAndTypePair> names_and_types;
-    SchemaResult result;
+    std::list<DB::NameAndTypePair> result;
     for (size_t i = 0; i < types.size(); ++i)
     {
         const auto & field = (*type_lists[0])[i];
-        names_and_types.emplace_back(field.name, types[i]);
-        if (!field.physical_name.empty())
-        {
-            [[maybe_unused]] bool inserted = result.physical_names_map.emplace(field.name, field.physical_name).second;
-            chassert(inserted);
-        }
+        result.emplace_back(field.name, types[i]);
     }
-    result.names_and_types = DB::NamesAndTypesList(names_and_types.begin(), names_and_types.end());
-    return result;
+    return DB::NamesAndTypesList(result.begin(), result.end());
 }
 
 DB::DataTypes SchemaVisitorData::getDataTypesFromTypeList(size_t list_idx)
@@ -467,26 +447,20 @@ DB::DataTypes SchemaVisitorData::getDataTypesFromTypeList(size_t list_idx)
     return types;
 }
 
-std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(ffi::SharedSnapshot * snapshot)
+DB::NamesAndTypesList getTableSchemaFromSnapshot(ffi::SharedSnapshot * snapshot)
 {
     SchemaVisitorData data;
     SchemaVisitor::visitTableSchema(snapshot, data);
-    auto result = data.getSchemaResult();
-    return {result.names_and_types, result.physical_names_map};
+    return data.getSchemaResult();
 }
 
-DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedGlobalScanState * scan_state)
+std::pair<DB::NamesAndTypesList, DB::Names>
+getReadSchemaAndPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot, ffi::SharedExternEngine * engine)
 {
     SchemaVisitorData data;
-    SchemaVisitor::visitReadSchema(scan_state, data);
-    return data.getSchemaResult().names_and_types;
-}
-
-DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot)
-{
-    SchemaVisitorData data;
-    SchemaVisitor::visitPartitionColumns(snapshot, data);
-    return data.getPartitionColumns();
+    SchemaVisitor::visitReadSchema(snapshot, engine, data);
+    SchemaVisitor::visitPartitionColumns(snapshot, engine, data);
+    return {data.getSchemaResult(), data.getPartitionColumns()};
 }
 
 }

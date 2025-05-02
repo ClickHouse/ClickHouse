@@ -11,7 +11,6 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Core/ServerSettings.h>
 
 #include <boost/locale/date_time_facet.hpp>
 
@@ -24,13 +23,14 @@
 #endif
 
 
+namespace ProfileEvents
+{
+    extern const Event OSCPUWaitMicroseconds;
+    extern const Event OSCPUVirtualTimeMicroseconds;
+}
+
 namespace DB
 {
-
-namespace ServerSetting
-{
-    extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
-}
 
 namespace ErrorCodes
 {
@@ -753,20 +753,6 @@ void AsynchronousMetrics::processWarningForMutationStats(const AsynchronousMetri
     }
     if (num_pending_mutations <= max_pending_mutations_to_warn)
         context->removeWarningMessage(Context::WarningType::MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT);
-
-    if (auto num_pending_mutations_over_execution_time = tryGetMetricValue(new_values, "NumberOfPendingMutationsOverExecutionTime");
-        num_pending_mutations_over_execution_time > 0)
-    {
-        context->addOrUpdateWarningMessage(
-            Context::WarningType::MAX_PENDING_MUTATIONS_OVER_THRESHOLD,
-            PreformattedMessage::create(
-                "There are {} pending mutations that exceed the max_pending_mutations_execution_time_to_warn threshold.",
-                num_pending_mutations_over_execution_time));
-    }
-    else
-    {
-        context->removeWarningMessage(Context::WarningType::MAX_PENDING_MUTATIONS_OVER_THRESHOLD);
-    }
 }
 
 void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
@@ -1409,7 +1395,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             static constexpr size_t sector_size = 512;
 
             /// Always in milliseconds according to the docs.
-            static constexpr double time_multiplier = 1e-3;
+            static constexpr double time_multiplier = 1e-6;
 
 #define BLOCK_DEVICE_EXPLANATION \
     " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." \
@@ -1840,7 +1826,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
-    new_values["OSCPUOverload"] = { ProfileEvents::global_counters.getCPUOverload(context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold], /*reset*/ true), "Relative CPU deficit, calculated as: how many threads are waiting for CPU relative to the number of threads, using CPU. If it is greater than zero, the server would benefit from more CPU. If it is significantly greater than zero, the server could become unresponsive. The metric is accumulated between the updates of asynchronous metrics." };
+    new_values["OSCPUOverload"] = { getCPUOverloadMetric(), "Relative CPU deficit, calculated as: how many threads are waiting for CPU relative to the number of threads, using CPU. If it is greater than zero, the server would benefit from more CPU. If it is significantly greater than zero, the server could become unresponsive. The metric is accumulated between the updates of asynchronous metrics." };
 
     /// Add more metrics as you wish.
 
@@ -1861,6 +1847,24 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         // which later get inserted into the system.warnings table:
         processWarningForMutationStats(new_values);
     }
+}
+
+double AsynchronousMetrics::getCPUOverloadMetric()
+{
+    Int64 curr_cpu_wait_microseconds = ProfileEvents::global_counters[ProfileEvents::OSCPUWaitMicroseconds];
+    Int64 curr_cpu_virtual_time_microseconds = ProfileEvents::global_counters[ProfileEvents::OSCPUVirtualTimeMicroseconds];
+
+    Int64 os_cpu_wait_microseconds = curr_cpu_wait_microseconds - prev_cpu_wait_microseconds;
+    Int64 os_cpu_virtual_time_microseconds = curr_cpu_virtual_time_microseconds - prev_cpu_virtual_time_microseconds;
+
+    prev_cpu_wait_microseconds = curr_cpu_wait_microseconds;
+    prev_cpu_virtual_time_microseconds = curr_cpu_virtual_time_microseconds;
+
+    /// If we used less than one CPU core, we cannot detect overload.
+    if (os_cpu_virtual_time_microseconds < 1'000'000 || os_cpu_wait_microseconds <= 0)
+        return 0;
+
+    return static_cast<double>(os_cpu_wait_microseconds) / os_cpu_virtual_time_microseconds;
 }
 
 }

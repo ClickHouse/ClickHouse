@@ -604,11 +604,7 @@ public:
         if (isSmall())
         {
             if (small.empty())
-            {
-                if constexpr (sizeof(T) >= 8)
-                    return std::numeric_limits<UInt64>::max();
-                return std::numeric_limits<UInt32>::max();
-            }
+                return 0;
             auto min_val = std::numeric_limits<UnsignedT>::max();
             for (const auto & x : small)
             {

@@ -2,10 +2,8 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <IO/HashingWriteBuffer.h>
-#include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
@@ -13,6 +11,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitorHash.h>
 #include <Common/typeid_cast.h>
 #include <base/hex.h>
 #include <Core/Block.h>

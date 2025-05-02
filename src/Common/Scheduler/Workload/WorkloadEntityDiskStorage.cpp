@@ -15,7 +15,6 @@
 
 #include <Interpreters/Context.h>
 
-#include <Parsers/IAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateWorkloadQuery.h>
 #include <Parsers/ParserCreateResourceQuery.h>
