@@ -75,13 +75,13 @@ HandlerType XRayInstrumentationManager::getHandlerType(const std::string & handl
 {
     if (handler_name == "sleep")
         return HandlerType::Sleep;
-    
+
     if (handler_name == "log")
         return HandlerType::Log;
-    
+
     if (handler_name == "profile")
         return HandlerType::Profile;
-    
+
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown handler type: ({})", handler_name);
 }
 
@@ -413,7 +413,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
         element.query_id = CurrentThread::isInitialized() ? CurrentThread::getQueryId() : "";
         element.function_id = FuncId;
 
-        active_elements[FuncId] = std::move(element);  
+        active_elements[FuncId] = std::move(element);
     }
     else if (Type == XRayEntryType::EXIT)
     {

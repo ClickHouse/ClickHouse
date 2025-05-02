@@ -71,7 +71,7 @@ private:
     [[clang::xray_never_instrument]] static void sleep(int32_t FuncId, XRayEntryType Type);
     [[clang::xray_never_instrument]] static void log(int32_t FuncId, XRayEntryType Type);
     [[clang::xray_never_instrument]] static void profile(int32_t FuncId, XRayEntryType Type);
-    
+
     // TODO: more handlers
 
     mutable std::mutex mutex;
