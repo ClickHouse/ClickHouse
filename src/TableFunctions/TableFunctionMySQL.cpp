@@ -45,6 +45,7 @@ namespace MySQLSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -54,8 +55,8 @@ namespace
  * The structure of the table is taken from the mysql query DESCRIBE table.
  * If there is no such table, an exception is thrown.
  *
- * Alternatively, instead of table name, one can pass a SELECT query.
- * In which case, the table structure is taken from the result of the SELECT query provided by MySQL API.
+ * Alternatively, instead of table, one can pass a SELECT query. Either as (SELECT x FROM y...) or as query('SELECT x FROM y...').
+ * In which case, the table structure is taken from the query execution result provided by MySQL API.
  */
 class TableFunctionMySQL : public ITableFunction
 {
@@ -105,33 +106,38 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
             break;
         }
     }
-    // Check for `mysql('host:port', database, <SELECT query>, ...)` syntax
+    bool pass_select_query = false;
+    // Check for `mysql('host:port', database, <SELECT query>, ...)` syntax and put <SELECT query> as string literal
     if (args.size() > 2)
     {
-        // Check if it's in a form `mysql(h:p, db, (SELECT ...), ...)`, that is, an unquoted SELECT query
+        // Check if it's in a form `mysql(host:port, db, (SELECT ...), ...)`, that is, an unquoted SELECT query
         if (auto * maybe_select_ast = args[2]->as<ASTSubquery>())
         {
-            // Simply convert it to a string literal, thus fallthrough into the next "if"
             args[2] = std::make_shared<ASTLiteral>(maybe_select_ast->formatWithSecretsOneLine());
+            pass_select_query = true;
         }
-        auto maybe_select_ast = args[2];
-        if (auto * maybe_select_lit = maybe_select_ast->as<ASTLiteral>())
+        // Check if it's in a form `mysql(host:port, db, query('SELECT ...'), ...)`
+        else if (auto * func_wrapped_query = args[2]->as<ASTFunction>())
         {
-            if (maybe_select_lit->value.getType() == Field::Types::String)
-            {
-                auto maybe_select = maybe_select_lit->value.safeGet<String>();
-                auto maybe_select_sv = std::string_view(maybe_select);
-                maybe_select_sv.remove_prefix(maybe_select_sv.find_first_not_of('('));
-                if (boost::istarts_with(maybe_select_sv, "SELECT"))
-                {
-                    auto select_cfg = StorageMySQLSelect::getConfiguration(args, context);
-                    configuration = select_cfg;
-                    pool.emplace(createMySQLPoolWithFailover(
-                        select_cfg.database, select_cfg.addresses, select_cfg.username, select_cfg.password, "", "", "", mysql_settings));
-                    return;
-                }
-            }
+            if (func_wrapped_query->arguments->children.size() != 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'mysql' with query(...) must have 1 argument in it.");
+
+            auto * maybe_query_literal = func_wrapped_query->arguments->children[0]->as<ASTLiteral>();
+            if (!maybe_query_literal || maybe_query_literal->value.getType() != Field::Types::String)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "Table function 'mysql' with query(...) expects a string literal as its argument.");
+
+            args[2] = func_wrapped_query->arguments->children[0];
+            pass_select_query = true;
         }
+    }
+    if (pass_select_query)
+    {
+        auto select_cfg = StorageMySQLSelect::getConfiguration(args, context);
+        configuration = select_cfg;
+        pool.emplace(createMySQLPoolWithFailover(
+            select_cfg.database, select_cfg.addresses, select_cfg.username, select_cfg.password, "", "", "", mysql_settings));
+        return;
     }
 
     configuration = StorageMySQL::getConfiguration(args, context, mysql_settings);
