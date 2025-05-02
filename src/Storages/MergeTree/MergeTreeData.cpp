@@ -88,7 +88,6 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
-#include <Storages/MaterializedView/RefreshSet.h>
 
 #include <boost/range/algorithm_ext/erase.hpp>
 #include <boost/algorithm/string/join.hpp>
@@ -295,7 +294,6 @@ namespace ErrorCodes
     extern const int LIMIT_EXCEEDED;
     extern const int CANNOT_FORGET_PARTITION;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
-    extern const int TABLE_IS_READ_ONLY;
 }
 
 static void checkSuspiciousIndices(const ASTFunction * index_function)
@@ -6099,50 +6097,10 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
         reservation->update(reservation->getSize() - file_size);
     }
 
-    try
-    {
-        if (auto part = loadPartRestoredFromBackup(part_name, disk, temp_part_dir, detach_if_broken))
-            restored_parts_holder->addPart(part);
-        else
-            restored_parts_holder->increaseNumBrokenParts();
-    }
-    catch (Exception & e)
-    {
-        if (e.code() == ErrorCodes::TABLE_IS_READ_ONLY && is_dropped)
-        {
-            /// A hack to work around a race condition:
-            ///  1. RESTORE creates a refreshable materialized view and its target table.
-            ///  2. The view does a refresh and exchanges+drops the target table.
-            ///  3. RESTORE tries to restore target table's data from backup and fails because the table
-            ///     is dropped.
-            ///
-            /// (This can also happen without refreshable materialized view if the user just drops a
-            ///  table during RESTORE, so it may make sense to always ignore this error. But that
-            ///  feels sketchy as it may hide a bug.)
-            ///
-            /// For refreshable MV, this doesn't fully solve the problem. The initial refresh that
-            /// replaces the table usually happens early enough that the *source* table (from which
-            /// the refresh query reads) is still empty, not restored from backup yet. So the
-            /// refresh target table ends up empty until the next scheduled refresh.
-            /// TODO: Figure out a better way to deal with RMV backups. Maybe RESTORE should create
-            ///       RMVs after restoring all other tables (including RMVs' .inner_id.<uuid> tables,
-            ///       somehow).
-            StorageID storage_id = getStorageID();
-            if (storage_id.table_name.starts_with(".tmp") ||
-                getContext()->getRefreshSet().tryGetTaskForInnerTable(storage_id) != nullptr)
-            {
-                LOG_INFO(log, "Table was dropped during RESTORE, presumably by refreshable materialized view.");
-            }
-            else
-            {
-                throw;
-            }
-        }
-        else
-        {
-            throw;
-        }
-    }
+    if (auto part = loadPartRestoredFromBackup(part_name, disk, temp_part_dir, detach_if_broken))
+        restored_parts_holder->addPart(part);
+    else
+        restored_parts_holder->increaseNumBrokenParts();
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(const String & part_name, const DiskPtr & disk, const String & temp_part_dir, bool detach_if_broken) const
