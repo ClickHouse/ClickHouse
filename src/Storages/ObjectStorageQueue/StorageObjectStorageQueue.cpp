@@ -292,7 +292,7 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
     {
         try
         {
-            files_metadata->unregister(getStorageID(), /* active */true);
+            files_metadata->unregister(getStorageID(), /* active */true, /* remove_metadata_if_no_registered */false);
         }
         catch (...)
         {
@@ -543,7 +543,7 @@ void StorageObjectStorageQueue::threadFunc()
         {
             try
             {
-                files_metadata->unregister(storage_id, /* active */true);
+                files_metadata->unregister(storage_id, /* active */true, /* remove_metadata_if_no_registered */false);
             }
             catch (...)
             {
