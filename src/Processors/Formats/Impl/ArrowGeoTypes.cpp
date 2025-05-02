@@ -6,12 +6,15 @@
 #include <IO/ReadHelpers.h>
 #include <arrow/array/array_binary.h>
 #include <base/types.h>
-#include <rapidjson/document.h>
 #include <Common/Exception.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+
+#if USE_RAPIDJSON
+#include <rapidjson/document.h>
+#endif
 
 namespace DB
 {
@@ -21,6 +24,7 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 }
 
+#if USE_RAPIDJSON
 std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std::optional<rapidjson::Value> & geo_json)
 {
     std::unordered_map<String, GeoColumnMetadata> geo_columns;
@@ -66,6 +70,7 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
 
     return geo_columns;
 }
+#endif
 
 Point readPointWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
 {

@@ -5,7 +5,9 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnsWithTypeAndName.h>
 
+#if USE_RAPIDJSON
 #include <rapidjson/document.h>
+#endif
 
 namespace DB
 {
@@ -29,7 +31,9 @@ struct GeoColumnMetadata
     GeoType type;
 };
 
+#if USE_RAPIDJSON
 std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std::optional<rapidjson::Value> & geo_json);
+#endif
 
 struct Point
 {
