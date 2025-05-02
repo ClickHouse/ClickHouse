@@ -744,6 +744,13 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
 
             res->function_name = std::move(function_name);
+
+            String handler_name;
+            if (ParserIdentifier{}.parse(pos, temporary_identifier, expected))
+            {
+                handler_name = temporary_identifier->as<ASTIdentifier &>().name();
+            }
+            res->handler_name = std::move(handler_name);
             break;
         }
         case Type::INSTRUMENT_ADD:

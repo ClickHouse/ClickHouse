@@ -1,5 +1,6 @@
 #include "XRayInstrumentationManager.h"
 #include <cstdint>
+#include <shared_mutex>
 #include <string>
 
 #if USE_XRAY
@@ -42,8 +43,8 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 }
-std::unordered_map<int64_t, std::list<XRayInstrumentationManager::InstrumentedFunctionInfo>::iterator> XRayInstrumentationManager::functionIdToInstrumentPoint;
 std::unordered_map<int64_t, std::string> XRayInstrumentationManager::xrayIdToFunctionName;
+std::unordered_map<std::string, XRayHandlerFunction> xrayHandlerNameToFunction;
 
 void XRayInstrumentationManager::registerHandler(const std::string & name, XRayHandlerFunction handler)
 {
@@ -70,6 +71,19 @@ XRayInstrumentationManager & XRayInstrumentationManager::instance()
     return instance;
 }
 
+HandlerType XRayInstrumentationManager::getHandlerType(const std::string & handler_name)
+{
+    if (handler_name == "sleep")
+        return HandlerType::Sleep;
+    
+    if (handler_name == "log")
+        return HandlerType::Log;
+    
+    if (handler_name == "profile")
+        return HandlerType::Profile;
+    
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown handler type: ({})", handler_name);
+}
 
 void XRayInstrumentationManager::setHandlerAndPatch(const std::string & function_name, const std::string & handler_name, std::optional<std::vector<InstrumentParameter>> &parameters, ContextPtr context)
 {
@@ -78,8 +92,6 @@ void XRayInstrumentationManager::setHandlerAndPatch(const std::string & function
     if (handler_it == xrayHandlerNameToFunction.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown XRAY handler: ({})", handler_name);
 
-    auto handler_function = handler_it->second;
-
     int64_t function_id;
     auto fn_it = functionNameToXRayID.find(function_name);
     if (fn_it != functionNameToXRayID.end())
@@ -92,16 +104,27 @@ void XRayInstrumentationManager::setHandlerAndPatch(const std::string & function
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown function to instrument: ({})", function_name);
     }
+
+    HandlerType type = getHandlerType(handler_name); // add try catch
+    auto handlers_set_it = functionIdToHandlers.find(function_id);
+    if (handlers_set_it->second.contains(type))
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Handler of this type is already installed for function ({})", function_name);
+    }
     instrumented_functions.emplace_front(instrumentation_point_id, function_id, function_name, handler_name, parameters, context);
-    functionIdToInstrumentPoint[function_id] = instrumented_functions.begin();
+    functionIdToHandlers[function_id][type] = instrumented_functions.begin();
     instrumentation_point_id++;
-    __xray_set_handler(handler_function);
-    __xray_patch_function(function_id);
+
+    static std::once_flag once;
+    std::call_once(once, [&] {
+        __xray_set_handler(&XRayInstrumentationManager::dispatchHandler);
+        __xray_patch_function(function_id);
+    });
     // add/update a row "intrumentation_point_id | function_id | function_name | handler_name | parameters" to system.instrument -- TODO
 }
 
 
-void XRayInstrumentationManager::unpatchFunction(const std::string & function_name)
+void XRayInstrumentationManager::unpatchFunction(const std::string & function_name, const std::string & handler_name)
 {
     std::lock_guard lock(mutex);
     int64_t function_id;
@@ -116,8 +139,9 @@ void XRayInstrumentationManager::unpatchFunction(const std::string & function_na
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown function to instrument: ({})", function_name);
     }
-    instrumented_functions.erase(functionIdToInstrumentPoint[function_id]);
-    functionIdToInstrumentPoint.erase(function_id);
+    HandlerType type = getHandlerType(handler_name);
+    instrumented_functions.erase(functionIdToHandlers[function_id][type]);
+    functionIdToHandlers[function_id].erase(type);
     __xray_unpatch_function(function_id);
     // delete a row "intrumentation_point_id | function_id | function_name | handler_name | parameters" in system.instrument by functionId
 }
@@ -130,6 +154,32 @@ XRayHandlerFunction XRayInstrumentationManager::getHandler(const std::string & n
     if (it == xrayHandlerNameToFunction.end())
         throw std::runtime_error("Handler not found: " + name);
     return it->second;
+}
+
+[[clang::xray_never_instrument]] void XRayInstrumentationManager::dispatchHandler(int32_t FuncId, XRayEntryType Type)
+{
+    static thread_local bool in_hook = false;
+    if (in_hook) return;
+    in_hook = true;
+
+    std::shared_lock lock(shared_mutex); // shared??? or maybe not? or do we need this at all??
+    auto handlers_set_it = functionIdToHandlers.find(FuncId);
+    if (handlers_set_it == functionIdToHandlers.end())
+    {
+        in_hook = false;
+        return;
+    }
+
+    for (const auto & [type, ip_it] : handlers_set_it->second)
+    {
+        auto handler = xrayHandlerNameToFunction[ip_it->handler_name]; // additional checks needed??
+        if (handler)
+        {
+            handler(FuncId, Type);
+        }
+    }
+
+    in_hook = false;
 }
 
 
@@ -249,8 +299,9 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     }
 
     in_hook = true;
+    HandlerType type = HandlerType::Sleep;
     // but does XRay allow us to throw exceptions in handlers?
-    auto parameters_it = functionIdToInstrumentPoint.find(FuncId);
+    auto parameters_it = functionIdToHandlers[FuncId].find(type); // DOUBLE CHECK IF THIS IS RIGHT
     auto & params_opt = parameters_it->second->parameters;
     if (!params_opt.has_value())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for sleep instrumentation"); // or maybe we want to use some default parameter instead of throwing exception??
@@ -293,8 +344,9 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     }
 
     in_hook = true;
+    HandlerType type = HandlerType::Log;
     // but does XRay allow us to throw exceptions in handlers?
-    auto parameters_it = functionIdToInstrumentPoint.find(FuncId);
+    auto parameters_it = functionIdToHandlers[FuncId].find(type); // DOUBLE CHECK IF THIS IS RIGHT
     auto & params_opt = parameters_it->second->parameters;
     if (!params_opt.has_value())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for log instrumentation"); // or maybe we want to use some default parameter instead of throwing exception??
@@ -327,18 +379,26 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     }
 
     in_hook = true;
-    // but does XRay allow us to throw exceptions in handlers?
-    auto parameters_it = functionIdToInstrumentPoint.find(FuncId);
-    auto & params_opt = parameters_it->second->parameters;
-    if (!params_opt.has_value())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected parameters for profiling instrumentation"); // or maybe we want to use some default parameter instead of throwing exception??
-    // TODO -- not clear yet how to write what we want to the system.instrumentation_profiling_log
-    auto context_it = functionIdToInstrumentPoint.find(FuncId);
-    auto & context = context_it->second->context;
-    if (!context)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No context for profiling instrumentation");
-    if (auto log = context->getInstrumentationProfilingLog())
+    HandlerType type = HandlerType::Profile;
+    static thread_local std::unordered_map<int32_t, InstrumentationProfilingLogElement> active_elements;
+    if (Type == XRayEntryType::ENTRY)
     {
+        // but does XRay allow us to throw exceptions in handlers?
+        auto parameters_it = functionIdToHandlers[FuncId].find(type); // DOUBLE CHECK IF THIS IS RIGHT
+        auto & params_opt = parameters_it->second->parameters;
+        if (!params_opt.has_value())
+        {
+            in_hook = false;
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected parameters for profiling instrumentation"); // or maybe we want to use some default parameter instead of throwing exception??
+        }
+        // TODO -- not clear yet how to write what we want to the system.instrumentation_profiling_log
+        auto context_it = functionIdToHandlers[FuncId].find(type); // DOUBLE CHECK IF THIS IS RIGHT
+        auto & context = context_it->second->context;
+        if (!context)
+        {
+            in_hook = false;
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No context for profiling instrumentation");
+        }
         InstrumentationProfilingLogElement element;
         element.function_name = xrayIdToFunctionName[FuncId];
         element.tid = getThreadId();
@@ -349,12 +409,35 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
 
         element.event_time = time_t(duration_cast<seconds>(now.time_since_epoch()).count());
         element.event_time_microseconds = Decimal64(now_us);
-        /// TODO for Alina: fill the duration once the exit event is triggered
-        /// by doing end_time - start_time.
-        /// element.duration_microseconds = ?;
+
         element.query_id = CurrentThread::isInitialized() ? CurrentThread::getQueryId() : "";
         element.function_id = FuncId;
-        log->add(std::move(element));
+
+        active_elements[FuncId] = std::move(element);  
+    }
+    else if (Type == XRayEntryType::EXIT)
+    {
+        auto it = active_elements.find(FuncId);
+        if (it != active_elements.end())
+        {
+            auto & element = it->second;
+            auto now = std::chrono::system_clock::now();
+            auto now_us = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
+
+            auto start_us = Int64(element.event_time_microseconds);
+            element.duration_microseconds = Decimal64(now_us - start_us);
+
+            auto context_it = functionIdToHandlers[FuncId].find(type); // DOUBLE CHECK IF THIS IS RIGHT
+            auto & context = context_it->second->context;
+            if (context)
+            {
+                if (auto log = context->getInstrumentationProfilingLog())
+                {
+                    log->add(std::move(element));
+                }
+            }
+            active_elements.erase(it);
+        }
     }
     in_hook = false;
 }
