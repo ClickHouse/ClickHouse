@@ -1,3 +1,4 @@
+Const column in grouping set, analyzer on:
 0	0	value	0	1
 0	0	value	1	1
 0	0	value	2	1
@@ -6,7 +7,7 @@
 1	0		1	1
 1	0		2	1
 1	0		3	1
-=================================================
+Non-const column in grouping set, analyzer on:
 0	0	value	0	1
 0	0	value	1	1
 0	0	value	2	1
@@ -15,7 +16,7 @@
 1	0		1	1
 1	0		2	1
 1	0		3	1
-=================================================
+Const column in grouping set, analyzer off:
 0	0	value	0	1
 0	0	value	1	1
 0	0	value	2	1
