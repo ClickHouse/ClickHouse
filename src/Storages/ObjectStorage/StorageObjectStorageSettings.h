@@ -50,9 +50,6 @@ class SettingsChanges;
     DECLARE(Bool, allow_dynamic_metadata_for_data_lakes, false, R"(
 If enabled, indicates that metadata is taken from iceberg specification that is pulled from cloud before each query.
 )", 0) \
-    DECLARE(Bool, allow_experimental_delta_kernel_rs, false, R"(
-If enabled, the engine would use delta-kernel-rs for DeltaLake metadata parsing
-)", 0) \
     DECLARE(Bool, delta_lake_read_schema_same_as_table_schema, false, R"(
 Whether delta-lake read schema is the same as table schema.
 )", 0) \
@@ -68,6 +65,9 @@ If enabled, the engine would use the metadata file with the most recent last_upd
     DECLARE(Bool, iceberg_use_version_hint, false, R"(
 Get latest metadata path from version-hint.text file.
 )", 0) \
+
+#define OBSOLETE_SETTINGS(M, ALIAS) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_delta_kernel_rs, true) \
 
 // clang-format on
 
@@ -98,6 +98,7 @@ using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSett
 
 #define LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS(M, ALIAS) \
     STORAGE_OBJECT_STORAGE_RELATED_SETTINGS(M, ALIAS) \
+    OBSOLETE_SETTINGS(M, ALIAS) \
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
 }
