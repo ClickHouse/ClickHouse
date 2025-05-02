@@ -57,6 +57,7 @@ private:
     {
         size_t position;
         size_t left_ngram_position;
+        size_t symbol_index;
         size_t hash;
     };
 
@@ -86,6 +87,11 @@ private:
         std::pair<size_t, size_t> getNGramPositions() const
         {
             return {left_iterator, right_iterator};
+        }
+
+        size_t getRightSymbol() const
+        {
+            return num_increments;
         }
 
         size_t getNextPosition(size_t iterator) const
@@ -123,13 +129,15 @@ private:
             return false;
 
         auto [ngram_left_position, right_position] = symbol_iterator.getNGramPositions();
+        size_t right_symbol_index = symbol_iterator.getRightSymbol();
         size_t next_right_position = symbol_iterator.getNextPosition(right_position);
         size_t right_border_ngram_hash = hasher(pos + ngram_left_position, next_right_position - ngram_left_position);
 
         while (!convex_hull.empty() && convex_hull.back().hash < right_border_ngram_hash)
         {
             size_t possible_left_position = convex_hull.back().left_ngram_position;
-            size_t length = next_right_position - possible_left_position;
+            size_t possible_left_symbol_index = convex_hull.back().symbol_index;
+            size_t length = right_symbol_index - possible_left_symbol_index + 2;
             if (length > max_ngram_length)
             {
                 /// If the current length is greater than the current right position, it will be greater at future right positions, so we can just delete them all.
@@ -143,7 +151,8 @@ private:
         if (!convex_hull.empty())
         {
             size_t possible_left_position = convex_hull.back().left_ngram_position;
-            size_t length = next_right_position - possible_left_position;
+            size_t possible_left_symbol_index = convex_hull.back().symbol_index;
+            size_t length = right_symbol_index - possible_left_symbol_index + 2;
             if (length <= max_ngram_length)
                 result.push_back({possible_left_position, next_right_position});
         }
@@ -152,7 +161,12 @@ private:
         while (!convex_hull.empty() && convex_hull.back().hash == right_border_ngram_hash)
             convex_hull.pop_back();
 
-        convex_hull.push_back(PositionAndHash{.position = right_position, .left_ngram_position = ngram_left_position, .hash = right_border_ngram_hash});
+        convex_hull.push_back(PositionAndHash{
+            .position = right_position,
+            .left_ngram_position = ngram_left_position,
+            .symbol_index = right_symbol_index,
+            .hash = right_border_ngram_hash
+        });
         symbol_iterator.increment();
         return true;
     }
