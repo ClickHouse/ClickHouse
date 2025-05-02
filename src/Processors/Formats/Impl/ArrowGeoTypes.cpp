@@ -46,7 +46,7 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
     std::unordered_map<String, GeoColumnMetadata> geo_columns;
     if (geo_json.has_value())
     {
-        if (geo_json->HasMember("columns") && geo_json.value()["columns"].IsObject())
+        if (geo_json->IsObject() && geo_json->HasMember("columns") && geo_json.value()["columns"].IsObject())
         {
             const rapidjson::Value & columns = geo_json.value()["columns"];
 
