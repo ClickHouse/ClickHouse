@@ -18,18 +18,18 @@ from delta import *
 from deltalake.writer import write_deltalake
 from minio.deleteobjects import DeleteObject
 from pyspark.sql.functions import (
+    col,
     current_timestamp,
     monotonically_increasing_id,
     row_number,
-    col,
 )
 from pyspark.sql.types import (
     ArrayType,
     BooleanType,
     DateType,
     IntegerType,
-    ShortType,
     LongType,
+    ShortType,
     StringType,
     StructField,
     StructType,
@@ -39,9 +39,12 @@ from pyspark.sql.window import Window
 
 import helpers.client
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import minio_access_key, minio_secret_key
+from helpers.mock_servers import start_mock_servers
 from helpers.network import PartitionManager
 from helpers.s3_tools import (
     AzureUploader,
+    LocalUploader,
     S3Uploader,
     get_file_contents,
     list_s3_objects,
@@ -49,9 +52,6 @@ from helpers.s3_tools import (
     upload_directory,
 )
 from helpers.test_tools import TSV
-from helpers.mock_servers import start_mock_servers
-from helpers.config_cluster import minio_access_key
-from helpers.config_cluster import minio_secret_key
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__, with_spark=True)
@@ -140,6 +140,8 @@ def started_cluster():
         cluster.default_azure_uploader = AzureUploader(
             cluster.blob_service_client, cluster.azure_container_name
         )
+
+        cluster.local_uploader = LocalUploader(cluster.instances_dir_name)
 
         cluster.spark_session = get_spark()
 
@@ -262,6 +264,24 @@ def create_delta_table(
                     SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"""
                     + allow_dynamic_metadata_for_datalakes_suffix
                 )
+    elif storage_type == "local":
+        if run_on_cluster:
+            assert table_function
+            instance.query(
+                f"deltalakeLocalCluster('cluster_simple', filename = '{table_name}/', format={format})"
+            )
+        else:
+            if table_function:
+                instance.query(
+                    f"deltalakeLocal(filename = '{table_name}/', format={format})"
+                )
+            else:
+                instance.query(
+                    f"""
+                    DROP TABLE IF EXISTS {table_name};
+                    CREATE TABLE {table_name}
+                    ENGINE=DeltaLakeLocal(filename = '{table_name}/', format={format})"""
+                )
     else:
         raise Exception(f"Unknown delta lake storage type: {storage_type}")
 
@@ -276,6 +296,10 @@ def default_upload_directory(
         )
     elif storage_type == "azure":
         return started_cluster.default_azure_uploader.upload_directory(
+            local_path, remote_path, **kwargs
+        )
+    elif storage_type == "local":
+        return started_cluster.local_uploader.upload_directory(
             local_path, remote_path, **kwargs
         )
     else:
@@ -302,7 +326,8 @@ def create_initial_data_file(
 
 
 @pytest.mark.parametrize(
-    "use_delta_kernel, storage_type", [("1", "s3"), ("0", "s3"), ("0", "azure")]
+    "use_delta_kernel, storage_type",
+    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "local")],
 )
 def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     instance = started_cluster.instances["node1"]
@@ -340,7 +365,8 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
 
 
 @pytest.mark.parametrize(
-    "use_delta_kernel, storage_type", [("1", "s3"), ("0", "s3"), ("0", "azure")]
+    "use_delta_kernel, storage_type",
+    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "local")],
 )
 def test_partition_by(started_cluster, use_delta_kernel, storage_type):
     instance = started_cluster.instances["node1"]
@@ -375,7 +401,8 @@ def test_partition_by(started_cluster, use_delta_kernel, storage_type):
 
 
 @pytest.mark.parametrize(
-    "use_delta_kernel, storage_type", [("1", "s3"), ("0", "s3"), ("0", "azure")]
+    "use_delta_kernel, storage_type",
+    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "local")],
 )
 def test_checkpoint(started_cluster, use_delta_kernel, storage_type):
     instance = started_cluster.instances["node1"]
