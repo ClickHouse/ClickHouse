@@ -1572,6 +1572,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 return false;
             throw;
         }
+
+        /// If this is an initial create, we also need to check the table name's length.
+        /// We are not checking this for secondary creates to avoid backward compatibility issues.
+        if (mode <= LoadingStrictnessLevel::CREATE)
+            database->checkTableNameLength(create.getTable());
     }
 
     data_path = database->getTableDataPath(create);
