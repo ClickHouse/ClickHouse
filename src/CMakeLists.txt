@@ -682,6 +682,10 @@ if (TARGET ch_contrib::sha3iuf)
     dbms_target_link_libraries(PUBLIC ch_contrib::sha3iuf)
 endif()
 
+if (TARGET ch_contrib::nghttp2)
+    dbms_target_link_libraries(PRIVATE ch_contrib::nghttp2)
+endif()
+
 if (ENABLE_BUZZHOUSE)
     dbms_target_link_libraries(PRIVATE clickhouse_buzzhouse_proto)
 endif()
