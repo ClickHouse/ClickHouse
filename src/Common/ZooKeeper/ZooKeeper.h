@@ -214,6 +214,8 @@ class ZooKeeper
     */
     ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
 
+    explicit ZooKeeper(std::unique_ptr<Coordination::IKeeper> existing_impl);
+
     /// See addCheckSessionOp
     void initSession();
 
@@ -228,6 +230,8 @@ public:
     static Ptr create(const Poco::Util::AbstractConfiguration & config,
                       const std::string & config_name,
                       std::shared_ptr<DB::ZooKeeperLog> zk_log_);
+
+    static Ptr create_from_impl(std::unique_ptr<Coordination::IKeeper> existing_impl);
 
     template <typename... Args>
     static Ptr createWithoutKillingPreviousSessions(Args &&... args)

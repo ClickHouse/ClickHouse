@@ -5,6 +5,8 @@
 
 #if USE_NURAFT
 
+#include <Common/ZooKeeper/KeeperOverDispatcher.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 
@@ -22,8 +24,6 @@ public:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
 private:
-    Coordination::ZooKeeperResponsePtr awaitKeeperResponse(std::shared_ptr<Coordination::ZooKeeperRequest> request) const;
-
     void performZooKeeperRequest(
         Coordination::OpNum opnum, const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response) const;
 
@@ -37,6 +37,7 @@ private:
     LoggerPtr log;
     const IServer & server;
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
+    std::shared_ptr<zkutil::ZooKeeper> keeper_client;
     Poco::Timespan session_timeout;
     Poco::Timespan operation_timeout;
 };

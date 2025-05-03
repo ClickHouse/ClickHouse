@@ -5,6 +5,8 @@
 
 #if USE_NURAFT
 
+#include <Common/ZooKeeper/KeeperOverDispatcher.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
@@ -52,6 +54,7 @@ class KeeperHTTPCommandsHandler : public HTTPRequestHandler
 private:
     LoggerPtr log;
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
+    std::shared_ptr<zkutil::ZooKeeper> keeper_client;
 
 public:
     explicit KeeperHTTPCommandsHandler(std::shared_ptr<KeeperDispatcher> keeper_dispatcher_);

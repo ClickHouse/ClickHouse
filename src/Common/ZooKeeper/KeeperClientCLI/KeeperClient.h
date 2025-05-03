@@ -24,16 +24,10 @@ static const NameSet four_letter_word_commands
         "wchc", "wchp", "dump", "csnp", "lgif", "rqld",
     };
 
-class KeeperClient: public Poco::Util::Application
+class KeeperClientBase
 {
 public:
-    KeeperClient(std::ostream & sout_ = std::cout, std::ostream & serr_ = std::cerr);
-
-    void initialize(Poco::Util::Application & self) override;
-
-    int main(const std::vector<String> & args) override;
-
-    void defineOptions(Poco::Util::OptionSet & options) override;
+    KeeperClientBase(std::ostream & sout_ = std::cout, std::ostream & serr_ = std::cerr);
 
     fs::path getAbsolutePath(const String & relative) const;
 
@@ -50,12 +44,9 @@ public:
     std::ostream & sout;
     std::ostream & serr;
 
-protected:
-    void runInteractive();
-    void runInteractiveReplxx();
-    void runInteractiveInputStream();
-
     bool processQueryText(const String & text);
+
+protected:
 
     void loadCommands(std::vector<Command> && new_commands);
 

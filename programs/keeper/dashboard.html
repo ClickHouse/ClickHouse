@@ -1204,9 +1204,11 @@
                 command_input.disabled = true;
 
                 const server_url = new URL(window.location);
-                server_url.pathname = "/api/v1/commands/";
+                server_url.pathname = "/api/v1/commands";
                 let url = server_url.toString();
-                fetch(url + command)
+                fetch(url + "?" + new URLSearchParams({
+                    command: command,
+                }).toString())
                     .then(response => response.json())
                     .then(data => {
                         if (data.result !== undefined) {

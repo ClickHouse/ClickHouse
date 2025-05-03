@@ -23,6 +23,7 @@
 #include <Server/KeeperHTTPStorageHandler.h>
 #include <Server/KeeperNotFoundHandler.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>
 
 namespace DB
 {
@@ -248,6 +249,8 @@ void KeeperHTTPReadinessHandler::handleRequest(
 KeeperHTTPCommandsHandler::KeeperHTTPCommandsHandler(std::shared_ptr<KeeperDispatcher> keeper_dispatcher_)
     : log(getLogger("KeeperHTTPCommandsHandler")), keeper_dispatcher(keeper_dispatcher_)
 {
+    keeper_client = zkutil::ZooKeeper::create_from_impl(
+    std::make_unique<Coordination::KeeperOverDispatcher>(keeper_dispatcher, Coordination::DEFAULT_SESSION_TIMEOUT_MS * Poco::Timespan::MILLISECONDS));
 }
 
 void KeeperHTTPCommandsHandler::handleRequest(
@@ -255,9 +258,10 @@ void KeeperHTTPCommandsHandler::handleRequest(
 try
 {
     std::vector<std::string> uri_segments;
+    Poco::URI uri;
     try
     {
-        Poco::URI uri(request.getURI());
+        uri = Poco::URI(request.getURI());
         uri.getPathSegments(uri_segments);
     }
     catch (...)
@@ -267,33 +271,31 @@ try
         return;
     }
 
-    /// non-strict path "/api/v1/commands" filter is already attached
-    if (uri_segments.size() != 4)
+    String command;
+    String cwd = "/";
+
+    const auto params = uri.getQueryParameters();
+    for (const auto & [key, value]: params)
     {
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "Invalid command path");
-        *response.send() << "Invalid command path\n";
+        if (key == "command")
+            command = value;
+        else if (key == "cwd")
+            cwd = value;
+    }
+
+    if (command.empty())
+    {
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "Invalid command");
+        *response.send() << "Invalid command\n";
         return;
     }
-    const auto command = uri_segments[3];
 
     setResponseDefaultHeaders(response);
 
     Poco::JSON::Object response_json;
     response.setContentType("application/json");
 
-    if (!FourLetterCommandFactory::instance().isKnown(DB::IFourLetterCommand::toCode(command)))
-    {
-        LOG_INFO(log, "Invalid four letter command: {}", command);
-        response_json.set("message", "Invalid four letter command.");
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
-    }
-    else if (!FourLetterCommandFactory::instance().isEnabled(DB::IFourLetterCommand::toCode(command)))
-    {
-        LOG_INFO(log, "Not enabled four letter command: {}", command);
-        response_json.set("message", "Command is disabled. Check server settings.");
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_FORBIDDEN);
-    }
-    else
+    if (FourLetterCommandFactory::instance().isKnown(DB::IFourLetterCommand::toCode(command)))
     {
         auto command_ptr = FourLetterCommandFactory::instance().get(DB::IFourLetterCommand::toCode(command));
         LOG_DEBUG(log, "Received four letter command {}", command_ptr->name());
@@ -310,6 +312,16 @@ try
             response_json.set("message", "Internal server error.");
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         }
+    }
+    else
+    {
+        std::ostringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        KeeperClientBase client(stream, stream);
+        client.zookeeper = keeper_client;
+        client.cwd = cwd;
+
+        client.processQueryText(command);
+        response_json.set("result", stream.str());
     }
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM

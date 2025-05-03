@@ -225,6 +225,12 @@ ZooKeeper::ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperL
     init(args_, /*existing_impl*/ {});
 }
 
+ZooKeeper::ZooKeeper(std::unique_ptr<Coordination::IKeeper> existing_impl)
+{
+    log = getLogger("ZooKeeper");
+    impl = std::move(existing_impl);
+}
+
 
 ZooKeeper::ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, Strings availability_zones_, std::unique_ptr<Coordination::IKeeper> existing_impl)
     : availability_zones(std::move(availability_zones_)), zk_log(std::move(zk_log_))
@@ -1121,6 +1127,14 @@ Coordination::ReconfigResponse ZooKeeper::reconfig(
 ZooKeeperPtr ZooKeeper::create(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
 {
     auto res = std::shared_ptr<ZooKeeper>(new ZooKeeper(config, config_name, zk_log_));
+    res->initSession();
+    return res;
+}
+
+ZooKeeperPtr ZooKeeper::create_from_impl(std::unique_ptr<Coordination::IKeeper> existing_impl)
+{
+    auto res = std::shared_ptr<ZooKeeper>(new ZooKeeper(std::move(existing_impl)));
+    res->args.zookeeper_name = "internal";
     res->initSession();
     return res;
 }

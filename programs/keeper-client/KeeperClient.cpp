@@ -93,7 +93,7 @@ void KeeperClient::askConfirmation(const String & prompt, std::function<void()> 
         return;
     }
 
-    std::cout << prompt << " Continue?\n";
+    sout << prompt << " Continue?\n";
     waiting_confirmation = true;
     confirmation_callback = callback;
 }
@@ -203,30 +203,6 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
     suggest.setCompletionsCallback(
         [&](const String & prefix, size_t /* prefix_length */) { return getCompletions(prefix); });
 
-    loadCommands({
-        std::make_shared<LSCommand>(),
-        std::make_shared<CDCommand>(),
-        std::make_shared<SetCommand>(),
-        std::make_shared<CreateCommand>(),
-        std::make_shared<TouchCommand>(),
-        std::make_shared<GetCommand>(),
-        std::make_shared<ExistsCommand>(),
-        std::make_shared<GetStatCommand>(),
-        std::make_shared<FindSuperNodes>(),
-        std::make_shared<DeleteStaleBackups>(),
-        std::make_shared<FindBigFamily>(),
-        std::make_shared<RMCommand>(),
-        std::make_shared<RMRCommand>(),
-        std::make_shared<ReconfigCommand>(),
-        std::make_shared<SyncCommand>(),
-        std::make_shared<HelpCommand>(),
-        std::make_shared<FourLetterWordCommand>(),
-        std::make_shared<GetDirectChildrenNumberCommand>(),
-        std::make_shared<GetAllChildrenNumberCommand>(),
-        std::make_shared<CPCommand>(),
-        std::make_shared<MVCommand>(),
-    });
-
     String home_path;
     const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
     if (home_path_cstr)
@@ -301,7 +277,7 @@ bool KeeperClient::processQueryText(const String & text)
 
             if (!res)
             {
-                std::cerr << message << "\n";
+                serr << message << "\n";
                 return true;
             }
 
@@ -313,7 +289,7 @@ bool KeeperClient::processQueryText(const String & text)
     }
     catch (Coordination::Exception & err)
     {
-        std::cerr << err.message() << "\n";
+        serr << err.message() << "\n";
     }
     return true;
 }
@@ -356,7 +332,7 @@ void KeeperClient::runInteractiveReplxx()
             break;
     }
 
-    std::cout << std::endl;
+    sout << std::endl;
 }
 
 void KeeperClient::runInteractiveInputStream()
@@ -366,8 +342,8 @@ void KeeperClient::runInteractiveInputStream()
         if (!processQueryText(input))
             break;
 
-        std::cout << "\a\a\a\a" << std::endl;
-        std::cerr << std::flush;
+        sout << "\a\a\a\a" << std::endl;
+        serr << std::flush;
     }
 }
 
@@ -449,6 +425,34 @@ int KeeperClient::main(const std::vector<String> & /* args */)
     zookeeper.reset();
 
     return 0;
+}
+
+KeeperClient::KeeperClient(std::ostream & sout_, std::ostream & serr_)
+    : sout(sout_), serr(serr_)
+{
+    loadCommands({
+        std::make_shared<LSCommand>(),
+        std::make_shared<CDCommand>(),
+        std::make_shared<SetCommand>(),
+        std::make_shared<CreateCommand>(),
+        std::make_shared<TouchCommand>(),
+        std::make_shared<GetCommand>(),
+        std::make_shared<ExistsCommand>(),
+        std::make_shared<GetStatCommand>(),
+        std::make_shared<FindSuperNodes>(),
+        std::make_shared<DeleteStaleBackups>(),
+        std::make_shared<FindBigFamily>(),
+        std::make_shared<RMCommand>(),
+        std::make_shared<RMRCommand>(),
+        std::make_shared<ReconfigCommand>(),
+        std::make_shared<SyncCommand>(),
+        std::make_shared<HelpCommand>(),
+        std::make_shared<FourLetterWordCommand>(),
+        std::make_shared<GetDirectChildrenNumberCommand>(),
+        std::make_shared<GetAllChildrenNumberCommand>(),
+        std::make_shared<CPCommand>(),
+        std::make_shared<MVCommand>(),
+    });
 }
 
 }

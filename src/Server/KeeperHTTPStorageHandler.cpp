@@ -26,7 +26,7 @@ extern const int LOGICAL_ERROR;
 extern const int TIMEOUT_EXCEEDED;
 }
 
-Poco::JSON::Object toJSON(const Coordination::Stat & stat)
+Poco::JSON::Object statToJSON(const Coordination::Stat & stat)
 {
     Poco::JSON::Object result;
     result.set("czxid", stat.czxid);
@@ -104,6 +104,8 @@ KeeperHTTPStorageHandler::KeeperHTTPStorageHandler(const IServer & server_, std:
           server.config().getUInt("keeper_server.http_control.storage.operation_timeout", Coordination::DEFAULT_OPERATION_TIMEOUT_MS)
           * Poco::Timespan::MILLISECONDS)
 {
+    keeper_client = zkutil::ZooKeeper::create_from_impl(
+        std::make_unique<Coordination::KeeperOverDispatcher>(keeper_dispatcher, operation_timeout));
 }
 
 void KeeperHTTPStorageHandler::performZooKeeperRequest(
@@ -134,53 +136,16 @@ void KeeperHTTPStorageHandler::performZooKeeperRequest(
     }
 }
 
-Coordination::ZooKeeperResponsePtr KeeperHTTPStorageHandler::awaitKeeperResponse(std::shared_ptr<Coordination::ZooKeeperRequest> request) const
-{
-    auto response_promise = std::make_shared<std::promise<Coordination::ZooKeeperResponsePtr>>();
-    auto response_future = response_promise->get_future();
-
-    auto response_callback
-        = [response_promise](const Coordination::ZooKeeperResponsePtr & zk_response, Coordination::ZooKeeperRequestPtr) mutable
-    { response_promise->set_value(zk_response); };
-
-    const auto session_id = keeper_dispatcher->getSessionID(session_timeout.totalMilliseconds());
-
-    keeper_dispatcher->registerSession(session_id, response_callback);
-    SCOPE_EXIT({ keeper_dispatcher->finishSession(session_id); });
-
-    if (request->isReadRequest())
-    {
-        keeper_dispatcher->putLocalReadRequest(request, session_id);
-    }
-    else if (!keeper_dispatcher->putRequest(request, session_id, /* use_xid_64= */ false))
-    {
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session {} already disconnected", session_id);
-    }
-
-    if (response_future.wait_for(std::chrono::milliseconds(operation_timeout.totalMilliseconds())) != std::future_status::ready)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Operation timeout ({} ms) exceeded.", operation_timeout.totalMilliseconds());
-
-    auto result = response_future.get();
-
-    keeper_dispatcher->finishSession(session_id);
-    return result;
-}
-
 void KeeperHTTPStorageHandler::performZooKeeperExistsRequest(const std::string & storage_path, HTTPServerResponse & response) const
 {
-    Coordination::ZooKeeperExistsRequest zk_request;
-    zk_request.path = storage_path;
+    Coordination::Stat stat;
+    bool exits = keeper_client->exists(storage_path, &stat);
 
-    const auto result_ptr = awaitKeeperResponse(std::make_shared<Coordination::ZooKeeperExistsRequest>(std::move(zk_request)));
-    auto exists_result_ptr = std::dynamic_pointer_cast<Coordination::ZooKeeperExistsResponse>(result_ptr);
-    if (!exists_result_ptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type for get operation.");
-
-    if (setErrorResponseForZKCode(exists_result_ptr->error, response))
-        return;
+    if (!exits)
+        setErrorResponseForZKCode(Coordination::Error::ZNONODE, response);
 
     Poco::JSON::Object response_json;
-    response_json.set("stat", toJSON(exists_result_ptr->stat));
+    response_json.set("stat", statToJSON(stat));
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
@@ -194,20 +159,16 @@ void KeeperHTTPStorageHandler::performZooKeeperExistsRequest(const std::string &
 
 void KeeperHTTPStorageHandler::performZooKeeperListRequest(const std::string & storage_path, HTTPServerResponse & response) const
 {
-    Coordination::ZooKeeperListRequest zk_request;
-    zk_request.path = storage_path;
+    Coordination::Stat stat;
+    Strings result;
+    const auto error = keeper_client->tryGetChildren(storage_path, result, &stat);
 
-    const auto result_ptr = awaitKeeperResponse(std::make_shared<Coordination::ZooKeeperListRequest>(std::move(zk_request)));
-    auto list_result_ptr = std::dynamic_pointer_cast<Coordination::ZooKeeperListResponse>(result_ptr);
-    if (!list_result_ptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type for list operation.");
-
-    if (setErrorResponseForZKCode(list_result_ptr->error, response))
+    if (setErrorResponseForZKCode(error, response))
         return;
 
     Poco::JSON::Object response_json;
-    response_json.set("child_node_names", list_result_ptr->names);
-    response_json.set("stat", toJSON(list_result_ptr->stat));
+    response_json.set("child_node_names", result);
+    response_json.set("stat", statToJSON(stat));
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
@@ -221,23 +182,19 @@ void KeeperHTTPStorageHandler::performZooKeeperListRequest(const std::string & s
 
 void KeeperHTTPStorageHandler::performZooKeeperGetRequest(const std::string & storage_path, HTTPServerResponse & response) const
 {
-    Coordination::ZooKeeperGetRequest zk_request;
-    zk_request.path = storage_path;
+    String result;
+    bool exits = keeper_client->tryGet(storage_path, result);
 
-    const auto result_ptr = awaitKeeperResponse(std::make_shared<Coordination::ZooKeeperGetRequest>(std::move(zk_request)));
-    auto get_result_ptr = std::dynamic_pointer_cast<Coordination::ZooKeeperGetResponse>(result_ptr);
-    if (!get_result_ptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type for get operation.");
-
-    if (setErrorResponseForZKCode(get_result_ptr->error, response))
-        return;
+    if (!exits)
+        setErrorResponseForZKCode(Coordination::Error::ZNONODE, response);
 
     response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
     response.setContentType("application/octet-stream");
-    response.setContentLength(get_result_ptr->data.size());
+    response.setContentLength(result.size());
 
-    response.send()->write(get_result_ptr->data.c_str(), get_result_ptr->data.size());
-    response.send()->next();
+    auto buffer = response.send();
+    buffer->write(result.c_str(), result.size());
+    buffer->next();
 }
 
 void KeeperHTTPStorageHandler::performZooKeeperSetRequest(
@@ -251,17 +208,9 @@ void KeeperHTTPStorageHandler::performZooKeeperSetRequest(
         return;
     }
 
-    Coordination::ZooKeeperSetRequest zk_request;
-    zk_request.path = storage_path;
-    zk_request.data = getRawBytesFromRequest(request);
-    zk_request.version = maybe_request_version.value();
+    const auto error = keeper_client->trySet(storage_path, getRawBytesFromRequest(request), maybe_request_version.value());
 
-    const auto result_ptr = awaitKeeperResponse(std::make_shared<Coordination::ZooKeeperSetRequest>(std::move(zk_request)));
-    auto set_result_ptr = std::dynamic_pointer_cast<Coordination::ZooKeeperSetResponse>(result_ptr);
-    if (!set_result_ptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type for set operation.");
-
-    if (setErrorResponseForZKCode(set_result_ptr->error, response))
+    if (setErrorResponseForZKCode(error, response))
         return;
 
     response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
@@ -272,16 +221,9 @@ void KeeperHTTPStorageHandler::performZooKeeperSetRequest(
 void KeeperHTTPStorageHandler::performZooKeeperCreateRequest(
     const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response) const
 {
-    Coordination::ZooKeeperCreateRequest zk_request;
-    zk_request.path = storage_path;
-    zk_request.data = getRawBytesFromRequest(request);
+    const auto error = keeper_client->tryCreate(storage_path, getRawBytesFromRequest(request), zkutil::CreateMode::Persistent);
 
-    const auto result_ptr = awaitKeeperResponse(std::make_shared<Coordination::ZooKeeperCreateRequest>(std::move(zk_request)));
-    auto create_result_ptr = std::dynamic_pointer_cast<Coordination::ZooKeeperCreateResponse>(result_ptr);
-    if (!create_result_ptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type for create operation.");
-
-    if (setErrorResponseForZKCode(create_result_ptr->error, response))
+    if (setErrorResponseForZKCode(error, response))
         return;
 
     response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
@@ -299,16 +241,10 @@ void KeeperHTTPStorageHandler::performZooKeeperRemoveRequest(
         *response.send() << "Version parameter is not set or invalid for remove request.\n";
         return;
     }
-    Coordination::ZooKeeperRemoveRequest zk_request;
-    zk_request.path = storage_path;
-    zk_request.version = maybe_request_version.value();
 
-    const auto result_ptr = awaitKeeperResponse(std::make_shared<Coordination::ZooKeeperRemoveRequest>(std::move(zk_request)));
-    auto remove_result_ptr = std::dynamic_pointer_cast<Coordination::ZooKeeperRemoveResponse>(result_ptr);
-    if (!remove_result_ptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type for remove operation.");
+    const auto error = keeper_client->tryRemove(storage_path, maybe_request_version.value());
 
-    if (setErrorResponseForZKCode(remove_result_ptr->error, response))
+    if (setErrorResponseForZKCode(error, response))
         return;
 
     response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);

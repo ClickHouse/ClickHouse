@@ -27,7 +27,7 @@ bool LSCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node
     return true;
 }
 
-void LSCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+void LSCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client) const
 {
     String path;
     if (!query->args.empty())
@@ -60,7 +60,7 @@ bool CDCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node
     return true;
 }
 
-void CDCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+void CDCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client) const
 {
     if (query->args.empty())
         return;
@@ -91,7 +91,7 @@ bool SetCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & nod
     return true;
 }
 
-void SetCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+void SetCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client) const
 {
     if (query->args.size() == 2)
         client->zookeeper->set(client->getAbsolutePath(query->args[0].safeGet<String>()), query->args[1].safeGet<String>());
@@ -138,7 +138,7 @@ bool CreateCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & 
     return true;
 }
 
-void CreateCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+void CreateCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client) const
 {
     client->zookeeper->create(
         client->getAbsolutePath(query->args[0].safeGet<String>()),
@@ -156,7 +156,7 @@ bool TouchCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & n
     return true;
 }
 
-void TouchCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+void TouchCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client) const
 {
     client->zookeeper->createIfNotExists(client->getAbsolutePath(query->args[0].safeGet<String>()), "");
 }
@@ -171,7 +171,7 @@ bool GetCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & nod
     return true;
 }
 
-void GetCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+void GetCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client) const
 {
     client->sout << client->zookeeper->get(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
 }
@@ -186,9 +186,9 @@ bool ExistsCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & 
     return true;
 }
 
-void ExistsCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient * client) const
+void ExistsCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClientBase * client) const
 {
-    client->sout << client->zookeeper->exists(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
+    std::cout << client->zookeeper->exists(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
 }
 
 bool GetStatCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
@@ -201,7 +201,7 @@ bool GetStatCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> &
     return true;
 }
 
-void GetStatCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+void GetStatCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client) const
 {
     Coordination::Stat stat;
     String path;
@@ -212,17 +212,17 @@ void GetStatCommand::execute(const ASTKeeperQuery * query, KeeperClient * client
 
     client->zookeeper->get(path, &stat);
 
-    client->sout << "cZxid = " << stat.czxid << "\n";
-    client->sout << "mZxid = " << stat.mzxid << "\n";
-    client->sout << "pZxid = " << stat.pzxid << "\n";
-    client->sout << "ctime = " << stat.ctime << "\n";
-    client->sout << "mtime = " << stat.mtime << "\n";
-    client->sout << "version = " << stat.version << "\n";
-    client->sout << "cversion = " << stat.cversion << "\n";
-    client->sout << "aversion = " << stat.aversion << "\n";
-    client->sout << "ephemeralOwner = " << stat.ephemeralOwner << "\n";
-    client->sout << "dataLength = " << stat.dataLength << "\n";
-    client->sout << "numChildren = " << stat.numChildren << "\n";
+    std::cout << "cZxid = " << stat.czxid << "\n";
+    std::cout << "mZxid = " << stat.mzxid << "\n";
+    std::cout << "pZxid = " << stat.pzxid << "\n";
+    std::cout << "ctime = " << stat.ctime << "\n";
+    std::cout << "mtime = " << stat.mtime << "\n";
+    std::cout << "version = " << stat.version << "\n";
+    std::cout << "cversion = " << stat.cversion << "\n";
+    std::cout << "aversion = " << stat.aversion << "\n";
+    std::cout << "ephemeralOwner = " << stat.ephemeralOwner << "\n";
+    std::cout << "dataLength = " << stat.dataLength << "\n";
+    std::cout << "numChildren = " << stat.numChildren << "\n";
 }
 
 namespace
@@ -239,10 +239,10 @@ struct TraversalTask : public std::enable_shared_from_this<TraversalTask<UserCtx
         std::deque<TraversalTaskPtr> new_tasks; /// Tasks for newly discovered children, that hasn't been started yet
         std::deque<std::function<void(Ctx &)>> in_flight_list_requests;  /// In-flight getChildren requests
         std::deque<std::function<void(Ctx &)>> finish_callbacks;    /// Callbacks to be called
-        KeeperClient * client;
+        KeeperClientBase * client;
         UserCtx & user_ctx;
 
-        Ctx(KeeperClient * client_, UserCtx & user_ctx_) : client(client_), user_ctx(user_ctx_) {}
+        Ctx(KeeperClientBase * client_, UserCtx & user_ctx_) : client(client_), user_ctx(user_ctx_) {}
     };
 
 private:
@@ -323,7 +323,7 @@ private:
 /// Traverses the tree in parallel and calls user callbacks
 /// Parallelization is achieved by sending multiple async getChildren requests to Keeper, but all processing is done in a single thread
 template <class UserCtx>
-void parallelized_traverse(const fs::path & path, KeeperClient * client, size_t max_in_flight_requests, UserCtx & ctx_)
+void parallelized_traverse(const fs::path & path, KeeperClientBase * client, size_t max_in_flight_requests, UserCtx & ctx_)
 {
     typename TraversalTask<UserCtx>::Ctx ctx(client, ctx_);
 
@@ -380,7 +380,7 @@ bool FindSuperNodes::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> &
     return true;
 }
 
-void FindSuperNodes::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+void FindSuperNodes::execute(const ASTKeeperQuery * query, KeeperClientBase * client) const
 {
     auto threshold = query->args[0].safeGet<UInt64>();
     auto path = client->getAbsolutePath(query->args[1].safeGet<String>());
@@ -407,7 +407,7 @@ bool DeleteStaleBackups::parse(IParser::Pos & /* pos */, std::shared_ptr<ASTKeep
     return true;
 }
 
-void DeleteStaleBackups::execute(const ASTKeeperQuery * /* query */, KeeperClient * client) const
+void DeleteStaleBackups::execute(const ASTKeeperQuery * /* query */, KeeperClientBase * client) const
 {
     client->askConfirmation(
         "You are going to delete all inactive backups in /clickhouse/backups.",
@@ -420,7 +420,7 @@ void DeleteStaleBackups::execute(const ASTKeeperQuery * /* query */, KeeperClien
             for (const auto & child : backups)
             {
                 auto backup_path = backup_root / child;
-                client->sout << "Found backup " << backup_path << ", checking if it's active\n";
+                std::cout << "Found backup " << backup_path << ", checking if it's active\n";
 
                 String stage_path = backup_path / "stage";
                 auto stages = client->zookeeper->getChildren(stage_path);
@@ -464,7 +464,7 @@ bool FindBigFamily::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & 
     return true;
 }
 
-void FindBigFamily::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+void FindBigFamily::execute(const ASTKeeperQuery * query, KeeperClientBase * client) const
 {
     auto path = client->getAbsolutePath(query->args[0].safeGet<String>());
     auto n = query->args[1].safeGet<UInt64>();
@@ -502,7 +502,7 @@ bool RMCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node
     return true;
 }
 
-void RMCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+void RMCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client) const
 {
     Int32 version{-1};
     if (query->args.size() == 2)
@@ -527,7 +527,7 @@ bool RMRCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & nod
     return true;
 }
 
-void RMRCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+void RMRCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client) const
 {
     String path = client->getAbsolutePath(query->args[0].safeGet<String>());
     UInt64 remove_nodes_limit = query->args[1].safeGet<UInt64>();
@@ -564,7 +564,7 @@ bool ReconfigCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> 
     return true;
 }
 
-void ReconfigCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient * client) const
+void ReconfigCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClientBase * client) const
 {
     String joining;
     String leaving;
@@ -600,7 +600,7 @@ bool SyncCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & no
     return true;
 }
 
-void SyncCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient * client) const
+void SyncCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClientBase * client) const
 {
     client->sout << client->zookeeper->sync(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
 }
@@ -610,9 +610,9 @@ bool HelpCommand::parse(IParser::Pos & /* pos */, std::shared_ptr<ASTKeeperQuery
     return true;
 }
 
-void HelpCommand::execute(const ASTKeeperQuery * /* query */, KeeperClient * client) const
+void HelpCommand::execute(const ASTKeeperQuery * /* query */, KeeperClientBase * client) const
 {
-    for (const auto & pair : KeeperClient::commands)
+    for (const auto & pair : KeeperClientBase::commands)
         client->sout << pair.second->generateHelpString() << "\n";
 }
 
@@ -631,7 +631,7 @@ bool FourLetterWordCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQ
     return true;
 }
 
-void FourLetterWordCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+void FourLetterWordCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client) const
 {
     client->sout << client->executeFourLetterCommand(query->args[0].safeGet<String>()) << "\n";
 }
@@ -647,7 +647,7 @@ bool GetDirectChildrenNumberCommand::parse(IParser::Pos & pos, std::shared_ptr<A
     return true;
 }
 
-void GetDirectChildrenNumberCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+void GetDirectChildrenNumberCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client) const
 {
     auto path = client->getAbsolutePath(query->args[0].safeGet<String>());
 
@@ -668,7 +668,7 @@ bool GetAllChildrenNumberCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTK
     return true;
 }
 
-void GetAllChildrenNumberCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+void GetAllChildrenNumberCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client) const
 {
     auto path = client->getAbsolutePath(query->args[0].safeGet<String>());
 
@@ -706,7 +706,7 @@ class CPMVOperation
     constexpr static UInt64 kTryLimit = 1000;
 
 public:
-    CPMVOperation(String src_, String dest_, bool remove_src_, KeeperClient * client_)
+    CPMVOperation(String src_, String dest_, bool remove_src_, KeeperClientBase * client_)
         : src(std::move(src_)), dest(std::move(dest_)), remove_src(remove_src_), client(client_)
     {
     }
@@ -756,7 +756,7 @@ private:
     String src;
     String dest;
     bool remove_src = false;
-    KeeperClient * client = nullptr;
+    KeeperClientBase * client = nullptr;
 
     bool is_completed = false;
     uint64_t failed_tries_count = 0;
@@ -779,7 +779,7 @@ bool CPCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node
     return true;
 }
 
-void CPCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+void CPCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client) const
 {
     auto src = client->getAbsolutePath(query->args[0].safeGet<String>());
     auto dest = client->getAbsolutePath(query->args[1].safeGet<String>());
@@ -805,7 +805,7 @@ bool MVCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node
     return true;
 }
 
-void MVCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+void MVCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client) const
 {
     auto src = client->getAbsolutePath(query->args[0].safeGet<String>());
     auto dest = client->getAbsolutePath(query->args[1].safeGet<String>());
