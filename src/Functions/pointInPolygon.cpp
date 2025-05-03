@@ -265,12 +265,19 @@ public:
 
         const auto & tuple_columns = tuple_col->getColumns();
 
-        const ColumnWithTypeAndName & poly = arguments[1];
-        const IColumn * poly_col = poly.column.get();
-        const ColumnConst * const_poly_col = checkAndGetColumn<ColumnConst>(poly_col);
-
         bool point_is_const = const_tuple_col != nullptr;
-        bool poly_is_const = const_poly_col != nullptr;
+        bool poly_is_const = true;
+
+        for (size_t i = 1; i < arguments.size(); ++i)
+        {
+            const IColumn * poly_col = arguments[i].column.get();
+            const auto * const_poly_col = checkAndGetColumn<ColumnConst>(poly_col);
+            if (const_poly_col == nullptr)
+            {
+                poly_is_const = false;
+                break;
+            }
+        }
 
         /// Two different algorithms are used for constant and non constant polygons.
         /// Constant polygons are preprocessed to speed up matching.
@@ -279,8 +286,9 @@ public:
 
         if (poly_is_const)
         {
-            bool is_const_multi_polygon = (arguments.size() == 2 && isThreeDimensionalArray(*poly.type))
-                || (arguments.size() > 2 && isTwoDimensionalArray(*poly.type));
+            const ColumnWithTypeAndName & first_poly_col = arguments[1];
+            bool is_const_multi_polygon = (arguments.size() == 2 && isThreeDimensionalArray(*first_poly_col.type))
+                || (arguments.size() > 2 && isTwoDimensionalArray(*first_poly_col.type));
 
             if (is_const_multi_polygon)
             {
