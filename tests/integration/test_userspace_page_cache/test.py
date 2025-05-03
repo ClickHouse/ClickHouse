@@ -263,3 +263,4 @@ def test_limits(started_cluster):
         )
         > 4000000
     )
+    node.query("drop table a;" "system drop page cache;")
