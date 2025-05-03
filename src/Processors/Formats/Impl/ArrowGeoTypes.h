@@ -5,13 +5,14 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnsWithTypeAndName.h>
 
-#if USE_RAPIDJSON
-#include <rapidjson/document.h>
-#endif
+#include <Poco/Dynamic/Var.h>
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 
 #if USE_ARROW
-#include <arrow/util/key_value_metadata.h>
-#include <arrow/array/array_binary.h>
+#    include <arrow/array/array_binary.h>
+#    include <arrow/util/key_value_metadata.h>
 #endif
 
 namespace DB
@@ -36,13 +37,11 @@ struct GeoColumnMetadata
     GeoType type;
 };
 
-#if USE_RAPIDJSON && USE_ARROW
-std::optional<rapidjson::Value> extractGeoMetadata(std::shared_ptr<const arrow::KeyValueMetadata> metadata);
+#if USE_ARROW
+std::optional<Poco::JSON::Object::Ptr> extractGeoMetadata(std::shared_ptr<const arrow::KeyValueMetadata> metadata);
 #endif
 
-#if USE_RAPIDJSON
-std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std::optional<rapidjson::Value> & geo_json);
-#endif
+std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std::optional<Poco::JSON::Object::Ptr> & geo_json);
 
 struct Point
 {

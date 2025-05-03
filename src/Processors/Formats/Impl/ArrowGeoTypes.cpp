@@ -19,8 +19,8 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 }
 
-#if USE_RAPIDJSON && USE_ARROW
-std::optional<rapidjson::Value> extractGeoMetadata(std::shared_ptr<const arrow::KeyValueMetadata> metadata)
+#if USE_ARROW
+std::optional<Poco::JSON::Object::Ptr> extractGeoMetadata(std::shared_ptr<const arrow::KeyValueMetadata> metadata)
 {
     if (!metadata)
         return std::nullopt;
@@ -30,10 +30,10 @@ std::optional<rapidjson::Value> extractGeoMetadata(std::shared_ptr<const arrow::
         if (metadata->key(i) == "geo")
         {
             const auto & value = metadata->value(i);
-            rapidjson::Document doc;
-            doc.Parse(value.c_str());
-
-            return doc.GetObject();
+            Poco::JSON::Parser parser;
+            Poco::Dynamic::Var result = parser.parse(value);
+            Poco::JSON::Object::Ptr obj = result.extract<Poco::JSON::Object::Ptr>();
+            return obj;
         }
     }
     return std::nullopt;
@@ -41,47 +41,50 @@ std::optional<rapidjson::Value> extractGeoMetadata(std::shared_ptr<const arrow::
 #endif
 
 #if USE_RAPIDJSON
-std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std::optional<rapidjson::Value> & geo_json)
+std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std::optional<Poco::JSON::Object::Ptr> & geo_json)
 {
     std::unordered_map<String, GeoColumnMetadata> geo_columns;
+
     if (geo_json.has_value())
     {
-        if (geo_json->IsObject() && geo_json->HasMember("columns") && geo_json.value()["columns"].IsObject())
-        {
-            const rapidjson::Value & columns = geo_json.value()["columns"];
-
-            for (const auto & column : columns.GetObject())
-            {
-                const auto & column_name = column.name.GetString();
-                auto encoding_name = String(column.value["encoding"].GetString());
-                GeoEncoding geo_encoding;
-
-                if (encoding_name == "WKB")
-                    geo_encoding = GeoEncoding::WKB;
-                else if (encoding_name == "WKT")
-                    geo_encoding = GeoEncoding::WKT;
-                else
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect encoding name in geo json metadata: {}", encoding_name);
-
-                auto types = column.value["geometry_types"].GetArray();
-                if (types.Size() != 1)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse does not support different types in one column");
-                auto type = String(types[0].GetString());
-
-                GeoType result_type;
-                if (type == "Point")
-                    result_type = GeoType::Point;
-                else if (type == "LineString")
-                    result_type = GeoType::LineString;
-                else if (type == "Polygon")
-                    result_type = GeoType::Polygon;
-                else
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown geo type {}", type);
-                geo_columns[column_name] = GeoColumnMetadata{.encoding = geo_encoding, .type = result_type};
-            }
-        }
-        else
+        Poco::JSON::Object::Ptr obj = geo_json.value();
+        if (!obj->has("columns"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect geo json metadata");
+
+        Poco::JSON::Object::Ptr columns = obj->getObject("columns");
+        for (const auto & column_entry : *columns)
+        {
+            const std::string & column_name = column_entry.first;
+            Poco::JSON::Object::Ptr column_obj = column_entry.second.extract<Poco::JSON::Object::Ptr>();
+
+            String encoding_name = column_obj->getValue<std::string>("encoding");
+            GeoEncoding geo_encoding;
+
+            if (encoding_name == "WKB")
+                geo_encoding = GeoEncoding::WKB;
+            else if (encoding_name == "WKT")
+                geo_encoding = GeoEncoding::WKT;
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect encoding name in geo json metadata: {}", encoding_name);
+
+            Poco::JSON::Array::Ptr types = column_obj->getArray("geometry_types");
+            if (types->size() != 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse does not support different types in one column");
+
+            String type = types->getElement<std::string>(0);
+            GeoType result_type;
+
+            if (type == "Point")
+                result_type = GeoType::Point;
+            else if (type == "LineString")
+                result_type = GeoType::LineString;
+            else if (type == "Polygon")
+                result_type = GeoType::Polygon;
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown geo type {}", type);
+
+            geo_columns[column_name] = GeoColumnMetadata{.encoding = geo_encoding, .type = result_type};
+        }
     }
 
     return geo_columns;

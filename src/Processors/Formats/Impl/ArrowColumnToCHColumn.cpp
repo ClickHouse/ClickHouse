@@ -1337,10 +1337,8 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
 
     ColumnsWithTypeAndName sample_columns;
 
-#if USE_RAPIDJSON
     auto geo_json = extractGeoMetadata(metadata);
     std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_json);
-#endif
 
     for (const auto & field : schema.fields())
     {
@@ -1356,11 +1354,7 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
             nullptr /*nested_type_hint*/,
             field->nullable() /*is_nullable_column*/,
             false /*is_map_nested_column*/,
-#if USE_RAPIDJSON
             geo_columns.contains(field->name()) ? std::optional(geo_columns[field->name()]) : std::nullopt,
-#else
-            std::nullopt,
-#endif
             settings);
 
         if (sample_column.column)
@@ -1433,10 +1427,9 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
     columns.reserve(header.columns());
 
     std::unordered_map<String, std::pair<BlockPtr, std::shared_ptr<NestedColumnExtractHelper>>> nested_tables;
-#if USE_RAPIDJSON
+
     auto geo_metadata = extractGeoMetadata(metadata);
     std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_metadata);
-#endif
 
     for (size_t column_i = 0, header_columns = header.columns(); column_i < header_columns; ++column_i)
     {
@@ -1479,11 +1472,7 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
                             nested_table_type,
                             arrow_column.field->nullable() /*is_nullable_column*/,
                             false /*is_map_nested_column*/,
-#if USE_RAPIDJSON
                             geo_columns.contains(header_column.name) ? std::optional(geo_columns[header_column.name]) : std::nullopt,
-#else
-                            std::nullopt,
-#endif
                             settings)
                     };
 
@@ -1524,11 +1513,7 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
                 header_column.type,
                 arrow_column.field->nullable(),
                 false /*is_map_nested_column*/,
-#if USE_RAPIDJSON
                 geo_columns.contains(header_column.name) ? std::optional(geo_columns[header_column.name]) : std::nullopt,
-#else
-                std::nullopt,
-#endif
                 settings);
         }
 
