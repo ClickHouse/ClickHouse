@@ -1,15 +1,20 @@
 <test>
 <query>
-WITH 18446744073709551616.0 AS TWO64
+WITH
+    2001  AS side,
+    -1000 AS min_coord
 SELECT count()
-FROM numbers(10000000)
-WHERE NOT ignore(
+FROM
+(
+    SELECT number
+    FROM numbers(side * side)
+) AS grid
+WHERE NOT ignore
+(
     pointInPolygon
     (
-        (
-            -1000 + 2000 * (toFloat64(sipHash64(number))                         / TWO64),
-            -1000 + 2000 * (toFloat64(sipHash64(number + toUInt64(0x9E3779B9))) / TWO64)
-        ),
+        (min_coord + (number % side),
+         min_coord + (number / side)),
         [
             [
                 [(100,100),(900,100),(900,900),(100,900)],
