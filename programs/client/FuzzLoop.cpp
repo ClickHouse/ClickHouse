@@ -42,15 +42,12 @@ namespace ErrorCodes
 extern const int NOT_IMPLEMENTED;
 extern const int SYNTAX_ERROR;
 extern const int TOO_DEEP_RECURSION;
-extern const int TIMEOUT_EXCEEDED;
-extern const int SOCKET_TIMEOUT;
 extern const int BUZZHOUSE;
 }
 
 std::optional<bool> Client::processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query, const bool permissive)
 {
-    bool async_insert = false;
-    processParsedSingleQuery(query_to_execute, parsed_query, async_insert);
+    processParsedSingleQuery(query_to_execute, query_to_execute, parsed_query);
 
     const auto * exception = server_exception ? server_exception.get() : client_exception.get();
     // Sometimes you may get TOO_DEEP_RECURSION from the server,
@@ -108,7 +105,7 @@ std::optional<bool> Client::processFuzzingStep(const String & query_to_execute, 
 }
 
 /// Returns false when server is not available.
-bool Client::processWithFuzzing(std::string_view full_query)
+bool Client::processWithFuzzing(const String & full_query)
 {
     ASTPtr orig_ast;
 
@@ -501,16 +498,8 @@ bool Client::processBuzzHouseQuery(const String & full_query)
         // Query completed with error, keep the previous starting AST.
         // Also discard the exception that we now know to be non-fatal,
         // so that it doesn't influence the exit code.
-        const auto * exception = server_exception ? server_exception.get() : (client_exception ? client_exception.get() : nullptr);
-        const bool throw_timeout_error = fuzz_config->fail_on_timeout && exception
-            && (exception->code() == ErrorCodes::TIMEOUT_EXCEEDED || exception->code() == ErrorCodes::SOCKET_TIMEOUT);
-
         server_exception.reset();
         client_exception.reset();
-        if (throw_timeout_error)
-        {
-            throw Exception(ErrorCodes::BUZZHOUSE, "BuzzHouse exception on timeout");
-        }
     }
     return server_up;
 }
@@ -675,16 +664,12 @@ bool Client::buzzHouse()
                 }
                 else if (settings_oracle && nopt < (correctness_oracle + settings_oracle + 1))
                 {
-                    /// Test running query with different settings, but some times, call system commands
+                    /// Test running query with different settings
                     qo.generateFirstSetting(rg, sq1);
-                    if (sq1.has_explain())
-                    {
-                        /// Run query only when something was generated
-                        BuzzHouse::SQLQueryToString(full_query, sq1);
-                        outf << full_query << std::endl;
-                        server_up &= processBuzzHouseQuery(full_query);
-                        qo.setIntermediateStepSuccess(!have_error);
-                    }
+                    BuzzHouse::SQLQueryToString(full_query, sq1);
+                    outf << full_query << std::endl;
+                    server_up &= processBuzzHouseQuery(full_query);
+                    qo.setIntermediateStepSuccess(!have_error);
 
                     sq2.Clear();
                     full_query2.resize(0);
@@ -696,7 +681,7 @@ bool Client::buzzHouse()
 
                     sq3.Clear();
                     full_query.resize(0);
-                    qo.generateSecondSetting(rg, gen, sq1, sq3);
+                    qo.generateSecondSetting(sq1, sq3);
                     BuzzHouse::SQLQueryToString(full_query, sq3);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);

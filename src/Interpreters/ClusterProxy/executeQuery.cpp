@@ -57,6 +57,7 @@ namespace Setting
     extern const SettingsUInt64 max_memory_usage_for_user;
     extern const SettingsUInt64 max_network_bandwidth;
     extern const SettingsUInt64 max_network_bytes;
+    extern const SettingsMaxThreads max_threads;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 offset;
     extern const SettingsBool optimize_skip_unused_shards;
@@ -562,7 +563,7 @@ static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepairConnectionPoolsF
     size_t max_replicas_to_use = settings[Setting::max_parallel_replicas];
     if (max_replicas_to_use > shard.getAllNodeCount())
     {
-        LOG_TRACE(
+        LOG_INFO(
             logger,
             "The number of replicas requested ({}) is bigger than the real number available in the cluster ({}). "
             "Will use the latter number to execute the query.",
@@ -1095,6 +1096,9 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
 
         pipeline.addCompletedPipeline(std::move(remote_pipeline));
     }
+
+    /// Otherwise CompletedPipelineExecutor uses 1 thread by default
+    pipeline.setNumThreads(settings[Setting::max_threads]);
 
     return pipeline;
 }

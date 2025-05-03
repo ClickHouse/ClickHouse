@@ -15,6 +15,8 @@ namespace DB
 struct LazilyReadInfo;
 using LazilyReadInfoPtr = std::shared_ptr<LazilyReadInfo>;
 
+using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+
 class Pipe;
 
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
@@ -69,7 +71,6 @@ public:
         Partition,
         PrimaryKey,
         Skip,
-        PrimaryKeyExpand,
     };
 
     /// This is a struct with information about applied indexes.
@@ -122,7 +123,7 @@ public:
         const ContextPtr & context_,
         size_t max_block_size_,
         size_t num_streams_,
-        PartitionIdToMaxBlockPtr max_block_numbers_to_read_,
+        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
         LoggerPtr log_,
         AnalysisResultPtr analyzed_result_ptr_,
         bool enable_parallel_reading_,
@@ -183,7 +184,7 @@ public:
         const SelectQueryInfo & query_info,
         ContextPtr context,
         size_t num_streams,
-        PartitionIdToMaxBlockPtr max_block_numbers_to_read,
+        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
         const MergeTreeData & data,
         const Names & all_column_names,
         LoggerPtr log,
@@ -248,7 +249,7 @@ private:
     /// Used for aggregation optimization (see DB::QueryPlanOptimizations::tryAggregateEachPartitionIndependently).
     bool output_each_partition_through_separate_port = false;
 
-    PartitionIdToMaxBlockPtr max_block_numbers_to_read;
+    std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read;
 
     /// Pre-computed value, needed to trigger sets creating for PK
     mutable std::optional<Indexes> indexes;
