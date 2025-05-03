@@ -30,6 +30,7 @@ public:
         const std::string & remote_database_name_,
         /*const*/ std::string select_query_,
         const ColumnsDescription & columns_,
+        const String & comment,
         ContextPtr context_,
         const MySQLSettings & mysql_settings_);
 

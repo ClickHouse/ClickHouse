@@ -53,6 +53,7 @@ StorageMySQLSelect::StorageMySQLSelect(
     const std::string & remote_database_name_,
     const std::string select_query_,
     const ColumnsDescription & columns_,
+    const String & comment,
     ContextPtr context_,
     const MySQLSettings & mysql_settings_)
 
@@ -74,6 +75,7 @@ StorageMySQLSelect::StorageMySQLSelect(
     else
         storage_metadata.setColumns(columns_);
 
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
