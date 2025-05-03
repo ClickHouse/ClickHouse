@@ -1,6 +1,4 @@
 #include <algorithm>
-#include <future>
-#include <numeric>
 #include <optional>
 #include <Core/Settings.h>
 #include <Poco/Util/Application.h>
