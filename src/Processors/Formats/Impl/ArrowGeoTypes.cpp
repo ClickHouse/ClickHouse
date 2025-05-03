@@ -40,7 +40,7 @@ std::optional<Poco::JSON::Object::Ptr> extractGeoMetadata(std::shared_ptr<const 
 }
 #endif
 
-std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std::optional<Poco::JSON::Object::Ptr> & geo_json)
+std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(std::optional<Poco::JSON::Object::Ptr> geo_json)
 {
     std::unordered_map<String, GeoColumnMetadata> geo_columns;
 
