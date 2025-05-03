@@ -6,7 +6,7 @@ namespace DB
 
 REGISTER_FUNCTION(Base32Encode)
 {
-    factory.registerFunction<FunctionBase32Conversion<Base32Encode>>();
+    factory.registerFunction<FunctionBaseXXConversion<BaseXXEncode<Base32Traits>>>();
 }
 
 }

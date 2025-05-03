@@ -11,8 +11,8 @@ struct NameTryBase58Decode
     static constexpr auto name = "tryBase58Decode";
 };
 
-using TryBase58DecodeImpl = Base58Decode<NameTryBase58Decode, Base58DecodeErrorHandling::ReturnEmptyString>;
-using FunctionTryBase58Decode = FunctionBase58Conversion<TryBase58DecodeImpl>;
+using TryBase58DecodeImpl = BaseXXDecode<Base58Traits, NameTryBase58Decode, BaseXXDecodeErrorHandling::ReturnEmptyString>;
+using FunctionTryBase58Decode = FunctionBaseXXConversion<TryBase58DecodeImpl>;
 
 }
 
