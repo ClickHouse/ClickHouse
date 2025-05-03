@@ -93,11 +93,10 @@ size_t DistinctSortedStreamTransform::buildFilterForRange(
     for (size_t i = range_begin; i < range_end; ++i)
     {
         const auto emplace_result = state.emplaceKey(method.data, i, data.string_pool);
-        assert(emplace_result.has_value());
 
         /// emit the record if there is no such key in the current set, skip otherwise
-        filter[i] = emplace_result->isInserted();
-        if (emplace_result->isInserted())
+        filter[i] = emplace_result.isInserted();
+        if (emplace_result.isInserted())
             ++count;
     }
     return count;

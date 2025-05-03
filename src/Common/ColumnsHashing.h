@@ -222,7 +222,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     }
 
     template <typename Data>
-    ALWAYS_INLINE std::optional<EmplaceResult> emplaceKey(Data & data, size_t row_, Arena & pool)
+    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row_, Arena & pool)
     {
         size_t row = getIndexAt(row_);
 

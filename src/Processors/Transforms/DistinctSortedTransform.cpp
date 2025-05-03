@@ -204,10 +204,9 @@ bool DistinctSortedTransform::buildFilter(
     bool has_new_data = false;
     { /// handle 0-indexed row to avoid index check in loop below
         const auto emplace_result = state.emplaceKey(method.data, 0, variants.string_pool);
-        assert(emplace_result.has_value());
-        if (emplace_result->isInserted())
+        if (emplace_result.isInserted())
             has_new_data = true;
-        filter[0] = emplace_result->isInserted();
+        filter[0] = emplace_result.isInserted();
     }
     for (size_t i = 1; i < rows; ++i)
     {
@@ -217,13 +216,12 @@ bool DistinctSortedTransform::buildFilter(
             method.data.clear();
 
         const auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
-        assert(emplace_result.has_value());
-        if (emplace_result->isInserted())
+        if (emplace_result.isInserted())
             has_new_data = true;
 
         /// Emit the record if there is no such key in the current set yet.
         /// Skip it otherwise.
-        filter[i] = emplace_result->isInserted();
+        filter[i] = emplace_result.isInserted();
     }
     return has_new_data;
 }

@@ -99,10 +99,9 @@ void NO_INLINE Set::insertFromBlockImplCase(
         }
 
         [[maybe_unused]] auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
-        assert(emplace_result.has_value());
 
         if constexpr (build_filter)
-            (*out_filter)[i] = emplace_result->isInserted();
+            (*out_filter)[i] = emplace_result.isInserted();
     }
 }
 

@@ -307,14 +307,13 @@ bool MergeTreeIndexAggregatorSet::buildFilter(
     for (size_t i = 0; i < limit; ++i)
     {
         auto emplace_result = state.emplaceKey(method.data, pos + i, variants.string_pool);
-        assert(emplace_result.has_value());
 
-        if (emplace_result->isInserted())
+        if (emplace_result.isInserted())
             has_new_data = true;
 
         /// Emit the record if there is no such key in the current set yet.
         /// Skip it otherwise.
-        filter[pos + i] = emplace_result->isInserted();
+        filter[pos + i] = emplace_result.isInserted();
     }
     return has_new_data;
 }

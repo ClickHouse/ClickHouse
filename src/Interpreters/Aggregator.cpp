@@ -1082,9 +1082,8 @@ void NO_INLINE Aggregator::executeImplBatch(
         AggregateDataPtr place = reinterpret_cast<AggregateDataPtr>(0x1);
         if (all_keys_are_const)
         {
-            auto emplace_result = state.emplaceKey(method.data, 0, *aggregates_pool, params.optimization_indexes, params.limit_offset_plus_length);
-            assert(emplace_result.has_value());
-            emplace_result->setMapped(place);
+            auto emplace_result = state.emplaceKey(method.data, 0, *aggregates_pool);
+            emplace_result.setMapped(place);
         }
         else
         {
@@ -1103,9 +1102,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                     }
                 }
 
-                auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool, params.optimization_indexes, params.limit_offset_plus_length);
-                if (emplace_result.has_value())
-                    emplace_result->setMapped(place);
+                state.emplaceKey(method.data, i, *aggregates_pool).setMapped(place);
             }
         }
         return;
@@ -1248,63 +1245,121 @@ void NO_INLINE Aggregator::executeImplBatch(
     /// For all rows.
     if (!no_more_keys)
     {
-        for (size_t i = key_start; i < key_end; ++i)
+        if (params.optimization_indexes != std::nullopt && params.limit_offset_plus_length < (key_end - key_start) / 2)
         {
-            AggregateDataPtr aggregate_data = nullptr;
-
-            if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
+            const auto& optimization_indexes = params.optimization_indexes.value();
+            for (size_t i = key_start; i < key_end; ++i)
             {
-                if (i == key_start + PrefetchingHelper::iterationsToMeasure())
-                    prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+                AggregateDataPtr aggregate_data = nullptr;
 
-                if (i + prefetch_look_ahead < row_end)
+                if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
                 {
-                    auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
-                    method.data.prefetch(std::move(key_holder));
-                }
-            }
+                    if (i == key_start + PrefetchingHelper::iterationsToMeasure())
+                        prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
 
-            auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool, params.optimization_indexes, params.limit_offset_plus_length);
-
-            if (!emplace_result.has_value())
-            {
-                places[i] = nullptr;
-                continue;
-            }
-
-            /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
-            if (emplace_result->isInserted())
-            {
-                /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
-                emplace_result->setMapped(nullptr);
-
-                aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-
-#if USE_EMBEDDED_COMPILER
-                if (use_compiled_functions)
-                {
-                    const auto & compiled_aggregate_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
-                    compiled_aggregate_functions.create_aggregate_states_function(aggregate_data);
-                    if (compiled_aggregate_functions.functions_count != aggregate_functions.size())
+                    if (i + prefetch_look_ahead < row_end)
                     {
-                        static constexpr bool skip_compiled_aggregate_functions = true;
-                        createAggregateStates<skip_compiled_aggregate_functions>(aggregate_data);
+                        auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
+                        method.data.prefetch(std::move(key_holder));
                     }
                 }
-                else
-#endif
+
+                auto emplace_result = state.emplaceKeyOptimization(method.data, i, *aggregates_pool, optimization_indexes, params.limit_offset_plus_length);
+
+                if (!emplace_result.has_value())
                 {
-                    createAggregateStates(aggregate_data);
+                    places[i] = nullptr;
+                    continue;
                 }
 
-                emplace_result->setMapped(aggregate_data);
-            }
-            else
-                aggregate_data = emplace_result->getMapped();
+                /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
+                if (emplace_result->isInserted())
+                {
+                    /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
+                    emplace_result->setMapped(nullptr);
 
-            assert(aggregate_data != nullptr);
-            places[i] = aggregate_data;
+                    aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+
+#if USE_EMBEDDED_COMPILER
+                    if (use_compiled_functions)
+                    {
+                        const auto & compiled_aggregate_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
+                        compiled_aggregate_functions.create_aggregate_states_function(aggregate_data);
+                        if (compiled_aggregate_functions.functions_count != aggregate_functions.size())
+                        {
+                            static constexpr bool skip_compiled_aggregate_functions = true;
+                            createAggregateStates<skip_compiled_aggregate_functions>(aggregate_data);
+                        }
+                    }
+                    else
+#endif
+                    {
+                        createAggregateStates(aggregate_data);
+                    }
+
+                    emplace_result->setMapped(aggregate_data);
+                }
+                else
+                    aggregate_data = emplace_result->getMapped();
+
+                assert(aggregate_data != nullptr);
+                places[i] = aggregate_data;
+            }
+        } else
+        {
+            for (size_t i = key_start; i < key_end; ++i)
+            {
+                AggregateDataPtr aggregate_data = nullptr;
+
+                if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
+                {
+                    if (i == key_start + PrefetchingHelper::iterationsToMeasure())
+                        prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+
+                    if (i + prefetch_look_ahead < row_end)
+                    {
+                        auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
+                        method.data.prefetch(std::move(key_holder));
+                    }
+                }
+
+                auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
+
+                /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
+                if (emplace_result.isInserted())
+                {
+                    /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
+                    emplace_result.setMapped(nullptr);
+
+                    aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+
+#if USE_EMBEDDED_COMPILER
+                    if (use_compiled_functions)
+                    {
+                        const auto & compiled_aggregate_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
+                        compiled_aggregate_functions.create_aggregate_states_function(aggregate_data);
+                        if (compiled_aggregate_functions.functions_count != aggregate_functions.size())
+                        {
+                            static constexpr bool skip_compiled_aggregate_functions = true;
+                            createAggregateStates<skip_compiled_aggregate_functions>(aggregate_data);
+                        }
+                    }
+                    else
+#endif
+                    {
+                        createAggregateStates(aggregate_data);
+                    }
+
+                    emplace_result.setMapped(aggregate_data);
+                }
+                else
+                    aggregate_data = emplace_result.getMapped();
+
+                assert(aggregate_data != nullptr);
+                places[i] = aggregate_data;
+            }
         }
+
     }
     else
     {
@@ -3161,17 +3216,16 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
             /// Furthermore, arena_for_keys is set to be a pointer to the last member of aggregates_pools,
             /// which is always initialized to have at least 1 arena.
             auto emplace_result = state.emplaceKey(data, i, *arena_for_keys); /// NOLINT(clang-analyzer-core.NonNullParamChecker)
-            assert(emplace_result.has_value());
-            if (!emplace_result->isInserted())
-                places[i] = emplace_result->getMapped();
+            if (!emplace_result.isInserted())
+                places[i] = emplace_result.getMapped();
             else
             {
-                emplace_result->setMapped(nullptr);
+                emplace_result.setMapped(nullptr);
 
                 AggregateDataPtr aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
                 createAggregateStates(aggregate_data);
 
-                emplace_result->setMapped(aggregate_data);
+                emplace_result.setMapped(aggregate_data);
                 places[i] = aggregate_data;
             }
         }

@@ -196,13 +196,7 @@ public:
     static HashMethodContextPtr createContext(const HashMethodContextSettings &) { return nullptr; }
 
     template <typename Data>
-    ALWAYS_INLINE std::optional<EmplaceResult> emplaceKey(Data & data, size_t row, Arena & pool)
-    {
-        return emplaceKey(data, row, pool, std::nullopt, 9223372036854775807ll);
-    }
-
-    template <typename Data>
-    ALWAYS_INLINE std::optional<EmplaceResult> emplaceKey(Data & data, size_t row, Arena & pool, const std::optional<std::vector<std::tuple<UInt64, SortDirection, std::string>>> & optimization_indexes, size_t limit_offset_plus_length)
+    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
     {
         if constexpr (nullable)
         {
@@ -228,7 +222,37 @@ public:
         }
 
         auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
-        return emplaceImpl(key_holder, data, limit_offset_plus_length, optimization_indexes);
+        return emplaceImpl(key_holder, data);
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE std::optional<EmplaceResult> emplaceKeyOptimization(Data & data, size_t row, Arena & pool, const std::vector<std::tuple<UInt64, SortDirection, std::string>> & optimization_indexes, size_t limit_offset_plus_length)
+    {
+        if constexpr (nullable)
+        {
+            if (isNullAt(row))
+            {
+                if constexpr (consecutive_keys_optimization)
+                {
+                    if (!cache.is_null)
+                    {
+                        cache.onNewValue(true);
+                        cache.is_null = true;
+                    }
+                }
+
+                bool has_null_key = data.hasNullKeyData();
+                data.hasNullKeyData() = true;
+
+                if constexpr (has_mapped)
+                    return EmplaceResult(data.getNullKeyData(), data.getNullKeyData(), !has_null_key);
+                else
+                    return EmplaceResult(!has_null_key);
+            }
+        }
+
+        auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
+        return emplaceImplOptimization(key_holder, data, limit_offset_plus_length, optimization_indexes);
     }
 
     template <typename Data>
@@ -385,11 +409,66 @@ protected:
     }
 
     template <typename Data, typename KeyHolder>
-    ALWAYS_INLINE std::optional<EmplaceResult> emplaceImpl(
+    ALWAYS_INLINE EmplaceResult emplaceImpl(KeyHolder & key_holder, Data & data)
+    {
+        if constexpr (consecutive_keys_optimization)
+        {
+            if (cache.found && cache.check(keyHolderGetKey(key_holder)))
+            {
+                if constexpr (has_mapped)
+                    return EmplaceResult(cache.value.second, cache.value.second, false);
+                else
+                    return EmplaceResult(false);
+            }
+        }
+
+        typename Data::LookupResult it;
+        bool inserted = false;
+        data.emplace(key_holder, it, inserted);
+
+        [[maybe_unused]] Mapped * cached = nullptr;
+        if constexpr (has_mapped)
+            cached = &it->getMapped();
+
+        if constexpr (has_mapped)
+        {
+            if (inserted)
+            {
+                new (&it->getMapped()) Mapped();
+            }
+        }
+
+        if constexpr (consecutive_keys_optimization)
+        {
+            cache.onNewValue(true);
+
+            if constexpr (nullable)
+                cache.is_null = false;
+
+            if constexpr (has_mapped)
+            {
+                cache.value.first = it->getKey();
+                cache.value.second = it->getMapped();
+                cached = &cache.value.second;
+            }
+            else
+            {
+                cache.value = it->getKey();
+            }
+        }
+
+        if constexpr (has_mapped)
+            return EmplaceResult(it->getMapped(), *cached, inserted);
+        else
+            return EmplaceResult(inserted);
+    }
+
+    template <typename Data, typename KeyHolder>
+    ALWAYS_INLINE std::optional<EmplaceResult> emplaceImplOptimization(
         KeyHolder & key_holder,
         Data & data,
         size_t limit_offset_plus_length,
-        const std::optional<std::vector<std::tuple<UInt64, SortDirection, std::string>>> & optimization_indexes)
+        const std::vector<std::tuple<UInt64, SortDirection, std::string>> & optimization_indexes)
     {
         chassert(limit_offset_plus_length > 0);
         if constexpr (consecutive_keys_optimization)
@@ -414,9 +493,9 @@ protected:
                        && !std::is_same_v<KeyHolder, UInt128>
                        && !std::is_same_v<KeyHolder, Int256>
                        && !std::is_same_v<KeyHolder, UInt256>) { // MVP. TODO support all types
-                if (optimization_indexes && data.size() >= limit_offset_plus_length * 2)
+                if (data.size() >= limit_offset_plus_length * 2)
                 {
-                    assert(optimization_indexes->size() == 1 && std::get<0>((*optimization_indexes)[0]) == 0); // TODO support arbitrary number of expressions in findOptimizationSublistIndexes
+                    assert(optimization_indexes.size() == 1 && std::get<0>(optimization_indexes[0]) == 0); // TODO support arbitrary number of expressions in findOptimizationSublistIndexes
                     if constexpr (HasBegin<Data>::value)
                     {
                         if constexpr (!std::is_same_v<decltype(data.begin()->getKey()), const VoidKey> && HasErase<Data, decltype(keyHolderGetKey(key_holder))>::value)
@@ -434,7 +513,7 @@ protected:
                                 data_iterators.push_back(iter);
                             std::nth_element(data_iterators.begin(), data_iterators.begin() + (limit_offset_plus_length - 1), data_iterators.end(), [this, &optimization_indexes](const typename Data::iterator& lhs, const typename Data::iterator& rhs)
                             {
-                                return compareKeyHolders(lhs->getKey(), rhs->getKey(), optimization_indexes.value());
+                                return compareKeyHolders(lhs->getKey(), rhs->getKey(), optimization_indexes);
                             });
 
                             // erase excess elements
