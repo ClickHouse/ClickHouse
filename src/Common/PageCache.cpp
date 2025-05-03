@@ -7,6 +7,7 @@
 #include <Common/formatReadable.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
+#include <Common/logger_useful.h>
 
 
 namespace ProfileEvents
@@ -172,7 +173,22 @@ void PageCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
 
     size_t reduced_limit = size_t(memory_limit * (1. - std::min(free_memory_ratio, 1.)));
     size_t target_size = reduced_limit - std::min(peak, reduced_limit);
-    target_size = std::clamp(target_size, min_size_in_bytes, max_size_in_bytes);
+
+    /// if page_cache_max_size setting is for some reason less than page_cache_min_size,
+    /// then set the target_size to page_cache_min_size to ensure that the resizing logic
+    /// works correctly and doesn't cause the server to crash.
+    if (min_size_in_bytes <= max_size_in_bytes)
+    {
+        target_size = std::clamp(target_size, min_size_in_bytes, max_size_in_bytes);
+    }
+    else
+    {
+        target_size = min_size_in_bytes;
+        LOG_WARNING(
+            getLogger("PageCache"),
+            "PageCache page_cache_min_size is greater than page_cache_max_size. PageCache will be resized to page_cache_min_size: {}.",
+            target_size);
+    }
 
     size_t size_per_shard = (target_size + shards.size() - 1) / shards.size();
     for (const auto & shard : shards)
