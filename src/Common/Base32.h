@@ -1,0 +1,170 @@
+#pragma once
+
+#include <optional>
+#include <base/types.h>
+
+namespace DB
+{
+
+struct Base32Rfc4648
+{
+    // clang-format off
+    static constexpr char encoding_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    static constexpr UInt8 decoding_table[256] = {
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
+        0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
+        0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    };
+    // clang-format on
+    static constexpr Int8 padding_char = '=';
+};
+
+template <typename Traits, typename Tag>
+struct Base32;
+
+struct Base32NaiveTag;
+
+template <typename Traits>
+struct Base32<Traits, Base32NaiveTag>
+{
+    static size_t encodeBase32(const UInt8 * src, size_t src_length, UInt8 * dst)
+    {
+        //  in:      [01010101] [11001100] [11110000]
+
+        // out:      01010 | 11100 | 11001 | 11100 | 000
+        //           [ 5b ]  [ 5b ]  [ 5b ]  [ 5b ] ...
+
+        size_t ipos = 0;
+        size_t opos = 0;
+        uint32_t buffer = 0;
+        uint8_t bits_left = 0;
+
+        while (ipos < src_length)
+        {
+            buffer = (buffer << 8) | src[ipos++];
+            bits_left += 8;
+
+            while (bits_left >= 5)
+            {
+                dst[opos++] = Traits::encoding_table[(buffer >> (bits_left - 5)) & 0x1F];
+                bits_left -= 5;
+            }
+        }
+
+        if (bits_left > 0)
+        {
+            dst[opos++] = Traits::encoding_table[(buffer << (5 - bits_left)) & 0x1F];
+        }
+
+        while (opos % 8 != 0)
+        {
+            dst[opos++] = Traits::padding_char;
+        }
+
+        return opos;
+    }
+
+    static std::optional<size_t> decodeBase32(const UInt8 * src, size_t src_length, UInt8 * dst)
+    {
+        if (src_length % 8 != 0)
+        {
+            return std::nullopt;
+        }
+
+        size_t dst_pos = 0;
+        size_t buffer = 0;
+        int bits = 0;
+        size_t pad_count = 0;
+        bool padding_started = false;
+
+        for (size_t i = 0; i < src_length; ++i)
+        {
+            UInt8 c = src[i];
+
+            if (c == Traits::padding_char)
+            {
+                padding_started = true;
+                pad_count++;
+                continue;
+            }
+
+            if (padding_started)
+            {
+                return std::nullopt; // Only padding was expected
+            }
+
+            UInt8 value = Traits::decoding_table[c];
+            if (value == 0xFF)
+            {
+                return std::nullopt; // Invalid symbol
+            }
+
+            // Stuff in decoded bits, write out if there's enough
+            buffer = (buffer << 5) | value;
+            bits += 5;
+
+            if (bits >= 8)
+            {
+                bits -= 8;
+                dst[dst_pos++] = (buffer >> bits) & 0xFF;
+            }
+        }
+
+        if (pad_count > 0)
+        {
+            if (!(pad_count == 1 || pad_count == 3 || pad_count == 4 || pad_count == 6))
+            {
+                return std::nullopt;
+            }
+
+            size_t const data_chars = src_length - pad_count;
+
+            bool valid_padding = false;
+            switch (pad_count)
+            {
+                case 1:
+                    valid_padding = (data_chars % 8) == 7;
+                    break; // 7 data chars → 1 padding
+                case 3:
+                    valid_padding = (data_chars % 8) == 5;
+                    break; // 5 data chars → 3 padding
+                case 4:
+                    valid_padding = (data_chars % 8) == 4;
+                    break; // 4 data chars → 4 padding
+                case 6:
+                    valid_padding = (data_chars % 8) == 2;
+                    break; // 2 data chars → 6 padding
+                default:
+                    valid_padding = false;
+                    break;
+            }
+
+            if (!valid_padding)
+            {
+                return std::nullopt;
+            }
+
+            if (bits > 0 && (buffer & ((1 << bits) - 1)) != 0)
+            {
+                return std::nullopt;
+            }
+        }
+
+        return dst_pos;
+    }
+};
+}
