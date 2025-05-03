@@ -24,7 +24,7 @@
 
 // more aliases: https://mailman.videolan.org/pipermail/x264-devel/2014-May/010660.html
 
-#define ALWAYS_INLINE __attribute__((__always_inline__))
+#define ALWAYS_INLINE
 #define NO_INLINE __attribute__((__noinline__))
 #define MAY_ALIAS __attribute__((__may_alias__))
 
