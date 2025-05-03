@@ -284,14 +284,20 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
                 RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), data_size, reverse, res.data());
 
                 /// Radix sort treats all positive NaNs to be greater than all numbers.
-                /// If the user needs the opposite, we must move them accordingly.
-                if (is_floating_point<T> && nan_direction_hint < 0)
+                /// And all negative NaNs to be lower that all numbers.
+                /// Some platforms may produce both of them without signals depending on instruction sets or expression.
+                /// Move all NaNs to the desired part of result.
+                /// Example amd64:
+                /// double val1 = 0.0 / 0.0; // nan
+                /// doubel val2 = 0.0; val2 = val2 / val2; // -nan
+                if (is_floating_point<T>)
                 {
+                    const auto is_nulls_last = ((nan_direction_hint > 0) != reverse);
                     size_t nans_to_move = 0;
 
                     for (size_t i = 0; i < data_size; ++i)
                     {
-                        if (isNaN(data[res[reverse ? i : data_size - 1 - i]]))
+                        if (isNaN(data[res[is_nulls_last ? i : data_size - 1 - i]]))
                             ++nans_to_move;
                         else
                             break;
@@ -299,7 +305,7 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
 
                     if (nans_to_move)
                     {
-                        std::rotate(std::begin(res), std::begin(res) + (reverse ? nans_to_move : data_size - nans_to_move), std::end(res));
+                        std::rotate(std::begin(res), std::begin(res) + (is_nulls_last ? nans_to_move : data_size - nans_to_move), std::end(res));
                     }
                 }
 
@@ -353,15 +359,21 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
 
                 RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), size, reverse, begin);
 
-                /// Radix sort treats all NaNs to be greater than all numbers.
-                /// If the user needs the opposite, we must move them accordingly.
-                if (is_floating_point<T> && nan_direction_hint < 0)
+                /// Radix sort treats all positive NaNs to be greater than all numbers.
+                /// And all negative NaNs to be lower that all numbers.
+                /// Some platforms may produce both of them without signals depending on instruction sets or expression.
+                /// Move all NaNs to the desired part of result.
+                /// Example amd64:
+                /// double val1 = 0.0 / 0.0; // nan
+                /// doubel val2 = 0.0; val2 = val2 / val2; // -nan
+                if (is_floating_point<T>)
                 {
+                    const auto is_nulls_last = ((nan_direction_hint > 0) != reverse);
                     size_t nans_to_move = 0;
 
                     for (size_t i = 0; i < size; ++i)
                     {
-                        if (isNaN(data[begin[reverse ? i : size - 1 - i]]))
+                        if (isNaN(data[begin[is_nulls_last ? i : size - 1 - i]]))
                             ++nans_to_move;
                         else
                             break;
@@ -369,7 +381,7 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
 
                     if (nans_to_move)
                     {
-                        std::rotate(begin, begin + (reverse ? nans_to_move : size - nans_to_move), end);
+                        std::rotate(begin, begin + (is_nulls_last ? nans_to_move : size - nans_to_move), end);
                     }
                 }
 
