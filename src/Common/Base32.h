@@ -167,4 +167,15 @@ struct Base32<Traits, Base32NaiveTag>
         return dst_pos;
     }
 };
+
+inline size_t encodeBase32(const UInt8 * src, size_t src_length, UInt8 * dst)
+{
+    return Base32<Base32Rfc4648, Base32NaiveTag>::encodeBase32(src, src_length, dst);
+}
+
+inline std::optional<size_t> decodeBase32(const UInt8 * src, size_t src_length, UInt8 * dst)
+{
+    return Base32<Base32Rfc4648, Base32NaiveTag>::decodeBase32(src, src_length, dst);
+}
+
 }
