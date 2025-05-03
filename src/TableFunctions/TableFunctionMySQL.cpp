@@ -24,8 +24,6 @@
 #include <Databases/MySQL/DatabaseMySQL.h>
 #include <Common/parseRemoteDescription.h>
 
-#include <boost/algorithm/string/predicate.hpp>
-
 #include <variant>
 
 namespace DB
@@ -117,7 +115,7 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
             pass_select_query = true;
         }
         // Check if it's in a form `mysql(host:port, db, query('SELECT ...'), ...)`
-        else if (auto * func_wrapped_query = args[2]->as<ASTFunction>())
+        else if (auto * func_wrapped_query = args[2]->as<ASTFunction>(); func_wrapped_query && func_wrapped_query->name == "query")
         {
             if (func_wrapped_query->arguments->children.size() != 1)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'mysql' with query(...) must have 1 argument in it.");
