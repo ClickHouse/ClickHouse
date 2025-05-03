@@ -1,35 +1,37 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
 #include <IO/ReadBuffer.h>
 #include <Server/HTTP/HTTPRequest.h>
-#include <Server/HTTP/HTTPContext.h>
 #include <Common/ProfileEvents.h>
 #include "config.h"
 
-#include <Poco/Net/HTTPServerSession.h>
+#include <Poco/Net/SocketAddress.h>
+#include <Poco/Net/SocketImpl.h>
 
 namespace DB
 {
 
 class X509Certificate;
-class HTTPServerResponse;
-class ReadBufferFromPocoSocket;
 
 class HTTPServerRequest : public HTTPRequest
 {
 public:
-    HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session, const ProfileEvents::Event & read_event = ProfileEvents::end());
+    HTTPServerRequest(
+        HTTPRequest request,
+        std::unique_ptr<ReadBuffer> body,
+        const Poco::Net::SocketAddress & client_address,
+        const Poco::Net::SocketAddress & server_address,
+        bool secure,
+        Poco::Net::SocketImpl * socket);
 
     /// FIXME: it's a little bit inconvenient interface. The rationale is that all other ReadBuffer's wrap each other
     ///        via unique_ptr - but we can't inherit HTTPServerRequest from ReadBuffer and pass it around,
     ///        since we also need it in other places.
 
-    /// Returns the input stream for reading the request body.
     ReadBuffer & getStream()
     {
-        poco_check_ptr(stream);
-        return *stream;
+        poco_check_ptr(body);
+        return *body;
     }
 
     bool checkPeerConnected() const;
@@ -48,26 +50,14 @@ public:
 #endif
 
 private:
-    /// Limits for basic sanity checks when reading a header
-    enum Limits
-    {
-        MAX_METHOD_LENGTH = 32,
-        MAX_VERSION_LENGTH = 8,
-    };
-
-    const size_t max_uri_size;
-    const size_t max_fields_number;
-    const size_t max_field_name_size;
-    const size_t max_field_value_size;
-
-    std::unique_ptr<ReadBuffer> stream;
-    Poco::Net::SocketImpl * socket;
+    std::unique_ptr<ReadBuffer> body;
     Poco::Net::SocketAddress client_address;
     Poco::Net::SocketAddress server_address;
+    
+    const bool secure;
 
-    bool secure;
-
-    void readRequest(ReadBuffer & in);
+    /// FIXME: this field should not exist
+    Poco::Net::SocketImpl * socket;
 };
 
 }
