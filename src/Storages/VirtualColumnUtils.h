@@ -110,9 +110,6 @@ struct VirtualsForFileLikeStorage
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
     VirtualsForFileLikeStorage virtual_values, ContextPtr context);
-
-// exposed in the header for unit testing purposes
-std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValues(const String & path);
 }
 
 }

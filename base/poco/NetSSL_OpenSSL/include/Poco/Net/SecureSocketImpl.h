@@ -20,11 +20,11 @@
 
 #include <openssl/bio.h>
 #include <openssl/ssl.h>
-
 #include "Poco/Net/Context.h"
 #include "Poco/Net/NetSSL.h"
 #include "Poco/Net/Session.h"
 #include "Poco/Net/SocketImpl.h"
+#include "Poco/Net/X509Certificate.h"
 
 #include <mutex>
 
@@ -236,21 +236,16 @@ namespace Net
         /// to be able to re-use it again.
 
     private:
-        using MutexT = Poco::FastMutex;
-        using LockT = MutexT::ScopedLock;
-        using UnLockT = Poco::ScopedLockWithUnlock<MutexT>;
-
         SecureSocketImpl(const SecureSocketImpl &);
         SecureSocketImpl & operator=(const SecureSocketImpl &);
 
         mutable std::recursive_mutex _mutex;
-        std::atomic<SSL *> _pSSL;
+        SSL * _pSSL; // GUARDED_BY _mutex
         Poco::AutoPtr<SocketImpl> _pSocket;
         Context::Ptr _pContext;
         bool _needHandshake;
         std::string _peerHostName;
         Session::Ptr _pSession;
-        mutable MutexT _ssl_mutex;
 
         friend class SecureStreamSocketImpl;
 
