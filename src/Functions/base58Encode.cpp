@@ -6,7 +6,7 @@ namespace DB
 
 REGISTER_FUNCTION(Base58Encode)
 {
-    factory.registerFunction<FunctionBase58Conversion<Base58Encode>>();
+    factory.registerFunction<FunctionBaseXXConversion<BaseXXEncode<Base58Traits>>>();
 }
 
 }
