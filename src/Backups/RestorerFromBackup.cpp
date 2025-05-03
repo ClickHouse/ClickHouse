@@ -177,6 +177,9 @@ void RestorerFromBackup::run(Mode mode_)
     insertDataToTables();
     runDataRestoreTasks();
 
+    setStage(Stage::FINALIZING_TABLES);
+    finalizeTables();
+
     /// Restored successfully!
     setStage(Stage::COMPLETED);
 }
@@ -1171,6 +1174,20 @@ void RestorerFromBackup::runDataRestoreTasks()
 
         waitFutures();
     }
+}
+
+void RestorerFromBackup::finalizeTables()
+{
+    std::vector<StoragePtr> tables;
+    {
+        std::lock_guard lock{mutex};
+        tables.reserve(table_infos.size());
+        for (const auto & [_, info] : table_infos)
+            tables.push_back(info.storage);
+    }
+
+    for (const auto & storage : tables)
+        storage->finalizeRestoreFromBackup();
 }
 
 void RestorerFromBackup::throwTableIsNotEmpty(const StorageID & storage_id)
