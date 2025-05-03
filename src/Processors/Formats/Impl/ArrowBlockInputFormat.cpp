@@ -209,7 +209,7 @@ NamesAndTypesList ArrowSchemaReader::readSchema()
 
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         *schema,
-        file_reader->metadata(),
+        file_reader ? file_reader->metadata() : nullptr,
         stream ? "ArrowStream" : "Arrow",
         format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference,
         format_settings.schema_inference_make_columns_nullable != 0);
