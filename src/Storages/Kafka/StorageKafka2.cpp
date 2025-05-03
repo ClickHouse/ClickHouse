@@ -473,6 +473,8 @@ cppkafka::Configuration StorageKafka2::getConsumerConfiguration(size_t consumer_
     // It is disabled, because in case of no materialized views are attached, it can cause live memory leak. To enable it, a similar cleanup mechanism must be introduced as for StorageKafka.
     kafka_config.set("statistics.interval.ms", "0");
     // kafka_config.set("auto.offset.reset", "latest");
+    // Making more frequent updates, now 1 min
+    kafka_config.set("topic.metadata.refresh.interval.ms", "60000");
     return kafka_config;
 }
 
@@ -1218,6 +1220,13 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
     consumer_info.watch.restart();
     auto & consumer = consumer_info.consumer;
 
+    auto all_topic_partitions = consumer->getAllTopicPartitions();
+    if (all_topic_partitions.empty())
+    {
+        LOG_DEBUG(log, "Couldn't create an assignment");
+        return StallReason::NoMetadata;
+    }
+
     try
     {
         if (consumer_info.permanent_locks.empty() || consumer_info.poll_count >= TMP_LOCKS_REFRESH_POLLS)
@@ -1231,13 +1240,6 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
             {
                 consumer_info.keeper = getZooKeeperAndAssertActive();
                 LOG_TEST(log, "Got new zookeeper");
-            }
-
-            auto all_topic_partitions = consumer->getAllTopicPartitions();
-            if (all_topic_partitions.empty())
-            {
-                LOG_DEBUG(log, "Couldn't create an assignment");
-                return StallReason::NoMetadata;
             }
 
             updatePermanentLocks(*consumer_info.keeper, consumer->getAllTopicPartitions(), consumer_info.permanent_locks, consumer_info.permanent_locks_changed);
