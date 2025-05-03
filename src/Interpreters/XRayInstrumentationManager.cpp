@@ -74,13 +74,13 @@ XRayInstrumentationManager & XRayInstrumentationManager::instance()
 
 HandlerType XRayInstrumentationManager::getHandlerType(const std::string & handler_name)
 {
-    if (handler_name == "sleep")
+    if (handler_name == "SLEEP")
         return HandlerType::Sleep;
 
-    if (handler_name == "log")
+    if (handler_name == "LOG")
         return HandlerType::Log;
 
-    if (handler_name == "profile")
+    if (handler_name == "PROFILE")
         return HandlerType::Profile;
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown handler type: ({})", handler_name);
@@ -108,7 +108,7 @@ void XRayInstrumentationManager::setHandlerAndPatch(const std::string & function
 
     HandlerType type = getHandlerType(handler_name); // add try catch
     auto handlers_set_it = functionIdToHandlers.find(function_id);
-    if (handlers_set_it->second.contains(type))
+    if (handlers_set_it !=  functionIdToHandlers.end() && handlers_set_it->second.contains(type))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Handler of this type is already installed for function ({})", function_name);
     }
@@ -380,6 +380,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     }
 
     in_hook = true;
+    LOG_DEBUG(getLogger("XRayInstrumentationManager::profile"), "function with id {}", toString(FuncId));
     HandlerType type = HandlerType::Profile;
     static thread_local std::unordered_map<int32_t, InstrumentationProfilingLogElement> active_elements;
     if (Type == XRayEntryType::ENTRY)
@@ -387,10 +388,10 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
         // but does XRay allow us to throw exceptions in handlers?
         auto parameters_it = functionIdToHandlers[FuncId].find(type); // DOUBLE CHECK IF THIS IS RIGHT
         auto & params_opt = parameters_it->second->parameters;
-        if (!params_opt.has_value())
+        if (params_opt.has_value())
         {
             in_hook = false;
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected parameters for profiling instrumentation"); // or maybe we want to use some default parameter instead of throwing exception??
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected parameters for profiling instrumentation");
         }
         // TODO -- not clear yet how to write what we want to the system.instrumentation_profiling_log
         auto context_it = functionIdToHandlers[FuncId].find(type); // DOUBLE CHECK IF THIS IS RIGHT
