@@ -83,5 +83,7 @@
         FROM random_pts
         WHERE NOT ignore(pointInPolygon(pt, mp_shuffled));
     </query>
-    <drop_query>DROP TABLE IF EXISTS polygons</drop_query>
+    <drop_query>DROP TABLE IF EXISTS random_polys;</drop_query>
+    <drop_query>DROP TABLE IF EXISTS multipoly_holder;</drop_query>
+    <drop_query>DROP TABLE IF EXISTS random_pts;</drop_query>
 </test>
