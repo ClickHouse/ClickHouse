@@ -46,11 +46,11 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(std::opti
 
     if (geo_json.has_value())
     {
-        Poco::JSON::Object::Ptr obj = geo_json.value();
+        const Poco::JSON::Object::Ptr & obj = geo_json.value();
         if (!obj->has("columns"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect geo json metadata");
 
-        Poco::JSON::Object::Ptr columns = obj->getObject("columns");
+        const Poco::JSON::Object::Ptr & columns = obj->getObject("columns");
         for (const auto & column_entry : *columns)
         {
             const std::string & column_name = column_entry.first;
