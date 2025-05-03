@@ -352,6 +352,8 @@ public:
         partition_strategy = partition_strategy_;
     }
 
+    virtual void assertInitialized() const;
+
 private:
     String format = "auto";
     String compression_method = "auto";
@@ -363,8 +365,6 @@ private:
     std::shared_ptr<IPartitionStrategy> partition_strategy;
 
 protected:
-    void assertInitialized() const;
-
     bool initialized = false;
 
 private:

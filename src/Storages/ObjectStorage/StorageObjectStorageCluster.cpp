@@ -205,6 +205,8 @@ std::string StorageObjectStorageCluster::getName() const
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
 {
+    if (pure_storage)
+        return pure_storage->totalRows(query_context);
     configuration->update(
         object_storage,
         query_context,
@@ -215,6 +217,8 @@ std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_co
 
 std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
 {
+    if (pure_storage)
+        return pure_storage->totalBytes(query_context);
     configuration->update(
         object_storage,
         query_context,

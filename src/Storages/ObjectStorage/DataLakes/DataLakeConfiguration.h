@@ -90,7 +90,7 @@ public:
 
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const override
     {
-        assertInitialized();
+        assertInitializedDL();
         if (auto schema = current_metadata->getTableSchema(); !schema.empty())
             return ColumnsDescription(std::move(schema));
         return std::nullopt;
@@ -98,38 +98,38 @@ public:
 
     std::optional<size_t> totalRows(ContextPtr local_context) override
     {
-        assertInitialized();
+        assertInitializedDL();
         return current_metadata->totalRows(local_context);
     }
 
     std::optional<size_t> totalBytes(ContextPtr local_context) override
     {
-        assertInitialized();
+        assertInitializedDL();
         return current_metadata->totalBytes(local_context);
     }
 
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, const String & data_path) const override
     {
-        assertInitialized();
+        assertInitializedDL();
         return current_metadata->getInitialSchemaByPath(local_context, data_path);
     }
 
     std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, const String & data_path) const override
     {
-        assertInitialized();
+        assertInitializedDL();
         return current_metadata->getSchemaTransformer(local_context, data_path);
     }
 
     bool hasExternalDynamicMetadata() override
     {
-        assertInitialized();
+        assertInitializedDL();
         return (*settings)[DataLakeStorageSetting::allow_dynamic_metadata_for_data_lakes]
             && current_metadata->supportsSchemaEvolution();
     }
 
     IDataLakeMetadata * getExternalMetadata() override
     {
-        assertInitialized();
+        assertInitializedDL();
         return current_metadata.get();
     }
 
@@ -137,7 +137,7 @@ public:
 
     bool supportsWrites() const override
     {
-        assertInitialized();
+        assertInitializedDL();
         return current_metadata->supportsWrites();
     }
 
@@ -147,7 +147,7 @@ public:
         size_t list_batch_size,
         ContextPtr context) override
     {
-        assertInitialized();
+        assertInitializedDL();
         return current_metadata->iterate(filter_dag, callback, list_batch_size, context);
     }
 
@@ -159,7 +159,7 @@ public:
 #if USE_PARQUET && USE_AWS_S3
     DeltaLakePartitionColumns getDeltaLakePartitionColumns() const
     {
-        assertInitialized();
+        assertInitializedDL();
         const auto * delta_lake_metadata = dynamic_cast<const DeltaLakeMetadata *>(current_metadata.get());
         if (delta_lake_metadata)
             return delta_lake_metadata->getPartitionColumns();
@@ -169,7 +169,7 @@ public:
 
     void modifyFormatSettings(FormatSettings & settings_) const override
     {
-        assertInitialized();
+        assertInitializedDL();
         current_metadata->modifyFormatSettings(settings_);
     }
 
@@ -178,8 +178,9 @@ private:
     LoggerPtr log = getLogger("DataLakeConfiguration");
     const DataLakeStorageSettingsPtr settings;
 
-    void assertInitialized() const
+    void assertInitializedDL() const
     {
+        BaseStorageConfiguration::assertInitialized();
         if (!current_metadata)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Metadata is not initialized");
     }
@@ -483,6 +484,8 @@ protected:
         ObjectStorageType type = extractDynamicStorageType(args, context, nullptr);
         createDynamicStorage(type);
     }
+
+    void assertInitialized() const override { return getImpl().assertInitialized(); }
 
 private:
     inline StorageObjectStorage::Configuration & getImpl() const
