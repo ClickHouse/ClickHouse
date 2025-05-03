@@ -61,13 +61,13 @@ bool BloomFilter::find(const char * data, size_t len)
     size_t hash1 = CityHash_v1_0_2::CityHash64WithSeed(data, len, seed);
     size_t hash2 = CityHash_v1_0_2::CityHash64WithSeed(data, len, SEED_GEN_A * seed + SEED_GEN_B);
 
-    // acc = hash1 + hash2 * i
     size_t acc = hash1;
 
     for (size_t i = 0; i < hashes; ++i)
     {
-        // pos = (hash1 + hash2*i + i*i) % (8 * size)
-        size_t pos = fastMod(acc + i*i);
+        /// It accumulates in the loop as follows:
+        /// pos = (hash1 + hash2 * i + i * i) % (8 * size)
+        size_t pos = fastMod(acc + i * i);
         if (!(filter[pos / word_bits] & (1ULL << (pos % word_bits))))
             return false;
         acc += hash2;
@@ -85,8 +85,8 @@ void BloomFilter::add(const char * data, size_t len)
 
     for (size_t i = 0; i < hashes; ++i)
     {
-        // pos = (hash1 + hash2*i + i*i) % (8 * size)
-        size_t pos = fastMod(acc + i*i);
+        // pos = (hash1 + hash2 * i + i * i) % (8 * size)
+        size_t pos = fastMod(acc + i * i);
         filter[pos / word_bits] |= (1ULL << (pos % word_bits));
         acc += hash2;
     }
