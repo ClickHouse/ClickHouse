@@ -226,7 +226,7 @@ public:
     }
 
     template <typename Data>
-    ALWAYS_INLINE std::optional<EmplaceResult> emplaceKeyOptimization(Data & data, size_t row, Arena & pool, const std::vector<std::tuple<UInt64, SortDirection, std::string>> & optimization_indexes, size_t limit_offset_plus_length)
+    ALWAYS_INLINE std::optional<EmplaceResult> emplaceKeyOptimization(Data & data, size_t row, Arena & pool, const std::vector<std::tuple<UInt64, SortDirection, bool>> & optimization_indexes, size_t limit_offset_plus_length)
     {
         if constexpr (nullable)
         {
@@ -385,19 +385,18 @@ protected:
         >::type::type;
     };
 
-    template <typename KeyHolder1, typename KeyHolder2>
-    bool compareKeyHolders(const KeyHolder1 & lhs, const KeyHolder2 & rhs, const std::vector<std::tuple<UInt64, SortDirection, std::string>> & optimization_indexes)
+    template <typename KeyHolder>
+    bool compareKeyHolders(const KeyHolder & lhs, const KeyHolder & rhs, const std::vector<std::tuple<UInt64, SortDirection, bool>> & optimization_indexes)
     {
         const auto & lhs_key = keyHolderGetKey(lhs);
         const auto & rhs_key = keyHolderGetKey(rhs);
 
         assert(optimization_indexes.size() == 1); // MVP. TODO remove after supporting several expressions in findOptimizationSublistIndexes
 
-        const std::string & type_name = std::get<2>(optimization_indexes[0]);
-        if (type_name == "Int8" || type_name == "Int16" || type_name == "Int32" || type_name == "Int64" || type_name == "Int128" || type_name == "Int256")
+        if (std::get<2>(optimization_indexes[0]))
         {
-            auto lhs_key_signed = static_cast<typename MakeSignedType<KeyHolder1>::type>(lhs_key);
-            auto rhs_key_signed = static_cast<typename MakeSignedType<KeyHolder2>::type>(rhs_key);
+            auto lhs_key_signed = static_cast<typename MakeSignedType<KeyHolder>::type>(lhs_key);
+            auto rhs_key_signed = static_cast<typename MakeSignedType<KeyHolder>::type>(rhs_key);
             if (std::get<1>(optimization_indexes[0]) == SortDirection::ASCENDING)
                 return lhs_key_signed < rhs_key_signed;
             return rhs_key_signed < lhs_key_signed;
@@ -468,7 +467,7 @@ protected:
         KeyHolder & key_holder,
         Data & data,
         size_t limit_offset_plus_length,
-        const std::vector<std::tuple<UInt64, SortDirection, std::string>> & optimization_indexes)
+        const std::vector<std::tuple<UInt64, SortDirection, bool>> & optimization_indexes)
     {
         chassert(limit_offset_plus_length > 0);
         if constexpr (consecutive_keys_optimization)

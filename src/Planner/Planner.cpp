@@ -479,8 +479,9 @@ void addFilterStep(
 // Finds indexes of ORDER BY expressions in the GROUP BY expression list
 // if the first one is a subset of the second one.
 // Example: (GROUP BY a, b, c ORDER BY c, a) => {2, 0}.
-// The second elements of pairs are sort directions.
-std::optional<std::vector<std::tuple<UInt64, SortDirection, std::string>>> findOptimizationSublistIndexes(const QueryTreeNodes& group_by_nodes, const QueryTreeNodes& order_by_nodes)
+// The second elements of tuples are sort directions.
+// The third elements of tuples are flags, if type signed or not
+std::optional<std::vector<std::tuple<UInt64, SortDirection, bool>>> findOptimizationSublistIndexes(const QueryTreeNodes& group_by_nodes, const QueryTreeNodes& order_by_nodes)
 {
     if (order_by_nodes.empty())
         return std::nullopt;
@@ -488,9 +489,9 @@ std::optional<std::vector<std::tuple<UInt64, SortDirection, std::string>>> findO
     if (group_by_nodes.size() != 1) // MVP. TODO allow more than one expression
         return std::nullopt;
 
-    std::vector<std::tuple<UInt64, SortDirection, std::string>> result(order_by_nodes.size());
+    std::vector<std::tuple<UInt64, SortDirection, bool>> result(order_by_nodes.size());
     std::unordered_map<std::string, size_t> index_of_group_by_expression;
-    std::unordered_map<std::string, std::string> type_of_group_by_expression;
+    std::unordered_map<std::string, bool> expression_signed_or_not;
     for (size_t i = 0; i < group_by_nodes.size(); ++i)
     {
         if (group_by_nodes[i]->getNodeType() != QueryTreeNodeType::COLUMN)
@@ -499,7 +500,7 @@ std::optional<std::vector<std::tuple<UInt64, SortDirection, std::string>>> findO
         index_of_group_by_expression[group_by_node_typed.getColumnName()] = i;
         const DataTypePtr & column_type = group_by_node_typed.getColumnType();
         if (column_type != nullptr)
-            type_of_group_by_expression[group_by_node_typed.getColumnName()] = column_type->getName();
+            expression_signed_or_not[group_by_node_typed.getColumnName()] = column_type->getName() == "Int8" || column_type->getName() == "Int16" || column_type->getName() == "Int32" || column_type->getName() == "Int64" || column_type->getName() == "Int128" || column_type->getName() == "Int256";
     }
 
     for (size_t i = 0; i < order_by_nodes.size(); ++i)
@@ -513,7 +514,7 @@ std::optional<std::vector<std::tuple<UInt64, SortDirection, std::string>>> findO
         auto group_by_map_iter = index_of_group_by_expression.find(order_by_column_name);
         if (group_by_map_iter == index_of_group_by_expression.end())
             return std::nullopt;
-        result[i] = {group_by_map_iter->second, order_by_node_typed.getSortDirection(), type_of_group_by_expression[order_by_column_name]};
+        result[i] = {group_by_map_iter->second, order_by_node_typed.getSortDirection(), expression_signed_or_not[order_by_column_name]};
     }
     return result;
 }
@@ -541,7 +542,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
             aggregate_description.argument_names.clear();
     }
 
-    std::optional<std::vector<std::tuple<UInt64, SortDirection, std::string>>> optimization_indexes;
+    std::optional<std::vector<std::tuple<UInt64, SortDirection, bool>>> optimization_indexes;
     if (!query_node.isGroupByWithTotals() && !query_node.hasHaving())
     {
         const auto& group_by_nodes = query_node.getGroupBy().getNodes();
