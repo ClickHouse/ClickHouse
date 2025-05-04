@@ -1,4 +1,5 @@
 SET session_timezone = 'UTC';
+SET formatdatetime_e_with_space_padding = 1;
 
 SELECT 'The reference time point is 2023-06-30 23:59:30';
 SELECT '───────────────────────────────────────────────';
@@ -7,7 +8,7 @@ SELECT '────────────────────────
 
 WITH
     toDateTime('2023-06-30 23:59:30') AS dt_ref,
-    now() AS dt_now, 
+    now() AS dt_now,
     date_sub(DAY, 1, dt_now) as dt_before,
     dateDiff(SECOND, dt_ref, dt_now) AS time_shift,
     formatDateTime(dt_before, '%b %e %T') AS syslog_before
@@ -25,8 +26,7 @@ SELECT
     parseDateTime64BestEffortUS(syslog_before) - time_shift AS res64_us,
     parseDateTime64BestEffortUSOrNull(syslog_before) - time_shift AS res64_us_null,
     parseDateTime64BestEffortUSOrZero(syslog_before) - time_shift AS res64_us_zero
-FORMAT Vertical
-SETTINGS formatdatetime_e_format_with_space_padding = 1;
+FORMAT Vertical;
 
 SELECT '──────────────────────────────────────────────';
 SELECT 'The argument is after the reference time point';
@@ -34,7 +34,7 @@ SELECT '────────────────────────
 
 WITH
     toDateTime('2023-06-30 23:59:30') AS dt_ref,
-    now() AS dt_now, 
+    now() AS dt_now,
     date_add(DAY, 1, dt_now) as dt_after,
     dateDiff(SECOND, dt_ref, dt_now) AS time_shift,
     formatDateTime(dt_after, '%b %e %T') AS syslog_after
@@ -52,5 +52,4 @@ SELECT
     parseDateTime64BestEffortUS(syslog_after) - time_shift AS res64_us,
     parseDateTime64BestEffortUSOrNull(syslog_after) - time_shift AS res64_us_null,
     parseDateTime64BestEffortUSOrZero(syslog_after) - time_shift AS res64_us_zero
-FORMAT Vertical
-SETTINGS formatdatetime_e_format_with_space_padding = 1;
+FORMAT Vertical;

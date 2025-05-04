@@ -16,7 +16,7 @@ SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%c'), formatDateTime(t
 SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%C'), formatDateTime(toDate32('2018-01-02'), '%C');
 SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%d'), formatDateTime(toDate32('2018-01-02'), '%d');
 SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%D'), formatDateTime(toDate32('2018-01-02'), '%D');
-SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%e'), formatDateTime(toDate32('2018-01-02'), '%e') SETTINGS formatdatetime_e_format_with_space_padding = 1;
+SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%e'), formatDateTime(toDate32('2018-01-02'), '%e') SETTINGS formatdatetime_e_with_space_padding = 1;
 SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%f'), formatDateTime(toDate32('2018-01-02'), '%f');
 SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%F'), formatDateTime(toDate32('2018-01-02'), '%F');
 SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%h'), formatDateTime(toDate32('2018-01-02'), '%h');

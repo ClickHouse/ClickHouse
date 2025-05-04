@@ -4,8 +4,8 @@ SELECT DATE_FORMAT(toDateTime('2018-01-02 22:33:44'), '%c'), DATE_FORMAT(toDate3
 SELECT DATE_FORMAT(toDateTime('2018-01-02 22:33:44'), '%C'), DATE_FORMAT(toDate32('2018-01-02'), '%C');
 SELECT DATE_FORMAT(toDateTime('2018-01-02 22:33:44'), '%d'), DATE_FORMAT(toDate32('2018-01-02'), '%d');
 SELECT DATE_FORMAT(toDateTime('2018-01-02 22:33:44'), '%D'), DATE_FORMAT(toDate32('2018-01-02'), '%D');
-SELECT DATE_FORMAT(toDateTime('2018-01-02 22:33:44'), '%e'), DATE_FORMAT(toDate32('2018-01-02'), '%e') SETTINGS formatdatetime_e_format_with_space_padding = 1;
-SELECT DATE_FORMAT(toDateTime('2018-01-02 22:33:44'), '%e'), DATE_FORMAT(toDate32('2018-01-02'), '%e') SETTINGS formatdatetime_e_format_with_space_padding = 0;
+SELECT DATE_FORMAT(toDateTime('2018-01-02 22:33:44'), '%e'), DATE_FORMAT(toDate32('2018-01-02'), '%e') SETTINGS formatdatetime_e_with_space_padding = 1;
+SELECT DATE_FORMAT(toDateTime('2018-01-02 22:33:44'), '%e'), DATE_FORMAT(toDate32('2018-01-02'), '%e') SETTINGS formatdatetime_e_with_space_padding = 0;
 SELECT DATE_FORMAT(toDateTime('2018-01-02 22:33:44'), '%F'), DATE_FORMAT(toDate32('2018-01-02'), '%F');
 SELECT DATE_FORMAT(toDateTime('2018-01-02 22:33:44'), '%h'), DATE_FORMAT(toDate32('2018-01-02'), '%h');
 SELECT DATE_FORMAT(toDateTime('2018-01-02 22:33:44'), '%H'), DATE_FORMAT(toDate32('2018-01-02'), '%H');

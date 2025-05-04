@@ -643,7 +643,7 @@ namespace
     public:
         const bool mysql_M_is_month_name;
         const bool mysql_parse_ckl_without_leading_zeros;
-        const bool mysql_e_mandatory_space_padding;
+        const bool mysql_e_requires_space_padding;
 
         static constexpr auto name = Name::name;
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionParseDateTimeImpl>(context); }
@@ -651,7 +651,7 @@ namespace
         explicit FunctionParseDateTimeImpl(ContextPtr context)
             : mysql_M_is_month_name(context->getSettingsRef()[Setting::formatdatetime_parsedatetime_m_is_month_name])
             , mysql_parse_ckl_without_leading_zeros(context->getSettingsRef()[Setting::parsedatetime_parse_without_leading_zeros])
-            , mysql_e_mandatory_space_padding(context->getSettingsRef()[Setting::parsedatetime_e_requires_space_padding])
+            , mysql_e_requires_space_padding(context->getSettingsRef()[Setting::parsedatetime_e_requires_space_padding])
         {
         }
 
@@ -1971,7 +1971,7 @@ namespace
 
                         // Day of month
                         case 'e':
-                            if (mysql_e_mandatory_space_padding)
+                            if (mysql_e_requires_space_padding)
                                 instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfMonthMandatorySpacePadding)); /// ' 1' - '31'
                             else
                                 instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfMonthOptionalSpacePadding));  /// '1' (or ' 1') - '31'
