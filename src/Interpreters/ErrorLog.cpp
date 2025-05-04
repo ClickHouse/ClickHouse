@@ -51,6 +51,12 @@ ColumnsDescription ErrorLogElement::getColumnsDescription()
                 "Error name."
             },
         {
+                "last_error_message",
+                std::make_shared<DataTypeString>(),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Message for the last error."
+            },
+        {
                 "value",
                 std::make_shared<DataTypeUInt64>(),
                 parseQuery(codec_parser, "(ZSTD(3))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
@@ -61,6 +67,18 @@ ColumnsDescription ErrorLogElement::getColumnsDescription()
                 std::make_shared<DataTypeUInt8>(),
                 parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "Remote exception (i.e. received during one of the distributed queries)."
+            },
+        {
+                "last_error_trace",
+                std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "A stack trace that represents a list of physical addresses where the called methods are stored."
+            },
+        {
+                "query_id",
+                std::make_shared<DataTypeString>(),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Id of a query that caused an error (if available)."
             }
     };
 }
@@ -74,8 +92,11 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(code);
     columns[column_idx++]->insert(ErrorCodes::getName(code));
+    columns[column_idx++]->insert(error_message);
     columns[column_idx++]->insert(value);
     columns[column_idx++]->insert(remote);
+    columns[column_idx++]->insert(error_trace);
+    columns[column_idx++]->insert(query_id);
 }
 
 struct ValuePair
@@ -83,6 +104,15 @@ struct ValuePair
     UInt64 local = 0;
     UInt64 remote = 0;
 };
+
+
+Array ErrorLog::buildTraceArray(const ErrorCodes::FramePointers & trace)
+{
+    Array result(trace.size());
+    for (size_t i = 0; i < trace.size(); ++i)
+        result[i] = reinterpret_cast<intptr_t>(trace[i]);
+    return result;
+}
 
 void ErrorLog::stepFunction(TimePoint current_time)
 {
@@ -99,8 +129,11 @@ void ErrorLog::stepFunction(TimePoint current_time)
             ErrorLogElement local_elem {
                 .event_time=event_time,
                 .code=code,
+                .error_message=error.local.message,
                 .value=error.local.count - previous_values.at(code).local,
-                .remote=false
+                .remote=false,
+                .error_trace=buildTraceArray(error.local.trace),
+                .query_id=error.local.query_id
             };
             this->add(std::move(local_elem));
             previous_values[code].local = error.local.count;
@@ -110,8 +143,11 @@ void ErrorLog::stepFunction(TimePoint current_time)
             ErrorLogElement remote_elem {
                 .event_time=event_time,
                 .code=code,
+                .error_message=error.remote.message,
                 .value=error.remote.count - previous_values.at(code).remote,
-                .remote=true
+                .remote=true,
+                .error_trace=buildTraceArray(error.remote.trace),
+                .query_id=error.remote.query_id
             };
             add(std::move(remote_elem));
             previous_values[code].remote = error.remote.count;

@@ -4,6 +4,7 @@
 #include <Common/ErrorCodes.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Storages/ColumnsDescription.h>
 
 
@@ -17,8 +18,11 @@ struct ErrorLogElement
 {
     time_t event_time{};
     ErrorCodes::ErrorCode code{};
+    std::string error_message{};
     ErrorCodes::Value value{};
     bool remote{};
+    Array error_trace{};
+    std::string_view query_id;
 
     static std::string name() { return "ErrorLog"; }
     static ColumnsDescription getColumnsDescription();
@@ -33,6 +37,9 @@ class ErrorLog : public PeriodicLog<ErrorLogElement>
 
 protected:
     void stepFunction(TimePoint current_time) override;
+
+private:
+    Array buildTraceArray(const ErrorCodes::FramePointers & trace);
 };
 
 }
