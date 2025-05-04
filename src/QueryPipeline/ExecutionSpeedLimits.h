@@ -3,6 +3,7 @@
 #include <Poco/Timespan.h>
 #include <base/types.h>
 #include <QueryPipeline/SizeLimits.h>
+#include <Common/LoggingFormatStringHelpers.h>
 
 class Stopwatch;
 
@@ -30,6 +31,9 @@ public:
         OverflowMode timeout_overflow_mode) const;
 
     bool checkTimeLimit(const UInt64 & elapsed_ns, OverflowMode overflow_mode) const;
+
+    template <typename... Args>
+    static bool handleOverflowMode(OverflowMode mode, int code, FormatStringHelper<Args...> fmt, Args &&... args);
 };
 
 }
