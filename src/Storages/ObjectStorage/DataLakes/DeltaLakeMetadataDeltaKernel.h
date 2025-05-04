@@ -36,9 +36,15 @@ public:
         ConfigurationObserverPtr configuration_,
         bool read_schema_same_as_table_schema_);
 
+    DeltaLakeMetadataDeltaKernel(const DeltaLakeMetadataDeltaKernel & other) : log(other.log), table_snapshot(other.table_snapshot) {}
+
     bool supportsUpdate() const override { return true; }
 
     bool update(const ContextPtr & context) override;
+
+    std::unique_ptr<IDataLakeMetadata> clone() override {
+        return std::make_unique<DeltaLakeMetadataDeltaKernel>(*this);
+    }
 
     NamesAndTypesList getTableSchema() const override;
 
