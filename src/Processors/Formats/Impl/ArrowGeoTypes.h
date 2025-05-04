@@ -11,6 +11,8 @@
 #include <Poco/JSON/Parser.h>
 #include "base/types.h"
 
+#include <Functions/geometryConverters.h>
+
 #if USE_ARROW
 #    include <arrow/array/array_binary.h>
 #    include <arrow/util/key_value_metadata.h>
