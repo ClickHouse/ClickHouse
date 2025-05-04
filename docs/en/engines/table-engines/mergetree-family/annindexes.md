@@ -394,7 +394,7 @@ returns
    └────┴─────────┘
 ```
 
-# References {#references}
+## References {#references}
 
 Blogs:
 - [Vector Search with ClickHouse - Part 1](https://clickhouse.com/blog/vector-search-clickhouse-p1)
