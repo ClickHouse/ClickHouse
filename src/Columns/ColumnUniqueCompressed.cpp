@@ -5,6 +5,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/HashTable/HashMap.h>
 
 namespace DB
 {
@@ -85,14 +86,16 @@ MutableColumnPtr ColumnUniqueFCBlockDF::getDecompressedAll() const
 
 ColumnPtr ColumnUniqueFCBlockDF::getNestedColumn() const
 {
+    auto decompressed = getDecompressedAll();
+
     if (!is_nullable)
     {
-        return getDecompressedAll();
+        return decompressed;
     }
 
     ColumnUInt8::MutablePtr null_mask = ColumnUInt8::create(size(), UInt8(0));
     null_mask->getData()[getNullValueIndex()] = 1;
-    return ColumnNullable::create(getDecompressedAll(), std::move(null_mask));
+    return ColumnNullable::create(std::move(decompressed), std::move(null_mask));
 }
 
 ColumnUniqueFCBlockDF::ColumnUniqueFCBlockDF(const ColumnPtr & string_column, size_t block_size_, bool is_nullable_)
@@ -126,6 +129,7 @@ ColumnUniqueFCBlockDF::ColumnUniqueFCBlockDF(const ColumnUniqueFCBlockDF & other
     : data_column(other.data_column)
     , common_prefix_lengths(other.common_prefix_lengths.begin(), other.common_prefix_lengths.end()),
       block_size(other.block_size),
+      old_indexes_mapping(other.old_indexes_mapping),
       is_nullable(other.is_nullable)
 {
 }
@@ -246,6 +250,11 @@ MutableColumnPtr ColumnUniqueFCBlockDF::cloneEmpty() const
 
 size_t ColumnUniqueFCBlockDF::uniqueInsert(const Field & x)
 {
+    if (x.isNull())
+    {
+        return getNullValueIndex();
+    }
+
     const String & str = x.safeGet<String>();
     const size_t output = getPosToInsert(str);
 
@@ -256,6 +265,16 @@ size_t ColumnUniqueFCBlockDF::uniqueInsert(const Field & x)
 
 bool ColumnUniqueFCBlockDF::tryUniqueInsert(const Field & x, size_t & index)
 {
+    if (x.isNull())
+    {
+        if (is_nullable)
+        {
+            index = getNullValueIndex();
+            return true;
+        }
+        return false;
+    }
+
     String result;
     if (!x.tryGet<String>(result))
     {
@@ -285,7 +304,7 @@ MutableColumnPtr ColumnUniqueFCBlockDF::uniqueInsertRangeFrom(const IColumn & sr
     auto positions = ColumnVector<UInt64>::create();
     for (size_t i = start; i < start + length; ++i)
     {
-        const StringRef data = src.getDataAt(i);
+        const StringRef data = src_column->getDataAt(i);
         const UInt64 pos = getPosToInsert(data);
         positions->insert(pos);
     }
@@ -605,13 +624,16 @@ MutableColumnPtr ColumnUniqueFCBlockDF::prepareForInsert(const MutableColumnPtr 
         sorted_permutation);
     sorted_column = column_to_modify->permute(sorted_permutation, 0);
 
-    auto* column_data = static_cast<ColumnUInt64 &>(*mapping).getData().data();
-    for (size_t i = 0; i < sorted_permutation.size(); ++i)
+    HashMap<StringRef, size_t> map;
+    for (size_t i = 0; i < sorted_column->size(); ++i)
     {
-        if (sorted_permutation[i] < mapping->size())
-        {
-            column_data[sorted_permutation[i]] = i;
-        }
+        map.insert({sorted_column->getDataAt(i), map.size()});
+    }
+
+    auto * mapping_data = static_cast<ColumnUInt64 &>(*mapping).getData().data();
+    for (size_t i = 0; i < mapping->size(); ++i)
+    {
+        mapping_data[i] = map.at(column_to_modify->getDataAt(i));
     }
 
     return mapping;
