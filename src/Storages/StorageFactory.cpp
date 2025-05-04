@@ -71,7 +71,8 @@ StoragePtr StorageFactory::get(
     ContextMutablePtr context,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
-    LoadingStrictnessLevel mode) const
+    LoadingStrictnessLevel mode,
+    bool is_restore_from_backup) const
 {
     String name;
     String comment;
@@ -233,7 +234,8 @@ StoragePtr StorageFactory::get(
         .columns = columns,
         .constraints = constraints,
         .mode = mode,
-        .comment = comment};
+        .comment = comment,
+        .is_restore_from_backup = is_restore_from_backup};
 
     assert(arguments.getContext() == arguments.getContext()->getGlobalContext());
 

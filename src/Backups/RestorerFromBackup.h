@@ -133,6 +133,8 @@ protected:
 
     void runDataRestoreTasks();
 
+    void finalizeTables();
+
     void setStage(const String & new_stage, const String & message = "");
 
     /// Schedule a task from the thread pool and start executing it.
