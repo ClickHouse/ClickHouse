@@ -117,7 +117,6 @@ private:
 
     bool async_insert = false;
     bool skip_destination_table = false;
-    bool allow_materialized = false;
 
     StorageIDPrivate root_view;
 
