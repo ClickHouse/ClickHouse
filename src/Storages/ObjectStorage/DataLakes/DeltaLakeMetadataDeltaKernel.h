@@ -42,7 +42,8 @@ public:
 
     bool update(const ContextPtr & context) override;
 
-    std::unique_ptr<IDataLakeMetadata> clone() override {
+    std::unique_ptr<IDataLakeMetadata> clone() override
+    {
         return std::make_unique<DeltaLakeMetadataDeltaKernel>(*this);
     }
 
