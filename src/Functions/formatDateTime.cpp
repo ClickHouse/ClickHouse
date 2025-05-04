@@ -594,7 +594,7 @@ private:
             return scale;
         }
 
-        static size_t mysqlISO8601Time(char * dest, Time source, const DateLUTImpl & timezone) // NOLINT
+        size_t mysqlISO8601Time(char * dest, Time source, const DateLUTImpl & timezone) // NOLINT
         {
             writeNumber2(dest, ToHourImpl::execute(source, timezone));
             writeNumber2(dest + 3, ToMinuteImpl::execute(source, timezone));
