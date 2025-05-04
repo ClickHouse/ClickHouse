@@ -311,6 +311,10 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
                 [&]
                 {
                     LOG_TRACE(log, "Falling back to copy file {} from disk {} to S3 through buffers", src_path, src_disk->getName());
+
+                    if (copy_encrypted)
+                        return src_disk->readEncryptedFile(src_path, read_settings);
+
                     return src_disk->readFile(src_path, read_settings);
                 });
             return; /// copied!
@@ -323,7 +327,7 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
 
 void BackupWriterS3::copyFile(const String & destination, const String & source, size_t size)
 {
-    LOG_TRACE(log, "Copying file inside backup from {} to {} ", source, destination);
+    LOG_TRACE(log, "Copying file inside backup from {} to {}", source, destination);
 
     const auto source_key = fs::path(s3_uri.key) / source;
     copyS3File(
