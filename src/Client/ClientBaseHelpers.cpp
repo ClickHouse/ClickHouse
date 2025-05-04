@@ -5,6 +5,7 @@
 #include <Common/LocalDate.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Common/UTF8Helpers.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -236,5 +237,26 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     }
 }
 #endif
+
+String formatQuery(String query)
+{
+    bool multiline_query = query.contains('\n');
+    ParserQuery parser(query.data() + query.size(), /*allow_settings_after_format_in_insert_=*/ false, /*implicit_select_=*/ false);
+    const ASTPtr ast = parseQuery(parser, query, /*max_query_size=*/ 0, /*max_parser_depth=*/ 0, /*max_parser_backtracks=*/ 0);
+
+    bool insert_with_data = false;
+    if (auto * insert_query = ast->as<ASTInsertQuery>(); insert_query && insert_query->hasInlinedData())
+        insert_with_data = true;
+
+    if (!insert_with_data)
+    {
+        if (multiline_query)
+            query = ast->formatWithSecretsMultiLine();
+        else
+            query = ast->formatWithSecretsOneLine();
+    }
+
+    return query;
+}
 
 }

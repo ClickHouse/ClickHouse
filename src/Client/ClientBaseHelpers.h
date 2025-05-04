@@ -24,4 +24,6 @@ std::string getChineseZodiac();
 void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors, const Context & context);
 #endif
 
+String formatQuery(String query);
+
 }
