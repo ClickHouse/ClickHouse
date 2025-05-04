@@ -580,6 +580,7 @@ void ReplxxLineReader::openEditor(bool format_query)
     }
     catch (const std::exception & e)
     {
+        rx.print("\n");
         rx.print(e.what());
         rx.print("\n");
 
