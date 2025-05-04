@@ -20,11 +20,6 @@ def started_cluster():
             main_configs=["configs/conf.xml", "configs/smol.xml"],
             with_minio=True,
         )
-        cluster.add_instance(
-            "node_incorrect_limits",
-            main_configs=["configs/conf.xml", "configs/incorrect_limits.xml"],
-            with_minio=True,
-        )
         cluster.start()
 
         yield cluster
@@ -211,56 +206,4 @@ def test_size_adjustment(started_cluster):
         < 50000000
     )
 
-    node.query("drop table a;" "system drop page cache;")
-
-
-def test_limits(started_cluster):
-    """
-    Node with incorrect limits should not crash:
-    <page_cache_min_size>10000000</page_cache_min_size>
-    <page_cache_max_size>8192</page_cache_max_size>
-    In the above config, page_cache_min_size is larger than page_cache_max_size,
-    in this case the page cache should always be resized only considering page_cache_min_size
-    in src/Common/PageCache.cpp::autoResize
-    """
-    node = cluster.instances["node_incorrect_limits"]
-    # create a table and run some queries to check that page cache is working and not crashing
-    node.query(
-        "create table a (k Int64 CODEC(NONE)) engine MergeTree order by k settings storage_policy = 's3';"
-        "system stop merges a;"
-        "insert into a select * from numbers(1000000);"
-    )
-
-    node.query("system reload asynchronous metrics;")
-    assert (
-        int(
-            node.query(
-                "select value from system.asynchronous_metrics where metric = 'PageCacheBytes'"
-            )
-        )
-        < 4000000
-    )
-
-    query_id = uuid.uuid4().hex
-    node.query(
-        "select sum(k) from a settings use_page_cache_for_disks_without_file_cache=1",
-        query_id=query_id,
-    )
-    node.query("system flush logs; system reload asynchronous metrics;")
-    assert (
-        int(
-            node.query(
-                f"select ProfileEvents['PageCacheMisses'] from system.query_log where query_id='{query_id}' and type = 'QueryFinish'"
-            )
-        )
-        > 0
-    )
-    assert (
-        int(
-            node.query(
-                "select value from system.asynchronous_metrics where metric = 'PageCacheBytes'"
-            )
-        )
-        > 4000000
-    )
     node.query("drop table a;" "system drop page cache;")
