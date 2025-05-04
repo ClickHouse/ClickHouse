@@ -5186,6 +5186,42 @@ void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, Identif
     }
 }
 
+static NameSet getColumnsFromTableExpression(const QueryTreeNodePtr & table_expression)
+{
+    NameSet existing_columns;
+
+    if (const auto * table_node = table_expression->as<TableNode>())
+    {
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+        for (const auto & column : table_node->getStorageSnapshot()->getColumns(get_column_options))
+            existing_columns.insert(column.name);
+    }
+    else if (const auto * table_function_node = table_expression->as<TableFunctionNode>())
+    {
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+        for (const auto & column : table_function_node->getStorageSnapshot()->getColumns(get_column_options))
+            existing_columns.insert(column.name);
+    }
+    else if (const auto * query_node = table_expression->as<QueryNode>())
+    {
+        for (const auto & column : query_node->getProjectionColumns())
+            existing_columns.insert(column.name);
+    }
+    else if (const auto * union_node = table_expression->as<UnionNode>())
+    {
+        for (const auto & column : union_node->computeProjectionColumns())
+            existing_columns.insert(column.name);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Expected TableNode, TableFunctionNode, QueryNode or UnionNode, got {}: {}",
+            table_expression->getNodeTypeName(),
+            table_expression->formatASTForErrorMessage());
+    }
+    return existing_columns;
+}
+
 /// Resolve join node in scope
 void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor)
 {
@@ -5270,11 +5306,15 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                         const auto & resolved_nodes = left_subquery->getProjection().getNodes();
                         if (resolved_nodes.size() == 1)
                         {
+                            /// Added column should not conflict with existing column names
+                            NameSet existing_columns = getColumnsFromTableExpression(left_table_expression);
+
+                            NameAndTypePair column_name_type(identifier_full_name_, resolved_nodes.front()->getResultType());
+                            while (existing_columns.contains(column_name_type.name))
+                                column_name_type.name = "_" + column_name_type.name;
+
                             /// Create ColumnNode with expression from parent projection
-                            return std::make_shared<ColumnNode>(
-                                NameAndTypePair{identifier_full_name_, resolved_nodes.front()->getResultType()},
-                                resolved_nodes.front(),
-                                left_table_expression);
+                            return std::make_shared<ColumnNode>(std::move(column_name_type), resolved_nodes.front(), left_table_expression);
                         }
                     }
                 }
@@ -5306,7 +5346,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             {
                 String extra_message;
                 const QueryNode * query_node = scope.scope_node ? scope.scope_node->as<QueryNode>() : nullptr;
-                if (settings[Setting::analyzer_compatibility_join_using_top_level_identifier] && query_node)
+                if (!settings[Setting::analyzer_compatibility_join_using_top_level_identifier] && query_node)
                 {
                     for (const auto & projection_node : query_node->getProjection().getNodes())
                     {
