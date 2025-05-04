@@ -86,9 +86,6 @@ endif()
 
 # Note that RUSTFLAGS_CPU is defined in cpu_features.cmake
 set(RUSTFLAGS ${RUSTFLAGS_CPU})
-if (CMAKE_OSX_DEPLOYMENT_TARGET)
-    list(APPEND RUSTFLAGS "-C" "link-arg=-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
-endif()
 
 # Otherwise /usr/bin/ld will not be able to link our openssl build (built with lld) to openssl rust wrapper (built ld)
 if (LINKER_NAME MATCHES "lld")
