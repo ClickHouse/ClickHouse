@@ -180,8 +180,8 @@ void ColumnLowCardinality::doInsertFrom(const IColumn & src, size_t n)
     else
     {
         compactIfSharedDictionary();
-        const auto & nested = *low_cardinality_src->getDictionary().getNestedColumn();
-        const auto index = getDictionary().uniqueInsertFrom(nested, position);
+        const auto nested = low_cardinality_src->getDictionary().getNestedColumn();
+        const auto index = getDictionary().uniqueInsertFrom(*nested, position);
         reindexIfNeeded();
         idx.insertPosition(index);
     }
@@ -631,7 +631,7 @@ ColumnLowCardinality::getMinimalDictionaryEncodedColumn(UInt64 offset, UInt64 li
 
 ColumnPtr ColumnLowCardinality::countKeys() const
 {
-    const auto & nested_column = getDictionary().getNestedColumn();
+    const auto nested_column = getDictionary().getNestedColumn();
     size_t dict_size = nested_column->size();
 
     auto counter = ColumnUInt64::create(dict_size, 0);
@@ -998,8 +998,8 @@ void ColumnLowCardinality::reindexIfNeeded()
 {
     if (dictionary.getColumnUnique().haveIndexesChanged())
     {
-        auto mapping = dictionary.getColumnUnique().detachChangedIndexes();
-        auto old_indexes = idx.detachPositions();
+        const auto mapping = dictionary.getColumnUnique().detachChangedIndexes();
+        const auto old_indexes = idx.detachPositions();
         auto new_indexes = mapping->index(*old_indexes, 0);
         idx.attachPositions(IColumn::mutate(std::move(new_indexes)));
     }
