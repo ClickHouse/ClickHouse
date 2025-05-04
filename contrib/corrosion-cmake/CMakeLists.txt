@@ -156,6 +156,10 @@ function(clickhouse_config_crate_flags target_name)
     corrosion_set_env_vars(${target_name} "CXXFLAGS=${RUST_CXXFLAGS}")
     corrosion_set_env_vars(${target_name} "RUSTFLAGS=${RUSTFLAGS}")
     corrosion_set_env_vars(${target_name} "RUSTDOCFLAGS=${RUSTFLAGS}")
+    if (CMAKE_OSX_SYSROOT)
+        corrosion_set_env_vars(${target_name} "SDKROOT=${CMAKE_OSX_SYSROOT}")
+    endif()
+    corrosion_set_linker(${target_name} ${LINKER_NAME})
 
     # sccache seems to be broken and mixes up builds
     if (NOT "${RUSTCWRAPPER}" STREQUAL "")
