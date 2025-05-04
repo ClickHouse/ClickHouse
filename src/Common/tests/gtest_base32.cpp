@@ -44,8 +44,10 @@ struct CoderTestConfiguration
     using coder_t = Coder;
 };
 
-struct Base32TestData
+struct Base32Rfc4648TestData
 {
+    constexpr static bool allow_lowercase_encoded = true;
+
     // clang-format off
     constexpr static EncodeDecodeData encode_tests[] = {
         {100, ""sv, ""sv},
@@ -112,7 +114,7 @@ struct BaseCoderTest : public ::testing::Test
     using coder_t = typename T::coder_t;
 };
 
-using TestedTypes = ::testing::Types<CoderTestConfiguration<Base32TestData, Base32<Base32Rfc4648, Base32NaiveTag>>>;
+using TestedTypes = ::testing::Types<CoderTestConfiguration<Base32Rfc4648TestData, Base32<Base32Rfc4648, Base32NaiveTag>>>;
 TYPED_TEST_SUITE(BaseCoderTest, TestedTypes);
 
 TYPED_TEST(BaseCoderTest, Null)
@@ -147,13 +149,23 @@ TYPED_TEST(BaseCoderTest, EncodeDecode)
         auto const encode_output_sv = std::string_view(reinterpret_cast<const char *>(encode_output), encoded_result_len);
         EXPECT_EQ(test.expected, encode_output_sv) << " for id=" << test.id;
 
+        auto decode = [&](std::string_view what)
+        {
+            UInt8 decode_output[128] = {0};
+            auto const decode_result = coder_t::decodeBase32(reinterpret_cast<const UInt8 *>(what.data()), what.size(), decode_output);
+            ASSERT_TRUE(decode_result.has_value()) << " for id=" << test.id;
+            EXPECT_EQ(input_len, decode_result.value()) << " for id=" << test.id;
+            auto const decode_output_sv = std::string_view(reinterpret_cast<const char *>(decode_output), decode_result.value());
+            EXPECT_EQ(test.input, decode_output_sv) << " for id=" << test.id;
+        };
         // And now decode it back
-        UInt8 decode_output[128] = {0};
-        auto const decode_result = coder_t::decodeBase32(encode_output, encoded_result_len, decode_output);
-        ASSERT_TRUE(decode_result.has_value()) << " for id=" << test.id;
-        EXPECT_EQ(input_len, decode_result.value()) << " for id=" << test.id;
-        auto const decode_output_sv = std::string_view(reinterpret_cast<const char *>(decode_output), decode_result.value());
-        EXPECT_EQ(test.input, decode_output_sv) << " for id=" << test.id;
+        decode(encode_output_sv);
+        if constexpr (test_data_t::allow_lowercase_encoded)
+        {
+            std::string lower_case(encode_output_sv);
+            std::transform(lower_case.begin(), lower_case.end(), lower_case.begin(), ::tolower);
+            decode(lower_case);
+        }
     }
 }
 

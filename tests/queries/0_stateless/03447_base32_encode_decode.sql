@@ -52,8 +52,11 @@ INSERT INTO t3447 VALUES
 SELECT 'Part 1 - Encoding';
 SELECT id, str AS input, hex(str) AS input_hex, base32Encode(str) AS result, b32, result == b32 FROM t3447;
 
-SELECT 'Part 2 - Decoding';
-SELECT id, b32 as input, base32Decode(b32) AS result, hex(result) as result_hex, hex(str) as expected_hex, result == str FROM t3447;
+SELECT 'Part 2a - Decoding';
+SELECT id, b32 as input, base32Decode(input) AS result, hex(result) as result_hex, hex(str) as expected_hex, result == str FROM t3447;
+
+SELECT 'Part 2b - Decoding lowercase';
+SELECT id, lower(b32) as input, base32Decode(input) AS result, hex(result) as result_hex, hex(str) as expected_hex, result == str FROM t3447;
 
 SELECT 'Part 3 - Roundtrip';
 SELECT id, str AS input, hex(str) AS input_hex, base32Decode(base32Encode(str)) AS result, result == str FROM t3447;
