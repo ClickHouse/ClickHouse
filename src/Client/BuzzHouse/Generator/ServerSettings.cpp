@@ -272,6 +272,10 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"decimal_check_overflow", CHSetting(trueOrFalse, {}, false)},
     /// {"deduplicate_blocks_in_dependent_materialized_views", CHSetting(trueOrFalse, {}, false)},
     /// {"describe_compact_output", CHSetting(trueOrFalse, {}, false)},
+    {"default_reader_bucket_count",
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 128)); }, {}, false)},
+    {"default_shuffle_join_bucket_count",
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 128)); }, {}, false)},
     {"describe_extend_object_types", CHSetting(trueOrFalse, {}, false)},
     {"describe_include_subcolumns", CHSetting(trueOrFalse, {}, false)},
     {"describe_include_virtual_columns", CHSetting(trueOrFalse, {}, false)},
@@ -327,6 +331,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"engine_file_skip_empty_files", CHSetting(trueOrFalse, {}, false)},
     {"engine_url_skip_empty_files", CHSetting(trueOrFalse, {}, false)},
     {"exact_rows_before_limit", CHSetting(trueOrFalse, {"0", "1"}, false)},
+    {"execute_distributed_plan_locally", CHSetting(trueOrFalse, {}, false)},
     /// {"external_table_functions_use_nulls", CHSetting(trueOrFalse, {}, false)},
     /// {"external_table_strict_query", CHSetting(trueOrFalse, {}, true)},
     {"extremes", CHSetting(trueOrFalse, {}, false)},
@@ -358,6 +363,15 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"final", CHSetting(trueOrFalse, {}, false)},
     {"flatten_nested", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"force_aggregate_partitions_independently", CHSetting(trueOrFalse, {"0", "1"}, false)},
+    {"force_exchange_kind",
+     CHSetting(
+         [](RandomGenerator & rg)
+         {
+             const DB::Strings & choices = {"''", "'Persisted'", "'Streaming'"};
+             return rg.pickRandomly(choices);
+         },
+         {"''", "'Persisted'", "'Streaming'"},
+         false)},
     {"force_grouping_standard_compatibility", CHSetting(trueOrFalse, {}, false)},
     {"force_optimize_skip_unused_shards", CHSetting(zeroOneTwo, {}, false)},
     {"force_optimize_skip_unused_shards_nesting", CHSetting(zeroOneTwo, {}, false)},
@@ -519,6 +533,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"log_query_threads", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"log_query_views", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"low_cardinality_max_dictionary_size", CHSetting(highRange, {}, false)},
+    {"make_distributed_plan", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"materialize_skip_indexes_on_insert", CHSetting(trueOrFalse, {}, false)},
     {"materialize_statistics_on_insert", CHSetting(trueOrFalse, {}, false)},
     {"materialize_ttl_after_modify", CHSetting(trueOrFalse, {}, false)},
@@ -578,6 +593,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"mysql_map_fixed_string_to_text_in_show_columns", CHSetting(trueOrFalse, {}, false)},
     {"mysql_map_string_to_text_in_show_columns", CHSetting(trueOrFalse, {}, false)},
     {"optimize_count_from_files", CHSetting(trueOrFalse, {"0", "1"}, false)},
+    {"optimize_exchanges", CHSetting(trueOrFalse, {}, false)},
     {"optimize_extract_common_expressions", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"optimize_on_insert", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"optimize_or_like_chain", CHSetting(trueOrFalse, {"0", "1"}, false)},

@@ -140,7 +140,7 @@ public:
     virtual bool supportsDeduplication() const { return false; }
 
     /// Returns true if the blocks shouldn't be pushed to associated views on insert.
-    virtual bool noPushingToViews() const { return false; }
+    virtual bool noPushingToViewsOnInserts() const { return false; }
 
     /// Read query returns streams which automatically distribute data between themselves.
     /// So, it's impossible for one stream run out of data when there is data in other streams.
@@ -241,6 +241,12 @@ public:
 
     /// Returns true if the storage supports backup/restore for specific partitions.
     virtual bool supportsBackupPartition() const { return false; }
+
+    /// Called after all databases and tables on all replicas have been restored from backup.
+    /// If this data does some background work that depends on contents of other tables, this is
+    /// the place to kick off that work (and it should be paused when IStorage is created with
+    /// is_restore_from_backup = true in StorageFactory::Arguments).
+    virtual void finalizeRestoreFromBackup() {}
 
     /// Return true if there is at least one part containing lightweight deleted mask.
     virtual bool hasLightweightDeletedMask() const { return false; }

@@ -48,7 +48,7 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
     try
     {
         if (node->processor->isSpillable() && CurrentThread::getGroup())
-            CurrentThread::getGroup()->memory_spill_scheduler.checkAndSpill(node->processor);
+            CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(node->processor);
 
         node->processor->work();
 
