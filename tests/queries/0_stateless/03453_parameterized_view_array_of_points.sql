@@ -9,7 +9,7 @@ ENGINE = Memory;
 
 INSERT INTO point_test FORMAT Values ('one', (0.12,46.45)), ('two', (0,0)), ('three',(1,0)), ('four', (0,1));
 
-CREATE OR REPLACE VIEW point_test_parameterized AS
+CREATE VIEW point_test_parameterized AS
 SELECT *
 FROM point_test
 WHERE coord = {point:Point};
@@ -17,7 +17,7 @@ WHERE coord = {point:Point};
 SELECT *
 FROM point_test_parameterized(point = (0, 0));
 
-CREATE OR REPLACE VIEW point_test_parameterized2 AS
+CREATE VIEW point_test_parameterized2 AS
 SELECT *
 FROM point_test
 WHERE coord IN {point:Array(Point)};
