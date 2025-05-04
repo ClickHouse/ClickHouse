@@ -555,6 +555,8 @@ void ReplxxLineReader::openEditor()
     {
         rx.print(e.what());
         rx.print("\n");
+
+        rx.invoke(replxx::Replxx::ACTION::REPAINT, 0);
     }
 
     if (bracketed_paste_enabled)
