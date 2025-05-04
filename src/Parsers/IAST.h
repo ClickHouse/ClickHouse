@@ -337,6 +337,7 @@ public:
         SetTransactionSnapshot,
         AsyncInsertFlush,
         ParallelWithQuery,
+        Copy,
     };
     /// Return QueryKind of this AST query.
     virtual QueryKind getQueryKind() const { return QueryKind::None; }
