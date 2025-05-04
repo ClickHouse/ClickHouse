@@ -40,7 +40,7 @@ public:
     virtual bool haveIndexesChanged() const = 0;
 
     /// Returns a column containing the mapping between old and new indexes
-    /// Should be called inly if haveIndexesChanged() is true. After such a call
+    /// Should be called only if haveIndexesChanged() is true. After such a call
     /// haveIndexesChanged() should return false until next inserts
     virtual MutableColumnPtr detachChangedIndexes() = 0;
 
