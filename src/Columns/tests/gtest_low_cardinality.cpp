@@ -78,6 +78,8 @@ TEST(ColumnLowCardinality, CompressedDictionary)
         "banner",
         "apple",
         "application",
+        "banana",
+        "banana"
     };
 
     for (const auto & str : data)
@@ -122,4 +124,33 @@ TEST(ColumnLowCardinality, CompressedDictionaryCompact)
     {
         EXPECT_EQ((*cut_column)[i].safeGet<String>(), data[i + 2]);
     }
+}
+
+TEST(ColumnLowCardinality, CompressedDictionaryNullable)
+{
+    MutableColumnPtr indexes = ColumnUInt8::create();
+    MutableColumnPtr dictionary = ColumnUniqueFCBlockDF::create(ColumnString::create(), 4, true);
+    auto low_cardinality_column = ColumnLowCardinality::create(std::move(dictionary), std::move(indexes));
+
+    std::vector<String> data = {
+        "banana",
+        "banner",
+        "apple",
+        "application",
+    };
+
+    for (const auto & str : data)
+    {
+        low_cardinality_column->insert(str);
+    }
+
+    for (size_t i = 0; i < data.size(); ++i)
+    {
+        EXPECT_FALSE(low_cardinality_column->isNullAt(i));
+        EXPECT_EQ((*low_cardinality_column)[i].safeGet<String>(), data[i]);
+    }
+
+    low_cardinality_column->insert({});
+    const size_t null_pos = low_cardinality_column->size() - 1;
+    EXPECT_TRUE(low_cardinality_column->isNullAt(null_pos));
 }
