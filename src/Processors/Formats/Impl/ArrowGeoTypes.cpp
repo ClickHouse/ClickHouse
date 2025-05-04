@@ -282,7 +282,6 @@ void LineColumnBuilder::appendObject(const GeometricObject & object)
 ColumnWithTypeAndName LineColumnBuilder::getResultColumn()
 {
     auto all_points_column = point_column_builder.getResultColumn();
-    std::cerr << "compare linestring sizes " << all_points_column.column->size() << ' ' << offsets.size() << '\n';
     auto array_column = ColumnArray::create(all_points_column.column, offsets_column->getPtr());
 
     auto array_type = std::make_shared<DataTypeArray>(all_points_column.type);
