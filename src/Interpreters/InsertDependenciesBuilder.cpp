@@ -691,7 +691,7 @@ private:
 
 
 InsertDependenciesBuilder::InsertDependenciesBuilder(StoragePtr table, ASTPtr query, Block insert_header,
-    bool async_insert_, bool skip_destination_table_, bool allow_materialized_,
+    bool async_insert_, bool skip_destination_table_, bool /*allow_materialized_*/,
     ContextPtr context)
     : init_table_id(table->getStorageID())
     , init_storage(table)
@@ -700,7 +700,7 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(StoragePtr table, ASTPtr qu
     , init_context(context)
     , async_insert(async_insert_)
     , skip_destination_table(skip_destination_table_)
-    , allow_materialized(allow_materialized_)
+    // , allow_materialized(allow_materialized_)
     , views_error_registry(std::make_shared<ViewErrorsRegistry>())
     , logger(getLogger("InsertDependenciesBuilder"))
 {
