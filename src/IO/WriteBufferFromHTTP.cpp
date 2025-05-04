@@ -1,6 +1,8 @@
 #include <IO/WriteBufferFromHTTP.h>
 
 #include <Common/logger_useful.h>
+#include <Common/ProxyConfigurationResolverProvider.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -49,6 +51,23 @@ void WriteBufferFromHTTP::finalizeImpl()
     /// TODO: Response body is ignored.
 
     WriteBufferFromOStream::finalizeImpl();
+}
+
+std::unique_ptr<WriteBufferFromHTTP> BuilderWriteBufferFromHTTP::create()
+{
+    ProxyConfiguration proxy_configuration;
+
+    if (!bypass_proxy)
+    {
+        auto proxy_protocol = ProxyConfiguration::protocolFromString(uri.getScheme());
+        proxy_configuration = ProxyConfigurationResolverProvider::get(proxy_protocol)->resolve();
+    }
+
+    /// WriteBufferFromHTTP constructor is private and can't be used in `make_unique`
+    std::unique_ptr<WriteBufferFromHTTP> ptr(new WriteBufferFromHTTP(
+        connection_group, uri, method, content_type, content_encoding, additional_headers, timeouts, buffer_size_, proxy_configuration));
+
+    return ptr;
 }
 
 }

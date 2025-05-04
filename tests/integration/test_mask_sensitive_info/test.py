@@ -260,10 +260,7 @@ def test_create_table():
         f"S3(named_collection_6, url = 'http://minio1:9001/root/data/test8.csv', access_key_id = 'minio', secret_access_key = '{password}', format = 'CSV')",
         f"S3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV', 'gzip')",
         f"S3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '{password}')",
-        (
-            f"DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
-            "DNS_ERROR",
-        ),
+        f"DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
         f"S3Queue('http://minio1:9001/root/data/', 'CSV') settings mode = 'ordered'",
         f"S3Queue('http://minio1:9001/root/data/', 'CSV', 'gzip') settings mode = 'ordered'",
         f"S3Queue('http://minio1:9001/root/data/', 'minio', '{password}', 'CSV') settings mode = 'ordered'",

@@ -1,24 +1,36 @@
+INSERT INTO input SELECT * FROM numbers(1)
 view	enable_analyzer	InsertQuery	SelectQuery	InsertQueriesWithSubqueries	SelectQueriesWithSubqueries	QueriesWithSubqueries
 1	0	1	0	1	2	3
+SELECT * FROM system.one WHERE dummy IN (SELECT * FROM system.one) FORMAT Null
 subquery	enable_analyzer	InsertQuery	SelectQuery	InsertQueriesWithSubqueries	SelectQueriesWithSubqueries	QueriesWithSubqueries
 1	0	0	1	0	2	2
+WITH (SELECT * FROM system.one) AS x SELECT x FORMAT Null
 CSE	enable_analyzer	InsertQuery	SelectQuery	InsertQueriesWithSubqueries	SelectQueriesWithSubqueries	QueriesWithSubqueries
 1	0	0	1	0	2	2
+WITH (SELECT * FROM system.one) AS x SELECT x, x FORMAT Null
 CSE_Multi	enable_analyzer	InsertQuery	SelectQuery	InsertQueriesWithSubqueries	SelectQueriesWithSubqueries	QueriesWithSubqueries
 1	0	0	1	0	2	2
+WITH x AS (SELECT * FROM system.one) SELECT * FROM x FORMAT Null
 CTE	enable_analyzer	InsertQuery	SelectQuery	InsertQueriesWithSubqueries	SelectQueriesWithSubqueries	QueriesWithSubqueries
 1	0	0	1	0	2	2
+WITH x AS (SELECT * FROM system.one) SELECT * FROM x UNION ALL SELECT * FROM x FORMAT Null
 CTE_Multi	enable_analyzer	InsertQuery	SelectQuery	InsertQueriesWithSubqueries	SelectQueriesWithSubqueries	QueriesWithSubqueries
 1	0	0	1	0	4	4
+INSERT INTO input SELECT * FROM numbers(1)
 view	enable_analyzer	InsertQuery	SelectQuery	InsertQueriesWithSubqueries	SelectQueriesWithSubqueries	QueriesWithSubqueries
-1	1	1	0	1	3	4
+1	1	1	0	1	2	3
+SELECT * FROM system.one WHERE dummy IN (SELECT * FROM system.one) FORMAT Null
 subquery	enable_analyzer	InsertQuery	SelectQuery	InsertQueriesWithSubqueries	SelectQueriesWithSubqueries	QueriesWithSubqueries
 1	1	0	1	0	2	2
+WITH (SELECT * FROM system.one) AS x SELECT x FORMAT Null
 CSE	enable_analyzer	InsertQuery	SelectQuery	InsertQueriesWithSubqueries	SelectQueriesWithSubqueries	QueriesWithSubqueries
 1	1	0	1	0	2	2
+WITH (SELECT * FROM system.one) AS x SELECT x, x FORMAT Null
 CSE_Multi	enable_analyzer	InsertQuery	SelectQuery	InsertQueriesWithSubqueries	SelectQueriesWithSubqueries	QueriesWithSubqueries
 1	1	0	1	0	2	2
+WITH x AS (SELECT * FROM system.one) SELECT * FROM x FORMAT Null
 CTE	enable_analyzer	InsertQuery	SelectQuery	InsertQueriesWithSubqueries	SelectQueriesWithSubqueries	QueriesWithSubqueries
 1	1	0	1	0	2	2
+WITH x AS (SELECT * FROM system.one) SELECT * FROM x UNION ALL SELECT * FROM x FORMAT Null
 CTE_Multi	enable_analyzer	InsertQuery	SelectQuery	InsertQueriesWithSubqueries	SelectQueriesWithSubqueries	QueriesWithSubqueries
 1	1	0	1	0	4	4

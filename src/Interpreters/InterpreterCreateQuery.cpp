@@ -1778,7 +1778,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 getContext()->getGlobalContext(),
                 properties.columns,
                 properties.constraints,
-                mode);
+                mode,
+                is_restore_from_backup);
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
 
@@ -1847,6 +1848,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 return false;
             throw;
         }
+
+        /// If this is an initial create, we also need to check the table name's length.
+        /// We are not checking this for secondary creates to avoid backward compatibility issues.
+        if (mode <= LoadingStrictnessLevel::CREATE)
+            database->checkTableNameLength(create.getTable());
     }
 
     data_path = database->getTableDataPath(create);
@@ -1950,7 +1956,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             getContext()->getGlobalContext(),
             properties.columns,
             properties.constraints,
-            mode);
+            mode,
+            is_restore_from_backup);
 
         /// If schema was inferred while storage creation, add columns description to create query.
         auto & create_query = query_ptr->as<ASTCreateQuery &>();
