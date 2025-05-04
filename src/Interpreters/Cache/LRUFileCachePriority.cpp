@@ -31,8 +31,8 @@ namespace ErrorCodes
 LRUFileCachePriority::LRUFileCachePriority(
     size_t max_size_,
     size_t max_elements_,
-    StatePtr state_,
-    const std::string & description_)
+    const std::string & description_,
+    StatePtr state_)
     : IFileCachePriority(max_size_, max_elements_)
     , description(description_)
     , log(getLogger("LRUFileCachePriority" + (description.empty() ? "" : "(" + description + ")")))
