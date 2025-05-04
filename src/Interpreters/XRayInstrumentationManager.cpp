@@ -162,8 +162,8 @@ XRayHandlerFunction XRayInstrumentationManager::getHandler(const std::string & n
     static thread_local bool in_hook = false;
     if (in_hook) return;
     in_hook = true;
-
-    std::shared_lock lock(shared_mutex); // shared??? or maybe not? or do we need this at all??
+    LOG_DEBUG(getLogger("XRayInstrumentationManager::dispatchHandler"), "XRayEntryType {}", toString(Type));
+    //std::shared_lock lock(shared_mutex); // shared??? or maybe not? or do we need this at all??
     auto handlers_set_it = functionIdToHandlers.find(FuncId);
     if (handlers_set_it == functionIdToHandlers.end())
     {
@@ -179,7 +179,7 @@ XRayHandlerFunction XRayInstrumentationManager::getHandler(const std::string & n
             handler(FuncId, Type);
         }
     }
-
+    LOG_DEBUG(getLogger("XRayInstrumentationManager::dispatchHandler"), "WTF!!! {}", toString(Type));
     in_hook = false;
 }
 
@@ -374,7 +374,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
 [[clang::xray_never_instrument]] void XRayInstrumentationManager::profile(int32_t FuncId, XRayEntryType Type)
 {
     static thread_local bool in_hook = false;
-    if (in_hook || Type != XRayEntryType::ENTRY)
+    if (in_hook)
     {
         return;
     }
@@ -416,6 +416,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
         element.function_id = FuncId;
 
         active_elements[FuncId] = std::move(element);
+        LOG_DEBUG(getLogger("XRayInstrumentationManager::profile"), "BEEN THERE ENTRY");
     }
     else if (Type == XRayEntryType::EXIT)
     {
@@ -431,17 +432,22 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
 
             auto context_it = functionIdToHandlers[FuncId].find(type); // DOUBLE CHECK IF THIS IS RIGHT
             auto & context = context_it->second->context;
+            LOG_DEBUG(getLogger("XRayInstrumentationManager::profile"), "NO CONTEXT {}", toString(element.duration_microseconds));
             if (context)
             {
+                LOG_DEBUG(getLogger("XRayInstrumentationManager::profile"), "HAVE CONTEXT {}", toString(element.duration_microseconds));
                 if (auto log = context->getInstrumentationProfilingLog())
                 {
+                    LOG_DEBUG(getLogger("XRayInstrumentationManager::profile"), "BEEN THERE getInstrumentationProfilingLog{}", toString(element.duration_microseconds));
                     log->add(std::move(element));
                 }
             }
             active_elements.erase(it);
+            LOG_DEBUG(getLogger("XRayInstrumentationManager::profile"), "BEEN THERE EXIT");
         }
     }
     in_hook = false;
+    LOG_DEBUG(getLogger("XRayInstrumentationManager::profile"), "BEEN THERE ");
 }
 
 std::string_view XRayInstrumentationManager::removeTemplateArgs(std::string_view input)
