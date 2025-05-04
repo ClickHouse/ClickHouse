@@ -6,6 +6,8 @@
 #include <IO/ReadHelpers.h>
 #include <base/types.h>
 #include <Common/Exception.h>
+#include "Functions/geometryConverters.h"
+#include "IO/ReadBufferFromString.h"
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -79,6 +81,10 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(std::opti
                 result_type = GeoType::LineString;
             else if (type == "Polygon")
                 result_type = GeoType::Polygon;
+            else if (type == "MultiLineString")
+                result_type = GeoType::MultiLineString;
+            else if (type == "MultiPolygon")
+                result_type = GeoType::MultiPolygon;
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown geo type {}", type);
 
@@ -89,21 +95,21 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(std::opti
     return geo_columns;
 }
 
-Point readPointWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
+CartesianPoint readPointWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
 {
     double x;
     double y;
     readBinaryEndian(x, in_buffer, endian_to_read);
     readBinaryEndian(y, in_buffer, endian_to_read);
-    return Point{.x = x, .y = y};
+    return CartesianPoint(x, y);
 }
 
-Line readLineWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
+CartesianLineString readLineWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
 {
     int num_points;
     readBinaryEndian(num_points, in_buffer, endian_to_read);
 
-    Line line;
+    CartesianLineString line;
     for (int i = 0; i < num_points; ++i)
     {
         line.push_back(readPointWKB(in_buffer, endian_to_read));
@@ -111,17 +117,54 @@ Line readLineWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
     return line;
 }
 
-Polygon readPolygonWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
+CartesianPolygon readPolygonWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
 {
-    int num_points;
-    readBinaryEndian(num_points, in_buffer, endian_to_read);
+    int num_lines;
+    readBinaryEndian(num_lines, in_buffer, endian_to_read);
 
-    Polygon polygon;
-    for (int i = 0; i < num_points; ++i)
+    CartesianPolygon polygon;
     {
-        polygon.push_back(readLineWKB(in_buffer, endian_to_read));
+        auto parsed_points = readLineWKB(in_buffer, endian_to_read);
+        for (const auto & point : parsed_points)
+            polygon.outer().push_back(point);
+    }
+
+    for (int i = 1; i < num_lines; ++i)
+    {
+        auto parsed_points = readLineWKB(in_buffer, endian_to_read);
+        polygon.inners().push_back({});
+        for (const auto & point : parsed_points)
+            polygon.inners().back().push_back(point);
     }
     return polygon;
+}
+
+GeometricObject parseWKBFormat(ReadBuffer & in_buffer);
+
+CartesianMultiLineString readMultiLineStringWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
+{
+    CartesianMultiLineString multiline;
+
+    int num_lines;
+    readBinaryEndian(num_lines, in_buffer, endian_to_read);
+
+    for (int i = 0; i < num_lines; ++i)
+        multiline.push_back(std::get<CartesianLineString>(parseWKBFormat(in_buffer)));
+
+    return multiline;
+}
+
+CartesianMultiPolygon readMultiPolygonWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
+{
+    CartesianMultiPolygon multipolygon;
+
+    int num_polygons;
+    readBinaryEndian(num_polygons, in_buffer, endian_to_read);
+
+    for (int i = 0; i < num_polygons; ++i)
+        multipolygon.push_back(std::get<CartesianPolygon>(parseWKBFormat(in_buffer)));
+
+    return multipolygon;
 }
 
 GeometricObject parseWKBFormat(ReadBuffer & in_buffer)
@@ -135,96 +178,51 @@ GeometricObject parseWKBFormat(ReadBuffer & in_buffer)
 
     readBinaryEndian(geom_type, in_buffer, endian_to_read);
 
-    if (geom_type == 1)
-        return readPointWKB(in_buffer, endian_to_read);
-    else if (geom_type == 2)
-        return readLineWKB(in_buffer, endian_to_read);
-    else if (geom_type == 3)
-        return readPolygonWKB(in_buffer, endian_to_read);
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKB format: Incorrect geometry type");
-}
-
-Point parseWKTPoint(ReadBuffer & in_buffer)
-{
-    double x;
-    double y;
-    readFloatText(x, in_buffer);
-    in_buffer.ignore();
-    readFloatText(y, in_buffer);
-    in_buffer.ignore();
-    return {x, y};
-}
-
-Line parseWKTLine(ReadBuffer & in_buffer)
-{
-    char ch;
-    Line ls;
-    while (true)
+    switch (geom_type)
     {
-        double x;
-        double y;
-        readFloatText(x, in_buffer);
-        in_buffer.ignore();
-        readFloatText(y, in_buffer);
-        ls.push_back({x, y});
-        readBinary(ch, in_buffer);
-        if (ch == ')')
-            break;
-        in_buffer.ignore();
+        case 1:
+            return readPointWKB(in_buffer, endian_to_read);
+        case 2:
+            return readLineWKB(in_buffer, endian_to_read);
+        case 3:
+            return readPolygonWKB(in_buffer, endian_to_read);
+        case 5:
+            return readMultiLineStringWKB(in_buffer, endian_to_read);
+        case 6:
+            return readMultiPolygonWKB(in_buffer, endian_to_read);
+        default:
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKB format: Incorrect geometry type");
     }
-    return ls;
 }
 
-Polygon parseWKTPolygon(ReadBuffer & in_buffer)
+GeometricObject parseWKBFormat(const String & input)
 {
-    char ch;
-    Polygon poly;
-    while (true)
-    {
-        in_buffer.ignore();
-        std::vector<Point> ring;
-        while (true)
-        {
-            double x;
-            double y;
-            readFloatText(x, in_buffer);
-            in_buffer.ignore();
-            readFloatText(y, in_buffer);
-            ring.push_back({x, y});
-            readBinary(ch, in_buffer);
-            if (ch == ')')
-                break;
-            in_buffer.ignore();
-        }
-        poly.push_back(ring);
-        readBinary(ch, in_buffer);
-        if (ch == ')')
-            break;
-        in_buffer.ignore();
-    }
-    return poly;
+    auto in_buffer = ReadBufferFromString(input);
+
+    return parseWKBFormat(in_buffer);
 }
 
-GeometricObject parseWKTFormat(ReadBuffer & in_buffer)
+GeometricObject parseWKTFormat(const String & input)
 {
-    std::string type;
-    while (true)
+    if (input.starts_with("POINT"))
     {
-        char current_symbol;
-        readBinary(current_symbol, in_buffer);
-        if (current_symbol == '(')
-            break;
-        type.push_back(current_symbol);
+        CartesianPoint point;
+        boost::geometry::read_wkt(input, point);
+        return point;
     }
-
-    if (type == "POINT")
-        return parseWKTPoint(in_buffer);
-    if (type == "LINESTRING")
-        return parseWKTLine(in_buffer);
-    if (type == "POLYGON")
-        return parseWKTPolygon(in_buffer);
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: type {}", type);
+    if (input.starts_with("POLYGON"))
+    {
+        CartesianPolygon polygon;
+        boost::geometry::read_wkt(input, polygon);
+        return polygon;
+    }
+    if (input.starts_with("LINESTRING"))
+    {
+        CartesianLineString linestring;
+        boost::geometry::read_wkt(input, linestring);
+        return linestring;
+    }
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown geometry object in WKT {}", input);
 }
 
 PointColumnBuilder::PointColumnBuilder(const String & name_)
@@ -238,12 +236,12 @@ PointColumnBuilder::PointColumnBuilder(const String & name_)
 
 void PointColumnBuilder::appendObject(const GeometricObject & object)
 {
-    if (!std::holds_alternative<Point>(object))
+    if (!std::holds_alternative<CartesianPoint>(object))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected point");
 
-    const auto & point = std::get<Point>(object);
-    point_column_data_x.push_back(point.x);
-    point_column_data_y.push_back(point.y);
+    const auto & point = std::get<CartesianPoint>(object);
+    point_column_data_x.push_back(point.x());
+    point_column_data_y.push_back(point.y());
 }
 
 ColumnWithTypeAndName PointColumnBuilder::getResultColumn()
@@ -269,10 +267,10 @@ LineColumnBuilder::LineColumnBuilder(const String & name_)
 
 void LineColumnBuilder::appendObject(const GeometricObject & object)
 {
-    if (!std::holds_alternative<Line>(object))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected point");
+    if (!std::holds_alternative<CartesianLineString>(object))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected line string");
 
-    const auto & line = std::get<Line>(object);
+    const auto & line = std::get<CartesianLineString>(object);
     for (const auto & point : line)
     {
         point_column_builder.appendObject(point);
@@ -284,6 +282,7 @@ void LineColumnBuilder::appendObject(const GeometricObject & object)
 ColumnWithTypeAndName LineColumnBuilder::getResultColumn()
 {
     auto all_points_column = point_column_builder.getResultColumn();
+    std::cerr << "compare linestring sizes " << all_points_column.column->size() << ' ' << offsets.size() << '\n';
     auto array_column = ColumnArray::create(all_points_column.column, offsets_column->getPtr());
 
     auto array_type = std::make_shared<DataTypeArray>(all_points_column.type);
@@ -300,21 +299,80 @@ PolygonColumnBuilder::PolygonColumnBuilder(const String & name_)
 
 void PolygonColumnBuilder::appendObject(const GeometricObject & object)
 {
-    if (!std::holds_alternative<Polygon>(object))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected point");
+    if (!std::holds_alternative<CartesianPolygon>(object))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected polygon");
 
-    const auto & polygon = std::get<Polygon>(object);
-    for (const auto & line : polygon)
-    {
-        line_column_builder.appendObject(line);
-    }
-    offset += polygon.size();
+    const auto & polygon = std::get<CartesianPolygon>(object);
+    line_column_builder.appendObject(CartesianLineString(polygon.outer().begin(), polygon.outer().end()));
+    for (const auto & inner_circle : polygon.inners())
+        line_column_builder.appendObject(CartesianLineString(inner_circle.begin(), inner_circle.end()));
+    offset += 1 + polygon.inners().size();
     offsets.push_back(offset);
 }
 
 ColumnWithTypeAndName PolygonColumnBuilder::getResultColumn()
 {
     auto all_points_column = line_column_builder.getResultColumn();
+    auto array_column = ColumnArray::create(all_points_column.column, offsets_column->getPtr());
+
+    auto array_type = std::make_shared<DataTypeArray>(all_points_column.type);
+    return {std::move(array_column), array_type, name};
+}
+
+MultiLineStringColumnBuilder::MultiLineStringColumnBuilder(const String & name_)
+    : offsets_column(ColumnVector<ColumnArray::Offset>::create())
+    , offsets(offsets_column->getData())
+    , line_column_builder("")
+    , name(name_)
+{
+}
+
+void MultiLineStringColumnBuilder::appendObject(const GeometricObject & object)
+{
+    if (!std::holds_alternative<CartesianMultiLineString>(object))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected multiline");
+
+    const auto & multilinestring = std::get<CartesianMultiLineString>(object);
+    for (const auto & line : multilinestring)
+        line_column_builder.appendObject(line);
+
+    offset += multilinestring.size();
+    offsets.push_back(offset);
+}
+
+ColumnWithTypeAndName MultiLineStringColumnBuilder::getResultColumn()
+{
+    auto all_points_column = line_column_builder.getResultColumn();
+    auto array_column = ColumnArray::create(all_points_column.column, offsets_column->getPtr());
+
+    auto array_type = std::make_shared<DataTypeArray>(all_points_column.type);
+    return {std::move(array_column), array_type, name};
+}
+
+MultiPolygonColumnBuilder::MultiPolygonColumnBuilder(const String & name_)
+    : offsets_column(ColumnVector<ColumnArray::Offset>::create())
+    , offsets(offsets_column->getData())
+    , polygon_column_builder("")
+    , name(name_)
+{
+}
+
+void MultiPolygonColumnBuilder::appendObject(const GeometricObject & object)
+{
+    if (!std::holds_alternative<CartesianMultiPolygon>(object))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected multi polygon");
+
+    const auto & multipolygon = std::get<CartesianMultiPolygon>(object);
+    for (const auto & polygon : multipolygon)
+        polygon_column_builder.appendObject(polygon);
+
+    offset += multipolygon.size();
+    offsets.push_back(offset);
+}
+
+ColumnWithTypeAndName MultiPolygonColumnBuilder::getResultColumn()
+{
+    auto all_points_column = polygon_column_builder.getResultColumn();
     auto array_column = ColumnArray::create(all_points_column.column, offsets_column->getPtr());
 
     auto array_type = std::make_shared<DataTypeArray>(all_points_column.type);
@@ -334,6 +392,12 @@ GeoColumnBuilder::GeoColumnBuilder(const String & name_, GeoType type_)
             break;
         case GeoType::Polygon:
             geomery_column_builder = std::make_unique<PolygonColumnBuilder>(name);
+            break;
+        case GeoType::MultiLineString:
+            geomery_column_builder = std::make_unique<MultiLineStringColumnBuilder>(name);
+            break;
+        case GeoType::MultiPolygon:
+            geomery_column_builder = std::make_unique<MultiPolygonColumnBuilder>(name);
             break;
     }
 }

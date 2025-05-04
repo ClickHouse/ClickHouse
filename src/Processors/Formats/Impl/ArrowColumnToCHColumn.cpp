@@ -483,15 +483,16 @@ static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::
             auto * raw_data = buffer->mutable_data() + chunk.value_offset(offset_i);
             if (chunk.IsNull(offset_i))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Geometry nullable columns are not supported");
-            ReadBuffer in_buffer(reinterpret_cast<char*>(raw_data), chunk.value_length(offset_i), 0);
+
+            String in_data(reinterpret_cast<char*>(raw_data), chunk.value_length(offset_i));
             GeometricObject result_object;
             switch (geo_metadata.encoding)
             {
                 case GeoEncoding::WKB:
-                    result_object = parseWKBFormat(in_buffer);
+                    result_object = parseWKBFormat(in_data);
                     break;
                 case GeoEncoding::WKT:
-                    result_object = parseWKTFormat(in_buffer);
+                    result_object = parseWKTFormat(in_data);
                     break;
             }
             column_builder.appendObject(result_object);
