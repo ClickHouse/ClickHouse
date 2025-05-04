@@ -462,7 +462,7 @@ void PipelineExecutor::spawnThreadsImpl(AcquiredSlotPtr slot)
 
         /// Count of threads in use should be updated for proper finish() condition.
         /// NOTE: this will not decrease `use_threads` below initially granted count
-        auto spawn_status = tasks.upscale(thread_num + 1);
+        const auto spawn_status = tasks.upscale(thread_num + 1);
 
         /// Start new thread
         pool->scheduleOrThrowOnError([this, thread_num, thread_group = CurrentThread::getGroup(), my_slot = std::move(slot)]
