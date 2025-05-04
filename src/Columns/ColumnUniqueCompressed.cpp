@@ -10,6 +10,31 @@
 namespace DB
 {
 
+namespace
+{
+
+const ColumnString * getAndCheckColumnString(const IColumn * column)
+{
+    const ColumnString * ptr;
+    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(column))
+    {
+        ptr = typeid_cast<const ColumnString *>(&nullable_column->getNestedColumn());
+    }
+    else
+    {
+        ptr = typeid_cast<const ColumnString *>(column);
+    }
+    
+    if (!ptr)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ColumnString, got {}", column->getName());
+    }
+
+    return ptr;
+}
+
+}
+
 String ColumnUniqueFCBlockDF::getDecompressedAt(size_t pos) const
 {
     chassert(pos < data_column->size());
@@ -287,15 +312,7 @@ bool ColumnUniqueFCBlockDF::tryUniqueInsert(const Field & x, size_t & index)
 
 MutableColumnPtr ColumnUniqueFCBlockDF::uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    const ColumnString * src_column;
-    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&src))
-    {
-        src_column = typeid_cast<const ColumnString *>(&nullable_column->getNestedColumn());
-    }
-    else 
-    {
-        src_column = typeid_cast<const ColumnString *>(&src);
-    }
+    const ColumnString * src_column = getAndCheckColumnString(&src);
 
     ColumnPtr sorted_column;
     old_indexes_mapping = prepareForInsert(getDecompressedAll(), src_column->cut(start, length), sorted_column);
@@ -346,7 +363,8 @@ size_t ColumnUniqueFCBlockDF::uniqueDeserializeAndInsertFromArena(const char * p
 
 size_t ColumnUniqueFCBlockDF::uniqueInsertFrom(const IColumn & src, size_t n)
 {
-    const StringRef data = src.getDataAt(n);
+    const ColumnString * src_column = getAndCheckColumnString(&src);
+    const StringRef data = src_column->getDataAt(n);
     const size_t output = uniqueInsertData(data.data, data.size);
     return output;
 }
