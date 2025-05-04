@@ -537,6 +537,7 @@ class ClickHouseCluster:
         self.minio_ip = None
         self.minio_bucket = "root"
         self.minio_bucket_2 = "root2"
+        self.minio_bucket_db_disk = "root-db-disk"
         self.minio_port = 9001
         self.minio_client = None  # type: Minio
         self.minio_redirect_host = "proxy1"
@@ -1634,7 +1635,10 @@ class ClickHouseCluster:
         with_nginx=False,
         with_redis=False,
         with_minio=False,
-        with_remote_database_disk=False,  # Currently, there is no remote storage can be used for the database disk. We disabled it as default.
+        # The config is defined in tests/integration/helpers/remote_database_disk.xml
+        # However, some tests cannot use with_remote_database_disk by their configs: e.g using secure keeper
+        # So, we set the default value of with_remote_database_disk to None and try to enable it if possible (i.e. if not explicitly set to false)
+        with_remote_database_disk=None,
         with_azurite=False,
         with_cassandra=False,
         with_ldap=False,
@@ -1707,7 +1711,11 @@ class ClickHouseCluster:
             with_remote_database_disk = False
 
         if with_remote_database_disk is None:
-            with_remote_database_disk = False
+            with_remote_database_disk = True
+
+        if with_remote_database_disk:
+            logging.debug(f"Instance {name}, with_remote_database_disk enabled")
+            with_minio = True
 
         if not env_variables:
             env_variables = {}
@@ -2611,7 +2619,11 @@ class ClickHouseCluster:
 
                 logging.debug("Connected to Minio.")
 
-                buckets = [self.minio_bucket, self.minio_bucket_2]
+                buckets = [
+                    self.minio_bucket,
+                    self.minio_bucket_2,
+                    self.minio_bucket_db_disk,
+                ]
 
                 for bucket in buckets:
                     if minio_client.bucket_exists(bucket):
@@ -2917,6 +2929,32 @@ class ClickHouseCluster:
                 self.wait_zookeeper_to_start()
                 for command in self.pre_zookeeper_commands:
                     self.run_kazoo_commands_with_retries(command, repeats=5)
+
+            for instance in list(self.instances.values()):
+                if instance.with_remote_database_disk:
+                    logging.debug(
+                        f"Setup with_remote_database_disk, instance {instance.name}"
+                    )
+                    config_file_path = os.path.join(
+                        HELPERS_DIR, "remote_database_disk.xml"
+                    )
+                    with open(config_file_path, "r") as config_source_file:
+                        data = config_source_file.read()
+                    data = data.format(
+                        host=self.minio_host,
+                        port=str(self.minio_port),
+                        bucket=self.minio_bucket_db_disk,
+                        shard="{shard}",
+                        replica="{replica}",
+                    )
+                    instance_config_dir = os.path.join(instance.path, "configs")
+                    target_config_file_path = os.path.join(
+                        instance_config_dir,
+                        "config.d",
+                        "remote_database_disk.xml",
+                    )
+                    with open(target_config_file_path, "w") as config_target_file:
+                        config_target_file.write(data)
 
             if self.with_mysql_client and self.base_mysql_client_cmd:
                 logging.debug("Setup MySQL Client")
@@ -3572,6 +3610,11 @@ class ClickHouseInstance:
         )
         self.secrets_dir = p.abspath(p.join(base_path, "secrets"))
         self.macros = macros if macros is not None else {}
+        if with_remote_database_disk:
+            if "shard" not in self.macros:
+                self.macros["shard"] = "default"
+            if "replica" not in self.macros:
+                self.macros["replica"] = self.name
         self.with_zookeeper = with_zookeeper
         self.zookeeper_config_path = zookeeper_config_path
 

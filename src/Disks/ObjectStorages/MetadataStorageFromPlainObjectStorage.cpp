@@ -20,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -236,10 +237,30 @@ void MetadataStorageFromPlainObjectStorageTransaction::moveFile(const std::strin
         throwNotImplemented();
 
     if (metadata_storage.existsDirectory(path_from))
+    {
         moveDirectory(path_from, path_to);
-    else
-        throwNotImplemented();
+        return;
+    }
+
+    addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
+        false, path_from, path_to, *metadata_storage.getPathMap(), object_storage));
 }
+
+void MetadataStorageFromPlainObjectStorageTransaction::replaceFile(const std::string & path_from, const std::string & path_to)
+{
+    if (metadata_storage.object_storage->isWriteOnce())
+        throwNotImplemented();
+
+    if (metadata_storage.existsDirectory(path_from))
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Replacing from directory is not supported {}", path_from);
+
+    if (metadata_storage.existsDirectory(path_to))
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Replacing to directory is not supported {}", path_to);
+
+    addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
+        true, path_from, path_to, *metadata_storage.getPathMap(), object_storage));
+}
+
 
 void MetadataStorageFromPlainObjectStorageTransaction::createEmptyMetadataFile(const std::string & path)
 {
