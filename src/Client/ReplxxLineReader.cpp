@@ -583,9 +583,10 @@ void ReplxxLineReader::openEditor(bool format_query)
         rx.print("\n");
         rx.print(e.what());
         rx.print("\n");
-
-        rx.invoke(replxx::Replxx::ACTION::REPAINT, 0);
     }
+
+    rx.invoke(replxx::Replxx::ACTION::CLEAR_SELF, 0);
+    rx.invoke(replxx::Replxx::ACTION::REPAINT, 0);
 
     if (bracketed_paste_enabled)
         enableBracketedPaste();
