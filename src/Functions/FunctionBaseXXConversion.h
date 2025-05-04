@@ -23,13 +23,12 @@ template <typename Traits>
 struct BaseXXEncode
 {
     static constexpr auto name = Traits::encodeName;
-    static constexpr auto oversize = Traits::oversize;
 
     static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count)
     {
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
-        size_t max_result_size = static_cast<size_t>(ceil(oversize * src_column.getChars().size() + 1));
+        size_t const max_result_size = Traits::getMaxEncodedSize(src_column.getChars().size());
 
         dst_data.resize(max_result_size);
         dst_offsets.resize(input_rows_count);
@@ -62,7 +61,7 @@ struct BaseXXEncode
     {
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
-        size_t max_result_size = static_cast<size_t>(ceil(oversize * src_column.getChars().size() + 1));
+        size_t const max_result_size = Traits::getMaxEncodedSize(src_column.getChars().size());
 
         dst_data.resize(max_result_size);
         dst_offsets.resize(input_rows_count);
@@ -70,7 +69,7 @@ struct BaseXXEncode
         const auto * src = src_column.getChars().data();
         auto * dst = dst_data.data();
 
-        size_t N = src_column.getN();
+        size_t const N = src_column.getN();
         size_t current_dst_offset = 0;
 
         for (size_t row = 0; row < input_rows_count; ++row)

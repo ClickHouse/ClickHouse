@@ -9,9 +9,14 @@ namespace DB
 struct Base58Traits
 {
     static constexpr auto encodeName = "base58Encode";
-    /// Base58 has efficiency of 73% (8/11) [https://monerodocs.org/cryptography/base58/],
-    /// and we take double scale to avoid any reallocation.
-    static constexpr auto oversize = 2;
+
+    static size_t getMaxEncodedSize(size_t src_length)
+    {
+        /// Base58 has efficiency of 73% (8/11) [https://monerodocs.org/cryptography/base58/],
+        /// and we take double scale to avoid any reallocation.
+        constexpr auto oversize = 2;
+        return static_cast<size_t>(ceil(oversize * src_length + 1));
+    }
 
     static size_t encode(const UInt8 * src, size_t src_length, UInt8 * dst) { return encodeBase58(src, src_length, dst); }
     static std::optional<size_t> decode(const UInt8 * src, size_t src_length, UInt8 * dst) { return decodeBase58(src, src_length, dst); }
