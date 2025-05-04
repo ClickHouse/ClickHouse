@@ -1,4 +1,7 @@
 #include <Client/ReplxxLineReader.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
 #include <base/errnoToString.h>
 
 #include <IO/ReadBufferFromFile.h>
@@ -390,7 +393,10 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
     /// We don't want to allow opening EDITOR in the embedded mode.
     if (!options.embedded_mode)
-        rx.bind_key(Replxx::KEY::meta('E'), [this](char32_t) { openEditor(); return Replxx::ACTION_RESULT::CONTINUE; });
+    {
+        rx.bind_key(Replxx::KEY::meta('E'), [this](char32_t) { openEditor(/*format_query=*/ false); return Replxx::ACTION_RESULT::CONTINUE; });
+        rx.bind_key(Replxx::KEY::meta('F'), [this](char32_t) { openEditor(/*format_query=*/ true); return Replxx::ACTION_RESULT::CONTINUE; });
+    }
 
     /// readline insert-comment
     auto insert_comment_action = [this](char32_t code)
@@ -530,12 +536,33 @@ void ReplxxLineReader::addToHistory(const String & line)
         rx.print("Unlock of history file failed: %s\n", errnoToString().c_str());
 }
 
-void ReplxxLineReader::openEditor()
+void ReplxxLineReader::openEditor(bool format_query)
 {
     try
     {
+        String query = rx.get_state().text();
+
+        if (format_query)
+        {
+            bool multiline_query = query.contains('\n');
+            ParserQuery parser(query.data() + query.size(), /*allow_settings_after_format_in_insert_=*/ false, /*implicit_select_=*/ false);
+            const ASTPtr ast = parseQuery(parser, query, /*max_query_size=*/ 0, /*max_parser_depth=*/ 0, /*max_parser_backtracks=*/ 0);
+
+            bool insert_with_data = false;
+            if (auto * insert_query = ast->as<ASTInsertQuery>(); insert_query && insert_query->hasInlinedData())
+                insert_with_data = true;
+
+            if (!insert_with_data)
+            {
+                if (multiline_query)
+                    query = ast->formatWithSecretsMultiLine();
+                else
+                    query = ast->formatWithSecretsOneLine();
+            }
+        }
+
         TemporaryFile editor_file("clickhouse_client_editor_XXXXXX.sql");
-        editor_file.write(rx.get_state().text());
+        editor_file.write(query);
         editor_file.close();
 
         char * const argv[] = {editor.data(), editor_file.getPath().data(), nullptr};
@@ -551,7 +578,7 @@ void ReplxxLineReader::openEditor()
             rx.print(fmt::format("Editor {} terminated unsuccessfully: {}\n", backQuoteIfNeed(editor), editor_exit_code).data());
         }
     }
-    catch (const std::runtime_error & e)
+    catch (const std::exception & e)
     {
         rx.print(e.what());
         rx.print("\n");
