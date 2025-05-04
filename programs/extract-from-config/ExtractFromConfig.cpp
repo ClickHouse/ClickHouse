@@ -114,6 +114,44 @@ static DB::ConfigurationPtr get_configuration(const std::string & config_path, b
     return DB::ConfigurationPtr(new Poco::Util::XMLConfiguration(config_xml));
 }
 
+static void printYamlLike(const Poco::Util::AbstractConfiguration & config, const std::string & key, std::ostream & out, int indent = 0)
+{
+    std::vector<std::string> subkeys;
+    config.keys(key, subkeys);
+
+    std::string indent_str(indent, ' ');
+    std::string tag = key.substr(key.find_last_of('.') + 1);
+
+    if (subkeys.empty())
+    {
+        // Leaf node
+        std::string value = config.getString(key);
+
+        // Quote the value if it contains special characters or is empty
+        bool needs_quotes = value.empty() || value.find_first_of(":#-?*{}[],&!|>'\"%@`") != std::string::npos;
+        if (needs_quotes)
+            value = "\"" + value + "\"";
+
+        if (indent == 0)
+        {
+            out << value;
+        }
+        else
+        {
+            out << indent_str << tag << ": " << value << "\n";
+        }
+        return;
+    }
+
+    // Node with children
+    out << indent_str << tag << ":\n";
+    for (const auto & subkey : subkeys)
+    {
+        std::string full_key = key.empty() ? subkey : key + "." + subkey;
+        printYamlLike(config, full_key, out, indent + 2);
+    }
+}
+
 static void printXmlLike(const Poco::Util::AbstractConfiguration & config, const std::string & key, std::ostream & out, int indent = 0)
 {
     std::vector<std::string> subkeys;
@@ -143,19 +181,10 @@ static void printXmlLike(const Poco::Util::AbstractConfiguration & config, const
         std::string full_key = key.empty() ? subkey : key + "." + subkey;
         printXmlLike(config, full_key, out, indent + 4);
     }
-    out << indent_str << "</" << tag;
-    if (indent == 0)
-    {
-        // the last element
-        out << ">";
-    }
-    else
-    {
-        out << ">\n";
-    }
+    out << indent_str << "</" << tag << ">\n";
 }
 
-static std::vector<std::string> extractFromConfig(const std::string & config_path, const std::string & key, bool process_zk_includes, bool ignore_errors, bool get_users, bool pretty)
+static std::vector<std::string> extractFromConfig(const std::string & config_path, const std::string & key, bool process_zk_includes, bool ignore_errors, bool get_users, std::string & format)
 {
     DB::ConfigurationPtr configuration = get_configuration(config_path, process_zk_includes, !ignore_errors);
 
@@ -183,15 +212,21 @@ static std::vector<std::string> extractFromConfig(const std::string & config_pat
             throw DB::Exception(DB::ErrorCodes::CANNOT_LOAD_CONFIG, "Not found: {}", key);
         return {""};
     }
-    if (pretty)
+    if (format == "xml")
     {
         std::ostringstream oss;
         printXmlLike(*configuration, key, oss);
         return {oss.str()};
     }
+    else if (format == "yaml" || format == "yml")
+    {
+        std::ostringstream oss;
+        printYamlLike(*configuration, key, oss);
+        return {oss.str()};
+    }
     else
     {
-        return {configuration->getString(key)};
+        return {configuration->getString(key)} ;
     }
 }
 
@@ -204,10 +239,11 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
     bool process_zk_includes = false;
     bool ignore_errors = false;
     bool get_users = false;
-    bool pretty = false;
     std::string log_level;
     std::string config_path;
     std::string key;
+    std::string format;
+    std::set<std::string> allowed_output_formats = {"", "yaml", "yml", "xml"};
 
     namespace po = boost::program_options;
 
@@ -218,7 +254,7 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
         ("process-zk-includes", po::bool_switch(&process_zk_includes),
          "if there are from_zk elements in config, connect to ZooKeeper and process them")
         ("try", po::bool_switch(&ignore_errors), "Do not warn about missing keys, missing users configurations or non existing file from include_from tag")
-        ("pretty", po::bool_switch(&pretty), "Pretty print for nested keys")
+        ("format,o", po::value<std::string>(&format)->default_value(""), "Pretty print for nested keys. yaml or xml")
         ("users", po::bool_switch(&get_users), "Return values from users.xml config")
         ("log-level", po::value<std::string>(&log_level)->default_value("error"), "log level")
         ("config-file,c", po::value<std::string>(&config_path)->required(), "path to config file")
@@ -243,11 +279,24 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
             return 0;
         }
 
+        boost::algorithm::to_lower(format);
+        if (!allowed_output_formats.contains(format))
+        {
+            std::cerr << "Invalid format: " << format << "\n"
+                      << "Allowed formats yaml, yml, xml or empty\n";
+            return 1;
+        }
+
         po::notify(options);
 
         setupLogging(log_level);
-        for (const auto & value : extractFromConfig(config_path, key, process_zk_includes, ignore_errors, get_users, pretty))
-            std::cout << value << std::endl;
+        for (const auto & value : extractFromConfig(config_path, key, process_zk_includes, ignore_errors, get_users, format))
+        {
+            std::cout << value;
+            // check trailing new line
+            if (!value.empty() && value.back() != '\n')
+                std::cout << std::endl;
+        }
     }
     catch (...)
     {
