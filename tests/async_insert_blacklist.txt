@@ -42,67 +42,8 @@
 02270_stdin_with_query_or_infile_data
 02435_rollback_cancelled_queries
 
-    AsyncInsertRows profile event is missing
-01413_rows_events
-
     https://github.com/ClickHouse/ClickHouse/issues/57768
 02423_insert_summary_behaviour
 
     https://github.com/ClickHouse/ClickHouse/issues/79790
 02046_remote_table_function_named_collections
-
-
-    FAIL	02417_opentelemetry_insert_on_distributed_table	5.20
-    2025-04-04 03:39:33 Reason: result differs with reference:
-    2025-04-04 03:39:33 --- /repo/tests/queries/0_stateless/02417_opentelemetry_insert_on_distributed_table.reference	2025-04-04 03:23:18.320164897 +1030
-    2025-04-04 03:39:33 +++ /repo/tests/queries/0_stateless/02417_opentelemetry_insert_on_distributed_table.stdout	2025-04-04 03:39:33.334212935 +1030
-    2025-04-04 03:39:33 @@ -1,15 +1,9 @@
-    2025-04-04 03:39:33  ===1===
-    2025-04-04 03:39:33 -{"operation_name":"void DB::DistributedSink::writeToLocal(const Cluster::ShardInfo &, const Block &, size_t)","cluster":"test_cluster_two_shards_localhost","shard":"1","rows":"1","bytes":"8"}
-    2025-04-04 03:39:33 -{"operation_name":"void DB::DistributedSink::writeToLocal(const Cluster::ShardInfo &, const Block &, size_t)","cluster":"test_cluster_two_shards_localhost","shard":"2","rows":"1","bytes":"8"}
-    2025-04-04 03:39:33  1
-    2025-04-04 03:39:33  ===2===
-    2025-04-04 03:39:33 -{"operation_name":"void DB::DistributedAsyncInsertDirectoryQueue::processFile(std::string &, const SettingsChanges &)","cluster":"test_cluster_two_shards_localhost","shard":"1","rows":"1","bytes":"8"}
-    2025-04-04 03:39:33 -{"operation_name":"void DB::DistributedAsyncInsertDirectoryQueue::processFile(std::string &, const SettingsChanges &)","cluster":"test_cluster_two_shards_localhost","shard":"2","rows":"1","bytes":"8"}
-    2025-04-04 03:39:33 -3
-    2025-04-04 03:39:33 -2
-    2025-04-04 03:39:33 +1
-    2025-04-04 03:39:33 +0
-    2025-04-04 03:39:33  ===3===
-    2025-04-04 03:39:33 -{"operation_name":"auto DB::DistributedSink::runWritingJob(JobReplica &, const Block &, size_t)::(anonymous class)::operator()() const","cluster":"test_cluster_two_shards_localhost","shard":"1","rows":"1","bytes":"8"}
-    2025-04-04 03:39:33 -{"operation_name":"auto DB::DistributedSink::runWritingJob(JobReplica &, const Block &, size_t)::(anonymous class)::operator()() const","cluster":"test_cluster_two_shards_localhost","shard":"2","rows":"1","bytes":"8"}
-    2025-04-04 03:39:33  1
-    2025-04-04 03:39:33  ===4===
-    2025-04-04 03:39:33  {"operation_name":"auto DB::DistributedSink::runWritingJob(JobReplica &, const Block &, size_t)::(anonymous class)::operator()() const","cluster":"test_cluster_two_shards_localhost","shard":"1","rows":"1","bytes":"8"}
-    2025-04-04 03:39:33
-    2025-04-04 03:39:33
-    2025-04-04 03:39:33 Settings used in the test: --max_insert_threads 1 --group_by_two_level_threshold 1 --group_by_two_level_threshold_bytes 1 --distributed_aggregation_memory_efficient 1 --fsync_metadata 0 --output_format_parallel_formatting 0 --input_format_parallel_parsing 0 --min_chunk_bytes_for_parallel_parsing 11050395 --max_read_buffer_size 867254 --prefer_localhost_replica 1 --max_block_size 33216 --max_joined_block_size_rows 8084 --max_threads 1 --optimize_append_index 0 --optimize_if_chain_to_multiif 1 --optimize_if_transform_strings_to_enum 1 --optimize_read_in_order 1 --optimize_or_like_chain 0 --optimize_substitute_columns 1 --enable_multiple_prewhere_read_steps 0 --read_in_order_two_level_merge_threshold 28 --optimize_aggregation_in_order 1 --aggregation_in_order_max_block_bytes 17150565 --use_uncompressed_cache 0 --min_bytes_to_use_direct_io 10737418240 --min_bytes_to_use_mmap_io 7955247908 --local_filesystem_read_method pread_threadpool --remote_filesystem_read_method threadpool --local_filesystem_read_prefetch 1 --filesystem_cache_segments_batch_size 2 --read_from_filesystem_cache_if_exists_otherwise_bypass_cache 1 --throw_on_error_from_cache_on_write_operations 0 --remote_filesystem_read_prefetch 0 --allow_prefetched_read_pool_for_remote_filesystem 1 --filesystem_prefetch_max_memory_usage 64Mi --filesystem_prefetches_limit 10 --filesystem_prefetch_min_bytes_for_single_read_task 1Mi --filesystem_prefetch_step_marks 0 --filesystem_prefetch_step_bytes 100Mi --compile_aggregate_expressions 1 --compile_sort_description 1 --merge_tree_coarse_index_granularity 20 --optimize_distinct_in_order 0 --max_bytes_before_remerge_sort 1807198608 --min_compress_block_size 264715 --max_compress_block_size 486163 --merge_tree_compact_parts_min_granules_to_multibuffer_read 14 --optimize_sorting_by_input_stream_properties 0 --http_response_buffer_size 9535929 --http_wait_end_of_query True --enable_memory_bound_merging_of_aggregation_results 0 --min_count_to_compile_expression 3 --min_count_to_compile_aggregate_expression 0 --min_count_to_compile_sort_description 3 --session_timezone Mexico/BajaSur --use_page_cache_for_disks_without_file_cache False --page_cache_inject_eviction True --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability 0.48 --prefer_external_sort_block_bytes 100000000 --cross_join_min_rows_to_compress 100000000 --cross_join_min_bytes_to_compress 100000000 --min_external_table_block_size_bytes 100000000 --max_parsing_threads 10 --optimize_functions_to_subcolumns 0 --parallel_replicas_local_plan 0 --query_plan_join_swap_table auto --enable_vertical_final 1 --optimize_extract_common_expressions 1 --use_query_condition_cache 0 --max_bytes_before_external_sort 0 --max_bytes_before_external_group_by 0 --max_bytes_ratio_before_external_sort 0.2 --max_bytes_ratio_before_external_group_by 0.2
-    2025-04-04 03:39:33
-    2025-04-04 03:39:33 MergeTree settings used in test: --ratio_of_defaults_for_sparse_serialization 0.0 --prefer_fetch_merged_part_size_threshold 10737418240 --vertical_merge_algorithm_min_rows_to_activate 1 --vertical_merge_algorithm_min_columns_to_activate 100 --allow_vertical_merges_from_compact_to_wide_parts 1 --min_merge_bytes_to_use_direct_io 1 --index_granularity_bytes 13714526 --merge_max_block_size 4995 --index_granularity 29598 --min_bytes_for_wide_part 915939826 --marks_compress_block_size 26904 --primary_key_compress_block_size 61136 --replace_long_file_name_to_hash 0 --max_file_name_length 24 --min_bytes_for_full_part_storage 536870912 --compact_parts_max_bytes_to_buffer 52075424 --compact_parts_max_granules_to_buffer 1 --compact_parts_merge_max_bytes_to_prefetch_part 15860469 --cache_populated_by_fetch 1 --concurrent_part_removal_threshold 10 --old_parts_lifetime 299 --prewarm_mark_cache 1 --use_const_adaptive_granularity 1 --enable_index_granularity_compression 1 --enable_block_number_column 0 --enable_block_offset_column 0 --use_primary_key_cache 0 --prewarm_primary_key_cache 0
-    2025-04-04 03:39:33
-    2025-04-04 03:39:33 Database: test_swjjbrc6
-
-    FAIL	02421_simple_queries_for_opentelemetry	4.00
-    2025-04-04 03:30:21 Reason: result differs with reference:
-    2025-04-04 03:30:21 --- /repo/tests/queries/0_stateless/02421_simple_queries_for_opentelemetry.reference	2025-04-04 03:23:18.320164897 +1030
-    2025-04-04 03:30:21 +++ /repo/tests/queries/0_stateless/02421_simple_queries_for_opentelemetry.stdout	2025-04-04 03:30:21.155889098 +1030
-    2025-04-04 03:30:21 @@ -1,6 +1,6 @@
-    2025-04-04 03:30:21  {"query":"show processlist format Null
-      "}
-    2025-04-04 03:30:21  {"query":"show databases format Null
-      "}
-    2025-04-04 03:30:21 -{"query":"insert into opentelemetry_test values","read_rows":"3","written_rows":"3"}
-    2025-04-04 03:30:21 +{"query":"insert into opentelemetry_test values","read_rows":"","written_rows":""}
-    2025-04-04 03:30:21  {"query":"select * from opentelemetry_test format Null
-      ","read_rows":"3","written_rows":""}
-    2025-04-04 03:30:21  {"query":"SELECT * FROM opentelemetry_test FORMAT Null
-      ","read_rows":"3","written_rows":""}
-    2025-04-04 03:30:21  {"min_compress_block_size":"present","max_block_size":"present","max_execution_time":"present"}
-    2025-04-04 03:30:21
-    2025-04-04 03:30:21
-    2025-04-04 03:30:21 Settings used in the test: --max_insert_threads 1 --group_by_two_level_threshold 440855 --group_by_two_level_threshold_bytes 11597371 --distributed_aggregation_memory_efficient 1 --fsync_metadata 0 --output_format_parallel_formatting 1 --input_format_parallel_parsing 0 --min_chunk_bytes_for_parallel_parsing 7737435 --max_read_buffer_size 860942 --prefer_localhost_replica 1 --max_block_size 58921 --max_joined_block_size_rows 99921 --max_threads 2 --optimize_append_index 1 --optimize_if_chain_to_multiif 1 --optimize_if_transform_strings_to_enum 1 --optimize_read_in_order 0 --optimize_or_like_chain 0 --optimize_substitute_columns 1 --enable_multiple_prewhere_read_steps 0 --read_in_order_two_level_merge_threshold 40 --optimize_aggregation_in_order 0 --aggregation_in_order_max_block_bytes 43570048 --use_uncompressed_cache 0 --min_bytes_to_use_direct_io 10737418240 --min_bytes_to_use_mmap_io 10737418240 --local_filesystem_read_method read --remote_filesystem_read_method threadpool --local_filesystem_read_prefetch 0 --filesystem_cache_segments_batch_size 10 --read_from_filesystem_cache_if_exists_otherwise_bypass_cache 0 --throw_on_error_from_cache_on_write_operations 1 --remote_filesystem_read_prefetch 0 --allow_prefetched_read_pool_for_remote_filesystem 1 --filesystem_prefetch_max_memory_usage 128Mi --filesystem_prefetches_limit 10 --filesystem_prefetch_min_bytes_for_single_read_task 1Mi --filesystem_prefetch_step_marks 0 --filesystem_prefetch_step_bytes 0 --compile_aggregate_expressions 0 --compile_sort_description 1 --merge_tree_coarse_index_granularity 4 --optimize_distinct_in_order 1 --max_bytes_before_remerge_sort 569103651 --min_compress_block_size 1196021 --max_compress_block_size 1373014 --merge_tree_compact_parts_min_granules_to_multibuffer_read 59 --optimize_sorting_by_input_stream_properties 0 --http_response_buffer_size 2579816 --http_wait_end_of_query True --enable_memory_bound_merging_of_aggregation_results 0 --min_count_to_compile_expression 3 --min_count_to_compile_aggregate_expression 3 --min_count_to_compile_sort_description 3 --session_timezone America/Hermosillo --use_page_cache_for_disks_without_file_cache True --page_cache_inject_eviction True --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability 0.34 --prefer_external_sort_block_bytes 1 --cross_join_min_rows_to_compress 0 --cross_join_min_bytes_to_compress 1 --min_external_table_block_size_bytes 100000000 --max_parsing_threads 1 --optimize_functions_to_subcolumns 1 --parallel_replicas_local_plan 1 --query_plan_join_swap_table true --enable_vertical_final 0 --optimize_extract_common_expressions 0 --use_query_condition_cache 0 --max_bytes_before_external_sort 0 --max_bytes_before_external_group_by 0 --max_bytes_ratio_before_external_sort 0.0 --max_bytes_ratio_before_external_group_by 0.11
-    2025-04-04 03:30:21
-    2025-04-04 03:30:21 MergeTree settings used in test: --ratio_of_defaults_for_sparse_serialization 1.0 --prefer_fetch_merged_part_size_threshold 1 --vertical_merge_algorithm_min_rows_to_activate 1000000 --vertical_merge_algorithm_min_columns_to_activate 40 --allow_vertical_merges_from_compact_to_wide_parts 1 --min_merge_bytes_to_use_direct_io 10737418240 --index_granularity_bytes 24194483 --merge_max_block_size 7504 --index_granularity 39728 --min_bytes_for_wide_part 0 --marks_compress_block_size 8442 --primary_key_compress_block_size 96506 --replace_long_file_name_to_hash 0 --max_file_name_length 128 --min_bytes_for_full_part_storage 230961642 --compact_parts_max_bytes_to_buffer 138334530 --compact_parts_max_granules_to_buffer 174 --compact_parts_merge_max_bytes_to_prefetch_part 32459157 --cache_populated_by_fetch 0 --concurrent_part_removal_threshold 100 --old_parts_lifetime 480 --prewarm_mark_cache 0 --use_const_adaptive_granularity 1 --enable_index_granularity_compression 1 --enable_block_number_column 0 --enable_block_offset_column 1 --use_primary_key_cache 1 --prewarm_primary_key_cache 1
-    2025-04-04 03:30:21
-    2025-04-04 03:30:21 Database: test_ho1x48nh
-
