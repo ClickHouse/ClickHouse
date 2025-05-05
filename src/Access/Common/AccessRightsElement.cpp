@@ -159,7 +159,7 @@ void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool hilite) cons
             && is_enabled_user_name_access_type)
         {
             if (!anyParameter())
-                LOG_WARNING(getLogger("AccessRightsElement"),
+                LOG_INFO(getLogger("AccessRightsElement"),
                     "Converting {} to *.* because the setting `enable_user_name_access_type` is `false`. "
                     "Consider turning this setting on, if your cluster contains no replicas older than 25.1",
                     parameter);
