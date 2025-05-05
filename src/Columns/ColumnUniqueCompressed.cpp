@@ -536,14 +536,18 @@ void ColumnUniqueFCBlockDF::collectSerializedValueSizes(PaddedPODArray<UInt64> &
 
 char * ColumnUniqueFCBlockDF::serializeIntoMemory(size_t pos, DecompressedValue value, char * memory) const
 {
-    const size_t value_size = value.size() + 1; /* Null terminator */
-
     if (is_nullable)
     {
         UInt8 flag = (pos == getNullValueIndex() ? 1 : 0);
         unalignedStore<UInt8>(memory, flag);
         ++memory;
+        if (flag)
+        {
+            return memory;
+        }
     }
+
+    const size_t value_size = value.size() + 1; /* Null terminator */
 
     memcpy(memory, &value_size, sizeof(value_size));
     memory += sizeof(value_size);
@@ -559,11 +563,30 @@ char * ColumnUniqueFCBlockDF::serializeIntoMemory(size_t pos, DecompressedValue 
 
 StringRef ColumnUniqueFCBlockDF::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
-    const DecompressedValue value = getDecompressedRefsAt(n);
+    DecompressedValue value;
+    size_t serialization_size;
+
+    if (is_nullable)
+    {
+        if (n == getNullValueIndex())
+        {
+            value = {{nullptr, 0}, {nullptr, 0}};
+            serialization_size = 1;
+        }
+        else
+        {
+            value = getDecompressedRefsAt(n);
+            serialization_size = sizeof(value.size()) + value.size() + 2; /* Null terminator and is_null byte */
+        }
+    }
+    else
+    {
+        value = getDecompressedRefsAt(n);
+        serialization_size = sizeof(value.size()) + value.size() + 1; /* Null terminator */
+    }
 
     StringRef res;
-    const size_t value_size = value.size() + 1; /* Null terminator */
-    res.size = sizeof(value_size) + value_size + is_nullable;
+    res.size = serialization_size;
     char * pos = arena.allocContinue(res.size, begin);
     res.data = pos;
 
