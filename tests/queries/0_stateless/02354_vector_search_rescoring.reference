@@ -1,3 +1,4 @@
+Test "SELECT id" without and with rescoring
 5
 6
 7
@@ -5,6 +6,7 @@ _distance Float32
 5
 6
 7
+Test "SELECT id, vec" without and with rescoring
 5	[0,2]
 6	[0,2.1]
 7	[0,2.2]
