@@ -64,7 +64,7 @@ struct FunctionDocumentation
     using Examples = std::vector<Example>;
 
     using IntroducedIn = VersionNumber;
-    static const VersionNumber VERSION_UNKNOWN;
+    static constexpr VersionNumber VERSION_UNKNOWN;
 
     enum class Category : uint8_t
     {
