@@ -194,11 +194,22 @@ CacheMetadata::CacheMetadata(
     , cleanup_queue(std::make_shared<CleanupQueue>())
     , download_queue(std::make_shared<DownloadQueue>(background_download_queue_size_limit_))
     , write_cache_per_user_directory(write_cache_per_user_directory_)
-    , path_stat(getStatVFS(path))
     , use_real_disk_size(use_real_disk_size_)
     , log(getLogger("CacheMetadata"))
     , download_threads_num(background_download_threads_)
 {
+    try
+    {
+        if (!fs::exists(path))
+        {
+            fs::create_directory(path);
+        }
+        path_stat = getStatVFS(path);
+    }
+    catch (...)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Couldn't initialize cache directory {}", path);
+    }
 }
 
 size_t CacheMetadata::alignFileSize(size_t file_size) const

@@ -33,7 +33,10 @@ public:
         const size_t offset;
         const KeyMetadataPtr key_metadata;
 
+        /// While using `use_real_disk_size` the aligned(real) size could defer from filled size. 
+        /// This mean that download_size in FileSegment could defer from entry.getSize()
         size_t getSize() const;
+        size_t getFilledSize() const;
         void setSize(size_t size_);
 
         void increaseSize(size_t size_);
