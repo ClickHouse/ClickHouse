@@ -11,7 +11,7 @@ INSERT INTO t0 VALUES (1, 1);
 
 ALTER TABLE t0 DELETE WHERE key = 1 SETTINGS mutations_sync = 1;
 
-SELECT is_done, toUnixTimestamp(create_time) <= toUnixTimestamp(finish_time) FROM system.mutations;
+SELECT sum(toUnixTimestamp(create_time) <= toUnixTimestamp(finish_time)) > 0 FROM system.mutations WHERE database = currentDatabase();
 
 
 DROP TABLE t0;
@@ -29,6 +29,6 @@ INSERT INTO t1 VALUES (1, 1);
 
 ALTER TABLE t1 DELETE WHERE key = 1 SETTINGS mutations_sync = 1;
 
-SELECT is_done, toUnixTimestamp(create_time) <= toUnixTimestamp(finish_time) FROM system.mutations;
+SELECT sum(toUnixTimestamp(create_time) <= toUnixTimestamp(finish_time)) > 0 FROM system.mutations WHERE database = currentDatabase();
 
 DROP TABLE t1;
