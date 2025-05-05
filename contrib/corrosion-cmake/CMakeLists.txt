@@ -156,7 +156,12 @@ function(clickhouse_config_crate_flags target_name)
     if (CMAKE_OSX_SYSROOT)
         corrosion_set_env_vars(${target_name} "SDKROOT=${CMAKE_OSX_SYSROOT}")
     endif()
-    corrosion_set_linker(${target_name} ${LINKER_NAME})
+    # We cannot use dummy linker with clang-tidy since this will not run
+    # everything properly, for instance build-script-build will not be
+    # executed and compilation will be failed.
+    if (NOT ENABLE_DUMMY_LAUNCHERS)
+        corrosion_set_linker(${target_name} ${LINKER_NAME})
+    endif()
 
     # sccache seems to be broken and mixes up builds
     if (NOT "${RUSTCWRAPPER}" STREQUAL "")
