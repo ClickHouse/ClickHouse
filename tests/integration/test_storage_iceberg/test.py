@@ -650,6 +650,7 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
         )
         assert len(cluster_secondary_queries) == 1
 
+    assert int(instance.query(f"SELECT count() FROM {table_function_expr_cluster}")) == 100
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
