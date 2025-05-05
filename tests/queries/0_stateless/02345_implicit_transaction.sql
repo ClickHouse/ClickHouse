@@ -1,4 +1,7 @@
 -- Tags: no-ordinary-database, no-fasttest
+DROP TABLE IF EXISTS landing;
+DROP TABLE IF EXISTS target;
+DROP TABLE IF EXISTS landing_to_target;
 
 CREATE TABLE landing (n Int64) engine=MergeTree order by n;
 CREATE TABLE target  (n Int64) engine=MergeTree order by n;
@@ -102,3 +105,7 @@ SET throw_on_unsupported_query_inside_transaction=0;
 -- there's not session in the interserver mode
 SELECT * FROM cluster('test_cluster_interserver_secret', system, one) FORMAT Null;  -- { serverError INVALID_TRANSACTION }
 SELECT * FROM cluster('test_cluster_two_shards', system, one);
+
+DROP TABLE landing;
+DROP TABLE target;
+DROP TABLE landing_to_target;
