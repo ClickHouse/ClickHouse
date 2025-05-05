@@ -2984,6 +2984,17 @@ CONV_FN(CreateTableAs, create_table)
     ExprSchemaTableToString(ret, create_table.est());
 }
 
+CONV_FN(CreateTableSelect, create_table)
+{
+    if (create_table.empty())
+    {
+        ret += " EMPTY";
+    }
+    ret += " AS (";
+    SelectToString(ret, create_table.sel());
+    ret += ")";
+}
+
 static void CreateOrReplaceToString(String & ret, const CreateReplaceOption & cro)
 {
     switch (cro)
@@ -3037,9 +3048,7 @@ CONV_FN(CreateTable, create_table)
     }
     if (create_table.has_table_def() && create_table.has_as_select_stmt())
     {
-        ret += " AS (";
-        SelectToString(ret, create_table.as_select_stmt());
-        ret += ")";
+        CreateTableSelectToString(ret, create_table.as_select_stmt());
     }
     if (create_table.has_comment())
     {
@@ -4672,9 +4681,9 @@ CONV_FN(ExplainQuery, explain)
     SQLQueryInnerToString(ret, explain.inner_query());
 }
 
-CONV_FN(SQLQuery, query)
+CONV_FN(SingleSQLQuery, query)
 {
-    using QueryType = SQLQuery::QueryOneofCase;
+    using QueryType = SingleSQLQuery::QueryOneofCase;
     switch (query.query_oneof_case())
     {
         case QueryType::kExplain:
@@ -4692,6 +4701,17 @@ CONV_FN(SQLQuery, query)
         default:
             ret += "SELECT 1";
     }
+}
+
+CONV_FN(SQLQuery, query)
+{
+    SingleSQLQueryToString(ret, query.single_query());
+    for (int i = 0; i < query.parallel_queries_size(); i++)
+    {
+        ret += " PARALLEL WITH ";
+        SingleSQLQueryToString(ret, query.parallel_queries(i));
+    }
     ret += ";";
 }
+
 }

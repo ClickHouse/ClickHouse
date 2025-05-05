@@ -132,7 +132,8 @@ Chunk IRowInputFormat::read()
 
         RowReadExtension info;
         bool continue_reading = true;
-        for (size_t rows = 0; (rows < params.max_block_size || num_rows == 0) && continue_reading; ++rows)
+        size_t total_bytes = 0;
+        for (size_t rows = 0; ((rows < params.max_block_size && (!params.max_block_size_bytes || total_bytes < params.max_block_size_bytes)) || num_rows == 0) && continue_reading; ++rows)
         {
             try
             {
@@ -166,6 +167,17 @@ Chunk IRowInputFormat::read()
                 /// The case when there is no columns. Just count rows.
                 if (columns.empty())
                     ++num_rows;
+
+                if (params.max_block_size_bytes)
+                {
+                    for (size_t i = 0; i != columns.size(); ++i)
+                    {
+                        /// Column of a deprecated Object type will throw inside byteSizeAt because it's not finalized.
+                        /// It's ok to ignore deprecated type here.
+                        if (!header.getByPosition(i).type->hasDynamicSubcolumnsDeprecated())
+                            total_bytes += columns[i]->byteSizeAt(columns[i]->size() - 1);
+                    }
+                }
             }
             catch (Exception & e)
             {

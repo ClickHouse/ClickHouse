@@ -292,6 +292,12 @@
     <!-- For 'Connection: keep-alive' in HTTP 1.1 -->
     <keep_alive_timeout>10</keep_alive_timeout>
 
+    <!-- Enable verbose output in /replicas_status handler. -->
+    <!-- <enable_verbose_replicas_status/>true<enable_verbose_replicas_status>-->
+
+    <!-- Enable stacktrace in default http handler. -->
+    <!-- <enable_http_stacktrace/>true<enable_http_stacktrace>-->
+
     <!-- gRPC protocol (see src/Server/grpc_protos/clickhouse_grpc.proto for the API) -->
     <!-- <grpc_port>9100</grpc_port> -->
     <grpc>
