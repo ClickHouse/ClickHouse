@@ -124,7 +124,7 @@ ColumnNodePtrWithHashSet QueryNode::getCorrelatedColumnsSet() const
     return result;
 }
 
-void QueryNode::addCorrelatedColumn(ColumnNodePtr correlated_column)
+void QueryNode::addCorrelatedColumn(const QueryTreeNodePtr & correlated_column)
 {
     auto & correlated_columns = getCorrelatedColumns().getNodes();
     for (const auto & column : correlated_columns)

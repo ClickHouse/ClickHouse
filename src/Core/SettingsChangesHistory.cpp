@@ -85,7 +85,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"default_reader_bucket_count", 8, 8, "New experimental setting."},
             {"optimize_exchanges", 0, 0, "New experimental setting."},
             {"force_exchange_kind", "", "", "New experimental setting."},
-            {"allow_experimental_delta_kernel_rs", false, false, "New setting"},
+            {"allow_experimental_delta_kernel_rs", true, true, "New setting"},
             {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
         });
         addSettingsChanges(settings_changes_history, "25.4",
