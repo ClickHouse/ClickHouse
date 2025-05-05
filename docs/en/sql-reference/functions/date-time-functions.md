@@ -2386,7 +2386,7 @@ Alias: `dateTrunc`.
 
     - `nanosecond` - Compatible only with DateTime64
     - `microsecond` - Compatible only with DateTime64
-    - `milisecond` - Compatible only with DateTime64
+    - `millisecond` - Compatible only with DateTime64
     - `second`
     - `minute`
     - `hour`

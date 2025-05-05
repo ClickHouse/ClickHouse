@@ -7,12 +7,16 @@
 #include <QueryPipeline/RemoteInserter.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/formatReadable.h>
 #include <Common/quoteString.h>
+#include <Disks/IDisk.h>
 #include <base/defines.h>
+#include <Interpreters/Context.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromFile.h>
 
 #include <fmt/ranges.h>
+#include <filesystem>
 #include <ranges>
 
 namespace CurrentMetrics

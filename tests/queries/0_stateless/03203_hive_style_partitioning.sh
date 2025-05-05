@@ -69,6 +69,9 @@ SELECT *, column0 FROM s3('http://localhost:11111/test/hive_partitioning/column0
 
 SELECT *, non_existing_column FROM s3('http://localhost:11111/test/hive_partitioning/non_existing_column=Elizabeth/sample.parquet') LIMIT 10;
 SELECT *, column0 FROM s3('http://localhost:11111/test/hive_partitioning/column0=*/sample.parquet') WHERE column0 = 'Elizabeth' LIMIT 10;
+
+SELECT _path FROM s3('http://localhost:11111/test/hive_partitioning/column0=Arthur/**.parquet') order by _path;
+SELECT _path FROM s3('http://localhost:11111/test/hive_partitioning/column0=Arthur/**.parquet') where column1 = '';
 """
 
 $CLICKHOUSE_CLIENT -q """

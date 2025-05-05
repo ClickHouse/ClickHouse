@@ -189,6 +189,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"active_parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The number of active parts in this table."},
         {"total_marks", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The total number of marks in all parts in this table."},
         {"active_on_fly_data_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active data mutations (UPDATEs and DELETEs) suitable for applying on the fly."},
+        {"active_on_fly_alter_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active alter mutations (MODIFY COLUMNs) suitable for applying on the fly."},
         {"active_on_fly_metadata_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active metadata mutations (RENAMEs) suitable for applying on the fly."},
         {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Total number of rows INSERTed since server start (only for Buffer tables)."
@@ -715,20 +716,26 @@ protected:
                         res_columns[res_index++]->insertDefault();
                 }
 
-                if (columns_mask[src_index++])
+                if (table_merge_tree)
                 {
-                    if (table_merge_tree)
-                        res_columns[res_index++]->insert(table_merge_tree->getNumberOnFlyDataMutations());
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
+                    MutationCounters mutation_counters;
+                    if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2])
+                        mutation_counters = table_merge_tree->getMutationCounters();
 
-                if (columns_mask[src_index++])
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(mutation_counters.num_data);
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(mutation_counters.num_alter);
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(mutation_counters.num_metadata);
+                }
+                else
                 {
-                    if (table_merge_tree)
-                        res_columns[res_index++]->insert(table_merge_tree->getNumberOnFlyMetadataMutations());
-                    else
-                        res_columns[res_index++]->insertDefault();
+                    for (size_t i = 0; i < 3; ++i)
+                    {
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+                    }
                 }
 
                 if (columns_mask[src_index++])

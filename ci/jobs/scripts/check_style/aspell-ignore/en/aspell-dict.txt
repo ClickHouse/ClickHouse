@@ -1251,6 +1251,7 @@ aggthrow
 aiochclient
 alloc
 allocator
+allowlist
 alphaTokens
 amplab
 analysisOfVariance
@@ -1349,6 +1350,7 @@ arrayZipUnaligned
 ascii
 asin
 asinh
+aspell
 assumeNotNull
 async
 asynch
@@ -1529,6 +1531,7 @@ codec
 codecs
 codepoint
 codepoints
+codespell
 collapsingmergetree
 combinator
 combinators
@@ -1648,6 +1651,7 @@ dbal
 dbeaver
 dbgen
 dbms
+dbpedia
 ddl
 deallocated
 deallocation
@@ -1684,6 +1688,7 @@ denormalize
 denormalized
 denormalizing
 denormals
+denylist
 dequeued
 dequeues
 dereference
@@ -1724,6 +1729,7 @@ distinctdynamictypes
 distinctjsonpaths
 distro
 divideDecimal
+divideOrNull
 dmesg
 doesnt
 domainRFC
@@ -1883,8 +1889,10 @@ geospatial
 getClientHTTPHeader
 getMacro
 getMaxTableNameLengthForDatabase
+getMergeTreeSetting
 getOSKernelVersion
 getServerPort
+getServerSetting
 getSetting
 getSettingOrDefault
 getSizeOfEnumType
@@ -1999,6 +2007,7 @@ http
 https
 hudi
 hudiCluster
+hyperparameter
 hyperscan
 hypot
 hyvor
@@ -2032,6 +2041,7 @@ inodes
 instantiation
 instantiations
 intDiv
+intDivOrNull
 intDivOrZero
 intExp
 intHash
@@ -2229,6 +2239,7 @@ mebibytes
 memtable
 memtables
 mergeTreeIndex
+mergeTreeProjection
 mergeable
 mergetree
 messageID
@@ -2257,6 +2268,7 @@ mmap
 mmapped
 modularization
 moduli
+moduloOrNull
 moduloOrZero
 mongoc
 mongocxx
@@ -2312,6 +2324,7 @@ musqldump
 mutex
 mydb
 myfilter
+mypy
 mysql
 mysqldump
 mysqljs
@@ -2469,6 +2482,7 @@ positionCaseInsensitive
 positionCaseInsensitiveUTF
 positionUTF
 positiveModulo
+positiveModuloOrNull
 postfix
 postfixes
 postgres
@@ -2771,6 +2785,10 @@ socketcache
 soundex
 sparkBar
 sparkbar
+sparseGrams
+sparseGramsHashes
+sparseGramsHashesUTF
+sparseGramsUTF
 sparsehash
 speedscope
 splitBy
@@ -2820,6 +2838,8 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
+stringBytesEntropy
+stringBytesUniq
 stringCompare
 stringJaccardIndex
 stringJaccardIndexUTF

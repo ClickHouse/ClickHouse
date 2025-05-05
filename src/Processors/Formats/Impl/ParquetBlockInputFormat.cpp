@@ -35,6 +35,8 @@
 namespace ProfileEvents
 {
     extern const Event ParquetFetchWaitTimeMicroseconds;
+    extern const Event ParquetReadRowGroups;
+    extern const Event ParquetPrunedRowGroups;
 }
 
 namespace CurrentMetrics
@@ -744,6 +746,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
         if (key_condition_with_bloom_filter_data && skip_row_group_based_on_filters(row_group))
         {
+            ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups);
             continue;
         }
 
@@ -751,6 +754,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         if (row_group_batches.empty() || (!prefetch_group && row_group_batches.back().total_bytes_compressed >= min_bytes_for_seek))
             row_group_batches.emplace_back();
 
+        ProfileEvents::increment(ProfileEvents::ParquetReadRowGroups);
         row_group_batches.back().row_groups_idxs.push_back(row_group);
         row_group_batches.back().total_rows += metadata->RowGroup(row_group)->num_rows();
         auto row_group_size = metadata->RowGroup(row_group)->total_compressed_size();

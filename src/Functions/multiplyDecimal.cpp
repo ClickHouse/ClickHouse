@@ -128,8 +128,9 @@ SELECT
 Received exception from server (version 22.11.1):
 Code: 407. DB::Exception: Received from localhost:9000. DB::Exception: Decimal math overflow: While processing toDecimal64(-12.647987876, 9) AS a, toDecimal64(123.967645643, 9) AS b, a * b. (DECIMAL_OVERFLOW)
 ```
-)"});
-
+    )",
+    .category = FunctionDocumentation::Category::TypeConversion
+    });
 }
 
 }

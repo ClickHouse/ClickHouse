@@ -6,8 +6,6 @@ import sys
 import traceback
 from pathlib import Path
 
-from praktika.info import Info
-
 from ._environment import _Environment
 from .artifact import Artifact
 from .cidb import CIDB
@@ -15,20 +13,20 @@ from .digest import Digest
 from .gh import GH
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
+from .info import Info
 from .result import Result, ResultInfo
 from .runtime import RunConfig
-from .s3 import S3, StorageUsage
+from .s3 import S3
 from .settings import Settings
+from .usage import ComputeUsage, StorageUsage
 from .utils import Shell, TeePopen, Utils
 
 
 class Runner:
     @staticmethod
-    def generate_local_run_environment(workflow, job, pr=None, branch=None, sha=None):
+    def generate_local_run_environment(workflow, job, pr=None, sha=None):
         print("WARNING: Generate dummy env for local test")
-        Shell.check(
-            f"mkdir -p {Settings.TEMP_DIR} {Settings.INPUT_DIR} {Settings.OUTPUT_DIR}"
-        )
+        Shell.check(f"mkdir -p {Settings.TEMP_DIR}", strict=True)
         os.environ["JOB_NAME"] = job.name
         os.environ["CHECK_NAME"] = job.name
         _Environment(
@@ -75,7 +73,7 @@ class Runner:
 
         workflow_config.dump()
 
-        Result.generate_pending(job.name).dump()
+        Result.create_from(name=job.name, status=Result.Status.PENDING).dump()
 
     def _setup_env(self, _workflow, job):
         # source env file to write data into fs (workflow config json, workflow status json)
@@ -98,6 +96,7 @@ class Runner:
         env.JOB_NAME = job.name
         os.environ["JOB_NAME"] = job.name
         os.environ["CHECK_NAME"] = job.name
+        env.JOB_CONFIG = job
         env.dump()
         print(env)
 
@@ -122,6 +121,7 @@ class Runner:
 
         if job.requires and job.name not in (
             Settings.CI_CONFIG_JOB_NAME,
+            Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
             Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
             Settings.FINISH_WORKFLOW_JOB_NAME,
         ):
@@ -146,9 +146,11 @@ class Runner:
                             if job.name
                             not in (
                                 Settings.CI_CONFIG_JOB_NAME,
+                                Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
                                 Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
                                 Settings.FINISH_WORKFLOW_JOB_NAME,
                             )
+                            and job.provides
                         ]
                         and Settings.ENABLE_ARTIFACTS_REPORT
                     ):
@@ -172,10 +174,17 @@ class Runner:
             else:
                 prefixes = [env.get_s3_prefix()] * len(required_artifacts)
             for artifact, prefix in zip(required_artifacts, prefixes):
+                if artifact.compress_zst:
+                    assert not isinstance(
+                        artifact.path, (tuple, list)
+                    ), "Not yes supported for compressed artifacts"
+                    artifact.path = f"{Path(artifact.path).name}.zst"
+
                 if isinstance(artifact.path, (tuple, list)):
                     artifact_paths = artifact.path
                 else:
                     artifact_paths = [artifact.path]
+
                 for artifact_path in artifact_paths:
                     recursive = False
                     include_pattern = ""
@@ -186,18 +195,15 @@ class Runner:
                         assert "*" in include_pattern
                     else:
                         s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{Path(artifact_path).name}"
-                    if not S3.copy_file_from_s3(
+                    S3.copy_file_from_s3(
                         s3_path=s3_path,
                         local_path=Settings.INPUT_DIR,
                         recursive=recursive,
                         include_pattern=include_pattern,
-                    ):
-                        if artifact.type != Artifact.Type.PHONY:
-                            Utils.raise_with_error(
-                                f"Failed to download artifact [{artifact.name}]"
-                            )
-                        else:
-                            print(f"NOTE: no artifact report from [{artifact.name}]")
+                    )
+
+                    if artifact.compress_zst:
+                        Utils.decompress_file(Path(Settings.INPUT_DIR) / artifact_path)
 
         return 0
 
@@ -243,6 +249,9 @@ class Runner:
                 )
             docker = docker or f"{docker_name}:{docker_tag}"
             current_dir = os.getcwd()
+            Shell.check(
+                "docker ps | grep -q praktika && docker rm -f praktika", verbose=True
+            )
             cmd = f"docker run --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='.:./ci' --volume ./:{current_dir} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
@@ -288,7 +297,7 @@ class Runner:
                     else:
                         info = f"ERROR: Invalid status [{result.status}] for exit code [{exit_code}]  - switch to [{Result.Status.ERROR}]"
                         print(info)
-                        result.set_status(Result.Status.ERROR)
+                    result.set_status(Result.Status.ERROR)
                     result.set_info(info)
                     result.set_info("---").set_info(
                         process.get_latest_log(max_lines=20)
@@ -317,7 +326,7 @@ class Runner:
                 info=info,
             ).dump()
         elif prerun_exit_code != 0:
-            info = f"ERROR: {ResultInfo.PRE_JOB_FAILED}"
+            info = ResultInfo.PRE_JOB_FAILED
             print(info)
             # set Result with error and logs
             Result(
@@ -352,6 +361,8 @@ class Runner:
             info = f"ERROR: {ResultInfo.KILLED}"
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
+        elif not result.is_ok and job.allow_merge_on_failure:
+            result.set_not_required_label()
 
         result.update_duration()
         # if result.is_error():
@@ -365,9 +376,7 @@ class Runner:
                     name = check.__name__
                 else:
                     name = str(check)
-                results_.append(
-                    Result.from_commands_run(name=name, command=check, with_info=True)
-                )
+                results_.append(Result.from_commands_run(name=name, command=check))
             result.results.append(
                 Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
             )
@@ -387,6 +396,18 @@ class Runner:
                 artifact_links = []
                 s3_path = f"{Settings.S3_ARTIFACT_PATH}/{env.get_s3_prefix()}/{Utils.normalize_string(env.JOB_NAME)}"
                 for artifact in providing_artifacts:
+                    if artifact.compress_zst:
+                        if isinstance(artifact.path, (tuple, list)):
+                            Utils.raise_with_error(
+                                "TODO: list of paths is not supported with comress = True"
+                            )
+                        if "*" in artifact.path:
+                            Utils.raise_with_error(
+                                "TODO: globe is not supported with comress = True"
+                            )
+                        print(f"Compress artifact file [{artifact.path}]")
+                        artifact.path = Utils.compress_file_zst(artifact.path)
+
                     if isinstance(artifact.path, (tuple, list)):
                         artifact_paths = artifact.path
                     else:
@@ -431,13 +452,15 @@ class Runner:
                     passwd=workflow.get_secret(
                         Settings.SECRET_CI_DB_PASSWORD
                     ).get_value(),
-                ).insert(result)
+                ).insert(result, result_name_for_cidb=job.result_name_for_cidb)
             except Exception as ex:
                 traceback.print_exc()
                 error = f"ERROR: Failed to insert data into CI DB, exception [{ex}]"
                 print(error)
                 info_errors.append(error)
 
+        if env.TRACEBACKS:
+            result.set_info("===\n" + "---\n".join(env.TRACEBACKS))
         result.dump()
 
         # always in the end
@@ -456,11 +479,19 @@ class Runner:
             workflow_storage_usage = StorageUsage.from_dict(
                 workflow_result.ext.get("storage_usage", {})
             )
+            workflow_compute_usage = ComputeUsage.from_dict(
+                workflow_result.ext.get("compute_usage", {})
+            )
             if workflow_storage_usage:
                 print(
                     "NOTE: storage_usage is found in workflow Result - insert into CIDB"
                 )
                 ci_db.insert_storage_usage(workflow_storage_usage)
+            if workflow_compute_usage:
+                print(
+                    "NOTE: compute_usage is found in workflow Result - insert into CIDB"
+                )
+                ci_db.insert_compute_usage(workflow_compute_usage)
 
         report_url = Info().get_job_report_url(latest=False)
         if (
@@ -519,11 +550,10 @@ class Runner:
             except Exception as e:
                 print(f"ERROR: Setup env script failed with exception [{e}]")
                 traceback.print_exc()
+                Info().store_traceback()
             print(f"=== Setup env finished ===\n\n")
         else:
-            self.generate_local_run_environment(
-                workflow, job, pr=pr, branch=branch, sha=sha
-            )
+            self.generate_local_run_environment(workflow, job, pr=pr, sha=sha)
 
         if res and (not local_run or pr or sha or branch):
             res = False
@@ -536,6 +566,7 @@ class Runner:
             except Exception as e:
                 print(f"ERROR: Pre-run script failed with exception [{e}]")
                 traceback.print_exc()
+                Info().store_traceback()
             print(f"=== Pre run finished ===\n\n")
 
         if res:
@@ -556,6 +587,7 @@ class Runner:
             except Exception as e:
                 print(f"ERROR: Run script failed with exception [{e}]")
                 traceback.print_exc()
+                Info().store_traceback()
                 res = False
 
             result = Result.from_fs(job.name)

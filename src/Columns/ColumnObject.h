@@ -156,7 +156,7 @@ public:
 
     void reserve(size_t n) override;
     size_t capacity() const override;
-    void prepareForSquashing(const std::vector<ColumnPtr> & source_columns) override;
+    void prepareForSquashing(const std::vector<ColumnPtr> & source_columns, size_t factor) override;
     void ensureOwnership() override;
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;

@@ -191,6 +191,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
     }
 };
 
+
 ReadBufferFromHDFS::ReadBufferFromHDFS(
         const String & hdfs_uri_,
         const String & hdfs_file_path_,

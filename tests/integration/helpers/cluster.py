@@ -348,14 +348,18 @@ def rabbitmq_debuginfo(rabbitmq_id, cookie):
 
 async def check_nats_is_available(nats_port, ssl_ctx=None):
     nc = await nats_connect_ssl(
-        nats_port, user="click", password="house", ssl_ctx=ssl_ctx
+        nats_port,
+        user="click",
+        password="house",
+        ssl_ctx=ssl_ctx,
+        max_reconnect_attempts=1,
     )
     available = nc.is_connected
     await nc.close()
     return available
 
 
-async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None):
+async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None, **connect_options):
     if not ssl_ctx:
         ssl_ctx = ssl.create_default_context()
         ssl_ctx.check_hostname = False
@@ -365,6 +369,7 @@ async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None):
         user=user,
         password=password,
         tls=ssl_ctx,
+        **connect_options,
     )
     return nc
 
@@ -487,6 +492,7 @@ class ClickHouseCluster:
         self.base_zookeeper_cmd = None
         self.base_mysql57_cmd = []
         self.base_kafka_cmd = []
+        self.base_kafka_sasl_cmd = []
         self.base_kerberized_kafka_cmd = []
         self.base_kerberos_kdc_cmd = []
         self.base_rabbitmq_cmd = []
@@ -506,6 +512,7 @@ class ClickHouseCluster:
         self.with_postgres_cluster = False
         self.with_postgresql_java_client = False
         self.with_kafka = False
+        self.with_kafka_sasl = False
         self.with_kerberized_kafka = False
         self.with_kerberos_kdc = False
         self.with_rabbitmq = False
@@ -541,6 +548,7 @@ class ClickHouseCluster:
         self.spark_session = None
         self.with_iceberg_catalog = False
         self.with_glue_catalog = False
+        self.with_hms_catalog = False
 
         self.with_azurite = False
         self.azurite_container = "azurite-container"
@@ -559,6 +567,12 @@ class ClickHouseCluster:
         self.kafka_docker_id = self.get_instance_docker_id(self.kafka_host)
 
         self.coredns_host = "coredns"
+
+        self.kafka_sasl_host = "kafka_sasl"
+        self.kafka_sasl_dir = os.path.join(self.instances_dir, "kafka_sasl")
+        self._kafka_sasl_port = 0
+        self.kafka_sasl_docker_id = None
+        self.kafka_sasl_docker_id = self.get_instance_docker_id(self.kafka_sasl_host)
 
         # available when with_kerberozed_kafka == True
         # reuses kafka_dir
@@ -773,6 +787,13 @@ class ClickHouseCluster:
             return self._schema_registry_auth_port
         self._schema_registry_auth_port = self.port_pool.get_port()
         return self._schema_registry_auth_port
+
+    @property
+    def kafka_sasl_port(self):
+        if self._kafka_sasl_port:
+            return self._kafka_sasl_port
+        self._kafka_sasl_port = self.port_pool.get_port()
+        return self._kafka_sasl_port
 
     @property
     def kerberized_kafka_port(self):
@@ -1225,6 +1246,22 @@ class ClickHouseCluster:
         )
         return self.base_kafka_cmd
 
+    def setup_kafka_sasl_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_kafka_sasl = True
+        env_variables["KAFKA_HOST"] = self.kafka_sasl_host
+        env_variables["KAFKA_EXTERNAL_PORT"] = str(self.kafka_sasl_port)
+        env_variables["KAFKA_DIR"] = instance.path + "/"
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_kafka_sasl.yml")]
+        )
+        self.base_kafka_sasl_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_kafka_sasl.yml"),
+        )
+        return self.base_kafka_sasl_cmd
+
     def setup_kerberized_kafka_cmd(
         self, instance, env_variables, docker_compose_yml_dir
     ):
@@ -1382,15 +1419,11 @@ class ClickHouseCluster:
         )
         return self.base_minio_cmd
 
-    def setup_glue_catalog_cmd(
-        self, instance, env_variables, docker_compose_yml_dir
-    ):
+    def setup_glue_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.base_cmd.extend(
             [
                 "--file",
-                p.join(
-                    docker_compose_yml_dir, "docker_compose_glue_catalog.yml"
-                ),
+                p.join(docker_compose_yml_dir, "docker_compose_glue_catalog.yml"),
             ]
         )
         self.base_iceberg_catalog_cmd = self.compose_cmd(
@@ -1400,6 +1433,28 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_glue_catalog.yml"),
         )
         return self.base_iceberg_catalog_cmd
+
+
+    def setup_hms_catalog_cmd(
+         self, instance, env_variables, docker_compose_yml_dir
+     ):
+         self.base_cmd.extend(
+             [
+                 "--file",
+                 p.join(
+                     docker_compose_yml_dir, "docker_compose_iceberg_hms_catalog.yml"
+                 ),
+             ]
+         )
+
+         self.base_iceberg_hms_cmd = self.compose_cmd(
+             "--env-file",
+             instance.env_file,
+             "--file",
+             p.join(docker_compose_yml_dir, "docker_compose_iceberg_hms_catalog.yml"),
+         )
+         return self.base_iceberg_hms_cmd
+
 
     def setup_iceberg_catalog_cmd(
         self, instance, env_variables, docker_compose_yml_dir
@@ -1562,6 +1617,7 @@ class ClickHouseCluster:
         with_mysql8=False,
         with_mysql_cluster=False,
         with_kafka=False,
+        with_kafka_sasl=False,
         with_kerberized_kafka=False,
         with_kerberos_kdc=False,
         with_secrets=False,
@@ -1588,9 +1644,11 @@ class ClickHouseCluster:
         with_prometheus=False,
         with_iceberg_catalog=False,
         with_glue_catalog=False,
+        with_hms_catalog=False,
         handle_prometheus_remote_write=False,
         handle_prometheus_remote_read=False,
         use_old_analyzer=None,
+        use_distributed_plan=None,
         hostname=None,
         env_variables=None,
         instance_env_variables=False,
@@ -1618,6 +1676,7 @@ class ClickHouseCluster:
         extra_args="",
         randomize_settings=True,
         use_docker_init_flag=False,
+        clickhouse_start_cmd=CLICKHOUSE_START_COMMAND,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
 
@@ -1662,7 +1721,7 @@ class ClickHouseCluster:
             "/var/lib/clickhouse/server_%h_%p_%m.profraw"
         )
 
-        clickhouse_start_command = CLICKHOUSE_START_COMMAND
+        clickhouse_start_command = clickhouse_start_cmd
         if clickhouse_log_file:
             clickhouse_start_command += " --log-file=" + clickhouse_log_file
         if clickhouse_error_log_file:
@@ -1687,12 +1746,16 @@ class ClickHouseCluster:
             with_mysql8=with_mysql8,
             with_mysql_cluster=with_mysql_cluster,
             with_kafka=with_kafka,
+            with_kafka_sasl=with_kafka_sasl,
             with_kerberized_kafka=with_kerberized_kafka,
             with_kerberos_kdc=with_kerberos_kdc,
             with_rabbitmq=with_rabbitmq,
             with_nats=with_nats,
             with_nginx=with_nginx,
-            with_secrets=with_secrets or with_kerberos_kdc or with_kerberized_kafka,
+            with_secrets=with_secrets
+            or with_kerberos_kdc
+            or with_kerberized_kafka
+            or with_kafka_sasl,
             with_mongo=with_mongo,
             with_redis=with_redis,
             with_minio=with_minio,
@@ -1705,7 +1768,9 @@ class ClickHouseCluster:
             with_ldap=with_ldap,
             with_iceberg_catalog=with_iceberg_catalog,
             with_glue_catalog=with_glue_catalog,
+            with_hms_catalog=with_hms_catalog,
             use_old_analyzer=use_old_analyzer,
+            use_distributed_plan=use_distributed_plan,
             server_bin_path=self.server_bin_path,
             clickhouse_path_dir=clickhouse_path_dir,
             with_odbc_drivers=with_odbc_drivers,
@@ -1834,6 +1899,13 @@ class ClickHouseCluster:
                 self.setup_kafka_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
+        if with_kafka_sasl and not self.with_kafka_sasl:
+            cmds.append(
+                self.setup_kafka_sasl_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
         if with_kerberized_kafka and not self.with_kerberized_kafka:
             cmds.append(
                 self.setup_kerberized_kafka_cmd(
@@ -1891,6 +1963,13 @@ class ClickHouseCluster:
         if with_glue_catalog and not self.with_glue_catalog:
             cmds.append(
                 self.setup_glue_catalog_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
+        if with_hms_catalog and not self.with_hms_catalog:
+            cmds.append(
+                self.setup_hms_catalog_cmd(
                     instance, env_variables, docker_compose_yml_dir
                 )
             )
@@ -2375,7 +2454,7 @@ class ClickHouseCluster:
                     return True
             except Exception as ex:
                 logging.debug("RabbitMQ await_startup failed, %s:", ex)
-                time.sleep(0.5)
+                time.sleep(0.1)
 
         start = time.time()
         while time.time() - start < timeout:
@@ -2392,16 +2471,23 @@ class ClickHouseCluster:
         raise RuntimeError("Cannot wait RabbitMQ container")
 
     def stop_rabbitmq_app(self, timeout=120):
-        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "stop_app", timeout)
+        run_rabbitmqctl(
+            self.rabbitmq_docker_id, self.rabbitmq_cookie, "stop_app", timeout
+        )
 
     def start_rabbitmq_app(self, timeout=120):
-        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout)
+        run_rabbitmqctl(
+            self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout
+        )
         self.wait_rabbitmq_to_start()
 
     def reset_rabbitmq(self, timeout=120):
         self.stop_rabbitmq_app()
         run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "reset", timeout)
         self.start_rabbitmq_app()
+
+    def run_rabbitmqctl(self, command):
+        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, command)
 
     def wait_nats_is_available(self, max_retries=5):
         retries = 0
@@ -2484,7 +2570,10 @@ class ClickHouseCluster:
 
     def wait_mongo_to_start(self, timeout=30, secure=False):
         connection_str = "mongodb://{user}:{password}@{host}:{port}".format(
-            host="localhost", port=self.mongo_port, user=mongo_user, password=urllib.parse.quote_plus(mongo_pass)
+            host="localhost",
+            port=self.mongo_port,
+            user=mongo_user,
+            password=urllib.parse.quote_plus(mongo_pass),
         )
         if secure:
             connection_str += "/?tls=true&tlsAllowInvalidCertificates=true"
@@ -2532,7 +2621,9 @@ class ClickHouseCluster:
                         )
                         errors = minio_client.remove_objects(bucket, delete_object_list)
                         for error in errors:
-                            logging.error(f"Error occurred when deleting object {error}")
+                            logging.error(
+                                f"Error occurred when deleting object {error}"
+                            )
                         minio_client.remove_bucket(bucket)
                     minio_client.make_bucket(bucket)
                     logging.debug("S3 bucket '%s' created", bucket)
@@ -2906,6 +2997,14 @@ class ClickHouseCluster:
                 self.wait_kafka_is_available(self.kafka_docker_id, self.kafka_port)
                 self.wait_schema_registry_to_start()
 
+            if self.with_kafka_sasl and self.base_kafka_sasl_cmd:
+                logging.debug("Setup Kafka with SASL")
+                os.mkdir(self.kafka_sasl_dir)
+                subprocess_check_call(
+                    self.base_kafka_sasl_cmd + common_opts + ["--renew-anon-volumes"]
+                )
+                self.up_called = True
+
             if self.with_kerberized_kafka and self.base_kerberized_kafka_cmd:
                 logging.debug("Setup kerberized kafka")
                 os.mkdir(self.kafka_dir)
@@ -3230,10 +3329,10 @@ class ClickHouseCluster:
 
     @contextmanager
     def pause_container(self, instance_name):
-        '''Use it as following:
+        """Use it as following:
         with cluster.pause_container(name):
             useful_stuff()
-        '''
+        """
         self._pause_container(instance_name)
         try:
             yield
@@ -3305,6 +3404,12 @@ class ClickHouseCluster:
         for n in zk_nodes:
             logging.info("Stopping zookeeper node: %s", n)
             subprocess_check_call(self.base_zookeeper_cmd + ["stop", n])
+
+    # Faster than waiting for clean stop
+    def kill_zookeeper_nodes(self, zk_nodes):
+        for n in zk_nodes:
+            logging.info("Killing zookeeper node: %s", n)
+            subprocess_check_call(self.base_zookeeper_cmd + ["kill", n])
 
     def start_zookeeper_nodes(self, zk_nodes):
         for n in zk_nodes:
@@ -3383,6 +3488,7 @@ class ClickHouseInstance:
         with_mysql8,
         with_mysql_cluster,
         with_kafka,
+        with_kafka_sasl,
         with_kerberized_kafka,
         with_kerberos_kdc,
         with_rabbitmq,
@@ -3401,7 +3507,9 @@ class ClickHouseInstance:
         with_ldap,
         with_iceberg_catalog,
         with_glue_catalog,
+        with_hms_catalog,
         use_old_analyzer,
+        use_distributed_plan,
         server_bin_path,
         clickhouse_path_dir,
         with_odbc_drivers,
@@ -3477,6 +3585,7 @@ class ClickHouseInstance:
         self.with_postgres_cluster = with_postgres_cluster
         self.with_postgresql_java_client = with_postgresql_java_client
         self.with_kafka = with_kafka
+        self.with_kafka_sasl = with_kafka_sasl
         self.with_kerberized_kafka = with_kerberized_kafka
         self.with_kerberos_kdc = with_kerberos_kdc
         self.with_rabbitmq = with_rabbitmq
@@ -3498,6 +3607,7 @@ class ClickHouseInstance:
         self.with_coredns = with_coredns
         self.coredns_config_dir = p.abspath(p.join(base_path, "coredns_config"))
         self.use_old_analyzer = use_old_analyzer
+        self.use_distributed_plan = use_distributed_plan
         self.randomize_settings = randomize_settings
 
         self.main_config_name = main_config_name
@@ -4537,8 +4647,22 @@ class ClickHouseInstance:
         )
 
     def replace_in_config(self, path_to_config, replace, replacement):
+        # Do `sed 's/{replace}/{replacement}/g'`, but with some hacks to make it work when {replace}
+        # and {replacement} have quotes or slashes.
+        for d in "/|#-=+@^*~":
+            if d not in replace and d not in replacement:
+                delimiter = d
+                break
+        else:
+            raise Exception(f"Couldn't find a suitable delimiter")
+        replace = shlex.quote(replace)
+        replacement = shlex.quote(replacement)
         self.exec_in_container(
-            ["bash", "-c", f"sed -i 's/{replace}/{replacement}/g' {path_to_config}"]
+            [
+                "bash",
+                "-c",
+                f"sed -i 's{delimiter}'{replace}'{delimiter}'{replacement}'{delimiter}g' {path_to_config}",
+            ]
         )
 
     def create_dir(self):
@@ -4598,17 +4722,35 @@ class ClickHouseInstance:
 
         write_embedded_config("0_common_instance_users.xml", users_d_dir)
 
+        if self.with_installed_binary:
+            # Ignore CPU overload in this case
+            write_embedded_config("0_common_min_cpu_busy_time.xml", self.config_d_dir)
+        else:
+            write_embedded_config("0_common_max_cpu_load.xml", users_d_dir)
+
         use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
+        use_distributed_plan = (
+            os.environ.get("CLICKHOUSE_USE_DISTRIBUTED_PLAN") is not None
+        )
+
         # If specific version was used there can be no
         # enable_analyzer setting, so do this only if it was
         # explicitly requested.
         if self.tag:
             use_old_analyzer = False
+        if self.tag != "latest":
+            use_distributed_plan = False
         # Prefer specified in the test option:
         if self.use_old_analyzer is not None:
             use_old_analyzer = self.use_old_analyzer
+        if self.use_distributed_plan is not None:
+            use_distributed_plan = self.use_distributed_plan
+
         if use_old_analyzer:
             write_embedded_config("0_common_enable_old_analyzer.xml", users_d_dir)
+
+        if use_distributed_plan:
+            write_embedded_config("0_common_enable_distributed_plan.xml", users_d_dir)
 
         if len(self.custom_dictionaries_paths):
             write_embedded_config("0_common_enable_dictionaries.xml", self.config_d_dir)
@@ -4732,6 +4874,9 @@ class ClickHouseInstance:
         if self.with_kafka:
             depends_on.append("kafka1")
             depends_on.append("schema-registry")
+
+        if self.with_kafka_sasl:
+            depends_on.append("kafka_sasl")
 
         if self.with_kerberized_kafka:
             depends_on.append("kerberized_kafka1")

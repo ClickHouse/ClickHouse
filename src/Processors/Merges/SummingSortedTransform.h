@@ -20,7 +20,7 @@ public:
         const Block & header, size_t num_inputs,
         SortDescription description_,
         /// List of columns to be summed. If empty, all numeric columns that are not in the description are taken.
-        const Names & column_names_to_sum,
+        const Names & partition_and_sorting_required_columns,
         const Names & partition_key_columns,
         size_t max_block_size_rows,
         size_t max_block_size_bytes
@@ -30,7 +30,7 @@ public:
             header,
             num_inputs,
             std::move(description_),
-            column_names_to_sum,
+            partition_and_sorting_required_columns,
             partition_key_columns,
             max_block_size_rows,
             max_block_size_bytes)

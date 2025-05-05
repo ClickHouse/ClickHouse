@@ -39,6 +39,7 @@ namespace Setting
 
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsUInt64 max_size_to_preallocate_for_joins;
+    extern const SettingsUInt64 parallel_hash_join_threshold;
 
     extern const SettingsUInt64 max_joined_block_size_rows;
     extern const SettingsString temporary_files_codec;
@@ -73,6 +74,7 @@ namespace QueryPlanSerializationSetting
 
     extern const QueryPlanSerializationSettingsBool collect_hash_table_stats_during_joins;
     extern const QueryPlanSerializationSettingsUInt64 max_size_to_preallocate_for_joins;
+    extern const QueryPlanSerializationSettingsUInt64 parallel_hash_join_threshold;
 
     extern const QueryPlanSerializationSettingsUInt64 max_joined_block_size_rows;
     extern const QueryPlanSerializationSettingsString temporary_files_codec;
@@ -115,6 +117,7 @@ JoinSettings::JoinSettings(const Settings & query_settings)
 
     collect_hash_table_stats_during_joins = query_settings[Setting::collect_hash_table_stats_during_joins];
     max_size_to_preallocate_for_joins = query_settings[Setting::max_size_to_preallocate_for_joins];
+    parallel_hash_join_threshold = query_settings[Setting::parallel_hash_join_threshold];
 
     temporary_files_codec = query_settings[Setting::temporary_files_codec];
     join_output_by_rowlist_perkey_rows_threshold = query_settings[Setting::join_output_by_rowlist_perkey_rows_threshold];
@@ -148,6 +151,7 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
 
     collect_hash_table_stats_during_joins = settings[QueryPlanSerializationSetting::collect_hash_table_stats_during_joins];
     max_size_to_preallocate_for_joins = settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_joins];
+    parallel_hash_join_threshold = settings[QueryPlanSerializationSetting::parallel_hash_join_threshold];
 
     max_joined_block_size_rows = settings[QueryPlanSerializationSetting::max_joined_block_size_rows];
     temporary_files_codec = settings[QueryPlanSerializationSetting::temporary_files_codec];
@@ -185,6 +189,7 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
 
     settings[QueryPlanSerializationSetting::collect_hash_table_stats_during_joins] = collect_hash_table_stats_during_joins;
     settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_joins] = max_size_to_preallocate_for_joins;
+    settings[QueryPlanSerializationSetting::parallel_hash_join_threshold] = parallel_hash_join_threshold;
 
     settings[QueryPlanSerializationSetting::max_joined_block_size_rows] = max_joined_block_size_rows;
     settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
