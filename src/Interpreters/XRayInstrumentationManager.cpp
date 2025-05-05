@@ -141,6 +141,10 @@ void XRayInstrumentationManager::unpatchFunction(const std::string & function_na
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown function to instrument: ({})", function_name);
     }
     HandlerType type = getHandlerType(handler_name);
+    if (!functionIdToHandlers.contains(function_id))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "This function wasn't previously instrumented, nothing to unpatch: ({})", function_name);
+    if (!functionIdToHandlers[function_id].contains(type))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "This function was not instrumenented with this handler type,  nothing to unpatch: ({}), ({})", function_name, handler_name);
     instrumented_functions.erase(functionIdToHandlers[function_id][type]);
     functionIdToHandlers[function_id].erase(type);
     __xray_unpatch_function(function_id);
@@ -162,8 +166,7 @@ XRayHandlerFunction XRayInstrumentationManager::getHandler(const std::string & n
     static thread_local bool in_hook = false;
     if (in_hook) return;
     in_hook = true;
-    LOG_DEBUG(getLogger("XRayInstrumentationManager::dispatchHandler"), "XRayEntryType {}", toString(Type));
-    //std::shared_lock lock(shared_mutex); // shared??? or maybe not? or do we need this at all??
+    std::shared_lock lock(shared_mutex); // shared??? or maybe not? or do we need this at all??
     auto handlers_set_it = functionIdToHandlers.find(FuncId);
     if (handlers_set_it == functionIdToHandlers.end())
     {
@@ -173,13 +176,28 @@ XRayHandlerFunction XRayInstrumentationManager::getHandler(const std::string & n
 
     for (const auto & [type, ip_it] : handlers_set_it->second)
     {
-        auto handler = xrayHandlerNameToFunction[ip_it->handler_name]; // additional checks needed??
+        auto handler_it = xrayHandlerNameToFunction.find(ip_it->handler_name);
+        if (handler_it == xrayHandlerNameToFunction.end())
+        {
+            LOG_ERROR(getLogger("XRayInstrumentationManager::dispatchHandler"), "Handler not found");
+        }
+        auto handler = handler_it->second;
         if (handler)
         {
-            handler(FuncId, Type);
+            try
+            {
+                handler(FuncId, Type);
+            }
+            catch (const std::exception & e)
+            {
+                LOG_ERROR(getLogger("XRayInstrumentationManager::dispatchHandler"), "Exception in handler '{}': {}", ip_it->handler_name, e.what());
+            }
+        }
+        else 
+        {
+            LOG_ERROR(getLogger("XRayInstrumentationManager::dispatchHandler"), "Handler not found");
         }
     }
-    LOG_DEBUG(getLogger("XRayInstrumentationManager::dispatchHandler"), "WTF!!! {}", toString(Type));
     in_hook = false;
 }
 
@@ -230,7 +248,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
             auto stripped_function_name = extractNearestNamespaceAndFunction(function_name);
             strippedFunctionNameToXRayID[stripped_function_name].push_back(FuncID);
             functionNameToXRayID[function_name] = FuncID;
-            xrayIdToFunctionName[FuncID] = function_name;
+            xrayIdToFunctionName[FuncID] = stripped_function_name;
         }
     }
 }
@@ -416,7 +434,6 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
         element.function_id = FuncId;
 
         active_elements[FuncId] = std::move(element);
-        LOG_DEBUG(getLogger("XRayInstrumentationManager::profile"), "BEEN THERE ENTRY");
     }
     else if (Type == XRayEntryType::EXIT)
     {
@@ -432,22 +449,17 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
 
             auto context_it = functionIdToHandlers[FuncId].find(type); // DOUBLE CHECK IF THIS IS RIGHT
             auto & context = context_it->second->context;
-            LOG_DEBUG(getLogger("XRayInstrumentationManager::profile"), "NO CONTEXT {}", toString(element.duration_microseconds));
             if (context)
             {
-                LOG_DEBUG(getLogger("XRayInstrumentationManager::profile"), "HAVE CONTEXT {}", toString(element.duration_microseconds));
                 if (auto log = context->getInstrumentationProfilingLog())
                 {
-                    LOG_DEBUG(getLogger("XRayInstrumentationManager::profile"), "BEEN THERE getInstrumentationProfilingLog{}", toString(element.duration_microseconds));
                     log->add(std::move(element));
                 }
             }
             active_elements.erase(it);
-            LOG_DEBUG(getLogger("XRayInstrumentationManager::profile"), "BEEN THERE EXIT");
         }
     }
     in_hook = false;
-    LOG_DEBUG(getLogger("XRayInstrumentationManager::profile"), "BEEN THERE ");
 }
 
 std::string_view XRayInstrumentationManager::removeTemplateArgs(std::string_view input)

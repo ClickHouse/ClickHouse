@@ -83,7 +83,6 @@ private:
     std::unordered_map<std::string, std::vector<int64_t>> strippedFunctionNameToXRayID;
     static std::unordered_map<int64_t, std::string> xrayIdToFunctionName;
     std::list<InstrumentedFunctionInfo> instrumented_functions;
-    //static std::unordered_map<int64_t, std::vector<std::list<InstrumentedFunctionInfo>::iterator>> functionIdToInstrumentPoint;
     static std::unordered_map<int32_t, HandlerTypeToIP> functionIdToHandlers;
 
     static inline std::mutex log_mutex;
