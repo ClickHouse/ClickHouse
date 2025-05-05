@@ -41,18 +41,12 @@ struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescripti
 };
 
 
-/// RangesInDataPartReadHints can be used for read time optimizations e.g row positioning
+/// A vehicle which transports additional information to optimize searches
 struct RangesInDataPartReadHints
 {
-    /// VectorIndexSearchResults - 1) Exact part offsets positioning
-    ///                            2) A pre-computed "_distance" virtual column
+    /// 1) Exact part offsets positions 2) a pre-computed "_distance" virtual column
     using VectorIndexSearchResults = std::pair<std::vector<UInt64>, std::vector<float>>;
-
     std::optional<VectorIndexSearchResults> ann_search_results;
-
-    bool isFilled() const { return ann_search_results.has_value(); }
-
-    const VectorIndexSearchResults & getVectorIndexSearchResults() const { return ann_search_results.value(); }
 };
 
 struct RangesInDataPart
