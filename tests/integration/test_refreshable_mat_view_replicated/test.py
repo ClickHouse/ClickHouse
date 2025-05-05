@@ -238,6 +238,11 @@ def fn_setup_tables():
     "empty",
     [True, False],
 )
+@pytest.mark.skipif(
+    datetime.now().minute > 57,
+    reason='"EVERY 1 HOUR" refresh interval schedules the refresh to occur at the start of the next hour, '
+           'which might trigger it earlier than expected'
+)
 def test_append(
     module_setup_tables,
     fn_setup_tables,
@@ -296,6 +301,11 @@ def test_append(
             "refresh_retry_max_backoff_ms": "20",
         },
     ],
+)
+@pytest.mark.skipif(
+    datetime.now().minute > 57,
+    reason='"EVERY 1 HOUR" refresh interval schedules the refresh to occur at the start of the next hour, '
+           'which might trigger it earlier than expected'
 )
 def test_alters(
     module_setup_tables,
@@ -382,7 +392,7 @@ def test_real_wait_refresh(
 
     create_sql = CREATE_RMV.render(
         table_name="test_rmv",
-        refresh_interval="EVERY 10 SECOND",
+        refresh_interval="AFTER 10 SECOND",
         to_clause=to_clause_,
         table_clause=table_clause,
         select_query="SELECT now() as a, b FROM src1 SETTINGS insert_deduplicate=0",

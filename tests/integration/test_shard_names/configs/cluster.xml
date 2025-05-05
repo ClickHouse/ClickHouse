@@ -2,14 +2,14 @@
     <remote_servers>
         <test_shard_names_literal>
             <shard>
-                <shard_name>first</shard_name>
+                <name>first</name>
                 <replica>
                     <host>node</host>
                     <port>9000</port>
                 </replica>
             </shard>
             <shard>
-                <shard_name>second</shard_name>
+                <name>second</name>
                 <replica>
                     <host>node</host>
                     <port>1</port>
@@ -18,14 +18,14 @@
         </test_shard_names_literal>
         <test_shard_names_nums>
             <shard>
-                <shard_name>3</shard_name>
+                <name>3</name>
                 <replica>
                     <host>node</host>
                     <port>9000</port>
                 </replica>
             </shard>
             <shard>
-                <shard_name>10</shard_name>
+                <name>10</name>
                 <replica>
                     <host>node</host>
                     <port>1</port>
@@ -34,12 +34,12 @@
         </test_shard_names_nums>
         <test_shard_names_with_nodes>
             <node>
-                <shard_name>3</shard_name>
+                <name>3</name>
                 <host>node</host>
                 <port>9000</port>
             </node>
             <node>
-                <shard_name>6</shard_name>
+                <name>6</name>
                 <host>node</host>
                 <port>9000</port>
             </node>

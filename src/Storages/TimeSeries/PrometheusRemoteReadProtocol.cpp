@@ -3,11 +3,13 @@
 
 #if USE_PROMETHEUS_PROTOBUFS
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/logger_useful.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <Core/Settings.h>
@@ -20,7 +22,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/StorageTimeSeries.h>
@@ -468,7 +469,7 @@ void PrometheusRemoteReadProtocol::readTimeSeries(google::protobuf::RepeatedPtrF
         start_timestamp_ms, end_timestamp_ms, label_matcher, time_series_settings, data_table_id, tags_table_id);
 
     LOG_TRACE(log, "{}: Executing query {}",
-              time_series_storage_id.getNameForLogs(), select_query);
+              time_series_storage_id.getNameForLogs(), select_query->formatForLogging());
 
     auto context = getContext();
     BlockIO io;

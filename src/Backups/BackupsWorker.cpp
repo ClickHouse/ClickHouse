@@ -36,6 +36,8 @@
 #include <boost/range/adaptor/map.hpp>
 
 
+#include <Parsers/ASTAlterQuery.h>
+
 namespace CurrentMetrics
 {
     extern const Metric BackupsThreads;

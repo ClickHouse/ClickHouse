@@ -38,7 +38,7 @@ SETTINGS
 "
 
 $CLICKHOUSE_CLIENT -m --query "
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 -- This threshold was determined experimentally - before the fix this ratio had values around 50K
 SELECT throwIf(ProfileEvents['WriteBufferFromFileDescriptorWriteBytes'] / ProfileEvents['WriteBufferFromFileDescriptorWrite'] < 200000)

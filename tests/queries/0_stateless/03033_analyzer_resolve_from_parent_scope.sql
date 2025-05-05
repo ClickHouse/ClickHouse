@@ -33,7 +33,7 @@ UNION ALL
 SELECT 5 as a, x FROM t
 ORDER BY a, x
 FORMAT Null
-SETTINGS allow_experimental_analyzer = 1;
+SETTINGS enable_analyzer = 1;
 
 WITH t AS
     (
@@ -56,4 +56,4 @@ FROM
 ORDER BY
     a ASC,
     x ASC
-SETTINGS allow_experimental_analyzer = 1;
+SETTINGS enable_analyzer = 1;

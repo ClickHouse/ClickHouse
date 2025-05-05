@@ -1,5 +1,8 @@
-#include <Common/Exception.h>
 #include <Common/JSONParsers/SimdJSONParser.h>
+
+#if USE_SIMDJSON
+
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -15,3 +18,5 @@ void SimdJSONParser::reserve(size_t max_size)
 }
 
 }
+
+#endif

@@ -1,4 +1,6 @@
 #include <Processors/Formats/Impl/MySQLDumpRowInputFormat.h>
+
+#include <Common/assert_cast.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <IO/ReadHelpers.h>
 #include <IO/PeekableReadBuffer.h>

@@ -1,5 +1,6 @@
 #include <Storages/Kafka/StorageKafka2.h>
 
+#include <Columns/IColumn.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -1244,6 +1245,7 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
     {
         LOG_TRACE(log, "Didn't get any messages");
         needs_offset_reset = false;
+        block_io.onCancelOrConnectionLoss();
         return std::nullopt;
     }
 

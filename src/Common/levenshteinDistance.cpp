@@ -5,7 +5,7 @@
 namespace DB
 {
 
-size_t levenshteinDistance(const String & lhs, const String & rhs)
+size_t levenshteinDistanceCaseInsensitive(const String & lhs, const String & rhs)
 {
     size_t m = lhs.size();
     size_t n = rhs.size();

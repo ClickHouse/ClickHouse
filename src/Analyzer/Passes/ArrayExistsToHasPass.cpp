@@ -1,12 +1,7 @@
 #include <Analyzer/Passes/ArrayExistsToHasPass.h>
 
-#include <Functions/FunctionFactory.h>
 #include <Functions/array/has.h>
 
-#include <Interpreters/Context.h>
-
-#include <Analyzer/ColumnNode.h>
-#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/LambdaNode.h>

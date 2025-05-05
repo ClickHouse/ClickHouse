@@ -4,6 +4,8 @@
 #include <IO/ReadHelpers.h>
 #include <boost/algorithm/string.hpp>
 
+#include <fmt/ranges.h>
+
 
 namespace DB
 {
@@ -64,21 +66,92 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "25.5",
+        {
+            {"geotoh3_lon_lat_input_order", true, false, "A new setting for legacy behaviour to set lon and lat order"},
+            {"secondary_indices_enable_bulk_filtering", false, true, "A new algorithm for filtering by data skipping indices"},
+            {"implicit_table_at_top_level", "", "", "A new setting, used in clickhouse-local"},
+            {"use_skip_indexes_if_final_exact_mode", 0, 0, "This setting was introduced to help FINAL query return correct results with skip indexes"},
+            {"input_format_max_block_size_bytes", 0, 0, "New setting to limit bytes size if blocks created by input format"},
+            {"parallel_replicas_insert_select_local_pipeline", false, true, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"},
+            {"page_cache_block_size", 1048576, 1048576, "Made this setting adjustable on a per-query level."},
+            {"page_cache_lookahead_blocks", 16, 16, "Made this setting adjustable on a per-query level."},
+            {"output_format_pretty_glue_chunks", "0", "auto", "A new setting to make Pretty formats prettier."},
+            {"parallel_hash_join_threshold", 0, 100'000, "New setting"},
+            {"make_distributed_plan", 0, 0, "New experimental setting."},
+            {"execute_distributed_plan_locally", 0, 0, "New experimental setting."},
+            {"default_shuffle_join_bucket_count", 8, 8, "New experimental setting."},
+            {"default_reader_bucket_count", 8, 8, "New experimental setting."},
+            {"optimize_exchanges", 0, 0, "New experimental setting."},
+            {"force_exchange_kind", "", "", "New experimental setting."},
+            {"allow_experimental_delta_kernel_rs", true, true, "New setting"},
+            {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
+        });
+        addSettingsChanges(settings_changes_history, "25.4",
+        {
+            /// Release closed. Please use 25.5
+            {"use_query_condition_cache", false, true, "A new optimization"},
+            {"allow_materialized_view_with_bad_select", true, false, "Don't allow creating MVs referencing nonexistent columns or tables"},
+            {"query_plan_optimize_lazy_materialization", false, true, "Added new setting to use query plan for lazy materialization optimisation"},
+            {"query_plan_max_limit_for_lazy_materialization", 10, 10, "Added new setting to control maximum limit value that allows to use query plan for lazy materialization optimisation. If zero, there is no limit"},
+            {"query_plan_convert_join_to_in", false, false, "New setting"},
+            {"enable_hdfs_pread", true, true, "New setting."},
+            {"low_priority_query_wait_time_ms", 1000, 1000, "New setting."},
+            {"allow_experimental_correlated_subqueries", false, false, "Added new setting to allow correlated subqueries execution."},
+            {"serialize_query_plan", false, false, "NewSetting"},
+            {"allow_experimental_shared_set_join", 0, 1, "A setting for ClickHouse Cloud to enable SharedSet and SharedJoin"},
+            {"allow_special_bool_values_inside_variant", true, false, "Don't allow special bool values during Variant type parsing"},
+            {"cast_string_to_variant_use_inference", true, true, "New setting to enable/disable types inference during CAST from String to Variant"},
+            {"distributed_cache_read_request_max_tries", 20, 20, "New setting"},
+            {"query_condition_cache_store_conditions_as_plaintext", false, false, "New setting"},
+            {"min_os_cpu_wait_time_ratio_to_throw", 0, 2, "New setting"},
+            {"max_os_cpu_wait_time_ratio_to_throw", 0, 6, "New setting"},
+            {"query_plan_merge_filter_into_join_condition", false, true, "Added new setting to merge filter into join condition"},
+            {"use_local_cache_for_remote_storage", true, false, "Obsolete setting."},
+            {"iceberg_timestamp_ms", 0, 0, "New setting."},
+            {"iceberg_snapshot_id", 0, 0, "New setting."},
+            {"use_iceberg_metadata_files_cache", true, true, "New setting"},
+            {"query_plan_join_shard_by_pk_ranges", false, false, "New setting"},
+            {"parallel_replicas_insert_select_local_pipeline", false, false, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"},
+            {"parallel_hash_join_threshold", 0, 0, "New setting"},
+            /// Release closed. Please use 25.5
+        });
+        addSettingsChanges(settings_changes_history, "25.3",
+        {
+            /// Release closed. Please use 25.4
+            {"enable_json_type", false, true, "JSON data type is production-ready"},
+            {"enable_dynamic_type", false, true, "Dynamic data type is production-ready"},
+            {"enable_variant_type", false, true, "Variant data type is production-ready"},
+            {"allow_experimental_json_type", false, true, "JSON data type is production-ready"},
+            {"allow_experimental_dynamic_type", false, true, "Dynamic data type is production-ready"},
+            {"allow_experimental_variant_type", false, true, "Variant data type is production-ready"},
+            {"allow_experimental_database_unity_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'"},
+            {"allow_experimental_database_glue_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'"},
+            {"use_page_cache_with_distributed_cache", false, false, "New setting"},
+            {"use_query_condition_cache", false, false, "New setting."},
+            {"parallel_replicas_for_cluster_engines", false, true, "New setting."},
+            {"parallel_hash_join_threshold", 0, 0, "New setting"},
+            /// Release closed. Please use 25.4
+        });
         addSettingsChanges(settings_changes_history, "25.2",
         {
+            /// Release closed. Please use 25.3
             {"schema_inference_make_json_columns_nullable", false, false, "Allow to infer Nullable(JSON) during schema inference"},
             {"query_plan_use_new_logical_join_step", false, true, "Enable new step"},
             {"postgresql_fault_injection_probability", 0., 0., "New setting"},
             {"apply_settings_from_server", false, true, "Client-side code (e.g. INSERT input parsing and query output formatting) will use the same settings as the server, including settings from server config."},
             {"merge_tree_use_deserialization_prefixes_cache", true, true, "A new setting to control the usage of deserialization prefixes cache in MergeTree"},
             {"merge_tree_use_prefixes_deserialization_thread_pool", true, true, "A new setting controlling the usage of the thread pool for parallel prefixes deserialization in MergeTree"},
-            {"optimize_and_compare_chain", true, false, "A new setting"},
+            {"optimize_and_compare_chain", false, true, "A new setting"},
             {"enable_adaptive_memory_spill_scheduler", false, false, "New setting. Enable spill memory data into external storage adaptively."},
             {"output_format_parquet_write_bloom_filter", false, true, "Added support for writing Parquet bloom filters."},
             {"output_format_parquet_bloom_filter_bits_per_value", 10.5, 10.5, "New setting."},
             {"output_format_parquet_bloom_filter_flush_threshold_bytes", 128 * 1024 * 1024, 128 * 1024 * 1024, "New setting."},
             {"output_format_pretty_max_rows", 10000, 1000, "It is better for usability - less amount to scroll."},
             {"restore_replicated_merge_tree_to_shared_merge_tree", false, false, "New setting."},
+            {"parallel_replicas_only_with_analyzer", true, true, "Parallel replicas is supported only with analyzer enabled"},
+            {"s3_allow_multipart_copy", true, true, "New setting."},
+            /// Release closed. Please use 25.3
         });
         addSettingsChanges(settings_changes_history, "25.1",
         {
@@ -90,7 +163,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"formatdatetime_f_prints_scale_number_of_digits", true, false, "New setting."},
             {"distributed_cache_connect_max_tries", 20, 20, "Cloud only"},
             {"query_plan_use_new_logical_join_step", false, false, "New join step, internal change"},
-            {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
+            {"distributed_cache_min_bytes_for_seek", 0, 0, "New private setting."},
             {"use_iceberg_partition_pruning", false, false, "New setting"},
             {"max_bytes_ratio_before_external_group_by", 0.0, 0.5, "Enable automatic spilling to disk by default."},
             {"max_bytes_ratio_before_external_sort", 0.0, 0.5, "Enable automatic spilling to disk by default."},
@@ -658,8 +731,33 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "25.5",
+        {
+            {"write_marks_for_substreams_in_compact_parts", false, true, "New setting"},
+        });
+        addSettingsChanges(merge_tree_settings_changes_history, "25.4",
+        {
+            /// Release closed. Please use 25.5
+            {"max_postpone_time_for_failed_replicated_fetches_ms", 0, 1ULL * 60 * 1000, "Added new setting to enable postponing fetch tasks in the replication queue."},
+            {"max_postpone_time_for_failed_replicated_merges_ms", 0, 1ULL * 60 * 1000, "Added new setting to enable postponing merge tasks in the replication queue."},
+            {"max_postpone_time_for_failed_replicated_tasks_ms", 0, 5ULL * 60 * 1000, "Added new setting to enable postponing tasks in the replication queue."},
+            {"default_compression_codec", "", "", "New setting"},
+            {"refresh_parts_interval", 0, 0, "A new setting"},
+            {"max_merge_delayed_streams_for_parallel_write", 1000, 40, "New setting"},
+            {"allow_summing_columns_in_partition_or_order_key", true, false, "New setting to allow summing of partition or sorting key columns"},
+            /// Release closed. Please use 25.5
+        });
+        addSettingsChanges(merge_tree_settings_changes_history, "25.3",
+        {
+            /// Release closed. Please use 25.4
+            {"shared_merge_tree_enable_keeper_parts_extra_data", false, false, "New setting"},
+            {"zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock", 0, 0, "New setting"},
+            {"enable_replacing_merge_with_cleanup_for_min_age_to_force_merge", false, false, "New setting to allow automatic cleanup merges for ReplacingMergeTree"},
+            /// Release closed. Please use 25.4
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.2",
         {
+            /// Release closed. Please use 25.3
             {"shared_merge_tree_initial_parts_update_backoff_ms", 50, 50, "New setting"},
             {"shared_merge_tree_max_parts_update_backoff_ms", 5000, 5000, "New setting"},
             {"shared_merge_tree_interserver_http_connection_timeout_ms", 100, 100, "New setting"},
@@ -668,6 +766,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"allow_reduce_blocking_parts_task", false, true, "Now SMT will remove stale blocking parts from ZooKeeper by default"},
             {"shared_merge_tree_max_suspicious_broken_parts", 0, 0, "Max broken parts for SMT, if more - deny automatic detach"},
             {"shared_merge_tree_max_suspicious_broken_parts_bytes", 0, 0, "Max size of all broken parts for SMT, if more - deny automatic detach"},
+            /// Release closed. Please use 25.3
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.1",
         {

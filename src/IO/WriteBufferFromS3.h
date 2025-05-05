@@ -78,6 +78,9 @@ private:
     S3::PutObjectRequest getPutRequest(PartData & data);
     void makeSinglepartUpload(PartData && data);
 
+    /// Returns true if not a single byte was written to the buffer
+    bool isEmpty() const { return total_size == 0 && count() == 0 && hidden_size == 0 && offset() == 0; }
+
     const String bucket;
     const String key;
     const S3::S3RequestSettings request_settings;

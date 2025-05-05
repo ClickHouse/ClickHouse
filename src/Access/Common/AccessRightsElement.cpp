@@ -4,8 +4,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/IAST.h>
 
-#include <boost/range/algorithm_ext/erase.hpp>
-
 
 namespace DB
 {

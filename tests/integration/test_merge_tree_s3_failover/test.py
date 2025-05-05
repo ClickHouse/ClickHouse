@@ -98,7 +98,7 @@ FILES_PER_PART_WIDE = (
 # In debug build there are additional requests (from MergeTreeDataPartWriterWide.cpp:554 due to additional validation).
 FILES_PER_PART_WIDE_DEBUG = 2  # Additional requests to S3 in debug build
 
-FILES_PER_PART_COMPACT = FILES_PER_PART_BASE + 1 + 1 + 2
+FILES_PER_PART_COMPACT = FILES_PER_PART_BASE + 1 + 1 + 2 + 1
 FILES_PER_PART_COMPACT_DEBUG = 0
 
 
@@ -220,7 +220,7 @@ def test_move_failover(cluster):
         node.query(
             """
         SELECT count(*) FROM system.part_log
-        WHERE event_type='MovePart' AND table='s3_failover_test'
+        WHERE event_type='MovePart' AND table='s3_failover_test' AND database=currentDatabase()
         """
         )
         == "2\n"
@@ -230,7 +230,7 @@ def test_move_failover(cluster):
     exception = node.query(
         """
         SELECT exception FROM system.part_log
-        WHERE event_type='MovePart' AND table='s3_failover_test' AND notEmpty(exception)
+        WHERE event_type='MovePart' AND table='s3_failover_test' AND notEmpty(exception) AND database=currentDatabase()
         ORDER BY event_time
         LIMIT 1
         """
@@ -243,6 +243,8 @@ def test_move_failover(cluster):
         node.query("SELECT id,data FROM s3_failover_test FORMAT Values")
         == "(0,'data'),(1,'data')"
     )
+
+    node.query("DROP TABLE s3_failover_test")
 
 
 # Check that throttled request retries and does not cause an error on disk with default `retry_attempts` (>0)
@@ -273,6 +275,8 @@ def test_throttle_retry(cluster):
         == "42\n"
     )
 
+    node.query("DROP TABLE s3_throttle_retry_test")
+
 
 # Check that loading of parts is retried.
 def test_retry_loading_parts(cluster):
@@ -298,3 +302,4 @@ def test_retry_loading_parts(cluster):
         "Failed to load data part all_1_1_0 at try 0 with retryable error"
     )
     assert node.query("SELECT * FROM s3_retry_loading_parts") == "42\n"
+    node.query("DROP TABLE s3_retry_loading_parts")

@@ -21,29 +21,26 @@ struct StringKey24
 inline StringRef ALWAYS_INLINE toStringView(const StringKey8 & n)
 {
     assert(n != 0);
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    return {reinterpret_cast<const char *>(&n), 8ul - (std::countr_zero(n) >> 3)};
-#else
-    return {reinterpret_cast<const char *>(&n), 8ul - (std::countl_zero(n) >> 3)};
-#endif
+    if constexpr (std::endian::native == std::endian::big)
+        return {reinterpret_cast<const char *>(&n), 8ul - (std::countr_zero(n) >> 3)};
+    else
+        return {reinterpret_cast<const char *>(&n), 8ul - (std::countl_zero(n) >> 3)};
 }
 inline StringRef ALWAYS_INLINE toStringView(const StringKey16 & n)
 {
     assert(n.items[1] != 0);
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    return {reinterpret_cast<const char *>(&n), 16ul - (std::countr_zero(n.items[1]) >> 3)};
-#else
-    return {reinterpret_cast<const char *>(&n), 16ul - (std::countl_zero(n.items[1]) >> 3)};
-#endif
+    if constexpr (std::endian::native == std::endian::big)
+        return {reinterpret_cast<const char *>(&n), 16ul - (std::countr_zero(n.items[1]) >> 3)};
+    else
+        return {reinterpret_cast<const char *>(&n), 16ul - (std::countl_zero(n.items[1]) >> 3)};
 }
 inline StringRef ALWAYS_INLINE toStringView(const StringKey24 & n)
 {
     assert(n.c != 0);
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    return {reinterpret_cast<const char *>(&n), 24ul - (std::countr_zero(n.c) >> 3)};
-#else
-    return {reinterpret_cast<const char *>(&n), 24ul - (std::countl_zero(n.c) >> 3)};
-#endif
+    if constexpr (std::endian::native == std::endian::big)
+        return {reinterpret_cast<const char *>(&n), 24ul - (std::countr_zero(n.c) >> 3)};
+    else
+        return {reinterpret_cast<const char *>(&n), 24ul - (std::countl_zero(n.c) >> 3)};
 }
 
 struct StringHashTableHash

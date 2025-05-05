@@ -41,16 +41,18 @@ def start_cluster():
 
 
 def get_compression_codec_byte(node, table_name, part_name):
-    cmd = "tail -c +17 /var/lib/clickhouse/data/default/{}/{}/data1.bin | od -x -N 1 | head -n 1 | awk '{{print $2}}'".format(
-        table_name, part_name
-    )
+    data_path = node.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='{table_name}'"
+    ).strip()
+    cmd = f"tail -c +17 {data_path}/{part_name}/data1.bin | od -x -N 1 | head -n 1 | awk '{{print $2}}'"
     return node.exec_in_container(["bash", "-c", cmd]).strip()
 
 
 def get_second_multiple_codec_byte(node, table_name, part_name):
-    cmd = "tail -c +17 /var/lib/clickhouse/data/default/{}/{}/data1.bin | od -x -j 11 -N 1 | head -n 1 | awk '{{print $2}}'".format(
-        table_name, part_name
-    )
+    data_path = node.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='{table_name}'"
+    ).strip()
+    cmd = f"tail -c +17 {data_path}/{part_name}/data1.bin | od -x -j 11 -N 1 | head -n 1 | awk '{{print $2}}'"
     return node.exec_in_container(["bash", "-c", cmd]).strip()
 
 
@@ -422,11 +424,14 @@ def test_default_codec_for_compact_parts(start_cluster):
 
     node4.query("ALTER TABLE compact_parts_table DETACH PART 'all_1_1_0'")
 
+    data_path = node4.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='compact_parts_table'"
+    ).strip()
     node4.exec_in_container(
         [
             "bash",
             "-c",
-            "rm /var/lib/clickhouse/data/default/compact_parts_table/detached/all_1_1_0/default_compression_codec.txt",
+            f"rm {data_path}detached/all_1_1_0/default_compression_codec.txt",
         ]
     )
 

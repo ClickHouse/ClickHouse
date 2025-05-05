@@ -1,3 +1,4 @@
+
 #include <Storages/MergeTree/MergeFromLogEntryTask.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
@@ -7,13 +8,10 @@
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ProfileEventsScope.h>
-#include <Common/randomSeed.h>
+
+#include <Common/DateLUTImpl.h>
 
 #include <Core/BackgroundSchedulePool.h>
-
-#include <pcg_random.hpp>
-
-#include <cmath>
 
 namespace ProfileEvents
 {
@@ -33,7 +31,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 prefer_fetch_merged_part_size_threshold;
     extern const MergeTreeSettingsSeconds prefer_fetch_merged_part_time_threshold;
     extern const MergeTreeSettingsSeconds try_fetch_recompressed_part_timeout;
-    extern const MergeTreeSettingsUInt64 zero_copy_merge_mutation_min_parts_size_sleep_before_lock;
 }
 
 namespace ErrorCodes
@@ -52,7 +49,6 @@ MergeFromLogEntryTask::MergeFromLogEntryTask(
         storage_,
         selected_entry_,
         task_result_callback_)
-    , rng(randomSeed())
 {
 }
 
@@ -243,6 +239,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     future_merged_part->uuid = entry.new_part_uuid;
     future_merged_part->updatePath(storage, reserved_space.get());
     future_merged_part->merge_type = entry.merge_type;
+    /// If a merge is a cleanup merge we need to mark the future part as final as cleanup merges can only be performed when merging all parts in a partition down to a single part.
+    future_merged_part->final = entry.cleanup;
 
     if ((*storage_settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
     {
@@ -259,27 +257,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
                 };
             }
 
-            if ((*storage_settings_ptr)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock] != 0 &&
-                estimated_space_for_merge >= (*storage_settings_ptr)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock])
-            {
-                /// In zero copy replication only one replica execute merge/mutation, others just download merged parts metadata.
-                /// Here we are trying to mitigate the skew of merges execution because of faster/slower replicas.
-                /// Replicas can be slow because of different reasons like bigger latency for ZooKeeper or just slight step behind because of bigger queue.
-                /// In this case faster replica can pick up all merges execution, especially large merges while other replicas can just idle. And even in this case
-                /// the fast replica is not overloaded because amount of executing merges doesn't affect the ability to acquire locks for new merges.
-                ///
-                /// So here we trying to solve it with the simplest solution -- sleep random time up to 500ms for 1GB part and up to 7 seconds for 300GB part.
-                /// It can sound too much, but we are trying to acquire these locks in background tasks which can be scheduled each 5 seconds or so.
-                double start_to_sleep_seconds = std::logf((*storage_settings_ptr)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock].value);
-                uint64_t right_border_to_sleep_ms = static_cast<uint64_t>((std::log(estimated_space_for_merge) - start_to_sleep_seconds + 0.5) * 1000);
-                uint64_t time_to_sleep_milliseconds = std::min<uint64_t>(10000UL, std::uniform_int_distribution<uint64_t>(1, 1 + right_border_to_sleep_ms)(rng));
-
-                LOG_INFO(log, "Merge size is {} bytes (it's more than sleep threshold {}) so will intentionally sleep for {} ms to allow other replicas to took this big merge",
-                    estimated_space_for_merge, (*storage_settings_ptr)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock], time_to_sleep_milliseconds);
-
-                std::this_thread::sleep_for(std::chrono::milliseconds(time_to_sleep_milliseconds));
-            }
-
+            maybeSleepBeforeZeroCopyLock(estimated_space_for_merge);
             zero_copy_lock = storage.tryCreateZeroCopyExclusiveLock(entry.new_part_name, disk);
 
             if (!zero_copy_lock || !zero_copy_lock->isLocked())

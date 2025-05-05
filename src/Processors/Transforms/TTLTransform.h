@@ -1,8 +1,8 @@
 #pragma once
+
+#include <Interpreters/PreparedSets.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Processors/TTL/TTLDeleteAlgorithm.h>
 

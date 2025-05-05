@@ -14,7 +14,11 @@ namespace Setting
     extern const SettingsBool enable_parsing_to_custom_serialization;
 }
 
-ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context, bool supports_subset_of_columns)
+ReadFromFormatInfo prepareReadingFromFormat(
+    const Strings & requested_columns,
+    const StorageSnapshotPtr & storage_snapshot,
+    const ContextPtr & context,
+    bool supports_subset_of_columns)
 {
     ReadFromFormatInfo info;
     /// Collect requested virtual columns and remove them from requested columns.

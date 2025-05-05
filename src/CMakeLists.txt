@@ -94,6 +94,7 @@ if (OMIT_HEAVY_DEBUG_SYMBOLS)
 endif()
 
 add_headers_and_sources(clickhouse_common_io Common)
+add_headers_and_sources(clickhouse_common_io Common/Crypto)
 add_headers_and_sources(clickhouse_common_io Common/JSONParsers)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler)
@@ -130,6 +131,7 @@ add_headers_and_sources(dbms Storages/ObjectStorage/HDFS)
 add_headers_and_sources(dbms Storages/ObjectStorage/Local)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Iceberg)
+add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/DeltaLake)
 add_headers_and_sources(dbms Common/NamedCollections)
 add_headers_and_sources(dbms Common/Scheduler/Workload)
 
@@ -161,7 +163,7 @@ if (TARGET ch_contrib::hdfs)
     add_headers_and_sources(dbms Disks/ObjectStorages/HDFS)
 endif()
 
-add_headers_and_sources(dbms Databases/Iceberg)
+add_headers_and_sources(dbms Databases/DataLake)
 
 add_headers_and_sources(dbms Disks/ObjectStorages/Cached)
 add_headers_and_sources(dbms Disks/ObjectStorages/Local)
@@ -456,10 +458,6 @@ dbms_target_link_libraries (
         Poco::Redis
 )
 
-if (USE_MONGODB)
-    dbms_target_link_libraries (PUBLIC Poco::MongoDB)
-endif()
-
 if (TARGET ch_contrib::mongocxx)
     dbms_target_link_libraries(
         PUBLIC
@@ -672,6 +670,14 @@ endif()
 
 if (TARGET ch_contrib::google_cloud_cpp)
     dbms_target_link_libraries(PUBLIC ch_contrib::google_cloud_cpp)
+endif()
+
+if (TARGET ch_contrib::delta_kernel_rs)
+    target_link_libraries(dbms PRIVATE ch_contrib::delta_kernel_rs)
+endif ()
+
+if (TARGET ch_contrib::sha3iuf)
+    dbms_target_link_libraries(PUBLIC ch_contrib::sha3iuf)
 endif()
 
 if (ENABLE_BUZZHOUSE)

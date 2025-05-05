@@ -38,12 +38,11 @@ function(add_contrib cmake_folder)
     add_subdirectory (${cmake_folder})
 endfunction()
 
-# We need to add OpenSSL first so that all our projects use our own version instead of the system one.
-add_contrib (openssl-cmake openssl)
-
 # Use the original launchers for the projects that are needed for source code generation:
 # protoc and llvm-tlbgen.
 disable_dummy_launchers_if_needed()
+# We need to add OpenSSL first so that all our projects use our own version instead of the system one.
+add_contrib (openssl-cmake openssl)  # Needed for delta-lake
 add_contrib (abseil-cpp-cmake abseil-cpp)
 add_contrib (zlib-ng-cmake zlib-ng)
 add_contrib (google-protobuf-cmake google-protobuf)
@@ -89,6 +88,7 @@ add_contrib (msgpack-c-cmake msgpack-c)
 add_contrib (libarchive-cmake libarchive)
 
 add_contrib (corrosion-cmake corrosion)
+add_contrib (delta-kernel-rs-cmake delta-kernel-rs)
 
 if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
@@ -248,6 +248,9 @@ add_contrib (numactl-cmake numactl)
 add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf, absl
 
 add_contrib (jwt-cpp-cmake jwt-cpp)
+
+add_contrib (sha3iuf-cmake SHA3IUF)
+
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

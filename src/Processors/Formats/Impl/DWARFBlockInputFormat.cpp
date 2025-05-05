@@ -313,7 +313,7 @@ llvm::DWARFFormValue DWARFBlockInputFormat::parseAttribute(
     if (!val.extractValue(*extractor, offset, unit.dwarf_unit->getFormParams(), unit.dwarf_unit))
         throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
             "Failed to parse attribute {} of form {} at offset {}",
-                llvm::dwarf::AttributeString(attr.Attr), attr.Form, *offset);
+                llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr.Form, *offset);
     return val;
 }
 
@@ -334,7 +334,7 @@ void DWARFBlockInputFormat::skipAttribute(
             attr.Form, *extractor, offset, unit.dwarf_unit->getFormParams()))
                 throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
                     "Failed to skip attribute {} of form {} at offset {}",
-                    llvm::dwarf::AttributeString(attr.Attr), attr.Form, *offset);
+                    llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr.Form, *offset);
     }
 }
 
@@ -346,7 +346,9 @@ uint64_t DWARFBlockInputFormat::parseAddress(llvm::dwarf::Attribute attr, const 
         (val.getForm() >= llvm::dwarf::DW_FORM_addrx1 &&
          val.getForm() <= llvm::dwarf::DW_FORM_addrx4))
         return fetchFromDebugAddr(unit.debug_addr_base, val.getRawUValue());
-    throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Form {} for {} is not supported", llvm::dwarf::FormEncodingString(val.getForm()), llvm::dwarf::AttributeString(attr));
+    throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Form {} for {} is not supported",
+        llvm::dwarf::FormEncodingString(val.getForm()).operator std::string_view(),
+        llvm::dwarf::AttributeString(attr).operator std::string_view());
 }
 
 Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
