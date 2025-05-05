@@ -159,6 +159,7 @@ private:
     const String index_column;
     const unum::usearch::metric_kind_t metric_kind;
     const size_t expansion_search;
+    const size_t ann_post_filter_multiplier;
 };
 
 

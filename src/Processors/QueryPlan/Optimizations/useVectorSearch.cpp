@@ -10,6 +10,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 namespace DB::QueryPlanOptimizations
@@ -48,6 +49,9 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     /// ExpressionStep
     ///    ^
     ///    |
+    /// [FilterStep] optional
+    ///    ^
+    ///    |
     /// ReadFromMergeTree
 
     auto * limit_step = typeid_cast<LimitStep *>(node->step.get());
@@ -70,9 +74,22 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
 
     if (node->children.size() != 1)
         return updated_layers;
+
     node = node->children.front();
+    bool additional_filters_present = false; /// WHERE or PREWHERE
     auto * read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
     if (!read_from_mergetree_step)
+    {
+        auto * filter_step = typeid_cast<FilterStep *>(node->step.get());
+        if (!filter_step)
+            return updated_layers;
+        node = node->children.front();
+        read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
+        additional_filters_present = true;
+    }
+    if (const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo())
+        additional_filters_present = true;
+    if (additional_filters_present && settings.ann_prefer_pre_filtering) /// user wants KNN
         return updated_layers;
 
     /// Extract N
@@ -126,6 +143,11 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
         else if (child->type == ActionsDAG::ActionType::INPUT) /// old analyzer
         {
             search_column = child->result_name;
+            /// if there is a Filter step, then the result_name is "__table1.vec"
+            if (search_column.find('.') != std::string::npos)
+            {
+                search_column = search_column.substr(search_column.find('.') + 1);
+            }
         }
         else if (child->type == ActionsDAG::ActionType::COLUMN)
         {
@@ -166,7 +188,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     if (search_column.empty() || reference_vector.empty())
         return updated_layers;
 
-    auto vector_search_parameters = std::make_optional<VectorSearchParameters>(search_column, distance_function, n, reference_vector);
+    auto vector_search_parameters = std::make_optional<VectorSearchParameters>(search_column, distance_function, n, reference_vector, additional_filters_present);
     read_from_mergetree_step->setVectorSearchParameters(std::move(vector_search_parameters));
 
     return updated_layers;

@@ -1793,6 +1793,7 @@ static void buildIndexes(
     }
 
     // move minmax indices to first positions, so they will be applied first as cheapest ones
+    // Edit: Vector similarity index is the most selective (if present), hence move it to front
     std::stable_sort(begin(skip_indexes.useful_indices), end(skip_indexes.useful_indices), [](const auto & l, const auto & r)
     {
         const bool l_min_max = (typeid_cast<const MergeTreeIndexMinMax *>(l.index.get()));
@@ -1800,6 +1801,12 @@ static void buildIndexes(
         if (l_min_max == r_min_max)
             return false;
 
+        const bool l_vector = (typeid_cast<const MergeTreeIndexVectorSimilarity *>(l.index.get()));
+        const bool r_vector = (typeid_cast<const MergeTreeIndexVectorSimilarity *>(r.index.get()));
+        if (l_vector)
+            return true;
+        if (r_vector)
+            return false;
         if (l_min_max)
             return true; // left is min max but right is not
 

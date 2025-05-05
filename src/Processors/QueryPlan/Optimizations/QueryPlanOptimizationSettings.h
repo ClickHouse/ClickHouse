@@ -88,6 +88,8 @@ struct QueryPlanOptimizationSettings
     size_t max_limit_for_lazy_materialization = 0;
 
     size_t max_limit_for_ann_queries;
+    bool ann_prefer_pre_filtering;
+    size_t ann_post_filter_multiplier;
 
     /// Setting needed for Sets (JOIN -> IN optimization)
 

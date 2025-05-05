@@ -6548,6 +6548,12 @@ SELECT queries with LIMIT bigger than this setting cannot use vector similarity 
     DECLARE(UInt64, hnsw_candidate_list_size_for_search, 256, R"(
 The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, ann_prefer_pre_filtering, false, R"(
+If a vector search query has a WHERE clause, this parameter determines if the predicates are evaluated first (pre-filtering) OR if the vector similarity index is looked up first (post-filtering). Please check documentation for additional specifics.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, ann_post_filter_multiplier, 1, R"(
+Determines the number of neighbours to fetch from the vector similarity index before performing post-filtering on other predicates. The number of neighbours fetched is (LIMIT n X ann_post_filter_multiplier).
+)", EXPERIMENTAL) \
     DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction
 )", EXPERIMENTAL) \

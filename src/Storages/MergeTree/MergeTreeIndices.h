@@ -102,6 +102,7 @@ struct VectorSearchParameters
     String distance_function;
     size_t limit;
     std::vector<Float64> reference_vector;
+    bool additional_filters_present;
 };
 
 /// Stores some info about a single block of data.

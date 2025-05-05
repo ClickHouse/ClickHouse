@@ -34,6 +34,8 @@ struct Optimization
         size_t max_limit_for_ann_queries;
         size_t use_index_for_in_with_subqueries_max_values;
         SizeLimits network_transfer_limits;
+        bool ann_prefer_pre_filtering;
+        size_t ann_post_filter_multiplier;
     };
 
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &, const ExtraSettings &);

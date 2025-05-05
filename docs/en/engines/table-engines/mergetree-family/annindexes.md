@@ -238,7 +238,7 @@ These two strategies determine the order in which the filters are evaluated:
 - With pre-filtering, the filter evaluation order is the other way round.
 
 Both strategies have different trade-offs:
-- Post-filtering has the general problem that it may return less than the number of rows requested in the `LIMIT <N>` clause. This happens when at least one of the result rows returned by the vector similarity index fails to satisfy the additional filters. In ClickHouse, this situation is luckily unlikely to happen because vector similarity indexes do not return rows but blocks with thousands of rows (see "Differences to Regular Skipping Indexes" below).
+- Post-filtering has the general problem that it may return less than the number of rows requested in the `LIMIT <N>` clause. This happens when at least one of the result rows returned by the vector similarity index fails to satisfy the additional filters.
 - Pre-filtering is an unsolved problem. Some specialized vector databases implement it but most databases including ClickHouse will fall back to exact neighbor search, i.e., a brute-force scan without index.
 
 What strategy is used comes down to whether ClickHouse can use indexes for the additional filter conditions.
@@ -261,7 +261,40 @@ LIMIT 3;
 ClickHouse will ignore all partitions but the one for year 2025.
 Within this partition, a post-filtering strategy will be applied.
 
-If the additional filter condition is part of the primary key, then ClickHouse will always apply pre-filtering.
+If the additional filter condition is on the primary key and the filter selects some but not all ranges of a part, then Clickhouse will fall back to exact neighbour search i.e brute force scan without index, on the selected ranges of the part. If the primary key filter selects entire parts, Clickhouse will use the vector similarity index on those parts to retrieve results.
+
+In case additional filter conditions on columns can make use of skip indexes (minmax, set etc), Clickhouse by default chooses a post-filtering strategy. Clickhouse gives higher priority to the vector similarity index because the vector index is expected to deliver business value by accelerating semantic search response times.
+
+Clickhouse provides 2 settings for finer control on post-filtering and pre-filtering -
+
+```
+ann_prefer_pre_filtering
+```
+When the additional filter conditions are extremely selective, it is possible that brute force search on a small filtered set of rows gives better results then post-filtering using the vector search. Users can request explicit pre-filtering by setting ```ann_prefer_pre_filtering``` to True (default is False). An example query where pre-filtering could be a good choice is -
+
+```sql
+SELECT bookid, author, title
+FROM books
+WHERE price < 2.00
+ORDER BY cosineDistance(book_vector, getEmbedding('Books on ancient Asian empires'))
+LIMIT 10
+```
+
+Assuming books priced less that $2 are a tiny portion, post-filtering approach may return 0 rows because the top LIMIT <N> matches returned by the vector index could all be priced above $2. By opting for explicit pre-filtering, the subset of all books priced less than $2 are shortlisted and then brute-force vector search executed on the subset to return the closest matches.
+
+```
+ann_post_filter_multiplier
+```
+As explained above in the trade-offs, post-filtering could return lesser number of rows then specified in the 'LIMIT <N>' clause. Consider this query -
+
+```sql
+SELECT bookid, author, title
+FROM books
+WHERE published_year <= 2000
+ORDER BY cosineDistance(book_vector, getEmbedding('Books on ancient Asian empires'))
+LIMIT 10
+```
+One or more of the 10 nearest matching books returned by the vector index could be published after year 2000. Hence the query will end up returning less than 10 rows, contrary to user expectations. For such cases, the parameter ```ann_post_filter_multiplier``` can be set to a value like 2 or 10 to indicate that 20 or 100 nearest matching books should be returned by the vector index and then the additional filter to be applied on those rows to return the result of 10 rows.
 
 ### Performance Tuning {#performance-tuning}
 

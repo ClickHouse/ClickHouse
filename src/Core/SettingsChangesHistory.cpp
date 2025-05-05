@@ -86,6 +86,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"force_exchange_kind", "", "", "New experimental setting."},
             {"allow_experimental_delta_kernel_rs", true, true, "New setting"},
             {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
+            {"ann_prefer_pre_filtering", false, true, "Vector search related "},
+            {"ann_post_filter_multiplier", 1, 1, "Vector search related "},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
