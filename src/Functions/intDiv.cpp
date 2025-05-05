@@ -139,8 +139,8 @@ in the range of the dividend, or when dividing a minimal negative number by minu
     FunctionDocumentation::ReturnedValue returned_value = "Result of integer division of a and b";
     FunctionDocumentation::Example example1 = {"Integer division of two floats", R"(
 SELECT
-  intDiv(toFloat64(1), 0.001) AS res,
-  toTypeName(res)
+intDiv(toFloat64(1), 0.001) AS res,
+toTypeName(res)
     )", R"(
 ┌──res─┬─toTypeName(intDiv(toFloat64(1), 0.001))─┐
 │ 1000 │ Int64                                   │
