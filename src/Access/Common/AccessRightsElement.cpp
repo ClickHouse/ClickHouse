@@ -142,8 +142,12 @@ void AccessRightsElement::formatColumnNames(WriteBuffer & buffer) const
 
 void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool hilite) const
 {
-    const auto context = Context::getGlobalContextInstance();
-    const auto & access_control = context->getAccessControl();
+    auto is_enabled_user_name_access_type = true;
+    if (const auto context = Context::getGlobalContextInstance())
+    {
+        const auto & access_control = context->getAccessControl();
+        is_enabled_user_name_access_type = access_control.isEnabledUserNameAccessType();
+    }
 
     buffer << (hilite ? IAST::hilite_keyword : "") << "ON " << (hilite ? IAST::hilite_none : "");
     if (isGlobalWithParameter())
@@ -152,7 +156,7 @@ void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool hilite) cons
         /// If `enable_user_name_access_type` is set to false, we will dump `GRANT CREATE USER ON *` as `GRANT CREATE USER ON *.*`.
         /// This will allow us to run old replicas in the same cluster.
         if (access_flags.getParameterType() == AccessFlags::USER_NAME
-            && !access_control.isEnabledUserNameAccessType())
+            && is_enabled_user_name_access_type)
         {
             if (!anyParameter())
                 LOG_WARNING(getLogger("AccessRightsElement"),

@@ -173,7 +173,7 @@ public:
     void setBcryptWorkfactor(int workfactor_);
     int getBcryptWorkfactor() const;
 
-    /// Compatability setting
+    /// Compatibility setting
     void setEnableUserNameAccessType(bool enable_user_name_access_type_);
     bool isEnabledUserNameAccessType() const;
 
