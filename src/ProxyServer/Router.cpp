@@ -5,8 +5,8 @@
 #include <fmt/format.h>
 #include <Poco/Exception.h>
 
-#include <ProxyServer/ActiveConnections.h>
-#include <ProxyServer/ConnectionsManager.h>
+#include <ProxyServer/ConnectionsCounter.h>
+#include <ProxyServer/LeastConnections.h>
 #include <ProxyServer/RoundRobin.h>
 #include <ProxyServer/Rules.h>
 #include <ProxyServer/ServerConfig.h>
@@ -22,46 +22,43 @@ Action getActionByRule(
 {
     if (rule->action.type == RuleActionType::Reject)
     {
-        return Action(RuleActionType::Reject, {}, rule->connections_manager, global_counter);
+        return Action(RuleActionType::Reject, {}, rule->connections_counter, global_counter);
     }
 
-    if (!rule->load_balancer)
+    if (!rule->load_balancer) [[unlikely]]
     {
-        // unlikely
         throw std::runtime_error(fmt::format("no balancer found for rule #{}", rule_id));
     }
 
-    const auto route_to = rule->load_balancer->select(*rule->connections_manager);
-    if (!route_to.has_value())
+    const auto target = rule->load_balancer->select(*rule->connections_counter);
+    if (!target.has_value()) [[unlikely]]
     {
-        // unlikely
         throw std::runtime_error(fmt::format("balancer could not find a suitable server. rule #{}", rule_id));
     }
 
-    const auto iter = servers.find(*route_to);
-    if (iter == servers.end())
+    const auto iter = servers.find(*target);
+    if (iter == servers.end()) [[unlikely]]
     {
-        // unlikely
         throw std::runtime_error(fmt::format("balancer returned the server that is not in the servers container. rule #{}", rule_id));
     }
 
-    return Action(RuleActionType::Route, {iter->second}, rule->connections_manager, global_counter);
+    return Action(RuleActionType::Route, {iter->second}, rule->connections_counter, global_counter);
 }
 
 }
 
 Action::Action(
     RuleActionType type_,
-    std::optional<ServerConfig> route_to_,
-    std::shared_ptr<ActiveConnectionsManager> connections_manager_,
+    std::optional<ServerConfig> target_,
+    std::shared_ptr<ConnectionsCounter> connections_counter_,
     GlobalConnectionsCounter * global_counter_)
     : type(type_)
-    , route_to(std::move(route_to_))
+    , target(std::move(target_))
     , global_counter(global_counter_)
 {
-    if (connections_manager_)
+    if (connections_counter_)
     {
-        connections_manager = std::optional(std::weak_ptr<ActiveConnectionsManager>(connections_manager_));
+        connections_counter = std::optional(std::weak_ptr<ConnectionsCounter>(connections_counter_));
     }
 }
 
@@ -75,31 +72,31 @@ RuleActionType Action::getType()
     return type;
 }
 
-const std::optional<ServerConfig> & Action::getRouteTo()
+const std::optional<ServerConfig> & Action::getTarget()
 {
-    return route_to;
+    return target;
 }
 
 void Action::disconnect()
 {
-    if (disconnected || !route_to.has_value() || !global_counter)
+    if (disconnected || !target.has_value() || !global_counter)
         return;
     disconnected = true;
 
-    if (!connections_manager.has_value())
+    if (!connections_counter.has_value())
     {
-        global_counter->updateConnectionCount(*route_to, -1);
+        global_counter->updateConnectionCount(*target, -1);
         return;
     }
 
-    auto connection_manager_ptr = connections_manager->lock();
-    if (connection_manager_ptr)
+    auto connection_counter_ptr = connections_counter->lock();
+    if (connection_counter_ptr)
     {
-        connection_manager_ptr->removeConnection(*route_to);
+        connection_counter_ptr->removeConnection(*target);
     }
     else
     {
-        global_counter->updateConnectionCount(*route_to, -1);
+        global_counter->updateConnectionCount(*target, -1);
     }
 }
 
@@ -107,6 +104,8 @@ Router::Router(const Poco::Util::AbstractConfiguration & cfg)
 {
     updateConfig(cfg);
 }
+
+Router::~Router() = default;
 
 void Router::updateConfig(const Poco::Util::AbstractConfiguration & cfg)
 {
@@ -137,18 +136,6 @@ Action Router::route(const std::string & user, const std::string & hostname, con
     }
 
     return Action(RuleActionType::Reject, {}, nullptr, nullptr);
-}
-
-void Router::notifyConnectionFinished(std::weak_ptr<DefaultRule> rule, const ServerConfig & server)
-{
-    if (!rule.expired())
-    {
-        rule.lock()->connections_manager->removeConnection(server);
-    }
-    else
-    {
-        connections_counter.updateConnectionCount(server, -1);
-    }
 }
 
 }

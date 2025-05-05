@@ -13,7 +13,7 @@ public:
     RoundRobinLoadBalancer();
     ~RoundRobinLoadBalancer() override;
 
-    std::optional<std::string> select(const ActiveConnectionsManager & connections_manager) override;
+    std::optional<std::string> select(const ConnectionsCounter & connections_counter) override;
 
 private:
     size_t counter = 0;

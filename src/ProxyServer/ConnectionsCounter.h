@@ -14,7 +14,7 @@ namespace Proxy
 class GlobalConnectionsCounter
 {
 public:
-    explicit GlobalConnectionsCounter() = default;
+    explicit GlobalConnectionsCounter();
 
     void updateConnectionCount(const ServerConfig & server, int64_t diff);
 
@@ -22,7 +22,7 @@ private:
     std::unordered_map<ServerConfig, size_t> counter;
 };
 
-class ActiveConnectionsManager
+class ConnectionsCounter
 {
 private:
     struct Entry
@@ -34,12 +34,11 @@ private:
     };
 
 public:
-    explicit ActiveConnectionsManager(
-        const std::vector<ServerConfig> & servers_ = {}, GlobalConnectionsCounter * global_counter_ = nullptr);
+    explicit ConnectionsCounter(const std::vector<ServerConfig> & servers_ = {}, GlobalConnectionsCounter * global_counter_ = nullptr);
 
-    ActiveConnectionsManager(ActiveConnectionsManager && other) noexcept;
+    ConnectionsCounter(ConnectionsCounter && other) noexcept;
 
-    ActiveConnectionsManager & operator=(ActiveConnectionsManager && other) noexcept;
+    ConnectionsCounter & operator=(ConnectionsCounter && other) noexcept;
 
     void addConnection(const ServerConfig & server);
 

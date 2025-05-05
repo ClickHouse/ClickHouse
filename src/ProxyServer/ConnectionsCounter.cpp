@@ -1,5 +1,5 @@
 
-#include "ConnectionsManager.h"
+#include "ConnectionsCounter.h"
 
 #include <mutex>
 #include <stdexcept>
@@ -8,6 +8,8 @@
 
 namespace Proxy
 {
+
+GlobalConnectionsCounter::GlobalConnectionsCounter() = default;
 
 void GlobalConnectionsCounter::updateConnectionCount(const ServerConfig & server, int64_t diff)
 {
@@ -19,12 +21,12 @@ void GlobalConnectionsCounter::updateConnectionCount(const ServerConfig & server
     }
 }
 
-bool ActiveConnectionsManager::Entry::operator<(const Entry & other) const
+bool ConnectionsCounter::Entry::operator<(const Entry & other) const
 {
     return count < other.count;
 }
 
-ActiveConnectionsManager::ActiveConnectionsManager(const std::vector<ServerConfig> & servers_, GlobalConnectionsCounter * global_counter_)
+ConnectionsCounter::ConnectionsCounter(const std::vector<ServerConfig> & servers_, GlobalConnectionsCounter * global_counter_)
     : servers(servers_)
     , global_counter(global_counter_)
 {
@@ -48,7 +50,7 @@ ActiveConnectionsManager::ActiveConnectionsManager(const std::vector<ServerConfi
     }
 }
 
-ActiveConnectionsManager::ActiveConnectionsManager(ActiveConnectionsManager && other) noexcept
+ConnectionsCounter::ConnectionsCounter(ConnectionsCounter && other) noexcept
     : servers(std::move(other.servers))
     , connection_count(std::move(other.connection_count))
     , least_loaded_servers(std::move(other.least_loaded_servers))
@@ -56,7 +58,7 @@ ActiveConnectionsManager::ActiveConnectionsManager(ActiveConnectionsManager && o
 {
 }
 
-ActiveConnectionsManager & ActiveConnectionsManager::operator=(ActiveConnectionsManager && other) noexcept
+ConnectionsCounter & ConnectionsCounter::operator=(ConnectionsCounter && other) noexcept
 {
     if (this != &other)
     {
@@ -69,45 +71,45 @@ ActiveConnectionsManager & ActiveConnectionsManager::operator=(ActiveConnections
     return *this;
 }
 
-void ActiveConnectionsManager::addConnection(const ServerConfig & server)
+void ConnectionsCounter::addConnection(const ServerConfig & server)
 {
     updateConnectionCount(server, 1);
 }
 
-void ActiveConnectionsManager::removeConnection(const ServerConfig & server)
+void ConnectionsCounter::removeConnection(const ServerConfig & server)
 {
     updateConnectionCount(server, -1);
 }
 
-std::optional<std::string> ActiveConnectionsManager::getLeastLoaded() const
+std::optional<std::string> ConnectionsCounter::getLeastLoaded() const
 {
     std::lock_guard lock(mutex);
     auto it = least_loaded_servers.begin();
     return it == least_loaded_servers.end() ? std::nullopt : std::optional(it->server.key);
 }
 
-size_t ActiveConnectionsManager::size() const
+size_t ConnectionsCounter::size() const
 {
     return servers.size();
 }
 
-bool ActiveConnectionsManager::empty() const
+bool ConnectionsCounter::empty() const
 {
     return servers.empty();
 }
 
-std::string ActiveConnectionsManager::operator[](size_t index) const
+std::string ConnectionsCounter::operator[](size_t index) const
 {
     return servers[index].key;
 }
 
-void ActiveConnectionsManager::updateConnectionCount(const ServerConfig & server, int64_t diff)
+void ConnectionsCounter::updateConnectionCount(const ServerConfig & server, int64_t diff)
 {
     std::lock_guard lock(mutex);
     const auto it = connection_count.find(server);
     if (it == connection_count.end())
     {
-        throw std::runtime_error("Server with key " + server.key + " not found in ActiveConnectionsManager");
+        throw std::runtime_error("Server with key " + server.key + " not found in ConnectionsCounter");
     }
     least_loaded_servers.erase({.server = server, .count = it->second});
     (it->second) += diff;

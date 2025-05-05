@@ -2,9 +2,10 @@
 
 #include <mutex>
 
+#include <boost/noncopyable.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include <ProxyServer/ConnectionsManager.h>
+#include <ProxyServer/ConnectionsCounter.h>
 #include <ProxyServer/RouterConfig.h>
 #include <ProxyServer/Rules.h>
 
@@ -16,49 +17,42 @@ struct Action
 public:
     explicit Action(
         RuleActionType type_,
-        std::optional<ServerConfig> route_to_,
-        std::shared_ptr<ActiveConnectionsManager> connections_manager_,
+        std::optional<ServerConfig> target_,
+        std::shared_ptr<ConnectionsCounter> connections_counter_,
         GlobalConnectionsCounter * global_counter_);
     ~Action();
 
     Action(const Action &) = delete; // non-copyable
-    Action & operator=(const Action &) = delete;
+    Action & operator=(const Action &) = delete; // non-copyable
     Action(Action &&) = default; // movable
-    Action & operator=(Action &&) = default;
+    Action & operator=(Action &&) = default; // movable
 
     RuleActionType getType();
-    const std::optional<ServerConfig>& getRouteTo();
-    
+    const std::optional<ServerConfig> & getTarget();
+
     void disconnect();
 
 private:
     RuleActionType type;
-    std::optional<ServerConfig> route_to = {};
+    std::optional<ServerConfig> target = {};
 
-    std::optional<std::weak_ptr<ActiveConnectionsManager>> connections_manager = {};
+    std::optional<std::weak_ptr<ConnectionsCounter>> connections_counter = {};
     GlobalConnectionsCounter * global_counter = nullptr;
     bool disconnected = false;
 };
 
-class Router
+class Router : private boost::noncopyable
 {
 private:
     using Config = RouterConfig;
 
 public:
-    Router(const Router &) = delete;
-    Router & operator=(const Router &) = delete;
-    Router(const Router &&) = delete;
-    Router & operator=(Router &&) = delete;
-    ~Router() = default;
-
     explicit Router(const Poco::Util::AbstractConfiguration & cfg);
+    ~Router();
 
     void updateConfig(const Poco::Util::AbstractConfiguration & cfg);
 
     Action route(const std::string & user, const std::string & hostname, const std::string & database);
-
-    void notifyConnectionFinished(std::weak_ptr<DefaultRule> rule, const ServerConfig & server);
 
 private:
     RouterConfig config;

@@ -5,7 +5,6 @@
         <console>true</console>
     </logger>
 
-    <http_port>8123</http_port>
     <tcp_port>9000</tcp_port>
 
     <storage>
@@ -13,8 +12,7 @@
             <server>
                 <key>server</key>
                 <host>127.0.0.1</host>
-                <http-port>8124</http-port>
-                <tcp-port>9001</tcp-port>
+                <tcp_port>9001</tcp_port>
             </server>
         </servers>
     </storage>

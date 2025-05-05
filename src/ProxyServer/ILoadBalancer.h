@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ProxyServer/ConnectionsManager.h>
+#include <ProxyServer/ConnectionsCounter.h>
 
 namespace Proxy
 {
@@ -10,7 +10,7 @@ class ILoadBalancer
 public:
     virtual ~ILoadBalancer() = default;
 
-    virtual std::optional<std::string> select(const ActiveConnectionsManager & connections_manager) = 0;
+    virtual std::optional<std::string> select(const ConnectionsCounter & connections_counter) = 0;
 };
 
 }

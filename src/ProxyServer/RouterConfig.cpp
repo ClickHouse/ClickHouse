@@ -2,14 +2,15 @@
 
 #include <memory>
 
-#include <ProxyServer/ActiveConnections.h>
-#include <ProxyServer/RoundRobin.h>
-#include <ProxyServer/Rules.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/XML/XMLWriter.h>
-#include "Common/Exception.h"
-#include "ProxyServer/ConnectionsManager.h"
-#include "ProxyServer/ServerConfig.h"
+#include <Common/Exception.h>
+
+#include <ProxyServer/ConnectionsCounter.h>
+#include <ProxyServer/LeastConnections.h>
+#include <ProxyServer/RoundRobin.h>
+#include <ProxyServer/Rules.h>
+#include <ProxyServer/ServerConfig.h>
 
 namespace DB
 {
@@ -42,8 +43,10 @@ Servers parseServers(const Poco::Util::AbstractConfiguration & config)
             ServerConfig server;
             server.key = config.getString(prefix + ".key");
             server.host = config.getString(prefix + ".host");
-            server.http_port = config.getInt(prefix + ".http-port");
-            server.tcp_port = config.getInt(prefix + ".tcp-port");
+
+            server.tcp_port = config.getInt(prefix + ".tcp_port", 0);
+            server.tcp_with_proxy_port = config.getInt(prefix + ".tcp_with_proxy_port", 0);
+
             servers[server.key] = std::move(server);
         }
         catch (const Poco::NotFoundException &)
@@ -55,8 +58,12 @@ Servers parseServers(const Poco::Util::AbstractConfiguration & config)
     return servers;
 }
 
-std::shared_ptr<DefaultRule>
-parseRule(const Poco::Util::AbstractConfiguration & config, const Servers & servers, GlobalConnectionsCounter * global_counter, std::string prefix, bool is_filter_rule)
+std::shared_ptr<DefaultRule> parseRule(
+    const Poco::Util::AbstractConfiguration & config,
+    const Servers & servers,
+    GlobalConnectionsCounter * global_counter,
+    std::string prefix,
+    bool is_filter_rule)
 try
 {
     std::shared_ptr<DefaultRule> rule;
@@ -96,7 +103,7 @@ try
             {
                 std::string server_key = config.getString(prefix + "." + config_key);
 
-                rule->action.route_to_servers.push_back(server_key);
+                rule->action.target_servers.push_back(server_key);
             }
             catch (const Poco::NotFoundException &)
             {
@@ -104,7 +111,7 @@ try
             }
         }
 
-        if (rule->action.route_to_servers.empty())
+        if (rule->action.target_servers.empty())
         {
             throw DB::Exception(
                 DB::ErrorCodes::INVALID_CONFIG_PARAMETER, "Routing rule action 'route_to' has no servers configured at {}", prefix);
@@ -118,14 +125,14 @@ try
             case LoadBalancingPolicy::RoundRobin:
                 rule->load_balancer = std::make_unique<RoundRobinLoadBalancer>();
                 break;
-            case LoadBalancingPolicy::ActiveConnections:
-                rule->load_balancer = std::make_unique<ActiveConnectionsLoadBalancer>();
+            case LoadBalancingPolicy::LeastConnections:
+                rule->load_balancer = std::make_unique<LeastConnectionsLoadBalancer>();
                 break;
         }
 
         std::vector<ServerConfig> rule_servers;
-        rule_servers.reserve(rule->action.route_to_servers.size());
-        for (const auto & server_key : rule->action.route_to_servers)
+        rule_servers.reserve(rule->action.target_servers.size());
+        for (const auto & server_key : rule->action.target_servers)
         {
             const auto iter = servers.find(server_key);
             if (iter == servers.end())
@@ -135,7 +142,7 @@ try
             }
             rule_servers.push_back(iter->second);
         }
-        rule->connections_manager = std::make_shared<ActiveConnectionsManager>(rule_servers, global_counter);
+        rule->connections_counter = std::make_shared<ConnectionsCounter>(rule_servers, global_counter);
     }
 
     return rule;
@@ -171,7 +178,8 @@ Rules parseRules(const Poco::Util::AbstractConfiguration & config, const Servers
     return rules;
 }
 
-std::shared_ptr<DefaultRule> parseDefaultRule(const Poco::Util::AbstractConfiguration & config, const Servers & servers, GlobalConnectionsCounter * global_counter)
+std::shared_ptr<DefaultRule>
+parseDefaultRule(const Poco::Util::AbstractConfiguration & config, const Servers & servers, GlobalConnectionsCounter * global_counter)
 {
     std::string prefix = "routing.default";
     return parseRule(config, servers, global_counter, prefix, /*is_filter_rule=*/false);

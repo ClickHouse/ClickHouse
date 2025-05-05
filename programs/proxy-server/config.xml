@@ -5,22 +5,22 @@
         <count>10</count>
     </logger>
 
-    <http_port>8123</http_port>
     <tcp_port>9000</tcp_port>
+    <!-- <tcp_with_proxy_port>9011</tcp_with_proxy_port> -->
 
     <storage>
         <servers>
             <server>
                 <key>server-1</key>
                 <host>127.0.0.1</host>
-                <http-port>8124</http-port>
-                <tcp-port>9001</tcp-port>
+                <tcp_port>9001</tcp_port>
+                <!-- <tcp_with_proxy_port>9012</tcp_with_proxy_port> -->
             </server>
             <server>
                 <key>server-2</key>
                 <host>127.0.0.1</host>
-                <http-port>8125</http-port>
-                <tcp-port>9002</tcp-port>
+                <tcp_port>9002</tcp_port>
+                <!-- <tcp_with_proxy_port>9013</tcp_with_proxy_port> -->
             </server>
         </servers>
     </storage>

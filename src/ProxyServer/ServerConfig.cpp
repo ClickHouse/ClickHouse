@@ -9,14 +9,14 @@ size_t ServerConfig::id() const
 {
     size_t seed = 0;
     boost::hash_combine(seed, host);
-    boost::hash_combine(seed, http_port);
     boost::hash_combine(seed, tcp_port);
+    boost::hash_combine(seed, tcp_with_proxy_port);
     return seed;
 }
 
 bool ServerConfig::operator==(const ServerConfig & other) const
 {
-    return host == other.host && http_port == other.http_port && tcp_port == other.tcp_port;
+    return host == other.host && tcp_port == other.tcp_port && tcp_with_proxy_port == other.tcp_with_proxy_port;
 }
 
 }

@@ -5,10 +5,10 @@
 #include <IO/ReadBufferFromPocoSocketChunked.h>
 #include <IO/WriteBufferFromPocoSocketChunked.h>
 #include <Interpreters/ClientInfo.h>
+#include <Server/TCPServer.h>
 
 #include <ProxyServer/IProxyServer.h>
 #include <ProxyServer/Router.h>
-#include <Server/TCPServer.h>
 
 namespace Poco
 {
@@ -23,7 +23,7 @@ using DB::TCPServer;
 class TCPHandler : public Poco::Net::TCPServerConnection
 {
 private:
-    struct ClientConnection
+    struct ClientConnectionData
     {
         String user;
         String password;
@@ -37,7 +37,12 @@ private:
     };
 
 public:
-    TCPHandler(IProxyServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, RouterPtr router_);
+    TCPHandler(
+        IProxyServer & server_,
+        TCPServer & tcp_server_,
+        const Poco::Net::StreamSocket & socket_,
+        bool parse_proxy_protocol_,
+        RouterPtr router_);
     ~TCPHandler() override;
 
     void run() override;
@@ -47,6 +52,8 @@ private:
     TCPServer & tcp_server;
     bool parse_proxy_protocol = false;
     LoggerPtr log;
+
+    [[maybe_unused]] String forwarded_for;
 
     Poco::Timespan send_timeout = Poco::Timespan(DB::DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0);
     Poco::Timespan receive_timeout = Poco::Timespan(DB::DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0);
@@ -59,21 +66,24 @@ private:
 
     std::optional<Action> action;
 
-    ClientConnection client_connection;
-    std::unique_ptr<Poco::Net::StreamSocket> mid_socket;
-    /// Streams for reading/writing from/to server connection socket.
-    std::shared_ptr<DB::ReadBufferFromPocoSocketChunked> mid_in;
-    std::shared_ptr<DB::WriteBufferFromPocoSocketChunked> mid_out;
+    std::string proxy_header;
+    ClientConnectionData client_connection_data;
+    std::unique_ptr<Poco::Net::StreamSocket> target_socket;
+    /// Stream for writing to server connection socket.
+    std::shared_ptr<DB::WriteBufferFromPocoSocketChunked> target_out;
 
     void runImpl();
 
+    bool receiveProxyHeader();
+    void redirectProxyHeader();
     void receiveHello();
+    void redirectHello();
     void connect();
-    void sendHello();
 
-    void startRedirection();
+    void doRedirection();
 
-    Poco::Net::SocketAddress getClientAddress(const DB::ClientInfo & client_info);
+    int getTargetPort(const ServerConfig & target) const;
+    const char * getTargetPortName() const;
 };
 
 }

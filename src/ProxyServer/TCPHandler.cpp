@@ -6,6 +6,7 @@
 
 #include <Core/Defines.h>
 #include <Core/Protocol.h>
+#include <IO/LimitReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <IO/WriteBuffer.h>
@@ -21,6 +22,7 @@
 
 namespace DB::ErrorCodes
 {
+extern const int ATTEMPT_TO_READ_AFTER_EOF;
 extern const int BAD_ARGUMENTS;
 extern const int CLIENT_HAS_CONNECTED_TO_WRONG_PORT;
 extern const int UNEXPECTED_PACKET_FROM_CLIENT;
@@ -29,10 +31,12 @@ extern const int UNEXPECTED_PACKET_FROM_CLIENT;
 namespace Proxy
 {
 
-TCPHandler::TCPHandler(IProxyServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, RouterPtr router_)
+TCPHandler::TCPHandler(
+    IProxyServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, RouterPtr router_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
+    , parse_proxy_protocol(parse_proxy_protocol_)
     , log(getLogger("TCPHandler"))
     , router(router_)
 {
@@ -63,6 +67,10 @@ void TCPHandler::runImpl()
     socket().setNoDelay(true);
 
     in = std::make_shared<DB::ReadBufferFromPocoSocketChunked>(socket());
+
+    /// Support for PROXY protocol
+    if (parse_proxy_protocol && !receiveProxyHeader())
+        return;
 
     if (in->eof())
     {
@@ -95,22 +103,22 @@ void TCPHandler::runImpl()
             }
             return;
         }
-        startRedirection();
+        doRedirection();
         action->disconnect();
     }
-    catch (const DB::Exception & _)
+    catch (const DB::Exception & e)
     {
-        // if (e.code() == ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT)
-        // {
-        //     LOG_DEBUG(log, "Client has connected to wrong port.");
-        //     return;
-        // }
+        if (e.code() == DB::ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT)
+        {
+            LOG_DEBUG(log, "Client has connected to wrong port.");
+            return;
+        }
 
-        // if (e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
-        // {
-        //     LOG_INFO(log, "Client has gone away.");
-        //     return;
-        // }
+        if (e.code() == DB::ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
+        {
+            LOG_INFO(log, "Client has gone away.");
+            return;
+        }
 
         // try
         // {
@@ -129,6 +137,7 @@ void TCPHandler::runImpl()
 namespace
 {
 
+// TODO: move to lib
 std::string formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(const Poco::Util::AbstractConfiguration & config)
 {
     std::string result = fmt::format(
@@ -136,14 +145,118 @@ std::string formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(const Poco::Ut
         "Port {} is for clickhouse-client program\r\n",
         config.getString("tcp_port"));
 
-    if (config.has("http_port"))
-    {
-        result += fmt::format("You must use port {} for HTTP.\r\n", config.getString("http_port"));
-    }
+    // TODO: add hint using http port when supported
 
     return result;
 }
 
+}
+
+bool TCPHandler::receiveProxyHeader()
+{
+    if (in->eof())
+    {
+        LOG_WARNING(log, "Client has not sent any data.");
+        return false;
+    }
+
+    String forwarded_address;
+
+    /// Only PROXYv1 is supported.
+    /// Validation of protocol is not fully performed.
+
+    DB::LimitReadBuffer limit_in(*in, {.read_no_more = 107, .expect_eof = true}); /// Maximum length from the specs.
+
+    std::string aux;
+    proxy_header.clear();
+    proxy_header.reserve(107); // TODO: move to some constants header?
+
+    assertString("PROXY ", limit_in);
+    proxy_header += "PROXY ";
+
+    if (limit_in.eof())
+    {
+        LOG_WARNING(log, "Incomplete PROXY header is received.");
+        return false;
+    }
+
+    /// TCP4 / TCP6 / UNKNOWN
+    if ('T' == *limit_in.position())
+    {
+        assertString("TCP", limit_in);
+        proxy_header += "TCP";
+
+        if (limit_in.eof())
+        {
+            LOG_WARNING(log, "Incomplete PROXY header is received.");
+            return false;
+        }
+
+        if ('4' != *limit_in.position() && '6' != *limit_in.position())
+        {
+            LOG_WARNING(log, "Unexpected protocol in PROXY header is received.");
+            return false;
+        }
+
+        bool is_tcp6 = ('6' == *limit_in.position());
+        proxy_header += *limit_in.position();
+
+        ++limit_in.position();
+        assertChar(' ', limit_in);
+        proxy_header += ' ';
+
+        /// Read the first field and ignore other.
+        readStringUntilWhitespace(forwarded_address, limit_in);
+        proxy_header += forwarded_address;
+
+        if (is_tcp6)
+            forwarded_address = "[" + forwarded_address + "]";
+
+        /// Skip second field (destination address)
+        assertChar(' ', limit_in);
+        readStringUntilWhitespace(aux, limit_in);
+        assertChar(' ', limit_in);
+        proxy_header += ' ' + aux + ' ';
+
+        /// Read source port
+        String port;
+        readStringUntilWhitespace(port, limit_in);
+        proxy_header += port;
+
+        forwarded_address += ":" + port;
+
+        /// Skip until \r\n
+        while (!limit_in.eof() && *limit_in.position() != '\r')
+        {
+            proxy_header += *limit_in.position();
+            ++limit_in.position();
+        }
+        assertString("\r\n", limit_in);
+        proxy_header += "\r\n";
+    }
+    else if (checkString("UNKNOWN", limit_in))
+    {
+        /// This is just a health check, there is no subsequent data in this connection.
+
+        while (!limit_in.eof() && *limit_in.position() != '\r')
+            ++limit_in.position();
+        assertString("\r\n", limit_in);
+        return false;
+    }
+    else
+    {
+        LOG_WARNING(log, "Unexpected protocol in PROXY header is received.");
+        return false;
+    }
+
+    LOG_TRACE(log, "Forwarded client address from PROXY header: {}", forwarded_address);
+    forwarded_for = std::move(forwarded_address);
+    return true;
+}
+
+void TCPHandler::redirectProxyHeader()
+{
+    target_out->write(proxy_header.data(), proxy_header.size());
 }
 
 void TCPHandler::receiveHello()
@@ -207,7 +320,7 @@ void TCPHandler::receiveHello()
             return;
         }
         case RuleActionType::Route: {
-            client_connection = ClientConnection{
+            client_connection_data = ClientConnectionData{
                 .user = std::move(user),
                 .password = std::move(password),
                 .default_database = std::move(default_database),
@@ -218,28 +331,71 @@ void TCPHandler::receiveHello()
                 .client_version_patch = client_version_patch,
                 .client_tcp_protocol_version = client_tcp_protocol_version};
 
-            LOG_DEBUG(log, "Redirecting connection to {}:{}", action->getRouteTo()->host, action->getRouteTo()->tcp_port);
+            const auto & target = action->getTarget().value();
+            auto target_port = getTargetPort(target);
+
+            if (target_port == 0) // TODO: check ports when parsing config
+            {
+                LOG_ERROR(log, "Cannot redirect TCP connection to server '{}', there is no {} provided", target.key, getTargetPortName());
+                return;
+            }
+
+            LOG_DEBUG(log, "Redirecting connection to {}:{}", target.host, target_port);
 
             connect();
-            // sendHello();
+            if (parse_proxy_protocol)
+            {
+                redirectProxyHeader();
+            }
+            redirectHello();
         }
     }
 }
 
+void TCPHandler::redirectHello()
+{
+    auto has_control_character = [](const std::string & s)
+    {
+        for (auto c : s)
+            if (isControlASCII(c))
+                return true;
+        return false;
+    };
+
+    if (has_control_character(client_connection_data.default_database) || has_control_character(client_connection_data.user)
+        || has_control_character(client_connection_data.password))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters");
+
+    writeVarUInt(DB::Protocol::Client::Hello, *target_out);
+    writeStringBinary(client_connection_data.client_name, *target_out);
+    writeVarUInt(client_connection_data.client_version_major, *target_out);
+    writeVarUInt(client_connection_data.client_version_minor, *target_out);
+    // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
+    writeVarUInt(client_connection_data.client_tcp_protocol_version, *target_out);
+    writeStringBinary(client_connection_data.default_database, *target_out);
+
+    writeStringBinary(client_connection_data.user, *target_out);
+    writeStringBinary(client_connection_data.password, *target_out);
+
+    target_out->next();
+}
+
 void TCPHandler::connect()
 {
-    const auto & assigned_server = action->getRouteTo().value();
+    const auto & target = action->getTarget().value();
 
-    auto addresses = DB::DNSResolver::instance().resolveAddressList(assigned_server.host, assigned_server.tcp_port);
+    auto addresses = DB::DNSResolver::instance().resolveAddressList(target.host, getTargetPort(target));
     const auto connection_timeout = DB::DBMS_DEFAULT_CONNECT_TIMEOUT_SEC; // TODO: move to config
 
     for (auto it = addresses.begin(); it != addresses.end();)
     {
-        mid_socket = std::make_unique<Poco::Net::StreamSocket>();
+        target_socket = std::make_unique<Poco::Net::StreamSocket>();
 
         try
         {
-            mid_socket->connect(*it, connection_timeout);
+            target_socket->connect(*it, connection_timeout);
             break;
         }
         catch (DB::NetException &)
@@ -262,66 +418,30 @@ void TCPHandler::connect()
         }
     }
 
-    mid_socket->setReceiveTimeout(DB::DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC); // TODO: move to config
-    mid_socket->setSendTimeout(DB::DBMS_DEFAULT_SEND_TIMEOUT_SEC); // TODO: move to config
-    mid_socket->setNoDelay(true);
+    target_socket->setReceiveTimeout(DB::DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC); // TODO: move to config
+    target_socket->setSendTimeout(DB::DBMS_DEFAULT_SEND_TIMEOUT_SEC); // TODO: move to config
+    target_socket->setNoDelay(true);
 
-    // TODO keepalive ?
+    // TODO: keepalive ?
 
-    mid_in = std::make_shared<DB::ReadBufferFromPocoSocketChunked>(*mid_socket);
-    // in->setAsyncCallback(async_callback);
-
-    mid_out = std::make_shared<DB::AutoCanceledWriteBuffer<DB::WriteBufferFromPocoSocketChunked>>(*mid_socket);
-    // out->setAsyncCallback(async_callback);
-
-    sendHello();
+    target_out = std::make_shared<DB::AutoCanceledWriteBuffer<DB::WriteBufferFromPocoSocketChunked>>(*target_socket);
 }
 
-void TCPHandler::sendHello()
+void TCPHandler::doRedirection()
 {
-    auto has_control_character = [](const std::string & s)
-    {
-        for (auto c : s)
-            if (isControlASCII(c))
-                return true;
-        return false;
-    };
-
-    if (has_control_character(client_connection.default_database) || has_control_character(client_connection.user)
-        || has_control_character(client_connection.password))
-        throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS,
-            "Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters");
-
-    writeVarUInt(DB::Protocol::Client::Hello, *mid_out);
-    writeStringBinary(client_connection.client_name, *mid_out);
-    writeVarUInt(client_connection.client_version_major, *mid_out);
-    writeVarUInt(client_connection.client_version_minor, *mid_out);
-    // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
-    writeVarUInt(client_connection.client_tcp_protocol_version, *mid_out);
-    writeStringBinary(client_connection.default_database, *mid_out);
-
-    writeStringBinary(client_connection.user, *mid_out);
-    writeStringBinary(client_connection.password, *mid_out);
-
-    mid_out->next();
-}
-
-void TCPHandler::startRedirection()
-{
-    const auto & assigned_server = action->getRouteTo().value();
+    const auto & assigned_server = action->getTarget().value();
 
     constexpr size_t buffer_size = 64 * 1024;
     char buffer[buffer_size];
 
     Poco::Net::Socket::SocketList read_list;
     read_list.push_back(socket());
-    read_list.push_back(*mid_socket);
+    read_list.push_back(*target_socket);
 
     bool client_active = true;
     bool server_active = true;
 
-    LOG_DEBUG(log, "Starting proxy redirection between client and server {}:{}", assigned_server.host, assigned_server.tcp_port);
+    LOG_DEBUG(log, "Starting proxy redirection between client and server {}:{}", assigned_server.host, getTargetPort(assigned_server));
 
     try
     {
@@ -342,7 +462,7 @@ void TCPHandler::startRedirection()
                     int bytes_read = socket().receiveBytes(buffer, buffer_size);
                     if (bytes_read > 0)
                     {
-                        mid_socket->sendBytes(buffer, bytes_read);
+                        target_socket->sendBytes(buffer, bytes_read);
                     }
                     else if (bytes_read == 0)
                     {
@@ -360,11 +480,11 @@ void TCPHandler::startRedirection()
                 }
             }
 
-            if (std::find(read_ready.begin(), read_ready.end(), *mid_socket) != read_ready.end())
+            if (std::find(read_ready.begin(), read_ready.end(), *target_socket) != read_ready.end())
             {
                 try
                 {
-                    int bytes_read = mid_socket->receiveBytes(buffer, buffer_size);
+                    int bytes_read = target_socket->receiveBytes(buffer, buffer_size);
                     if (bytes_read > 0)
                     {
                         socket().sendBytes(buffer, bytes_read);
@@ -388,21 +508,21 @@ void TCPHandler::startRedirection()
                     else
                     {
                         LOG_WARNING(log, "Non-fatal error from server: {}", e.displayText());
-                        Poco::Thread::sleep(100); // TOOD: move to config
+                        Poco::Thread::sleep(100); // TODO: move to config
                     }
                 }
             }
 
             if (read_ready.empty())
             {
-                Poco::Thread::sleep(10); // TOOD: move to config
+                Poco::Thread::sleep(10); // TODO: move to config
             }
         }
     }
     catch (...)
     {
         out->finalize();
-        mid_out->finalize();
+        target_out->finalize();
         throw;
     }
 
@@ -422,7 +542,7 @@ void TCPHandler::startRedirection()
     {
         try
         {
-            mid_socket->shutdown();
+            target_socket->shutdown();
         }
         catch (...)
         {
@@ -440,7 +560,7 @@ void TCPHandler::startRedirection()
     }
     try
     {
-        mid_out->finalize();
+        target_out->finalize();
     }
     catch (...)
     {
@@ -448,6 +568,16 @@ void TCPHandler::startRedirection()
     }
 
     LOG_DEBUG(log, "Proxy redirection completed");
+}
+
+int TCPHandler::getTargetPort(const ServerConfig & target) const
+{
+    return parse_proxy_protocol ? target.tcp_with_proxy_port : target.tcp_port;
+}
+
+const char * TCPHandler::getTargetPortName() const
+{
+    return parse_proxy_protocol ? "tcp_with_proxy_port" : "tcp_port";
 }
 
 } // namespace Proxy

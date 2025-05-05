@@ -2,8 +2,8 @@
 
 #include <vector>
 
+#include <ProxyServer/ConnectionsCounter.h>
 #include <ProxyServer/ILoadBalancer.h>
-#include <ProxyServer/ConnectionsManager.h>
 
 namespace Proxy
 {
@@ -11,7 +11,7 @@ namespace Proxy
 enum class LoadBalancingPolicy
 {
     RoundRobin,
-    ActiveConnections,
+    LeastConnections,
 };
 
 constexpr LoadBalancingPolicy defaultLoadBalancingPolicy = LoadBalancingPolicy::RoundRobin;
@@ -27,7 +27,7 @@ enum class RuleActionType
 struct RuleAction
 {
     RuleActionType type = RuleActionType::Route;
-    std::vector<std::string> route_to_servers;
+    std::vector<std::string> target_servers;
 };
 
 struct DefaultRule
@@ -35,11 +35,11 @@ struct DefaultRule
     RuleAction action;
     LoadBalancingPolicy policy;
     std::unique_ptr<ILoadBalancer> load_balancer;
-    std::shared_ptr<ActiveConnectionsManager> connections_manager;
+    std::shared_ptr<ConnectionsCounter> connections_counter;
 
     DefaultRule() = default;
-    DefaultRule(DefaultRule&&) = default;
-    DefaultRule& operator=(DefaultRule&&) = default;
+    DefaultRule(DefaultRule &&) = default;
+    DefaultRule & operator=(DefaultRule &&) = default;
 
     virtual ~DefaultRule() = default;
 };
@@ -51,8 +51,8 @@ struct FilterRule : public DefaultRule
     std::string user;
 
     FilterRule() = default;
-    FilterRule(FilterRule&&) = default;
-    FilterRule& operator=(FilterRule&&) = default;
+    FilterRule(FilterRule &&) = default;
+    FilterRule & operator=(FilterRule &&) = default;
 
     ~FilterRule() override = default;
 };
