@@ -1382,9 +1382,9 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
     {
         auto current = nodes_to_process.back();
         nodes_to_process.pop_back();
-        if (ColumnNodePtr current_column = std::dynamic_pointer_cast<ColumnNode>(current))
+        if (current->getNodeType() == QueryTreeNodeType::COLUMN)
         {
-            auto is_correlated_column = checkCorrelatedColumn(&scope, current_column);
+            auto is_correlated_column = checkCorrelatedColumn(&scope, current);
             if (is_correlated_column && !scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
             {
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -1392,7 +1392,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
                     " (Enable 'allow_experimental_correlated_subqueries' setting to allow correlated subqueries execution). In scope {}",
                     identifier_lookup.identifier.getFullName(),
                     resolved_identifier->formatASTForErrorMessage(),
-                    current_column->getColumnName(),
+                    current->as<ColumnNode>()->getColumnName(),
                     scope.scope_node->formatASTForErrorMessage());
             }
         }
@@ -2932,13 +2932,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     if (is_special_function_exists)
     {
         checkFunctionNodeHasEmptyNullsAction(*function_node_ptr);
-        /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
         auto & exists_subquery_argument = function_node_ptr->getArguments().getNodes().at(0);
         bool correlated_exists_subquery = exists_subquery_argument->getNodeType() == QueryTreeNodeType::QUERY
             ? exists_subquery_argument->as<QueryNode>()->isCorrelated()
             : exists_subquery_argument->as<UnionNode>()->isCorrelated();
         if (!correlated_exists_subquery)
         {
+            /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
             auto constant_data_type = std::make_shared<DataTypeUInt64>();
 
             auto in_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));

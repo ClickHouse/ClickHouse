@@ -61,74 +61,76 @@ Returned value: array of dictionary attribute values parsed in the attribute's d
 Throws an exception if cannot parse the value of the attribute, the value does not match the attribute data type, or the dictionary doesn't support this function.
 )" };
 
-    factory.registerFunction<FunctionDictGetNoType<DictionaryGetFunctionType::get>>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "attribute's data type") });
-    factory.registerFunction<FunctionDictGetNoType<DictionaryGetFunctionType::getOrDefault>>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "attribute's data type") });
-    factory.registerFunction<FunctionDictGetOrNull>(FunctionDocumentation{ .description=dict_get_or_null_description });
-    factory.registerFunction<FunctionDictGetNoType<DictionaryGetFunctionType::getAll>>(FunctionDocumentation{ .description=dict_get_all_description });
+    constexpr auto category_dictionary = FunctionDocumentation::Category::Dictionary;
 
-    factory.registerFunction<FunctionDictGetUInt8>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "UInt8") });
-    factory.registerFunction<FunctionDictGetUInt16>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "UInt16") });
-    factory.registerFunction<FunctionDictGetUInt32>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "UInt32") });
-    factory.registerFunction<FunctionDictGetUInt64>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "UInt64") });
-    factory.registerFunction<FunctionDictGetInt8>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "Int8") });
-    factory.registerFunction<FunctionDictGetInt16>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "Int16") });
-    factory.registerFunction<FunctionDictGetInt32>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "Int32") });
-    factory.registerFunction<FunctionDictGetInt64>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "Int64") });
-    factory.registerFunction<FunctionDictGetFloat32>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "Float32") });
-    factory.registerFunction<FunctionDictGetFloat64>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "Float64") });
-    factory.registerFunction<FunctionDictGetDate>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "Date") });
-    factory.registerFunction<FunctionDictGetDateTime>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "DateTime") });
-    factory.registerFunction<FunctionDictGetUUID>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "UUID") });
-    factory.registerFunction<FunctionDictGetIPv4>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "IPv4") });
-    factory.registerFunction<FunctionDictGetIPv6>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "IPv6") });
-    factory.registerFunction<FunctionDictGetString>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "String") });
+    factory.registerFunction<FunctionDictGetNoType<DictionaryGetFunctionType::get>>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "attribute's data type"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetNoType<DictionaryGetFunctionType::getOrDefault>>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "attribute's data type"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetOrNull>(FunctionDocumentation{ .description=dict_get_or_null_description, .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetNoType<DictionaryGetFunctionType::getAll>>(FunctionDocumentation{ .description=dict_get_all_description, .category = category_dictionary });
 
-    factory.registerFunction<FunctionDictGetUInt8OrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "UInt8") });
-    factory.registerFunction<FunctionDictGetUInt16OrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "UInt16") });
-    factory.registerFunction<FunctionDictGetUInt32OrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "UInt32") });
-    factory.registerFunction<FunctionDictGetUInt64OrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "UInt64") });
-    factory.registerFunction<FunctionDictGetInt8OrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "Int8") });
-    factory.registerFunction<FunctionDictGetInt16OrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "Int16") });
-    factory.registerFunction<FunctionDictGetInt32OrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "Int32") });
-    factory.registerFunction<FunctionDictGetInt64OrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "Int64") });
-    factory.registerFunction<FunctionDictGetFloat32OrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "Float32") });
-    factory.registerFunction<FunctionDictGetFloat64OrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "Float64") });
-    factory.registerFunction<FunctionDictGetDateOrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "Date") });
-    factory.registerFunction<FunctionDictGetDateTimeOrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "DateTime") });
-    factory.registerFunction<FunctionDictGetUUIDOrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "UUID") });
-    factory.registerFunction<FunctionDictGetIPv4OrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "IPv4") });
-    factory.registerFunction<FunctionDictGetIPv6OrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "IPv6") });
-    factory.registerFunction<FunctionDictGetStringOrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "String") });
+    factory.registerFunction<FunctionDictGetUInt8>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "UInt8"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetUInt16>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "UInt16"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetUInt32>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "UInt32"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetUInt64>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "UInt64"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetInt8>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "Int8"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetInt16>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "Int16"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetInt32>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "Int32"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetInt64>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "Int64"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetFloat32>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "Float32"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetFloat64>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "Float64"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetDate>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "Date"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetDateTime>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "DateTime"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetUUID>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "UUID"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetIPv4>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "IPv4"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetIPv6>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "IPv6"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetString>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "String"), .category = category_dictionary });
+
+    factory.registerFunction<FunctionDictGetUInt8OrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "UInt8"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetUInt16OrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "UInt16"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetUInt32OrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "UInt32"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetUInt64OrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "UInt64"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetInt8OrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "Int8"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetInt16OrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "Int16"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetInt32OrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "Int32"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetInt64OrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "Int64"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetFloat32OrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "Float32"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetFloat64OrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "Float64"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetDateOrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "Date"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetDateTimeOrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "DateTime"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetUUIDOrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "UUID"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetIPv4OrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "IPv4"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetIPv6OrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "IPv6"), .category = category_dictionary });
+    factory.registerFunction<FunctionDictGetStringOrDefault>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "String"), .category = category_dictionary });
 
     factory.registerFunction<FunctionDictHas>(FunctionDocumentation{ .description=R"(
 Checks whether a key is present in a dictionary.
 Accepts 2 parameters: name of the dictionary, key value - expression returning dictionary key-type value or tuple-type value - depending on the dictionary configuration.
 Returned value: 0 if there is no key, 1 if there is a key, type of UInt8
-)"});
+)", .category = category_dictionary});
 
     factory.registerFunction<FunctionDictGetHierarchy>(FunctionDocumentation{ .description=R"(
 Creates an array, containing all the parents of a key in the hierarchical dictionary.
 Accepts 2 parameters: name of the dictionary, key value - expression returning a UInt64-type value.
 Returned value: parents for the key, type of Array(UInt64)
-)"});
+)", .category = category_dictionary});
 
     factory.registerFunction<FunctionDictIsIn>(FunctionDocumentation{ .description=R"(
 Checks the ancestor of a key through the whole hierarchical chain in the dictionary.
 Accepts 3 parameters: name of the dictionary, key to be checked - expression returning a UInt64-type value, alleged ancestor of the key - expression returning a UInt64-type.
 Returned value: 0 if key is not a child of the ancestor, 1 if key is a child of the ancestor or if key is the ancestor, type of UInt8
-)"});
+)", .category = category_dictionary});
 
     factory.registerFunction<FunctionDictGetChildrenOverloadResolver>(FunctionDocumentation{ .description=R"(
 Returns first-level children as an array of indexes. It is the inverse transformation for dictGetHierarchy.
 Accepts 2 parameters: name of the dictionary, key value - expression returning a UInt64-type value.
 Returned value: first-level descendants for the key, type of Array(UInt64)
-)"});
+)", .category = category_dictionary});
 
     factory.registerFunction<FunctionDictGetDescendantsOverloadResolver>(FunctionDocumentation{ .description=R"(
 Returns all descendants as if dictGetChildren function was applied level times recursively.
 Accepts 3 parameters: name of the dictionary, key value - expression returning a UInt64-type value, level — hierarchy level - If level = 0 returns all descendants to the end - UInt8
 Returned value: descendants for the key, type of Array(UInt64)
-)"});
+)", .category = category_dictionary});
 }
 
 }

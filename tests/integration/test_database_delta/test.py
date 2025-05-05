@@ -77,10 +77,12 @@ def execute_multiple_spark_queries(node, queries_list, ignore_exit_code=False):
     return execute_spark_query(node, ";".join(queries_list), ignore_exit_code)
 
 
-def test_embedded_database_and_tables(started_cluster):
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_embedded_database_and_tables(started_cluster, use_delta_kernel):
     node1 = started_cluster.instances["node1"]
+    node1.query("drop database if exists unity_test")
     node1.query(
-        "create database unity_test engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false",
+        f"create database unity_test engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}",
         settings={"allow_experimental_database_unity_catalog": "1"},
     )
     default_tables = list(
@@ -214,7 +216,7 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
     )
     complex_data = (
         node1.query(
-            f"SELECT * FROM complex_schema.`{schema_name}.{table_name}`"
+            f"SELECT * FROM complex_schema.`{schema_name}.{table_name}`", settings={"allow_experimental_delta_kernel_rs": use_delta_kernel}
         )
         .strip()
         .split("\t")

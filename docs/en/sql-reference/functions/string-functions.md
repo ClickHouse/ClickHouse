@@ -2637,3 +2637,67 @@ Result:
 1. │ [417784657,728683856,3071092609] │
    └──────────────────────────────────┘
 ```
+
+## stringBytesUniq {#stringbytesuniq}
+
+Counts the number of distinct bytes in a string.
+
+**Syntax**
+
+```sql
+stringBytesUniq(s)
+```
+
+**Arguments**
+
+- `s` — The string to analyze. [String](../data-types/string.md).
+
+**Returned value**
+
+- The number of distinct bytes in the string. [UInt16](../data-types/int-uint.md).
+
+**Example**
+
+```sql
+SELECT stringBytesUniq('Hello');
+```
+
+Result:
+
+```result
+┌─stringBytesUniq('Hello')─┐
+│                        4 │
+└──────────────────────────┘
+```
+
+## stringBytesEntropy {#stringbytesentropy}
+
+Calculates Shannon's entropy of byte distribution in a string.
+
+**Syntax**
+
+```sql
+stringBytesEntropy(s)
+```
+
+**Arguments**
+
+- `s` — The string to analyze. [String](../data-types/string.md).
+
+**Returned value**
+
+- Shannon's entropy of byte distribution in the string. [Float64](../data-types/float.md).
+
+**Example**
+
+```sql
+SELECT stringBytesEntropy('Hello, world!');
+```
+
+Result:
+
+```result
+┌─stringBytesEntropy('Hello, world!')─┐
+│                         3.07049960  │
+└─────────────────────────────────────┘
+```
