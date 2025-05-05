@@ -208,9 +208,10 @@ public:
     void updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_read_info_value);
     bool isQueryWithSampling() const;
 
+    /// Special stuff for vector search ----
     void replaceVectorColumnWithDistance(const std::string & column);
-
     bool isVectorColumnReplaced() const;
+    /// ----
 
     /// Returns true if the optimization is applicable (and applies it then).
     bool requestOutputEachPartitionThroughSeparatePort();

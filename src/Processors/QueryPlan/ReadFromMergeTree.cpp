@@ -2113,19 +2113,20 @@ void ReadFromMergeTree::updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_re
 
 void ReadFromMergeTree::replaceVectorColumnWithDistance(const std::string & column)
 {
-    chassert(!isVectorColumnReplaced());
+    if (isVectorColumnReplaced())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector column unexpectedly already replaced.");
     std::erase(all_column_names, column);
     all_column_names.emplace_back("_distance");
     output_header = MergeTreeSelectProcessor::transformHeader(
-                    storage_snapshot->getSampleBlockForColumns(all_column_names),
-                    lazily_read_info,
-                    query_info.prewhere_info);
+                        storage_snapshot->getSampleBlockForColumns(all_column_names),
+                        lazily_read_info, query_info.prewhere_info);
 }
 
 bool ReadFromMergeTree::isVectorColumnReplaced() const
 {
-    return (std::find_if(all_column_names.begin(), all_column_names.end(), [] (const String & column_name)
-        { return column_name == "_distance"; }) != all_column_names.end());
+    return std::find_if(all_column_names.begin(), all_column_names.end(),
+                        [](const String & column_name) { return column_name == "_distance"; })
+            != all_column_names.end();
 }
 
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
