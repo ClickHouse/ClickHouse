@@ -209,7 +209,7 @@ public:
     bool isQueryWithSampling() const;
 
     /// Special stuff for vector search ----
-    void replaceVectorColumnWithDistance(const std::string & column);
+    void replaceVectorColumnWithDistanceColumn(const String & vector_column);
     bool isVectorColumnReplaced() const;
     /// ----
 

@@ -187,7 +187,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
             /// 1. Remove the physical vector column from ReadFromMergeTreeStep, add virtual "_distance" column
             /// 2. Replace the "cosineDistance(vec, [1.0, 2.0...])" node in the DAG by the "_distance" node
 
-            read_from_mergetree_step->replaceVectorColumnWithDistance(search_column);
+            read_from_mergetree_step->replaceVectorColumnWithDistanceColumn(search_column);
 
             expression.removeUnusedResult(sort_column); /// Removes the OUTPUT cosineDistance(...) FUNCTION Node
             expression.removeUnusedActions(); /// Removes the vector column INPUT node (it is no longer needed)
