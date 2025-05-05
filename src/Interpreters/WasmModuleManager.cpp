@@ -1,6 +1,5 @@
 #include <Interpreters/WasmModuleManager.h>
 #include <Interpreters/WebAssembly/HostApi.h>
-#include <Interpreters/WebAssembly/WasmEdgeRuntime.h>
 #include <Interpreters/WebAssembly/WasmTimeRuntime.h>
 
 #include <Interpreters/Context.h>
@@ -22,10 +21,8 @@
 namespace DB
 {
 
-// hello123
-// using WebAssembly::WasmEdgeRuntime;
-using WebAssembly::WasmTimeRuntime;
 using WebAssembly::WasmModule;
+using WebAssembly::WasmTimeRuntime;
 
 namespace ErrorCodes
 {
@@ -112,8 +109,6 @@ ResultType checkValidWasmCode(std::string_view name, std::string_view wasm_code)
 WasmModuleManager::WasmModuleManager(DiskPtr user_sciptrs_disk_, fs::path user_sciptrs_path_)
     : user_scripts_disk(std::move(user_sciptrs_disk_))
     , user_scripts_path(std::move(user_sciptrs_path_))
-    // hello123 here engine is chosen
-    // , engine(std::make_unique<WasmEdgeRuntime>())
     , engine(std::make_unique<WasmTimeRuntime>())
 {
     registerExistingModules();

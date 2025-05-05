@@ -214,6 +214,7 @@ public:
 
     void invoke(std::string_view function_name, const std::vector<WasmVal> & params, std::vector<WasmVal> & returns) override
     {
+        LOG_TRACE(log, "Function {} invocation started", function_name);
         auto get_function_result = instance.value().get(store, function_name);
         if (!get_function_result.has_value())
         {
@@ -257,7 +258,7 @@ public:
 
         returns.clear();
         std::transform(returns_values.begin(), returns_values.end(), std::back_inserter(returns), fromWasmTimeValue);
-        LOG_DEBUG(log, "Function {} invocation ended", function_name);
+        LOG_TRACE(log, "Function {} invocation ended", function_name);
     }
 
 private:
@@ -395,6 +396,7 @@ public:
 
     std::unique_ptr<WasmCompartment> instantiate(Config cfg) const override
     {
+        LOG_TRACE(log, "Module instantiation started");
         wasmtime::Config instance_config;
         if (cfg.fuel_limit)
         {
@@ -429,17 +431,21 @@ public:
         auto compartment = std::make_unique<WasmTimeCompartment>(
             std::move(engine_for_instance), std::move(store_for_instance), std::move(module_for_instance));
 
+        LOG_TRACE(log, "add host function started");
         for (const auto & host_function_ptr : host_functions)
         {
             auto add_host_func_result = linker_for_instance.func_new(
                 "env",
                 host_function_ptr->getName(),
                 toWasmFunctionType(host_function_ptr.get()),
-                [&compartment, &host_function_ptr](
+                [compartment_ptr = compartment.get(), module_log = this->log, &host_function_ptr](
                     wasmtime::Caller caller,
                     wasmtime::Span<const wasmtime::Val> params,
                     wasmtime::Span<wasmtime::Val> results) -> wasmtime::Result<std::monostate, wasmtime::Trap>
-                { return callHostFunction(compartment.get(), host_function_ptr.get(), caller, params, results); }
+                {
+                    LOG_TRACE(module_log, "host callback invocation started");
+                    return callHostFunction(compartment_ptr, host_function_ptr.get(), caller, params, results);
+                }
 
             );
             if (!add_host_func_result)
@@ -448,10 +454,11 @@ public:
                     ErrorCodes::WASM_ERROR, "Failed to add host function to module instance: {}", add_host_func_result.err().message());
             }
         }
+        LOG_TRACE(log, "add host function ended");
 
         compartment->instantiate(std::move(linker_for_instance));
 
-
+        LOG_TRACE(log, "module instantiation ended");
         return compartment;
     }
 
@@ -498,6 +505,8 @@ private:
     std::map<std::string, wasmtime::FuncType::Ref, std::less<>> function_imports_map;
 
     std::vector<std::unique_ptr<WasmHostFunction>> host_functions;
+
+    LoggerPtr log = getLogger("WasmTimeModule");
 };
 
 std::unique_ptr<WasmModule> WasmTimeRuntime::createModule(std::string_view wasm_code) const

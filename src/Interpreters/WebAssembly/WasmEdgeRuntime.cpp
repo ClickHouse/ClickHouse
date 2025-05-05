@@ -519,7 +519,7 @@ void WasmEdgeCompartment::invoke(std::string_view function_name, const std::vect
 
     returns.clear();
     std::transform(returns_values.begin(), returns_values.end(), std::back_inserter(returns), fromWasmEdgeValue<>);
-    LOG_DEBUG(log, "Function {} invocation ended", function_name);
+    LOG_TRACE(log, "Function {} invocation ended", function_name);
 }
 
 
