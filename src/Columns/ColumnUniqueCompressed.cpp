@@ -39,13 +39,13 @@ String ColumnUniqueFCBlockDF::getDecompressedAt(size_t pos) const
 {
     chassert(pos < data_column->size());
 
-    /// Default / Null value
-    if (!pos)
+    /// Default and Null value
+    if (pos < specialValuesCount())
     {
         return "";
     }
 
-    const size_t pos_in_block = (pos - 1) % block_size;
+    const size_t pos_in_block = (pos - specialValuesCount()) % block_size;
     if (pos_in_block == 0)
     {
         return data_column->getDataAt(pos).toString();
@@ -66,13 +66,13 @@ ColumnUniqueFCBlockDF::DecompressedValue ColumnUniqueFCBlockDF::getDecompressedR
 {
     chassert(pos < data_column->size());
 
-    /// Default / Null value
-    if (!pos)
+    /// Default and Null value
+    if (pos < specialValuesCount())
     {
         return {{nullptr, 0}, {nullptr, 0}};
     }
 
-    const size_t pos_in_block = (pos - 1) % block_size;
+    const size_t pos_in_block = (pos - specialValuesCount()) % block_size;
     if (pos_in_block == 0)
     {
         const StringRef prefix = data_column->getDataAt(pos);
@@ -164,17 +164,18 @@ size_t ColumnUniqueFCBlockDF::getPosOfClosestHeader(StringRef value) const
     /// Default value case
     if (value.empty())
     {
-        return 0;
+        return getNestedTypeDefaultValueIndex();
     }
 
     /// it's a binsearch over "header" positions
-    size_t left = 1;
-    size_t right = (data_column->size() - 1) / block_size;
-    size_t output = 1;
-    while (left <= right)
+    const size_t special_values_count = specialValuesCount();
+    size_t left = 0;
+    size_t right = (data_column->size() - special_values_count + block_size - 1) / block_size;
+    size_t output = special_values_count;
+    while (left < right)
     {
-        size_t mid = (left + right) / 2;
-        size_t header_index = mid * block_size;
+        const size_t mid = (left + right) / 2;
+        const size_t header_index = mid * block_size + special_values_count;
 
         const StringRef header = data_column->getDataAt(header_index);
         if (header < value || header == value)
@@ -184,11 +185,7 @@ size_t ColumnUniqueFCBlockDF::getPosOfClosestHeader(StringRef value) const
         }
         else
         {
-            if (mid == 0)
-            {
-                break;
-            }
-            right = mid - 1;
+            right = mid;
         }
     }
     return output;
@@ -218,9 +215,12 @@ void ColumnUniqueFCBlockDF::calculateCompression(const ColumnPtr & string_column
     data_column = data_column->cloneEmpty();
     common_prefix_lengths.clear();
 
-    /// Default / Null value
-    data_column->insert("");
-    common_prefix_lengths.push_back(0);
+    /// Default and Null value
+    for (size_t i = 0; i < specialValuesCount(); ++i)
+    {
+        data_column->insertDefault();
+        common_prefix_lengths.push_back(0);
+    }
 
     StringRef current_header = "";
     StringRef prev_data = ""; // to skip duplicates
@@ -319,12 +319,32 @@ MutableColumnPtr ColumnUniqueFCBlockDF::uniqueInsertRangeFrom(const IColumn & sr
     calculateCompression(sorted_column);
 
     auto positions = ColumnVector<UInt64>::create();
-    for (size_t i = start; i < start + length; ++i)
+    if (is_nullable) /// keeping it outside of loop for performance
     {
-        const StringRef data = src_column->getDataAt(i);
-        const UInt64 pos = getPosToInsert(data);
-        positions->insert(pos);
+        for (size_t i = start; i < start + length; ++i)
+        {
+            if (src.isNullAt(i))
+            {
+                positions->insert(getNullValueIndex());
+            }
+            else
+            {
+                const StringRef data = src_column->getDataAt(i);
+                const UInt64 pos = getPosToInsert(data);
+                positions->insert(pos);
+            }
+        }
     }
+    else 
+    {
+        for (size_t i = start; i < start + length; ++i)
+        {
+            const StringRef data = src_column->getDataAt(i);
+            const UInt64 pos = getPosToInsert(data);
+            positions->insert(pos);
+        }
+    }
+
     return positions;
 }
 
@@ -363,6 +383,10 @@ size_t ColumnUniqueFCBlockDF::uniqueDeserializeAndInsertFromArena(const char * p
 
 size_t ColumnUniqueFCBlockDF::uniqueInsertFrom(const IColumn & src, size_t n)
 {
+    if (is_nullable && src.isNullAt(n))
+    {
+        return getNullValueIndex();
+    }
     const ColumnString * src_column = getAndCheckColumnString(&src);
     const StringRef data = src_column->getDataAt(n);
     const size_t output = uniqueInsertData(data.data, data.size);
@@ -383,6 +407,10 @@ ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t
     for (size_t i = start; i < start + length; ++i)
     {
         partition_index = i;
+        if (src.isNullAt(i))
+        {
+            continue;
+        }
         const StringRef data = src.getDataAt(i);
         if (size() + to_add_strings.size() >= max_dictionary_size)
         {
@@ -396,15 +424,7 @@ ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t
 
     auto values = getDecompressedAll();
 
-    const ColumnString * src_column;
-    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&src))
-    {
-        src_column = typeid_cast<const ColumnString *>(&nullable_column->getNestedColumn());
-    }
-    else 
-    {
-        src_column = typeid_cast<const ColumnString *>(&src);
-    }
+    const ColumnString * src_column = getAndCheckColumnString(&src);
 
     auto to_add = src_column->cut(start, partition_index);
 
@@ -413,9 +433,26 @@ ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t
     calculateCompression(sorted_column);
 
     MutableColumnPtr indexes = ColumnVector<UInt64>::create();
-    for (size_t i = start; i < partition_index; ++i)
+    if (is_nullable) /// keeping it outside of loop for performance
     {
-        indexes->insert(getPosToInsert(src.getDataAt(i)));
+        for (size_t i = 0; i < partition_index; ++i)
+        {
+            if (src.isNullAt(i))
+            {
+                indexes->insert(getNullValueIndex());
+            }
+            else 
+            {
+                indexes->insert(getPosToInsert(src.getDataAt(i)));
+            }
+        }
+    }
+    else
+    {
+        for (size_t i = start; i < partition_index; ++i)
+        {
+            indexes->insert(getPosToInsert(src.getDataAt(i)));
+        }
     }
 
     auto overflow = src.cut(partition_index, start + length - partition_index);
@@ -433,11 +470,20 @@ size_t ColumnUniqueFCBlockDF::getNullValueIndex() const
 
 Field ColumnUniqueFCBlockDF::operator[](size_t n) const
 {
+    if (is_nullable && n == getNullValueIndex())
+    {
+        return {};
+    }
     return getDecompressedAt(n);
 }
 
 void ColumnUniqueFCBlockDF::get(size_t n, Field & res) const
 {
+    if (is_nullable && n == getNullValueIndex())
+    {
+        res = Field{};
+        return;
+    }
     res = getDecompressedAt(n);
 }
 
@@ -577,8 +623,8 @@ int ColumnUniqueFCBlockDF::doCompareAt(size_t n, size_t m, const IColumn & rhs, 
 
 void ColumnUniqueFCBlockDF::getExtremes(Field & min, Field & max) const
 {
-    /// Only default / null value
-    if (size() == 1)
+    /// Only default and null value
+    if (size() == specialValuesCount())
     {
         min = "";
         max = "";
@@ -586,7 +632,7 @@ void ColumnUniqueFCBlockDF::getExtremes(Field & min, Field & max) const
     }
 
     /// As values are sorted
-    get(1, min);
+    get(specialValuesCount(), min);
     get(size() - 1, max);
 }
 
@@ -649,12 +695,69 @@ MutableColumnPtr ColumnUniqueFCBlockDF::prepareForInsert(const MutableColumnPtr 
     }
 
     auto * mapping_data = static_cast<ColumnUInt64 &>(*mapping).getData().data();
-    for (size_t i = 0; i < mapping->size(); ++i)
+
+    /// we must take into account that in nullable case there are 2 empty strings
+    const size_t special_values = specialValuesCount();
+    for (size_t i = 0; i < special_values; ++i)
     {
-        mapping_data[i] = map.at(column_to_modify->getDataAt(i));
+        mapping_data[i] = i;
+    }
+    for (size_t i = special_values; i < mapping->size(); ++i)
+    {
+        mapping_data[i] = map.at(column_to_modify->getDataAt(i)) + special_values - 1;
     }
 
     return mapping;
+}
+
+size_t ColumnUniqueFCBlockDF::specialValuesCount() const
+{
+    return is_nullable ? 2 : 1;
+}
+
+void ColumnUniqueFCBlockDF::nestedToNullable()
+{
+    chassert(!is_nullable);
+
+    is_nullable = true;
+
+    auto temp = ColumnString::create();
+    temp->insertDefault();
+    temp->insertRangeFrom(*data_column, 0, size());
+    data_column = std::move(temp);
+
+    Lengths temp_lengths;
+    temp_lengths.reserve(common_prefix_lengths.size() + 1);
+    temp_lengths.push_back(0);
+    temp_lengths.insert_assume_reserved(common_prefix_lengths.begin(), common_prefix_lengths.end());
+    common_prefix_lengths = std::move(temp_lengths);
+
+    auto mapping = ColumnUInt64::create(size() - 1);
+    for (size_t i = 0; i < size() - 1; ++i)
+    {
+        mapping->getData()[i] = i + 1;
+    }
+    old_indexes_mapping = std::move(mapping);
+}
+
+void ColumnUniqueFCBlockDF::nestedRemoveNullable()
+{
+    chassert(is_nullable);
+
+    is_nullable = false;
+
+    data_column = data_column->cut(1, size() - 1);
+
+    Lengths temp_lengths{common_prefix_lengths.begin() + 1, common_prefix_lengths.end()};
+    common_prefix_lengths = std::move(temp_lengths);
+
+    auto mapping = ColumnUInt64::create(size() + 1);
+    for (size_t i = 0; i < size(); ++i)
+    {
+        mapping->getData()[i + 1] = i;
+    }
+    mapping->getData()[0] = 0; /// null values map into default
+    old_indexes_mapping = std::move(mapping);
 }
 
 }

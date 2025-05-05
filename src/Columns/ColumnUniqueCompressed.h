@@ -43,8 +43,13 @@ public:
     ColumnPtr getNestedColumn() const override;
     ColumnPtr getNestedNotNullableColumn() const override { return getDecompressedAll(); }
     bool nestedColumnIsNullable() const override { return is_nullable; }
-    void nestedToNullable() override { is_nullable = true; }
-    void nestedRemoveNullable() override { is_nullable = false; }
+    
+    /// Afterwards users must reindex
+    void nestedToNullable() override;
+
+    /// Afterwards users must reindex
+    void nestedRemoveNullable() override;
+    
     bool nestedCanBeInsideNullable() const override { return true; }
 
     size_t size() const override { return data_column->size(); }
@@ -65,14 +70,14 @@ public:
 
     size_t getDefaultValueIndex() const override { return 0; }
     size_t getNullValueIndex() const override;
-    size_t getNestedTypeDefaultValueIndex() const override { return 0; }
+    size_t getNestedTypeDefaultValueIndex() const override { return is_nullable ? 1 : 0; }
     bool canContainNulls() const override { return is_nullable; }
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
     std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
-    bool isDefaultAt(size_t n) const override { return n == getDefaultValueIndex(); }
+    bool isDefaultAt(size_t n) const override { return n == getNestedTypeDefaultValueIndex(); }
     bool isNullAt(size_t n) const override { return n == getNullValueIndex(); }
 
     /// This methos is not implemented as there is no continuous memory chunk containing the value
@@ -151,6 +156,9 @@ public:
     std::optional<UInt64> getOrFindValueIndex(StringRef value) const override;
 
 private:
+    /// Default value and null value for nullable and only default value otherwise
+    size_t specialValuesCount() const;
+
     String getDecompressedAt(size_t pos) const;
 
     struct DecompressedValue
@@ -181,7 +189,7 @@ private:
     /// Inserts data from `to_insert` into `column_to_modify`. Stores sorted version of `column_to_modify` in `sorted_column` and returns 
     /// a column containing the permutation of data initialy in `column_to_mofiy`. This data is `old_indexes_mapping` itself.
     /// This method provides an optimized way to calculate `old_indexes_mapping` during inserts
-    static MutableColumnPtr prepareForInsert(const MutableColumnPtr & column_to_modify, const ColumnPtr & to_insert, ColumnPtr & sorted_column);
+    MutableColumnPtr prepareForInsert(const MutableColumnPtr & column_to_modify, const ColumnPtr & to_insert, ColumnPtr & sorted_column);
 
     /// Compresses `string_column` and stores this compression instead of current
     /// Assumes that string_column is sorted

@@ -120,6 +120,32 @@ TEST(ColumnUniqueCompressed, RangeInsertFCBlockDF)
     }
 }
 
+TEST(ColumnUniqueCompressed, NullableConversionFCBlockDF)
+{
+    auto unique_compressed_column = getNotEmptyColumnUniqueCompressedFCBlockDF(false);
+    
+    const size_t some_index = 10;
+    
+    const String value_in_not_nullable = (*unique_compressed_column)[some_index].safeGet<String>();
+    const size_t default_index_not_nullable = unique_compressed_column->uniqueInsert("");
+    EXPECT_EQ(default_index_not_nullable, unique_compressed_column->getNestedTypeDefaultValueIndex());
+
+    unique_compressed_column->nestedToNullable();
+
+    const String value_in_nullable = (*unique_compressed_column)[some_index + 1].safeGet<String>();
+    const size_t default_index_nullable = unique_compressed_column->uniqueInsert("");
+    const size_t null_index = unique_compressed_column->uniqueInsert(Field{});
+    EXPECT_EQ(value_in_not_nullable, value_in_nullable);
+    EXPECT_EQ(default_index_nullable, unique_compressed_column->getNestedTypeDefaultValueIndex());
+    EXPECT_EQ(null_index, unique_compressed_column->getNullValueIndex());
+    EXPECT_NE(unique_compressed_column->getNullValueIndex(), unique_compressed_column->getNestedTypeDefaultValueIndex());
+    EXPECT_TRUE((*unique_compressed_column)[null_index].isNull());
+
+    unique_compressed_column->nestedRemoveNullable();
+
+    EXPECT_EQ(value_in_not_nullable, (*unique_compressed_column)[some_index].safeGet<String>());
+}
+
 TEST(ColumnUniqueCompressed, RangeInsertWithOverflowFCBlockDF)
 {
     const std::vector<std::string> data = {
@@ -228,4 +254,45 @@ TEST(ColumnUniqueCompressed, ReindexFCBlockDF)
         const UInt64 pos = unique_compressed_column->getOrFindValueIndex(old_values[i]).value();
         EXPECT_EQ(pos, mapping->get64(i));
     }
+}
+
+TEST(ColumnUniqueCompressed, ReindexNullableFCBlockDF)
+{
+    const std::vector<std::string> data = {
+        "",
+        "block",
+        "blocking",
+        "blockings",
+        "sort",
+        "sorted",
+    };
+
+    auto strings_column = ColumnString::create();
+    for (const auto & str : data)
+    {
+        strings_column->insert(str);
+    }
+
+    auto unique_compressed_column = getNotEmptyColumnUniqueCompressedFCBlockDF(true);
+
+    std::vector<std::string> old_values;
+    for (size_t i = 1; i < unique_compressed_column->size(); ++i)
+    {
+        old_values.push_back((*unique_compressed_column)[i].safeGet<String>());
+    }
+    EXPECT_TRUE((*unique_compressed_column)[0].isNull());
+
+    EXPECT_FALSE(unique_compressed_column->haveIndexesChanged());
+    unique_compressed_column->uniqueInsertRangeFrom(*strings_column, 0, strings_column->size());
+    EXPECT_TRUE(unique_compressed_column->haveIndexesChanged());
+
+    auto mapping = unique_compressed_column->detachChangedIndexes();
+    EXPECT_FALSE(unique_compressed_column->haveIndexesChanged());
+
+    for (size_t i = 0; i < old_values.size(); ++i)
+    {
+        const UInt64 pos = unique_compressed_column->getOrFindValueIndex(old_values[i]).value();
+        EXPECT_EQ(pos, mapping->get64(i + 1));
+    }
+    EXPECT_EQ(mapping->getUInt(0), 0);
 }
