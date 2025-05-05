@@ -1801,12 +1801,14 @@ static void buildIndexes(
         if (l_min_max == r_min_max)
             return false;
 
+#if USE_USEARCH
         const bool l_vector = (typeid_cast<const MergeTreeIndexVectorSimilarity *>(l.index.get()));
         const bool r_vector = (typeid_cast<const MergeTreeIndexVectorSimilarity *>(r.index.get()));
         if (l_vector)
             return true;
         if (r_vector)
             return false;
+#endif
         if (l_min_max)
             return true; // left is min max but right is not
 
