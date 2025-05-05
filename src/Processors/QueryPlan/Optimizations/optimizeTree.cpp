@@ -48,9 +48,9 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
 
     Optimization::ExtraSettings extra_settings = {
         optimization_settings.max_limit_for_ann_queries,
+        optimization_settings.vector_search_with_rescoring,
         optimization_settings.use_index_for_in_with_subqueries_max_values,
         optimization_settings.network_transfer_limits,
-        optimization_settings.rescore_in_ann_queries,
     };
 
     while (!stack.empty())

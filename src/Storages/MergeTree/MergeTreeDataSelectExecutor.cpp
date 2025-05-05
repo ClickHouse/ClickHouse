@@ -97,7 +97,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
-    extern const SettingsBool rescore_in_ann_queries;
+    extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
 }
 
@@ -1723,7 +1723,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 #endif
                    }
 
-                    if (settings[Setting::rescore_in_ann_queries] || has_duplicates ||
+                    if (settings[Setting::vector_search_with_rescoring] || has_duplicates ||
                         (read_hints.ann_search_results.value().second.empty()) ||
                         index_granularity < part->index_granularity->getMarksCountWithoutFinal())
                     {

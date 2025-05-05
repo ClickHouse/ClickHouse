@@ -7,7 +7,7 @@ SET max_execution_time = 600;
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2, 'f32', 32, 128)) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192, index_granularity_bytes = 10485760;
+CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192, index_granularity_bytes = 10485760;
 INSERT INTO tab SELECT number, [toFloat32(number), 0.0] from numbers(10000);
 
 WITH [1.0, 0.0] AS reference_vec
@@ -16,10 +16,10 @@ FROM tab
 ORDER BY L2Distance(vec, reference_vec)
 LIMIT 1;
 
-WITH [9000, 0.0] AS reference_vec
+WITH [9000.0, 0.0] AS reference_vec
 SELECT id, vec, L2Distance(vec, reference_vec)
 FROM tab
 ORDER BY L2Distance(vec, reference_vec)
 LIMIT 1;
 
--- DROP TABLE tab;
+DROP TABLE tab;
