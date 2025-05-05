@@ -57,6 +57,11 @@ size_t IFileCachePriority::Entry::getSize() const
     return size.load();
 }
 
+size_t IFileCachePriority::Entry::getFilledSize() const
+{
+    return size.load();
+}
+
 void IFileCachePriority::Entry::setSize(size_t size_)
 {
     size.store(size_);
