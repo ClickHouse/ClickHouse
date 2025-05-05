@@ -40,8 +40,8 @@ Additional join types available in ClickHouse are:
 
 | Type                                        | Description                                                                                                                               |
 |---------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------|
-| `LEFT SEMI JOIN`, `RIGHT SEMI JOIN`         | A whitelist on "join keys", without producing a cartesian product.                                                                        |
-| `LEFT ANTI JOIN`, `RIGHT ANTI JOIN`         | A blacklist on "join keys", without producing a cartesian product.                                                                        |
+| `LEFT SEMI JOIN`, `RIGHT SEMI JOIN`         | An allowlist on "join keys", without producing a cartesian product.                                                                        |
+| `LEFT ANTI JOIN`, `RIGHT ANTI JOIN`         | A denylist on "join keys", without producing a cartesian product.                                                                        |
 | `LEFT ANY JOIN`, `RIGHT ANY JOIN`, `INNER ANY JOIN` | Partially (for opposite side of `LEFT` and `RIGHT`) or completely (for `INNER` and `FULL`) disables the cartesian product for standard `JOIN` types. |
 | `ASOF JOIN`, `LEFT ASOF JOIN`               | Joining sequences with a non-exact match. `ASOF JOIN` usage is described below.                                                           |
 | `PASTE JOIN`                                | Performs a horizontal concatenation of two tables.                                                                                          |
