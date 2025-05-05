@@ -37,15 +37,16 @@ REGISTER_FUNCTION(GCD)
     An exception is thrown when dividing by zero or when dividing a minimal
     negative number by minus one.
     )";
-    FunctionDocumentation::Syntax syntax = "gcd(a, b)";
-    FunctionDocumentation::Argument argument1 = {"a", "First integer"};
-    FunctionDocumentation::Argument argument2 = {"b", "Second integer"};
+    FunctionDocumentation::Syntax syntax = "gcd(x, y)";
+    FunctionDocumentation::Argument argument1 = {"x", "First integer"};
+    FunctionDocumentation::Argument argument2 = {"y", "Second integer"};
     FunctionDocumentation::Arguments arguments = {argument1, argument2};
-    FunctionDocumentation::ReturnedValue returned_value = "The greatest common divisor of `a` and `b`.";
+    FunctionDocumentation::ReturnedValue returned_value = "The greatest common divisor of `x` and `y`.";
     FunctionDocumentation::Example example1 = {"", "SELECT gcd(12, 18)", "6"};
     FunctionDocumentation::Examples examples = {example1};
-    FunctionDocumentation::Category categories = {"arithmetic"};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
+
     factory.registerFunction<FunctionGCD>(documentation);
 }
 

@@ -31,7 +31,7 @@ REGISTER_FUNCTION(Max2)
     FunctionDocumentation::ReturnedValue returned_value = "Returns the bigger value of `a` and `b`";
     FunctionDocumentation::Example example1 = {"", "SELECT max2(-1, 2)", "2"};
     FunctionDocumentation::Examples examples = {example1};
-    FunctionDocumentation::Category categories = {"arithmetic"};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
     factory.registerFunction<FunctionMax2>(documentation, FunctionFactory::Case::Insensitive);
 }

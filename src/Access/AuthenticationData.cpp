@@ -1,32 +1,26 @@
 #include <Access/AccessControl.h>
 #include <Access/AuthenticationData.h>
+#include <Access/Common/AuthenticationType.h>
+#include <Common/Base64.h>
 #include <Common/Exception.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Access/getValidUntilFromAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTPublicSSHKey.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <IO/WriteHelpers.h>
 
-#include <Common/OpenSSLHelpers.h>
-#include <Common/Base64.h>
-#include <Poco/SHA1Engine.h>
 #include <boost/algorithm/hex.hpp>
+#include <Poco/SHA1Engine.h>
 
-#include <Access/Common/SSLCertificateSubjects.h>
-#include <Access/Common/AuthenticationType.h>
 #include "config.h"
 
 #if USE_SSL
-#     include <openssl/crypto.h>
-#     include <openssl/rand.h>
-#     include <openssl/err.h>
-#     include <openssl/evp.h>
-#     include <openssl/hmac.h>
-#     include <openssl/sha.h>
-#     include <openssl/buffer.h>
-#     include <openssl/bio.h>
+#    include <openssl/rand.h>
+#    include <openssl/err.h>
+#    include <Common/Crypto/X509Certificate.h>
+#    include <Common/OpenSSLHelpers.h>
 #endif
 
 #if USE_BCRYPT
@@ -35,6 +29,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int AUTHENTICATION_FAILED;
@@ -45,27 +40,6 @@ namespace ErrorCodes
     extern const int OPENSSL_ERROR;
 }
 
-namespace
-{
-#if USE_SSL
-
-std::vector<uint8_t> pbkdf2SHA256(std::string_view password, const std::vector<uint8_t>& salt, int iterations)
-{
-    std::vector<uint8_t> derived_key(SHA256_DIGEST_LENGTH);
-    PKCS5_PBKDF2_HMAC(
-        password.data(),
-        static_cast<Int32>(password.size()),
-        salt.data(),
-        static_cast<Int32>(salt.size()),
-        iterations,
-        EVP_sha256(),
-        SHA256_DIGEST_LENGTH,
-        derived_key.data());
-    return derived_key;
-}
-
-#endif
-}
 
 AuthenticationData::Digest AuthenticationData::Util::encodeSHA256(std::string_view text [[maybe_unused]])
 {
@@ -148,7 +122,9 @@ bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
 {
     return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash)
         && (lhs.ldap_server_name == rhs.ldap_server_name) && (lhs.kerberos_realm == rhs.kerberos_realm)
+#if USE_SSL
         && (lhs.ssl_certificate_subjects == rhs.ssl_certificate_subjects)
+#endif
 #if USE_SSH
         && (lhs.ssh_keys == rhs.ssh_keys)
 #endif
@@ -332,17 +308,19 @@ String AuthenticationData::getSalt() const
     return salt;
 }
 
-void AuthenticationData::setSSLCertificateSubjects(SSLCertificateSubjects && ssl_certificate_subjects_)
+#if USE_SSL
+void AuthenticationData::setSSLCertificateSubjects(X509Certificate::Subjects && ssl_certificate_subjects_)
 {
     if (ssl_certificate_subjects_.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'SSL CERTIFICATE' authentication type requires a non-empty list of subjects.");
     ssl_certificate_subjects = std::move(ssl_certificate_subjects_);
 }
 
-void AuthenticationData::addSSLCertificateSubject(SSLCertificateSubjects::Type type_, String && subject_)
+void AuthenticationData::addSSLCertificateSubject(X509Certificate::Subjects::Type type_, String && subject_)
 {
     ssl_certificate_subjects.insert(type_, std::move(subject_));
 }
+#endif
 
 std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
 {
@@ -408,17 +386,21 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         }
         case AuthenticationType::SSL_CERTIFICATE:
         {
-            using SSLCertificateSubjects::Type::CN;
-            using SSLCertificateSubjects::Type::SAN;
+#if USE_SSL
+            using X509Certificate::Subjects::Type::CN;
+            using X509Certificate::Subjects::Type::SAN;
 
             const auto &subjects = getSSLCertificateSubjects();
-            SSLCertificateSubjects::Type cert_subject_type = !subjects.at(SAN).empty() ? SAN : CN;
+            X509Certificate::Subjects::Type cert_subject_type = !subjects.at(SAN).empty() ? SAN : CN;
 
             node->ssl_cert_subject_type = toString(cert_subject_type);
             for (const auto & name : getSSLCertificateSubjects().at(cert_subject_type))
                 node->children.push_back(std::make_shared<ASTLiteral>(name));
 
             break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL certificates support is disabled, because ClickHouse was built without SSL library");
+#endif
         }
         case AuthenticationType::SSH_KEY:
         {
@@ -547,19 +529,21 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         if (query.type == AuthenticationType::SHA256_PASSWORD)
         {
 #if USE_SSL
-            ///random generator FIPS complaint
+            /// random generator FIPS compliant
             uint8_t key[32];
             if (RAND_bytes(key, sizeof(key)) != 1)
                 throw Exception(ErrorCodes::OPENSSL_ERROR, "RAND_bytes failed: {}", getOpenSSLErrors());
 
             String salt;
             salt.resize(sizeof(key) * 2);
+
             char * buf_pos = salt.data();
             for (uint8_t k : key)
             {
                 writeHexByteUppercase(k, buf_pos);
                 buf_pos += 2;
             }
+
             value.append(salt);
             auth_data.setSalt(salt);
 #else
@@ -571,22 +555,25 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         if (query.type == AuthenticationType::SCRAM_SHA256_PASSWORD)
         {
 #if USE_SSL
-            ///random generator FIPS complaint
+            /// random generator FIPS compliant
             uint8_t key[32];
             if (RAND_bytes(key, sizeof(key)) != 1)
                 throw Exception(ErrorCodes::OPENSSL_ERROR, "RAND_bytes failed: {}", getOpenSSLErrors());
 
             String salt;
             salt.resize(sizeof(key) * 2);
+
             char * buf_pos = salt.data();
             for (uint8_t k : key)
             {
                 writeHexByteUppercase(k, buf_pos);
                 buf_pos += 2;
             }
+
             auth_data.setSalt(salt);
             auto digest = Util::encodeScramSHA256(value, salt);
             auth_data.setPasswordHashBinary(digest, validate);
+
             return auth_data;
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -635,9 +622,13 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
     }
     else if (query.type == AuthenticationType::SSL_CERTIFICATE)
     {
-        auto ssl_cert_subject_type = parseSSLCertificateSubjectType(*query.ssl_cert_subject_type);
+#if USE_SSL
+        auto ssl_cert_subject_type = X509Certificate::Subjects::parseSubjectType(*query.ssl_cert_subject_type);
         for (const auto & arg : args)
             auth_data.addSSLCertificateSubject(ssl_cert_subject_type, checkAndGetLiteralArgument<String>(arg, "ssl_certificate_subject"));
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL certificates support is disabled, because ClickHouse was built without SSL library");
+#endif
     }
     else if (query.type == AuthenticationType::HTTP)
     {

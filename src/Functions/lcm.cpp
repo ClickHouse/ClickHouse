@@ -75,7 +75,7 @@ REGISTER_FUNCTION(LCM)
     FunctionDocumentation::ReturnedValue returned_value = "The least common multiple of `a` and `b`.";
     FunctionDocumentation::Example example1 = {"", "SELECT lcm(6, 8)", "24"};
     FunctionDocumentation::Examples examples = {example1};
-    FunctionDocumentation::Category categories = {"arithmetic"};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
     factory.registerFunction<FunctionLCM>(documentation);
 }

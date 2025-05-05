@@ -93,7 +93,7 @@ REGISTER_FUNCTION(DivideDecimals)
     └─────┴─────┴────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
     )"};
     FunctionDocumentation::Examples examples = {example1, example2};
-    FunctionDocumentation::Category categories = {"arithmetic"};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
     factory.registerFunction<FunctionsDecimalArithmetics<DivideDecimalsImpl>>(documentation);
 }

@@ -51,15 +51,14 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameAbs>
 
 REGISTER_FUNCTION(Abs)
 {
-    FunctionDocumentation::Description description = "Calculates the absolute value of `a`. Has no effect if `a` is of an unsigned type. If `a` is of a signed type, it returns an unsigned number.";
-    FunctionDocumentation::Syntax syntax = "abs(a)";
-    FunctionDocumentation::Argument argument1 = {"a", "Value to get the absolute value of"};
-    FunctionDocumentation::Arguments arguments = {argument1};
-    FunctionDocumentation::ReturnedValue returned_value = "The absolute value of `a`";
-    FunctionDocumentation::Example example1 = {"", "SELECT abs(-0.5)", "0.5"};
-    FunctionDocumentation::Examples examples = {example1};
-    FunctionDocumentation::Category categories = {"arithmetic"};
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
+    FunctionDocumentation::Description description = "Calculates the absolute value of `x`. Has no effect if `x` is of an unsigned type. If `x` is of a signed type, it returns an unsigned number.";
+    FunctionDocumentation::Syntax syntax = "abs(x)";
+    FunctionDocumentation::Arguments argument = {{"x", "Value to get the absolute value of"}};
+    FunctionDocumentation::ReturnedValue returned_value = "The absolute value of `x`";
+    FunctionDocumentation::Examples examples = {{"", "SELECT abs(-0.5)", "0.5"}};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, categories};
+
     factory.registerFunction<FunctionAbs>(documentation, FunctionFactory::Case::Insensitive);
 }
 

@@ -45,7 +45,7 @@ REGISTER_FUNCTION(IntDivOrZero)
     FunctionDocumentation::Example example1 = {"Integer division by zero", "SELECT intDivOrZero(1, 0)","0"};
     FunctionDocumentation::Example example2 = {"Dividing a minimal negative number by minus 1", "SELECT intDivOrZero(0.05, -1)","0"};
     FunctionDocumentation::Examples examples = {example1, example2};
-    FunctionDocumentation::Category categories = {"arithmetic"};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
     factory.registerFunction<FunctionIntDivOrZero>(documentation);
 }

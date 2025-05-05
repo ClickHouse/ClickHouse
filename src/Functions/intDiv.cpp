@@ -158,9 +158,16 @@ REGISTER_FUNCTION(IntDiv)
     (ILLEGAL_DIVISION)
     )"};
     FunctionDocumentation::Examples examples = {example1, example2};
-    FunctionDocumentation::Category categories = {"arithmetic"};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
     factory.registerFunction<FunctionIntDiv>(documentation);
 }
 
+struct NameIntDivOrNull { static constexpr auto name = "intDivOrNull"; };
+using FunctionIntDivOrNull = BinaryArithmeticOverloadResolver<DivideIntegralOrNullImpl, NameIntDivOrNull, false>;
+
+REGISTER_FUNCTION(IntDivOrNull)
+{
+    factory.registerFunction<FunctionIntDivOrNull>();
+}
 }

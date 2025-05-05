@@ -33,6 +33,9 @@ struct DivideFloatingImpl
 #endif
 };
 
+template <typename A, typename B>
+struct DivideFloatingOrNullImpl : DivideFloatingImpl<A, B>{};
+
 struct NameDivide { static constexpr auto name = "divide"; };
 using FunctionDivide = BinaryArithmeticOverloadResolver<DivideFloatingImpl, NameDivide>;
 
@@ -46,17 +49,26 @@ REGISTER_FUNCTION(Divide)
     Division by `0` returns `inf`, `-inf`, or `nan`.
     :::
     )";
-    FunctionDocumentation::Syntax syntax = "divide(a, b)";
-    FunctionDocumentation::Argument argument1 = {"a", "Left hand operand."};
-    FunctionDocumentation::Argument argument2 = {"b", "Right hand operand."};
+    FunctionDocumentation::Syntax syntax = "divide(x, y)";
+    FunctionDocumentation::Argument argument1 = {"x", "Dividend"};
+    FunctionDocumentation::Argument argument2 = {"y", "Divisor"};
     FunctionDocumentation::Arguments arguments = {argument1, argument2};
-    FunctionDocumentation::ReturnedValue returned_value = "The quotient of a and b";
+    FunctionDocumentation::ReturnedValue returned_value = "The quotient of x and y";
     FunctionDocumentation::Example example1 = {"Dividing two numbers", "SELECT divide(25,5) AS quotient, toTypeName(quotient)", "5 Float64"};
     FunctionDocumentation::Example example2 = {"Dividing by zero", "SELECT divide(25,0)", "inf"};
     FunctionDocumentation::Examples examples = {example1, example2};
-    FunctionDocumentation::Category categories = {"arithmetic"};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
+
     factory.registerFunction<FunctionDivide>(documentation);
+}
+
+struct NameDivideOrNull { static constexpr auto name = "divideOrNull"; };
+using FunctionDivideOrNull = BinaryArithmeticOverloadResolver<DivideFloatingOrNullImpl, NameDivideOrNull>;
+
+REGISTER_FUNCTION(DivideOrNull)
+{
+    factory.registerFunction<FunctionDivideOrNull>();
 }
 
 }

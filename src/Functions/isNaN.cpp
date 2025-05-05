@@ -30,7 +30,7 @@ REGISTER_FUNCTION(IsNaN)
     FunctionDocumentation::ReturnedValue returned_value = "`1` if `NaN`, otherwise `0`";
     FunctionDocumentation::Example example1 = {"", "SELECT isNaN(NaN)", "1"};
     FunctionDocumentation::Examples examples = {example1};
-    FunctionDocumentation::Category categories = {"arithmetic"};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
     factory.registerFunction<FunctionIsNaN>(documentation);
 }

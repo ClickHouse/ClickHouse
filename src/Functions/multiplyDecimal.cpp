@@ -101,7 +101,7 @@ REGISTER_FUNCTION(MultiplyDecimals)
     While processing toDecimal64(-12.647987876, 9) AS a, toDecimal64(123.967645643, 9) AS b, a * b. (DECIMAL_OVERFLOW)
     )"};
     FunctionDocumentation::Examples examples = {example1, example2, example3};
-    FunctionDocumentation::Category categories = {"arithmetic"};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
     factory.registerFunction<FunctionsDecimalArithmetics<MultiplyDecimalsImpl>>(documentation);
 }

@@ -53,7 +53,7 @@ REGISTER_FUNCTION(IsInfinite)
     )", "1 0 0"
     };
     FunctionDocumentation::Examples examples = {example1};
-    FunctionDocumentation::Category categories = {"arithmetic"};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
     factory.registerFunction<FunctionIsInfinite>(documentation);
 }

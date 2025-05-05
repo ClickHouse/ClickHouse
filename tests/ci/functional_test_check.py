@@ -67,6 +67,8 @@ def get_additional_envs(
         result.append("RANDOMIZE_OBJECT_KEY_TYPE=1")
     if "analyzer" in check_name:
         result.append("USE_OLD_ANALYZER=1")
+    if "distributed plan" in check_name:
+        result.append("USE_DISTRIBUTED_PLAN=1")
     if "azure" in check_name:
         assert "USE_S3_STORAGE_FOR_MERGE_TREE=1" not in result
         result.append("USE_AZURE_STORAGE_FOR_MERGE_TREE=1")
