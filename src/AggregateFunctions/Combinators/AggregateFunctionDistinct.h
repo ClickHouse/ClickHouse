@@ -164,6 +164,16 @@ private:
         return place + prefix_size;
     }
 
+    /// This is a flag to indicate whether the nested function's state is up-to-date.
+    /// This helps in avoiding unnecessary recomputation of the nested function's result, which is both
+    ///  slow and can lead to wrong results.
+    inline bool ready(ConstAggregateDataPtr place) const noexcept { return *reinterpret_cast<const bool *>(place + prefix_size - 1); }
+
+    inline bool & ready(AggregateDataPtr place) const noexcept // NOLINT
+    {
+        return *reinterpret_cast<bool *>(place + prefix_size - 1);
+    }
+
 public:
     AggregateFunctionDistinct(AggregateFunctionPtr nested_func_, const DataTypes & arguments, const Array & params_)
     : IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct>(arguments, params_, nested_func_->getResultType())
@@ -171,17 +181,22 @@ public:
     , arguments_num(arguments.size())
     {
         size_t nested_size = nested_func->alignOfData();
-        prefix_size = (sizeof(Data) + nested_size - 1) / nested_size * nested_size;
+        prefix_size = (sizeof(Data) + nested_size) / nested_size * nested_size;
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        this->data(place).add(columns, arguments_num, row_num, arena);
+        auto & data = this->data(place);
+        std::size_t before = data.set.size();
+        data.add(columns, arguments_num, row_num, arena);
+        if (data.set.size() != before) /// if new element was added
+            ready(place) = false;
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         this->data(place).merge(this->data(rhs), arena);
+        ready(place) = false;
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -192,18 +207,28 @@ public:
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         this->data(place).deserialize(buf, arena);
+        ready(place) = false;
     }
 
     template <bool MergeResult>
     void insertResultIntoImpl(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
     {
-        auto arguments = this->data(place).getArguments(this->argument_types);
-        ColumnRawPtrs arguments_raw(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            arguments_raw[i] = arguments[i].get();
+        /// If we have already computed the nested function's result, and no new elements were added,
+        ///  then we can skip recomputing it.
+        if (!ready(place))
+        {
+            resetNestedFunction(place);
 
-        assert(!arguments.empty());
-        nested_func->addBatchSinglePlace(0, arguments[0]->size(), getNestedPlace(place), arguments_raw.data(), arena);
+            auto arguments = this->data(place).getArguments(this->argument_types);
+            ColumnRawPtrs arguments_raw(arguments.size());
+            for (size_t i = 0; i < arguments.size(); ++i)
+                arguments_raw[i] = arguments[i].get();
+
+            assert(!arguments.empty());
+            nested_func->addBatchSinglePlace(0, arguments[0]->size(), getNestedPlace(place), arguments_raw.data(), arena);
+            ready(place) = true;
+        }
+
         if constexpr (MergeResult)
             nested_func->insertMergeResultInto(getNestedPlace(place), to, arena);
         else
@@ -233,6 +258,7 @@ public:
     void create(AggregateDataPtr __restrict place) const override
     {
         new (place) Data;
+        ready(place) = false;
         nested_func->create(getNestedPlace(place));
     }
 
@@ -251,6 +277,13 @@ public:
     {
         this->data(place).~Data();
         nested_func->destroyUpToState(getNestedPlace(place));
+    }
+
+    void resetNestedFunction(AggregateDataPtr __restrict place) const
+    {
+        auto nested_place = getNestedPlace(place);
+        nested_func->destroy(nested_place);
+        nested_func->create(nested_place);
     }
 
     String getName() const override
