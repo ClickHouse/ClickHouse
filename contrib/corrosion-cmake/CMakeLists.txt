@@ -92,6 +92,14 @@ if (LINKER_NAME MATCHES "lld")
     list(APPEND RUSTFLAGS "-C" "link-arg=-fuse-ld=lld")
 endif()
 
+if (CMAKE_OSX_SYSROOT)
+    list(APPEND RUSTFLAGS "-C" "link-arg=-isysroot")
+    list(APPEND RUSTFLAGS "-C" "link-arg=${CMAKE_OSX_SYSROOT}")
+elseif(CMAKE_SYSROOT)
+    list(APPEND RUSTFLAGS "-C" "link-arg=--sysroot")
+    list(APPEND RUSTFLAGS "-C" "link-arg=${CMAKE_SYSROOT}")
+endif()
+
 set(RUST_CARGO_BUILD_STD "")
 # For more info: https://doc.rust-lang.org/beta/unstable-book/compiler-flags/sanitizer.html#memorysanitizer
 if (SANITIZE STREQUAL "memory")
