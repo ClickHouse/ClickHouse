@@ -1712,18 +1712,14 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     /// corresponding ranges have to be returned in ascending order
                     auto rows = read_hints.ann_search_results.value().first;
                     std::sort(rows.begin(), rows.end());
+#ifndef NDEBUG
                     /// Duplicates should in theory not be possible but who knows ...
                     const bool has_duplicates = std::adjacent_find(rows.begin(), rows.end()) != rows.end();
                     if (has_duplicates)
-                    {
-#ifndef NDEBUG
                         throw Exception(ErrorCodes::INCORRECT_DATA, "Usearch returned duplicate row numbers");
-#else
-                        rows.erase(std::unique(rows.begin(), rows.end()), rows.end());
 #endif
-                   }
 
-                    if (settings[Setting::vector_search_with_rescoring] || has_duplicates ||
+                    if (settings[Setting::vector_search_with_rescoring] ||
                         (read_hints.ann_search_results.value().second.empty()) ||
                         index_granularity < part->index_granularity->getMarksCountWithoutFinal())
                     {
