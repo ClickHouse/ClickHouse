@@ -1,0 +1,17 @@
+<test>
+    <query>
+        SELECT number, avg(DISTINCT number) OVER () FROM numbers(0, 1_000_000) FORMAT Null;
+    </query>
+
+    <query>
+        SELECT number, count(DISTINCT number) OVER () FROM numbers(0, 1_000_000) FORMAT Null;
+    </query>
+
+    <query>
+        SELECT number, max(DISTINCT number) OVER () FROM numbers(0, 1_000_000) FORMAT Null;
+    </query>
+
+    <query>
+        SELECT number, sum(DISTINCT number) OVER () FROM numbers(0, 1_000_000) FORMAT Null;
+    </query>
+</test>
