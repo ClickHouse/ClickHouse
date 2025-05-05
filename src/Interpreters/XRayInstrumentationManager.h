@@ -64,10 +64,6 @@ private:
     std::string extractNearestNamespaceAndFunction(std::string_view signature);
     HandlerType getHandlerType(const std::string & handler_name);
 
-    [[clang::xray_never_instrument]] static void logEntry(int32_t FuncId, XRayEntryType Type);
-    [[clang::xray_never_instrument]] static void logAndSleep(int32_t FuncId, XRayEntryType Type);
-    [[clang::xray_never_instrument]] static void logEntryExit(int32_t FuncId, XRayEntryType Type);
-
     [[clang::xray_never_instrument]] static void dispatchHandler(int32_t FuncId, XRayEntryType Type);
     [[clang::xray_never_instrument]] static void sleep(int32_t FuncId, XRayEntryType Type);
     [[clang::xray_never_instrument]] static void log(int32_t FuncId, XRayEntryType Type);
