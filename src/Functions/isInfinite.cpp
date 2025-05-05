@@ -44,17 +44,21 @@ REGISTER_FUNCTION(IsInfinite)
     FunctionDocumentation::Argument argument1 = {"x", "Number to check for infiniteness. Float32 or Float64."};
     FunctionDocumentation::Arguments arguments = {argument1};
     FunctionDocumentation::ReturnedValue returned_value = "`1` if x is infinite, otherwise `0` (including for `NaN`).";
-    FunctionDocumentation::Example example1 = {
-    "Test if a number is infinite", R"(
-    SELECT
-        isInfinite(inf),
-        isInfinite(NaN),
-        isInfinite(10)
-    )", "1 0 0"
+    FunctionDocumentation::Examples examples = {
+        {
+            "Test if a number is infinite",
+            R"(
+SELECT
+isInfinite(inf),
+isInfinite(NaN),
+isInfinite(10)
+            )",
+            "1 0 0"
+        }
     };
-    FunctionDocumentation::Examples examples = {example1};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
+
     factory.registerFunction<FunctionIsInfinite>(documentation);
 }
 

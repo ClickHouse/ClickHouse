@@ -80,15 +80,16 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameNegate>
 
 REGISTER_FUNCTION(Negate)
 {
-    FunctionDocumentation::Description description = "Negates a value a. The result is always signed.";
-    FunctionDocumentation::Syntax syntax = "negate(a)";
-    FunctionDocumentation::Argument argument1 = {"a", "The value to negate."};
+    FunctionDocumentation::Description description = "Negates the argument `x`. The result is always signed.";
+    FunctionDocumentation::Syntax syntax = "negate(x)";
+    FunctionDocumentation::Argument argument1 = {"x", "The value to negate."};
     FunctionDocumentation::Arguments arguments = {argument1};
-    FunctionDocumentation::ReturnedValue returned_value = "Returns -a from a";
+    FunctionDocumentation::ReturnedValue returned_value = "Returns -x from x";
     FunctionDocumentation::Example example1 = {"", "SELECT negate(10)", "-10"};
     FunctionDocumentation::Examples examples = {example1};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
+
     factory.registerFunction<FunctionNegate>(documentation);
 }
 

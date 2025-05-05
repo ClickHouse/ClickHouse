@@ -196,16 +196,16 @@ using FunctionPositiveModulo = BinaryArithmeticOverloadResolver<PositiveModuloIm
 REGISTER_FUNCTION(PositiveModulo)
 {
     FunctionDocumentation::Description description = R"(
-    Calculates the remainder when dividing `a` by `b`. Similar to function
-    `modulo` except that `positiveModulo` always return non-negative number.
+Calculates the remainder when dividing `x` by `y`. Similar to function
+`modulo` except that `positiveModulo` always return non-negative number.
     )";
-    FunctionDocumentation::Syntax syntax = "positiveModulo(a, b)";
-    FunctionDocumentation::Argument argument1 = {"a", "The dividend"};
-    FunctionDocumentation::Argument argument2 = {"b", "The divisor (modulus)"};
+    FunctionDocumentation::Syntax syntax = "positiveModulo(x, y)";
+    FunctionDocumentation::Argument argument1 = {"x", "The dividend"};
+    FunctionDocumentation::Argument argument2 = {"y", "The divisor (modulus)"};
     FunctionDocumentation::Arguments arguments = {argument1, argument2};
     FunctionDocumentation::ReturnedValue returned_value = R"(
-    Returns the difference between `a` and the nearest integer not greater than
-    `a` divisible by `b`.
+Returns the difference between `x` and the nearest integer not greater than
+`x` divisible by `y`.
     )";
     FunctionDocumentation::Example example1 = {"positiveModulo", "SELECT positiveModulo(-1, 10)", "9"};
     FunctionDocumentation::Examples examples = {example1};

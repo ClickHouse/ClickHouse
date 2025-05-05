@@ -49,9 +49,9 @@ using FunctionMinus = BinaryArithmeticOverloadResolver<MinusImpl, NameMinus>;
 REGISTER_FUNCTION(Minus)
 {
     FunctionDocumentation::Description description = R"(
-    Calculates the difference of two values `a` and `b`. The result is always signed.
-    Similar to plus, it is possible to subtract an integer from a date or date with time.
-    Additionally, subtraction between date with time is supported, resulting in the time difference between them.
+Calculates the difference of two values `a` and `b`. The result is always signed.
+Similar to plus, it is possible to subtract an integer from a date or date with time.
+Additionally, subtraction between date with time is supported, resulting in the time difference between them.
     )";
     FunctionDocumentation::Syntax syntax = "minus(x, y)";
     FunctionDocumentation::Argument argument1 = {"x", "Minuend"};
