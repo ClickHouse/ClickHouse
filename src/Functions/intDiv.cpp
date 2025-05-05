@@ -124,7 +124,7 @@ using FunctionIntDiv = BinaryArithmeticOverloadResolver<DivideIntegralImpl, Name
 REGISTER_FUNCTION(IntDiv)
 {
     FunctionDocumentation::Description description = R"(
-Performs an integer division of two values `a` by `b`. In other words it
+Performs an integer division of two values `x` by `y`. In other words it
 computes the quotient rounded down to the next smallest integer.
 
 The result has the same width as the dividend (the first parameter).
@@ -132,16 +132,12 @@ The result has the same width as the dividend (the first parameter).
 An exception is thrown when dividing by zero, when the quotient does not fit
 in the range of the dividend, or when dividing a minimal negative number by minus one.
     )";
-    FunctionDocumentation::Syntax syntax = "intDiv(a, b)";
-    FunctionDocumentation::Argument argument1 = {"a", "Left hand operand."};
-    FunctionDocumentation::Argument argument2 = {"b", "Right hand operand."};
+    FunctionDocumentation::Syntax syntax = "intDiv(x, y)";
+    FunctionDocumentation::Argument argument1 = {"x", "Left hand operand."};
+    FunctionDocumentation::Argument argument2 = {"y", "Right hand operand."};
     FunctionDocumentation::Arguments arguments = {argument1, argument2};
-    FunctionDocumentation::ReturnedValue returned_value = "Result of integer division of a and b";
-    FunctionDocumentation::Example example1 = {"Integer division of two floats", R"(
-SELECT
-intDiv(toFloat64(1), 0.001) AS res,
-toTypeName(res)
-    )", R"(
+    FunctionDocumentation::ReturnedValue returned_value = "Result of integer division of `x` and `y`";
+    FunctionDocumentation::Example example1 = {"Integer division of two floats", "SELECT intDiv(toFloat64(1), 0.001) AS res, toTypeName(res)", R"(
 ┌──res─┬─toTypeName(intDiv(toFloat64(1), 0.001))─┐
 │ 1000 │ Int64                                   │
 └──────┴─────────────────────────────────────────┘

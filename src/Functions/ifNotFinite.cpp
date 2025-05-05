@@ -79,15 +79,7 @@ You can get a similar result by using the [ternary operator](/sql-reference/func
 - `x` if `x` is finite.
 - `y` if `x` is not finite.
     )";
-    FunctionDocumentation::Examples examples = {
-        {
-            "",
-            R"(
-SELECT 1/0 AS infimum,
-ifNotFinite(infimum,42)
-            )",
-            "inf  42"
-        }};
+    FunctionDocumentation::Examples examples = {{"","SELECT 1/0 AS infimum, ifNotFinite(infimum,42)","inf  42"}};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
 
