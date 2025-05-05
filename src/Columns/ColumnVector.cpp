@@ -289,7 +289,7 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
                 /// Move all NaNs to the desired part of result.
                 /// Example amd64:
                 /// double val1 = 0.0 / 0.0; // nan
-                /// doubel val2 = 0.0; val2 = val2 / val2; // -nan
+                /// double val2 = 0.0; val2 = val2 / val2; // -nan
                 if (is_floating_point<T>)
                 {
                     const auto is_nulls_last = ((nan_direction_hint > 0) != reverse);
@@ -365,7 +365,7 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
                 /// Move all NaNs to the desired part of result.
                 /// Example amd64:
                 /// double val1 = 0.0 / 0.0; // nan
-                /// doubel val2 = 0.0; val2 = val2 / val2; // -nan
+                /// double val2 = 0.0; val2 = val2 / val2; // -nan
                 if (is_floating_point<T>)
                 {
                     const auto is_nulls_last = ((nan_direction_hint > 0) != reverse);
