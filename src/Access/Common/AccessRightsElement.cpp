@@ -1,5 +1,6 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -154,7 +155,7 @@ void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool hilite) cons
             && !access_control.isEnabledUserNameAccessType())
         {
             if (!anyParameter())
-                getLogger("AccessRightsElement")->warning(
+                LOG_WARNING(getLogger("AccessRightsElement"),
                     "Converting {} to *.* because the setting `enable_user_name_access_type` is `false`. "
                     "Consider turning this setting on, if your cluster contains no replicas older than 25.1",
                     parameter);
