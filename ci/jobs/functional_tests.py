@@ -157,11 +157,12 @@ def main():
         res = res and Shell.check(
             "aws s3 ls s3://test --endpoint-url http://localhost:11111/", verbose=True
         )
-        if not Info().is_local_run:
-            res = res and CH.create_log_export_config()
+        # TODO: log export
+        # if not Info().is_local_run:
+        #     res = res and CH.create_log_export_config()
         res = res and CH.start()
-        if not Info().is_local_run:
-            res = res and CH.start_log_exports(stop_watch.start_time)
+        # if not Info().is_local_run:
+        #     res = res and CH.start_log_exports(stop_watch.start_time)
         res = res and CH.wait_ready()
         res = res and CH.prepare_stateful_data()
         if res:
