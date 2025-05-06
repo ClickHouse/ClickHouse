@@ -3,7 +3,6 @@
 #include <DataTypes/ObjectUtils.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 #include <Core/Settings.h>
@@ -31,7 +30,7 @@
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
-#include <Storages/MergeTree/MergeTreeIndexGin.h>
+#include <Storages/MergeTree/MergeTreeIndexFullText.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -55,8 +54,6 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric PartMutation;
-    extern const Metric TotalMergeFailures;
-    extern const Metric NonAbortedMergeFailures;
 }
 
 namespace DB
@@ -721,7 +718,7 @@ static NameSet collectFilesToSkip(
         files_to_skip.insert(index->getFileName() + mrk_extension);
 
         // Skip all full-text index files, for they will be rebuilt
-        if (dynamic_cast<const MergeTreeIndexGin *>(index.get()))
+        if (dynamic_cast<const MergeTreeIndexFullText *>(index.get()))
         {
             auto index_filename = index->getFileName();
             files_to_skip.insert(index_filename + ".gin_dict");
@@ -2099,50 +2096,37 @@ bool MutateTask::execute()
     Stopwatch watch;
     SCOPE_EXIT({ ctx->execute_elapsed_ns += watch.elapsedNanoseconds(); });
 
-    try
+    switch (state)
     {
-        switch (state)
+        case State::NEED_PREPARE:
         {
-            case State::NEED_PREPARE:
-            {
-                if (!prepare())
-                    return false;
-
-                state = State::NEED_EXECUTE;
-                return true;
-            }
-            case State::NEED_EXECUTE:
-            {
-                ctx->checkOperationIsNotCanceled();
-
-                if (task->executeStep())
-                    return true;
-
-                // The `new_data_part` is a shared pointer and must be moved to allow
-                // part deletion in case it is needed in `MutateFromLogEntryTask::finalize`.
-                //
-                // `tryRemovePartImmediately` requires `std::shared_ptr::unique() == true`
-                // to delete the part timely. When there are multiple shared pointers,
-                // only the part state is changed to `Deleting`.
-                //
-                // Fetching a byte-identical part (in case of checksum mismatches) will fail with
-                // `Part ... should be deleted after previous attempt before fetch`.
-                promise.set_value(std::move(ctx->new_data_part));
+            if (!prepare())
                 return false;
-            }
+
+            state = State::NEED_EXECUTE;
+            return true;
         }
-        return false;
-    }
-    catch (...)
-    {
-        const auto error_code = getCurrentExceptionCode();
-        if (error_code != ErrorCodes::ABORTED)
+        case State::NEED_EXECUTE:
         {
-            CurrentMetrics::add(CurrentMetrics::NonAbortedMergeFailures);
+            ctx->checkOperationIsNotCanceled();
+
+            if (task->executeStep())
+                return true;
+
+            // The `new_data_part` is a shared pointer and must be moved to allow
+            // part deletion in case it is needed in `MutateFromLogEntryTask::finalize`.
+            //
+            // `tryRemovePartImmediately` requires `std::shared_ptr::unique() == true`
+            // to delete the part timely. When there are multiple shared pointers,
+            // only the part state is changed to `Deleting`.
+            //
+            // Fetching a byte-identical part (in case of checksum mismatches) will fail with
+            // `Part ... should be deleted after previous attempt before fetch`.
+            promise.set_value(std::move(ctx->new_data_part));
+            return false;
         }
-        CurrentMetrics::add(CurrentMetrics::TotalMergeFailures);
-        throw;
     }
+    return false;
 }
 
 void MutateTask::cancel() noexcept
@@ -2238,7 +2222,7 @@ bool MutateTask::prepare()
     };
 
     auto mutations_snapshot = ctx->data->getMutationsSnapshot(params);
-    auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ctx->source_part, mutations_snapshot, ctx->context);
+    auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ctx->source_part, mutations_snapshot, ctx->metadata_snapshot, ctx->context);
 
     auto context_for_reading = Context::createCopy(ctx->context);
 

@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 3.25)
-
 # Actually, so many 3rd party libraries + unit tests need SSL that we cannot disable it
 # without breaking the build ...
 set(ENABLE_SSL 1 CACHE INTERNAL "")
@@ -377,6 +375,7 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_shift.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_sqr.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_sqrt.c
+    ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_srp.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_word.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_x931p.c
     ${OPENSSL_SOURCE_DIR}/crypto/bsearch.c
@@ -564,6 +563,28 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/encode_decode/encoder_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/encode_decode/encoder_meth.c
     ${OPENSSL_SOURCE_DIR}/crypto/encode_decode/encoder_pkey.c
+    ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_all.c
+    ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_cnf.c
+    ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_ctrl.c
+    ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_dyn.c
+    ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_err.c
+    ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_fat.c
+    ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_init.c
+    ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_lib.c
+    ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_list.c
+    ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_openssl.c
+    ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_pkey.c
+    ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_rdrand.c
+    ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_table.c
+    ${OPENSSL_SOURCE_DIR}/crypto/engine/tb_asnmth.c
+    ${OPENSSL_SOURCE_DIR}/crypto/engine/tb_cipher.c
+    ${OPENSSL_SOURCE_DIR}/crypto/engine/tb_dh.c
+    ${OPENSSL_SOURCE_DIR}/crypto/engine/tb_digest.c
+    ${OPENSSL_SOURCE_DIR}/crypto/engine/tb_dsa.c
+    ${OPENSSL_SOURCE_DIR}/crypto/engine/tb_eckey.c
+    ${OPENSSL_SOURCE_DIR}/crypto/engine/tb_pkmeth.c
+    ${OPENSSL_SOURCE_DIR}/crypto/engine/tb_rand.c
+    ${OPENSSL_SOURCE_DIR}/crypto/engine/tb_rsa.c
     ${OPENSSL_SOURCE_DIR}/crypto/err/err.c
     ${OPENSSL_SOURCE_DIR}/crypto/err/err_all.c
     ${OPENSSL_SOURCE_DIR}/crypto/err/err_all_legacy.c
@@ -582,11 +603,6 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/evp/c_allc.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/c_alld.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/cmeth_lib.c
-    ${OPENSSL_SOURCE_DIR}/crypto/evp/pmeth_lib.c
-    ${OPENSSL_SOURCE_DIR}/crypto/evp/pmeth_gn.c
-    ${OPENSSL_SOURCE_DIR}/crypto/evp/pmeth_check.c
-    ${OPENSSL_SOURCE_DIR}/crypto/evp/pbe_scrypt.c
-    ${OPENSSL_SOURCE_DIR}/crypto/evp/signature.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/ctrl_params_translate.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/dh_ctrl.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/dh_support.c
@@ -646,12 +662,19 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/evp/names.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/p5_crpt.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/p5_crpt2.c
+    ${OPENSSL_SOURCE_DIR}/crypto/evp/p_dec.c
+    ${OPENSSL_SOURCE_DIR}/crypto/evp/p_enc.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/p_legacy.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/p_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/p_open.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/p_seal.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/p_sign.c
     ${OPENSSL_SOURCE_DIR}/crypto/evp/p_verify.c
+    ${OPENSSL_SOURCE_DIR}/crypto/evp/pbe_scrypt.c
+    ${OPENSSL_SOURCE_DIR}/crypto/evp/pmeth_check.c
+    ${OPENSSL_SOURCE_DIR}/crypto/evp/pmeth_gn.c
+    ${OPENSSL_SOURCE_DIR}/crypto/evp/pmeth_lib.c
+    ${OPENSSL_SOURCE_DIR}/crypto/evp/signature.c
     ${OPENSSL_SOURCE_DIR}/crypto/ex_data.c
     ${OPENSSL_SOURCE_DIR}/crypto/ffc/ffc_backend.c
     ${OPENSSL_SOURCE_DIR}/crypto/ffc/ffc_dh.c
@@ -775,13 +798,14 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/provider_predefined.c
     ${OPENSSL_SOURCE_DIR}/crypto/punycode.c
     ${OPENSSL_SOURCE_DIR}/crypto/quic_vlint.c
+    ${OPENSSL_SOURCE_DIR}/crypto/rand/prov_seed.c
     ${OPENSSL_SOURCE_DIR}/crypto/rand/rand_deprecated.c
     ${OPENSSL_SOURCE_DIR}/crypto/rand/rand_err.c
     ${OPENSSL_SOURCE_DIR}/crypto/rand/rand_lib.c
+    ${OPENSSL_SOURCE_DIR}/crypto/rand/rand_meth.c
     ${OPENSSL_SOURCE_DIR}/crypto/rand/rand_pool.c
     ${OPENSSL_SOURCE_DIR}/crypto/rand/rand_uniform.c
     ${OPENSSL_SOURCE_DIR}/crypto/rand/randfile.c
-    ${OPENSSL_SOURCE_DIR}/crypto/rand/prov_seed.c
     ${OPENSSL_SOURCE_DIR}/crypto/rc2/rc2_cbc.c
     ${OPENSSL_SOURCE_DIR}/crypto/rc2/rc2_ecb.c
     ${OPENSSL_SOURCE_DIR}/crypto/rc2/rc2_skey.c
@@ -814,6 +838,7 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/rsa/rsa_sp800_56b_check.c
     ${OPENSSL_SOURCE_DIR}/crypto/rsa/rsa_sp800_56b_gen.c
     ${OPENSSL_SOURCE_DIR}/crypto/rsa/rsa_x931.c
+    ${OPENSSL_SOURCE_DIR}/crypto/rsa/rsa_x931g.c
     ${OPENSSL_SOURCE_DIR}/crypto/seed/seed.c
     ${OPENSSL_SOURCE_DIR}/crypto/seed/seed_cbc.c
     ${OPENSSL_SOURCE_DIR}/crypto/seed/seed_cfb.c
@@ -835,10 +860,14 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/sm3/sm3.c
     ${OPENSSL_SOURCE_DIR}/crypto/sm4/sm4.c
     ${OPENSSL_SOURCE_DIR}/crypto/sparse_array.c
+    ${OPENSSL_SOURCE_DIR}/crypto/srp/srp_lib.c
+    ${OPENSSL_SOURCE_DIR}/crypto/srp/srp_vfy.c
     ${OPENSSL_SOURCE_DIR}/crypto/stack/stack.c
     ${OPENSSL_SOURCE_DIR}/crypto/store/store_err.c
+    ${OPENSSL_SOURCE_DIR}/crypto/store/store_init.c
     ${OPENSSL_SOURCE_DIR}/crypto/store/store_lib.c
     ${OPENSSL_SOURCE_DIR}/crypto/store/store_meth.c
+    ${OPENSSL_SOURCE_DIR}/crypto/store/store_register.c
     ${OPENSSL_SOURCE_DIR}/crypto/store/store_result.c
     ${OPENSSL_SOURCE_DIR}/crypto/store/store_strings.c
     ${OPENSSL_SOURCE_DIR}/crypto/thread/api.c
@@ -944,6 +973,7 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/x509/x509name.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509/x509rset.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509/x509spki.c
+    ${OPENSSL_SOURCE_DIR}/crypto/x509/x509type.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509/x_all.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509/x_attrib.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509/x_crl.c
@@ -1141,7 +1171,6 @@ if(NOT ENABLE_OPENSSL_DYNAMIC)
     set(CRYPTO_SRC ${CRYPTO_SRC}
         ${OPENSSL_SOURCE_DIR}/providers/fips/fips_entry.c
         ${OPENSSL_SOURCE_DIR}/providers/fips/fipsprov.c
-        ${OPENSSL_SOURCE_DIR}/providers/legacyprov.c
     )
 endif()
 
@@ -1355,6 +1384,7 @@ set(SSL_SRC
     ${OPENSSL_SOURCE_DIR}/ssl/ssl_lib.c
     ${OPENSSL_SOURCE_DIR}/ssl/ssl_mcnf.c
     ${OPENSSL_SOURCE_DIR}/ssl/ssl_rsa.c
+    ${OPENSSL_SOURCE_DIR}/ssl/ssl_rsa_legacy.c
     ${OPENSSL_SOURCE_DIR}/ssl/ssl_sess.c
     ${OPENSSL_SOURCE_DIR}/ssl/ssl_stat.c
     ${OPENSSL_SOURCE_DIR}/ssl/ssl_txt.c
@@ -1364,6 +1394,7 @@ set(SSL_SRC
     ${OPENSSL_SOURCE_DIR}/ssl/t1_trce.c
     ${OPENSSL_SOURCE_DIR}/ssl/tls13_enc.c
     ${OPENSSL_SOURCE_DIR}/ssl/tls_depr.c
+    ${OPENSSL_SOURCE_DIR}/ssl/tls_srp.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/cc_newreno.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_ackm.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_cfq.c
@@ -1413,17 +1444,6 @@ set(SSL_SRC
     ${OPENSSL_SOURCE_DIR}/ssl/statem/statem_srvr.c
 )
 
-# Disable all deprecated API
-#
-# Engine API is deprecated in OpenSSL 3.0.
-# https://docs.openssl.org/3.3/man3/ENGINE_add/#history
-#
-# SRP API is deprecated in OpenSSL 3.0.
-# https://docs.openssl.org/3.1/man3/SRP_Calc_B/#history
-add_definitions(-DOPENSSL_NO_DEPRECATED)
-add_definitions(-DOPENSSL_NO_ENGINE)
-add_definitions(-DOPENSSL_NO_SRP)
-
 if(ENABLE_OPENSSL_DYNAMIC)
     add_library(crypto SHARED ${CRYPTO_SRC})
     set_target_properties(crypto PROPERTIES VERSION "${LIB_VERSION}" SOVERSION "${LIB_SOVERSION}")
@@ -1433,14 +1453,9 @@ if(ENABLE_OPENSSL_DYNAMIC)
     set_target_properties(ssl PROPERTIES VERSION "${LIB_VERSION}" SOVERSION "${LIB_SOVERSION}")
     set_target_properties(ssl PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/programs)
 else()
-    # Enable legacy crypto support for OpenSSL 3.+
-    # to avoid `dlopen(legacy.so)`.
-    add_definitions(-DSTATIC_LEGACY)
-
     add_library(crypto ${CRYPTO_SRC})
     add_library(ssl ${SSL_SRC})
 endif()
-
 
 target_include_directories(crypto
     SYSTEM PUBLIC "${PLATFORM_DIRECTORY}/include"

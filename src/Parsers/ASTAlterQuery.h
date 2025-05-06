@@ -79,10 +79,8 @@ public:
         NO_TYPE,
 
         MODIFY_DATABASE_SETTING,
-        MODIFY_DATABASE_COMMENT,
 
         MODIFY_COMMENT,
-
         MODIFY_SQL_SECURITY,
 
         UNLOCK_SNAPSHOT,

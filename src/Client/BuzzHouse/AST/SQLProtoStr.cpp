@@ -12,7 +12,7 @@
 namespace BuzzHouse
 {
 
-static constexpr char hexDigits[] = "0123456789ABCDEF";
+static constexpr char hex_digits[] = "0123456789ABCDEF";
 static constexpr char digits[] = "0123456789";
 
 CONV_FN(Expr, expr);
@@ -89,14 +89,14 @@ CONV_FN(Function, func)
 
 CONV_FN(Cluster, clust)
 {
-    ret += " ON CLUSTER '";
+    ret += " ON CLUSTER ";
     ret += clust.cluster();
-    ret += "'";
 }
 
 CONV_FN(Window, win)
 {
-    ret += win.window();
+    ret += "w";
+    ret += std::to_string(win.window());
 }
 
 CONV_FN(Storage, store)
@@ -118,7 +118,7 @@ CONV_FN(ExprColAlias, eca)
     }
 }
 
-static void ConvertToSQLString(String & ret, const String & s)
+static void convertToSQLString(String & ret, const String & s)
 {
     for (size_t i = 0; i < s.length(); i++)
     {
@@ -166,8 +166,8 @@ static void ConvertToSQLString(String & ret, const String & s)
                     const uint8_t & x = static_cast<uint8_t>(c);
 
                     ret += "\\x";
-                    ret += hexDigits[(x & 0xF0) >> 4];
-                    ret += hexDigits[x & 0x0F];
+                    ret += hex_digits[(x & 0xF0) >> 4];
+                    ret += hex_digits[x & 0x0F];
                 }
             }
         }
@@ -413,8 +413,8 @@ CONV_FN(LiteralValue, lit_val)
             for (size_t i = 0; i < s.length(); i++)
             {
                 const uint8_t & x = static_cast<uint8_t>(s[i]);
-                ret += hexDigits[(x & 0xF0) >> 4];
-                ret += hexDigits[x & 0x0F];
+                ret += hex_digits[(x & 0xF0) >> 4];
+                ret += hex_digits[x & 0x0F];
             }
             ret += '\'';
         }
@@ -429,7 +429,7 @@ CONV_FN(LiteralValue, lit_val)
             break;
         case LitValType::kStringLit:
             ret += '\'';
-            ConvertToSQLString(ret, lit_val.string_lit());
+            convertToSQLString(ret, lit_val.string_lit());
             ret += '\'';
             break;
         case LitValType::kSpecialVal: {
@@ -764,55 +764,6 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
         case BottomTypeNameType::kIPv6:
             ret += "IPv6";
             break;
-        case BottomTypeNameType::kDecimal: {
-            const Decimal & dec = btn.decimal();
-
-            ret += "Decimal";
-            if (dec.has_decimaln())
-            {
-                uint32_t precision = 0;
-                const DecimalN & dn = dec.decimaln();
-
-                switch (dn.precision())
-                {
-                    case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D32:
-                        precision = 9;
-                        break;
-                    case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D64:
-                        precision = 18;
-                        break;
-                    case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128:
-                        precision = 38;
-                        break;
-                    case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D256:
-                        precision = 76;
-                        break;
-                }
-                ret += DecimalN_DecimalPrecision_Name(dn.precision()).substr(1);
-                ret += "(";
-                ret += std::to_string(dn.scale() % (precision + 1));
-                ret += ")";
-            }
-            else if (dec.has_decimal_simple())
-            {
-                const DecimalSimple & ds = dec.decimal_simple();
-
-                if (ds.has_precision())
-                {
-                    const uint32_t precision = std::max<uint32_t>(1, ds.precision() % 77);
-
-                    ret += "(";
-                    ret += std::to_string(precision);
-                    if (ds.has_scale())
-                    {
-                        ret += ",";
-                        ret += std::to_string(ds.scale() % (precision + 1));
-                    }
-                    ret += ")";
-                }
-            }
-        }
-        break;
         default: {
             if (lcard)
             {
@@ -822,6 +773,55 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
             {
                 switch (btn.bottom_one_of_case())
                 {
+                    case BottomTypeNameType::kDecimal: {
+                        const Decimal & dec = btn.decimal();
+
+                        ret += "Decimal";
+                        if (dec.has_decimaln())
+                        {
+                            uint32_t precision = 0;
+                            const DecimalN & dn = dec.decimaln();
+
+                            switch (dn.precision())
+                            {
+                                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D32:
+                                    precision = 9;
+                                    break;
+                                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D64:
+                                    precision = 18;
+                                    break;
+                                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128:
+                                    precision = 38;
+                                    break;
+                                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D256:
+                                    precision = 76;
+                                    break;
+                            }
+                            ret += DecimalN_DecimalPrecision_Name(dn.precision()).substr(1);
+                            ret += "(";
+                            ret += std::to_string(dn.scale() % (precision + 1));
+                            ret += ")";
+                        }
+                        else if (dec.has_decimal_simple())
+                        {
+                            const DecimalSimple & ds = dec.decimal_simple();
+
+                            if (ds.has_precision())
+                            {
+                                const uint32_t precision = std::max<uint32_t>(1, ds.precision() % 77);
+
+                                ret += "(";
+                                ret += std::to_string(precision);
+                                if (ds.has_scale())
+                                {
+                                    ret += ",";
+                                    ret += std::to_string(ds.scale() % (precision + 1));
+                                }
+                                ret += ")";
+                            }
+                        }
+                    }
+                    break;
                     case BottomTypeNameType::kJdef: {
                         const JSONDef & jdef = btn.jdef();
 
@@ -1103,26 +1103,20 @@ CONV_FN(ExprIn, ein)
         ret += "GLOBAL ";
     if (ein.not_())
         ret += "NOT ";
-    ret += "IN ";
-    using InType = ExprIn::InOneofCase;
-    switch (ein.in_oneof_case())
+    ret += "IN (";
+    if (ein.has_exprs())
     {
-        case InType::kSingleExpr:
-            ExprToString(ret, ein.single_expr());
-            break;
-        case InType::kExprs:
-            ret += "(";
-            ExprListToString(ret, ein.exprs());
-            ret += ")";
-            break;
-        case InType::kSel:
-            ret += "(";
-            ExplainQueryToString(ret, ein.sel());
-            ret += ")";
-            break;
-        default:
-            ret += "1";
+        ExprListToString(ret, ein.exprs());
     }
+    else if (ein.has_sel())
+    {
+        ExplainQueryToString(ret, ein.sel());
+    }
+    else
+    {
+        ret += "1";
+    }
+    ret += ")";
 }
 
 CONV_FN(ExprAny, eany)
@@ -1478,18 +1472,10 @@ CONV_FN(WindowFuncCall, wc)
     {
         WindowDefnToString(ret, wc.win_defn());
     }
-    else if (wc.has_window())
+    else if (wc.has_win_name())
     {
-        WindowToString(ret, wc.window());
+        WindowToString(ret, wc.win_name());
     }
-    ret += ")";
-}
-
-CONV_FN(WindowDef, wdef)
-{
-    WindowToString(ret, wdef.window());
-    ret += " AS (";
-    WindowDefnToString(ret, wdef.win_defn());
     ret += ")";
 }
 
@@ -1802,22 +1788,6 @@ CONV_FN(GenerateSeriesFunc, gsf)
     ret += ")";
 }
 
-static void FlatExprSchemaTableToString(String & ret, const ExprSchemaTable & est, const String & separator)
-{
-    ret += "'";
-    if (est.has_database())
-    {
-        DatabaseToString(ret, est.database());
-    }
-    else
-    {
-        ret += "default";
-    }
-    ret += separator;
-    TableToString(ret, est.table());
-    ret += "'";
-}
-
 CONV_FN(TableFunction, tf);
 
 static void TableOrFunctionToString(String & ret, const bool tudf, const TableOrFunction & tof)
@@ -1828,7 +1798,20 @@ static void TableOrFunctionToString(String & ret, const bool tudf, const TableOr
         case TableOrFunctionType::kEst:
             if (tudf)
             {
-                FlatExprSchemaTableToString(ret, tof.est(), "', '");
+                const ExprSchemaTable & est = tof.est();
+
+                ret += "'";
+                if (est.has_database())
+                {
+                    DatabaseToString(ret, est.database());
+                }
+                else
+                {
+                    ret += "default";
+                }
+                ret += "', '";
+                TableToString(ret, est.table());
+                ret += "'";
             }
             else
             {
@@ -1853,8 +1836,7 @@ CONV_FN(RemoteFunc, rfunc)
 {
     const TableOrFunction & tof = rfunc.tof();
 
-    ret += RemoteFunc_RName_Name(rfunc.rname());
-    ret += "('";
+    ret += "remote('";
     ret += rfunc.address();
     ret += "', ";
     TableOrFunctionToString(ret, true, tof);
@@ -2006,8 +1988,11 @@ CONV_FN(ClusterFunc, cluster)
 
 CONV_FN(MergeTreeIndexFunc, mfunc)
 {
-    ret += "mergeTreeIndex(";
-    FlatExprSchemaTableToString(ret, mfunc.est(), "', '");
+    ret += "mergeTreeIndex('";
+    ret += mfunc.mdatabase();
+    ret += "', '";
+    ret += mfunc.mtable();
+    ret += "'";
     if (mfunc.has_with_marks())
     {
         ret += ", with_marks = ";
@@ -2018,8 +2003,9 @@ CONV_FN(MergeTreeIndexFunc, mfunc)
 
 CONV_FN(GenerateRandomFunc, grfunc)
 {
-    ret += "generateRandom(";
-    ExprToString(ret, grfunc.structure());
+    ret += "generateRandom('";
+    ret += grfunc.structure();
+    ret += "'";
     if (grfunc.has_random_seed())
     {
         ret += ", ";
@@ -2106,11 +2092,6 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kValues:
             ValuesStatementToString(ret, true, tf.values());
             break;
-        case TableFunctionType::kDictionary:
-            ret += "dictionary(";
-            FlatExprSchemaTableToString(ret, tf.dictionary(), ".");
-            ret += ")";
-            break;
         default:
             ret += "numbers(10)";
     }
@@ -2123,10 +2104,10 @@ CONV_FN(JoinedTableOrFunction, jtf)
     TableOrFunctionToString(ret, false, tof);
     if (jtf.has_table_alias())
     {
-        ret += " AS ";
+        ret += " ";
         TableToString(ret, jtf.table_alias());
     }
-    if (jtf.final())
+    if (tof.has_est() && jtf.final())
     {
         ret += " FINAL";
     }
@@ -2274,7 +2255,7 @@ CONV_FN(GroupByStatement, gbs)
     if (gbs.has_having_expr())
     {
         ret += " HAVING ";
-        WhereStatementToString(ret, gbs.having_expr());
+        ExprToString(ret, gbs.having_expr());
     }
 }
 
@@ -2325,14 +2306,6 @@ CONV_FN(OffsetStatement, off)
 
 CONV_FN(SelectStatementCore, ssc)
 {
-    const bool from_first
-        = ssc.from_first() && ssc.has_from() && ssc.from().tos().tos_list_size() == 0 && ssc.from().tos().join_clause().clauses_size() == 0;
-
-    if (from_first)
-    {
-        FromStatementToString(ret, ssc.from());
-        ret += " ";
-    }
     ret += "SELECT ";
     if (ssc.has_s_or_d())
     {
@@ -2354,7 +2327,7 @@ CONV_FN(SelectStatementCore, ssc)
             ResultColumnToString(ret, ssc.result_columns(i));
         }
     }
-    if (!from_first && ssc.has_from())
+    if (ssc.has_from())
     {
         ret += " ";
         FromStatementToString(ret, ssc.from());
@@ -2373,23 +2346,6 @@ CONV_FN(SelectStatementCore, ssc)
     {
         ret += " ";
         GroupByStatementToString(ret, ssc.groupby());
-    }
-    if (ssc.window_defs_size() > 0)
-    {
-        ret += " WINDOW ";
-        for (int i = 0; i < ssc.window_defs_size(); i++)
-        {
-            if (i != 0)
-            {
-                ret += ", ";
-            }
-            WindowDefToString(ret, ssc.window_defs(i));
-        }
-    }
-    if (ssc.has_qualify_expr())
-    {
-        ret += " QUALIFY ";
-        WhereStatementToString(ret, ssc.qualify_expr());
     }
     if (ssc.has_orderby())
     {
@@ -2429,38 +2385,14 @@ CONV_FN(CTEquery, cteq)
     ret += ")";
 }
 
-CONV_FN(CTEexpr, cte_expr)
-{
-    ExprToString(ret, cte_expr.expr());
-    ret += " AS `";
-    ColumnToString(ret, 1, cte_expr.col_alias());
-    ret += "`";
-}
-
-CONV_FN(SingleCTE, scte)
-{
-    if (scte.has_cte_query())
-    {
-        CTEqueryToString(ret, scte.cte_query());
-    }
-    else if (scte.has_cte_expr())
-    {
-        CTEexprToString(ret, scte.cte_expr());
-    }
-    else
-    {
-        ret += "1 AS c0";
-    }
-}
-
 CONV_FN(CTEs, cteq)
 {
     ret += "WITH ";
-    SingleCTEToString(ret, cteq.cte());
+    CTEqueryToString(ret, cteq.cte());
     for (int i = 0; i < cteq.other_ctes_size(); i++)
     {
         ret += ", ";
-        SingleCTEToString(ret, cteq.other_ctes(i));
+        CTEqueryToString(ret, cteq.other_ctes(i));
     }
     ret += " ";
 }
@@ -2676,10 +2608,10 @@ CONV_FN(ColumnDef, cdf)
     {
         ret += " PRIMARY KEY";
     }
-    if (cdf.has_setting_values())
+    if (cdf.has_settings())
     {
         ret += " SETTINGS(";
-        SettingValuesToString(ret, cdf.setting_values());
+        SettingValuesToString(ret, cdf.settings());
         ret += ")";
     }
 }
@@ -2864,9 +2796,6 @@ CONV_FN(TableEngineParam, tep)
             ret += tep.regexp();
             ret += "')";
             break;
-        case TableEngineParamType::kEst:
-            FlatExprSchemaTableToString(ret, tep.est(), ".");
-            break;
         default:
             ret += "c0";
     }
@@ -2996,10 +2925,10 @@ CONV_FN(TableEngine, te)
         ret += " ";
         TTLExprToString(ret, te.ttl_expr());
     }
-    if (te.has_setting_values())
+    if (te.has_settings())
     {
         ret += " SETTINGS ";
-        SettingValuesToString(ret, te.setting_values());
+        SettingValuesToString(ret, te.settings());
     }
 }
 
@@ -3013,27 +2942,22 @@ CONV_FN(CreateTableAs, create_table)
     ExprSchemaTableToString(ret, create_table.est());
 }
 
-static void CreateOrReplaceToString(String & ret, const CreateReplaceOption & cro)
+CONV_FN(CreateTable, create_table)
 {
-    switch (cro)
+    switch (create_table.create_opt())
     {
-        case CreateReplaceOption::Create:
+        case CreateTable_CreateTableOption::CreateTable_CreateTableOption_Create:
             ret += "CREATE";
             break;
-        case CreateReplaceOption::Replace:
+        case CreateTable_CreateTableOption::CreateTable_CreateTableOption_Replace:
             ret += "REPLACE";
             break;
-        case CreateReplaceOption::CreateOrReplace:
+        case CreateTable_CreateTableOption::CreateTable_CreateTableOption_CreateOrReplace:
             ret += "CREATE OR REPLACE";
             break;
     }
-}
-
-CONV_FN(CreateTable, create_table)
-{
-    CreateOrReplaceToString(ret, create_table.create_opt());
     ret += " ";
-    if (create_table.create_opt() == CreateReplaceOption::Create && create_table.is_temp())
+    if (create_table.create_opt() == CreateTable_CreateTableOption::CreateTable_CreateTableOption_Create && create_table.is_temp())
     {
         ret += "TEMPORARY ";
     }
@@ -3139,16 +3063,20 @@ CONV_FN(Drop, dt)
 
 CONV_FN(Insert, insert)
 {
-    if (insert.has_ctes())
+    if (insert.has_ctes() && insert.has_est() && insert.has_select())
     {
         CTEsToString(ret, insert.ctes());
     }
     ret += "INSERT INTO TABLE ";
-    if (insert.tof().has_tfunc())
+    if (insert.has_est())
+    {
+        ExprSchemaTableToString(ret, insert.est());
+    }
+    else if (insert.has_tfunction())
     {
         ret += "FUNCTION ";
+        TableFunctionToString(ret, insert.tfunction());
     }
-    TableOrFunctionToString(ret, false, insert.tof());
     if (insert.cols_size())
     {
         ret += " (";
@@ -3475,18 +3403,17 @@ CONV_FN(RefreshableView, rv)
 
 CONV_FN(CreateView, create_view)
 {
-    const bool replace = create_view.create_opt() != CreateReplaceOption::Create;
+    const bool replace = create_view.replace();
     const bool materialized = create_view.materialized();
     const bool refreshable = create_view.has_refresh();
 
-    CreateOrReplaceToString(ret, create_view.create_opt());
-    ret += " ";
-    if (replace)
+    if (create_view.replace())
     {
-        ret += "TABLE";
+        ret += "REPLACE TABLE";
     }
     else
     {
+        ret += "CREATE ";
         if (materialized)
         {
             ret += "MATERIALIZED ";
@@ -3494,15 +3421,7 @@ CONV_FN(CreateView, create_view)
         ret += "VIEW";
     }
     ret += " ";
-    if (create_view.if_not_exists())
-    {
-        ret += "IF NOT EXISTS ";
-    }
     ExprSchemaTableToString(ret, create_view.est());
-    if (create_view.has_cluster())
-    {
-        ClusterToString(ret, create_view.cluster());
-    }
     if (materialized)
     {
         if (!replace && refreshable)
@@ -3550,144 +3469,6 @@ CONV_FN(CreateView, create_view)
     {
         ret += " COMMENT ";
         ret += create_view.comment();
-    }
-}
-
-CONV_FN(DictionaryColumn, dc)
-{
-    ret += "`";
-    ColumnToString(ret, 1, dc.col());
-    ret += "` ";
-    TypeNameToString(ret, 0, dc.type());
-    ret += " DEFAULT ";
-    ExprToString(ret, dc.default_val());
-    if (dc.has_expression())
-    {
-        ret += " EXPRESSION ";
-        ExprToString(ret, dc.expression());
-    }
-    if (dc.has_hierarchical())
-    {
-        ret += " ";
-        ret += dc.hierarchical() ? "HIERARCHICAL" : "INJECTIVE";
-    }
-    if (dc.is_object_id())
-    {
-        ret += " IS_OBJECT_ID";
-    }
-}
-
-CONV_FN(DictionarySource, ds)
-{
-    ret += " SOURCE(";
-    using DictionarySourceType = DictionarySource::DictionarySourceOneofCase;
-    switch (ds.dictionary_source_oneof_case())
-    {
-        case DictionarySourceType::kEst:
-            ret += "CLICKHOUSE(DB ";
-            FlatExprSchemaTableToString(ret, ds.est(), "' TABLE '");
-            ret += ")";
-            break;
-        default:
-            ret += "NULL()";
-    }
-    ret += ")";
-}
-
-CONV_FN(DictionaryLayout, dl)
-{
-    ret += " LAYOUT(";
-    ret += DictionaryLayouts_Name(dl.layout());
-    ret += "(";
-    if (dl.has_setting_values())
-    {
-        const SettingValues & sv = dl.setting_values();
-        const SetValue & first = sv.set_value();
-
-        ret += first.property();
-        ret += " ";
-        ret += first.value();
-        for (int i = 0; i < sv.other_values_size(); i++)
-        {
-            const SetValue & next = sv.other_values(i);
-
-            ret += " ";
-            ret += next.property();
-            ret += " ";
-            ret += next.value();
-        }
-    }
-    ret += "))";
-}
-
-CONV_FN(DictionaryRange, dr)
-{
-    ret += " RANGE(MIN ";
-    ExprToString(ret, dr.min());
-    ret += "MAX ";
-    ExprToString(ret, dr.max());
-    ret += ")";
-}
-
-CONV_FN(DictionaryLifetime, dl)
-{
-    ret += " LIFETIME(";
-    if (dl.has_max())
-    {
-        ret += "MIN ";
-        ret += std::to_string(dl.min());
-        ret += " MAX ";
-        ret += std::to_string(dl.max());
-    }
-    else
-    {
-        ret += std::to_string(dl.min());
-    }
-    ret += ")";
-}
-
-CONV_FN(CreateDictionary, create_dictionary)
-{
-    CreateOrReplaceToString(ret, create_dictionary.create_opt());
-    ret += " DICTIONARY ";
-    if (create_dictionary.if_not_exists())
-    {
-        ret += "IF NOT EXISTS ";
-    }
-    ExprSchemaTableToString(ret, create_dictionary.est());
-    if (create_dictionary.has_cluster())
-    {
-        ClusterToString(ret, create_dictionary.cluster());
-    }
-    ret += " (";
-    DictionaryColumnToString(ret, create_dictionary.col());
-    for (int i = 0; i < create_dictionary.other_cols_size(); i++)
-    {
-        ret += ", ";
-        DictionaryColumnToString(ret, create_dictionary.other_cols(i));
-    }
-    ret += ") PRIMARY KEY ";
-    TableKeyToString(ret, create_dictionary.primary_key());
-    DictionarySourceToString(ret, create_dictionary.source());
-    DictionaryLayoutToString(ret, create_dictionary.layout());
-    if (create_dictionary.has_range())
-    {
-        DictionaryRangeToString(ret, create_dictionary.range());
-    }
-    if (create_dictionary.has_lifetime())
-    {
-        DictionaryLifetimeToString(ret, create_dictionary.lifetime());
-    }
-    if (create_dictionary.has_setting_values())
-    {
-        ret += " SETTINGS(";
-        SettingValuesToString(ret, create_dictionary.setting_values());
-        ret += ")";
-    }
-    if (create_dictionary.has_comment())
-    {
-        ret += " COMMENT ";
-        ret += create_dictionary.comment();
     }
 }
 
@@ -3739,7 +3520,7 @@ CONV_FN(ModifyColumnSetting, mcp)
 {
     ColumnPathToString(ret, 0, mcp.col());
     ret += " MODIFY SETTING ";
-    SettingValuesToString(ret, mcp.setting_values());
+    SettingValuesToString(ret, mcp.settings());
 }
 
 CONV_FN(SettingList, pl)
@@ -3756,7 +3537,7 @@ CONV_FN(RemoveColumnSetting, rcp)
 {
     ColumnPathToString(ret, 0, rcp.col());
     ret += " RESET SETTING ";
-    SettingListToString(ret, rcp.setting_values());
+    SettingListToString(ret, rcp.settings());
 }
 
 CONV_FN(HeavyDelete, hdel)
@@ -4159,73 +3940,45 @@ CONV_FN(TopSelect, top)
     }
 }
 
-static void SystemCommandOnCluster(String & ret, const String & desc, const SystemCommand & cmd, const ExprSchemaTable & est)
-{
-    ret += desc;
-    if (cmd.has_cluster())
-    {
-        ClusterToString(ret, cmd.cluster());
-    }
-    ret += " ";
-    ExprSchemaTableToString(ret, est);
-}
-
 CONV_FN(SystemCommand, cmd)
 {
-    bool can_set_cluster = false;
-
     ret += "SYSTEM ";
     using CmdType = SystemCommand::SystemCmdOneofCase;
     switch (cmd.system_cmd_oneof_case())
     {
         case CmdType::kReloadEmbeddedDictionaries:
             ret += "RELOAD EMBEDDED DICTIONARIES";
-            can_set_cluster = true;
             break;
         case CmdType::kReloadDictionaries:
             ret += "RELOAD DICTIONARIES";
-            can_set_cluster = true;
             break;
         case CmdType::kReloadModels:
             ret += "RELOAD MODELS";
-            can_set_cluster = true;
             break;
         case CmdType::kReloadFunctions:
             ret += "RELOAD FUNCTIONS";
-            can_set_cluster = true;
             break;
         case CmdType::kReloadFunction:
-            ret += "RELOAD FUNCTION";
-            if (cmd.has_cluster())
-            {
-                ClusterToString(ret, cmd.cluster());
-            }
-            ret += " ";
+            ret += "RELOAD FUNCTION ";
             FunctionToString(ret, cmd.reload_function());
             break;
         case CmdType::kReloadAsynchronousMetrics:
             ret += "RELOAD ASYNCHRONOUS METRICS";
-            can_set_cluster = true;
             break;
         case CmdType::kDropDnsCache:
             ret += "DROP DNS CACHE";
-            can_set_cluster = true;
             break;
         case CmdType::kDropMarkCache:
             ret += "DROP MARK CACHE";
-            can_set_cluster = true;
             break;
         case CmdType::kDropUncompressedCache:
             ret += "DROP UNCOMPRESSED CACHE";
-            can_set_cluster = true;
             break;
         case CmdType::kDropCompiledExpressionCache:
             ret += "DROP COMPILED EXPRESSION CACHE";
-            can_set_cluster = true;
             break;
         case CmdType::kDropQueryCache:
             ret += "DROP QUERY CACHE";
-            can_set_cluster = true;
             break;
         case CmdType::kDropFormatSchemaCache:
             ret += "DROP FORMAT SCHEMA CACHE";
@@ -4236,106 +3989,113 @@ CONV_FN(SystemCommand, cmd)
             break;
         case CmdType::kFlushLogs:
             ret += "FLUSH LOGS";
-            can_set_cluster = true;
             break;
         case CmdType::kReloadConfig:
             ret += "RELOAD CONFIG";
-            can_set_cluster = true;
             break;
         case CmdType::kReloadUsers:
             ret += "RELOAD USERS";
-            can_set_cluster = true;
             break;
         case CmdType::kStopMerges:
-            SystemCommandOnCluster(ret, "STOP MERGES", cmd, cmd.stop_merges());
+            ret += "STOP MERGES ";
+            ExprSchemaTableToString(ret, cmd.stop_merges());
             break;
         case CmdType::kStartMerges:
-            SystemCommandOnCluster(ret, "START MERGES", cmd, cmd.start_merges());
+            ret += "START MERGES ";
+            ExprSchemaTableToString(ret, cmd.start_merges());
             break;
         case CmdType::kStopTtlMerges:
-            SystemCommandOnCluster(ret, "STOP TTL MERGES", cmd, cmd.stop_ttl_merges());
+            ret += "STOP TTL MERGES ";
+            ExprSchemaTableToString(ret, cmd.stop_ttl_merges());
             break;
         case CmdType::kStartTtlMerges:
-            SystemCommandOnCluster(ret, "START TTL MERGES", cmd, cmd.start_ttl_merges());
+            ret += "START TTL MERGES ";
+            ExprSchemaTableToString(ret, cmd.start_ttl_merges());
             break;
         case CmdType::kStopMoves:
-            SystemCommandOnCluster(ret, "STOP MOVES", cmd, cmd.stop_moves());
+            ret += "STOP MOVES ";
+            ExprSchemaTableToString(ret, cmd.stop_moves());
             break;
         case CmdType::kStartMoves:
-            SystemCommandOnCluster(ret, "START MOVES", cmd, cmd.start_moves());
+            ret += "START MOVES ";
+            ExprSchemaTableToString(ret, cmd.start_moves());
             break;
         case CmdType::kWaitLoadingParts:
-            SystemCommandOnCluster(ret, "WAIT LOADING PARTS", cmd, cmd.wait_loading_parts());
+            ret += "WAIT LOADING PARTS ";
+            ExprSchemaTableToString(ret, cmd.wait_loading_parts());
             break;
         case CmdType::kStopFetches:
-            SystemCommandOnCluster(ret, "STOP FETCHES", cmd, cmd.stop_fetches());
+            ret += "STOP FETCHES ";
+            ExprSchemaTableToString(ret, cmd.stop_fetches());
             break;
         case CmdType::kStartFetches:
-            SystemCommandOnCluster(ret, "START FETCHES", cmd, cmd.start_fetches());
+            ret += "START FETCHES ";
+            ExprSchemaTableToString(ret, cmd.start_fetches());
             break;
         case CmdType::kStopReplicatedSends:
-            SystemCommandOnCluster(ret, "STOP REPLICATED SENDS", cmd, cmd.stop_replicated_sends());
+            ret += "STOP REPLICATED SENDS ";
+            ExprSchemaTableToString(ret, cmd.stop_replicated_sends());
             break;
         case CmdType::kStartReplicatedSends:
-            SystemCommandOnCluster(ret, "START REPLICATED SENDS", cmd, cmd.start_replicated_sends());
+            ret += "START REPLICATED SENDS ";
+            ExprSchemaTableToString(ret, cmd.start_replicated_sends());
             break;
         case CmdType::kStopReplicationQueues:
-            SystemCommandOnCluster(ret, "STOP REPLICATION QUEUES", cmd, cmd.stop_replication_queues());
+            ret += "STOP REPLICATION QUEUES ";
+            ExprSchemaTableToString(ret, cmd.stop_replication_queues());
             break;
         case CmdType::kStartReplicationQueues:
-            SystemCommandOnCluster(ret, "START REPLICATION QUEUES", cmd, cmd.start_replication_queues());
+            ret += "START REPLICATION QUEUES ";
+            ExprSchemaTableToString(ret, cmd.start_replication_queues());
             break;
         case CmdType::kStopPullingReplicationLog:
-            SystemCommandOnCluster(ret, "STOP PULLING REPLICATION LOG", cmd, cmd.stop_pulling_replication_log());
+            ret += "STOP PULLING REPLICATION LOG ";
+            ExprSchemaTableToString(ret, cmd.stop_pulling_replication_log());
             break;
         case CmdType::kStartPullingReplicationLog:
-            SystemCommandOnCluster(ret, "START PULLING REPLICATION LOG", cmd, cmd.start_pulling_replication_log());
+            ret += "START PULLING REPLICATION LOG ";
+            ExprSchemaTableToString(ret, cmd.start_pulling_replication_log());
             break;
         case CmdType::kSyncReplica:
-            SystemCommandOnCluster(ret, "SYNC REPLICA", cmd, cmd.sync_replica().est());
+            ret += "SYNC REPLICA ";
+            ExprSchemaTableToString(ret, cmd.sync_replica().est());
             ret += " ";
             ret += SyncReplica_SyncPolicy_Name(cmd.sync_replica().policy());
             break;
         case CmdType::kSyncReplicatedDatabase:
-            ret += "SYNC DATABASE REPLICA";
-            if (cmd.has_cluster())
-            {
-                ClusterToString(ret, cmd.cluster());
-            }
-            ret += " ";
+            ret += "SYNC DATABASE REPLICA ";
             DatabaseToString(ret, cmd.sync_replicated_database());
             break;
         case CmdType::kRestartReplica:
-            SystemCommandOnCluster(ret, "RESTART REPLICA", cmd, cmd.restart_replica());
+            ret += "SYNC RESTART REPLICA ";
+            ExprSchemaTableToString(ret, cmd.restart_replica());
             break;
         case CmdType::kRestoreReplica:
-            SystemCommandOnCluster(ret, "RESTORE REPLICA", cmd, cmd.restore_replica());
+            ret += "SYNC RESTORE REPLICA ";
+            ExprSchemaTableToString(ret, cmd.restore_replica());
             break;
         case CmdType::kRestartReplicas:
             ret += "RESTART REPLICAS";
-            can_set_cluster = true;
             break;
         case CmdType::kDropFilesystemCache:
             ret += "DROP FILESYSTEM CACHE";
-            can_set_cluster = true;
             break;
         case CmdType::kSyncFileCache:
             ret += "SYNC FILE CACHE";
-            can_set_cluster = true;
             break;
         case CmdType::kLoadPks:
             ret += "LOAD PRIMARY KEY";
-            can_set_cluster = true;
             break;
         case CmdType::kLoadPk:
-            SystemCommandOnCluster(ret, "LOAD PRIMARY KEY", cmd, cmd.load_pk());
+            ret += "LOAD PRIMARY KEY ";
+            ExprSchemaTableToString(ret, cmd.load_pk());
             break;
         case CmdType::kUnloadPks:
             ret += "UNLOAD PRIMARY KEY";
-            can_set_cluster = true;
             break;
         case CmdType::kUnloadPk:
-            SystemCommandOnCluster(ret, "UNLOAD PRIMARY KEY", cmd, cmd.unload_pk());
+            ret += "UNLOAD PRIMARY KEY ";
+            ExprSchemaTableToString(ret, cmd.unload_pk());
             break;
         case CmdType::kRefreshViews:
             ret += "REFRESH VIEW";
@@ -4367,77 +4127,51 @@ CONV_FN(SystemCommand, cmd)
             ExprSchemaTableToString(ret, cmd.wait_view());
             break;
         case CmdType::kPrewarmCache:
-            SystemCommandOnCluster(ret, "PREWARM MARK CACHE", cmd, cmd.prewarm_cache());
+            ret += "PREWARM MARK CACHE ";
+            ExprSchemaTableToString(ret, cmd.prewarm_cache());
             break;
         case CmdType::kPrewarmPrimaryIndexCache:
-            SystemCommandOnCluster(ret, "PREWARM PRIMARY INDEX CACHE", cmd, cmd.prewarm_primary_index_cache());
+            ret += "PREWARM PRIMARY INDEX CACHE ";
+            ExprSchemaTableToString(ret, cmd.prewarm_primary_index_cache());
             break;
         case CmdType::kDropConnectionsCache:
             ret += "DROP CONNECTIONS CACHE";
-            can_set_cluster = true;
             break;
         case CmdType::kDropPrimaryIndexCache:
             ret += "DROP PRIMARY INDEX CACHE";
-            can_set_cluster = true;
             break;
         case CmdType::kDropIndexMarkCache:
             ret += "DROP INDEX MARK CACHE";
-            can_set_cluster = true;
             break;
         case CmdType::kDropIndexUncompressedCache:
             ret += "DROP INDEX UNCOMPRESSED CACHE";
-            can_set_cluster = true;
             break;
         case CmdType::kDropMmapCache:
             ret += "DROP MMAP CACHE";
-            can_set_cluster = true;
             break;
         case CmdType::kDropPageCache:
             ret += "DROP PAGE CACHE";
-            can_set_cluster = true;
             break;
         case CmdType::kDropSchemaCache:
             ret += "DROP SCHEMA CACHE";
-            can_set_cluster = true;
             break;
         case CmdType::kDropS3ClientCache:
             ret += "DROP S3 CLIENT CACHE";
-            can_set_cluster = true;
             break;
         case CmdType::kFlushAsyncInsertQueue:
             ret += "FLUSH ASYNC INSERT QUEUE";
-            can_set_cluster = true;
             break;
         case CmdType::kSyncFilesystemCache:
             ret += "SYNC FILESYSTEM CACHE";
-            can_set_cluster = true;
+            break;
+        case CmdType::kDropCache:
+            ret += "DROP CACHE";
             break;
         case CmdType::kDropSkipIndexCache:
             ret += "DROP SKIPPING INDEX CACHE";
-            can_set_cluster = true;
-            break;
-        case CmdType::kReloadDictionary:
-            SystemCommandOnCluster(ret, "RELOAD DICTIONARY", cmd, cmd.reload_dictionary());
-            break;
-        case CmdType::kFlushDistributed:
-            SystemCommandOnCluster(ret, "FLUSH DISTRIBUTED", cmd, cmd.flush_distributed());
-            break;
-        case CmdType::kStopDistributedSends:
-            SystemCommandOnCluster(ret, "STOP DISTRIBUTED SENDS", cmd, cmd.stop_distributed_sends());
-            break;
-        case CmdType::kStartDistributedSends:
-            SystemCommandOnCluster(ret, "START DISTRIBUTED SENDS", cmd, cmd.start_distributed_sends());
-            break;
-        case CmdType::kDropQueryConditionCache:
-            ret += "DROP QUERY CONDITION CACHE";
-            can_set_cluster = true;
             break;
         default:
             ret += "REFRESH VIEW";
-    }
-    if (can_set_cluster && cmd.has_cluster())
-    {
-        ClusterToString(ret, cmd.cluster());
     }
 }
 
@@ -4617,9 +4351,6 @@ CONV_FN(SQLQueryInner, query)
         case QueryType::kBackupRestore:
             BackupRestoreToString(ret, query.backup_restore());
             break;
-        case QueryType::kCreateDictionary:
-            CreateDictionaryToString(ret, query.create_dictionary());
-            break;
         default:
             ret += "SELECT 1";
     }
@@ -4680,4 +4411,5 @@ CONV_FN(SQLQuery, query)
     }
     ret += ";";
 }
+
 }

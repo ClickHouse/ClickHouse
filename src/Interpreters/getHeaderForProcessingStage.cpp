@@ -162,8 +162,6 @@ Block getHeaderForProcessingStage(
 
             return result;
         }
-        case QueryProcessingStage::QueryPlan:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get header for QueryPlan stage.");
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown processed stage.");
 }

@@ -1126,7 +1126,7 @@ static const auto identifier_lambda = [](std::pair<std::string, ASTPtr> & p)
 {
     /// No query parameters identifiers at this moment
     const auto * id = typeid_cast<ASTIdentifier *>(p.second.get());
-    return id && !id->name_parts.empty() && !id->isParam();
+    return id && !id->name_parts.empty();
 };
 
 ASTPtr QueryFuzzer::generatePredicate()
@@ -1356,7 +1356,7 @@ static String getOldALias(const ASTPtr & input)
     }
     else
     {
-        chassert(false);
+        chassert(0);
         return "";
     }
 }
@@ -1417,7 +1417,7 @@ ASTPtr QueryFuzzer::addJoinClause()
             }
             else
             {
-                chassert(false);
+                chassert(0);
             }
         }
         else

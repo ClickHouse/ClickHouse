@@ -8,8 +8,10 @@
 #include <Common/Logger.h>
 #include <Storages/IStorage.h>
 #include <Interpreters/ExpressionActionsSettings.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/StoragePolicy.h>
 #include <Processors/Merges/Algorithms/Graphite.h>
@@ -27,6 +29,7 @@
 #include <Storages/MergeTree/TemporaryParts.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/DataDestinationType.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MarkCache.h>
@@ -42,8 +45,8 @@
 namespace DB
 {
 
-/// Number of streams is not number parts, but number or parts*files, hence 100.
-const size_t DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE = 100;
+/// Number of streams is not number parts, but number or parts*files, hence 1000.
+const size_t DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE = 1000;
 
 struct AlterCommand;
 class AlterCommands;
@@ -365,7 +368,7 @@ public:
         Graphite::Params graphite_params;
 
         /// Check that needed columns are present and have correct types.
-        void check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata) const;
+        void check(const StorageInMemoryMetadata & metadata) const;
 
         String getModeName() const;
     };
@@ -450,7 +453,7 @@ public:
 
     /// A snapshot of pending mutations that weren't applied to some of the parts yet
     /// and should be applied on the fly (i.e. when reading from the part).
-    /// Mutations not supported by AlterConversions (isSupported*Mutation) can be omitted.
+    /// Mutations not supported by AlterConversions (supportsMutationCommandType()) can be omitted.
     struct IMutationsSnapshot
     {
         /// Contains info that doesn't depend on state of mutations.
@@ -459,39 +462,31 @@ public:
             Int64 metadata_version = -1;
             Int64 min_part_metadata_version = -1;
             bool need_data_mutations = false;
-            bool need_alter_mutations = false;
         };
 
-        virtual ~IMutationsSnapshot() = default;
+        /// Contains info that depends on state of mutations.
+        struct Info
+        {
+            Int64 num_data_mutations = 0;
+            Int64 num_metadata_mutations = 0;
+        };
+
+        Params params;
+        Info info;
+
+        IMutationsSnapshot() = default;
+        IMutationsSnapshot(Params params_, Info info_): params(std::move(params_)), info(std::move(info_)) {}
 
         /// Returns mutation commands that are required to be applied to the `part`.
-        /// @return list of mutation commands in order: oldest to newest.
+        /// @return list of mutation commands, in *reverse* order (newest to oldest)
         virtual MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
         virtual std::shared_ptr<IMutationsSnapshot> cloneEmpty() const = 0;
         virtual NameSet getAllUpdatedColumns() const = 0;
 
-        virtual bool hasDataMutations() const = 0;
-        virtual bool hasAlterMutations() const = 0;
-        virtual bool hasMetadataMutations() const = 0;
-    };
+        bool hasDataMutations() const { return params.need_data_mutations && info.num_data_mutations > 0; }
+        bool hasMetadataMutations() const { return info.num_metadata_mutations > 0; }
 
-    struct MutationsSnapshotBase : public IMutationsSnapshot
-    {
-    public:
-        Params params;
-        MutationCounters counters;
-
-        MutationsSnapshotBase() = default;
-        MutationsSnapshotBase(Params params_, MutationCounters counters_);
-
-        bool hasDataMutations() const final { return params.need_data_mutations && counters.num_data > 0; }
-        bool hasAlterMutations() const final { return params.need_alter_mutations && counters.num_alter > 0; }
-        bool hasAnyMutations() const { return hasDataMutations() || hasAlterMutations() || hasMetadataMutations(); }
-
-        bool hasSupportedCommands(const MutationCommands & commands) const;
-
-    protected:
-        void addSupportedCommands(const MutationCommands & commands, MutationCommands & result_commands) const;
+        virtual ~IMutationsSnapshot() = default;
     };
 
     using MutationsSnapshotPtr = std::shared_ptr<const IMutationsSnapshot>;
@@ -511,10 +506,6 @@ public:
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
-
-    /// Check the set of data parts on disk and load if needed, assuming the data on disk can change under the hood.
-    /// This method allows read-only replicas of tables on a shared storage.
-    void refreshDataParts(UInt64 interval_milliseconds);
 
     /// Returns a pointer to primary index cache if it is enabled.
     PrimaryIndexCachePtr getPrimaryIndexCache() const;
@@ -563,8 +554,11 @@ public:
     /// Return the number of marks in all parts
     size_t getTotalMarksCount() const;
 
-    /// Returns the number of data mutations suitable for applying on the fly.
-    virtual MutationCounters getMutationCounters() const = 0;
+    /// Returns the number of data mutations (UPDATEs and DELETEs) suitable for applying on the fly.
+    virtual UInt64 getNumberOnFlyDataMutations() const = 0;
+
+    /// Returns the number of metadata mutations (RENAMEs) suitable for applying on the fly.
+    virtual UInt64 getNumberOnFlyMetadataMutations() const = 0;
 
     /// Same as above but only returns projection parts
     ProjectionPartsVector getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states = nullptr) const;
@@ -1020,6 +1014,7 @@ public:
     static AlterConversionsPtr getAlterConversionsForPart(
         const MergeTreeDataPartPtr & part,
         const MutationsSnapshotPtr & mutations,
+        const StorageMetadataPtr & metadata,
         const ContextPtr & query_context);
 
     /// Returns destination disk or volume for the TTL rule according to current storage policy.
@@ -1466,6 +1461,91 @@ protected:
         const MergeListEntry * merge_entry,
         std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters);
 
+    class PartMutationBackoffPolicy
+    {
+        struct PartMutationInfo
+        {
+            size_t retry_count;
+            size_t latest_fail_time_us;
+            size_t max_postpone_time_ms;
+            size_t max_postpone_power;
+
+            explicit PartMutationInfo(size_t max_postpone_time_ms_)
+                            : retry_count(0ull)
+                            , latest_fail_time_us(static_cast<size_t>(Poco::Timestamp().epochMicroseconds()))
+                            , max_postpone_time_ms(max_postpone_time_ms_)
+                            , max_postpone_power((max_postpone_time_ms_) ? (static_cast<size_t>(std::log2(max_postpone_time_ms_))) : (0ull))
+            {}
+
+            size_t getNextMinExecutionTimeUsResolution() const
+            {
+                if (max_postpone_time_ms == 0)
+                    return static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
+                size_t current_backoff_interval_us = (1 << retry_count) * 1000ul;
+                return latest_fail_time_us + current_backoff_interval_us;
+            }
+
+            void addPartFailure()
+            {
+                if (max_postpone_time_ms == 0)
+                    return;
+                retry_count = std::min(max_postpone_power, retry_count + 1);
+                latest_fail_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
+            }
+
+            bool partCanBeMutated() const
+            {
+                if (max_postpone_time_ms == 0)
+                    return true;
+
+                auto current_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
+                return current_time_us >= getNextMinExecutionTimeUsResolution();
+            }
+        };
+
+        using DataPartsWithRetryInfo = std::unordered_map<String, PartMutationInfo>;
+        DataPartsWithRetryInfo failed_mutation_parts;
+        mutable std::mutex parts_info_lock;
+
+    public:
+
+        void resetMutationFailures()
+        {
+            std::unique_lock lock(parts_info_lock);
+            failed_mutation_parts.clear();
+        }
+
+        void removePartFromFailed(const String & part_name)
+        {
+            std::unique_lock lock(parts_info_lock);
+            failed_mutation_parts.erase(part_name);
+        }
+
+        void addPartMutationFailure (const String& part_name, size_t max_postpone_time_ms_)
+        {
+            std::unique_lock lock(parts_info_lock);
+            auto part_info_it = failed_mutation_parts.find(part_name);
+            if (part_info_it == failed_mutation_parts.end())
+            {
+                auto [it, success] = failed_mutation_parts.emplace(part_name, PartMutationInfo(max_postpone_time_ms_));
+                std::swap(it, part_info_it);
+            }
+            auto& part_info = part_info_it->second;
+            part_info.addPartFailure();
+        }
+
+        bool partCanBeMutated(const String& part_name)
+        {
+            std::unique_lock lock(parts_info_lock);
+            auto iter = failed_mutation_parts.find(part_name);
+            if (iter == failed_mutation_parts.end())
+                return true;
+            return iter->second.partCanBeMutated();
+        }
+    };
+    /// Controls postponing logic for failed mutations.
+    PartMutationBackoffPolicy mutation_backoff_policy;
+
     /// If part is assigned to merge or mutation (possibly replicated)
     /// Should be overridden by children, because they can have different
     /// mechanisms for parts locking
@@ -1607,8 +1687,6 @@ protected:
     void loadOutdatedDataParts(bool is_async);
     void startOutdatedAndUnexpectedDataPartsLoadingTask();
     void stopOutdatedAndUnexpectedDataPartsLoadingTask();
-
-    BackgroundSchedulePoolTaskHolder refresh_parts_task;
 
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);
@@ -1754,7 +1832,14 @@ struct CurrentlySubmergingEmergingTagger
 };
 
 /// Look at MutationCommands if it contains mutations for AlterConversions, update the counter.
-void incrementMutationsCounters(MutationCounters & mutation_counters, const MutationCommands & commands);
-void decrementMutationsCounters(MutationCounters & mutation_counters, const MutationCommands & commands);
+void incrementMutationsCounters(
+    Int64 & num_data_mutations_to_apply,
+    Int64 & num_metadata_mutations_to_apply,
+    const MutationCommands & commands);
+
+void decrementMutationsCounters(
+    Int64 & num_data_mutations_to_apply,
+    Int64 & num_metadata_mutations_to_apply,
+    const MutationCommands & commands);
 
 }

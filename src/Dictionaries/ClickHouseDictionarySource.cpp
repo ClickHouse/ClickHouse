@@ -1,7 +1,6 @@
 #include "ClickHouseDictionarySource.h"
 #include <memory>
 #include <Client/ConnectionPool.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/RemoteHostFilter.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
@@ -62,8 +61,7 @@ namespace
             "", /* cluster_secret */
             "ClickHouseDictionarySource",
             Protocol::Compression::Enable,
-            configuration.secure ? Protocol::Secure::Enable : Protocol::Secure::Disable,
-            "" /* bind_host */));
+            configuration.secure ? Protocol::Secure::Enable : Protocol::Secure::Disable));
 
         return std::make_shared<ConnectionPoolWithFailover>(pools, LoadBalancing::RANDOM);
     }

@@ -7,7 +7,9 @@
 
 #include <Common/TypePromotion.h>
 
-#include <city.h>
+#include <DataTypes/IDataType.h>
+
+#include <Parsers/IAST_fwd.h>
 
 class SipHash;
 
@@ -16,14 +18,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int UNSUPPORTED_METHOD;
+    extern const int UNSUPPORTED_METHOD;
 }
-
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
-
-class IDataType;
-using DataTypePtr = std::shared_ptr<const IDataType>;
 
 class WriteBuffer;
 

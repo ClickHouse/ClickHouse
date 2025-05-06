@@ -2,7 +2,6 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Columns/ColumnLazy.h>
 #include <Columns/FilterDescription.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -17,9 +16,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/VirtualColumnUtils.h>
 #include <city.h>
-#include <Storages/LazilyReadInfo.h>
 
 namespace
 {
@@ -92,21 +89,15 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     MergeTreeReadPoolPtr pool_,
     MergeTreeSelectAlgorithmPtr algorithm_,
     const PrewhereInfoPtr & prewhere_info_,
-    const LazilyReadInfoPtr & lazily_read_info_,
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_)
     : pool(std::move(pool_))
     , algorithm(std::move(algorithm_))
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
-    , prewhere_actions(getPrewhereActions(
-          prewhere_info,
-          actions_settings,
-          reader_settings_.enable_multiple_prewhere_read_steps,
-          reader_settings_.force_short_circuit_execution))
-    , lazily_read_info(lazily_read_info_)
+    , prewhere_actions(getPrewhereActions(prewhere_info, actions_settings, reader_settings_.enable_multiple_prewhere_read_steps, reader_settings_.force_short_circuit_execution))
     , reader_settings(reader_settings_)
-    , result_header(transformHeader(pool->getHeader(), lazily_read_info, prewhere_info))
+    , result_header(transformHeader(pool->getHeader(), prewhere_info))
 {
     bool has_prewhere_actions_steps = !prewhere_actions.steps.empty();
     if (has_prewhere_actions_steps)
@@ -177,23 +168,17 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 /// Update the query condition cache for filters in PREWHERE stage
                 if (reader_settings.use_query_condition_cache && task && prewhere_info)
                 {
-                    for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
+                    for (const auto * outputs : prewhere_info->prewhere_actions.getOutputs())
                     {
-                        if (output->result_name == prewhere_info->prewhere_column_name)
+                        if (outputs->result_name == prewhere_info->prewhere_column_name)
                         {
-                            if (!VirtualColumnUtils::isDeterministic(output))
-                                continue;
-
                             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
                             auto data_part = task->getInfo().data_part;
 
                             query_condition_cache->write(
                                 data_part->storage.getStorageID().uuid,
                                 data_part->name,
-                                output->getHash(),
-                                reader_settings.query_condition_cache_store_conditions_as_plaintext
-                                    ? prewhere_info->prewhere_actions.getNames()[0]
-                                    : "",
+                                outputs->getHash(),
                                 task->getPrewhereUnmatchedMarks(),
                                 data_part->index_granularity->getMarksCount(),
                                 data_part->index_granularity->hasFinalMark());
@@ -223,8 +208,6 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
 
         if (res.row_count)
         {
-            injectLazilyReadColumns(res.row_count, res.block, task.get(), lazily_read_info);
-
             /// Reorder the columns according to result_header
             Columns ordered_columns;
             ordered_columns.reserve(result_header.columns());
@@ -277,54 +260,9 @@ void MergeTreeSelectProcessor::initializeReadersChain()
     task->initializeReadersChain(all_prewhere_actions, read_steps_performance_counters);
 }
 
-void MergeTreeSelectProcessor::injectLazilyReadColumns(
-    size_t rows,
-    Block & block,
-    MergeTreeReadTask * task,
-    const LazilyReadInfoPtr & lazily_read_info)
+Block MergeTreeSelectProcessor::transformHeader(Block block, const PrewhereInfoPtr & prewhere_info)
 {
-    if (!lazily_read_info)
-        return;
-
-    ColumnPtr row_num_column;
-    ColumnPtr part_num_column;
-    if (rows)
-    {
-        row_num_column = block.getByName("_part_offset").column;
-        part_num_column = DataTypeUInt64().createColumnConst(rows, task->getInfo().part_index_in_query)->convertToFullColumnIfConst();
-    }
-    else
-    {
-        row_num_column =  DataTypeUInt64().createColumn();
-        part_num_column = DataTypeUInt64().createColumn();
-    }
-
-    Columns columns{row_num_column, part_num_column};
-    bool create_empty_column_lazy = false;
-    for (auto column_with_type_and_name : lazily_read_info->lazily_read_columns)
-    {
-        if (create_empty_column_lazy)
-            column_with_type_and_name.column = ColumnLazy::create(columns[0]->size());
-        else
-        {
-            column_with_type_and_name.column = ColumnLazy::create(columns);
-            create_empty_column_lazy = true;
-        }
-        block.insert(column_with_type_and_name);
-    }
-
-    if (lazily_read_info->remove_part_offset_column)
-        block.erase("_part_offset");
-}
-
-Block MergeTreeSelectProcessor::transformHeader(
-    Block block,
-    const LazilyReadInfoPtr & lazily_read_info,
-    const PrewhereInfoPtr & prewhere_info)
-{
-    auto transformed = SourceStepWithFilter::applyPrewhereActions(std::move(block), prewhere_info);
-    injectLazilyReadColumns(0, transformed, nullptr, lazily_read_info);
-    return transformed;
+    return SourceStepWithFilter::applyPrewhereActions(std::move(block), prewhere_info);
 }
 
 static String dumpStatistics(const ReadStepsPerformanceCounters & counters)

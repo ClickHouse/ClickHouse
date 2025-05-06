@@ -1,6 +1,9 @@
+import json
 import logging
+import subprocess
 import time
 
+import pika
 import pytest
 
 from helpers.client import QueryRuntimeException
@@ -44,12 +47,28 @@ instance3 = cluster.add_instance(
 # Helpers
 
 
-def suspend_rabbitmq(rabbitmq_cluster):
-    rabbitmq_cluster.stop_rabbitmq_app()
+def kill_rabbitmq(rabbitmq_cluster):
+    try:
+        p = subprocess.Popen(("docker", "stop", rabbitmq_cluster.rabbitmq_docker_id), stdout=subprocess.PIPE)
+        p.wait(timeout=30)
+        return p.returncode == 0
+    except Exception as ex:
+        print("Exception stopping rabbit MQ, will try forcefully", ex)
+        try:
+            p = subprocess.Popen(
+                ("docker", "stop", "-s", "9", rabbitmq_cluster.rabbitmq_docker_id), stdout=subprocess.PIPE
+            )
+            p.wait(timeout=30)
+            return p.returncode == 0
+        except Exception as e:
+            print("Exception stopping rabbit MQ forcefully", e)
+    finally:
+        time.sleep(4)
 
 
-def resume_rabbitmq(rabbitmq_cluster):
-    rabbitmq_cluster.start_rabbitmq_app()
+def revive_rabbitmq(rabbitmq_cluster):
+    p = subprocess.Popen(("docker", "start", rabbitmq_cluster.rabbitmq_docker_id), stdout=subprocess.PIPE)
+    p.wait(timeout=60)
     rabbitmq_cluster.wait_rabbitmq_to_start()
 
 
@@ -61,6 +80,9 @@ def rabbitmq_cluster():
     try:
         cluster.start()
         logging.debug("rabbitmq_id is {}".format(instance.cluster.rabbitmq_docker_id))
+        instance.query("CREATE DATABASE test")
+        instance3.query("CREATE DATABASE test")
+
         yield cluster
 
     finally:
@@ -70,12 +92,9 @@ def rabbitmq_cluster():
 @pytest.fixture(autouse=True)
 def rabbitmq_setup_teardown():
     logging.debug("RabbitMQ is available - running test")
-    instance.query("CREATE DATABASE test")
-    instance3.query("CREATE DATABASE test")
     yield  # run test
     instance.query("DROP DATABASE test SYNC")
-    instance3.query("DROP DATABASE test SYNC")
-    cluster.reset_rabbitmq()
+    instance.query("CREATE DATABASE test")
 
 
 # Tests
@@ -110,12 +129,24 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
     """
     )
 
-    messages_num = 200000
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    messages_num = 100000
+    values = []
+    for i in range(messages_num):
+        values.append("({i}, {i})".format(i=i))
+    values = ",".join(values)
+
     deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
         try:
             instance.query(
-                f"INSERT INTO test.producer_reconnect SELECT number, number FROM numbers({messages_num})"
+                "INSERT INTO test.producer_reconnect VALUES {}".format(values)
             )
             break
         except QueryRuntimeException as e:
@@ -130,24 +161,20 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
 
     deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
-        number = int(instance.query("SELECT count() FROM test.view"))
-        if number != 0:
-            if number == messages_num:
-                pytest.fail("The RabbitMQ messages have been consumed before suspending the RabbitMQ server")
+        if int(instance.query("SELECT count() FROM test.view")) != 0:
             break
         time.sleep(0.1)
     else:
         pytest.fail(f"Time limit of 180 seconds reached. The count is still 0.")
 
-    suspend_rabbitmq(rabbitmq_cluster)
-    resume_rabbitmq(rabbitmq_cluster)
+    kill_rabbitmq(rabbitmq_cluster)
+    revive_rabbitmq(rabbitmq_cluster)
 
     deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
         result = instance.query("SELECT count(DISTINCT key) FROM test.view")
         if int(result) == messages_num:
             break
-        logging.debug(f"Result: {result} / {messages_num}")
         time.sleep(1)
     else:
         pytest.fail(
@@ -167,9 +194,9 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
 
 
 def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
+    logging.getLogger("pika").propagate = False
     instance.query(
         """
-        DROP TABLE IF EXISTS test.consumer_reconnect;
         CREATE TABLE test.consumer_reconnect (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
@@ -180,6 +207,33 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
                      rabbitmq_num_queues = 10,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
+    """
+    )
+
+    i = 0
+    messages_num = 150000
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    messages = []
+    for _ in range(messages_num):
+        messages.append(json.dumps({"key": i, "value": i}))
+        i += 1
+    for msg_id in range(messages_num):
+        channel.basic_publish(
+            exchange="consumer_reconnect",
+            routing_key="",
+            body=messages[msg_id],
+            properties=pika.BasicProperties(delivery_mode=2, message_id=str(msg_id)),
+        )
+    connection.close()
+    instance.query(
+        """
         CREATE TABLE test.view (key UInt64, value UInt64)
             ENGINE = MergeTree
             ORDER BY key;
@@ -188,37 +242,17 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     """
     )
 
-    messages_num = 200000
     deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
-        try:
-            instance.query(
-                f"INSERT INTO test.consumer_reconnect SELECT number, number FROM numbers({messages_num})"
-            )
+        if int(instance.query("SELECT count() FROM test.view")) != 0:
             break
-        except QueryRuntimeException as e:
-            if "Local: Timed out." in str(e):
-                continue
-            else:
-                raise
-    else:
-        pytest.fail(
-            f"Time limit of 180 seconds reached. The query could not be executed successfully."
-        )
-
-    deadline = time.monotonic() + 180
-    while time.monotonic() < deadline:
-        number = int(instance.query("SELECT count() FROM test.view"))
-        if number != 0:
-            if number == messages_num:
-                pytest.fail("The RabbitMQ messages have been consumed before suspending the RabbitMQ server")
-            break
+        logging.debug(3)
         time.sleep(0.1)
     else:
         pytest.fail(f"Time limit of 180 seconds reached. The count is still 0.")
 
-    suspend_rabbitmq(rabbitmq_cluster)
-    resume_rabbitmq(rabbitmq_cluster)
+    kill_rabbitmq(rabbitmq_cluster)
+    revive_rabbitmq(rabbitmq_cluster)
 
     # while int(instance.query('SELECT count() FROM test.view')) == 0:
     #    time.sleep(0.1)

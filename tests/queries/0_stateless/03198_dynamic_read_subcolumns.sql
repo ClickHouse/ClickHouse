@@ -11,7 +11,7 @@ SYSTEM DROP MARK CACHE;
 SELECT d.String FROM test_dynamic SETTINGS allow_experimental_analyzer = 1;
 SYSTEM DROP MARK CACHE;
 SELECT d.String FROM test_dynamic SETTINGS allow_experimental_analyzer = 0;
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 SELECT
     ProfileEvents['FileOpen']
 FROM system.query_log

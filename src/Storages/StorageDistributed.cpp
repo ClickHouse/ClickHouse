@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/NestedUtils.h>
 
@@ -38,7 +37,6 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
 
-#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -972,30 +970,14 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     const auto & settings = local_context->getSettingsRef();
     auto new_query = std::dynamic_pointer_cast<ASTInsertQuery>(query.clone());
 
+    /// Unwrap view() function.
     if (src_distributed.remote_table_function_ptr)
     {
         const TableFunctionPtr src_table_function =
             TableFunctionFactory::instance().get(src_distributed.remote_table_function_ptr, local_context);
-        if (const TableFunctionView * view_function = typeid_cast<const TableFunctionView *>(src_table_function.get()))
-        {
-            new_query->select = view_function->getSelectQuery().clone();
-        }
-        else
-        {
-            const auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
-            select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
-
-            const auto select = std::make_shared<ASTSelectQuery>();
-
-            auto expression_list = std::make_shared<ASTExpressionList>();
-            expression_list->children.push_back(std::make_shared<ASTAsterisk>());
-            select->setExpression(ASTSelectQuery::Expression::SELECT, expression_list->clone());
-            select->addTableFunction(src_distributed.remote_table_function_ptr);
-
-            select_with_union_query->list_of_selects->children.push_back(select->clone());
-
-            new_query->select = select_with_union_query;
-        }
+        const TableFunctionView * view_function =
+            assert_cast<const TableFunctionView *>(src_table_function.get());
+        new_query->select = view_function->getSelectQuery().clone();
     }
     else
     {
@@ -1201,7 +1183,6 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
                 Scalars{},
                 Tables{},
                 QueryProcessingStage::Complete,
-                nullptr,
                 extension);
 
             QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(
@@ -1532,7 +1513,7 @@ Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name) 
     return addresses;
 }
 
-std::optional<UInt64> StorageDistributed::totalBytes(ContextPtr) const
+std::optional<UInt64> StorageDistributed::totalBytes(const Settings &) const
 {
     UInt64 total_bytes = 0;
     for (const auto & status : getDirectoryQueueStatuses())
@@ -1856,7 +1837,7 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
         !(*distributed_settings)[DistributedSetting::bytes_to_delay_insert])
         return;
 
-    UInt64 total_bytes = *totalBytes(getContext());
+    UInt64 total_bytes = *totalBytes(getContext()->getSettingsRef());
 
     if ((*distributed_settings)[DistributedSetting::bytes_to_throw_insert] && total_bytes > (*distributed_settings)[DistributedSetting::bytes_to_throw_insert])
     {
@@ -1877,12 +1858,12 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
         do {
             delayed_ms += step_ms;
             std::this_thread::sleep_for(std::chrono::milliseconds(step_ms));
-        } while (*totalBytes(getContext()) > (*distributed_settings)[DistributedSetting::bytes_to_delay_insert] && delayed_ms < (*distributed_settings)[DistributedSetting::max_delay_to_insert]*1000);
+        } while (*totalBytes(getContext()->getSettingsRef()) > (*distributed_settings)[DistributedSetting::bytes_to_delay_insert] && delayed_ms < (*distributed_settings)[DistributedSetting::max_delay_to_insert]*1000);
 
         ProfileEvents::increment(ProfileEvents::DistributedDelayedInserts);
         ProfileEvents::increment(ProfileEvents::DistributedDelayedInsertsMilliseconds, delayed_ms);
 
-        UInt64 new_total_bytes = *totalBytes(getContext());
+        UInt64 new_total_bytes = *totalBytes(getContext()->getSettingsRef());
         LOG_INFO(log, "Too many bytes pending for async INSERT: was {}, now {}, INSERT was delayed to {} ms",
             formatReadableSizeWithBinarySuffix(total_bytes),
             formatReadableSizeWithBinarySuffix(new_total_bytes),

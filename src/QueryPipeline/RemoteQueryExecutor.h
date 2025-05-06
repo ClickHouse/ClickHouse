@@ -72,7 +72,6 @@ public:
         const Scalars & scalars_ = Scalars(),
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
-
         std::optional<Extension> extension_ = std::nullopt);
 
     /// Takes already set connection.
@@ -97,7 +96,6 @@ public:
         const Scalars & scalars_ = Scalars(),
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
-        std::shared_ptr<const QueryPlan> query_plan_ = nullptr,
         std::optional<Extension> extension_ = std::nullopt);
 
     /// Takes a pool and gets one or several connections from it.
@@ -110,7 +108,6 @@ public:
         const Scalars & scalars_ = Scalars(),
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
-        std::shared_ptr<const QueryPlan> query_plan_ = nullptr,
         std::optional<Extension> extension_ = std::nullopt,
         GetPriorityForLoadBalancing::Func priority_func = {});
 
@@ -234,7 +231,6 @@ private:
         const Scalars & scalars_,
         const Tables & external_tables_,
         QueryProcessingStage::Enum stage_,
-        std::shared_ptr<const QueryPlan> query_plan_,
         std::optional<Extension> extension_,
         GetPriorityForLoadBalancing::Func priority_func = {});
 
@@ -247,7 +243,6 @@ private:
     std::unique_ptr<ReadContext> read_context;
 
     const String query;
-    std::shared_ptr<const QueryPlan> query_plan;
     String query_id;
     ContextPtr context;
 

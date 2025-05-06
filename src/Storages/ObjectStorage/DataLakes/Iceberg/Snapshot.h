@@ -3,20 +3,25 @@
 
 #if USE_AVRO
 
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
-
+#include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
 namespace Iceberg
 {
 
-using ManifestList = std::vector<ManifestFilePtr>;
-using ManifestListPtr = std::shared_ptr<const ManifestList>;
+struct ManifestListFileEntry
+{
+    ManifestFileIterator manifest_file;
+    Int64 added_sequence_number;
+};
+
+using ManifestList = std::vector<ManifestListFileEntry>;
+
+
+using ManifestListsStorage = std::map<String, ManifestList>;
+using ManifestListIterator = IteratorWrapper<ManifestList>;
 
 struct IcebergSnapshot
 {
-    ManifestListPtr manifest_list;
-    Int64 snapshot_id;
-    std::optional<size_t> total_rows;
-    std::optional<size_t> total_bytes;
+    ManifestListIterator manifest_list_iterator;
 };
 }
 

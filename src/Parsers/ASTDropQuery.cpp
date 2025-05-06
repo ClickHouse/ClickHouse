@@ -1,6 +1,7 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Common/quoteString.h>
 #include <IO/Operators.h>
 
 

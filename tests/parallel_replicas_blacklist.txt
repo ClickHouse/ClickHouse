@@ -49,6 +49,13 @@
     Sizes of columns doesn't match
 02861_filter_pushdown_const_bug
 
+    https://github.com/ClickHouse/ClickHouse/issues/74547
+    vector search segfault
+02354_vector_search_multiple_marks
+02354_vector_search_expansion_search
+02354_vector_search_detach_attach
+02354_vector_search_different_array_sizes
+
     https://github.com/ClickHouse/ClickHouse/issues/74711
 03080_incorrect_join_with_merge
 
@@ -337,7 +344,6 @@
 02810_fix_remove_dedundant_distinct_view
 02864_statistics_delayed_materialization_in_merge
 03130_convert_outer_join_to_inner_join
-03355_join_to_in_optimization
 03152_join_filter_push_down_equivalent_columns
 03155_test_move_to_prewhere
 03176_check_timeout_in_index_analysis
@@ -355,7 +361,7 @@
 02149_read_in_order_fixed_prefix
 02151_hash_table_sizes_stats
 02156_storage_merge_prewhere
-02346_gin_index_match_predicate
+02346_fulltext_index_match_predicate
 02354_vector_search_subquery
 02421_explain_subquery
 02451_order_by_monotonic

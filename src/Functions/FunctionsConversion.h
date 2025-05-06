@@ -83,7 +83,6 @@ namespace Setting
 {
     extern const SettingsBool cast_ipv4_ipv6_default_on_conversion_error;
     extern const SettingsBool cast_string_to_dynamic_use_inference;
-    extern const SettingsBool cast_string_to_variant_use_inference;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsBool input_format_ipv4_default_on_conversion_error;
     extern const SettingsBool input_format_ipv6_default_on_conversion_error;
@@ -1706,20 +1705,11 @@ struct ConvertImpl
                 else if constexpr (std::is_same_v<FromDataType, DataTypeIPv6> && std::is_same_v<ToDataType, DataTypeUInt128>)
                 {
                     static_assert(
-                        std::is_same_v<DataTypeUInt128::FieldType, DataTypeIPv6::FieldType::UnderlyingType>,
+                        std::is_same_v<DataTypeUInt128::FieldType, DataTypeUUID::FieldType::UnderlyingType>,
                         "UInt128 and IPv6 types must be same");
 
                     vec_to[i].items[1] = std::byteswap(vec_from[i].toUnderType().items[0]);
                     vec_to[i].items[0] = std::byteswap(vec_from[i].toUnderType().items[1]);
-                }
-                else if constexpr (std::is_same_v<FromDataType, DataTypeUInt128> && std::is_same_v<ToDataType, DataTypeIPv6>)
-                {
-                    static_assert(
-                        std::is_same_v<DataTypeUInt128::FieldType, DataTypeIPv6::FieldType::UnderlyingType>,
-                        "IPv6 and UInt128 types must be same");
-
-                    vec_to[i].toUnderType().items[1] = std::byteswap(vec_from[i].items[0]);
-                    vec_to[i].toUnderType().items[0] = std::byteswap(vec_from[i].items[1]);
                 }
                 else if constexpr (std::is_same_v<FromDataType, DataTypeUUID> != std::is_same_v<ToDataType, DataTypeUUID>)
                 {
@@ -1981,7 +1971,6 @@ struct ConvertImplFromDynamicToColumn
         /// First, cast usual variants to result type.
         const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
         std::vector<ColumnPtr> cast_variant_columns(variant_types.size());
-        std::vector<bool> cast_variant_columns_is_const(variant_types.size(), false);
         for (size_t i = 0; i != variant_types.size(); ++i)
         {
             /// Skip shared variant, it will be processed later.
@@ -1991,11 +1980,6 @@ struct ConvertImplFromDynamicToColumn
             ColumnsWithTypeAndName new_args = arguments;
             new_args[0] = {variant_column.getVariantPtrByGlobalDiscriminator(i), variant_types[i], ""};
             cast_variant_columns[i] = nested_convert(new_args, result_type);
-            if (cast_variant_columns[i] && isColumnConst(*cast_variant_columns[i]))
-            {
-                cast_variant_columns[i] = assert_cast<const ColumnConst &>(*cast_variant_columns[i]).getDataColumnPtr();
-                cast_variant_columns_is_const[i] = true;
-            }
         }
 
         /// Second, collect all variants stored in shared variant and cast them to result type.
@@ -2047,17 +2031,11 @@ struct ConvertImplFromDynamicToColumn
 
         /// Cast all extracted variants into result type.
         std::vector<ColumnPtr> cast_shared_variant_columns(variant_types_from_shared_variant.size());
-        std::vector<bool> cast_shared_variant_columns_is_const(variant_types_from_shared_variant.size(), false);
         for (size_t i = 0; i != variant_types_from_shared_variant.size(); ++i)
         {
             ColumnsWithTypeAndName new_args = arguments;
             new_args[0] = {variant_columns_from_shared_variant[i]->getPtr(), variant_types_from_shared_variant[i], ""};
             cast_shared_variant_columns[i] = nested_convert(new_args, result_type);
-            if (cast_shared_variant_columns[i] && isColumnConst(*cast_shared_variant_columns[i]))
-            {
-                cast_shared_variant_columns[i] = assert_cast<const ColumnConst &>(*cast_shared_variant_columns[i]).getDataColumnPtr();
-                cast_shared_variant_columns_is_const[i] = true;
-            }
         }
 
         /// Construct result column from all cast variants.
@@ -2073,26 +2051,16 @@ struct ConvertImplFromDynamicToColumn
             else if (global_discr == shared_variant_discr)
             {
                 if (cast_shared_variant_columns[shared_variant_indexes[i]])
-                {
-                    size_t offset = cast_shared_variant_columns_is_const[shared_variant_indexes[i]] ? 0 : shared_variant_offsets[i];
-                    res->insertFrom(*cast_shared_variant_columns[shared_variant_indexes[i]], offset);
-                }
+                    res->insertFrom(*cast_shared_variant_columns[shared_variant_indexes[i]], shared_variant_offsets[i]);
                 else
-                {
                     res->insertDefault();
-                }
             }
             else
             {
                 if (cast_variant_columns[global_discr])
-                {
-                    size_t offset = cast_variant_columns_is_const[global_discr] ? 0 : offsets[i];
-                    res->insertFrom(*cast_variant_columns[global_discr], offset);
-                }
+                    res->insertFrom(*cast_variant_columns[global_discr], offsets[i]);
                 else
-                {
                     res->insertDefault();
-                }
             }
         }
 
@@ -5193,7 +5161,7 @@ private:
 
         auto variant_discr_opt = to_variant.tryGetVariantDiscriminator(removeNullableOrLowCardinalityNullable(from_type)->getName());
         /// Cast String to Variant through parsing if it's not Variant(String).
-        if (context && context->getSettingsRef()[Setting::cast_string_to_variant_use_inference] && isStringOrFixedString(removeNullable(removeLowCardinality(from_type))) && (!variant_discr_opt || to_variant.getVariants().size() > 1))
+        if (isStringOrFixedString(removeNullable(removeLowCardinality(from_type))) && (!variant_discr_opt || to_variant.getVariants().size() > 1))
             return createStringToVariantWrapper();
 
         if (!variant_discr_opt)

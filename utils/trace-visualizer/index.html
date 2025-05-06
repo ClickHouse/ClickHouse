@@ -91,26 +91,6 @@
     var data = null;
     var chart = null;
 
-    function updateStatus(pattern = '') {
-        if (pattern != '') {
-            const runtime = chart.filteredRuntime();
-            const total = chart.totalRuntime();
-            $("#status-text").text(`
-                ${chart.filteredCount()}/${chart.totalCount()} spans
-                ${runtime.toFixed(1)}/${total.toFixed(1)} runtime (${(runtime*100/total).toFixed(1)}%)
-                matching
-            `);
-        }
-        else
-        {
-            $("#status-text").text(`
-                ${chart.totalCount()} spans
-                ${chart.totalRuntime().toFixed(1)} runtime
-                total
-            `);
-        }
-    }
-
     function renderChart(parsed) {
         data = parsed;
         if (chart != null) {
@@ -125,7 +105,7 @@
             .timeDomain([0, parsed.max_time_ms])
         ;
         chart(data);
-        updateStatus();
+        $("#status-text").text(`${chart.data().length} spans total`);
     }
 
     $("<div id='errmsg'></div>").css({
@@ -183,7 +163,10 @@
         if (chart) {
             const pattern = document.getElementById('filterPattern').value;
             chart.filter(pattern);
-            updateStatus(pattern);
+            if (pattern != '')
+                $("#status-text").text(`${chart.filteredCount()}/${chart.data().length} spans matching`);
+            else
+                $("#status-text").text(`${chart.data().length} spans total`);
         }
         $('#findModal').modal('hide');
     }

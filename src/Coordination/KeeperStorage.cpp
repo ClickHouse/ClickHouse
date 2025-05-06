@@ -122,14 +122,12 @@ void unregisterEphemeralPath(KeeperStorageBase::Ephemerals & ephemerals, int64_t
     if (ephemerals_it == ephemerals.end())
     {
         if (throw_if_missing)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Session {} is expected to have ephemeral paths but no path is registered", session_id);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Session {} is missing ephemeral path {}", session_id, path);
 
         return;
     }
 
-    if (auto erased = ephemerals_it->second.erase(path); !erased && throw_if_missing)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session {} is missing ephemeral path {}", session_id, path);
-
+    ephemerals_it->second.erase(path);
     if (ephemerals_it->second.empty())
         ephemerals.erase(ephemerals_it);
 }
@@ -257,9 +255,14 @@ void NodeStats::copyStats(const Coordination::Stat & stat)
     aversion = stat.aversion;
 
     if (stat.ephemeralOwner == 0)
+    {
+        is_ephemeral_and_ctime.is_ephemeral = false;
         setNumChildren(stat.numChildren);
+    }
     else
+    {
         setEphemeralOwner(stat.ephemeralOwner);
+    }
 }
 
 void KeeperRocksNodeInfo::copyStats(const Coordination::Stat & stat)
@@ -1353,7 +1356,6 @@ bool KeeperStorage<Container>::removeNode(const std::string & path, int32_t vers
 
     if (prev_node.stats.ephemeralOwner() != 0)
     {
-        chassert(committed_ephemeral_nodes != 0);
         --committed_ephemeral_nodes;
         std::lock_guard lock(ephemeral_mutex);
         unregisterEphemeralPath(committed_ephemerals, prev_node.stats.ephemeralOwner(), path, /*throw_if_missing=*/true);

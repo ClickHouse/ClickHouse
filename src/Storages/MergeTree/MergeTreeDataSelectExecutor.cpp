@@ -10,7 +10,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeIndexGin.h>
+#include <Storages/MergeTree/MergeTreeIndexFullText.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/ASTIdentifier.h>
@@ -87,7 +87,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
-    extern const SettingsBool secondary_indices_enable_bulk_filtering;
 }
 
 namespace MergeTreeSetting
@@ -664,10 +663,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     struct IndexStat
     {
-        std::atomic<size_t> total_granules = 0;
-        std::atomic<size_t> granules_dropped = 0;
-        std::atomic<size_t> total_parts = 0;
-        std::atomic<size_t> parts_dropped = 0;
+        std::atomic<size_t> total_granules{0};
+        std::atomic<size_t> granules_dropped{0};
+        std::atomic<size_t> total_parts{0};
+        std::atomic<size_t> parts_dropped{0};
     };
 
     std::vector<IndexStat> useful_indices_stat(skip_indexes.useful_indices.size());
@@ -682,7 +681,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     {
         auto mark_cache = context->getIndexMarkCache();
         auto uncompressed_cache = context->getIndexUncompressedCache();
-        auto vector_similarity_index_cache = context->getVectorSimilarityIndexCache();
 
         auto query_status = context->getProcessListElement();
 
@@ -740,7 +738,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     reader_settings,
                     mark_cache.get(),
                     uncompressed_cache.get(),
-                    vector_similarity_index_cache.get(),
                     log);
 
                 stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
@@ -762,7 +759,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     indices_and_condition.indices, indices_and_condition.condition,
                     part, ranges.ranges,
                     settings, reader_settings,
-                    mark_cache.get(), uncompressed_cache.get(), vector_similarity_index_cache.get(), log);
+                    mark_cache.get(), uncompressed_cache.get(), log);
 
                 stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
                 stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
@@ -1486,7 +1483,6 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     const MergeTreeReaderSettings & reader_settings,
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
-    VectorSimilarityIndexCache * vector_similarity_index_cache,
     LoggerPtr log)
 {
     if (!index_helper->getDeserializedFormat(part->getDataPartStorage(), index_helper->getFileName()))
@@ -1495,9 +1491,6 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             (fs::path(part->getDataPartStorage().getFullPath()) / index_helper->getFileName()).string());
         return ranges;
     }
-
-    /// Whether we should use a more optimal filtering.
-    bool bulk_filtering = settings[Setting::secondary_indices_enable_bulk_filtering] && index_helper->supportsBulkFiltering();
 
     auto index_granularity = index_helper->index.granularity;
 
@@ -1525,130 +1518,77 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         index_ranges,
         mark_cache,
         uncompressed_cache,
-        vector_similarity_index_cache,
         reader_settings);
 
     MarkRanges res;
-    size_t ranges_size = ranges.size();
 
-    if (bulk_filtering)
+    /// Some granules can cover two or more ranges,
+    /// this variable is stored to avoid reading the same granule twice.
+    MergeTreeIndexGranulePtr granule = nullptr;
+    size_t last_index_mark = 0;
+
+    PostingsCacheForStore cache_in_store;
+    if (dynamic_cast<const MergeTreeIndexFullText *>(index_helper.get()))
+        cache_in_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->getDataPartStoragePtr());
+
+    for (size_t i = 0; i < ranges.size(); ++i)
     {
-        MergeTreeIndexBulkGranulesPtr granules;
+        const MarkRange & index_range = index_ranges[i];
 
-        size_t current_granule_num = 0;
-        for (size_t i = 0; i < ranges_size; ++i)
+        if (last_index_mark != index_range.begin || !granule)
+            reader.seek(index_range.begin);
+
+        for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
         {
-            const MarkRange & index_range = index_ranges[i];
+            if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
+                reader.read(granule);
 
-            for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
+            if (index_helper->isVectorSimilarityIndex())
             {
-                reader.read(index_mark, current_granule_num, granules);
-                ++current_granule_num;
-            }
-        }
+                auto rows = condition->calculateApproximateNearestNeighbors(granule);
 
-        IMergeTreeIndexCondition::FilteredGranules filtered_granules = condition->getPossibleGranules(granules);
-        if (filtered_granules.empty())
-            return res;
-
-        auto it = filtered_granules.begin();
-        current_granule_num = 0;
-        for (size_t i = 0; i < ranges_size; ++i)
-        {
-            const MarkRange & index_range = index_ranges[i];
-
-            for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
-            {
-                if (current_granule_num == *it)
+                for (auto row : rows)
                 {
+                    size_t num_marks = part->index_granularity->countMarksForRows(index_mark * index_granularity, row);
+
                     MarkRange data_range(
-                        std::max(ranges[i].begin, index_mark * index_granularity),
-                        std::min(ranges[i].end, (index_mark + 1) * index_granularity));
+                        std::max(ranges[i].begin, (index_mark * index_granularity) + num_marks),
+                        std::min(ranges[i].end, (index_mark * index_granularity) + num_marks + 1));
 
-                    if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
-                        res.push_back(data_range);
-                    else
-                        res.back().end = data_range.end;
-
-                    ++it;
-                    if (it == filtered_granules.end())
-                        break;
-                }
-
-                ++current_granule_num;
-            }
-
-            if (it == filtered_granules.end())
-                break;
-        }
-    }
-    else
-    {
-        /// Some granules can cover two or more ranges,
-        /// this variable is stored to avoid reading the same granule twice.
-        MergeTreeIndexGranulePtr granule = nullptr;
-        size_t last_index_mark = 0;
-
-        PostingsCacheForStore cache_in_store;
-        if (dynamic_cast<const MergeTreeIndexGin *>(index_helper.get()))
-            cache_in_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->getDataPartStoragePtr());
-
-        for (size_t i = 0; i < ranges_size; ++i)
-        {
-            const MarkRange & index_range = index_ranges[i];
-
-            for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
-            {
-                if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
-                    reader.read(index_mark, granule);
-
-                if (index_helper->isVectorSimilarityIndex())
-                {
-                    auto rows = condition->calculateApproximateNearestNeighbors(granule);
-
-                    for (auto row : rows)
-                    {
-                        size_t num_marks = part->index_granularity->countMarksForRows(index_mark * index_granularity, row);
-
-                        MarkRange data_range(
-                            std::max(ranges[i].begin, (index_mark * index_granularity) + num_marks),
-                            std::min(ranges[i].end, (index_mark * index_granularity) + num_marks + 1));
-
-                        if (!res.empty() && data_range.end == res.back().end)
-                            /// Vector search may return >1 hit within the same granule/mark. Don't add to the result twice.
-                            continue;
-
-                        if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
-                            res.push_back(data_range);
-                        else
-                            res.back().end = data_range.end;
-                    }
-                }
-                else
-                {
-                    bool result = false;
-                    const auto * gin_filter_condition = dynamic_cast<const MergeTreeIndexConditionGin *>(&*condition);
-                    if (!gin_filter_condition)
-                        result = condition->mayBeTrueOnGranule(granule);
-                    else
-                        result = cache_in_store.store ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, cache_in_store) : true;
-
-                    if (!result)
+                    if (!res.empty() && data_range.end == res.back().end)
+                        /// Vector search may return >1 hit within the same granule/mark. Don't add to the result twice.
                         continue;
 
-                    MarkRange data_range(
-                        std::max(ranges[i].begin, index_mark * index_granularity),
-                        std::min(ranges[i].end, (index_mark + 1) * index_granularity));
-
                     if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
                         res.push_back(data_range);
                     else
                         res.back().end = data_range.end;
                 }
             }
+            else
+            {
+                 bool result = false;
+                 const auto * gin_filter_condition = dynamic_cast<const MergeTreeConditionFullText *>(&*condition);
+                 if (!gin_filter_condition)
+                     result = condition->mayBeTrueOnGranule(granule);
+                 else
+                     result = cache_in_store.store ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, cache_in_store) : true;
 
-            last_index_mark = index_range.end - 1;
+                if (!result)
+                    continue;
+
+                MarkRange data_range(
+                    std::max(ranges[i].begin, index_mark * index_granularity),
+                    std::min(ranges[i].end, (index_mark + 1) * index_granularity));
+
+                if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
+                    res.push_back(data_range);
+                else
+                    res.back().end = data_range.end;
+            }
         }
+
+        last_index_mark = index_range.end - 1;
     }
 
     return res;
@@ -1663,7 +1603,6 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
     const MergeTreeReaderSettings & reader_settings,
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
-    VectorSimilarityIndexCache * vector_similarity_index_cache,
     LoggerPtr log)
 {
     for (const auto & index_helper : indices)
@@ -1706,7 +1645,6 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
                 index_ranges,
                 mark_cache,
                 uncompressed_cache,
-                vector_similarity_index_cache,
                 reader_settings));
     }
 
@@ -1723,13 +1661,17 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
             range.begin / index_granularity,
             (range.end + index_granularity - 1) / index_granularity);
 
+        if (last_index_mark != index_range.begin || !granules_filled)
+            for (auto & reader : readers)
+                reader->seek(index_range.begin);
+
         for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
         {
             if (index_mark != index_range.begin || !granules_filled || last_index_mark != index_range.begin)
             {
                 for (size_t i = 0; i < readers.size(); ++i)
                 {
-                    readers[i]->read(index_mark, granules[i]);
+                    readers[i]->read(granules[i]);
                     granules_filled = true;
                 }
             }

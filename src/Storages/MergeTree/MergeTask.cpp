@@ -111,7 +111,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool materialize_skip_indexes_on_merge;
     extern const MergeTreeSettingsBool prewarm_mark_cache;
     extern const MergeTreeSettingsBool use_const_adaptive_granularity;
-    extern const MergeTreeSettingsUInt64 max_merge_delayed_streams_for_parallel_write;
 }
 
 namespace ErrorCodes
@@ -487,7 +486,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             infos.add(part_infos);
         }
 
-        global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context));
+        global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->metadata_snapshot, global_ctx->context));
     }
 
     const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
@@ -955,13 +954,21 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
 
     ctx->it_name_and_type = global_ctx->gathering_columns.cbegin();
 
-    const auto & storage_settings = *global_ctx->data->getSettings();
+    const auto & settings = global_ctx->context->getSettingsRef();
 
+    size_t max_delayed_streams = 0;
     if (global_ctx->new_data_part->getDataPartStorage().supportParallelWrite())
-        ctx->max_delayed_streams = storage_settings[MergeTreeSetting::max_merge_delayed_streams_for_parallel_write];
+    {
+        if (settings[Setting::max_insert_delayed_streams_for_parallel_write].changed)
+            max_delayed_streams = settings[Setting::max_insert_delayed_streams_for_parallel_write];
+        else
+            max_delayed_streams = DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE;
+    }
+
+    ctx->max_delayed_streams = max_delayed_streams;
 
     bool all_parts_on_remote_disks = std::ranges::all_of(global_ctx->future_part->parts, [](const auto & part) { return part->isStoredOnRemoteDisk(); });
-    ctx->use_prefetch = all_parts_on_remote_disks && storage_settings[MergeTreeSetting::vertical_merge_remote_filesystem_prefetch];
+    ctx->use_prefetch = all_parts_on_remote_disks && (*global_ctx->data->getSettings())[MergeTreeSetting::vertical_merge_remote_filesystem_prefetch];
 
     if (ctx->use_prefetch && ctx->it_name_and_type != global_ctx->gathering_columns.end())
         ctx->prepared_pipeline = createPipelineForReadingOneColumn(ctx->it_name_and_type->name);
@@ -1524,7 +1531,7 @@ public:
     MergePartsStep(
         const Header & input_header_,
         const SortDescription & sort_description_,
-        const Names partition_and_sorting_required_columns_,
+        const Names partition_key_columns_,
         const MergeTreeData::MergingParams & merging_params_,
         const String & rows_sources_temporary_file_name_,
         UInt64 merge_block_size_rows_,
@@ -1534,7 +1541,7 @@ public:
         time_t time_of_merge_)
         : ITransformingStep(input_header_, input_header_, getTraits())
         , sort_description(sort_description_)
-        , partition_and_sorting_required_columns(partition_and_sorting_required_columns_)
+        , partition_key_columns(partition_key_columns_)
         , merging_params(merging_params_)
         , rows_sources_temporary_file_name(rows_sources_temporary_file_name_)
         , merge_block_size_rows(merge_block_size_rows_)
@@ -1588,7 +1595,7 @@ public:
 
             case MergeTreeData::MergingParams::Summing:
                 merged_transform = std::make_shared<SummingSortedTransform>(
-                    header, input_streams_count, sort_description, merging_params.columns_to_sum, partition_and_sorting_required_columns, merge_block_size_rows, merge_block_size_bytes);
+                    header, input_streams_count, sort_description, merging_params.columns_to_sum, partition_key_columns, merge_block_size_rows, merge_block_size_bytes);
                 break;
 
             case MergeTreeData::MergingParams::Aggregating:
@@ -1651,7 +1658,7 @@ private:
     }
 
     const SortDescription sort_description;
-    const Names partition_and_sorting_required_columns;
+    const Names partition_key_columns;
     const MergeTreeData::MergingParams merging_params{};
     const String rows_sources_temporary_file_name;
     const UInt64 merge_block_size_rows;
@@ -1807,8 +1814,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         size_t sort_columns_size = sort_columns.size();
         sort_description.reserve(sort_columns_size);
 
-        auto partition_and_sorting_required_columns = global_ctx->metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
-        partition_and_sorting_required_columns.append_range(global_ctx->metadata_snapshot->getSortingKey().expression->getRequiredColumns());
+        Names partition_key_columns = global_ctx->metadata_snapshot->getPartitionKey().column_names;
 
         for (size_t i = 0; i < sort_columns_size; ++i)
         {
@@ -1830,7 +1836,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         auto merge_step = std::make_unique<MergePartsStep>(
             merge_parts_query_plan.getCurrentHeader(),
             sort_description,
-            partition_and_sorting_required_columns,
+            partition_key_columns,
             global_ctx->merging_params,
             (is_vertical_merge ? RowsSourcesTemporaryFile::FILE_ID : ""), /// rows_sources' temporary file is used only for vertical merge
             (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size],

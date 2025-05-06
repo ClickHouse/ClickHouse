@@ -17,6 +17,7 @@ using Strings = std::vector<String>;
 
 /** Supports multiple names of active parts of data.
   * Repeats part of the MergeTreeData functionality.
+  * TODO: generalize with MergeTreeData
   */
 class ActiveDataPartSet
 {

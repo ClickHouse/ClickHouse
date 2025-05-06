@@ -50,15 +50,11 @@ list(APPEND CMAKE_MODULE_PATH "${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake"
 # Define function corrosion_import_crate()
 include ("${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake/Corrosion.cmake")
 
-set(CXX_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libcxx/include")
+# NOTE: this can also be done by overriding rustc, but it not trivial with rustup.
+set(RUST_CFLAGS "${CMAKE_C_FLAGS}")
 
-if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
-    set(RUST_CFLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_DEBUG}")
-    set(RUST_CXXFLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_DEBUG} -isystem ${CXX_INCLUDE_DIR} -nostdinc++")
-else ()
-    set(RUST_CFLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_RELWITHDEBINFO}")
-    set(RUST_CXXFLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -isystem ${CXX_INCLUDE_DIR} -nostdinc++")
-endif()
+set(CXX_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libcxx/include")
+set(RUST_CXXFLAGS "${CMAKE_CXX_FLAGS} -isystem ${CXX_INCLUDE_DIR} -nostdinc++")
 
 if (CMAKE_OSX_SYSROOT)
     set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -isysroot ${CMAKE_OSX_SYSROOT}")
@@ -79,13 +75,12 @@ endif ()
 
 if(CCACHE_EXECUTABLE MATCHES "/sccache$")
     message(STATUS "Using RUSTC_WRAPPER: ${CCACHE_EXECUTABLE}")
-    set(RUSTCWRAPPER "${CCACHE_EXECUTABLE}")
+    set(RUSTCWRAPPER "rustc-wrapper = \"${CCACHE_EXECUTABLE}\"")
 else()
     set(RUSTCWRAPPER "")
 endif()
 
-# Note that RUSTFLAGS_CPU is defined in cpu_features.cmake
-set(RUSTFLAGS ${RUSTFLAGS_CPU})
+set(RUSTFLAGS)
 if (CMAKE_OSX_DEPLOYMENT_TARGET)
     list(APPEND RUSTFLAGS "-C" "link-arg=-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
 endif()
@@ -98,14 +93,17 @@ endif()
 set(RUST_CARGO_BUILD_STD "")
 # For more info: https://doc.rust-lang.org/beta/unstable-book/compiler-flags/sanitizer.html#memorysanitizer
 if (SANITIZE STREQUAL "memory")
-    set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
+    set(RUST_CARGO_BUILD_STD "build-std = [\"std\", \"panic_abort\", \"core\", \"alloc\"]")
     list(APPEND RUSTFLAGS "-Zsanitizer=memory" "-Zsanitizer-memory-track-origins")
 elseif (SANITIZE STREQUAL "thread")
-    set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
+    set(RUST_CARGO_BUILD_STD "build-std = [\"std\", \"panic_abort\", \"core\", \"alloc\"]")
     list(APPEND RUSTFLAGS "-Zsanitizer=thread")
 endif()
 
-list(JOIN RUSTFLAGS " " RUSTFLAGS)
+list(TRANSFORM RUSTFLAGS PREPEND "\"")
+list(TRANSFORM RUSTFLAGS APPEND "\"")
+list(JOIN RUSTFLAGS "," RUSTFLAGS)
+set(RUSTFLAGS "[${RUSTFLAGS}]")
 
 message(STATUS "RUST_CFLAGS: ${RUST_CFLAGS}")
 message(STATUS "RUST_CXXFLAGS: ${RUST_CXXFLAGS}")
@@ -115,54 +113,6 @@ message(STATUS "RUST_CARGO_BUILD_STD: ${RUST_CARGO_BUILD_STD}")
 set(RUST_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../rust_vendor")
 
 # We now prepare a custom config.toml with all the flags and add it to cargo via flags
+# This needs to be done for each project using set_property(INTERFACE_CORROSION_CARGO_FLAGS)
 configure_file("config.toml.in" "config.toml" @ONLY)
 set (RUST_CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/config.toml" CACHE INTERNAL "Rust config")
-set(RUST_CFLAGS ${RUST_CFLAGS} CACHE INTERNAL "Rust config")
-set(RUST_CXXFLAGS ${RUST_CXXFLAGS} CACHE INTERNAL "Rust config")
-set(RUSTFLAGS "${RUSTFLAGS}" CACHE INTERNAL "Rust config")
-set(RUSTCWRAPPER ${RUSTCWRAPPER} CACHE INTERNAL "Rust config")
-set(RUST_CARGO_BUILD_STD ${RUST_CARGO_BUILD_STD} CACHE INTERNAL "Rust config")
-
-function(clickhouse_import_crate)
-    if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
-        set(profile "")
-    else()
-        if (ENABLE_THINLTO)
-            set(profile "release-thinlto")
-        else()
-            set(profile "release")
-        endif()
-    endif()
-
-    disable_dummy_launchers_if_needed()
-    corrosion_import_crate(${ARGN}
-            # We set manually the cargo config flags via command line `--config` option
-            # We have to do it this way because workspaces are built from source folder and we can't place the `config.toml`
-            # there, as it would conflict if you have multiple build folders
-            FLAGS "--config=${RUST_CONFIG_FILE}"
-            NO_STD
-            PROFILE ${profile}
-            # We only care about static libraries and want to avoid as much dynamic libs as possible
-            CRATE_TYPES staticlib
-            LOCKED
-            FLAGS --offline
-            NO_DEFAULT_FEATURES
-    )
-    enable_dummy_launchers_if_needed()
-endfunction()
-
-function(clickhouse_config_crate_flags target_name)
-    corrosion_set_env_vars(${target_name} "CFLAGS=${RUST_CFLAGS}")
-    corrosion_set_env_vars(${target_name} "CXXFLAGS=${RUST_CXXFLAGS}")
-    corrosion_set_env_vars(${target_name} "RUSTFLAGS=${RUSTFLAGS}")
-    corrosion_set_env_vars(${target_name} "RUSTDOCFLAGS=${RUSTFLAGS}")
-
-    # Disabled because sccache seems to be broken and mixes up builds
-    # if (NOT "${RUSTCWRAPPER}" STREQUAL "")
-    #    corrosion_set_env_vars(${target_name} "CARGO_BUILD_RUSTC_WRAPPER=${RUSTCWRAPPER}")
-    # endif()
-
-    if (NOT "${RUST_CARGO_BUILD_STD}" STREQUAL "")
-        corrosion_set_cargo_flags(${target_name} "${RUST_CARGO_BUILD_STD}")
-    endif()
-endfunction()
