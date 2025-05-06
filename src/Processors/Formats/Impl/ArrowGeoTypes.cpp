@@ -215,7 +215,7 @@ inline void readOpenBracket(ReadBuffer & in_buffer)
     }
 }
 
-inline bool readNextItem(ReadBuffer & in_buffer)
+inline bool readItemEnding(ReadBuffer & in_buffer)
 {
     char ch;
     while (true)
@@ -236,7 +236,7 @@ inline ArrowLineString parseWKTLine(ReadBuffer & in_buffer)
     while (true)
     {
         ls.push_back(parseWKTPoint(in_buffer));
-        if (readNextItem(in_buffer))
+        if (readItemEnding(in_buffer))
             break;
     }
     return ls;
@@ -249,7 +249,7 @@ inline ArrowPolygon parseWKTPolygon(ReadBuffer & in_buffer)
     while (true)
     {
         poly.push_back(parseWKTLine(in_buffer));
-        if (readNextItem(in_buffer))
+        if (readItemEnding(in_buffer))
             break;
     }
     return poly;
@@ -262,7 +262,7 @@ inline ArrowMultiPolygon parseWKTMultiPolygon(ReadBuffer & in_buffer)
     while (true)
     {
         poly.push_back(parseWKTPolygon(in_buffer));
-        if (readNextItem(in_buffer))
+        if (readItemEnding(in_buffer))
             break;
     }
     return poly;

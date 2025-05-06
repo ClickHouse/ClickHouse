@@ -188,7 +188,6 @@ private:
 };
 
 ArrowGeometricObject parseWKBFormat(ReadBuffer & in_buffer);
-
 ArrowGeometricObject parseWKTFormat(ReadBuffer & in_buffer);
 
 }
