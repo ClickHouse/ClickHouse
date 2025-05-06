@@ -5,6 +5,12 @@
 #include <Common/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/Crypto/OpenSSLInitializer.h>
+#include <Common/CPUID.h>
+
+#ifdef __x86_64__
+#include <immintrin.h>
+#endif
+
 
 #if defined(SANITIZE_COVERAGE)
 #    include <Common/Coverage.h>
@@ -238,6 +244,17 @@ __attribute__((constructor(202))) void init_ssl()
     DB::OpenSSLInitializer::initialize();
 }
 
+/// This makes SIMD floating point operations faster by avoiding subnormal values.
+void configureX86Denormals()
+{
+#ifdef __x86_64__
+    /// Flush results to zero
+    _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
+    /// Treat denormal inputs as zero
+    _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
+#endif
+}
+
 /// This allows to implement assert to forbid initialization of a class in static constructors.
 /// Usage:
 ///
@@ -259,6 +276,8 @@ int main(int argc_, char ** argv_)
 #if !defined(USE_MUSL)
     checkHarmfulEnvironmentVariables(argv_);
 #endif
+
+    configureX86Denormals();
 
     /// This is used for testing. For example,
     /// clickhouse-local should be able to run a simple query without throw/catch.
