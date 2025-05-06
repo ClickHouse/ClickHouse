@@ -1323,10 +1323,15 @@ deltaLake(
         'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
         '{minio_access_key}',
         '{minio_secret_key}',
-        SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})
+    SETTINGS allow_experimental_delta_kernel_rs=0)
     """
 
-    num_files = int(node.query(f"SELECT uniqExact(_path) FROM {delta_function}"))
+    num_files = int(
+        node.query(
+            f"SELECT uniqExact(_path) FROM {delta_function}",
+            settings={"allow_experimental_delta_kernel_rs": 1},
+        )
+    )
     assert num_files == 5
 
     new_data = [
@@ -1347,10 +1352,19 @@ deltaLake(
         "b\tNullable(Int32)\t\t\t\t\t\n"
         "c\tNullable(Int32)\t\t\t\t\t\n"
         "d\tNullable(String)\t\t\t\t\t\n"
-        "e\tNullable(String)" == node.query(f"DESCRIBE TABLE {delta_function}").strip()
+        "e\tNullable(String)"
+        == node.query(
+            f"DESCRIBE TABLE {delta_function}",
+            settings={"allow_experimental_delta_kernel_rs": 1},
+        ).strip()
     )
 
-    num_files = int(node.query(f"SELECT uniqExact(_path) FROM {delta_function}"))
+    num_files = int(
+        node.query(
+            f"SELECT uniqExact(_path) FROM {delta_function}",
+            settings={"allow_experimental_delta_kernel_rs": 1},
+        )
+    )
     assert num_files == 6
 
     query_id = f"{table_name}-{uuid.uuid4()}"
@@ -1359,6 +1373,7 @@ deltaLake(
         in node.query(
             f" SELECT a FROM {delta_function} WHERE c = 7 and d = 'aa'",
             query_id=query_id,
+            settings={"allow_experimental_delta_kernel_rs": 1},
         ).strip()
     )
 
@@ -1381,6 +1396,7 @@ deltaLake(
         in node.query(
             f"SELECT a FROM {delta_function} WHERE c = 7 and d = 'bb'",
             query_id=query_id,
+            settings={"allow_experimental_delta_kernel_rs": 1},
         ).strip()
     )
 
@@ -1832,5 +1848,7 @@ deltaLake(
     )
     assert (
         "1\ta\t2000-01-01\t['aa','aa']\ttrue\t['aaa','aaa']\n123\td\t2000-04-04\t['ddd','dd']\tfalse\t['ddd','ddd']\n214748364\tb\t2000-02-02\t['bb','bb']\tfalse\t['bbb','bbb']\n\\N\tc\t2000-03-03\t['cc','cc']\tfalse\t['ccc','ccc']\n"
-        == node.query(f"SELECT * FROM {delta_function} ORDER BY all settings input_format_parquet_allow_missing_columns=0 ")
+        == node.query(
+            f"SELECT * FROM {delta_function} ORDER BY all settings input_format_parquet_allow_missing_columns=0 "
+        )
     )

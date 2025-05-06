@@ -62,7 +62,7 @@ PageCache::PageCache(
 
 PageCache::MappedPtr PageCache::getOrSet(const PageCacheKey & key, bool detached_if_missing, bool inject_eviction, std::function<void(const MappedPtr &)> load)
 {
-    /// Prevent MemoryTracker from calling autoResize() while we may be holding the mutex.
+    /// Prevent MemoryTracker from calling autoResize while we may be holding the mutex.
     MemoryTrackerBlockerInThread blocker(VariableContext::Global);
 
     Key key_hash = key.hash();
@@ -91,7 +91,7 @@ PageCache::MappedPtr PageCache::getOrSet(const PageCacheKey & key, bool detached
         std::tie(result, miss) = shard.getOrSet(key_hash, [&]() -> MappedPtr
         {
             /// At this point CacheBase is not holding the mutex, so it's ok to let MemoryTracker
-            /// call autoResize().
+            /// call autoResize.
             blocker.reset();
 
             MappedPtr cell;
@@ -139,12 +139,13 @@ void PageCache::Shard::onRemoveOverflowWeightLoss(size_t weight_loss)
     ProfileEvents::increment(ProfileEvents::PageCacheWeightLost, weight_loss);
 }
 
-void PageCache::autoResize(size_t memory_usage, size_t memory_limit)
+void PageCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
 {
     /// Avoid recursion when called from MemoryTracker.
     MemoryTrackerBlockerInThread blocker(VariableContext::Global);
 
     size_t cache_size = sizeInBytes();
+    size_t memory_usage = size_t(std::max(memory_usage_signed, Int64(0)));
 
     size_t peak;
     {

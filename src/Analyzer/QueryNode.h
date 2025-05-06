@@ -645,7 +645,7 @@ public:
 
     ColumnNodePtrWithHashSet getCorrelatedColumnsSet() const;
 
-    void addCorrelatedColumn(ColumnNodePtr correlated_column);
+    void addCorrelatedColumn(const QueryTreeNodePtr & correlated_column);
 
     QueryTreeNodeType getNodeType() const override
     {

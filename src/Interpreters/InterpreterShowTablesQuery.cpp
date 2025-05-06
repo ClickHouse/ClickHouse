@@ -87,7 +87,8 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     if (query.cluster)
     {
         WriteBufferFromOwnString rewritten_query;
-        rewritten_query << "SELECT * FROM system.clusters";
+        rewritten_query
+            << "SELECT cluster, shard_num, replica_num, host_name, host_address, port FROM system.clusters";
 
         auto cluster_name_expanded = getContext()->getMacros()->expand(query.cluster_str);
 

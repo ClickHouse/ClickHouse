@@ -14,7 +14,7 @@
 
 # 2025 Changelog
 
-### <a id="254"></a> ClickHouse release 25.4 LTS, 2025-04-22
+### <a id="254"></a> ClickHouse release 25.4, 2025-04-22
 
 #### Backward Incompatible Change
 * Check if all columns in a materialized view match the target table when `allow_materialized_view_with_bad_select` is `false`. [#74481](https://github.com/ClickHouse/ClickHouse/pull/74481) ([Christoph Wurm](https://github.com/cwurm)).
@@ -23,7 +23,6 @@
 * Enhance `SummingMergeTree` validation to skip aggregation for columns used in partition or sort keys. [#78022](https://github.com/ClickHouse/ClickHouse/pull/78022) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)).
 
 #### New Feature
-* Support correlated subqueries as an argument of `EXISTS` expression in the `WHERE` clause. Closes [#72459](https://github.com/ClickHouse/ClickHouse/issues/72459). [#76078](https://github.com/ClickHouse/ClickHouse/pull/76078) ([Dmitry Novik](https://github.com/novikd)).
 * Added CPU slot scheduling for workloads, see [the docs](https://clickhouse.com/docs/operations/workload-scheduling#cpu_scheduling) for details. [#77595](https://github.com/ClickHouse/ClickHouse/pull/77595) ([Sergei Trifonov](https://github.com/serxa)).
 * `clickhouse-local` will retain its databases after restart if you specify the `--path` command line argument. This closes [#50647](https://github.com/ClickHouse/ClickHouse/issues/50647). This closes [#49947](https://github.com/ClickHouse/ClickHouse/issues/49947). [#71722](https://github.com/ClickHouse/ClickHouse/pull/71722) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * Reject queries when the server is overloaded. The decision is made based on the ratio of wait time (`OSCPUWaitMicroseconds`) to busy time (`OSCPUVirtualTimeMicroseconds`). The query is dropped with some probability, when this ratio is between `min_os_cpu_wait_time_ratio_to_throw` and `max_os_cpu_wait_time_ratio_to_throw` (those are query level settings). [#63206](https://github.com/ClickHouse/ClickHouse/pull/63206) ([Alexey Katsman](https://github.com/alexkats)).
@@ -48,6 +47,7 @@
 * Support password based auth in SSH protocol in ClickHouse. [#78586](https://github.com/ClickHouse/ClickHouse/pull/78586) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
 
 #### Experimental Feature
+* Support correlated subqueries as an argument of `EXISTS` expression in the `WHERE` clause. Closes [#72459](https://github.com/ClickHouse/ClickHouse/issues/72459). [#76078](https://github.com/ClickHouse/ClickHouse/pull/76078) ([Dmitry Novik](https://github.com/novikd)).
 * Functions `sparseGrams` and `sparseGramsHashes` with ASCII and UTF8 versions added. Author: [scanhex12](https://github.com/scanhex12). [#78176](https://github.com/ClickHouse/ClickHouse/pull/78176) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)). Do not use it: the implementation will change in the next versions.
 
 #### Performance Improvement
@@ -114,7 +114,7 @@
 
 #### Bug Fix (user-visible misbehavior in an official stable release)
 * Fix incorrect projection analysis when `count(Nullable)` is used in aggregate projections. This fixes [#74495](https://github.com/ClickHouse/ClickHouse/issues/74495) . This PR also adds some logs around projection analysis to clarify why a projection is used or why not. [#74498](https://github.com/ClickHouse/ClickHouse/pull/74498) ([Amos Bird](https://github.com/amosbird)).
-* Fix "Part <...> does not contain in snapshot of previous virtual parts. (PART_IS_TEMPORARILY_LOCKED)" during DETACH PART. [#76039](https://github.com/ClickHouse/ClickHouse/pull/76039) ([Aleksei Filatov](https://github.com/aalexfvk)).
+* Fix `Part <...> does not contain in snapshot of previous virtual parts. (PART_IS_TEMPORARILY_LOCKED)` during `DETACH PART`. [#76039](https://github.com/ClickHouse/ClickHouse/pull/76039) ([Aleksei Filatov](https://github.com/aalexfvk)).
 * Fix not working skip indexes with expression with literals in analyzer and remove trivial casts during indexes analysis. [#77229](https://github.com/ClickHouse/ClickHouse/pull/77229) ([Pavel Kruglov](https://github.com/Avogar)).
 * Fix a bug when `close_session` query parameter didn't have any effect leading to named sessions being closed only after `session_timeout`. [#77336](https://github.com/ClickHouse/ClickHouse/pull/77336) ([Alexey Katsman](https://github.com/alexkats)).
 * Fixed receiving messages from NATS server without attached Materialized Views. [#77392](https://github.com/ClickHouse/ClickHouse/pull/77392) ([Dmitry Novikov](https://github.com/dmitry-sles-novikov)).

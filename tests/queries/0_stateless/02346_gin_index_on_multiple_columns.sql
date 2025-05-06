@@ -1,3 +1,5 @@
+-- Tags: no-shared-merge-tree
+
 -- Tests that GIN indexes can be created on > 1 column
 
 SET allow_experimental_full_text_index = 1;

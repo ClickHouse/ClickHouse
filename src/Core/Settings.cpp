@@ -4723,6 +4723,11 @@ The probability of a fault injection during table creation after creating metada
     \
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
 If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
 )", 0) \
     \
     DECLARE(Bool, use_query_cache, false, R"(
@@ -6338,7 +6343,7 @@ Index analysis done only on replica-coordinator and skipped on other replicas. E
     DECLARE(Bool, parallel_replicas_only_with_analyzer, true, R"(
 The analyzer should be enabled to use parallel replicas. With disabled analyzer query execution fallbacks to local execution, even if parallel reading from replicas is enabled. Using parallel replicas without the analyzer enabled is not supported
 )", BETA) \
-    DECLARE(Bool, parallel_replicas_insert_select_local_pipeline, false, R"(
+    DECLARE(Bool, parallel_replicas_insert_select_local_pipeline, true, R"(
 Use local pipeline during distributed INSERT SELECT with parallel replicas
 )", BETA) \
     DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
@@ -6480,6 +6485,10 @@ As each series represents a node in Keeper, it is recommended to have no more th
 )", 0) \
     DECLARE(Bool, use_hive_partitioning, true, R"(
 When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](/sql-reference/table-functions/file#hive-style-partitioning)/[S3](/sql-reference/table-functions/s3#hive-style-partitioning)/[URL](/sql-reference/table-functions/url#hive-style-partitioning)/[HDFS](/sql-reference/table-functions/hdfs#hive-style-partitioning)/[AzureBlobStorage](/sql-reference/table-functions/azureBlobStorage#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
+)", 0) \
+    DECLARE(UInt64, parallel_hash_join_threshold, 100'000, R"(
+When hash-based join algorithm is applied, this threshold helps to decide between using `hash` and `parallel_hash` (only if estimation of the right table size is available).
+The former is used when we know that the right table size is below the threshold.
 )", 0) \
     DECLARE(Bool, apply_settings_from_server, true, R"(
 Whether the client should accept settings from server.
@@ -6631,6 +6640,9 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'
     DECLARE(Bool, allow_experimental_database_glue_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_database_hms_catalog, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'hms'
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_kusto_dialect, false, R"(
 Enable Kusto Query Language (KQL) - an alternative to SQL.
 )", EXPERIMENTAL) \
@@ -6639,6 +6651,33 @@ Enable PRQL - an alternative to SQL.
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
 Trigger processor to spill data into external storage adpatively. grace join is supported at present.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_delta_kernel_rs, true, R"(
+Allow experimental delta-kernel-rs implementation.
+)", BETA) \
+    DECLARE(Bool, make_distributed_plan, false, R"(
+Make distributed query plan.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, execute_distributed_plan_locally, false, R"(
+Run all tasks of a distributed query plan locally. Useful for testing and debugging.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, default_shuffle_join_bucket_count, 8, R"(
+Default number of buckets for distributed shuffle-hash-join.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, default_reader_bucket_count, 8, R"(
+Default number of tasks for parallel reading in distributed query. Tasks are spread across between replicas.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, optimize_exchanges, false, R"(
+Removes unnecessary exchanges in distributed query plan. Disable it for debugging.
+)", EXPERIMENTAL) \
+    DECLARE(String, force_exchange_kind, "", R"(
+Force specified kind of Exchange operators between distributed query stages.
+
+Possible values:
+
+ - '' - do not force any kind of Exchange operators, let the optimizer choose,
+ - 'Persisted' - use temporary files in object storage,
+ - 'Streaming' - stream exchange data over network.
 )", EXPERIMENTAL) \
     \
     /** Experimental tsToGrid aggregate function. */ \

@@ -6,7 +6,7 @@ from kafka import BrokerConnection, KafkaAdminClient, KafkaConsumer, KafkaProduc
 from kafka.admin import NewTopic
 
 from helpers.cluster import ClickHouseCluster, is_arm
-from helpers.kafka_common import (
+from helpers.kafka.common import (
     kafka_create_topic,
     kafka_delete_topic,
     get_kafka_producer,

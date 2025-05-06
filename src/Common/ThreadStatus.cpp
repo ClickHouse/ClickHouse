@@ -88,7 +88,7 @@ struct ThreadStack
         auto size = std::max<size_t>(UNWIND_MINSIGSTKSZ, MINSIGSTKSZ);
 
         if constexpr (guardPagesEnabled())
-            size += 1;
+            size += getPageSize();
 
         return size;
     }
@@ -107,7 +107,7 @@ static thread_local bool has_alt_stack = false;
 
 ThreadGroup::ThreadGroup()
     : master_thread_id(CurrentThread::get().thread_id)
-    , memory_spill_scheduler(false)
+    , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>(false))
 {}
 
 ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
