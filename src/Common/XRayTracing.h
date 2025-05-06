@@ -165,9 +165,54 @@ struct Sig<Ret (Class::*)(Args...) const>
     using type = Ret (Class::*)(Args...) const;
 };
 
+template <typename Ptr>
+int get_vtable_index(Ptr func)
+{
+    unsigned char bytes[sizeof(func)];
+    std::memcpy(bytes, &func, sizeof(func));
+
+    // The first byte (in little-endian systems) is the vtable index
+    return static_cast<int>(bytes[0]);
+}
+
+template <typename Class, typename Ptr>
+uint64_t get_virtual_address(const Class * instance, Ptr func)
+{
+    const auto vtable_index = get_vtable_index(func);
+    const auto true_index = vtable_index / sizeof(void *);
+    LOG_DEBUG(&Poco::Logger::get("debug"), "vtable_index={}, true_index={}", vtable_index, true_index);
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wundefined-reinterpret-cast"
+
+    const void * const * vtable = *reinterpret_cast<const void * const * const *>(instance);
+    const void * function_ptr = vtable[true_index];
+
+#pragma clang diagnostic pop
+
+    return reinterpret_cast<uint64_t>(function_ptr);
+}
+
 #define OMG(foo) \
     using FuncType = Sig<decltype(&(foo))>::type; \
     FuncType func_ptr = reinterpret_cast<FuncType>(&(foo)); \
     uint64_t func_addr = reinterpret_cast<uint64_t>(func_ptr); \
+    TraceScope scope(func_addr);
+
+#define OMG_MEMBER(class_name, member_func) \
+    using FuncType = Sig<decltype(&class_name::member_func)>::type; \
+    union \
+    { \
+        FuncType ptr; \
+        uint64_t value; \
+    } converter; \
+    converter.ptr = &class_name::member_func; \
+    uint64_t func_addr = converter.value; \
+    TraceScope scope(func_addr);
+
+#define OMG_VIRT_MEMBER(class_name, member_func) \
+    using FuncType = Sig<decltype(&class_name::member_func)>::type; \
+    FuncType func_ptr = &class_name::member_func; \
+    uint64_t func_addr = get_virtual_address(this, func_ptr); \
     TraceScope scope(func_addr);
 }
