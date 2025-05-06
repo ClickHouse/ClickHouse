@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
+#include <DataTypes/DataTypeObject.h>
 #include <Common/DateLUTImpl.h>
 #include <Processors/Chunk.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
@@ -29,6 +30,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnUnique.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnObject.h>
 #include <Common/FloatUtils.h>
 #include <Columns/ColumnNothing.h>
 #include <Interpreters/castColumn.h>
@@ -37,6 +39,7 @@
 #include <algorithm>
 #include <arrow/builder.h>
 #include <arrow/array.h>
+#include <arrow/util/key_value_metadata.h>
 #include <boost/algorithm/string/case_conv.hpp>
 
 
@@ -159,6 +162,51 @@ static ColumnWithTypeAndName readColumnWithStringData(const std::shared_ptr<arro
         }
     }
     return {std::move(internal_column), std::move(internal_type), column_name};
+}
+
+template <typename ArrowArray>
+static ColumnWithTypeAndName readColumnWithJSONData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
+{
+    static const auto internal_type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
+    static const auto serialization = internal_type->getDefaultSerialization();
+
+    auto internal_column = internal_type->createColumn();
+    auto & column_object = assert_cast<ColumnObject &>(*internal_column);
+
+    column_object.reserve(arrow_column->length());
+
+    FormatSettings fmt_settings;
+
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
+    {
+        const ArrowArray & chunk = dynamic_cast<ArrowArray &>(*(arrow_column->chunk(chunk_i)));
+
+        if (chunk.null_count() == 0)
+        {
+            for (size_t row_i = 0, num_rows = chunk.length(); row_i < num_rows; ++row_i)
+            {
+                auto view = chunk.GetView(row_i);
+                ReadBufferFromMemory rb(view.data(), view.size());
+                serialization->deserializeTextJSON(column_object, rb, fmt_settings);
+            }
+        }
+        else
+        {
+            for (size_t row_i = 0, num_rows = chunk.length(); row_i < num_rows; ++row_i)
+            {
+                if (chunk.IsNull(row_i))
+                {
+                    column_object.insertDefault();
+                    continue;
+                }
+                auto view = chunk.GetView(row_i);
+                ReadBufferFromMemory rb(view.data(), view.size());
+                serialization->deserializeTextJSON(column_object, rb, fmt_settings);
+            }
+        }
+    }
+
+    return {std::move(internal_column), internal_type, column_name};
 }
 
 static ColumnWithTypeAndName readColumnWithFixedStringData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
@@ -753,6 +801,7 @@ struct ReadColumnFromArrowColumnSettings
     bool skip_columns_with_unsupported_types;
     bool allow_inferring_nullable_columns;
     bool case_insensitive_matching;
+    bool enable_json_parsing;
 };
 
 static ColumnWithTypeAndName readColumnFromArrowColumn(
@@ -762,7 +811,8 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     DataTypePtr type_hint,
     bool is_nullable_column,
     bool is_map_nested_column,
-    const ReadColumnFromArrowColumnSettings & settings);
+    const ReadColumnFromArrowColumnSettings & settings,
+    const std::shared_ptr<arrow::Field> & arrow_field);
 
 static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
     const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
@@ -770,8 +820,19 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
     std::unordered_map<String, ArrowColumnToCHColumn::DictionaryInfo> dictionary_infos,
     DataTypePtr type_hint,
     bool is_map_nested_column,
-    const ReadColumnFromArrowColumnSettings & settings)
+    const ReadColumnFromArrowColumnSettings & settings,
+    const std::shared_ptr<arrow::Field> & arrow_field)
 {
+    auto isColumnJSON = [](auto field) -> bool
+    {
+        if (not field or not field->HasMetadata())
+            return false;
+
+        auto md = field->metadata();
+        auto value = md->Get("PARQUET:logical_type");
+        return value.ok() and *value == "JSON";
+    };
+
     switch (arrow_column->type()->id())
     {
         case arrow::Type::STRING:
@@ -804,10 +865,20 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                     /// ORC doesn't support Decimal256 as separate type. We read and write it as binary data.
                     case TypeIndex::Decimal256:
                         return readColumnWithBigNumberFromBinaryData<ColumnDecimal<Decimal256>>(arrow_column, column_name, type_hint);
+                    case TypeIndex::Object:
+                        if (settings.enable_json_parsing)
+                            return readColumnWithJSONData<arrow::BinaryArray>(arrow_column, column_name);
+                        [[fallthrough]];
                     default:
                         break;
                 }
             }
+
+            if (settings.enable_json_parsing and isColumnJSON(arrow_field))
+            {
+                return readColumnWithJSONData<arrow::BinaryArray>(arrow_column, column_name);
+            }
+
             return readColumnWithStringData<arrow::BinaryArray>(arrow_column, column_name);
         }
         case arrow::Type::FIXED_SIZE_BINARY:
@@ -831,9 +902,15 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
 
             return readColumnWithFixedStringData(arrow_column, column_name);
         }
-        case arrow::Type::LARGE_BINARY:
         case arrow::Type::LARGE_STRING:
-            return readColumnWithStringData<arrow::LargeBinaryArray>(arrow_column, column_name);
+        case arrow::Type::LARGE_BINARY:
+        {
+            bool parse_json = settings.enable_json_parsing
+                and ((type_hint and type_hint->getTypeId() == TypeIndex::Object) or isColumnJSON(arrow_field));
+
+            return parse_json ? readColumnWithJSONData<arrow::LargeBinaryArray>(arrow_column, column_name)
+                              : readColumnWithStringData<arrow::LargeBinaryArray>(arrow_column, column_name);
+        }
         case arrow::Type::BOOL:
             return readColumnWithBooleanData(arrow_column, column_name);
         case arrow::Type::DATE32:
@@ -892,7 +969,8 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 nested_type_hint,
                 false /*is_nullable_column*/,
                 true /*is_map_nested_column*/,
-                settings);
+                settings,
+                arrow_field);
             if (!nested_column.column)
                 return {};
 
@@ -991,7 +1069,8 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 nested_type_hint,
                 is_nested_nullable_column,
                 false /*is_map_nested_column*/,
-                settings);
+                settings,
+                arrow_field);
             if (!nested_column.column)
                 return {};
 
@@ -1075,7 +1154,8 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                     nested_type_hint,
                     field->nullable(),
                     false /*is_map_nested_column*/,
-                    settings);
+                    settings,
+                    arrow_field);
                 if (!column_with_type_and_name.column)
                     return {};
 
@@ -1114,7 +1194,8 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                     nullptr /*nested_type_hint*/,
                     false /*is_nullable_column*/,
                     false /*is_map_nested_column*/,
-                    settings);
+                    settings,
+                    arrow_field);
 
                 if (!dict_column.column)
                     return {};
@@ -1205,7 +1286,8 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     DataTypePtr type_hint,
     bool is_nullable_column,
     bool is_map_nested_column,
-    const ReadColumnFromArrowColumnSettings & settings)
+    const ReadColumnFromArrowColumnSettings & settings,
+    const std::shared_ptr<arrow::Field> & arrow_field)
 {
     bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && type_hint->isNullable())) && settings.allow_inferring_nullable_columns;
     if (read_as_nullable_column &&
@@ -1225,7 +1307,8 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             dictionary_infos,
             nested_type_hint,
             is_map_nested_column,
-            settings);
+            settings,
+            arrow_field);
 
         if (!nested_column.column)
             return {};
@@ -1242,7 +1325,8 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         dictionary_infos,
         type_hint,
         is_map_nested_column,
-        settings);
+        settings,
+        arrow_field);
 }
 
 // Creating CH header by arrow schema. Will be useful in task about inserting
@@ -1274,7 +1358,8 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
     const std::string & format_name,
     bool skip_columns_with_unsupported_types,
     bool allow_inferring_nullable_columns,
-    bool case_insensitive_matching)
+    bool case_insensitive_matching,
+    bool enable_json_parsing)
 {
     ReadColumnFromArrowColumnSettings settings
     {
@@ -1283,7 +1368,8 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         .allow_arrow_null_type = false,
         .skip_columns_with_unsupported_types = skip_columns_with_unsupported_types,
         .allow_inferring_nullable_columns = allow_inferring_nullable_columns,
-        .case_insensitive_matching = case_insensitive_matching
+        .case_insensitive_matching = case_insensitive_matching,
+        .enable_json_parsing = enable_json_parsing
     };
 
     ColumnsWithTypeAndName sample_columns;
@@ -1302,7 +1388,8 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
             nullptr /*nested_type_hint*/,
             field->nullable() /*is_nullable_column*/,
             false /*is_map_nested_column*/,
-            settings);
+            settings,
+            field);
 
         if (sample_column.column)
             sample_columns.emplace_back(std::move(sample_column));
@@ -1318,7 +1405,8 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
     bool null_as_default_,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
     bool case_insensitive_matching_,
-    bool is_stream_)
+    bool is_stream_,
+    bool enable_json_parsing_)
     : header(header_)
     , format_name(format_name_)
     , allow_missing_columns(allow_missing_columns_)
@@ -1326,6 +1414,7 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
     , date_time_overflow_behavior(date_time_overflow_behavior_)
     , case_insensitive_matching(case_insensitive_matching_)
     , is_stream(is_stream_)
+    , enable_json_parsing(enable_json_parsing_)
 {
 }
 
@@ -1359,7 +1448,8 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(const NameToArrowColumn & nam
         .allow_arrow_null_type = true,
         .skip_columns_with_unsupported_types = false,
         .allow_inferring_nullable_columns = true,
-        .case_insensitive_matching = case_insensitive_matching
+        .case_insensitive_matching = case_insensitive_matching,
+        .enable_json_parsing = enable_json_parsing
     };
 
     Columns columns;
@@ -1408,7 +1498,8 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(const NameToArrowColumn & nam
                             nested_table_type,
                             arrow_column.field->nullable() /*is_nullable_column*/,
                             false /*is_map_nested_column*/,
-                            settings)
+                            settings,
+                            arrow_column.field)
                     };
 
                     BlockPtr block_ptr = std::make_shared<Block>(cols);
@@ -1448,7 +1539,8 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(const NameToArrowColumn & nam
                 header_column.type,
                 arrow_column.field->nullable(),
                 false /*is_map_nested_column*/,
-                settings);
+                settings,
+                arrow_column.field);
         }
 
         if (null_as_default)

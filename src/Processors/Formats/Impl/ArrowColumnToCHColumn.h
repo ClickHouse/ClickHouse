@@ -26,7 +26,8 @@ public:
         bool null_as_default_,
         FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
         bool case_insensitive_matching_ = false,
-        bool is_stream_ = false);
+        bool is_stream_ = false,
+        bool enable_json_parsing_ = false);
 
     Chunk arrowTableToCHChunk(const std::shared_ptr<arrow::Table> & table, size_t num_rows, BlockMissingValues * block_missing_values = nullptr);
 
@@ -36,7 +37,8 @@ public:
         const std::string & format_name,
         bool skip_columns_with_unsupported_types = false,
         bool allow_inferring_nullable_columns = true,
-        bool case_insensitive_matching = false);
+        bool case_insensitive_matching = false,
+        bool enable_json_parsing = false);
 
     struct DictionaryInfo
     {
@@ -65,6 +67,7 @@ private:
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior;
     bool case_insensitive_matching;
     bool is_stream;
+    bool enable_json_parsing;
 
     /// Map {column name : dictionary column}.
     /// To avoid converting dictionary from Arrow Dictionary

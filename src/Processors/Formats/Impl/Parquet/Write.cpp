@@ -5,6 +5,7 @@
 #include <arrow/util/rle_encoding.h>
 #include <lz4.h>
 #include <xxhash.h>
+#include <DataTypes/DataTypeObject.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -12,6 +13,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnObject.h>
 #include <IO/WriteHelpers.h>
 #include <Common/config_version.h>
 #include <Common/formatReadable.h>
@@ -394,6 +396,43 @@ struct ConverterNumberAsFixedString
     }
 
     size_t fixedStringSize() { return sizeof(T); }
+};
+
+struct ConverterJSON
+{
+    using Statistics = StatisticsStringRef;
+
+    const ColumnObject & column;
+    PODArray<parquet::ByteArray> buf;
+    std::vector<String> stash;
+
+    explicit ConverterJSON(const ColumnPtr & c)
+        : column(assert_cast<const ColumnObject &>(*c))
+    {
+    }
+
+    const parquet::ByteArray * getBatch(size_t offset, size_t count)
+    {
+        buf.resize(count);
+        stash.clear();
+        stash.reserve(count);
+
+        auto data_type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
+        auto serialization = data_type->getDefaultSerialization();
+        FormatSettings fmt;
+
+        for (size_t i = 0; i < count; ++i)
+        {
+            WriteBufferFromOwnString wb;
+            serialization->serializeTextJSON(column, offset + i, wb, fmt);
+
+            stash.emplace_back(std::move(wb.str()));
+            const String & s = stash.back();
+
+            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size()), reinterpret_cast<const uint8_t *>(s.data()));
+        }
+        return buf.data();
+    }
 };
 
 /// Like ConverterNumberAsFixedString, but converts to big-endian. (Parquet uses little-endian
@@ -1008,6 +1047,10 @@ void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & option
             else
                 writeColumnImpl<parquet::ByteArrayType>(
                 s, options, out, ConverterFixedStringAsString(s.primitive_column));
+            break;
+        case TypeIndex::Object:
+            writeColumnImpl<parquet::ByteArrayType>(
+              s, options, out, ConverterJSON(s.primitive_column));
             break;
 
         #define F(source_type) \

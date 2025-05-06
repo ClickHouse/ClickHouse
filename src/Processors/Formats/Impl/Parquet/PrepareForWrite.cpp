@@ -421,6 +421,12 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             }
             break;
         }
+        case TypeIndex::Object: {
+            parq::LogicalType t;
+            t.__set_JSON({});
+            types(T::BYTE_ARRAY, C::JSON, t);
+            break;
+        }
 
         /// Parquet doesn't have logical types for these.
         case TypeIndex::UInt128: fixed_string(16); break;
