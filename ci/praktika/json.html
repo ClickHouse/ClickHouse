@@ -1132,9 +1132,10 @@
             columns.forEach(column => {
                 const th = document.createElement('th');
                 th.textContent = columnSymbols[column] || column;
-                th.style.cursor = 'pointer'; // Make headers clickable
+                th.style.cursor = 'pointer';
+                th.style.textDecoration = 'underline';
                 th.setAttribute('data-sort-direction', 'asc'); // Default sort direction
-                th.addEventListener('click', () => sortTable(results, column, columnSymbols[column] || column, tbody, nest_level, columns));
+                th.addEventListener('click', () => sortTable(results, column, columnSymbols[column] || column, tbody, nest_level));
                 headerRow.appendChild(th);
             });
             thead.appendChild(headerRow);
@@ -1288,7 +1289,7 @@
         }
     }
 
-    function sortTable(results, column, key, tbody, nest_level, columns) {
+    function sortTable(results, column, key, tbody, nest_level) {
         // Find the table header element for the given key
         const tableHeaders = document.querySelectorAll('th');
         let th = Array.from(tableHeaders).find(header => header.textContent === key);
