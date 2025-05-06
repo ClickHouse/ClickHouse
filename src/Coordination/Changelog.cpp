@@ -1,7 +1,10 @@
 #include <exception>
 #include <filesystem>
+#include <functional>
+#include <memory>
 #include <mutex>
 #include <ranges>
+#include <thread>
 #include <Coordination/Changelog.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperContext.h>
@@ -146,6 +149,7 @@ public:
         , keeper_context(std::move(keeper_context_))
         , log(getLogger("Changelog"))
     {
+        s3_disk = keeper_context->getDisk("some_s3_plain");
     }
 
     void setFile(ChangelogFileDescriptionPtr file_description, WriteMode mode)
@@ -223,6 +227,20 @@ public:
             last_index_written.reset();
             current_file_description = std::move(file_description);
 
+            if (!s3_file_start) {
+                s3_file_start = std::make_unique<size_t>(current_file_description->from_log_index);
+
+                s3_cur_path = formatChangelogPath(
+                    current_file_description->prefix,
+                    current_file_description->from_log_index,
+                    current_file_description->to_log_index,
+                    current_file_description->extension
+                );
+                s3_write_buffer = s3_disk->writeFile(s3_cur_path);
+
+                LOG_TRACE(log, "Initialize s3 description path: {}", s3_cur_path);
+            }
+
             if (log_file_settings.compress_logs)
                 compressed_buffer = std::make_unique<ZstdDeflatingAppendableWriteBuffer>(
                     std::move(file_buf),
@@ -275,6 +293,21 @@ public:
                 return false;
         }
 
+        /* Writing to s3 buffer */
+        {
+            LOG_TRACE(log, "Writing to s3 buffer before {}", s3_write_buffer->count());
+
+            auto & write_buffer = *s3_write_buffer;
+            writeIntBinary(computeRecordChecksum(record), write_buffer);
+            writeIntBinary(record.header.version, write_buffer);
+            writeIntBinary(record.header.index, write_buffer);
+            writeIntBinary(record.header.term, write_buffer);
+            writeIntBinary(record.header.value_type, write_buffer);
+            writeIntBinary(record.header.blob_size, write_buffer);
+
+            LOG_TRACE(log, "Writing to s3 buffer after {}", s3_write_buffer->count());
+        }
+
         auto & write_buffer = getBuffer();
         auto current_position = initial_file_size + write_buffer.count();
         writeIntBinary(computeRecordChecksum(record), write_buffer);
@@ -310,8 +343,49 @@ public:
         return true;
     }
 
-    void flush()
+    void flush(bool s3_flush = true)
     {
+        if (s3_flush) {
+            /* Flusing buffer, moving file */
+            LOG_TRACE(log, "Flushing s3 buffer {}", s3_write_buffer->count());
+    
+            s3_write_buffer->sync();
+            s3_write_buffer->finalize();
+    
+            auto new_path = formatChangelogPath(
+                current_file_description->prefix,
+                *s3_file_start,
+                *last_index_written,
+                current_file_description->extension);
+    
+            LOG_TRACE(log, "Writing s3 buffer old path: {} new path: {}", s3_cur_path, new_path);
+    
+            if (s3_cur_path != new_path)
+            {
+                try
+                {
+                    // s3_disk->moveFile(s3_cur_path, new_path);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, fmt::format("File rename failed on disk {}", s3_disk->getName()));
+                }
+            }
+    
+            /* Update current description (LATER IT MUST BE NEW ONE) */
+            *s3_file_start = *last_index_written + 1;
+            s3_cur_path = formatChangelogPath(
+                current_file_description->prefix,
+                *s3_file_start,
+                *s3_file_start + log_file_settings.rotate_interval,
+            current_file_description->extension);
+    
+            LOG_TRACE(log, "Open new s3 buffer with path {}", s3_cur_path);
+    
+            /* Init new buffer */
+            s3_write_buffer = s3_disk->writeFile(s3_cur_path);
+        }
+
         auto * file_buffer = tryGetFileBaseBuffer();
         if (file_buffer)
         {
@@ -365,6 +439,11 @@ public:
     }
 
 private:
+    DiskPtr s3_disk;
+    std::unique_ptr<WriteBufferFromFileBase> s3_write_buffer;
+    std::unique_ptr<size_t> s3_file_start{nullptr};
+    std::string s3_cur_path;
+
     void finalizeCurrentFile()
     {
         chassert(prealloc_done);
@@ -376,7 +455,7 @@ private:
         if (compressed_buffer)
             compressed_buffer->finalize();
 
-        flush();
+        flush(false);
 
         if (file_buf)
             file_buf->finalize();
@@ -406,6 +485,12 @@ private:
 
         if (file_buf)
             file_buf->cancel();
+
+        if (s3_write_buffer) {
+            LOG_TRACE(log, "Cancel s3 buffer");
+            s3_write_buffer->cancel();
+            s3_write_buffer.reset();
+        }
 
         compressed_buffer.reset();
         file_buf.reset();
@@ -2128,11 +2213,14 @@ void Changelog::writeThread()
             {
                 const auto & flush = std::get<Flush>(write_operation);
 
+                LOG_DEBUG(log, "Get flush: {}", flush.index);
+
                 if (batch_append_ok)
                 {
                     /// we can try batching more logs for flush
                     if (pending_appends < flush_settings.max_flush_batch_size)
                     {
+                        LOG_DEBUG(log, "Try to continue batching");
                         try_batch_flush = true;
                         continue;
                     }
@@ -2395,6 +2483,9 @@ uint64_t Changelog::termAt(uint64_t index) const
 
 bool Changelog::flush()
 {
+    LOG_DEBUG(log, "Try to flush: {}", std::hash<std::thread::id>{}(std::this_thread::get_id()));
+    std::cerr << "Try to flush " << std::this_thread::get_id() << std::endl;
+
     if (auto failed_ptr = flushAsync())
     {
         std::unique_lock lock{durable_idx_mutex};
@@ -2403,7 +2494,7 @@ bool Changelog::flush()
         return !*failed_ptr;
     }
 
-    // if we are shutting down let's return true to avoid abort inside NuRaft
+    // if we are shutting down let's return true toFlushing 4 logs avoid abort inside NuRaft
     // this can only happen when the config change is appended so no data loss should happen
     return true;
 }

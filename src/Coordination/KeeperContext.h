@@ -123,7 +123,9 @@ private:
     Storage getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getStatePathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
 
+public:
     DiskPtr getDisk(const Storage & storage) const;
+private:
 
     std::mutex local_logs_preprocessed_cv_mutex;
     std::condition_variable local_logs_preprocessed_cv;
