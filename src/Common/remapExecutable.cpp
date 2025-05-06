@@ -1,4 +1,5 @@
 #include "remapExecutable.h"
+#include "Common/logger_useful.h"
 
 #if defined(OS_LINUX) && defined(__amd64__) && defined(__SSE2__) && !defined(SANITIZER) && defined(NDEBUG)
 
@@ -101,6 +102,7 @@ __attribute__((__noinline__)) void remapToHugeStep2(void * begin, size_t size, v
 
     /// Make the memory area with the code executable and non-writable.
 
+    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
     syscall_func(SYS_mprotect, begin, size, PROT_READ | PROT_EXEC);
 
     /** Step 3 function should unmap the scratch area.

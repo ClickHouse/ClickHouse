@@ -34,8 +34,13 @@
 #include <base/defines.h>
 #include <base/types.h>
 
+#include <Common/XRayTracing.h>
+
 #include <algorithm>
+#include <bit>
 #include <numeric>
+#include <sstream>
+#include <stdint.h>
 
 using namespace DB;
 
@@ -246,8 +251,102 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
     }
 }
 
+template <typename Class, typename Ret, typename... Args>
+uint64_t get_virtual_address_reliable(Class * instance, Ret (Class::*func)(Args...))
+{
+    // Define a union to extract the appropriate parts
+    union
+    {
+        Ret (Class::*mfp)(Args...);
+        struct
+        {
+            int vtable_index;
+            int adj;
+        } parts;
+    } converter;
+
+    converter.mfp = func;
+
+    // Print debug info
+    std::cerr << "Vtable index from union: " << converter.parts.vtable_index << std::endl;
+    std::cerr << "Adjustment: " << converter.parts.adj << std::endl;
+
+    // For some ABIs, we need to adjust the index
+    int true_index = converter.parts.vtable_index / sizeof(void *);
+    std::cerr << "Adjusted index: " << true_index << std::endl;
+
+// Access the vtable
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wundefined-reinterpret-cast"
+
+    void ** vtable = *reinterpret_cast<void ***>(instance);
+
+    // Use the adjusted index
+    void * function_ptr = vtable[true_index];
+
+#pragma clang diagnostic pop
+
+    return reinterpret_cast<uint64_t>(function_ptr);
+}
+
+template <typename Class, typename Ret, typename... Args>
+uint64_t get_virtual_address_reliable(const Class * instance, Ret (Class::*func)(Args...) const)
+{
+    // Define a union to extract the appropriate parts
+    union
+    {
+        Ret (Class::*mfp)(Args...) const;
+        struct
+        {
+            int vtable_index;
+            int adj;
+        } parts;
+    } converter;
+
+    converter.mfp = func;
+
+    // Print debug info
+    std::cerr << "Vtable index from union: " << converter.parts.vtable_index << std::endl;
+    std::cerr << "Adjustment: " << converter.parts.adj << std::endl;
+
+    // For some ABIs, we need to adjust the index
+    int true_index = converter.parts.vtable_index / sizeof(void *);
+    std::cerr << "Adjusted index: " << true_index << std::endl;
+
+// Access the vtable
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wundefined-reinterpret-cast"
+
+    const void * const * vtable = *reinterpret_cast<const void * const * const *>(instance);
+
+    // Use the adjusted index
+    const void * function_ptr = vtable[true_index];
+
+#pragma clang diagnostic pop
+
+    return reinterpret_cast<uint64_t>(function_ptr);
+}
+
+#define OMG_MEMBER(class_name, member_func) \
+    using FuncType = Sig<decltype(&class_name::member_func)>::type; \
+    FuncType func_ptr = &class_name::member_func; \
+    uint64_t func_addr = get_virtual_address_reliable(this, func_ptr); \
+    TraceScope scope(func_addr);
+
 bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_limits)
 {
+    // using FuncType [[maybe_unused]] = Sig<decltype(&ConcurrentHashJoin::addBlockToJoin)>::type;
+    // FuncType func_ptr = reinterpret_cast<FuncType>(&ConcurrentHashJoin::addBlockToJoin);
+    // uint64_t func_addr = std::bit_cast<uint64_t>(func_ptr);
+    // void ** vtable = *reinterpret_cast<void ***>(instance);
+
+    // Access the function pointer at the given index
+    // void * function_ptr = vtable[vtable_index];
+
+    // Convert to uint64_t
+    // return reinterpret_cast<uint64_t>(function_ptr);
+    OMG_MEMBER(ConcurrentHashJoin, addBlockToJoin)
+
     /// We materialize columns here to avoid materializing them multiple times on different threads
     /// (inside different `hash_join`-s) because the block will be shared.
     Block right_block = hash_joins[0]->data->materializeColumnsFromRightBlock(right_block_);
@@ -382,6 +481,7 @@ const Block & ConcurrentHashJoin::getTotals() const
 
 size_t ConcurrentHashJoin::getTotalRowCount() const
 {
+    OMG_MEMBER(ConcurrentHashJoin, getTotalRowCount)
     size_t res = 0;
     for (const auto & hash_join : hash_joins)
     {
@@ -393,6 +493,7 @@ size_t ConcurrentHashJoin::getTotalRowCount() const
 
 size_t ConcurrentHashJoin::getTotalByteCount() const
 {
+    OMG_MEMBER(ConcurrentHashJoin, getTotalByteCount)
     size_t res = 0;
     for (const auto & hash_join : hash_joins)
     {

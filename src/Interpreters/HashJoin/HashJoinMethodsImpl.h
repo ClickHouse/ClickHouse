@@ -4,6 +4,8 @@
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 
+#include <Common/XRayTracing.h>
+
 #include <type_traits>
 
 namespace DB
@@ -231,6 +233,8 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
     Arena & pool,
     bool & is_inserted)
 {
+    OMG((insertFromBlockImplTypeCase<KeyGetter, HashMap, Selector>))
+
     [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename HashMap::mapped_type, RowRef>;
     constexpr bool is_asof_join = STRICTNESS == JoinStrictness::Asof;
 
