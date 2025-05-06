@@ -178,7 +178,7 @@ namespace
 
 bool isQueryResultCacheRelatedSetting(const String & setting_name)
 {
-    return (setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag" && setting_name != "log_comment";
+    return ((setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag") || setting_name == "log_comment";
 }
 
 class RemoveQueryResultCacheSettingsMatcher
