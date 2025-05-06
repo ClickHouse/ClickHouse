@@ -53,9 +53,9 @@ RUN apt-get update \
 RUN wget https://sourceware.org/pub/gdb/releases/gdb-$GDB_VERSION.tar.gz \
     && tar -xvf gdb-$GDB_VERSION.tar.gz \
     && cd gdb-$GDB_VERSION \
-    && ./configure --prefix=/usr \
+    && ./configure --prefix=/opt/gdb --with-separate-debug-dir=/usr/lib/debug \
     && make -j $(nproc) \
-    && make install DESTDIR=/opt/gdb \
+    && make install \
     && rm -fr gdb-$GDB_VERSION gdb-$GDB_VERSION.tar.gz
 
 # just in case
