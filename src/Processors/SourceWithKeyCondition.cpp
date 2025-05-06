@@ -8,8 +8,9 @@ namespace DB
 
 void SourceWithKeyCondition::setKeyConditionImpl(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context, const Block & keys)
 {
+    ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag ? filter_actions_dag->getOutputs().front() : nullptr, context);
     key_condition = std::make_shared<const KeyCondition>(
-        filter_actions_dag ? &*filter_actions_dag : nullptr,
+        inverted_dag,
         context,
         keys.getNames(),
         std::make_shared<ExpressionActions>(ActionsDAG(keys.getColumnsWithTypeAndName())));

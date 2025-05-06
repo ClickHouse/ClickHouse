@@ -572,19 +572,30 @@ ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversio
     return need_inversion ? makeASTFunction("not", cloned_node) : cloned_node;
 }
 
-static const ActionsDAG::Node & cloneASTWithInversionPushDown(
+static bool isTrivialCast(const ActionsDAG::Node & node)
+{
+    if (node.function_base->getName() != "CAST" || node.children.size() != 2 || node.children[1]->type != ActionsDAG::ActionType::COLUMN)
+        return false;
+
+    const auto * column_const = typeid_cast<const ColumnConst *>(node.children[1]->column.get());
+    if (!column_const)
+        return false;
+
+    Field field = column_const->getField();
+    if (field.getType() != Field::Types::String)
+        return false;
+
+    auto type_name = field.safeGet<String>();
+    return node.children[0]->result_type->getName() == type_name;
+}
+
+static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     const ActionsDAG::Node & node,
     ActionsDAG & inverted_dag,
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> to_inverted,
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
     const ContextPtr & context,
     const bool need_inversion)
 {
-    {
-        auto it = to_inverted.find(&node);
-        if (it != to_inverted.end())
-            return *it->second;
-    }
-
     const ActionsDAG::Node * res = nullptr;
     bool handled_inversion = false;
 
@@ -592,8 +603,12 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
     {
         case (ActionsDAG::ActionType::INPUT):
         {
-            /// Note: inputs order is not important here. Will match columns by names.
-            res = &inverted_dag.addInput({node.column, node.result_type, node.result_name});
+            auto & input = inputs_mapping[&node];
+            if (input == nullptr)
+                /// Note: inputs order is not important here. Will match columns by names.
+                input = &inverted_dag.addInput({node.column, node.result_type, node.result_name});
+
+            res = input;
             break;
         }
         case (ActionsDAG::ActionType::COLUMN):
@@ -617,13 +632,13 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
         case (ActionsDAG::ActionType::ALIAS):
         {
             /// Ignore aliases
-            res = &cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, need_inversion);
+            res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
             handled_inversion = true;
             break;
         }
         case (ActionsDAG::ActionType::ARRAY_JOIN):
         {
-            const auto & arg = cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, false);
+            const auto & arg = cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, false);
             res = &inverted_dag.addArrayJoin(arg, {});
             break;
         }
@@ -632,7 +647,7 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
             auto name = node.function_base->getName();
             if (name == "not")
             {
-                res = &cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, !need_inversion);
+                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, !need_inversion);
                 handled_inversion = true;
             }
             else if (name == "indexHint")
@@ -646,19 +661,29 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                         children = index_hint_dag.getOutputs();
 
                         for (auto & arg : children)
-                            arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, to_inverted, context, need_inversion);
+                            arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, need_inversion);
                     }
                 }
 
                 res = &inverted_dag.addFunction(node.function_base, children, "");
                 handled_inversion = true;
             }
+            else if (name == "materialize")
+            {
+                /// Remove "materialize" from index analysis.
+                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
+            }
+            else if (isTrivialCast(node))
+            {
+                /// Remove trivial cast and keep its first argument.
+                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
+            }
             else if (need_inversion && (name == "and" || name == "or"))
             {
                 ActionsDAG::NodeRawConstPtrs children(node.children);
 
                 for (auto & arg : children)
-                    arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, to_inverted, context, need_inversion);
+                    arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, need_inversion);
 
                 FunctionOverloadResolverPtr function_builder;
 
@@ -679,7 +704,7 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                 ActionsDAG::NodeRawConstPtrs children(node.children);
 
                 for (auto & arg : children)
-                    arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, to_inverted, context, false);
+                    arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, false);
 
                 auto it = inverse_relations.find(name);
                 if (it != inverse_relations.end())
@@ -723,8 +748,20 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
     if (!handled_inversion && need_inversion)
         res = &inverted_dag.addFunction(FunctionFactory::instance().get("not", context), {res}, "");
 
-    to_inverted[&node] = res;
     return *res;
+}
+
+static ActionsDAG cloneDAGWithInversionPushDown(const ActionsDAG::Node * predicate, const ContextPtr & context)
+{
+    ActionsDAG res;
+
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> inputs_mapping;
+
+    predicate = &DB::cloneDAGWithInversionPushDown(*predicate, res, inputs_mapping, context, false);
+
+    res.getOutputs() = {predicate};
+
+    return res;
 }
 
 const std::unordered_map<String, KeyCondition::SpaceFillingCurveType> KeyCondition::space_filling_curve_name_to_type {
@@ -756,26 +793,6 @@ static bool mayExistOnBloomFilter(const KeyCondition::BloomFilterData & conditio
     }
 
     return true;
-}
-
-ActionsDAG KeyCondition::cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context)
-{
-    ActionsDAG res;
-
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> to_inverted;
-
-    for (auto & node : nodes)
-        node = &DB::cloneASTWithInversionPushDown(*node, res, to_inverted, context, false);
-
-    if (nodes.size() > 1)
-    {
-        auto function_builder = FunctionFactory::instance().get("and", context);
-        nodes = {&res.addFunction(function_builder, std::move(nodes), "")};
-    }
-
-    res.getOutputs().swap(nodes);
-
-    return res;
 }
 
 /** Calculate expressions, that depend only on constants.
@@ -846,8 +863,26 @@ void KeyCondition::getAllSpaceFillingCurves()
     }
 }
 
+ActionsDAGWithInversionPushDown::ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context)
+{
+    if (!predicate_)
+        return;
+
+    /** When non-strictly monotonic functions are employed in functional index (e.g. ORDER BY toStartOfHour(dateTime)),
+    * the use of NOT operator in predicate will result in the indexing algorithm leave out some data.
+    * This is caused by rewriting in KeyCondition::tryParseAtomFromAST of relational operators to less strict
+    * when parsing the AST into internal RPN representation.
+    * To overcome the problem, before parsing the AST we transform it to its semantically equivalent form where all NOT's
+    * are pushed down and applied (when possible) to leaf nodes.
+    */
+    dag = cloneDAGWithInversionPushDown(predicate_, context);
+
+    predicate = dag->getOutputs()[0];
+}
+
+
 KeyCondition::KeyCondition(
-    const ActionsDAG * filter_dag,
+    const ActionsDAGWithInversionPushDown & filter_dag,
     ContextPtr context,
     const Names & key_column_names_,
     const ExpressionActionsPtr & key_expr_,
@@ -872,7 +907,7 @@ KeyCondition::KeyCondition(
     if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
         getAllSpaceFillingCurves();
 
-    if (!filter_dag)
+    if (!filter_dag.predicate)
     {
         has_filter = false;
         relaxed = true;
@@ -882,19 +917,7 @@ KeyCondition::KeyCondition(
 
     has_filter = true;
 
-    /** When non-strictly monotonic functions are employed in functional index (e.g. ORDER BY toStartOfHour(dateTime)),
-      * the use of NOT operator in predicate will result in the indexing algorithm leave out some data.
-      * This is caused by rewriting in KeyCondition::tryParseAtomFromAST of relational operators to less strict
-      * when parsing the AST into internal RPN representation.
-      * To overcome the problem, before parsing the AST we transform it to its semantically equivalent form where all NOT's
-      * are pushed down and applied (when possible) to leaf nodes.
-      */
-    auto inverted_dag = cloneASTWithInversionPushDown({filter_dag->getOutputs().at(0)}, context);
-    assert(inverted_dag.getOutputs().size() == 1);
-
-    const auto * inverted_dag_filter_node = inverted_dag.getOutputs()[0];
-
-    RPNBuilder<RPNElement> builder(inverted_dag_filter_node, context, [&](const RPNBuilderTreeNode & node, RPNElement & out)
+    RPNBuilder<RPNElement> builder(filter_dag.predicate, context, [&](const RPNBuilderTreeNode & node, RPNElement & out)
     {
         return extractAtomFromTree(node, out);
     });
