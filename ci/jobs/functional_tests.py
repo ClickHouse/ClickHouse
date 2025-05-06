@@ -164,13 +164,15 @@ def main():
         # if not Info().is_local_run:
         #     res = res and CH.start_log_exports(stop_watch.start_time)
         res = res and CH.wait_ready()
-        res = res and CH.prepare_stateful_data()
         if res:
             print("ch started")
         logs_to_attach += [
             f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.log",
             f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.err.log",
         ]
+        res = res and CH.prepare_stateful_data()
+        if res:
+            print("stateful data prepared")
         results.append(
             Result.create_from(
                 name=step_name,

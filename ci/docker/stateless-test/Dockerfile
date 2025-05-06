@@ -117,7 +117,9 @@ RUN npm install -g azurite@3.34.0 \
     && npm install -g tslib && npm install -g node
 
 ENV PYTHONPATH=".:./ci"
-USER clickhouse
+
+# FIX stress and upgrade job scripts to work with not root user in docker
+#USER clickhouse
 
 # A directory for cache
 RUN mkdir /dev/shm/clickhouse

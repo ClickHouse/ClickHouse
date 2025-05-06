@@ -47,6 +47,10 @@ class Result(MetaClasses.Serializable):
         RUNNING = "running"
         ERROR = "error"
 
+    class StatusExtended:
+        OK = "OK"
+        FAIL = "FAIL"
+
     class Label:
         REQUIRED = "required"
         NOT_REQUIRED = "not required"
@@ -152,7 +156,7 @@ class Result(MetaClasses.Serializable):
         return self.status in (Result.Status.RUNNING,)
 
     def is_ok(self):
-        return self.status in (Result.Status.SKIPPED, Result.Status.SUCCESS)
+        return self.status in (Result.Status.SKIPPED, Result.Status.SUCCESS, Result.StatusExtended.OK)
 
     def is_error(self):
         return self.status in (Result.Status.ERROR,)
