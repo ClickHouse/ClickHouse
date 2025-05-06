@@ -5531,10 +5531,21 @@ void Context::setGoogleProtosPath(const String & path)
 
 Context::SampleBlockCache & Context::getSampleBlockCache() const
 {
-    assert(hasQueryContext());
+    chassert(hasQueryContext());
     return getQueryContext()->sample_block_cache;
 }
 
+Context::StorageMetadataCache & Context::getStorageMetadataCache() const
+{
+    chassert(hasQueryContext());
+    return getQueryContext()->storage_metadata_cache;
+}
+
+Context::StorageSnapshotCache & Context::getStorageSnapshotCache() const
+{
+    chassert(hasQueryContext());
+    return getQueryContext()->storage_snapshot_cache;
+}
 
 bool Context::hasQueryParameters() const
 {
