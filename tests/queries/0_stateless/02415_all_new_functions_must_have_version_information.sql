@@ -1,6 +1,6 @@
--- This outputs the list of undocumented functions.
+-- This outputs the list of functions without version information.
 -- No new items in the list should appear. Please help shorten this list down to zero elements.
-SELECT name FROM system.functions WHERE NOT is_aggregate AND origin = 'System' AND alias_to = '' AND length(description) < 10
+SELECT name FROM system.functions WHERE NOT is_aggregate AND origin = 'System' AND alias_to = '' AND introduced_in == ''
 AND name NOT IN (
      -- these functions are not enabled in fast test
     'aes_decrypt_mysql', 'aes_encrypt_mysql', 'decrypt', 'encrypt',
@@ -15,5 +15,8 @@ AND name NOT IN (
     'geoToS2', 's2CapContains', 's2CapUnion', 's2CellsIntersect', 's2GetNeighbors', 's2RectAdd', 's2RectContains', 's2RectIntersection', 's2RectUnion', 's2ToGeo',
     'normalizeUTF8NFC', 'normalizeUTF8NFD', 'normalizeUTF8NFKC', 'normalizeUTF8NFKD',
     'lemmatize', 'tokenize', 'stem', 'synonyms', 'kql_array_sort_asc', 'kql_array_sort_desc',
-    'detectCharset', 'detectLanguageUnknown', 'detectProgrammingLanguage', 'detectTonality'
+    'detectCharset', 'detectLanguageUnknown', 'detectProgrammingLanguage', 'detectTonality',
+    'BLAKE3', 'JSONMergePatch', 'MD4', 'MD5', 'RIPEMD160', 'SHA1', 'SHA224', 'SHA256', 'SHA384', 'SHA512', 'SHA512_256', 'ULIDStringToDateTime', 'generateULID', 'halfMD5',
+    'idnaDecode', 'idnaEncode', 'keccak256', 'punycodeDecode', 'punycodeEncode', 'seriesPeriodDetectFFT', 'sqidDecode', 'sqidEncode', 'tryDecrypt', 'tryIdnaEncode', 'tryPunycodeDecode', 'uniqThetaIntersect',
+    'uniqThetaNot', 'uniqThetaUnion'
 ) ORDER BY name;

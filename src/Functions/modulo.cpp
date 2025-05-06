@@ -173,8 +173,9 @@ REGISTER_FUNCTION(Modulo)
     FunctionDocumentation::ReturnedValue returned_value = "The remainder of a % b";
     FunctionDocumentation::Example example1 = {"", "SELECT modulo(5, 2)", "1"};
     FunctionDocumentation::Examples examples = {example1};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
     factory.registerFunction<FunctionModulo>(documentation);
     factory.registerAlias("mod", "modulo", FunctionFactory::Case::Insensitive);
 }
@@ -209,8 +210,9 @@ Returns the difference between `x` and the nearest integer not greater than
     )";
     FunctionDocumentation::Example example1 = {"positiveModulo", "SELECT positiveModulo(-1, 10)", "9"};
     FunctionDocumentation::Examples examples = {example1};
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
     factory.registerFunction<FunctionPositiveModulo>(documentation,
         FunctionFactory::Case::Insensitive);
 
