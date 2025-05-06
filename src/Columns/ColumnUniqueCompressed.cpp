@@ -6,6 +6,7 @@
 #include <Common/Arena.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -365,7 +366,7 @@ size_t ColumnUniqueFCBlockDF::uniqueDeserializeAndInsertFromArena(const char * p
 {
     if (is_nullable)
     {
-        UInt8 val = unalignedLoad<UInt8>(pos);
+        const UInt8 val = unalignedLoad<UInt8>(pos);
         pos += sizeof(val);
 
         if (val)
@@ -538,7 +539,7 @@ char * ColumnUniqueFCBlockDF::serializeIntoMemory(size_t pos, DecompressedValue 
 {
     if (is_nullable)
     {
-        UInt8 flag = (pos == getNullValueIndex() ? 1 : 0);
+        const UInt8 flag = (pos == getNullValueIndex() ? 1 : 0);
         unalignedStore<UInt8>(memory, flag);
         ++memory;
         if (flag)
@@ -576,7 +577,7 @@ StringRef ColumnUniqueFCBlockDF::serializeValueIntoArena(size_t n, Arena & arena
         else
         {
             value = getDecompressedRefsAt(n);
-            serialization_size = sizeof(value.size()) + value.size() + 2; /* Null terminator and is_null byte */
+            serialization_size = sizeof(value.size()) + value.size() + 2; /* Null terminator and null byte */
         }
     }
     else
@@ -603,7 +604,20 @@ char * ColumnUniqueFCBlockDF::serializeValueIntoMemory(size_t n, char * memory) 
 
 void ColumnUniqueFCBlockDF::updateHashWithValue(size_t n, SipHash & hash_func) const
 {
-    data_column->updateHashWithValue(n, hash_func);
+    if (is_nullable)
+    {
+        const UInt8 null_flag = (n == getNullValueIndex());
+        hash_func.update(reinterpret_cast<const char *>(&null_flag), sizeof(null_flag));
+        if (null_flag)
+        {
+            return;
+        }
+    }
+    const DecompressedValue value = getDecompressedRefsAt(n);
+    const size_t size = value.size();
+    hash_func.update(reinterpret_cast<const char *>(&size), sizeof(size));
+    hash_func.update(value.prefix.data, value.prefix.size);
+    hash_func.update(value.suffix.data, value.suffix.size);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
