@@ -117,11 +117,16 @@ public:
     friend class NotJoinedHash;
 
 private:
+    void mergeBucketsIntoSlot0();
+    void mergeUsageFlags();
+    void mergeNonJoinedMarkers();
+    void finalizeSlots();
+    void finalizeNullsAndNonJoined();
+
     std::shared_ptr<TableJoin> table_join;
     size_t slots;
     std::unique_ptr<ThreadPool> pool;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
-    bool build_phase_finished = false;
 
     StatsCollectingParams stats_collecting_params;
 
@@ -137,6 +142,32 @@ private:
     bool isUsedByAnotherAlgorithm() const;
     bool canRemoveColumnsFromLeftBlock() const;
     bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
+    mutable std::atomic<bool> build_phase_finished{false};
+
+    /// A little helper to concatenate multiple non-joined streams.
+    class ConcatNotJoinedStreams final : public IBlocksStream
+    {
+    public:
+        explicit ConcatNotJoinedStreams(std::vector<IBlocksStreamPtr> children_)
+            : children(std::move(children_)) {}
+
+        Block nextImpl() override
+        {
+            while (idx < children.size())
+            {
+                auto & child = children[idx];
+                if (!child) { ++idx; continue; }
+                Block b = child->next();
+                if (b) return b;
+                ++idx;
+            }
+            return {};
+        }
+
+    private:
+        std::vector<IBlocksStreamPtr> children;
+        size_t idx = 0;
+    };
 };
 
 IQueryTreeNode::HashState preCalculateCacheKey(const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info);

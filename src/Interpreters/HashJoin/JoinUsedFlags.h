@@ -218,6 +218,24 @@ public:
             return flags[nullptr][offset].value.compare_exchange_strong(expected, true);
         }
     }
+
+    void mergeFrom(const JoinUsedFlags & other)
+    {
+        for (const auto & [block_ptr, other_vec] : other.flags)
+        {
+            auto & vec = flags[block_ptr];
+            if (vec.size() < other_vec.size())
+                vec.resize(other_vec.size());  // new entries default false
+
+            for (size_t i = 0; i < other_vec.size(); ++i)
+            {
+                // Combine current and other by load-OR-store
+                bool combined = vec[i].value.load(std::memory_order_relaxed)
+                              || other_vec[i].value.load(std::memory_order_relaxed);
+                vec[i].value.store(combined, std::memory_order_relaxed);
+            }
+        }
+    }
 };
 
 }
