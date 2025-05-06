@@ -333,7 +333,7 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--zookeeper')
         ADDITIONAL_OPTIONS+=('--shard')
     fi
-    if [[ "$USE_ASYNC_INSERTS" -eq 1 ]]; then
+    if [[ "$USE_ASYNC_INSERT" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--no-async-insert')
     fi
 

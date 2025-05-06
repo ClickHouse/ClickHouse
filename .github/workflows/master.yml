@@ -1611,11 +1611,11 @@ jobs:
             python3 -m praktika run 'Stateless tests (release, ParallelReplicas, s3 storage)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_asan_asyncinserts_s3_storage:
+  stateless_tests_debug_asyncinsert_s3_storage:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_asan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhc2FuLCBBc3luY0luc2VydHMsIHMzIHN0b3JhZ2Up') }}
-    name: "Stateless tests (asan, AsyncInserts, s3 storage)"
+    needs: [config_workflow, dockers_build_amd_and_merge, build_amd_debug]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChkZWJ1ZywgQXN5bmNJbnNlcnQsIHMzIHN0b3JhZ2Up') }}
+    name: "Stateless tests (debug, AsyncInsert, s3 storage)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -1644,9 +1644,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (asan, AsyncInserts, s3 storage)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (debug, AsyncInsert, s3 storage)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (asan, AsyncInserts, s3 storage)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (debug, AsyncInsert, s3 storage)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
   stateless_tests_debug:
@@ -3057,7 +3057,7 @@ jobs:
 
   stateless_tests_coverage_1_6:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage, stateless_tests_asan_distributed_plan_1_2, stateless_tests_asan_distributed_plan_2_2, stateless_tests_asan_asyncinserts_s3_storage]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage, stateless_tests_asan_distributed_plan_1_2, stateless_tests_asan_distributed_plan_2_2]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChjb3ZlcmFnZSwgMS82KQ==') }}
     name: "Stateless tests (coverage, 1/6)"
     outputs:
@@ -3095,7 +3095,7 @@ jobs:
 
   stateless_tests_coverage_2_6:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage, stateless_tests_asan_distributed_plan_1_2, stateless_tests_asan_distributed_plan_2_2, stateless_tests_asan_asyncinserts_s3_storage]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage, stateless_tests_asan_distributed_plan_1_2, stateless_tests_asan_distributed_plan_2_2]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChjb3ZlcmFnZSwgMi82KQ==') }}
     name: "Stateless tests (coverage, 2/6)"
     outputs:
@@ -3133,7 +3133,7 @@ jobs:
 
   stateless_tests_coverage_3_6:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage, stateless_tests_asan_distributed_plan_1_2, stateless_tests_asan_distributed_plan_2_2, stateless_tests_asan_asyncinserts_s3_storage]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage, stateless_tests_asan_distributed_plan_1_2, stateless_tests_asan_distributed_plan_2_2]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChjb3ZlcmFnZSwgMy82KQ==') }}
     name: "Stateless tests (coverage, 3/6)"
     outputs:
@@ -3171,7 +3171,7 @@ jobs:
 
   stateless_tests_coverage_4_6:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage, stateless_tests_asan_distributed_plan_1_2, stateless_tests_asan_distributed_plan_2_2, stateless_tests_asan_asyncinserts_s3_storage]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage, stateless_tests_asan_distributed_plan_1_2, stateless_tests_asan_distributed_plan_2_2]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChjb3ZlcmFnZSwgNC82KQ==') }}
     name: "Stateless tests (coverage, 4/6)"
     outputs:
@@ -3209,7 +3209,7 @@ jobs:
 
   stateless_tests_coverage_5_6:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage, stateless_tests_asan_distributed_plan_1_2, stateless_tests_asan_distributed_plan_2_2, stateless_tests_asan_asyncinserts_s3_storage]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage, stateless_tests_asan_distributed_plan_1_2, stateless_tests_asan_distributed_plan_2_2]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChjb3ZlcmFnZSwgNS82KQ==') }}
     name: "Stateless tests (coverage, 5/6)"
     outputs:
@@ -3247,7 +3247,7 @@ jobs:
 
   stateless_tests_coverage_6_6:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage, stateless_tests_asan_distributed_plan_1_2, stateless_tests_asan_distributed_plan_2_2, stateless_tests_asan_asyncinserts_s3_storage]
+    needs: [config_workflow, dockers_build_amd_and_merge, build_arm_coverage, stateless_tests_asan_distributed_plan_1_2, stateless_tests_asan_distributed_plan_2_2]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChjb3ZlcmFnZSwgNi82KQ==') }}
     name: "Stateless tests (coverage, 6/6)"
     outputs:

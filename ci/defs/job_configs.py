@@ -336,7 +336,7 @@ class JobConfigs:
             "release, old analyzer, s3, DatabaseReplicated, 1/2",
             "release, old analyzer, s3, DatabaseReplicated, 2/2",
             "release, ParallelReplicas, s3 storage",
-            "asan, AsyncInserts, s3 storage",
+            "debug, AsyncInsert, s3 storage",
         ],
         runs_on=[
             RunnerLabels.FUNC_TESTER_AMD,
@@ -354,7 +354,7 @@ class JobConfigs:
             ["Build (amd_release)"],
             ["Build (amd_release)"],
             ["Build (amd_release)"],
-            ["Build (amd_asan)"],
+            ["Build (amd_debug)"],
         ],
     )
     functional_tests_jobs_coverage = Job.Config(
