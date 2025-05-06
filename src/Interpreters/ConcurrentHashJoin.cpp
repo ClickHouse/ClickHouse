@@ -728,7 +728,7 @@ void ConcurrentHashJoin::mergeBucketsIntoSlot0()
                 }
             }
         }
-        
+
         // Also propagate non-joined rows information from all slots to slot 0
         bool has_non_joined = false;
         for (const auto & hash_join : hash_joins)
@@ -740,7 +740,7 @@ void ConcurrentHashJoin::mergeBucketsIntoSlot0()
                 break;
             }
         }
-        
+
         if (has_non_joined)
             hash_joins[0]->has_non_joined_rows.store(true, std::memory_order_release);
     }
@@ -765,10 +765,10 @@ void ConcurrentHashJoin::mergeBucketsIntoSlot0()
                 }
             }
         }
-        
+
         // Also propagate non-joined rows information in single-level mode
         bool has_non_joined = false;
-        for (const auto & hash_join : hash_joins) 
+        for (const auto & hash_join : hash_joins)
         {
             std::lock_guard lock(hash_join->mutex);
             if (hash_join->has_non_joined_rows.load(std::memory_order_relaxed))
@@ -777,7 +777,7 @@ void ConcurrentHashJoin::mergeBucketsIntoSlot0()
                 break;
             }
         }
-        
+
         if (has_non_joined)
             hash_joins[0]->has_non_joined_rows.store(true, std::memory_order_release);
     }
