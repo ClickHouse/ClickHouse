@@ -113,7 +113,7 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "PNG format currently only supports 8 or 16 bit depth, got {}", bit_depth);
 
         bytes_per_component = (bit_depth == 16) ? 2 : 1;
-        pixels.reserve(channels * bytes_per_component * max_width * max_height);
+        pixels.resize(channels * bytes_per_component * max_width * max_height);
     }
 
     void commonSetColumns(const ColumnPtr * columns, size_t num_columns, size_t expected)
@@ -131,9 +131,8 @@ public:
         try
         {
             const size_t final_byte_size = channels * bytes_per_component * width * height;
-            pixels.resize(final_byte_size);
             writer.startImage(width, height);
-            writer.writeEntireImage(reinterpret_cast<const unsigned char *>(pixels.data()), pixels.size());
+            writer.writeEntireImage(reinterpret_cast<const unsigned char *>(pixels.data()), final_byte_size);
             writer.finishImage();
         }
         catch (...)
@@ -151,29 +150,32 @@ public:
 
     void commonReset() { clear(); }
 
+    /// void commonAppendPixelRow(const UInt16 * components, size_t count) 
     void appendPixelRow(const UInt16 * components, size_t count)
     {
         if (count != channels)
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Provided component count {} does not match expected channel count {}", count, channels);
-
+                ErrorCodes::LOGICAL_ERROR, "Provided component count ({}) does not match expected channel count ({})", count, channels);
 
         if (row_count >= max_height * max_width)
             throw Exception(ErrorCodes::TOO_MANY_ROWS, "Exceeded maximum image resolution: {}x{}", max_width, max_height);
 
-        size_t current_offset = pixels.size();
-        size_t bytes_to_add = channels * bytes_per_component;
-        pixels.resize(current_offset + bytes_to_add);
-        std::byte * ptr = &pixels[current_offset];
+        const size_t write_pos = row_count * channels * bytes_per_component;
+
+        std::byte * ptr = reinterpret_cast<std::byte *>(pixels.data()) + write_pos;
 
         if (bit_depth == 16)
         {
-            memcpy(ptr, components, bytes_to_add);
+            for (size_t c = 0; c < channels; ++c)
+            {
+                UInt16 v = components[c];
+                std::memcpy(ptr + (2 * c), &v, sizeof(UInt16));
+            }
         }
         else if (bit_depth == 8)
         {
-            for (size_t i = 0; i < channels; ++i)
-                ptr[i] = static_cast<std::byte>(static_cast<UInt8>(components[i]));
+            for (size_t c = 0; c < channels; ++c)
+                ptr[c] = static_cast<std::byte>(static_cast<UInt8>(components[c]));
         }
 
         ++row_count;
@@ -190,7 +192,8 @@ public:
     size_t bytes_per_component;
     size_t channels;
 
-    PODArray<std::byte> pixels;
+    // PODArray<std::byte> pixels;
+    std::vector<std::byte> pixels;
 
     std::vector<ColumnPtr> src_columns;
 };
@@ -299,7 +302,7 @@ std::unique_ptr<PngSerializer> PngSerializer::create(
     const DataTypes & data_types, size_t width, size_t height, PngPixelFormat pixel_format, PngWriter & writer, int bit_depth)
 {
     size_t required_columns = 0;
-    size_t channels = 3; ///< RGB is set by default
+    size_t channels = 0;
     switch (pixel_format)
     {
         case PngPixelFormat::BINARY:

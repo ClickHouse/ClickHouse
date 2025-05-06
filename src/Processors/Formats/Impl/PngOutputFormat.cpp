@@ -56,8 +56,7 @@ const FormatNameMapping & lookupFormat(const String & mode_str)
 
     throw Exception(
         ErrorCodes::UNKNOWN_FORMAT,
-        "Invalid pixel mode: '{}'. \
-        Supported modes are BINARY, GRAYSCALE, RGB, RGBA (case-insensitive)",
+        "Invalid pixel mode: '{}'. Supported modes are BINARY, GRAYSCALE, RGB, RGBA (case-insensitive)",
         mode_str);
 }
 }
@@ -70,16 +69,16 @@ PngOutputFormat::PngOutputFormat(WriteBuffer & out_, const Block & header_, cons
     const auto & mapping = lookupFormat(format_settings.png_image.pixel_output_format);
 
     output_format = mapping.format;
-    output_format = mapping.format;
     int png_color_type = mapping.png_color_type;
 
     int requested_bit_depth = format_settings.png_image.bit_depth;
     int bit_depth = mapping.force_8bit ? 8 : requested_bit_depth;
 
     if (bit_depth != 8 && bit_depth != 16)
+    {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Currently supported only 8 or 16 bit depth, got {}", bit_depth);
-
-    if (mapping.force_8bit && requested_bit_depth != 8) [[unlikely]]
+    }
+    else if (mapping.force_8bit && requested_bit_depth != 8)
     {
         // LOG_WARNING(getLogger("PngOutputFormat"), "Bit depth overridden to 8 for 'BINARY' format");
     }

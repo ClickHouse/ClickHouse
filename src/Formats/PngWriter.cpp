@@ -140,7 +140,8 @@ void PngWriter::startImage(size_t width_, size_t height_)
 
     png_resource = std::make_unique<PngStructWrapper>(png_ptr, info_ptr);
 
-    png_set_write_fn(png_ptr, reinterpret_cast<void *>(this), &PngWriter::writeDataCallback, &PngWriter::flushDataCallback);
+    /// png_set_write_fn(png_ptr, reinterpret_cast<void *>(this), &PngWriter::writeDataCallback, &PngWriter::flushDataCallback);
+    png_set_write_fn(png_ptr, reinterpret_cast<void *>(this), &PngWriter::writeDataCallback, nullptr);
 
     png_set_IHDR(
         png_ptr,
@@ -150,17 +151,14 @@ void PngWriter::startImage(size_t width_, size_t height_)
         bit_depth,
         color_type,
         PNG_INTERLACE_NONE,
-        PNG_COMPRESSION_TYPE_DEFAULT, ///< TODO: Setting to control compression type
+        PNG_COMPRESSION_TYPE_DEFAULT,
         PNG_FILTER_TYPE_DEFAULT);
 
-    png_set_compression_level(png_ptr, compression_level);
-
-#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
-    if (bit_depth > 8)
-    {
+    if (bit_depth == 16)
         png_set_swap(png_ptr);
-    }
-#endif
+    
+    png_set_filter(png_ptr, PNG_FILTER_TYPE_BASE, PNG_ALL_FILTERS);
+    png_set_compression_level(png_ptr, compression_level);
 
     // LOG_INFO(getLogger("PngWriter"), "Image header set: {}x{} with bit_depth {} and color_type RGBA", width, height, bit_depth);
 }
@@ -197,6 +195,7 @@ void PngWriter::writeEntireImage(const unsigned char * data, size_t data_size)
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid color type ({}) encountered", color_type);
     }
+    
     size_t row_bytes = channels * width * bytes_per_component;
     size_t expected_total_size = row_bytes * height;
 
@@ -215,7 +214,6 @@ void PngWriter::writeEntireImage(const unsigned char * data, size_t data_size)
     }
 
     std::vector<png_bytep> row_pointers(height);
-
 
     for (size_t y = 0; y < height; ++y)
         row_pointers[y] = const_cast<png_bytep>(data + (y * row_bytes));
