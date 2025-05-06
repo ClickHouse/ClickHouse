@@ -6,13 +6,20 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <string_view>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 namespace Setting
 {
@@ -240,23 +247,46 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
 String formatQuery(String query)
 {
-    bool multiline_query = query.contains('\n');
     ParserQuery parser(query.data() + query.size(), /*allow_settings_after_format_in_insert_=*/ false, /*implicit_select_=*/ false);
-    const ASTPtr ast = parseQuery(parser, query, /*max_query_size=*/ 0, /*max_parser_depth=*/ 0, /*max_parser_backtracks=*/ 0);
 
-    bool insert_with_data = false;
-    if (auto * insert_query = ast->as<ASTInsertQuery>(); insert_query && insert_query->hasInlinedData())
-        insert_with_data = true;
+    String res;
+    res.reserve(query.size());
 
-    if (!insert_with_data)
+    const char * begin = query.data();
+    const char * pos = begin;
+    const char * end = begin + query.size();
+    while (pos < end)
     {
+        const char * query_start = pos;
+
+        const ASTPtr ast = parseQueryAndMovePosition(parser, pos, end, "query in editor", true,
+            /*max_query_size=*/ 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+        bool multiline_query = std::string_view(query_start, pos).contains('\n');
+        bool insert_with_data = false;
+        if (auto * insert_query = ast->as<ASTInsertQuery>(); insert_query && insert_query->hasInlinedData())
+            insert_with_data = true;
+
+        if (insert_with_data)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "INSERT query with inline data cannot be re-formatted");
+
         if (multiline_query)
-            query = ast->formatWithSecretsMultiLine();
+            res += ast->formatWithSecretsMultiLine();
         else
-            query = ast->formatWithSecretsOneLine();
+            res += ast->formatWithSecretsOneLine();
+
+        if (*(pos - 1) == ';')
+            res.push_back(';');
+
+        while (isWhitespaceASCII(*pos) || *pos == ';')
+        {
+            if (*pos != ';')
+                res.push_back(*pos);
+            ++pos;
+        }
     }
 
-    return query;
+    return res;
 }
 
 }
