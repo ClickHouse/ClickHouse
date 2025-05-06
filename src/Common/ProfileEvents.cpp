@@ -1129,42 +1129,6 @@ ValueType getValueType(Event event)
 
 Event end() { return END; }
 
-bool checkCPUOverload(Int64 os_cpu_busy_time_threshold, double min_ratio, double max_ratio, bool should_throw)
-{
-    double cpu_load = global_counters.getCPUOverload(os_cpu_busy_time_threshold);
-
-    if (cpu_load > DBL_EPSILON)
-    {
-        double current_ratio = std::min(std::max(min_ratio, cpu_load), max_ratio);
-        double probability_to_throw = (max_ratio <= min_ratio) ? 0.0 : (current_ratio - min_ratio) / (max_ratio - min_ratio);
-
-        const PreformattedMessage error_message = PreformattedMessage::create("CPU is overloaded, CPU is waiting for execution way more than executing, "
-                "ratio of wait time (OSCPUWaitMicroseconds metric) to busy time (OSCPUVirtualTimeMicroseconds metric) is {}. "
-                "Min ratio for error {}{}, max ratio for error {}{}, probability used to decide whether to {} {}.{}",
-                current_ratio,
-                should_throw ? "(min_os_cpu_wait_time_ratio_to_throw setting) " : "",
-                min_ratio,
-                should_throw ? "(max_os_cpu_wait_time_ratio_to_throw setting) " : "",
-                max_ratio,
-                should_throw ? "discard the query" : "drop the connection",
-                probability_to_throw,
-                should_throw ? " Consider reducing the number of queries or increase backoff between retries." : "");
-
-        if (std::bernoulli_distribution server_overloaded(probability_to_throw); server_overloaded(thread_local_rng))
-        {
-            if (should_throw)
-                throw DB::Exception(error_message, DB::ErrorCodes::SERVER_OVERLOADED);
-            else
-            {
-                LOG_ERROR(getLogger("ProfileEvents"), error_message);
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
-
 void increment(Event event, Count amount)
 {
     DB::CurrentThread::getProfileEvents().increment(event, amount);
