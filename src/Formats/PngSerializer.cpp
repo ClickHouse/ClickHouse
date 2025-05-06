@@ -32,6 +32,7 @@ inline bool extractBool(const IColumn & col, size_t row_num)
 
 inline UInt16 extractPixelComponentImpl(const IColumn & data_col, size_t row_num, int bit_depth)
 {
+    /// TODO: calc once   
     auto type_id = data_col.getDataType();
     auto max_val_u16 = (bit_depth == 16) ? 65535 : 255;
     Float64 max_val_float = static_cast<Float64>(max_val_u16);
@@ -57,8 +58,8 @@ inline UInt16 extractPixelComponentImpl(const IColumn & data_col, size_t row_num
         case TypeIndex::Float64: {
             Float64 val = data_col.getFloat64(row_num);
             /*
-             * IMPORTANT: Input Float values are expected to be directly in the target range
-             * [0, 255] if bit_depth=8, or [0, 65535] if bit_depth=16.
+             * IMPORTANT: Input floats are expected to be directly in the target range 
+             * For 8 bit is [0, 255], or [0, 65535] for 16.
              * Values outside this range will be clamped. No automatic scaling (TODO)
              */
             val = std::round(std::clamp(val, 0.0, max_val_float));
@@ -77,7 +78,7 @@ inline UInt16 extractPixelComponent(const IColumn & col, size_t row_num, int bit
     if (const auto * nullable_col = typeid_cast<const ColumnNullable *>(&col)) [[unlikely]]
     {
         if (nullable_col->isNullAt(row_num))
-            return 0; ///< Assume default value for NULL is black
+            return 0; ///< Assume default color for NULL values is black
 
         return extractPixelComponent(nullable_col->getNestedColumn(), row_num, bit_depth);
     }
@@ -166,11 +167,7 @@ public:
 
         if (bit_depth == 16)
         {
-            for (size_t c = 0; c < channels; ++c)
-            {
-                UInt16 v = components[c];
-                std::memcpy(ptr + (2 * c), &v, sizeof(UInt16));
-            }
+            std::memcpy(ptr, components, channels * sizeof(UInt16));
         }
         else if (bit_depth == 8)
         {
@@ -194,7 +191,6 @@ public:
 
     // PODArray<std::byte> pixels;
     std::vector<std::byte> pixels;
-
     std::vector<ColumnPtr> src_columns;
 };
 

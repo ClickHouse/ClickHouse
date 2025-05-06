@@ -157,7 +157,9 @@ void PngWriter::startImage(size_t width_, size_t height_)
     if (bit_depth == 16)
         png_set_swap(png_ptr);
     
-    png_set_filter(png_ptr, PNG_FILTER_TYPE_BASE, PNG_ALL_FILTERS);
+    /* TODO: Allow to control filters for better image compression */
+    png_set_filter(png_ptr, PNG_FILTER_TYPE_BASE, PNG_FILTER_NONE);
+    
     png_set_compression_level(png_ptr, compression_level);
 
     // LOG_INFO(getLogger("PngWriter"), "Image header set: {}x{} with bit_depth {} and color_type RGBA", width, height, bit_depth);
