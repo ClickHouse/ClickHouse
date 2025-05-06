@@ -182,7 +182,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
-    extern const int SERVER_OVERLOADED;
 }
 
 namespace FailPoints
