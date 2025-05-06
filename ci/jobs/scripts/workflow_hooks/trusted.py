@@ -7,6 +7,7 @@ TRUSTED_CONTRIBUTORS = {
     e.lower()
     for e in [
         "amosbird",
+        "azat",
         "den-crane",  # Documentation contributor
         "taiyang-li",
         "ucasFL",  # Amos Bird's friend
