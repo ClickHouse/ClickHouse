@@ -67,7 +67,6 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
-#include <Core/ServerSettings.h>
 
 #include <IO/CompressionMethod.h>
 
@@ -166,13 +165,6 @@ namespace Setting
     extern const SettingsBool enforce_strict_identifier_format;
     extern const SettingsMap http_response_headers;
     extern const SettingsBool apply_mutations_on_fly;
-    extern const SettingsFloat min_os_cpu_wait_time_ratio_to_throw;
-    extern const SettingsFloat max_os_cpu_wait_time_ratio_to_throw;
-}
-
-namespace ServerSetting
-{
-    extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
 }
 
 namespace ErrorCodes
@@ -1704,10 +1696,6 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     QueryFlags flags,
     QueryProcessingStage::Enum stage)
 {
-    ProfileEvents::checkCPUOverload(context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold],
-            context->getSettingsRef()[Setting::min_os_cpu_wait_time_ratio_to_throw],
-            context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw],
-            /*should_throw*/ true);
     ASTPtr ast;
     BlockIO res;
 
@@ -1753,11 +1741,6 @@ void executeQuery(
     }
 
     size_t max_query_size = context->getSettingsRef()[Setting::max_query_size];
-
-    ProfileEvents::checkCPUOverload(context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold],
-            context->getSettingsRef()[Setting::min_os_cpu_wait_time_ratio_to_throw],
-            context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw],
-            /*should_throw*/ true);
 
     if (istr.buffer().end() - istr.position() > static_cast<ssize_t>(max_query_size))
     {

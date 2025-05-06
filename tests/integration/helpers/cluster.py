@@ -1676,7 +1676,6 @@ class ClickHouseCluster:
         extra_args="",
         randomize_settings=True,
         use_docker_init_flag=False,
-        clickhouse_start_cmd=CLICKHOUSE_START_COMMAND,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
 
@@ -1721,7 +1720,7 @@ class ClickHouseCluster:
             "/var/lib/clickhouse/server_%h_%p_%m.profraw"
         )
 
-        clickhouse_start_command = clickhouse_start_cmd
+        clickhouse_start_command = CLICKHOUSE_START_COMMAND
         if clickhouse_log_file:
             clickhouse_start_command += " --log-file=" + clickhouse_log_file
         if clickhouse_error_log_file:
@@ -4721,12 +4720,6 @@ class ClickHouseInstance:
             )
 
         write_embedded_config("0_common_instance_users.xml", users_d_dir)
-
-        if self.with_installed_binary:
-            # Ignore CPU overload in this case
-            write_embedded_config("0_common_min_cpu_busy_time.xml", self.config_d_dir)
-        else:
-            write_embedded_config("0_common_max_cpu_load.xml", users_d_dir)
 
         use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
         use_distributed_plan = (
