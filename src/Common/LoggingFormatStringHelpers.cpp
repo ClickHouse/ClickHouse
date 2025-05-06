@@ -100,7 +100,7 @@ LogSeriesLimiter::LogSeriesLimiter(LoggerPtr logger_, size_t allowed_count_, tim
     auto & series_records = getSeriesRecords();
 
     if (last_cleanup < cutoff_time) // will also be triggered when last_cleanup is zero
-    {        
+    {
         std::erase_if(series_records, [cutoff_time](const auto & elem) { return get<0>(elem.second) < cutoff_time; });
         last_cleanup = now;
     }
