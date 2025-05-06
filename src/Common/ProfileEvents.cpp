@@ -1004,11 +1004,6 @@ The server successfully detected this situation and will download merged part fr
     #define APPLY_FOR_EVENTS(M) APPLY_FOR_BUILTIN_EVENTS(M)
 #endif
 
-namespace DB::ErrorCodes
-{
-    extern const int SERVER_OVERLOADED;
-}
-
 namespace ProfileEvents
 {
 
