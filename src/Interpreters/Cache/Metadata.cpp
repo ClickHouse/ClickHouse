@@ -200,9 +200,9 @@ CacheMetadata::CacheMetadata(
 {
     try
     {
-        if (!fs::exists(path))
+        if (!FS::exists(path))
         {
-            fs::create_directory(path);
+            chassert(fs::create_directories(path));
         }
         path_stat = getStatVFS(path);
     }
