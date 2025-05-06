@@ -1,3 +1,5 @@
+SET enable_analyzer=1;
+
 SELECT 'Const column in grouping set, analyzer on:';
 
 SELECT grouping(key_a), grouping(key_b), key_a, key_b, count()  FROM (
