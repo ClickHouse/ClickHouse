@@ -19,6 +19,16 @@ protected:
 };
 
 
+/** The DESCRIBE subquery, in parentheses.
+  */
+class ParserDescribeSubquery : public IParserBase
+{
+protected:
+    const char * getName() const override { return "DESCRIBE subquery"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
 /** An identifier, for example, x_yz123 or `something special`
   * If allow_query_parameter_ = true, also parses substitutions in form {name:Identifier}
   */

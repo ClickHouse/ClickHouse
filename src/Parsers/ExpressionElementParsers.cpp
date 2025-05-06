@@ -42,6 +42,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserExplainQuery.h>
+#include <Parsers/ParserDescribeTableQuery.h>
 
 #include <Interpreters/StorageID.h>
 
@@ -102,6 +103,41 @@ static ASTPtr buildSelectFromTableFunction(const std::shared_ptr<ASTFunction> & 
 
     return result_select_query;
 }
+
+
+bool ParserDescribeSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserDescribeTableQuery describe;
+    ParserExplainQuery explain;
+
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+    ++pos;
+
+    ASTPtr result_node = nullptr;
+
+    if (ASTPtr describe_node; describe.parse(pos, describe_node, expected))
+    {
+        result_node = std::move(describe_node);
+    }
+    else if (ASTPtr explain_node; explain.parse(pos, explain_node, expected))
+    {
+        /// TODO: Add support for EXPLAIN
+        return false;
+    }
+    else
+    {
+        return false;
+    }
+
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
+
+    node = std::make_shared<ASTSubquery>(std::move(result_node));
+    return true;
+}
+
 
 bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
