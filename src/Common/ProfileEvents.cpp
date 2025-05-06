@@ -1,11 +1,7 @@
-#include <Common/LoggingFormatStringHelpers.h>
-#include <Common/thread_local_rng.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
 #include <Common/TraceSender.h>
 
-#include <cfloat>
-#include <random>
 
 // clang-format off
 /// Available events. Add something here as you wish.
