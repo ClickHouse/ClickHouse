@@ -20,6 +20,7 @@
 #include <Analyzer/Passes/ArrayExistsToHasPass.h>
 #include <Analyzer/Passes/AutoFinalOnQueryPass.h>
 #include <Analyzer/Passes/ComparisonTupleEliminationPass.h>
+#include <Analyzer/Passes/ConvertOrHasAnyChainPass.h>
 #include <Analyzer/Passes/ConvertOrLikeChainPass.h>
 #include <Analyzer/Passes/ConvertQueryToCNFPass.h>
 #include <Analyzer/Passes/CountDistinctPass.h>
@@ -293,6 +294,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
 
     manager.addPass(std::make_unique<FuseFunctionsPass>());
 
+    manager.addPass(std::make_unique<ConvertOrHasAnyChainPass>());
     manager.addPass(std::make_unique<ConvertOrLikeChainPass>());
 
     manager.addPass(std::make_unique<LogicalExpressionOptimizerPass>());

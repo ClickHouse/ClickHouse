@@ -596,6 +596,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"optimize_exchanges", CHSetting(trueOrFalse, {}, false)},
     {"optimize_extract_common_expressions", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"optimize_on_insert", CHSetting(trueOrFalse, {"0", "1"}, false)},
+    {"optimize_or_has_any_chain", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"optimize_or_like_chain", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"optimize_throw_if_noop", CHSetting(trueOrFalse, {}, false)},
     {"optimize_time_filter_with_preimage", CHSetting(trueOrFalse, {"0", "1"}, false)},
