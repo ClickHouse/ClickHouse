@@ -76,11 +76,11 @@ class ClickHouseProc:
         print(f"Started setup_minio.sh asynchronously with PID {process.pid}")
         return True
 
-    def start_azurite(self):
+    def start_azurite(self, log_file_path):
         command = (
             "azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --silent --inMemoryPersistence",
         )
-        with open("./ci/tmp/azurite.log", "w") as log_file:
+        with open(log_file_path, "w") as log_file:
             process = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT, shell=True
             )

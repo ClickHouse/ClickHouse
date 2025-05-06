@@ -78,10 +78,12 @@ def main():
             config_installs_args += f" {OPTIONS_TO_INSTALL_ARGUMENTS[to]}"
 
     # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
-    os.environ["AZURE_CONNECTION_STRING"] = Shell.get_output(
-        f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
-        verbose=True,
-    )
+    info = Info()
+    if not info.is_local_run:
+        os.environ["AZURE_CONNECTION_STRING"] = Shell.get_output(
+            f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
+            verbose=True,
+        )
 
     if "azure" in test_options:
         config_installs_args += "--azure"
@@ -146,10 +148,11 @@ def main():
         step_name = "Start ClickHouse Server"
         print(step_name)
         minio_log = f"{temp_dir}/minio.log"
+        azurite_log = f"{temp_dir}/azurite.log"
         res = (
             res
             and CH.start_minio(test_type="stateless", log_file_path=minio_log)
-            and CH.start_azurite()
+            and CH.start_azurite(log_file_path=azurite_log)
         )
         logs_to_attach += [minio_log]
         time.sleep(10)
