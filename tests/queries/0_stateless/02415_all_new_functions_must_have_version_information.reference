@@ -1,4 +1,3 @@
-BLAKE3
 CAST
 CRC32
 CRC32IEEE
@@ -36,7 +35,6 @@ JSONExtractUInt
 JSONHas
 JSONKey
 JSONLength
-JSONMergePatch
 JSONSharedDataPaths
 JSONSharedDataPathsWithTypes
 JSONType
@@ -60,16 +58,6 @@ LpNormalize
 MACNumToString
 MACStringToNum
 MACStringToOUI
-MD4
-MD5
-RIPEMD160
-SHA1
-SHA224
-SHA256
-SHA384
-SHA512
-SHA512_256
-ULIDStringToDateTime
 URLHash
 URLHierarchy
 URLPathHierarchy
@@ -90,7 +78,6 @@ __bitSwapLastTwo
 __bitWrapperFunc
 __getScalar
 __scalarSubqueryResult
-abs
 accurateCast
 accurateCastOrDefault
 accurateCastOrNull
@@ -244,7 +231,6 @@ blockSize
 buildId
 byteHammingDistance
 byteSize
-byteSwap
 caseWithExpression
 catboostEvaluate
 cbrt
@@ -353,8 +339,6 @@ dictGetUUIDOrDefault
 dictHas
 dictIsIn
 displayName
-divide
-divideDecimal
 divideOrNull
 domain
 domainRFC
@@ -450,10 +434,8 @@ fromUnixTimestamp64Second
 fromUnixTimestampInJodaSyntax
 fuzzBits
 gccMurmurHash
-gcd
 generateRandomStructure
 generateSerialID
-generateULID
 generateUUIDv4
 geoDistance
 geohashDecode
@@ -485,7 +467,6 @@ greatCircleDistance
 greater
 greaterOrEquals
 greatest
-halfMD5
 has
 hasAll
 hasAny
@@ -510,10 +491,7 @@ hopStart
 hostName
 hypot
 identity
-idnaDecode
-idnaEncode
 if
-ifNotFinite
 ifNull
 ignore
 ilike
@@ -527,9 +505,7 @@ initcapUTF8
 initialQueryID
 initialQueryStartTime
 initializeAggregation
-intDiv
 intDivOrNull
-intDivOrZero
 intExp10
 intExp2
 intHash32
@@ -537,12 +513,9 @@ intHash64
 isConstant
 isDecimalOverflow
 isDynamicElementInSharedData
-isFinite
 isIPAddressInRange
 isIPv4String
 isIPv6String
-isInfinite
-isNaN
 isNotDistinctFrom
 isNotNull
 isNull
@@ -558,9 +531,7 @@ joinGet
 joinGetOrNull
 jumpConsistentHash
 kafkaMurmurHash
-keccak256
 kostikConsistentHash
-lcm
 least
 left
 leftPad
@@ -606,13 +577,9 @@ mapUpdate
 mapValues
 match
 materialize
-max2
 metroHash64
-min2
 minSampleSizeContinuous
 minSampleSizeConversion
-minus
-modulo
 moduloLegacy
 moduloOrNull
 moduloOrZero
@@ -642,14 +609,11 @@ multiSearchFirstPosition
 multiSearchFirstPositionCaseInsensitive
 multiSearchFirstPositionCaseInsensitiveUTF8
 multiSearchFirstPositionUTF8
-multiply
-multiplyDecimal
 murmurHash2_32
 murmurHash2_64
 murmurHash3_128
 murmurHash3_32
 murmurHash3_64
-negate
 neighbor
 nested
 netloc
@@ -731,7 +695,6 @@ partitionId
 path
 pathFull
 pi
-plus
 pointInEllipses
 pointInPolygon
 polygonAreaCartesian
@@ -756,14 +719,11 @@ position
 positionCaseInsensitive
 positionCaseInsensitiveUTF8
 positionUTF8
-positiveModulo
 positiveModuloOrNull
 pow
 printf
 proportionsZTest
 protocol
-punycodeDecode
-punycodeEncode
 queryID
 queryString
 queryStringAndFragment
@@ -853,7 +813,6 @@ runningDifference
 runningDifferenceStartingWithFirstValue
 seriesDecomposeSTL
 seriesOutliersDetectTukey
-seriesPeriodDetectFFT
 serverTimezone
 serverUUID
 shardCount
@@ -891,8 +850,6 @@ splitByNonAlpha
 splitByRegexp
 splitByString
 splitByWhitespace
-sqidDecode
-sqidEncode
 sqrt
 startsWith
 startsWithUTF8
@@ -1130,9 +1087,6 @@ trimLeft
 trimRight
 trunc
 tryBase58Decode
-tryDecrypt
-tryIdnaEncode
-tryPunycodeDecode
 tumble
 tumbleEnd
 tumbleStart
@@ -1157,9 +1111,6 @@ tuplePlus
 tupleToNameValuePairs
 unbin
 unhex
-uniqThetaIntersect
-uniqThetaNot
-uniqThetaUnion
 upper
 uptime
 validateNestedArraySizes
