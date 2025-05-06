@@ -34,6 +34,7 @@ common_ft_job_config = Job.Config(
             "./tests/*.txt",
         ],
     ),
+    result_name_for_cidb="Tests",
 )
 
 
