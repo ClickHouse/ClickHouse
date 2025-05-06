@@ -192,7 +192,8 @@ inline ArrowPoint parseWKTPoint(ReadBuffer & in_buffer)
     char ch;
     while (true)
     {
-        in_buffer.peek(ch);
+        if (!in_buffer.peek(ch))
+            break;
         if (ch != ' ')
             break;
         in_buffer.ignore();
@@ -273,7 +274,8 @@ ArrowGeometricObject parseWKTFormat(ReadBuffer & in_buffer)
     while (true)
     {
         char current_symbol;
-        in_buffer.peek(current_symbol);
+        if (!in_buffer.peek(current_symbol))
+            break;
         if (current_symbol == '(')
             break;
         type.push_back(current_symbol);
