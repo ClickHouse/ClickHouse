@@ -10,7 +10,6 @@ struct ServerConfig
     std::string key;
     std::string host;
     int tcp_port;
-    int tcp_with_proxy_port;
 
     size_t id() const;
 

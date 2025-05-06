@@ -5,14 +5,15 @@
         <console>true</console>
     </logger>
 
-    <tcp_port>9000</tcp_port>
+    <tcp_port>9090</tcp_port>
 
     <storage>
         <servers>
             <server>
                 <key>server</key>
                 <host>127.0.0.1</host>
-                <tcp_port>9001</tcp_port>
+                <!-- port with enabled proxy header parsing -->
+                <tcp_port>9011</tcp_port>
             </server>
         </servers>
     </storage>

@@ -1,6 +1,7 @@
 #include "TCPHandler.h"
 
 #include <Poco/Net/NetException.h>
+#include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
@@ -26,6 +27,7 @@ extern const int ATTEMPT_TO_READ_AFTER_EOF;
 extern const int BAD_ARGUMENTS;
 extern const int CLIENT_HAS_CONNECTED_TO_WRONG_PORT;
 extern const int UNEXPECTED_PACKET_FROM_CLIENT;
+extern const int UNKNOWN_SOCKET_ADDRESS_FAMILY;
 }
 
 namespace Proxy
@@ -152,6 +154,66 @@ std::string formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(const Poco::Ut
 
 }
 
+void TCPHandler::generateProxyHeader()
+{
+    if (parse_proxy_protocol)
+    {
+        return;
+    }
+
+    proxy_header.clear();
+    proxy_header.reserve(107);
+
+    proxy_header += "PROXY TCP";
+
+    const auto client_address = socket().peerAddress();
+    const auto client_host = client_address.host();
+
+    if (!target_socket) [[unlikely]]
+    {
+        throw std::runtime_error("target_socket is nullptr");
+    }
+
+    const auto target_address = target_socket->address();
+    const auto target_host = target_address.host();
+
+    bool is_ipv6 = client_address.family() == Poco::Net::SocketAddress::IPv6 || target_address.family() == Poco::Net::SocketAddress::IPv6;
+    proxy_header += is_ipv6 ? "6 " : "4 ";
+
+    switch (client_address.family())
+    {
+        case Poco::Net::SocketAddress::IPv4:
+            proxy_header += (is_ipv6 ? "::ffff:" : "") + client_host.toString();
+            break;
+        case Poco::Net::SocketAddress::IPv6: {
+            proxy_header += client_host.toString();
+            break;
+        }
+        default: {
+            throw DB::Exception(DB::ErrorCodes::UNKNOWN_SOCKET_ADDRESS_FAMILY, "Unknown client socket address family");
+        }
+    }
+    proxy_header += " ";
+
+    switch (target_address.family())
+    {
+        case Poco::Net::SocketAddress::IPv4:
+            proxy_header += (is_ipv6 ? "::ffff:" : "") + target_host.toString();
+            break;
+        case Poco::Net::SocketAddress::IPv6: {
+            proxy_header += target_host.toString();
+            break;
+        }
+        default: {
+            throw DB::Exception(DB::ErrorCodes::UNKNOWN_SOCKET_ADDRESS_FAMILY, "Unknown target socket address family");
+        }
+    }
+    proxy_header += " ";
+
+    proxy_header += std::to_string(client_address.port()) + " ";
+    proxy_header += std::to_string(target_address.port()) + "\r\n";
+}
+
 bool TCPHandler::receiveProxyHeader()
 {
     if (in->eof())
@@ -254,9 +316,10 @@ bool TCPHandler::receiveProxyHeader()
     return true;
 }
 
-void TCPHandler::redirectProxyHeader()
+void TCPHandler::sendProxyHeader()
 {
     target_out->write(proxy_header.data(), proxy_header.size());
+    target_out->next();
 }
 
 void TCPHandler::receiveHello()
@@ -332,21 +395,18 @@ void TCPHandler::receiveHello()
                 .client_tcp_protocol_version = client_tcp_protocol_version};
 
             const auto & target = action->getTarget().value();
-            auto target_port = getTargetPort(target);
 
-            if (target_port == 0) // TODO: check ports when parsing config
+            if (target.tcp_port == 0) // TODO: check ports when parsing config
             {
-                LOG_ERROR(log, "Cannot redirect TCP connection to server '{}', there is no {} provided", target.key, getTargetPortName());
+                LOG_ERROR(log, "Cannot redirect TCP connection to server '{}', there is no 'tcp_port' provided", target.key);
                 return;
             }
 
-            LOG_DEBUG(log, "Redirecting connection to {}:{}", target.host, target_port);
+            LOG_DEBUG(log, "Redirecting connection to {}:{}", target.host, target.tcp_port);
 
             connect();
-            if (parse_proxy_protocol)
-            {
-                redirectProxyHeader();
-            }
+            generateProxyHeader();
+            sendProxyHeader();
             redirectHello();
         }
     }
@@ -386,7 +446,7 @@ void TCPHandler::connect()
 {
     const auto & target = action->getTarget().value();
 
-    auto addresses = DB::DNSResolver::instance().resolveAddressList(target.host, getTargetPort(target));
+    auto addresses = DB::DNSResolver::instance().resolveAddressList(target.host, target.tcp_port);
     const auto connection_timeout = DB::DBMS_DEFAULT_CONNECT_TIMEOUT_SEC; // TODO: move to config
 
     for (auto it = addresses.begin(); it != addresses.end();)
@@ -441,7 +501,7 @@ void TCPHandler::doRedirection()
     bool client_active = true;
     bool server_active = true;
 
-    LOG_DEBUG(log, "Starting proxy redirection between client and server {}:{}", assigned_server.host, getTargetPort(assigned_server));
+    LOG_DEBUG(log, "Starting proxy redirection between client and server {}:{}", assigned_server.host, assigned_server.tcp_port);
 
     try
     {
@@ -568,16 +628,6 @@ void TCPHandler::doRedirection()
     }
 
     LOG_DEBUG(log, "Proxy redirection completed");
-}
-
-int TCPHandler::getTargetPort(const ServerConfig & target) const
-{
-    return parse_proxy_protocol ? target.tcp_with_proxy_port : target.tcp_port;
-}
-
-const char * TCPHandler::getTargetPortName() const
-{
-    return parse_proxy_protocol ? "tcp_with_proxy_port" : "tcp_port";
 }
 
 } // namespace Proxy

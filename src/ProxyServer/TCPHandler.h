@@ -74,16 +74,15 @@ private:
 
     void runImpl();
 
+    void generateProxyHeader();
+
     bool receiveProxyHeader();
-    void redirectProxyHeader();
+    void sendProxyHeader();
     void receiveHello();
     void redirectHello();
     void connect();
 
     void doRedirection();
-
-    int getTargetPort(const ServerConfig & target) const;
-    const char * getTargetPortName() const;
 };
 
 }

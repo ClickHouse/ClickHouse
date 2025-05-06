@@ -6,8 +6,8 @@
 #include <Poco/Exception.h>
 
 #include <ProxyServer/ConnectionsCounter.h>
-#include <ProxyServer/LeastConnections.h>
-#include <ProxyServer/RoundRobin.h>
+#include <ProxyServer/LeastConnectionsBalancer.h>
+#include <ProxyServer/RoundRobinBalancer.h>
 #include <ProxyServer/Rules.h>
 #include <ProxyServer/ServerConfig.h>
 

@@ -7,8 +7,8 @@
 #include <Common/Exception.h>
 
 #include <ProxyServer/ConnectionsCounter.h>
-#include <ProxyServer/LeastConnections.h>
-#include <ProxyServer/RoundRobin.h>
+#include <ProxyServer/LeastConnectionsBalancer.h>
+#include <ProxyServer/RoundRobinBalancer.h>
 #include <ProxyServer/Rules.h>
 #include <ProxyServer/ServerConfig.h>
 
@@ -45,7 +45,6 @@ Servers parseServers(const Poco::Util::AbstractConfiguration & config)
             server.host = config.getString(prefix + ".host");
 
             server.tcp_port = config.getInt(prefix + ".tcp_port", 0);
-            server.tcp_with_proxy_port = config.getInt(prefix + ".tcp_with_proxy_port", 0);
 
             servers[server.key] = std::move(server);
         }
