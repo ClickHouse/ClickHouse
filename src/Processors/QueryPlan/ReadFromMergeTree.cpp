@@ -187,11 +187,9 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool read_in_order_use_virtual_row;
     extern const SettingsBool use_query_condition_cache;
-    extern const SettingsBool query_condition_cache_store_conditions_as_plaintext;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool merge_tree_use_deserialization_prefixes_cache;
     extern const SettingsBool merge_tree_use_prefixes_deserialization_thread_pool;
-    extern const SettingsNonZeroUInt64 max_parallel_replicas;
 }
 
 namespace MergeTreeSetting
@@ -223,7 +221,6 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
         .enable_multiple_prewhere_read_steps = settings[Setting::enable_multiple_prewhere_read_steps],
         .force_short_circuit_execution = settings[Setting::query_plan_merge_filters],
         .use_query_condition_cache = settings[Setting::use_query_condition_cache] && settings[Setting::allow_experimental_analyzer],
-        .query_condition_cache_store_conditions_as_plaintext = settings[Setting::query_condition_cache_store_conditions_as_plaintext],
         .use_deserialization_prefixes_cache = settings[Setting::merge_tree_use_deserialization_prefixes_cache],
         .use_prefixes_deserialization_thread_pool = settings[Setting::merge_tree_use_prefixes_deserialization_thread_pool],
     };
@@ -725,12 +722,6 @@ Pipe ReadFromMergeTree::read(
     const auto & settings = context->getSettingsRef();
     size_t sum_marks = parts_with_range.getMarksCountAllParts();
 
-    const size_t total_query_nodes = is_parallel_reading_from_replicas
-        ? std::min<size_t>(
-              context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
-              context->getSettingsRef()[Setting::max_parallel_replicas])
-        : 1;
-
     PoolSettings pool_settings{
         .threads = max_streams,
         .sum_marks = sum_marks,
@@ -738,7 +729,6 @@ Pipe ReadFromMergeTree::read(
         .preferred_block_size_bytes = settings[Setting::preferred_block_size_bytes],
         .use_uncompressed_cache = use_uncompressed_cache,
         .use_const_size_tasks_for_remote_reading = settings[Setting::merge_tree_use_const_size_tasks_for_remote_reading],
-        .total_query_nodes = total_query_nodes,
     };
 
     if (read_type == ReadType::ParallelReplicas)
@@ -1155,19 +1145,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
     const auto read_type = input_order_info->direction == 1 ? ReadType::InOrder : ReadType::InReverseOrder;
 
-    const size_t total_query_nodes = is_parallel_reading_from_replicas
-        ? std::min<size_t>(
-              context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
-              context->getSettingsRef()[Setting::max_parallel_replicas])
-        : 1;
-
     PoolSettings pool_settings{
         .threads = num_streams,
         .sum_marks = parts_with_ranges.getMarksCountAllParts(),
         .min_marks_for_concurrent_read = info.min_marks_for_concurrent_read,
         .preferred_block_size_bytes = settings[Setting::preferred_block_size_bytes],
         .use_uncompressed_cache = info.use_uncompressed_cache,
-        .total_query_nodes = total_query_nodes,
     };
 
     Pipes pipes;

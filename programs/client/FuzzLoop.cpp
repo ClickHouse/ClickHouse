@@ -47,8 +47,7 @@ extern const int BUZZHOUSE;
 
 std::optional<bool> Client::processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query, const bool permissive)
 {
-    bool async_insert = false;
-    processParsedSingleQuery(query_to_execute, parsed_query, async_insert);
+    processParsedSingleQuery(query_to_execute, query_to_execute, parsed_query);
 
     const auto * exception = server_exception ? server_exception.get() : client_exception.get();
     // Sometimes you may get TOO_DEEP_RECURSION from the server,
@@ -106,7 +105,7 @@ std::optional<bool> Client::processFuzzingStep(const String & query_to_execute, 
 }
 
 /// Returns false when server is not available.
-bool Client::processWithFuzzing(std::string_view full_query)
+bool Client::processWithFuzzing(const String & full_query)
 {
     ASTPtr orig_ast;
 

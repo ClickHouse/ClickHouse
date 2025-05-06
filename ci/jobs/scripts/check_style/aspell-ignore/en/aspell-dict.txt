@@ -33,7 +33,6 @@ Approximative
 ArrayJoin
 ArrowCompression
 ArrowStream
-aspell
 AsyncInsertCacheSize
 AsynchronousHeavyMetricsCalculationTimeSpent
 AsynchronousHeavyMetricsUpdateInterval
@@ -130,7 +129,6 @@ CMPLNT
 CMake
 CMakeLists
 CODECS
-codespell
 CORS
 COVID
 CPUFrequencyMHz
@@ -661,7 +659,6 @@ Multiqueries
 Multithreading
 Multiword
 MurmurHash
-mypy
 MySQLConnection
 MySQLDataTypesSupport
 MySQLDump

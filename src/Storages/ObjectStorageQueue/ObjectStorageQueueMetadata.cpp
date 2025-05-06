@@ -19,7 +19,6 @@
 #include <Common/randomSeed.h>
 #include <Common/DNSResolver.h>
 #include <shared_mutex>
-#include <Core/ServerUUID.h>
 
 
 namespace ProfileEvents
@@ -506,14 +505,10 @@ namespace
     {
         std::string hostname;
         std::string table_id;
-        std::string server_uuid;
-
-        size_t version = 1;
 
         bool operator ==(const Info & other) const
         {
-            return hostname == other.hostname && table_id == other.table_id
-                && (version == 0 || other.version == 0 || server_uuid == other.server_uuid);
+            return hostname == other.hostname && table_id == other.table_id;
         }
 
         static Info create(const StorageID & storage_id)
@@ -521,7 +516,6 @@ namespace
             Info self;
             self.hostname = DNSResolver::instance().getHostName();
             self.table_id = storage_id.hasUUID() ? toString(storage_id.uuid) : storage_id.getFullTableName();
-            self.server_uuid = toString(ServerUUID::get());
             return self;
         }
 
@@ -530,18 +524,16 @@ namespace
             SipHash hash;
             hash.update(hostname);
             hash.update(table_id);
-            hash.update(server_uuid);
             return hash.get128();
         }
 
         std::string serialize() const
         {
             WriteBufferFromOwnString buf;
+            size_t version = 0;
             buf << version << "\n";
             buf << hostname << "\n";
             buf << table_id << "\n";
-            if (version >= 1)
-                buf << server_uuid << "\n";
             return buf.str();
         }
 
@@ -549,11 +541,10 @@ namespace
         {
             ReadBufferFromString buf(str);
             Info info;
-            buf >> info.version >> "\n";
+            size_t version;
+            buf >> version >> "\n";
             buf >> info.hostname >> "\n";
             buf >> info.table_id >> "\n";
-            if (info.version >= 1)
-                buf >> info.server_uuid >> "\n";
             return info;
         }
     };

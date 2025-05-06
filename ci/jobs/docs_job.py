@@ -1,7 +1,7 @@
 import os
 
 from ci.praktika.result import Result
-from ci.praktika.utils import Utils
+from ci.praktika.utils import Shell, Utils
 
 if __name__ == "__main__":
 
