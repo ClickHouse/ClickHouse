@@ -20,10 +20,12 @@
 #include "Columns/IColumn_fwd.h"
 #include "Core/Block.h"
 #include "Core/ColumnNumbers.h"
+#include "Core/ColumnsWithTypeAndName.h"
 #include "DataTypes/DataTypesNumber.h"
 #include "Interpreters/AggregationCommon.h"
 #include "Interpreters/BloomFilter.h"
 #include "Interpreters/SetVariants.h"
+#include "Processors/Chunk.h"
 #include "Processors/Transforms/SortingTransform.h"
 #include "base/defines.h"
 #include "base/types.h"
@@ -211,8 +213,7 @@ void DistinctTransform::buildSetFilter(
     const ColumnRawPtrs & columns,
     IColumnFilter & filter,
     const size_t rows,
-    SetVariants & variants,
-    size_t & passed_bf) const
+    SetVariants & variants) const
 {
     typename Method::State state(columns, key_sizes, nullptr);
 
