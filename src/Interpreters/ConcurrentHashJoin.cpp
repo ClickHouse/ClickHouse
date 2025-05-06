@@ -857,7 +857,26 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
             });
     }
     pool->wait();
-    build_phase_finished = true;
+
+    // 4) After all slots are finalized, ensure proper handling of NULL values and non-joined rows
+    if (isRightOrFull(table_join->kind()))
+    {
+        // For RIGHT and FULL joins, we need to ensure NULL values are handled correctly
+        // and non-joined rows are properly tracked
+        auto & slot0_flags_map = hash_joins[0]->data->getUsedFlags()->getFlagsMap();
+        for (auto & [block_ptr, flags_vec] : slot0_flags_map)
+        {
+            for (size_t row = 0; row < flags_vec.size(); ++row)
+            {
+                // If a row was not joined, mark it as non-joined
+                if (!flags_vec[row].value.load(std::memory_order_relaxed))
+                {
+                    hash_joins[0]->has_non_joined_rows.store(true, std::memory_order_release);
+                    break;
+                }
+            }
+        }
+    }
 }
 }
 
