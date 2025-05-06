@@ -127,7 +127,7 @@ void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
     if (extension)
         return;
 
-    extension = storage->getTaskIteratorExtension(predicate, context, cluster);
+    extension = storage->getTaskIteratorExtension(predicate, filter_actions_dag, context, cluster);
 }
 
 /// The code executes on initiator

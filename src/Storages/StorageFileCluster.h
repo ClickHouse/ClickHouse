@@ -29,6 +29,7 @@ public:
     std::string getName() const override { return "FileCluster"; }
     RemoteQueryExecutor::Extension getTaskIteratorExtension(
         const ActionsDAG::Node * predicate,
+        const std::optional<ActionsDAG> & filter_actions_dag,
         const ContextPtr & context,
         ClusterPtr) const override;
 

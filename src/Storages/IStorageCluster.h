@@ -44,6 +44,7 @@ public:
     /// Query is needed for pruning by virtual columns (_file, _path)
     virtual RemoteQueryExecutor::Extension getTaskIteratorExtension(
         const ActionsDAG::Node * predicate,
+        const std::optional<ActionsDAG> & filter_actions_dag,
         const ContextPtr & context,
         ClusterPtr cluster) const = 0;
 
