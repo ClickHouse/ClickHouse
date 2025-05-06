@@ -22,7 +22,8 @@
 #include <Functions/identity.h>
 #include <Functions/FunctionFactory.h>
 
-#include <base/map.h>
+
+#include <ranges>
 
 namespace DB
 {
@@ -332,7 +333,7 @@ struct MapKeyLikeAdapter
 
     static void extractNestedTypesAndColumns(ColumnsWithTypeAndName & arguments)
     {
-        checkTypes(collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }));
+        checkTypes(DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })});
 
         const auto & map_type = assert_cast<const DataTypeMap &>(*arguments[0].type);
         const auto & pattern_arg = arguments[1];

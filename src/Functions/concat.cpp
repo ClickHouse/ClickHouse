@@ -10,8 +10,8 @@
 #include <Functions/IFunction.h>
 #include <Functions/formatString.h>
 #include <IO/WriteHelpers.h>
-#include <base/map.h>
 
+#include <ranges>
 
 namespace DB
 {
@@ -227,7 +227,7 @@ public:
             return FunctionFactory::instance().getImpl("tupleConcat", context)->build(arguments);
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
             FunctionConcat::create(context),
-            collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+            DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
             return_type);
     }
 
