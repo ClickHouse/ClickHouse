@@ -6486,6 +6486,10 @@ As each series represents a node in Keeper, it is recommended to have no more th
     DECLARE(Bool, use_hive_partitioning, true, R"(
 When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](/sql-reference/table-functions/file#hive-style-partitioning)/[S3](/sql-reference/table-functions/s3#hive-style-partitioning)/[URL](/sql-reference/table-functions/url#hive-style-partitioning)/[HDFS](/sql-reference/table-functions/hdfs#hive-style-partitioning)/[AzureBlobStorage](/sql-reference/table-functions/azureBlobStorage#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
 )", 0) \
+    DECLARE(UInt64, parallel_hash_join_threshold, 100'000, R"(
+When hash-based join algorithm is applied, this threshold helps to decide between using `hash` and `parallel_hash` (only if estimation of the right table size is available).
+The former is used when we know that the right table size is below the threshold.
+)", 0) \
     DECLARE(Bool, apply_settings_from_server, true, R"(
 Whether the client should accept settings from server.
 
@@ -6648,9 +6652,9 @@ Enable PRQL - an alternative to SQL.
     DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
 Trigger processor to spill data into external storage adpatively. grace join is supported at present.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_delta_kernel_rs, false, R"(
+    DECLARE(Bool, allow_experimental_delta_kernel_rs, true, R"(
 Allow experimental delta-kernel-rs implementation.
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(Bool, make_distributed_plan, false, R"(
 Make distributed query plan.
 )", EXPERIMENTAL) \
