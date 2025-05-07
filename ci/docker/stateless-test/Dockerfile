@@ -8,7 +8,7 @@ RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.6.20200320/clickhouse-odbc-1.1.6-Linux.tar.gz"
 
 
-RUN mkdir /etc/clickhouse-server /etc/clickhouse-keeper /etc/clickhouse-client && chmod 777 /etc/clickhouse-* \
+RUN mkdir /etc/clickhouse-server /etc/clickhouse-keeper /etc/clickhouse-client /usr/share/clickhouse/ && chmod 777 /etc/clickhouse-* /usr/share/clickhouse \
     && mkdir -p /var/lib/clickhouse /var/log/clickhouse-server && chmod 777 /var/log/clickhouse-server /var/lib/clickhouse
 
 RUN addgroup --gid 1000 clickhouse && adduser --uid 1000 --gid 1000 --disabled-password clickhouse
@@ -39,8 +39,6 @@ RUN apt-get update -y \
             mysql-client=8.0* \
             ncdu \
             netcat-openbsd \
-            nodejs \
-            npm \
             odbcinst \
             openjdk-11-jre-headless \
             openssl \
@@ -67,7 +65,11 @@ RUN apt-get update -y \
             ripgrep \
             gnuplot \
             imagemagick \
-            parallel \
+            parallel
+
+# Install Node.js 20 from NodeSource (azurite 3.34 fails with 24)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
@@ -114,11 +116,10 @@ RUN chmod 777 /home
 ENV HOME="/home"
 
 RUN npm install -g azurite@3.34.0 \
-    && npm install -g tslib && npm install -g node
+    && npm install -g tslib
 
 ENV PYTHONPATH=".:./ci"
 
-# FIX stress and upgrade job scripts to work with not root user in docker
 #USER clickhouse
 
 # A directory for cache
