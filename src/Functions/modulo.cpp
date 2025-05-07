@@ -154,7 +154,29 @@ using FunctionModulo = BinaryArithmeticOverloadResolver<ModuloImpl, NameModulo, 
 
 REGISTER_FUNCTION(Modulo)
 {
-    factory.registerFunction<FunctionModulo>();
+    FunctionDocumentation::Description description = R"(
+    Calculates the remainder of the division of two values a by b.
+
+    The result type is an integer if both inputs are integers. If one of the
+    inputs is a floating-point number, the result type is Float64.
+
+    The remainder is computed like in C++. Truncated division is used for
+    negative numbers.
+
+    An exception is thrown when dividing by zero or when dividing a minimal
+    negative number by minus one.
+    )";
+    FunctionDocumentation::Syntax syntax = "modulo(a, b)";
+    FunctionDocumentation::Argument argument1 = {"a", "The dividend"};
+    FunctionDocumentation::Argument argument2 = {"b", "The divisor (modulus)"};
+    FunctionDocumentation::Arguments arguments = {argument1, argument2};
+    FunctionDocumentation::ReturnedValue returned_value = "The remainder of a % b";
+    FunctionDocumentation::Example example1 = {"", "SELECT modulo(5, 2)", "1"};
+    FunctionDocumentation::Examples examples = {example1};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+    factory.registerFunction<FunctionModulo>(documentation);
     factory.registerAlias("mod", "modulo", FunctionFactory::Case::Insensitive);
 }
 
@@ -174,15 +196,24 @@ using FunctionPositiveModulo = BinaryArithmeticOverloadResolver<PositiveModuloIm
 
 REGISTER_FUNCTION(PositiveModulo)
 {
-    factory.registerFunction<FunctionPositiveModulo>(FunctionDocumentation
-        {
-            .description = R"(
-Calculates the remainder when dividing `a` by `b`. Similar to function `modulo` except that `positiveModulo` always return non-negative number.
-Returns the difference between `a` and the nearest integer not greater than `a` divisible by `b`.
-In other words, the function returning the modulus (modulo) in the terms of Modular Arithmetic.
-        )",
-            .examples{{"positiveModulo", "SELECT positiveModulo(-1, 10);", ""}},
-            .category = FunctionDocumentation::Category::Arithmetic},
+    FunctionDocumentation::Description description = R"(
+Calculates the remainder when dividing `x` by `y`. Similar to function
+`modulo` except that `positiveModulo` always return non-negative number.
+    )";
+    FunctionDocumentation::Syntax syntax = "positiveModulo(x, y)";
+    FunctionDocumentation::Argument argument1 = {"x", "The dividend"};
+    FunctionDocumentation::Argument argument2 = {"y", "The divisor (modulus)"};
+    FunctionDocumentation::Arguments arguments = {argument1, argument2};
+    FunctionDocumentation::ReturnedValue returned_value = R"(
+Returns the difference between `x` and the nearest integer not greater than
+`x` divisible by `y`.
+    )";
+    FunctionDocumentation::Example example1 = {"positiveModulo", "SELECT positiveModulo(-1, 10)", "9"};
+    FunctionDocumentation::Examples examples = {example1};
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+    factory.registerFunction<FunctionPositiveModulo>(documentation,
         FunctionFactory::Case::Insensitive);
 
     factory.registerAlias("positive_modulo", "positiveModulo", FunctionFactory::Case::Insensitive);

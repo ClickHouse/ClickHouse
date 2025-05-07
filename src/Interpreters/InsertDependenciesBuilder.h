@@ -93,7 +93,7 @@ public:
     void logQueryView(StorageID view_id, std::exception_ptr exception, bool before_start = false) const;
 
 protected:
-    InsertDependenciesBuilder(StoragePtr table, ASTPtr query, Block insert_header, bool async_insert_, bool skip_destination_table_, bool allow_materialized_, ContextPtr context);
+    InsertDependenciesBuilder(StoragePtr table, ASTPtr query, Block insert_header, bool async_insert_, bool skip_destination_table_, ContextPtr context);
 
 private:
     bool isView(StorageIDPrivate id) const;
@@ -117,7 +117,6 @@ private:
 
     bool async_insert = false;
     bool skip_destination_table = false;
-    bool allow_materialized = false;
 
     StorageIDPrivate root_view;
 

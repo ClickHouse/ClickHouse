@@ -547,6 +547,11 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             node->getNodeTypeName(),
             node->formatASTForErrorMessage());
 
+    bool is_correlated_subquery = (query_node != nullptr && query_node->isCorrelated())
+                                || (union_node != nullptr && union_node->isCorrelated());
+    if (is_correlated_subquery)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot evaluate correlated scalar subquery");
+
     auto & context = scope.context;
 
     Block scalar_block;
@@ -2533,7 +2538,8 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
     auto & window_node = node->as<WindowNode &>();
     window_node.setParentWindowName({});
 
-    ProjectionNames partition_by_projection_names = resolveExpressionNodeList(window_node.getPartitionByNode(),
+    ProjectionNames partition_by_projection_names = resolveExpressionNodeList(
+        window_node.getPartitionByNode(),
         scope,
         false /*allow_lambda_expression*/,
         false /*allow_table_expression*/);
@@ -2743,7 +2749,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     /// Resolve function parameters
 
-    auto parameters_projection_names = resolveExpressionNodeList(function_node_ptr->getParametersNode(),
+    auto parameters_projection_names = resolveExpressionNodeList(
+        function_node_ptr->getParametersNode(),
         scope,
         false /*allow_lambda_expression*/,
         false /*allow_table_expression*/);
@@ -2924,7 +2931,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     /// Resolve function arguments
     bool allow_table_expressions = is_special_function_in || is_special_function_exists;
-    auto arguments_projection_names = resolveExpressionNodeList(function_node_ptr->getArgumentsNode(),
+    auto arguments_projection_names = resolveExpressionNodeList(
+        function_node_ptr->getArgumentsNode(),
         scope,
         true /*allow_lambda_expression*/,
         allow_table_expressions /*allow_table_expression*/);
@@ -3929,7 +3937,11 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
             else
                 resolveUnion(node, subquery_scope);
 
-            if (!allow_table_expression)
+            bool is_correlated_subquery = node_type == QueryTreeNodeType::QUERY
+                ? node->as<QueryNode>()->isCorrelated()
+                : node->as<UnionNode>()->isCorrelated();
+
+            if (!allow_table_expression && !is_correlated_subquery)
                 evaluateScalarSubqueryIfNeeded(node, subquery_scope);
 
             if (result_projection_names.empty())
@@ -4022,7 +4034,12 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
   * Example: CREATE TABLE test_table (id UInt64, value UInt64) ENGINE=TinyLog; SELECT plus(*) FROM test_table;
   * Example: SELECT *** FROM system.one;
   */
-ProjectionNames QueryAnalyzer::resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression)
+ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
+    QueryTreeNodePtr & node_list,
+    IdentifierResolveScope & scope,
+    bool allow_lambda_expression,
+    bool allow_table_expression
+)
 {
     auto & node_list_typed = node_list->as<ListNode &>();
     size_t node_list_size = node_list_typed.getNodes().size();
