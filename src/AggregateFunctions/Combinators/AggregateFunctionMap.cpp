@@ -442,15 +442,12 @@ public:
 
         const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get());
 
-        AggregateFunctionPtr res;
-
         if (map_type)
         {
             const DataTypePtr & key_type = map_type->getKeyType();
 
-            res.reset(createWithNumericBasedType<AggregateFunctionMap, false>(*key_type, nested_function, arguments));
-            if (res)
-                return res;
+            if (auto * res = createWithNumericBasedType<AggregateFunctionMap, false>(*key_type, nested_function, arguments))
+                return AggregateFunctionPtr(res);
 
             if (key_type->getTypeId() == TypeIndex::FixedString || key_type->getTypeId() == TypeIndex::String)
                 return std::make_shared<AggregateFunctionMap<String, false>>(nested_function, arguments);
@@ -463,9 +460,8 @@ public:
         {
             const DataTypePtr & key_type = arguments.back();
 
-            res.reset(createWithNumericBasedType<AggregateFunctionMap, true>(*key_type, nested_function, arguments));
-            if (res)
-                return res;
+            if (auto * res = createWithNumericBasedType<AggregateFunctionMap, true>(*key_type, nested_function, arguments))
+                return AggregateFunctionPtr(res);
 
             if (key_type->getTypeId() == TypeIndex::FixedString || key_type->getTypeId() == TypeIndex::String)
                 return std::make_shared<AggregateFunctionMap<String, true>>(nested_function, arguments);
