@@ -116,6 +116,7 @@ private:
 
     std::shared_ptr<TableJoin> table_join;
     size_t slots;
+    bool any_take_last_row;
     std::unique_ptr<ThreadPool> pool;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
     /// Shared flags map for all HashJoin instances.
