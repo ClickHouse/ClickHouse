@@ -112,7 +112,7 @@ void XRayInstrumentationManager::setHandlerAndPatch(const std::string & function
         throw e;
     }
 
-   
+
     auto handlers_set_it = functionIdToHandlers.find(function_id);
     if (handlers_set_it !=  functionIdToHandlers.end() && handlers_set_it->second.contains(type))
     {
@@ -149,7 +149,7 @@ void XRayInstrumentationManager::unpatchFunction(const std::string & function_na
     if (!functionIdToHandlers.contains(function_id))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "This function wasn't previously instrumented, nothing to unpatch: ({})", function_name);
     if (!functionIdToHandlers[function_id].contains(type))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "This function was not instrumenented with this handler type,  nothing to unpatch: ({}), ({})", function_name, handler_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "This function was not instrumenented with this handler type, nothing to unpatch: ({}), ({})", function_name, handler_name);
     instrumented_functions.erase(functionIdToHandlers[function_id][type]);
     functionIdToHandlers[function_id].erase(type);
     __xray_unpatch_function(function_id);
@@ -197,7 +197,7 @@ XRayHandlerFunction XRayInstrumentationManager::getHandler(const std::string & n
                 LOG_ERROR(getLogger("XRayInstrumentationManager::dispatchHandler"), "Exception in handler '{}': {}", ip_it->handler_name, e.what());
             }
         }
-        else 
+        else
         {
             LOG_ERROR(getLogger("XRayInstrumentationManager::dispatchHandler"), "Handler not found");
         }
