@@ -44,10 +44,12 @@ enum class AuthenticationType : uint8_t
     /// JSON Web Token
     JWT,
 
-    MAX,
-
     /// Password is encrypted in SCRAM-SHA256 hash.
     SCRAM_SHA256_PASSWORD,
+
+    /// NOT an AuthenticationType. It is used indicate the element number of AuthenticationType.
+    /// It should always be placed at the bottom of the element list.
+    MAX,
 };
 
 struct AuthenticationTypeInfo

@@ -232,7 +232,7 @@ It also makes sense to specify a local table in the `GLOBAL IN` clause, in case 
 
 ### Distributed Subqueries and max_rows_in_set {#distributed-subqueries-and-max_rows_in_set}
 
-You can use [`max_rows_in_set`](../../operations/settings/query-complexity.md#max-rows-in-set) and [`max_bytes_in_set`](../../operations/settings/query-complexity.md#max-rows-in-set) to control how much data is transferred during distributed queries. 
+You can use [`max_rows_in_set`](/operations/settings/settings#max_rows_in_set) and [`max_bytes_in_set`](/operations/settings/settings#max_bytes_in_set) to control how much data is transferred during distributed queries. 
 
 This is specially important if the `GLOBAL IN` query returns a large amount of data. Consider the following SQL:
 

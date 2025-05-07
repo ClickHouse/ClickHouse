@@ -18,13 +18,15 @@ As compiler, only Clang from homebrew is supported.
 
 ## Install Prerequisites {#install-prerequisites}
 
-First install [Homebrew](https://brew.sh/).
+First, see the generic [prerequisites documentation](developer-instruction.md).
 
-Next, run:
+Next, install [Homebrew](https://brew.sh/) and run
+
+Then run:
 
 ```bash
 brew update
-brew install ccache cmake ninja libtool gettext llvm binutils grep findutils nasm
+brew install ccache cmake ninja libtool gettext llvm binutils grep findutils nasm bash
 ```
 
 :::note

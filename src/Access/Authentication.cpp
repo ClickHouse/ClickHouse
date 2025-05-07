@@ -4,24 +4,18 @@
 #include <Access/ExternalAuthenticators.h>
 #include <Access/LDAPClient.h>
 #include <Access/GSSAcceptor.h>
-#include <Poco/SHA1Engine.h>
 #include <Common/Base64.h>
+#include <Common/Crypto/X509Certificate.h>
 #include <Common/Exception.h>
 #include <Common/SSHWrapper.h>
 #include <Common/typeid_cast.h>
-#include <Access/Common/SSLCertificateSubjects.h>
+#include <Poco/SHA1Engine.h>
 
 #include <base/types.h>
 #include "config.h"
 
 #if USE_SSL
-#   include <openssl/evp.h>
-#   include <openssl/hmac.h>
-#   include <openssl/sha.h>
-#   include <openssl/buffer.h>
-#   include <openssl/rand.h>
-#   include <openssl/bio.h>
-#   include <openssl/err.h>
+#    include <Common/OpenSSLHelpers.h>
 #endif
 
 namespace DB
@@ -55,6 +49,12 @@ namespace
     bool checkPasswordSHA256(std::string_view password, const Digest & password_sha256, const String & salt)
     {
         return Util::encodeSHA256(String(password).append(salt)) == password_sha256;
+    }
+
+    bool checkPasswordScramSHA256(std::string_view password, const Digest & password_scram_sha256, const String & salt)
+    {
+        auto digest = Util::encodeScramSHA256(password, salt);
+        return digest == password_scram_sha256;
     }
 
     bool checkPasswordDoubleSHA1MySQL(std::string_view scramble, std::string_view scrambled_password, const Digest & password_double_sha1)
@@ -111,39 +111,11 @@ namespace
             && external_authenticators.checkKerberosCredentials(authentication_method.getKerberosRealm(), *gss_acceptor_context);
     }
 
-#if USE_SSL
-    std::vector<uint8_t> hmacSHA256(const std::vector<uint8_t>& key, const std::string& data)
-    {
-        unsigned int len = SHA256_DIGEST_LENGTH;
-        std::vector<uint8_t> result(len);
-        HMAC(
-            EVP_sha256(),
-            key.data(),
-            static_cast<Int32>(key.size()),
-            reinterpret_cast<const uint8_t*>(data.data()),
-            data.size(),
-            result.data(),
-            &len);
-        return result;
-    }
-
-    std::vector<uint8_t> sha256(const std::vector<uint8_t>& data)
-    {
-        std::vector<uint8_t> hash(SHA256_DIGEST_LENGTH);
-        SHA256_CTX sha256;
-        SHA256_Init(&sha256);
-        SHA256_Update(&sha256, data.data(), data.size());
-        SHA256_Final(hash.data(), &sha256);
-        return hash;
-    }
-
-#endif
-
     std::string computeScramSHA256ClientProof(const std::vector<uint8_t> & salted_password [[maybe_unused]], const std::string& auth_message [[maybe_unused]])
     {
 #if USE_SSL
         auto client_key = hmacSHA256(salted_password, "Client Key");
-        auto stored_key = sha256(client_key);
+        auto stored_key = encodeSHA256(client_key);
         auto client_signature = hmacSHA256(stored_key, auth_message);
 
         String client_proof(client_key.size(), 0);
@@ -220,6 +192,11 @@ namespace
                 return checkPasswordSHA256(
                     basic_credentials->getPassword(), authentication_method.getPasswordHashBinary(), authentication_method.getSalt());
             }
+            case AuthenticationType::SCRAM_SHA256_PASSWORD:
+            {
+                return checkPasswordScramSHA256(
+                    basic_credentials->getPassword(), authentication_method.getPasswordHashBinary(), authentication_method.getSalt());
+            }
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
             {
                 return checkPasswordDoubleSHA1(basic_credentials->getPassword(), authentication_method.getPasswordHashBinary());
@@ -248,6 +225,7 @@ namespace
         return false;
     }
 
+#if USE_SSL
     bool checkSSLCertificateAuthentication(
         const SSLCertificateCredentials * ssl_certificate_credentials,
         const AuthenticationData & authentication_method)
@@ -257,7 +235,7 @@ namespace
             return false;
         }
 
-        for (SSLCertificateSubjects::Type type : {SSLCertificateSubjects::Type::CN, SSLCertificateSubjects::Type::SAN})
+        for (X509Certificate::Subjects::Type type : {X509Certificate::Subjects::Type::CN, X509Certificate::Subjects::Type::SAN})
         {
             for (const auto & subject : authentication_method.getSSLCertificateSubjects().at(type))
             {
@@ -287,6 +265,7 @@ namespace
 
         return false;
     }
+#endif
 
 #if USE_SSH
     bool checkSshAuthentication(
@@ -342,10 +321,12 @@ bool Authentication::areCredentialsValid(
         return checkScramSHA256Authentication(scram_shh256_credentials, authentication_method);
     }
 
+#if USE_SSL
     if (const auto * ssl_certificate_credentials = typeid_cast<const SSLCertificateCredentials *>(&credentials))
     {
         return checkSSLCertificateAuthentication(ssl_certificate_credentials, authentication_method);
     }
+#endif
 
 #if USE_SSH
     if (const auto * ssh_credentials = typeid_cast<const SshCredentials *>(&credentials))

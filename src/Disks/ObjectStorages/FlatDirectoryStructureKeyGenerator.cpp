@@ -19,15 +19,15 @@ FlatDirectoryStructureKeyGenerator::FlatDirectoryStructureKeyGenerator(
 ObjectStorageKey FlatDirectoryStructureKeyGenerator::generate(const String & path, bool is_directory, const std::optional<String> & key_prefix) const
 {
     if (is_directory)
-        chassert(path.ends_with('/'));
+        chassert(path.empty() || path.ends_with('/'));
 
-    const auto p = std::filesystem::path(path);
-    auto directory = p.parent_path();
+    const auto fs_path = std::filesystem::path(path);
+    std::filesystem::path directory = fs_path.parent_path();
 
     std::optional<std::filesystem::path> remote_path;
     {
         const auto ptr = path_map.lock();
-        auto res = ptr->getRemotePathInfoIfExists(p);
+        auto res = ptr->getRemotePathInfoIfExists(fs_path);
         if (res)
             return ObjectStorageKey::createAsRelative(key_prefix.has_value() ? *key_prefix : storage_key_prefix, res->path);
 
@@ -41,7 +41,7 @@ ObjectStorageKey FlatDirectoryStructureKeyGenerator::generate(const String & pat
                                                         : directory;
 
     if (!is_directory)
-        key /= p.filename();
+        key /= fs_path.filename();
 
     return ObjectStorageKey::createAsRelative(key_prefix.has_value() ? *key_prefix : storage_key_prefix, key);
 }

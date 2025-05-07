@@ -284,7 +284,7 @@ Result:
 
 ## bitmapMin {#bitmapmin}
 
-Computes the smallest bit set in a bitmap, or UINT32_MAX if the bitmap is empty.
+Computes the smallest bit set in a bitmap, or UINT32_MAX if the bitmap is empty(UINT64_MAX if type >= 8 bits).
 
 **Syntax**
 

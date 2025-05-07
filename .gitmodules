@@ -247,7 +247,7 @@
 	url = https://github.com/ClickHouse/llvm-project
 [submodule "contrib/corrosion"]
 	path = contrib/corrosion
-	url = https://github.com/ClickHouse/corrosion
+	url = https://github.com/corrosion-rs/corrosion
 [submodule "contrib/libssh"]
 	path = contrib/libssh
 	url = https://github.com/ClickHouse/libssh.git

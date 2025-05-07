@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2985
+personal_ws-1.1 en 3238 
 AArch
 ACLs
 ALTERs
@@ -203,7 +203,6 @@ CountMin
 Covid
 Cramer
 Cramer's
-Cramer
 Criteo
 Crotty
 Crowdsourced
@@ -796,7 +795,6 @@ ParallelParsingInputFormat
 ParallelParsingInputFormatThreads
 ParallelParsingInputFormatThreadsActive
 ParallelReplicasMode
-Parametrized
 ParquetCompression
 ParquetMetadata
 ParquetVersion
@@ -988,6 +986,7 @@ SelfManaged
 Sematext
 SendExternalTables
 SendScalars
+ServerSettings
 SetOperationMode
 ShareAlike
 ShareSet
@@ -1003,7 +1002,6 @@ SimpleState
 SipHash
 Smirnov
 Smirnov's
-Smirnov
 Smirnov'test
 Soundex
 SpanKind
@@ -1041,12 +1039,11 @@ SummingMergeTree
 SuperSet
 Superset
 SupersetDocker
+SvelteKit
 SystemLogParameters
 SystemReplicasThreads
 SystemReplicasThreadsActive
 SystemTableCloud
-SvelteKit
-Tauri
 TABLUM
 TAVG
 TCPConnection
@@ -1081,6 +1078,7 @@ TablesLoaderForegroundThreads
 TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
 TargetSpecific
+Tauri
 Telegraf
 TemplateIgnoreSpaces
 TemporaryFilesForAggregation
@@ -1147,7 +1145,6 @@ URLHash
 URLHierarchy
 URLPathHierarchy
 USearch
-USearch
 UTCTimestamp
 UUIDNumToString
 UUIDStringToNum
@@ -1183,7 +1180,6 @@ WALs
 WSFG
 Welch
 Welch's
-Welch
 Werror
 Wether
 WikiStat
@@ -1255,6 +1251,7 @@ aggthrow
 aiochclient
 alloc
 allocator
+allowlist
 alphaTokens
 amplab
 analysisOfVariance
@@ -1309,6 +1306,8 @@ arrayJoin
 arrayLast
 arrayLastIndex
 arrayLastOrNull
+arrayLevenshteinDistance
+arrayLevenshteinDistanceWeighted
 arrayMap
 arrayMax
 arrayMin
@@ -1336,6 +1335,7 @@ arrayShiftLeft
 arrayShiftRight
 arrayShingles
 arrayShuffle
+arraySimilarity
 arraySlice
 arraySort
 arraySplit
@@ -1350,6 +1350,7 @@ arrayZipUnaligned
 ascii
 asin
 asinh
+aspell
 assumeNotNull
 async
 asynch
@@ -1465,6 +1466,7 @@ capnproto
 cardinalities
 cardinality
 cartesian
+caseWithExpression
 cassandra
 catboost
 catboostEvaluate
@@ -1529,12 +1531,12 @@ codec
 codecs
 codepoint
 codepoints
+codespell
 collapsingmergetree
 combinator
 combinators
 compareSubstrings
 comparising
-composable
 composable
 compressability
 concat
@@ -1649,6 +1651,7 @@ dbal
 dbeaver
 dbgen
 dbms
+dbpedia
 ddl
 deallocated
 deallocation
@@ -1685,6 +1688,7 @@ denormalize
 denormalized
 denormalizing
 denormals
+denylist
 dequeued
 dequeues
 dereference
@@ -1725,6 +1729,7 @@ distinctdynamictypes
 distinctjsonpaths
 distro
 divideDecimal
+divideOrNull
 dmesg
 doesnt
 domainRFC
@@ -1884,8 +1889,10 @@ geospatial
 getClientHTTPHeader
 getMacro
 getMaxTableNameLengthForDatabase
+getMergeTreeSetting
 getOSKernelVersion
 getServerPort
+getServerSetting
 getSetting
 getSettingOrDefault
 getSizeOfEnumType
@@ -1999,8 +2006,8 @@ html
 http
 https
 hudi
-hudi
 hudiCluster
+hyperparameter
 hyperscan
 hypot
 hyvor
@@ -2034,6 +2041,7 @@ inodes
 instantiation
 instantiations
 intDiv
+intDivOrNull
 intDivOrZero
 intExp
 intHash
@@ -2098,8 +2106,8 @@ kRing
 kafka
 kafkaMurmurHash
 kafkacat
-keccak
 kbytes
+keccak
 keepalive
 keepermap
 kerberized
@@ -2235,6 +2243,7 @@ mebibytes
 memtable
 memtables
 mergeTreeIndex
+mergeTreeProjection
 mergeable
 mergetree
 messageID
@@ -2263,6 +2272,7 @@ mmap
 mmapped
 modularization
 moduli
+moduloOrNull
 moduloOrZero
 mongoc
 mongocxx
@@ -2318,6 +2328,7 @@ musqldump
 mutex
 mydb
 myfilter
+mypy
 mysql
 mysqldump
 mysqljs
@@ -2475,6 +2486,7 @@ positionCaseInsensitive
 positionCaseInsensitiveUTF
 positionUTF
 positiveModulo
+positiveModuloOrNull
 postfix
 postfixes
 postgres
@@ -2577,6 +2589,7 @@ quantiletdigest
 quantiletdigestweighted
 quantiletiming
 quantiletimingweighted
+quantized
 quartile
 queryID
 queryString
@@ -2708,6 +2721,7 @@ runningConcurrency
 runningDifference
 runningDifferenceStartingWithFirstValue
 runtime
+runtimes
 russian
 rustc
 rustup
@@ -2775,6 +2789,10 @@ socketcache
 soundex
 sparkBar
 sparkbar
+sparseGrams
+sparseGramsHashes
+sparseGramsHashesUTF
+sparseGramsUTF
 sparsehash
 speedscope
 splitBy
@@ -2824,6 +2842,8 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
+stringBytesEntropy
+stringBytesUniq
 stringCompare
 stringJaccardIndex
 stringJaccardIndexUTF
@@ -2952,6 +2972,7 @@ timeZoneOffset
 timezones
 tinylog
 tmp
+tmpfs
 toBFloat
 toBool
 toColumnTypeName
@@ -3079,7 +3100,6 @@ tryPunycodeDecode
 tskv
 tsv
 tui
-tmpfs
 tukey
 tumbleEnd
 tumbleStart

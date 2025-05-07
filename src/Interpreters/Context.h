@@ -97,6 +97,7 @@ class PrimaryIndexCache;
 class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
+class IcebergMetadataFilesCache;
 class VectorSimilarityIndexCache;
 class ProcessList;
 class QueryStatus;
@@ -116,6 +117,7 @@ class PartLog;
 class TextLog;
 class TraceLog;
 class MetricLog;
+class TransposedMetricLog;
 class LatencyLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
@@ -236,11 +238,17 @@ using ReadTaskCallback = std::function<String()>;
 using MergeTreeAllRangesCallback = std::function<void(InitialAllRangesAnnouncement)>;
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
+struct QueryPlanAndSets;
+using QueryPlanDeserializationCallback = std::function<std::shared_ptr<QueryPlanAndSets>()>;
+
 class TemporaryDataOnDiskScope;
 using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
+
+using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 
 class SessionTracker;
 
@@ -291,6 +299,7 @@ protected:
 
     ClientInfo client_info;
     ExternalTablesInitializer external_tables_initializer_callback;
+    QueryPlanDeserializationCallback query_plan_deserialization_callback;
 
     InputInitializer input_initializer_callback;
     InputBlocksReader input_blocks_reader;
@@ -340,8 +349,13 @@ protected:
     std::optional<MergeTreeAllRangesCallback> merge_tree_all_ranges_callback;
     UUID parallel_replicas_group_uuid{UUIDHelpers::Nil};
 
+    bool is_under_restore = false;
+
     /// This parameter can be set by the HTTP client to tune the behavior of output formats for compatibility.
     UInt64 client_protocol_version = 0;
+
+    /// Max block numbers in partitions to read from MergeTree tables.
+    PartitionIdToMaxBlockPtr partition_id_to_max_block;
 
 public:
     /// Record entities accessed by current query, and store this information in system.query_log.
@@ -520,6 +534,7 @@ public:
 protected:
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
+    mutable std::mutex sample_block_cache_mutex;
 
     PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
     PartUUIDsPtr ignored_part_uuids; /// set of parts' uuids are meant to be excluded from query processing
@@ -623,6 +638,7 @@ public:
         MAX_ATTACHED_DATABASES,
         MAX_ACTIVE_PARTS,
         MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT,
+        MAX_PENDING_MUTATIONS_OVER_THRESHOLD,
         MAX_NUM_THREADS_LOWER_THAN_LIMIT,
         OBSOLETE_SETTINGS,
         PROCESS_USER_MATCHES_DATA_OWNER,
@@ -747,6 +763,11 @@ public:
     /// This method is called in executeQuery() and will call the external tables initializer.
     void initializeExternalTablesIfSet();
 
+    /// This is a callback which returns deserialized QueryPlan if the packet with QueryPlan was received.
+    void setQueryPlanDeserializationCallback(QueryPlanDeserializationCallback && callback);
+    /// This method is called in executeQuery() and will call the query plan deserialization callback.
+    std::shared_ptr<QueryPlanAndSets> getDeserializedQueryPlan();
+
     /// When input() is present we have to send columns structure to client
     void setInputInitializer(InputInitializer && initializer);
     /// This method is called in StorageInput::read while executing query
@@ -823,6 +844,10 @@ public:
     void setQueryAccessInfo(QueryAccessInfoPtr other) { query_access_info = other; }
 
     void addQueryAccessInfo(
+        const StorageID & table_id,
+        const Names & column_names);
+
+    void addQueryAccessInfo(
         const String & quoted_database_name,
         const String & full_quoted_table_name,
         const Names & column_names);
@@ -866,7 +891,7 @@ public:
     /// Overload for the new analyzer. Structure inference is performed in QueryAnalysisPass.
     StoragePtr executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr);
 
-    StoragePtr buildParametrizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values);
+    StoragePtr buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values);
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
@@ -900,6 +925,9 @@ public:
 
     void setDistributed(bool is_distributed_) { is_distributed = is_distributed_; }
     bool isDistributed() const { return is_distributed; }
+
+    bool isUnderRestore() const { return is_under_restore; }
+    void setUnderRestore(bool under_restore) { is_under_restore = under_restore; }
 
     String getDefaultFormat() const;    /// If default_format is not specified, some global default format is returned.
     void setDefaultFormat(const String & name);
@@ -1001,6 +1029,7 @@ public:
     size_t getMaxDatabaseNumToWarn() const;
     size_t getMaxPartNumToWarn() const;
     size_t getMaxPendingMutationsToWarn() const;
+    size_t getMaxPendingMutationsExecutionTimeToWarn() const;
 
     void setMaxTableNumToWarn(size_t max_table_to_warn);
     void setMaxViewNumToWarn(size_t max_view_to_warn);
@@ -1009,6 +1038,7 @@ public:
     void setMaxPartNumToWarn(size_t max_part_to_warn);
     // Based on asynchronous metrics
     void setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn);
+    void setMaxPendingMutationsExecutionTimeToWarn(size_t max_pending_mutations_execution_time_to_warn);
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
@@ -1137,7 +1167,6 @@ public:
     void clearUncompressedCache() const;
 
     void setPageCache(
-        size_t default_block_size, size_t default_lookahead_blocks,
         std::chrono::milliseconds history_window, const String & cache_policy, double size_ratio,
         size_t min_size_in_bytes, size_t max_size_in_bytes, double free_memory_ratio,
         size_t num_shards);
@@ -1179,6 +1208,13 @@ public:
     void updateQueryResultCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<QueryResultCache> getQueryResultCache() const;
     void clearQueryResultCache(const std::optional<String> & tag) const;
+
+#if USE_AVRO
+    void setIcebergMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updateIcebergMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<IcebergMetadataFilesCache> getIcebergMetadataFilesCache() const;
+    void clearIcebergMetadataFilesCache() const;
+#endif
 
     void setQueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
     void updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
@@ -1256,6 +1292,7 @@ public:
     std::shared_ptr<TraceLog> getTraceLog() const;
     std::shared_ptr<TextLog> getTextLog() const;
     std::shared_ptr<MetricLog> getMetricLog() const;
+    std::shared_ptr<TransposedMetricLog> getTransposedMetricLog() const;
     std::shared_ptr<LatencyLog> getLatencyLog() const;
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog() const;
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
@@ -1369,7 +1406,7 @@ public:
     String getGoogleProtosPath() const;
     void setGoogleProtosPath(const String & path);
 
-    SampleBlockCache & getSampleBlockCache() const;
+    std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> getSampleBlockCache() const;
 
     /// Query parameters for prepared statements.
     bool hasQueryParameters() const;
@@ -1477,6 +1514,9 @@ public:
 
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
+
+    void setPartitionIdToMaxBlock(PartitionIdToMaxBlockPtr partitions);
+    PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock() const;
 
     const ServerSettings & getServerSettings() const;
 

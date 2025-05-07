@@ -238,6 +238,7 @@ def test_create_table():
     masked_azure_conn_string = re.sub(
         account_key_pattern, "AccountKey=[HIDDEN]\\1", azure_conn_string
     )
+    masked_sas_conn_string = 'BlobEndpoint=https://my-endpoint/;SharedAccessSignature=[HIDDEN]'
     azure_storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
     azure_account_name = "devstoreaccount1"
     azure_account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
@@ -259,10 +260,7 @@ def test_create_table():
         f"S3(named_collection_6, url = 'http://minio1:9001/root/data/test8.csv', access_key_id = 'minio', secret_access_key = '{password}', format = 'CSV')",
         f"S3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV', 'gzip')",
         f"S3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '{password}')",
-        (
-            f"DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
-            "DNS_ERROR",
-        ),
+        f"DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
         f"S3Queue('http://minio1:9001/root/data/', 'CSV') settings mode = 'ordered'",
         f"S3Queue('http://minio1:9001/root/data/', 'CSV', 'gzip') settings mode = 'ordered'",
         f"S3Queue('http://minio1:9001/root/data/', 'minio', '{password}', 'CSV') settings mode = 'ordered'",
@@ -284,6 +282,10 @@ def test_create_table():
         f"AzureQueue('{azure_conn_string}', 'cont', '*', 'CSV', 'none') SETTINGS mode = 'unordered'",
         f"AzureQueue('{azure_storage_account_url}', 'cont', '*', '{azure_account_name}', '{azure_account_key}', 'CSV') SETTINGS mode = 'unordered'",
         f"AzureQueue('{azure_storage_account_url}', 'cont', '*', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none') SETTINGS mode = 'unordered'",
+        (
+            f"AzureBlobStorage('BlobEndpoint=https://my-endpoint/;SharedAccessSignature=sp=r&st=2025-09-29T14:58:11Z&se=2025-09-29T00:00:00Z&spr=https&sv=2022-11-02&sr=c&sig=SECRET%SECRET%SECRET%SECRET', 'exampledatasets', 'example.csv')",
+            "STD_EXCEPTION",
+        )
     ]
 
     def make_test_case(i):
@@ -359,6 +361,7 @@ def test_create_table():
             f"CREATE TABLE table29 (`x` int) ENGINE = AzureQueue('{masked_azure_conn_string}', 'cont', '*', 'CSV', 'none') SETTINGS mode = 'unordered'",
             f"CREATE TABLE table30 (`x` int) ENGINE = AzureQueue('{azure_storage_account_url}', 'cont', '*', '{azure_account_name}', '[HIDDEN]', 'CSV') SETTINGS mode = 'unordered'",
             f"CREATE TABLE table31 (`x` int) ENGINE = AzureQueue('{azure_storage_account_url}', 'cont', '*', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none') SETTINGS mode = 'unordered'",
+            f"CREATE TABLE table32 (`x` int) ENGINE = AzureBlobStorage('{masked_sas_conn_string}', 'exampledatasets', 'example.csv')",
         ],
         must_not_contain=[password],
     )

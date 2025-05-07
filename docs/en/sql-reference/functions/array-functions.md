@@ -892,7 +892,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 
 Returns the array \[1, 2, 3, ..., length (arr) \]
 
-This function is normally used with ARRAY JOIN. It allows counting something just once for each array after applying ARRAY JOIN. Example:
+This function is normally used with `ARRAY JOIN`. It allows counting something just once for each array after applying `ARRAY JOIN`. Example:
 
 ```sql
 SELECT
@@ -3372,6 +3372,121 @@ Result:
 ┌─arrayNormalizedGini([0.9, 0.3, 0.8, 0.7], [6, 1, 0, 2])──────────┐
 │ (0.18055555555555558,0.2638888888888889,0.6842105263157896) │
 └─────────────────────────────────────────────────────────────┘
+```
+
+## arrayLevenshteinDistance {#arraylevenshteindistance}
+
+Calculates Levenshtein distance for two arrays.
+
+**Syntax**
+
+```sql
+arrayLevenshteinDistance(from, to)
+```
+
+**Arguments**
+
+- `from` — first array
+- `to` — second array
+
+**Returned Value**
+
+- Levenshtein distance between the first and the second arrays
+
+**Examples**
+
+Query:
+
+```sql
+SELECT arrayLevenshteinDistance([1, 2, 4], [1, 2, 3])
+```
+
+Result:
+
+```text
+
+┌─arrayLevenshteinDistance([1, 2, 4], [1, 2, 3])─┐
+│                                              1 │
+└────────────────────────────────────────────────┘
+
+```
+
+## arrayLevenshteinDistanceWeighted {#arraylevenshteindistanceweighted}
+
+Calculates Levenshtein distance for two arrays with custom weights for each element. Number of elements for array and its weights should match
+
+**Syntax**
+
+```sql
+arrayLevenshteinDistanceWeighted(from, to, from_weights, to_weights)
+```
+
+**Arguments**
+
+- `from` — first array
+- `to` — second array
+- `from_weights` — weights for the first array
+- `to_weights` — weights for the second array
+
+**Returned Value**
+
+- Levenshtein distance between the first and the second arrays with custom weights for each element
+
+**Examples**
+
+Query:
+
+```sql
+SELECT arrayLevenshteinDistanceWeighted(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])
+```
+
+Result:
+
+```text
+
+┌─arrayLevenshteinDistanceWeighted(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])─┐
+│                                                                                           14 │
+└──────────────────────────────────────────────────────────────────────────────────────────────┘
+
+```
+
+## arraySimilarity {#arraysimilarity}
+
+Calculates arrays' similarity from 0 to 1 based on weighed Levenshtein distance. Accepts the same arguments as `arrayLevenshteinDistanceWeighted` function.
+
+**Syntax**
+
+```sql
+arraySimilarity(from, to, from_weights, to_weights)
+```
+
+**Arguments**
+
+- `from` — first array
+- `to` — second array
+- `from_weights` — weights for the first array
+- `to_weights` — weights for the second array
+
+**Returned Value**
+
+- Similarity of two arrays based on the weighted Levenshtein distance
+
+**Examples**
+
+Query:
+
+```sql
+SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])
+```
+
+Result:
+
+```text
+
+┌─arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])─┐
+│                                                          0.2222222222222222 │
+└─────────────────────────────────────────────────────────────────────────────┘
+
 ```
 
 ## Distance functions {#distance-functions}

@@ -12,6 +12,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/StorageDictionary.h>
@@ -42,6 +43,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int BAD_ARGUMENTS;
 }
 namespace
 {
@@ -324,6 +326,24 @@ void writeMetadataFile(std::shared_ptr<IDisk> db_disk, const String & file_path,
     out.reset();
 }
 
+void updateDatabaseCommentWithMetadataFile(DatabasePtr db, const AlterCommand & command)
+{
+    if (!command.comment)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to obtain database comment from query");
+
+    String old_database_comment = db->getDatabaseComment();
+    db->setDatabaseComment(command.comment.value());
+
+    try
+    {
+        DatabaseCatalog::instance().updateMetadataFile(db);
+    }
+    catch (...)
+    {
+        db->setDatabaseComment(old_database_comment);
+        throw;
+    }
+}
 
 DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context_)
     : IDatabase(name_), WithContext(context_->getGlobalContext()), db_disk(context_->getDatabaseDisk()), log(getLogger(logger))

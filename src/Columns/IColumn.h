@@ -469,12 +469,12 @@ public:
     virtual size_t capacity() const { return size(); }
 
     /// Reserve memory before squashing all specified source columns into this column.
-    virtual void prepareForSquashing(const std::vector<Ptr> & source_columns)
+    virtual void prepareForSquashing(const std::vector<Ptr> & source_columns, size_t factor)
     {
         size_t new_size = size();
         for (const auto & source_column : source_columns)
             new_size += source_column->size();
-        reserve(new_size);
+        reserve(new_size * factor);
     }
 
     /// Requests the removal of unused capacity.
@@ -760,6 +760,9 @@ bool isColumnConst(const IColumn & column);
 
 /// True if column's an ColumnNullable instance. It's just a syntax sugar for type check.
 bool isColumnNullable(const IColumn & column);
+
+/// True if column's an ColumnLazy instance. It's just a syntax sugar for type check.
+bool isColumnLazy(const IColumn & column);
 
 /// True if column's is ColumnNullable or ColumnLowCardinality with nullable nested column.
 bool isColumnNullableOrLowCardinalityNullable(const IColumn & column);

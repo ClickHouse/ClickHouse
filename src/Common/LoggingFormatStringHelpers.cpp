@@ -16,13 +16,6 @@ std::mutex LogFrequencyLimiterImpl::mutex;
 void LogFrequencyLimiterImpl::log(Poco::Message & message)
 {
     std::string_view pattern = message.getFormatString();
-    if (pattern.empty())
-    {
-        /// Do not filter messages without a format string
-        if (auto * channel = logger->getChannel())
-            channel->log(message);
-        return;
-    }
 
     SipHash hash;
     hash.update(logger->name());
@@ -150,17 +143,16 @@ LogSeriesLimiter::LogSeriesLimiter(LoggerPtr logger_, size_t allowed_count_, tim
     ++total_count;
 }
 
+LogSeriesLimiter * LogSeriesLimiter::getChannel()
+{
+    if (!accepted)
+        return nullptr;
+
+    return this;
+}
+
 void LogSeriesLimiter::log(Poco::Message & message)
 {
-    std::string_view pattern = message.getFormatString();
-    if (pattern.empty())
-    {
-        /// Do not filter messages without a format string
-        if (auto * channel = logger->getChannel())
-            channel->log(message);
-        return;
-    }
-
     if (!accepted)
         return;
 

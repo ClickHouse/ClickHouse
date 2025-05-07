@@ -1,10 +1,10 @@
 import argparse
 import sys
 
-from praktika.html_prepare import Html
-from praktika.utils import Utils
-from praktika.validator import Validator
-from praktika.yaml_generator import YamlGenerator
+from .html_prepare import Html
+from .utils import Utils
+from .validator import Validator
+from .yaml_generator import YamlGenerator
 
 
 def create_parser():

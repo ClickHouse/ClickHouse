@@ -1,8 +1,8 @@
 -----------------------------------------
 TEST TABLE
-parametrized_view_one_param	View	[('id','UInt32')]
-parametrized_view_multiple_params	View	[('id_from','UInt32'),('id_to','UInt32')]
+parameterized_view_one_param	View	[('id','UInt32')]
+parameterized_view_multiple_params	View	[('id_from','UInt32'),('id_to','UInt32')]
 -----------------------------------------
 TEST TEMPORARY TABLE
-parametrized_view_one_param_temporary	View	[('id','UInt32')]
-parametrized_view_multiple_params_temporary	View	[('counter_id_from','UInt32'),('counter_id_to','UInt32'),('UserId','UInt32'),('date_from','Date'),('date_to','UInt32')]
+parameterized_view_one_param_temporary	View	[('id','UInt32')]
+parameterized_view_multiple_params_temporary	View	[('counter_id_from','UInt32'),('counter_id_to','UInt32'),('UserId','UInt32'),('date_from','Date'),('date_to','UInt32')]

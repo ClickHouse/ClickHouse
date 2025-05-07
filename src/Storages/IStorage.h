@@ -140,7 +140,7 @@ public:
     virtual bool supportsDeduplication() const { return false; }
 
     /// Returns true if the blocks shouldn't be pushed to associated views on insert.
-    virtual bool noPushingToViews() const { return false; }
+    virtual bool noPushingToViewsOnInserts() const { return false; }
 
     /// Read query returns streams which automatically distribute data between themselves.
     /// So, it's impossible for one stream run out of data when there is data in other streams.
@@ -172,6 +172,8 @@ public:
 
     /// Returns true if asynchronous inserts are enabled for table.
     virtual bool areAsynchronousInsertsEnabled() const { return false; }
+
+    virtual bool isSharedStorage() const { return false; }
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
@@ -239,6 +241,12 @@ public:
 
     /// Returns true if the storage supports backup/restore for specific partitions.
     virtual bool supportsBackupPartition() const { return false; }
+
+    /// Called after all databases and tables on all replicas have been restored from backup.
+    /// If this data does some background work that depends on contents of other tables, this is
+    /// the place to kick off that work (and it should be paused when IStorage is created with
+    /// is_restore_from_backup = true in StorageFactory::Arguments).
+    virtual void finalizeRestoreFromBackup() {}
 
     /// Return true if there is at least one part containing lightweight deleted mask.
     virtual bool hasLightweightDeletedMask() const { return false; }
@@ -323,7 +331,7 @@ public:
       * It will also store needed stuff for projection query pipeline.
       *
       * QueryProcessingStage::Enum required for Distributed over Distributed,
-      * since it cannot return Complete for intermediate queries never.
+      * since it cannot return Complete for intermediate queries ever.
       */
     virtual QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const
     {
@@ -657,7 +665,7 @@ public:
     /// - For total_rows column in system.tables
     ///
     /// Does takes underlying Storage (if any) into account.
-    virtual std::optional<UInt64> totalRows(const Settings &) const { return {}; }
+    virtual std::optional<UInt64> totalRows(ContextPtr) const { return {}; }
 
     /// Same as above but also take partition predicate into account.
     virtual std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG &, ContextPtr) const { return {}; }
@@ -675,7 +683,7 @@ public:
     /// Memory part should be estimated as a resident memory size.
     /// In particular, alloctedBytes() is preferable over bytes()
     /// when considering in-memory blocks.
-    virtual std::optional<UInt64> totalBytes(const Settings &) const { return {}; }
+    virtual std::optional<UInt64> totalBytes(ContextPtr) const { return {}; }
 
     /// If it is possible to quickly determine exact number of uncompressed bytes for the table on storage:
     /// - disk (uncompressed)

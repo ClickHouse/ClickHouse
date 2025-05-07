@@ -35,9 +35,9 @@ For a description of request parameters, see [request description](../../../sql-
 #### columns {#columns}
 
 `columns` - a tuple with the names of columns where values will be summarized. Optional parameter.
-    The columns must be of a numeric type and must not be in the primary key.
+    The columns must be of a numeric type and must not be in the partition or sorting key.
 
- If `columns` is not specified, ClickHouse summarizes the values in all columns with a numeric data type that are not in the primary key.
+ If `columns` is not specified, ClickHouse summarizes the values in all columns with a numeric data type that are not in the sorting key.
 
 ### Query clauses {#query-clauses}
 

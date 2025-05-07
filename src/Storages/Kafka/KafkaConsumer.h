@@ -10,6 +10,8 @@
 #include <Common/DateLUT.h>
 #include <Common/CurrentMetrics.h>
 
+#include <Storages/Kafka/IKafkaExceptionInfoSink.h>
+
 namespace CurrentMetrics
 {
     extern const Metric KafkaConsumers;
@@ -28,7 +30,7 @@ class StorageSystemKafkaConsumers;
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
-class KafkaConsumer
+class KafkaConsumer : public IKafkaExceptionInfoSink
 {
 public:
     struct ExceptionInfo
@@ -72,7 +74,7 @@ public:
         const Names & _topics
     );
 
-    ~KafkaConsumer();
+    ~KafkaConsumer() override;
 
     void createConsumer(cppkafka::Configuration consumer_config);
     bool hasConsumer() const { return consumer.get() != nullptr; }
@@ -115,8 +117,8 @@ public:
     auto currentTimestamp() const { return current[-1].get_timestamp(); }
     const auto & currentHeaderList() const { return current[-1].get_header_list(); }
     const cppkafka::Buffer & currentPayload() const { return current[-1].get_payload(); }
-    void setExceptionInfo(const cppkafka::Error & err, bool with_stacktrace = true);
-    void setExceptionInfo(const std::string & text, bool with_stacktrace = true);
+    void setExceptionInfo(const cppkafka::Error & err, bool with_stacktrace) override;
+    void setExceptionInfo(const std::string & text, bool with_stacktrace) override;
     void setRDKafkaStat(const std::string & stat_json_string)
     {
         std::lock_guard<std::mutex> lock(rdkafka_stat_mutex);
