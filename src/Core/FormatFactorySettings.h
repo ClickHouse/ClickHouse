@@ -1316,6 +1316,11 @@ Set the quoting style for identifiers in SHOW CREATE query
 Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.
 0 means no limit in bytes.
 )", 0) \
+    DECLARE(String, output_format_diagram_type, "SCATTER", "The type of diagram", 0) \
+    DECLARE(String, output_format_diagram_title, "", "The title of plot", 0) \
+    DECLARE(Bool, output_format_diagram_is_ascii_set, false, "Charset for printing plot. Available charsets: ASCII, UTF-8 (default one).", 0) \
+    DECLARE(Int64, output_format_diagram_limit_height, -1, "Limit num of rows in plot", 0) \
+    DECLARE(Int64, output_format_diagram_limit_width, -1, "Limit num of columns in plot", 0) \
 
 // End of FORMAT_FACTORY_SETTINGS
 

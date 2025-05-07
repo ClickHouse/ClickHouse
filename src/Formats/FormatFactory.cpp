@@ -338,6 +338,11 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.client_protocol_version = context->getClientProtocolVersion();
     format_settings.allow_special_bool_values_inside_variant = settings[Setting::allow_special_bool_values_inside_variant];
     format_settings.max_block_size_bytes = settings[Setting::input_format_max_block_size_bytes];
+    format_settings.diagram.diagram_type = settings[Setting::output_format_diagram_type];
+    format_settings.diagram.is_ascii_symbols = settings[Setting::output_format_diagram_is_ascii_set];
+    format_settings.diagram.title = settings[Setting::output_format_diagram_title];
+    format_settings.diagram.limit_height = settings[Setting::output_format_diagram_limit_height];
+    format_settings.diagram.limit_width = settings[Setting::output_format_diagram_limit_width];
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
