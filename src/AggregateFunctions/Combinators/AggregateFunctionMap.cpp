@@ -445,8 +445,9 @@ public:
         if (map_type)
         {
             const DataTypePtr & key_type = map_type->getKeyType();
+            auto temp_arguments = arguments;
 
-            if (auto * res = createWithNumericBasedType<AggregateFunctionMap, false>(*key_type, nested_function, arguments))
+            if (auto * res = createWithNumericBasedType<AggregateFunctionMap, false>(*key_type, nested_function, temp_arguments))
                 return AggregateFunctionPtr(res);
 
             if (key_type->getTypeId() == TypeIndex::FixedString || key_type->getTypeId() == TypeIndex::String)
@@ -459,8 +460,9 @@ public:
         else
         {
             const DataTypePtr & key_type = arguments.back();
+            auto temp_arguments = arguments;
 
-            if (auto * res = createWithNumericBasedType<AggregateFunctionMap, true>(*key_type, nested_function, arguments))
+            if (auto * res = createWithNumericBasedType<AggregateFunctionMap, true>(*key_type, nested_function, temp_arguments))
                 return AggregateFunctionPtr(res);
 
             if (key_type->getTypeId() == TypeIndex::FixedString || key_type->getTypeId() == TypeIndex::String)
