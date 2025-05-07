@@ -160,17 +160,17 @@ static IAggregateFunction * createWithNumericBasedType(const IDataType & argumen
 template <template <typename, bool> class AggregateFunctionTemplate, bool bool_param, typename... TArgs>
 static IAggregateFunction * createWithNumericBasedType(const IDataType & argument_type, TArgs && ... args)
 {
-    IAggregateFunction * f = createWithNumericType<AggregateFunctionTemplate, bool_param>(argument_type, std::forward<TArgs>(args)...);
+    IAggregateFunction * f = createWithNumericType<AggregateFunctionTemplate, bool_param>(argument_type, args...);
     if (f)
         return f;
 
     /// expects that DataTypeDate based on UInt16, DataTypeDateTime based on UInt32
     WhichDataType which(argument_type);
-    if (which.idx == TypeIndex::Date) return new AggregateFunctionTemplate<UInt16, bool_param>(std::forward<TArgs>(args)...);
-    if (which.idx == TypeIndex::DateTime) return new AggregateFunctionTemplate<UInt32, bool_param>(std::forward<TArgs>(args)...);
-    if (which.idx == TypeIndex::UUID) return new AggregateFunctionTemplate<UUID, bool_param>(std::forward<TArgs>(args)...);
-    if (which.idx == TypeIndex::IPv4) return new AggregateFunctionTemplate<IPv4, bool_param>(std::forward<TArgs>(args)...);
-    if (which.idx == TypeIndex::IPv6) return new AggregateFunctionTemplate<IPv6, bool_param>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Date) return new AggregateFunctionTemplate<UInt16, bool_param>(args...);
+    if (which.idx == TypeIndex::DateTime) return new AggregateFunctionTemplate<UInt32, bool_param>(args...);
+    if (which.idx == TypeIndex::UUID) return new AggregateFunctionTemplate<UUID, bool_param>(args...);
+    if (which.idx == TypeIndex::IPv4) return new AggregateFunctionTemplate<IPv4, bool_param>(args...);
+    if (which.idx == TypeIndex::IPv6) return new AggregateFunctionTemplate<IPv6, bool_param>(args...);
     return nullptr;
 }
 
