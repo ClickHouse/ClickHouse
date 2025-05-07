@@ -94,6 +94,11 @@ We are writing a URL column with the String type (average size of 60 bytes per v
 This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
 :::
 )", 0) \
+    DECLARE(String, url_base, "", R"(
+Base URL for resolving relative URLs in table functions like url() or urlCluster().
+For example, if url_base is 'https://abc.xyz/def/', 
+a path-relative URL 'data.csv' will resolve to 'https://abc.xyz/def/data.csv'.
+)", 0) \
     DECLARE(UInt64, max_compress_block_size, 1048576, R"(
 The maximum size of blocks of uncompressed data before compressing for writing to a table. By default, 1,048,576 (1 MiB). Specifying a smaller block size generally leads to slightly reduced compression ratio, the compression and decompression speed increases slightly due to cache locality, and memory consumption is reduced.
 
