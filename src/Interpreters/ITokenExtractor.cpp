@@ -4,7 +4,10 @@
 
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
-#include <bit>
+
+#if USE_CPPJIEBA
+#    include "Common/Tokenizer/ChineseTokenizer.h"
+#endif
 
 #if defined(__SSE2__)
 #include <emmintrin.h>
@@ -18,6 +21,24 @@
 
 namespace DB
 {
+
+std::vector<std::string> NgramTokenExtractor::getTokens(const char* data, size_t length) const {
+    if (n > length) {
+        return std::vector<std::string>{{data, length}};
+    }
+
+    std::vector<std::string> tokens;
+    tokens.reserve(length - n + 1);
+
+    size_t cur = 0;
+    size_t token_start = 0;
+    size_t token_len = 0;
+
+    while (cur < length && nextInStringPadded(data, length, &cur, &token_start, &token_len))
+        tokens.emplace_back(data + token_start, token_len);
+
+    return tokens;
+}
 
 bool NgramTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
 {
@@ -79,6 +100,20 @@ bool NgramTokenExtractor::nextInStringLike(const char * data, size_t length, siz
     }
 
     return false;
+}
+
+std::vector<std::string> SplitTokenExtractor::getTokens(const char* data, size_t length) const {
+    std::vector<std::string> tokens;
+    tokens.reserve(length / 5 /* assuming average length of word is 5. */);
+
+    size_t cur = 0;
+    size_t token_start = 0;
+    size_t token_len = 0;
+
+    while (cur < length && nextInStringPadded(data, length, &cur, &token_start, &token_len))
+        tokens.emplace_back(data + token_start, token_len);
+
+    return tokens;
 }
 
 bool SplitTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
@@ -270,4 +305,31 @@ void SplitTokenExtractor::substringToGinFilter(const char * data, size_t length,
             gin_filter.addTerm(data + token_start, token_len);
 }
 
+#if USE_CPPJIEBA
+
+std::vector<std::string> ChineseTokenExtractor::getTokens(const char * data, [[maybe_unused]] size_t length) const
+{
+    return ChineseTokenizer::instance().tokenize(data);
+}
+
+bool ChineseTokenExtractor::nextInString(
+    [[maybe_unused]] const char * data,
+    [[maybe_unused]] size_t length,
+    [[maybe_unused]] size_t * __restrict pos,
+    [[maybe_unused]] size_t * __restrict token_start,
+    [[maybe_unused]] size_t * __restrict token_length) const
+{
+    return false;
+}
+
+bool ChineseTokenExtractor::nextInStringLike(
+    [[maybe_unused]] const char * data,
+    [[maybe_unused]] size_t length,
+    [[maybe_unused]] size_t * pos,
+    [[maybe_unused]] String & token) const
+{
+    return false;
+}
+
+#endif
 }

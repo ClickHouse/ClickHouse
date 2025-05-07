@@ -404,13 +404,15 @@ Result:
 └───────────────────────────────────┘
 ```
 
-## tokenizeChinese {#tokenizeChinese}
+## tokenize {#tokenize}
 
-Splits Chinese text into tokens / words.
+Splits text into tokens / words by the given tokenizer.
 
 **Arguments**
 
+- `tokenizer_string` — The tokenizer to use. Valid arguments are 'default', 'none', 'ngram', and 'chinese'.
 - `input_string` — Any set of bytes represented as the [String](../data-types/string.md) data type object.
+- `ngram_size` - A mandatory `UInt8` that defines size of ngram when `tokenizer` is set to `ngram`.
 
 **Returned value**
 
@@ -419,7 +421,43 @@ Splits Chinese text into tokens / words.
 **Example**
 
 ```sql
-SELECT tokenizeChinese('你好世界！') AS tokens;
+SELECT tokenize('default', 'foo bar') AS tokens;
+```
+
+Result:
+
+```text
+┌─tokens────────┐
+│ ['foo','bar'] │
+└───────────────┘
+```
+
+```sql
+SELECT tokenize('none', 'foo bar') AS tokens;
+```
+
+Result:
+
+```text
+┌─token───────┐
+│ ['foo bar'] │
+└─────────────┘
+```
+
+```sql
+SELECT tokenize('ngram', 3, 'abc def') AS tokens;
+```
+
+Result:
+
+```text
+┌─tokens──────────────────────────┐
+│ ['abc','bc ','c d',' de','def'] │
+└─────────────────────────────────┘
+```
+
+```sql
+SELECT tokenize('chinese', '你好世界！') AS tokens;
 ```
 
 Result:

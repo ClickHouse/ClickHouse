@@ -1,0 +1,9 @@
+Default tokenizer.
+['abc','def','foo','bar']	4
+['abc','def','foo','bar','baz','code','hello','world']	8
+Ngram tokenizer.
+['a','b','c',' ','d','e','f']	7
+['abc','bc ','c d',' de','def']	5
+['abc def']	1
+NoOp tokenizer.
+['abc def']	1

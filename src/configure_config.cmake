@@ -200,5 +200,8 @@ endif()
 if (TARGET ch_contrib::sha3iuf)
     set(USE_SHA3IUF 1)
 endif()
+if (TARGET ch_contrib::cppjieba)
+    set(USE_CPPJIEBA 1)
+endif()
 
 set(SOURCE_DIR ${PROJECT_SOURCE_DIR})

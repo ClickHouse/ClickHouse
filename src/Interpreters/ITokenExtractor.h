@@ -13,6 +13,8 @@ struct ITokenExtractor
 {
     virtual ~ITokenExtractor() = default;
 
+    virtual std::vector<String> getTokens(const char* data, size_t length) const = 0;
+
     /// Fast inplace implementation for regular use.
     /// Gets string (data ptr and len) and start position for extracting next token (state of extractor).
     /// Returns false if parsing is finished, otherwise returns true.
@@ -154,6 +156,8 @@ struct NgramTokenExtractor final : public ITokenExtractorHelper<NgramTokenExtrac
 
     static const char * getName() { return "ngrambf_v1"; }
 
+    std::vector<String> getTokens(const char* data, size_t length) const override;
+
     bool nextInString(const char * data, size_t length, size_t *  __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
 
     bool nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const override;
@@ -170,6 +174,8 @@ struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtrac
 {
     static const char * getName() { return "tokenbf_v1"; }
 
+    std::vector<String> getTokens(const char* data, size_t length) const override;
+
     bool nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
 
     bool nextInStringPadded(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
@@ -179,8 +185,57 @@ struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtrac
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
 
     void substringToGinFilter(const char * data, size_t length, GinFilter & gin_filter, bool is_prefix, bool is_suffix) const override;
-
-
 };
+
+struct NoOpTokenExtractor final : public ITokenExtractorHelper<NoOpTokenExtractor>
+{
+    static const char * getName() { return "noop_v1"; }
+
+    std::vector<String> getTokens(const char* data, size_t length) const override {
+        return {{data, length}};
+    }
+
+    bool nextInString(
+        [[maybe_unused]] const char * data,
+        size_t length,
+        size_t * __restrict pos,
+        size_t * __restrict token_start,
+        size_t * __restrict token_length) const override
+    {
+        if (*pos == 0)
+        {
+            *token_start = 0;
+            *token_length = length;
+            return true;
+        }
+        return false;
+    }
+
+    bool nextInStringLike(
+        [[maybe_unused]] const char * data,
+        [[maybe_unused]] size_t length,
+        [[maybe_unused]] size_t * __restrict pos,
+        [[maybe_unused]] String & token) const override
+    {
+        return false;
+    }
+};
+
+
+#if USE_CPPJIEBA
+
+/// Parser extracting tokens for Chinese.
+struct ChineseTokenExtractor final : public ITokenExtractorHelper<ChineseTokenExtractor>
+{
+    static const char * getName() { return "chinese_v1"; }
+
+    std::vector<String> getTokens(const char* data, size_t length) const override;
+
+    bool nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
+
+    bool nextInStringLike(const char * data, size_t length, size_t * __restrict pos, String & token) const override;
+};
+
+#endif
 
 }
