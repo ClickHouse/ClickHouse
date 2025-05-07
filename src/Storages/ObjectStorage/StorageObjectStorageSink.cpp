@@ -56,9 +56,7 @@ void StorageObjectStorageSink::consume(Chunk & chunk)
 
 void StorageObjectStorageSink::onFinish()
 {
-    if (isCancelled())
-        return;
-
+    chassert(!isCancelled());
     finalizeBuffers();
     releaseBuffers();
 }
