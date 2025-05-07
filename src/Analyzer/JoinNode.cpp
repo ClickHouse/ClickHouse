@@ -1,4 +1,5 @@
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/Utils.h>
 #include <IO/Operators.h>
@@ -37,6 +38,47 @@ JoinNode::JoinNode(QueryTreeNodePtr left_table_expression_,
     children[join_expression_child_index] = std::move(join_expression_);
 }
 
+static ASTPtr makeUsingAST(const QueryTreeNodePtr & node)
+{
+    const auto & list_node = node->as<ListNode &>();
+
+    auto expr_list = std::make_shared<ASTExpressionList>();
+    expr_list->children.reserve(list_node.getNodes().size());
+
+    for (const auto & child : list_node.getNodes())
+    {
+        const auto & column_node = child->as<ColumnNode &>();
+        ASTPtr node_ast;
+
+        if (const auto expr = column_node.getExpression())
+        {
+            if (const auto * expr_list_node = expr->as<ListNode>())
+            {
+                if (expr_list_node->getNodes().size() == 2)
+                {
+                    const auto * lhs_column_node = expr_list_node->getNodes()[0]->as<ColumnNode>();
+                    const auto * rhs_column_node = expr_list_node->getNodes()[1]->as<ColumnNode>();
+                    if (lhs_column_node && rhs_column_node)
+                    {
+                        if (lhs_column_node->getColumnName() != rhs_column_node->getColumnName())
+                        {
+                            node_ast = std::make_shared<ASTIdentifier>(lhs_column_node->getColumnName());
+                            node_ast->setAlias(rhs_column_node->getColumnName());
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!node_ast)
+            node_ast = column_node.toAST();
+
+        expr_list->children.push_back(std::move(node_ast));
+    }
+
+    return expr_list;
+}
+
 ASTPtr JoinNode::toASTTableJoin() const
 {
     auto join_ast = std::make_shared<ASTTableJoin>();
@@ -46,16 +88,14 @@ ASTPtr JoinNode::toASTTableJoin() const
 
     if (children[join_expression_child_index])
     {
-        auto join_expression_ast = children[join_expression_child_index]->toAST();
-
         if (is_using_join_expression)
         {
-            join_ast->using_expression_list = join_expression_ast;
+            join_ast->using_expression_list = makeUsingAST(children[join_expression_child_index]);
             join_ast->children.push_back(join_ast->using_expression_list);
         }
         else
         {
-            join_ast->on_expression = join_expression_ast;
+            join_ast->on_expression = children[join_expression_child_index]->toAST();
             join_ast->children.push_back(join_ast->on_expression);
         }
     }

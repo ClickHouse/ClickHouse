@@ -5,7 +5,6 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
 
-
 namespace DB
 {
 
@@ -252,6 +251,7 @@ void ASTTableJoin::formatImplAfterTable(WriteBuffer & ostr, const FormatSettings
     {
         ostr << (settings.hilite ? hilite_keyword : "") << " USING " << (settings.hilite ? hilite_none : "");
         ostr << "(";
+        frame.ignore_printed_asts_with_alias = true;
         using_expression_list->format(ostr, settings, state, frame);
         ostr << ")";
     }
