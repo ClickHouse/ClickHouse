@@ -639,7 +639,11 @@ public:
                 UInt64 val = bit_buffer[i];
                 UInt64 row;
                 UInt64 col = val & 0x3f;
+#if defined(__x86_64__)
                 ASM_SHIFT_RIGHT(val, shift, row);
+#else
+                row = val >> shift;
+#endif
                 UInt64 index = indexes[offset + row];
 
                 if (types[col] == ARRAY_CONTAINER_TYPE
@@ -741,8 +745,11 @@ public:
                 {
                     UInt64 tmp_offset;
                     UInt64 p = bit_buffer[i][j];
-                    // ASM optimized
+#if defined(__x86_64__)
                     ASM_SHIFT_RIGHT(p, shift, tmp_offset);
+#else
+                    tmp_offset = p >> shift;
+#endif
                     ctn->words[tmp_offset] |= 1ULL << (p & 0x3f);
                 }
                 ctn->cardinality += cnt[i];
