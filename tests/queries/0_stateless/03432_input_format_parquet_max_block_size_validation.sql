@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 -- Test that setting input_format_parquet_max_block_size to 0 is not allowed
 SET input_format_parquet_max_block_size = 0; -- { serverError BAD_ARGUMENTS }
 
