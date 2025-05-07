@@ -111,7 +111,8 @@ StorageMaterializedView::StorageMaterializedView(
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
     LoadingStrictnessLevel mode,
-    const String & comment)
+    const String & comment,
+    bool is_restore_from_backup)
     : IStorage(table_id_), WithMutableContext(local_context->getGlobalContext())
 {
     StorageInMemoryMetadata storage_metadata;
@@ -232,7 +233,7 @@ StorageMaterializedView::StorageMaterializedView(
             refresh_context->checkAccess(AccessType::DROP_TABLE | AccessType::CREATE_TABLE | AccessType::SELECT | AccessType::INSERT, inner_db_name);
         }
 
-        refresher = RefreshTask::create(this, getContext(), *query.refresh_strategy, mode >= LoadingStrictnessLevel::ATTACH, refresh_coordinated, query.is_create_empty);
+        refresher = RefreshTask::create(this, getContext(), *query.refresh_strategy, mode >= LoadingStrictnessLevel::ATTACH, refresh_coordinated, query.is_create_empty, is_restore_from_backup);
     }
 
     if (!fixed_uuid)
@@ -847,6 +848,12 @@ void StorageMaterializedView::restoreDataFromBackup(RestorerFromBackup & restore
         getTargetTable()->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
 }
 
+void StorageMaterializedView::finalizeRestoreFromBackup()
+{
+    if (refresher)
+        refresher->finalizeRestoreFromBackup();
+}
+
 bool StorageMaterializedView::supportsBackupPartition() const
 {
     if (hasInnerTable() && fixed_uuid)
@@ -935,7 +942,7 @@ void registerStorageMaterializedView(StorageFactory & factory)
         /// Pass local_context here to convey setting for inner table
         return std::make_shared<StorageMaterializedView>(
             args.table_id, args.getLocalContext(), args.query,
-            args.columns, args.mode, args.comment);
+            args.columns, args.mode, args.comment, args.is_restore_from_backup);
     });
 }
 

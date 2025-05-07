@@ -1,15 +1,19 @@
+#include <utility>
+#include <ranges>
 #include <Planner/PlannerActionsVisitor.h>
 
 #include <AggregateFunctions/WindowFunction.h>
-#include <Analyzer/Utils.h>
-#include <Analyzer/SetUtils.h>
+
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/LambdaNode.h>
-#include <Analyzer/SortNode.h>
-#include <Analyzer/WindowNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/SetUtils.h>
+#include <Analyzer/SortNode.h>
+#include <Analyzer/UnionNode.h>
+#include <Analyzer/Utils.h>
+#include <Analyzer/WindowNode.h>
 
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeSet.h>
@@ -30,10 +34,12 @@
 #include <Interpreters/Set.h>
 
 #include <Planner/PlannerContext.h>
+#include <Planner/PlannerCorrelatedSubqueries.h>
 #include <Planner/TableExpressionData.h>
 #include <Planner/Utils.h>
 
 #include <Core/Settings.h>
+#include <fmt/format.h>
 
 
 namespace DB
@@ -185,6 +191,20 @@ public:
                     /// Empty node name is not allowed and leads to logical errors
                     if (result.empty())
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __actionName is internal nad should not be used directly");
+                    break;
+                }
+                else if (function_node.getFunctionName() == "exists")
+                {
+                    const auto & arguments = function_node.getArguments().getNodes();
+                    chassert(arguments.size() == 1);
+
+                    const auto & exists_argument = arguments.front();
+                    chassert(exists_argument != nullptr);
+
+                    const auto & table_alias = exists_argument->getAlias();
+                    chassert(!table_alias.empty());
+
+                    result = fmt::format("exists({})", table_alias);
                     break;
                 }
 
@@ -441,6 +461,12 @@ public:
             node_name_to_node[node.result_name] = &node;
     }
 
+    ActionsScopeNode(const ActionsScopeNode &) = delete;
+    ActionsScopeNode(ActionsScopeNode &&) = default;
+
+    ActionsScopeNode & operator=(const ActionsScopeNode &) = delete;
+    ActionsScopeNode & operator=(ActionsScopeNode &&) = delete;
+
     const QueryTreeNodePtr & getScopeNode() const
     {
         return scope_node;
@@ -488,6 +514,18 @@ public:
             return it->second;
 
         const auto * node = &actions_dag.addInput(node_name, column_type);
+        node_name_to_node[node->result_name] = node;
+
+        return node;
+    }
+
+    const ActionsDAG::Node * addPlaceholderColumnIfNecessary(const std::string & node_name, const DataTypePtr & column_type)
+    {
+        auto it = node_name_to_node.find(node_name);
+        if (it != node_name_to_node.end())
+            return it->second;
+
+        const auto * node = &actions_dag.addPlaceholder(node_name, column_type);
         node_name_to_node[node->result_name] = node;
 
         return node;
@@ -560,11 +598,13 @@ private:
 class PlannerActionsVisitorImpl
 {
 public:
-    PlannerActionsVisitorImpl(ActionsDAG & actions_dag,
+    PlannerActionsVisitorImpl(
+        ActionsDAG & actions_dag,
         const PlannerContextPtr & planner_context_,
+        const ColumnNodePtrWithHashSet & correlated_columns_set_,
         bool use_column_identifier_as_action_node_name_);
 
-    ActionsDAG::NodeRawConstPtrs visit(QueryTreeNodePtr expression_node);
+    std::pair<ActionsDAG::NodeRawConstPtrs, CorrelatedSubtrees> visit(QueryTreeNodePtr expression_node);
 
 private:
 
@@ -607,6 +647,8 @@ private:
 
     NodeNameAndNodeMinLevel visitColumn(const QueryTreeNodePtr & node);
 
+    NodeNameAndNodeMinLevel visitCorrelatedColumn(const ColumnNodePtr & node);
+
     NodeNameAndNodeMinLevel visitConstant(const QueryTreeNodePtr & node, const std::string & override_column_name = {});
 
     NodeNameAndNodeMinLevel visitLambda(const QueryTreeNodePtr & node);
@@ -615,26 +657,34 @@ private:
 
     NodeNameAndNodeMinLevel visitIndexHintFunction(const QueryTreeNodePtr & node);
 
+    NodeNameAndNodeMinLevel visitExistsFunction(const QueryTreeNodePtr & node);
+
     NodeNameAndNodeMinLevel visitFunction(const QueryTreeNodePtr & node);
 
     std::vector<ActionsScopeNode> actions_stack;
     std::unordered_map<QueryTreeNodePtr, std::string> node_to_node_name;
+    CorrelatedSubtrees correlated_subtrees;
     const PlannerContextPtr planner_context;
+    const ColumnNodePtrWithHashSet & correlated_columns_set;
     ActionNodeNameHelper action_node_name_helper;
     bool use_column_identifier_as_action_node_name;
 };
 
-PlannerActionsVisitorImpl::PlannerActionsVisitorImpl(ActionsDAG & actions_dag,
+PlannerActionsVisitorImpl::PlannerActionsVisitorImpl(
+    ActionsDAG & actions_dag,
     const PlannerContextPtr & planner_context_,
-    bool use_column_identifier_as_action_node_name_)
+    const ColumnNodePtrWithHashSet & correlated_columns_set_,
+    bool use_column_identifier_as_action_node_name_
+)
     : planner_context(planner_context_)
+    , correlated_columns_set(correlated_columns_set_)
     , action_node_name_helper(node_to_node_name, *planner_context, use_column_identifier_as_action_node_name_)
     , use_column_identifier_as_action_node_name(use_column_identifier_as_action_node_name_)
 {
     actions_stack.emplace_back(actions_dag, nullptr);
 }
 
-ActionsDAG::NodeRawConstPtrs PlannerActionsVisitorImpl::visit(QueryTreeNodePtr expression_node)
+std::pair<ActionsDAG::NodeRawConstPtrs, CorrelatedSubtrees> PlannerActionsVisitorImpl::visit(QueryTreeNodePtr expression_node)
 {
     ActionsDAG::NodeRawConstPtrs result;
 
@@ -652,7 +702,7 @@ ActionsDAG::NodeRawConstPtrs PlannerActionsVisitorImpl::visit(QueryTreeNodePtr e
         result.push_back(actions_stack.front().getNodeOrThrow(node_name));
     }
 
-    return result;
+    return std::make_pair(result, correlated_subtrees);
 }
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitImpl(QueryTreeNodePtr node)
@@ -673,8 +723,13 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitColumn(const QueryTreeNodePtr & node)
 {
-    auto column_node_name = action_node_name_helper.calculateActionNodeName(node);
     const auto & column_node = node->as<ColumnNode &>();
+
+    const auto & column_node_ptr = static_pointer_cast<ColumnNode>(node);
+    if (correlated_columns_set.contains(column_node_ptr))
+        return visitCorrelatedColumn(column_node_ptr);
+
+    auto column_node_name = action_node_name_helper.calculateActionNodeName(node);
     if (column_node.hasExpression())
     {
         auto expression = column_node.getExpression();
@@ -686,6 +741,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         else if (!use_column_identifier_as_action_node_name)
             return visitImpl(expression);
     }
+
     Int64 actions_stack_size = static_cast<Int64>(actions_stack.size() - 1);
     for (Int64 i = actions_stack_size; i >= 0; --i)
     {
@@ -699,6 +755,16 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
             return {column_node_name, Levels(i)};
         }
     }
+
+    return {column_node_name, Levels(0)};
+}
+
+PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitCorrelatedColumn(const ColumnNodePtr & node)
+{
+    auto column_node_name = action_node_name_helper.calculateActionNodeName(node);
+
+    for (auto & action_scope_node : actions_stack)
+        action_scope_node.addPlaceholderColumnIfNecessary(column_node_name, node->getColumnType());
 
     return {column_node_name, Levels(0)};
 }
@@ -913,11 +979,13 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     ActionsDAG index_hint_actions_dag;
     auto & index_hint_actions_dag_outputs = index_hint_actions_dag.getOutputs();
     std::unordered_set<std::string_view> index_hint_actions_dag_output_node_names;
-    PlannerActionsVisitor actions_visitor(planner_context);
+    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+    PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set);
 
     for (const auto & argument : function_node.getArguments())
     {
-        auto index_hint_argument_expression_dag_nodes = actions_visitor.visit(index_hint_actions_dag, argument);
+        auto [index_hint_argument_expression_dag_nodes, subqueries] = actions_visitor.visit(index_hint_actions_dag, argument);
+        subqueries.assertEmpty("in 'indexHint' function arguments");
 
         for (auto & expression_dag_node : index_hint_argument_expression_dag_nodes)
         {
@@ -939,12 +1007,44 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     return {function_node_name, Levels(index_hint_function_level)};
 }
 
+PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitExistsFunction(const QueryTreeNodePtr & node)
+{
+    const auto & function_node = node->as<FunctionNode &>();
+    auto function_node_name = action_node_name_helper.calculateActionNodeName(node);
+
+    size_t exists_function_level = actions_stack.size() - 1;
+    for (auto it = actions_stack.rbegin(); it != actions_stack.rend(); ++it)
+        it->addInputColumnIfNecessary(function_node_name, function_node.getResultType());
+
+    auto subquery_argument = function_node.getArguments().getNodes().front();
+    auto * query_node = subquery_argument->as<QueryNode>();
+    auto * union_node = subquery_argument->as<UnionNode>();
+    chassert(query_node != nullptr || union_node != nullptr);
+    const QueryTreeNodes & correlated_columns = query_node ? query_node->getCorrelatedColumns().getNodes() : union_node->getCorrelatedColumns().getNodes();
+
+    ColumnIdentifiers correlated_column_identifiers;
+    correlated_column_identifiers.reserve(correlated_columns.size());
+    for (const auto & column : correlated_columns)
+    {
+        correlated_column_identifiers.push_back(action_node_name_helper.calculateActionNodeName(column));
+    }
+
+    correlated_subtrees.subqueries.emplace_back(
+        function_node.getArguments().getNodes().front(),
+        CorrelatedSubqueryKind::EXISTS,
+        function_node_name,
+        std::move(correlated_column_identifiers));
+    return { function_node_name, Levels(exists_function_level) };
+}
+
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitFunction(const QueryTreeNodePtr & node)
 {
     const auto & function_node = node->as<FunctionNode &>();
 
     if (function_node.getFunctionName() == "indexHint")
         return visitIndexHintFunction(node);
+    if (function_node.getFunctionName() == "exists")
+        return visitExistsFunction(node);
 
     std::optional<NodeNameAndNodeMinLevel> in_function_second_argument_node_name_with_level;
 
@@ -1040,14 +1140,22 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
 }
 
-PlannerActionsVisitor::PlannerActionsVisitor(const PlannerContextPtr & planner_context_, bool use_column_identifier_as_action_node_name_)
+PlannerActionsVisitor::PlannerActionsVisitor(
+    const PlannerContextPtr & planner_context_,
+    const ColumnNodePtrWithHashSet & correlated_columns_set_,
+    bool use_column_identifier_as_action_node_name_)
     : planner_context(planner_context_)
+    , correlated_columns_set(correlated_columns_set_)
     , use_column_identifier_as_action_node_name(use_column_identifier_as_action_node_name_)
 {}
 
-ActionsDAG::NodeRawConstPtrs PlannerActionsVisitor::visit(ActionsDAG & actions_dag, QueryTreeNodePtr expression_node)
+std::pair<ActionsDAG::NodeRawConstPtrs, CorrelatedSubtrees> PlannerActionsVisitor::visit(ActionsDAG & actions_dag, QueryTreeNodePtr expression_node)
 {
-    PlannerActionsVisitorImpl actions_visitor_impl(actions_dag, planner_context, use_column_identifier_as_action_node_name);
+    PlannerActionsVisitorImpl actions_visitor_impl(
+        actions_dag,
+        planner_context,
+        correlated_columns_set,
+        use_column_identifier_as_action_node_name);
     return actions_visitor_impl.visit(expression_node);
 }
 

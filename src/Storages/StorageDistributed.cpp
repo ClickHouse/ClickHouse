@@ -1057,6 +1057,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     QueryPipeline pipeline;
     ContextMutablePtr query_context = Context::createCopy(local_context);
     query_context->increaseDistributedDepth();
+    query_context->setSetting("enable_parallel_replicas", Field{0}); // TODO: allow parallel inserts with PR for distributed tables
 
     for (size_t shard_index : collections::range(0, shards_info.size()))
     {

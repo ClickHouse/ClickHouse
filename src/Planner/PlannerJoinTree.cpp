@@ -1515,7 +1515,7 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
     auto hash_table_stat_cache_key = preCalculateCacheKey(right_table_expression, select_query_info);
     const auto cache_key_for_parallel_hash = calculateCacheKey(table_join, hash_table_stat_cache_key);
     auto join_algorithm = chooseJoinAlgorithm(
-        table_join, prepared_join_storage, left_header, right_header, JoinAlgorithmSettings(*planner_context->getQueryContext()), cache_key_for_parallel_hash);
+        table_join, prepared_join_storage, left_header, right_header, JoinAlgorithmSettings(*planner_context->getQueryContext()), cache_key_for_parallel_hash, /*rhs_size_estimation=*/{});
     auto result_plan = QueryPlan();
 
     bool is_filled_join = join_algorithm->isFilled();
@@ -2183,7 +2183,8 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
     auto plan_output_columns = plan.getCurrentHeader().getColumnsWithTypeAndName();
 
     ActionsDAG array_join_action_dag(plan_output_columns);
-    PlannerActionsVisitor actions_visitor(planner_context);
+    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+    PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set);
     std::unordered_set<std::string> array_join_expressions_output_nodes;
 
     Names array_join_column_names;
@@ -2194,7 +2195,8 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
         array_join_column_names.push_back(array_join_column_identifier);
 
         auto & array_join_expression_column = array_join_expression->as<ColumnNode &>();
-        auto expression_dag_index_nodes = actions_visitor.visit(array_join_action_dag, array_join_expression_column.getExpressionOrThrow());
+        auto [expression_dag_index_nodes, correlated_subtrees] = actions_visitor.visit(array_join_action_dag, array_join_expression_column.getExpressionOrThrow());
+        correlated_subtrees.assertEmpty("in ARRAY JOIN");
 
         for (auto & expression_dag_index_node : expression_dag_index_nodes)
         {

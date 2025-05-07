@@ -169,7 +169,7 @@ public:
     }
 
     Stats stats;
-    size_t replicas_count{0};
+    const size_t replicas_count{0};
     size_t unavailable_replicas_count{0};
     size_t sent_initial_requests{0};
     ProgressCallback progress_callback;
@@ -177,7 +177,8 @@ public:
     explicit ImplInterface(size_t replicas_count_)
         : stats{replicas_count_}
         , replicas_count(replicas_count_)
-    {}
+    {
+    }
 
     virtual ~ImplInterface() = default;
 
@@ -407,6 +408,7 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
 void DefaultCoordinator::markReplicaAsUnavailable(size_t replica_number)
 {
     LOG_DEBUG(log, "Replica number {} is unavailable", replica_number);
+    chassert(replica_number < replicas_count);
 
     ++unavailable_replicas_count;
     stats[replica_number].is_unavailable = true;
@@ -416,6 +418,9 @@ void DefaultCoordinator::markReplicaAsUnavailable(size_t replica_number)
 
     for (const auto & segment : distribution_by_hash_queue[replica_number])
     {
+        if (segment.ranges.empty())
+            continue;
+
         chassert(segment.ranges.size() == 1);
         enqueueToStealerOrStealingQueue(segment.info, segment.ranges.front());
     }
@@ -1064,6 +1069,13 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
     if (!pimpl)
         initialize(announcement.mode);
 
+    if (!snapshot_replica_num)
+    {
+        snapshot_replica_num = announcement.replica_num;
+
+        LOG_DEBUG(getLogger("ParallelReplicasReadingCoordinator"), "Using snapshot from replica num {}", snapshot_replica_num.value());
+    }
+
     pimpl->handleInitialAllRangesAnnouncement(std::move(announcement));
 }
 
@@ -1109,6 +1121,8 @@ void ParallelReplicasReadingCoordinator::markReplicaAsUnavailable(size_t replica
 
 void ParallelReplicasReadingCoordinator::initialize(CoordinationMode mode)
 {
+    chassert(!pimpl);
+
     switch (mode)
     {
         case CoordinationMode::Default:
@@ -1132,6 +1146,7 @@ void ParallelReplicasReadingCoordinator::initialize(CoordinationMode mode)
 
 ParallelReplicasReadingCoordinator::ParallelReplicasReadingCoordinator(size_t replicas_count_) : replicas_count(replicas_count_)
 {
+    LOG_DEBUG(getLogger("ParallelReplicasReadingCoordinator"), "Creating parallel replicas coordinator with replicas_count={}", replicas_count);
 }
 
 ParallelReplicasReadingCoordinator::~ParallelReplicasReadingCoordinator() = default;

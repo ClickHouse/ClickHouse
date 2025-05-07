@@ -28,17 +28,17 @@ private:
 public:
     MutableColumnPtr createColumn() const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method createColumn() is not implemented for data type {}", getName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method createColumn is not implemented for data type {}", getName());
     }
 
     Field getDefault() const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDefault() is not implemented for data type {}", getName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDefault is not implemented for data type {}", getName());
     }
 
     void insertDefaultInto(IColumn &) const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultInto() is not implemented for data type {}", getName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultInto is not implemented for data type {}", getName());
     }
 
     bool haveSubtypes() const override { return false; }
