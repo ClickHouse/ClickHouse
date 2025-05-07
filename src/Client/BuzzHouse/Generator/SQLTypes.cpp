@@ -88,7 +88,7 @@ String BoolType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &
 
 String IntType::typeName(const bool) const
 {
-    return fmt::format("{}Int{}", is_unsigned ? "U" : "", std::to_string(size));
+    return fmt::format("{}Int{}", is_unsigned ? "U" : "", size);
 }
 
 String IntType::MySQLtypeName(RandomGenerator &, const bool) const
@@ -178,7 +178,7 @@ String IntType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &)
 
 String FloatType::typeName(const bool) const
 {
-    return fmt::format("{}Float{}", size == 16 ? "B" : "", std::to_string(size));
+    return fmt::format("{}Float{}", size == 16 ? "B" : "", size);
 }
 
 String FloatType::MySQLtypeName(RandomGenerator &, const bool) const
@@ -297,7 +297,7 @@ SQLType * DateTimeType::typeDeepCopy() const
 
 String DateTimeType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
 {
-    return "'" + (extended ? rg.nextDateTime64() : rg.nextDateTime()) + "'";
+    return "'" + (extended ? rg.nextDateTime64(rg.nextSmallNumber() < 8) : rg.nextDateTime(precision.has_value())) + "'";
 }
 
 String DecimalType::typeName(const bool) const
@@ -375,7 +375,7 @@ String StringType::typeName(const bool) const
 {
     if (precision.has_value())
     {
-        return fmt::format("FixedString({})", std::to_string(precision.value()));
+        return fmt::format("FixedString({})", precision.value());
     }
     else
     {
@@ -387,7 +387,7 @@ String StringType::MySQLtypeName(RandomGenerator & rg, const bool) const
 {
     if (precision.has_value())
     {
-        return fmt::format("{}{}({})", rg.nextBool() ? "VAR" : "", rg.nextBool() ? "CHAR" : "BINARY", std::to_string(precision.value()));
+        return fmt::format("{}{}({})", rg.nextBool() ? "VAR" : "", rg.nextBool() ? "CHAR" : "BINARY", precision.value());
     }
     else
     {
@@ -399,7 +399,7 @@ String StringType::PostgreSQLtypeName(RandomGenerator & rg, const bool) const
 {
     if (precision.has_value())
     {
-        return fmt::format("{}CHAR({})", rg.nextBool() ? "VAR" : "", std::to_string(precision.value()));
+        return fmt::format("{}CHAR({})", rg.nextBool() ? "VAR" : "", precision.value());
     }
     else
     {
@@ -541,7 +541,7 @@ SQLType * EnumType::typeDeepCopy() const
 
 String EnumType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
 {
-    return rg.pickRandomlyFromVector(values).val;
+    return rg.pickRandomly(values).val;
 }
 
 String IPv4Type::typeName(const bool) const
@@ -638,7 +638,7 @@ String DynamicType::appendRandomRawValue(RandomGenerator & rg, StatementGenerato
     const uint32_t type_mask_backup = gen.next_type_mask;
 
     gen.next_type_mask = gen.fc.type_mask & ~(allow_dynamic | allow_nested);
-    SQLType * next = gen.randomNextType(rg, gen.next_type_mask, col_counter, nullptr);
+    auto next = std::unique_ptr<SQLType>(gen.randomNextType(rg, gen.next_type_mask, col_counter, nullptr));
     gen.next_type_mask = type_mask_backup;
     String ret = next->appendRandomRawValue(rg, gen);
 
@@ -647,7 +647,6 @@ String DynamicType::appendRandomRawValue(RandomGenerator & rg, StatementGenerato
         ret += "::";
         ret += next->typeName(false);
     }
-    delete next;
     return ret;
 }
 
@@ -1094,7 +1093,7 @@ SQLType * VariantType::typeDeepCopy() const
 
 String VariantType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
 {
-    return subtypes.empty() ? "NULL" : rg.pickRandomlyFromVector(subtypes)->appendRandomRawValue(rg, gen);
+    return subtypes.empty() ? "NULL" : rg.pickRandomly(subtypes)->appendRandomRawValue(rg, gen);
 }
 
 VariantType::~VariantType()
@@ -1208,7 +1207,7 @@ std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerato
         this->ids.emplace_back(11);
         this->ids.emplace_back(12);
     }
-    const uint32_t nopt = rg.pickRandomlyFromVector(this->ids);
+    const uint32_t nopt = rg.pickRandomly(this->ids);
     this->ids.clear();
     switch (nopt)
     {
@@ -1275,7 +1274,7 @@ SQLType * StatementGenerator::randomDateTimeType(RandomGenerator & rg, const uin
     }
     if ((!use64 || has_precision) && !fc.timezones.empty() && rg.nextSmallNumber() < 5)
     {
-        timezone = std::optional<String>(rg.pickRandomlyFromVector(fc.timezones));
+        timezone = std::optional<String>(rg.pickRandomly(fc.timezones));
         if (dt)
         {
             dt->set_timezone(timezone.value());
@@ -1294,7 +1293,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
     const uint32_t date_type = 15 * static_cast<uint32_t>((allowed_types & allow_dates) != 0);
     const uint32_t datetime_type = 15 * static_cast<uint32_t>((allowed_types & allow_datetimes) != 0);
     const uint32_t string_type = 30 * static_cast<uint32_t>((allowed_types & allow_strings) != 0);
-    const uint32_t decimal_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_decimals) != 0);
+    const uint32_t decimal_type = 20 * static_cast<uint32_t>((allowed_types & allow_decimals) != 0);
     const uint32_t bool_type = 20 * static_cast<uint32_t>((allowed_types & allow_bool) != 0);
     const uint32_t enum_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_enum) != 0);
     const uint32_t uuid_type = 10 * static_cast<uint32_t>((allowed_types & allow_uuid) != 0);
@@ -1347,7 +1346,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
     {
         std::optional<uint32_t> swidth;
 
-        if (rg.nextBool())
+        if (!(allowed_types & allow_fixed_strings) || rg.nextBool())
         {
             if (tp)
             {
@@ -1373,12 +1372,12 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
 
         if (rg.nextBool())
         {
-            short_notation = std::optional<DecimalN_DecimalPrecision>(static_cast<DecimalN_DecimalPrecision>(
-                (rg.nextRandomUInt32()
-                 % static_cast<uint32_t>(
-                     (allowed_types & set_no_decimal_limit) ? DecimalN::DecimalPrecision_MAX
-                                                            : DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128))
-                + 1));
+            std::uniform_int_distribution<uint32_t> dec_range(
+                1,
+                static_cast<uint32_t>(
+                    (allowed_types & set_no_decimal_limit) ? DecimalN::DecimalPrecision_MAX
+                                                           : DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128));
+            short_notation = std::optional<DecimalN_DecimalPrecision>(static_cast<DecimalN_DecimalPrecision>(dec_range(rg.generator)));
             switch (short_notation.value())
             {
                 case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D32:
@@ -1517,7 +1516,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
         String desc;
         std::vector<JSubType> subcols;
         JSONDef * jdef = tp ? tp->mutable_jdef() : nullptr;
-        const uint32_t nclauses = rg.nextMediumNumber() % 7;
+        const uint32_t nclauses = rg.nextLargeNumber() % 7;
 
         if (nclauses)
         {
@@ -1535,7 +1534,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
             }
             if (noption < 4)
             {
-                const uint32_t max_dpaths = rg.nextBool() ? (rg.nextSmallNumber() % 5) : (rg.nextRandomUInt32() % 1025);
+                const uint32_t max_dpaths = rg.nextBool() ? (rg.nextMediumNumber() % 5) : (rg.nextRandomUInt32() % 1025);
 
                 if (tp)
                 {
@@ -1546,7 +1545,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
             }
             else if (this->depth >= this->fc.max_depth || noption < 8)
             {
-                const uint32_t max_dtypes = rg.nextBool() ? (rg.nextSmallNumber() % 5) : (rg.nextRandomUInt32() % 33);
+                const uint32_t max_dtypes = rg.nextBool() ? (rg.nextMediumNumber() % 5) : (rg.nextRandomUInt32() % 33);
 
                 if (tp)
                 {
@@ -1767,7 +1766,8 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
         && nopt < (nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + nested_type + geo_type + 1))
     {
         /// Geo
-        const GeoTypes gt = static_cast<GeoTypes>((rg.nextRandomUInt32() % static_cast<uint32_t>(GeoTypes_MAX)) + 1);
+        std::uniform_int_distribution<uint32_t> geo_range(1, static_cast<uint32_t>(GeoTypes_MAX));
+        const GeoTypes gt = static_cast<GeoTypes>(geo_range(rg.generator));
 
         if (tp)
         {
@@ -2012,11 +2012,11 @@ String strBuildJSONElement(RandomGenerator & rg)
             break;
         case 16:
             /// Datetime
-            ret = '"' + rg.nextDateTime() + '"';
+            ret = '"' + rg.nextDateTime(rg.nextSmallNumber() < 8) + '"';
             break;
         case 17:
             /// Datetime64
-            ret = '"' + rg.nextDateTime64() + '"';
+            ret = '"' + rg.nextDateTime64(rg.nextSmallNumber() < 8) + '"';
             break;
         case 18:
             /// UUID

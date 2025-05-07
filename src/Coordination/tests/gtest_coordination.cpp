@@ -186,6 +186,11 @@ struct SimpliestRaftServer
         }
     }
 
+    ~SimpliestRaftServer()
+    {
+        state_manager->flushAndShutDownLogStore();
+    }
+
     // Server ID.
     int server_id;
 

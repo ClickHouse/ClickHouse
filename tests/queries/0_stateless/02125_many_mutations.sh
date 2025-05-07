@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-tsan, no-debug, no-asan, no-msan, no-ubsan, no-shared-merge-tree
+# Tags: long, no-tsan, no-debug, no-asan, no-msan, no-ubsan, no-shared-merge-tree, no-parallel, no-replicated-database
 # no-shared-merge-tree -- this test is too slow
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -18,7 +18,7 @@ select x, y from many_mutations order by x;
 
 job()
 {
-   yes "alter table many_mutations update y = y + 1 where 1;" | head -n 1000 | $CLICKHOUSE_CLIENT
+   yes "alter table many_mutations update y = y + 1 where 1;" | head -n 1000 | $CLICKHOUSE_CLIENT --max_execution_time 120 --lock_acquire_timeout 120
 }
 
 job &
@@ -45,7 +45,7 @@ job &
 wait
 
 # truncate before drop, avoid removing all the mutations (it's slow) in DatabaseCatalog's thread (may affect other tests)
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT --max_execution_time 120 -q "
 select count() from system.mutations where database = currentDatabase() and table = 'many_mutations' and not is_done;
 system start merges many_mutations;
 optimize table many_mutations final SETTINGS optimize_throw_if_noop = 1;

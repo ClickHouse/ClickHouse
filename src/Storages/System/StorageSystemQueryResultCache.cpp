@@ -26,8 +26,8 @@ ColumnsDescription StorageSystemQueryResultCache::getColumnsDescription()
     };
 }
 
-StorageSystemQueryResultCache::StorageSystemQueryResultCache(const StorageID & table_id_)
-    : IStorageSystemOneBlock(table_id_, getColumnsDescription())
+StorageSystemQueryResultCache::StorageSystemQueryResultCache(const StorageID & table_id)
+    : IStorageSystemOneBlock(table_id, getColumnsDescription())
 {
 }
 

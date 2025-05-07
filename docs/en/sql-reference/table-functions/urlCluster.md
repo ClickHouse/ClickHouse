@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/table-functions/urlCluster
+description: 'Allows processing files from URL in parallel from many nodes in a specified
+  cluster.'
+sidebar_label: 'urlCluster'
 sidebar_position: 201
-sidebar_label: urlCluster
-title: "urlCluster"
-description: "Allows processing files from URL in parallel from many nodes in a specified cluster."
+slug: /sql-reference/table-functions/urlCluster
+title: 'urlCluster'
 ---
 
 # urlCluster Table Function
@@ -12,7 +13,7 @@ Allows processing files from URL in parallel from many nodes in a specified clus
 
 **Syntax**
 
-``` sql
+```sql
 urlCluster(cluster_name, URL, format, structure)
 ```
 
@@ -49,7 +50,7 @@ if __name__ == "__main__":
     HTTPServer(server_address, CSVHTTPServer).serve_forever()
 ```
 
-``` sql
+```sql
 SELECT * FROM urlCluster('cluster_simple','http://127.0.0.1:12345', CSV, 'column1 String, column2 UInt32')
 ```
 

@@ -8,7 +8,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/queryToString.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -148,7 +147,7 @@ DistributedSink::DistributedSink(
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , query_ast(createInsertToRemoteTableQuery(storage.remote_storage.database_name, storage.remote_storage.table_name, columns_to_send_))
-    , query_string(queryToString(query_ast))
+    , query_string(query_ast->formatWithSecretsOneLine())
     , cluster(cluster_)
     , insert_sync(insert_sync_)
     , allow_materialized(context->getSettingsRef()[Setting::insert_allow_materialized_columns])
@@ -449,9 +448,9 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     copy_query_ast,
                     job.local_context,
                     allow_materialized,
-                    /* no_squash */ false,
-                    /* no_destination */ false,
-                    /* async_isnert */ false);
+                    /* no_squash= */ false,
+                    /* no_destination= */ false,
+                    /* async_insert_= */ false);
                 auto block_io = interp.execute();
 
                 job.pipeline = std::move(block_io.pipeline);
@@ -756,9 +755,9 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const 
             query_ast,
             context,
             allow_materialized,
-            /* no_squash */ false,
-            /* no_destination */ false,
-            /* async_isnert */ false);
+            /* no_squash= */ false,
+            /* no_destination= */ false,
+            /* async_insert_= */ false);
 
         auto block_io = interp.execute();
         PushingPipelineExecutor executor(block_io.pipeline);

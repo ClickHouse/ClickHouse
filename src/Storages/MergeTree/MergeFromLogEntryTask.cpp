@@ -9,6 +9,8 @@
 #include <Common/ProfileEvents.h>
 #include <Common/ProfileEventsScope.h>
 
+#include <Common/DateLUTImpl.h>
+
 #include <Core/BackgroundSchedulePool.h>
 
 namespace ProfileEvents

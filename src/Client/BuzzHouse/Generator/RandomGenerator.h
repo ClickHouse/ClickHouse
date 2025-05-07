@@ -29,7 +29,7 @@ private:
     std::uniform_int_distribution<int32_t> ints32;
 
     std::uniform_int_distribution<uint32_t> uints32, dist1, dist2, dist3, dist4, date_years, datetime_years, datetime64_years, months,
-        hours, minutes;
+        hours, minutes, subseconds;
 
     std::uniform_int_distribution<int64_t> ints64;
 
@@ -63,10 +63,6 @@ private:
 
     const DB::Strings common_chinese{
         "认识你很高兴", "美国", "叫", "名字", "你们", "日本", "哪国人", "爸爸", "兄弟姐妹", "漂亮", "照片", "😉"};
-
-    const DB::Strings nasty_strings{"a\"a", "b\\tb", "c\\nc", "d\\'d", "e e", "",   "😉", "\"", "\\'",  "\\t",  "\\n",  "--",   "0",
-                                    "1",    "-1",    "{",     "}",     "(",   ")",  "[",  "]",  ",",    ".",    ";",    ":",    "\\\\",
-                                    "/",    "_",     "%",     "*",     "\\0", "{}", "[]", "()", "null", "NULL", "TRUE", "FALSE"};
 
     /// Use bad_utf8 on x' strings!
     const DB::Strings bad_utf8{
@@ -109,12 +105,17 @@ public:
         , months(1, 12)
         , hours(0, 23)
         , minutes(0, 59)
+        , subseconds(0, UINT32_C(1000000000))
         , ints64(std::numeric_limits<int64_t>::min(), std::numeric_limits<int64_t>::max())
         , uints64(std::numeric_limits<uint64_t>::min(), std::numeric_limits<uint64_t>::max())
         , zero_one(0, 1)
         , generator(seed)
     {
     }
+
+    const DB::Strings nasty_strings{"a\"a", "b\\tb", "c\\nc", "d\\'d", "e e", "",   "😉", "\"", "\\'",  "\\t",  "\\n",  "--", "0",
+                                    "1",    "-1",    "{",     "}",     "(",   ")",  "[",  "]",  ",",    ".",    ";",    ":",  "\\\\",
+                                    "/",    "_",     "%",     "*",     "\\0", "{}", "[]", "()", "null", "NULL", "TRUE", "叫", "FALSE"};
 
     uint64_t getSeed() const;
 
@@ -151,10 +152,10 @@ public:
     String nextDate32();
 
     /// Range [1970-01-01 00:00:00, 2106-02-07 06:28:15]
-    String nextDateTime();
+    String nextDateTime(bool has_subseconds);
 
     /// Range [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]
-    String nextDateTime64();
+    String nextDateTime64(bool has_subseconds);
 
     template <typename T>
     T thresholdGenerator(const double always_on_prob, const double always_off_prob, T min_val, T max_val)
@@ -194,29 +195,17 @@ public:
         return d(generator);
     }
 
-    template <typename T>
-    const T & pickRandomlyFromVector(const std::vector<T> & vals)
+    template <typename Container>
+    const auto & pickRandomly(const Container & container)
     {
-        std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
-        return vals[d(generator)];
-    }
-
-    template <typename T>
-    const T & pickRandomlyFromSet(const std::unordered_set<T> & vals)
-    {
-        std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
-        auto it = vals.begin();
+        std::uniform_int_distribution<size_t> d{0, container.size() - 1};
+        auto it = container.begin();
         std::advance(it, d(generator));
-        return *it;
-    }
 
-    template <typename K, typename V>
-    const K & pickKeyRandomlyFromMap(const std::unordered_map<K, V> & vals)
-    {
-        std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
-        auto it = vals.begin();
-        std::advance(it, d(generator));
-        return it->first;
+        if constexpr (requires { it->first; })
+            return it->first;
+        else
+            return *it;
     }
 
     template <typename K, typename V>
@@ -228,15 +217,6 @@ public:
         return it->second;
     }
 
-    template <typename K, typename V>
-    std::tuple<K, V> pickPairRandomlyFromMap(const std::unordered_map<K, V> & vals)
-    {
-        std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
-        auto it = vals.begin();
-        std::advance(it, d(generator));
-        return std::make_tuple(it->first, it->second);
-    }
-
     String nextJSONCol();
 
     String nextString(const String & delimiter, bool allow_nasty, uint32_t limit);
@@ -246,6 +226,23 @@ public:
     String nextIPv4();
 
     String nextIPv6();
+};
+
+using RandomSettingParameter = std::function<String(RandomGenerator &)>;
+
+struct CHSetting
+{
+public:
+    const RandomSettingParameter random_func;
+    const std::unordered_set<String> oracle_values;
+    const bool changes_behavior;
+
+    CHSetting(const RandomSettingParameter & rf, const std::unordered_set<String> & ov, const bool cb)
+        : random_func(rf)
+        , oracle_values(ov)
+        , changes_behavior(cb)
+    {
+    }
 };
 
 }

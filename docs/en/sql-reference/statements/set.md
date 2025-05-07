@@ -1,12 +1,14 @@
 ---
-slug: /sql-reference/statements/set
+description: 'Documentation for SET Statement'
+sidebar_label: 'SET'
 sidebar_position: 50
-sidebar_label: SET
+slug: /sql-reference/statements/set
+title: 'SET Statement'
 ---
 
 # SET Statement
 
-``` sql
+```sql
 SET param = value
 ```
 
@@ -14,7 +16,7 @@ Assigns `value` to the `param` [setting](/operations/settings/overview) for the 
 
 You can also set all the values from the specified settings profile in a single query.
 
-``` sql
+```sql
 SET profile = 'profile-name-from-the-settings-file'
 ```
 

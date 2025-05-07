@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/functions/tuple-map-functions
+description: 'Documentation for Tuple Map Functions'
+sidebar_label: 'Maps'
 sidebar_position: 120
-sidebar_label: Maps
-title: Map Functions
+slug: /sql-reference/functions/tuple-map-functions
+title: 'Map Functions'
 ---
 
 ## map {#map}
@@ -34,7 +35,7 @@ SELECT map('key1', number, 'key2', number * 2) FROM numbers(3);
 
 Result:
 
-``` text
+```text
 ┌─map('key1', number, 'key2', multiply(number, 2))─┐
 │ {'key1':0,'key2':0}                              │
 │ {'key1':1,'key2':2}                              │
@@ -151,7 +152,7 @@ SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') a
 
 Result:
 
-``` Result:
+```Result:
 ┌─kv──────────────────────────────────────────────────────────────────────┐
 │ {'name':'neymar','age':'31','team':'psg','nationality':'brazil'}        │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -165,7 +166,7 @@ SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:bra
 
 Result:
 
-``` text
+```text
 ┌─kv───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ {'name':'neymar','age':'31','team':'psg','nationality':'brazil','last_key':'last_value'}                                 │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -179,7 +180,7 @@ SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv
 
 Result:
 
-``` text
+```text
 ┌─kv─────────────────────┐
 │ {'age':'a\\x0A\\n\\0'} │
 └────────────────────────┘
@@ -786,7 +787,7 @@ SELECT mapExists((k, v) -> (v = 1), map('k1', 1, 'k2', 2)) AS res
 
 Result:
 
-```
+```response
 ┌─res─┐
 │   1 │
 └─────┘
@@ -811,7 +812,7 @@ SELECT mapAll((k, v) -> (v = 1), map('k1', 1, 'k2', 2)) AS res
 
 Result:
 
-```
+```response
 ┌─res─┐
 │   0 │
 └─────┘
@@ -824,21 +825,21 @@ If the `func` function is specified, the sorting order is determined by the resu
 
 **Examples**
 
-``` sql
+```sql
 SELECT mapSort(map('key2', 2, 'key3', 1, 'key1', 3)) AS map;
 ```
 
-``` text
+```text
 ┌─map──────────────────────────┐
 │ {'key1':3,'key2':2,'key3':1} │
 └──────────────────────────────┘
 ```
 
-``` sql
+```sql
 SELECT mapSort((k, v) -> v, map('key2', 2, 'key3', 1, 'key1', 3)) AS map;
 ```
 
-``` text
+```text
 ┌─map──────────────────────────┐
 │ {'key3':1,'key2':2,'key1':3} │
 └──────────────────────────────┘
@@ -868,11 +869,11 @@ mapPartialSort([func,] limit, map)
 
 **Example**
 
-``` sql
+```sql
 SELECT mapPartialSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2));
 ```
 
-``` text
+```text
 ┌─mapPartialSort(lambda(tuple(k, v), v), 2, map('k1', 3, 'k2', 1, 'k3', 2))─┐
 │ {'k2':1,'k3':2,'k1':3}                                                    │
 └───────────────────────────────────────────────────────────────────────────┘
@@ -885,21 +886,21 @@ If the `func` function is specified, the sorting order is determined by the resu
 
 **Examples**
 
-``` sql
+```sql
 SELECT mapReverseSort(map('key2', 2, 'key3', 1, 'key1', 3)) AS map;
 ```
 
-``` text
+```text
 ┌─map──────────────────────────┐
 │ {'key3':1,'key2':2,'key1':3} │
 └──────────────────────────────┘
 ```
 
-``` sql
+```sql
 SELECT mapReverseSort((k, v) -> v, map('key2', 2, 'key3', 1, 'key1', 3)) AS map;
 ```
 
-``` text
+```text
 ┌─map──────────────────────────┐
 │ {'key1':3,'key2':2,'key3':1} │
 └──────────────────────────────┘
@@ -929,11 +930,11 @@ mapPartialReverseSort([func,] limit, map)
 
 **Example**
 
-``` sql
+```sql
 SELECT mapPartialReverseSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2));
 ```
 
-``` text
+```text
 ┌─mapPartialReverseSort(lambda(tuple(k, v), v), 2, map('k1', 3, 'k2', 1, 'k3', 2))─┐
 │ {'k1':3,'k3':2,'k2':1}                                                           │
 └──────────────────────────────────────────────────────────────────────────────────┘

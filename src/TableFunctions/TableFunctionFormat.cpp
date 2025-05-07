@@ -217,7 +217,7 @@ Result:
 )", ""
         },
     },
-    .category{""}
+    .category = FunctionDocumentation::Category::TableFunction
 };
 
 }

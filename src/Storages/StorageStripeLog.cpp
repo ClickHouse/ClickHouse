@@ -538,7 +538,7 @@ void StorageStripeLog::updateTotalRows(const WriteLock &)
     total_rows = new_total_rows;
 }
 
-std::optional<UInt64> StorageStripeLog::totalRows(const Settings &) const
+std::optional<UInt64> StorageStripeLog::totalRows(ContextPtr) const
 {
     if (indices_loaded)
         return total_rows;
@@ -549,7 +549,7 @@ std::optional<UInt64> StorageStripeLog::totalRows(const Settings &) const
     return {};
 }
 
-std::optional<UInt64> StorageStripeLog::totalBytes(const Settings &) const
+std::optional<UInt64> StorageStripeLog::totalBytes(ContextPtr) const
 {
     return total_bytes;
 }

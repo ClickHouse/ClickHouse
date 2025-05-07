@@ -60,7 +60,7 @@
 	url = https://github.com/ClickHouse/snappy
 [submodule "contrib/cppkafka"]
 	path = contrib/cppkafka
-	url = https://github.com/mfontanini/cppkafka
+	url = https://github.com/ClickHouse/cppkafka
 [submodule "contrib/brotli"]
 	path = contrib/brotli
 	url = https://github.com/google/brotli
@@ -247,7 +247,7 @@
 	url = https://github.com/ClickHouse/llvm-project
 [submodule "contrib/corrosion"]
 	path = contrib/corrosion
-	url = https://github.com/ClickHouse/corrosion
+	url = https://github.com/corrosion-rs/corrosion
 [submodule "contrib/libssh"]
 	path = contrib/libssh
 	url = https://github.com/ClickHouse/libssh.git
@@ -372,3 +372,6 @@
 [submodule "contrib/delta-kernel-rs"]
 	path = contrib/delta-kernel-rs
 	url = https://github.com/ClickHouse/delta-kernel-rs.git
+[submodule "contrib/SHA3IUF"]
+	path = contrib/SHA3IUF
+	url = https://github.com/brainhub/SHA3IUF.git

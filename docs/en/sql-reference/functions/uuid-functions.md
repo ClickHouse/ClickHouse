@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/uuid-functions
+description: 'Documentation for Functions for Working with UUIDs'
+sidebar_label: 'UUIDs'
 sidebar_position: 205
-sidebar_label: UUIDs
+slug: /sql-reference/functions/uuid-functions
+title: 'Functions for Working with UUIDs'
 ---
 
 import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
@@ -14,7 +16,7 @@ Generates a [version 4](https://tools.ietf.org/html/rfc4122#section-4.4) [UUID](
 
 **Syntax**
 
-``` sql
+```sql
 generateUUIDv4([expr])
 ```
 
@@ -30,7 +32,7 @@ A value of type UUIDv4.
 
 First, create a table with a column of type UUID, then insert a generated UUIDv4 into the table.
 
-``` sql
+```sql
 CREATE TABLE tab (uuid UUID) ENGINE = Memory;
 
 INSERT INTO tab SELECT generateUUIDv4();
@@ -86,7 +88,7 @@ As of April 2024, version 7 UUIDs are in draft status and their layout may chang
 
 **Syntax**
 
-``` sql
+```sql
 generateUUIDv7([expr])
 ```
 
@@ -102,7 +104,7 @@ A value of type UUIDv7.
 
 First, create a table with a column of type UUID, then insert a generated UUIDv7 into the table.
 
-``` sql
+```sql
 CREATE TABLE tab (uuid UUID) ENGINE = Memory;
 
 INSERT INTO tab SELECT generateUUIDv7();
@@ -212,7 +214,7 @@ Result:
 
 Converts a value of type String to a UUID.
 
-``` sql
+```sql
 toUUID(string)
 ```
 
@@ -222,7 +224,7 @@ The UUID type value.
 
 **Usage example**
 
-``` sql
+```sql
 SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
 ```
 
@@ -245,7 +247,7 @@ Result:
 
 UUID
 
-``` sql
+```sql
 toUUIDOrDefault(string, default)
 ```
 
@@ -257,7 +259,7 @@ The UUID type value.
 
 This first example returns the first argument converted to a UUID type as it can be converted:
 
-``` sql
+```sql
 SELECT toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', cast('59f0c404-5cb3-11e7-907b-a6006ad3dba0' as UUID));
 ```
 
@@ -287,7 +289,7 @@ Result:
 
 Takes an argument of type String and tries to parse it into UUID. If failed, returns NULL.
 
-``` sql
+```sql
 toUUIDOrNull(string)
 ```
 
@@ -297,7 +299,7 @@ The Nullable(UUID) type value.
 
 **Usage example**
 
-``` sql
+```sql
 SELECT toUUIDOrNull('61f0c404-5cb3-11e7-907b-a6006ad3dba0T') AS uuid
 ```
 
@@ -313,7 +315,7 @@ Result:
 
 It takes an argument of type String and tries to parse it into UUID. If failed, returns zero UUID.
 
-``` sql
+```sql
 toUUIDOrZero(string)
 ```
 
@@ -323,7 +325,7 @@ The UUID type value.
 
 **Usage example**
 
-``` sql
+```sql
 SELECT toUUIDOrZero('61f0c404-5cb3-11e7-907b-a6006ad3dba0T') AS uuid
 ```
 
@@ -341,7 +343,7 @@ Accepts `string` containing 36 characters in the format `xxxxxxxx-xxxx-xxxx-xxxx
 
 **Syntax**
 
-``` sql
+```sql
 UUIDStringToNum(string[, variant = 1])
 ```
 
@@ -356,7 +358,7 @@ FixedString(16)
 
 **Usage examples**
 
-``` sql
+```sql
 SELECT
     '612f3c40-5d3b-217e-707b-6a546a3d7b29' AS uuid,
     UUIDStringToNum(uuid) AS bytes
@@ -370,7 +372,7 @@ Result:
 └──────────────────────────────────────┴──────────────────┘
 ```
 
-``` sql
+```sql
 SELECT
     '612f3c40-5d3b-217e-707b-6a546a3d7b29' AS uuid,
     UUIDStringToNum(uuid, 2) AS bytes
@@ -390,7 +392,7 @@ Accepts `binary` containing a binary representation of a UUID, with its format o
 
 **Syntax**
 
-``` sql
+```sql
 UUIDNumToString(binary[, variant = 1])
 ```
 
@@ -405,7 +407,7 @@ String.
 
 **Usage example**
 
-``` sql
+```sql
 SELECT
     'a/<@];!~p{jTj={)' AS bytes,
     UUIDNumToString(toFixedString(bytes, 16)) AS uuid
@@ -419,7 +421,7 @@ Result:
 └──────────────────┴──────────────────────────────────────┘
 ```
 
-``` sql
+```sql
 SELECT
     '@</a;]~!p{jTj={)' AS bytes,
     UUIDNumToString(toFixedString(bytes, 16), 2) AS uuid
@@ -439,7 +441,7 @@ Accepts a [UUID](../data-types/uuid.md) and returns its binary representation as
 
 **Syntax**
 
-``` sql
+```sql
 UUIDToNum(uuid[, variant = 1])
 ```
 
@@ -454,7 +456,7 @@ The binary representation of the UUID.
 
 **Usage examples**
 
-``` sql
+```sql
 SELECT
     toUUID('612f3c40-5d3b-217e-707b-6a546a3d7b29') AS uuid,
     UUIDToNum(uuid) AS bytes
@@ -468,7 +470,7 @@ Result:
 └──────────────────────────────────────┴──────────────────┘
 ```
 
-``` sql
+```sql
 SELECT
     toUUID('612f3c40-5d3b-217e-707b-6a546a3d7b29') AS uuid,
     UUIDToNum(uuid, 2) AS bytes
@@ -488,7 +490,7 @@ Returns the timestamp component of a UUID version 7.
 
 **Syntax**
 
-``` sql
+```sql
 UUIDv7ToDateTime(uuid[, timezone])
 ```
 
@@ -503,7 +505,7 @@ UUIDv7ToDateTime(uuid[, timezone])
 
 **Usage examples**
 
-``` sql
+```sql
 SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))
 ```
 
@@ -515,7 +517,7 @@ Result:
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-``` sql
+```sql
 SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America/New_York')
 ```
 
@@ -568,7 +570,7 @@ While no standard or recommendation exists for the epoch of Snowflake IDs, imple
 
 **Syntax**
 
-``` sql
+```sql
 generateSnowflakeID([expr, [machine_id]])
 ```
 
@@ -585,7 +587,7 @@ A value of type UInt64.
 
 First, create a table with a column of type UInt64, then insert a generated Snowflake ID into the table.
 
-``` sql
+```sql
 CREATE TABLE tab (id UInt64) ENGINE = Memory;
 
 INSERT INTO tab SELECT generateSnowflakeID();
@@ -634,7 +636,7 @@ Extracts the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wi
 
 **Syntax**
 
-``` sql
+```sql
 snowflakeToDateTime(value[, time_zone])
 ```
 
@@ -651,7 +653,7 @@ snowflakeToDateTime(value[, time_zone])
 
 Query:
 
-``` sql
+```sql
 SELECT snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC');
 ```
 
@@ -677,7 +679,7 @@ Extracts the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wi
 
 **Syntax**
 
-``` sql
+```sql
 snowflakeToDateTime64(value[, time_zone])
 ```
 
@@ -694,7 +696,7 @@ snowflakeToDateTime64(value[, time_zone])
 
 Query:
 
-``` sql
+```sql
 SELECT snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC');
 ```
 
@@ -720,7 +722,7 @@ Converts a [DateTime](../data-types/datetime.md) value to the first [Snowflake I
 
 **Syntax**
 
-``` sql
+```sql
 dateTimeToSnowflake(value)
 ```
 
@@ -736,7 +738,7 @@ dateTimeToSnowflake(value)
 
 Query:
 
-``` sql
+```sql
 WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt SELECT dateTimeToSnowflake(dt);
 ```
 
@@ -761,7 +763,7 @@ Convert a [DateTime64](../data-types/datetime64.md) to the first [Snowflake ID](
 
 **Syntax**
 
-``` sql
+```sql
 dateTime64ToSnowflake(value)
 ```
 
@@ -777,7 +779,7 @@ dateTime64ToSnowflake(value)
 
 Query:
 
-``` sql
+```sql
 WITH toDateTime64('2021-08-15 18:57:56.492', 3, 'Asia/Shanghai') AS dt64 SELECT dateTime64ToSnowflake(dt64);
 ```
 
@@ -795,7 +797,7 @@ Returns the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wik
 
 **Syntax**
 
-``` sql
+```sql
 snowflakeIDToDateTime(value[, epoch[, time_zone]])
 ```
 
@@ -831,7 +833,7 @@ Returns the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wik
 
 **Syntax**
 
-``` sql
+```sql
 snowflakeIDToDateTime64(value[, epoch[, time_zone]])
 ```
 
@@ -867,7 +869,7 @@ Converts a [DateTime](../data-types/datetime.md) value to the first [Snowflake I
 
 **Syntax**
 
-``` sql
+```sql
 dateTimeToSnowflakeID(value[, epoch])
 ```
 
@@ -902,7 +904,7 @@ Convert a [DateTime64](../data-types/datetime64.md) to the first [Snowflake ID](
 
 **Syntax**
 
-``` sql
+```sql
 dateTime64ToSnowflakeID(value[, epoch])
 ```
 

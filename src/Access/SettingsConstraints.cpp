@@ -1,6 +1,5 @@
-#include <string_view>
-#include <unordered_map>
 #include <Access/SettingsConstraints.h>
+#include <Access/SettingsProfileElement.h>
 #include <Access/resolveSetting.h>
 #include <Access/AccessControl.h>
 #include <Core/Settings.h>
@@ -9,7 +8,9 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Common/SettingSource.h>
 #include <IO/WriteHelpers.h>
-#include <Poco/Util/AbstractConfiguration.h>
+
+#include <string_view>
+#include <unordered_map>
 
 namespace DB
 {

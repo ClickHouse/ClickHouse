@@ -3,9 +3,10 @@
 #include "config.h"
 
 #if USE_MONGODB
-#include <Processors/ISource.h>
-#include <Interpreters/Context.h>
 #include <Common/JSONBuilder.h>
+#include <Interpreters/Context.h>
+#include <Processors/ISource.h>
+#include <Storages/StorageMongoDB.h>
 
 #include <mongocxx/client.hpp>
 #include <mongocxx/collection.hpp>
@@ -32,6 +33,8 @@ public:
     String getName() const override { return "MongoDB"; }
 
 private:
+    MongoDBInstanceHolder & instance_holder = MongoDBInstanceHolder::instance();
+
     static void insertDefaultValue(IColumn & column, const IColumn & sample_column);
     void insertValue(IColumn & column, const size_t & idx, const DataTypePtr & type, const std::string & name, const bsoncxx::document::element & value);
 

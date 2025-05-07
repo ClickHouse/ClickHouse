@@ -130,6 +130,7 @@ public:
     operator bool() const { return impl != nullptr; } /// NOLINT
 
     Holder * getHolder() { return holder.get(); }
+    const Holder * getHolder() const { return holder.get(); }
 
     void reset()
     {

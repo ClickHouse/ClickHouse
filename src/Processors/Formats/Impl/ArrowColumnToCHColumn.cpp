@@ -1,4 +1,5 @@
 #include "ArrowColumnToCHColumn.h"
+#include "Common/Exception.h"
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
 
@@ -20,9 +21,9 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Common/DateLUTImpl.h>
-#include <base/types.h>
 #include <Processors/Chunk.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#include <Processors/Formats/Impl/ArrowGeoTypes.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnArray.h>
@@ -38,6 +39,7 @@
 #include <algorithm>
 #include <arrow/builder.h>
 #include <arrow/array.h>
+#include <arrow/util/key_value_metadata.h>
 #include <boost/algorithm/string/case_conv.hpp>
 
 
@@ -467,6 +469,39 @@ static ColumnPtr readByteMapFromArrowColumn(const std::shared_ptr<arrow::Chunked
     return nullmap_column;
 }
 
+static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, GeoColumnMetadata geo_metadata)
+{
+    auto column_builder = GeoColumnBuilder(column_name, geo_metadata.type);
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
+    {
+        arrow::BinaryArray & chunk = dynamic_cast<arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
+        std::shared_ptr<arrow::Buffer> buffer = chunk.value_data();
+        const size_t chunk_length = chunk.length();
+
+        for (size_t offset_i = 0; offset_i != chunk_length; ++offset_i)
+        {
+            auto * raw_data = buffer->mutable_data() + chunk.value_offset(offset_i);
+            if (chunk.IsNull(offset_i))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Geometry nullable columns are not supported");
+
+            ReadBuffer in_buffer(reinterpret_cast<char*>(raw_data), chunk.value_length(offset_i), 0);
+            ArrowGeometricObject result_object;
+            switch (geo_metadata.encoding)
+            {
+                case GeoEncoding::WKB:
+                    result_object = parseWKBFormat(in_buffer);
+                    break;
+                case GeoEncoding::WKT:
+                    result_object = parseWKTFormat(in_buffer);
+                    break;
+            }
+            column_builder.appendObject(result_object);
+        }
+    }
+
+    return column_builder.getResultColumn();
+}
+
 template <typename T>
 struct ArrowOffsetArray;
 
@@ -763,6 +798,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     DataTypePtr type_hint,
     bool is_nullable_column,
     bool is_map_nested_column,
+    std::optional<GeoColumnMetadata> geo_metadata,
     const ReadColumnFromArrowColumnSettings & settings);
 
 static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
@@ -771,6 +807,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
     std::unordered_map<String, ArrowColumnToCHColumn::DictionaryInfo> dictionary_infos,
     DataTypePtr type_hint,
     bool is_map_nested_column,
+    std::optional<GeoColumnMetadata> geo_metadata,
     const ReadColumnFromArrowColumnSettings & settings)
 {
     switch (arrow_column->type()->id())
@@ -808,6 +845,10 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                     default:
                         break;
                 }
+            }
+            if (geo_metadata)
+            {
+                return readColumnWithGeoData(arrow_column, column_name, *geo_metadata);
             }
             return readColumnWithStringData<arrow::BinaryArray>(arrow_column, column_name);
         }
@@ -893,6 +934,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 nested_type_hint,
                 false /*is_nullable_column*/,
                 true /*is_map_nested_column*/,
+                geo_metadata,
                 settings);
             if (!nested_column.column)
                 return {};
@@ -992,6 +1034,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 nested_type_hint,
                 is_nested_nullable_column,
                 false /*is_map_nested_column*/,
+                geo_metadata,
                 settings);
             if (!nested_column.column)
                 return {};
@@ -1076,6 +1119,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                     nested_type_hint,
                     field->nullable(),
                     false /*is_map_nested_column*/,
+                    geo_metadata,
                     settings);
                 if (!column_with_type_and_name.column)
                     return {};
@@ -1115,6 +1159,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                     nullptr /*nested_type_hint*/,
                     false /*is_nullable_column*/,
                     false /*is_map_nested_column*/,
+                    geo_metadata,
                     settings);
 
                 if (!dict_column.column)
@@ -1206,9 +1251,10 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     DataTypePtr type_hint,
     bool is_nullable_column,
     bool is_map_nested_column,
+    std::optional<GeoColumnMetadata> geo_metadata,
     const ReadColumnFromArrowColumnSettings & settings)
 {
-    bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && type_hint->isNullable())) && settings.allow_inferring_nullable_columns;
+    bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && type_hint->isNullable())) && !geo_metadata && settings.allow_inferring_nullable_columns;
     if (read_as_nullable_column &&
         arrow_column->type()->id() != arrow::Type::LIST &&
         arrow_column->type()->id() != arrow::Type::LARGE_LIST &&
@@ -1226,6 +1272,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             dictionary_infos,
             nested_type_hint,
             is_map_nested_column,
+            geo_metadata,
             settings);
 
         if (!nested_column.column)
@@ -1243,6 +1290,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         dictionary_infos,
         type_hint,
         is_map_nested_column,
+        geo_metadata,
         settings);
 }
 
@@ -1272,6 +1320,7 @@ static std::shared_ptr<arrow::ChunkedArray> createArrowColumn(const std::shared_
 
 Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
     const arrow::Schema & schema,
+    std::shared_ptr<const arrow::KeyValueMetadata> metadata,
     const std::string & format_name,
     bool skip_columns_with_unsupported_types,
     bool allow_inferring_nullable_columns,
@@ -1289,6 +1338,9 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
 
     ColumnsWithTypeAndName sample_columns;
 
+    auto geo_json = extractGeoMetadata(metadata);
+    std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_json);
+
     for (const auto & field : schema.fields())
     {
         /// Create empty arrow column by it's type and convert it to ClickHouse column.
@@ -1303,6 +1355,7 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
             nullptr /*nested_type_hint*/,
             field->nullable() /*is_nullable_column*/,
             false /*is_map_nested_column*/,
+            geo_columns.contains(field->name()) ? std::optional(geo_columns[field->name()]) : std::nullopt,
             settings);
 
         if (sample_column.column)
@@ -1330,7 +1383,11 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
 {
 }
 
-Chunk ArrowColumnToCHColumn::arrowTableToCHChunk(const std::shared_ptr<arrow::Table> & table, size_t num_rows, BlockMissingValues * block_missing_values)
+Chunk ArrowColumnToCHColumn::arrowTableToCHChunk(
+    const std::shared_ptr<arrow::Table> & table,
+    size_t num_rows,
+    std::shared_ptr<const arrow::KeyValueMetadata> metadata,
+    BlockMissingValues * block_missing_values)
 {
     NameToArrowColumn name_to_arrow_column;
 
@@ -1348,10 +1405,14 @@ Chunk ArrowColumnToCHColumn::arrowTableToCHChunk(const std::shared_ptr<arrow::Ta
         name_to_arrow_column[std::move(column_name)] = {std::move(arrow_column), std::move(arrow_field)};
     }
 
-    return arrowColumnsToCHChunk(name_to_arrow_column, num_rows, block_missing_values);
+    return arrowColumnsToCHChunk(name_to_arrow_column, num_rows, metadata, block_missing_values);
 }
 
-Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(const NameToArrowColumn & name_to_arrow_column, size_t num_rows, BlockMissingValues * block_missing_values)
+Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
+    const NameToArrowColumn & name_to_arrow_column,
+    size_t num_rows,
+    std::shared_ptr<const arrow::KeyValueMetadata> metadata,
+    BlockMissingValues * block_missing_values)
 {
     ReadColumnFromArrowColumnSettings settings
     {
@@ -1367,6 +1428,9 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(const NameToArrowColumn & nam
     columns.reserve(header.columns());
 
     std::unordered_map<String, std::pair<BlockPtr, std::shared_ptr<NestedColumnExtractHelper>>> nested_tables;
+
+    auto geo_metadata = extractGeoMetadata(metadata);
+    std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_metadata);
 
     for (size_t column_i = 0, header_columns = header.columns(); column_i < header_columns; ++column_i)
     {
@@ -1409,6 +1473,7 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(const NameToArrowColumn & nam
                             nested_table_type,
                             arrow_column.field->nullable() /*is_nullable_column*/,
                             false /*is_map_nested_column*/,
+                            geo_columns.contains(header_column.name) ? std::optional(geo_columns[header_column.name]) : std::nullopt,
                             settings)
                     };
 
@@ -1449,6 +1514,7 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(const NameToArrowColumn & nam
                 header_column.type,
                 arrow_column.field->nullable(),
                 false /*is_map_nested_column*/,
+                geo_columns.contains(header_column.name) ? std::optional(geo_columns[header_column.name]) : std::nullopt,
                 settings);
         }
 

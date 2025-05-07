@@ -275,7 +275,8 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(c
                     address.host_name == replica_address.host_name &&
                     address.port == replica_address.port &&
                     address.default_database == replica_address.default_database &&
-                    address.secure == replica_address.secure)
+                    address.secure == replica_address.secure &&
+                    address.bind_host == replica_address.bind_host)
                 {
                     return shards_info[shard_index].per_replica_pools[replica_index];
                 }
@@ -296,7 +297,8 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(c
             address.cluster_secret,
             storage.getName() + '_' + address.user, /* client */
             Protocol::Compression::Enable,
-            address.secure);
+            address.secure,
+            address.bind_host);
     };
 
     auto pools = createPoolsForAddresses(addresses, pool_factory, storage.log);

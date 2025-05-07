@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/special/keeper-map
+description: 'This engine allows you to use Keeper/ZooKeeper cluster as consistent
+  key-value store with linearizable writes and sequentially consistent reads.'
+sidebar_label: 'KeeperMap'
 sidebar_position: 150
-sidebar_label: KeeperMap
-title: "KeeperMap"
-description: "This engine allows you to use Keeper/ZooKeeper cluster as consistent key-value store with linearizable writes and sequentially consistent reads."
+slug: /engines/table-engines/special/keeper-map
+title: 'KeeperMap'
 ---
 
 # KeeperMap {#keepermap}
@@ -24,7 +25,7 @@ where path can be any other valid ZooKeeper path.
 
 ## Creating a Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -48,7 +49,7 @@ This limit is a soft limit and it can be possible that more keys will end up in 
 
 Example:
 
-``` sql
+```sql
 CREATE TABLE keeper_map_table
 (
     `key` String,

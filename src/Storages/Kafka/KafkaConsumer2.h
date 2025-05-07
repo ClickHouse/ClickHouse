@@ -145,7 +145,6 @@ private:
     const Names topics;
 
     bool polledDataUnusable(const TopicPartition & topic_partition) const;
-    void drainConsumerQueue();
     void resetIfStopped();
     void filterMessageErrors();
     ReadBufferPtr getNextMessage();

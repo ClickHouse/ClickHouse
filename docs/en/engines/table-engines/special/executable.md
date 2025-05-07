@@ -1,9 +1,11 @@
 ---
-slug: /engines/table-engines/special/executable
+description: 'The `Executable` and `ExecutablePool` table engines allow you to define
+  a table whose rows are generated from a script that you define (by writing rows
+  to **stdout**).'
+sidebar_label: 'Executable'
 sidebar_position: 40
-sidebar_label:  Executable
-title: "Executable and ExecutablePool Table Engines"
-description: "The `Executable` and `ExecutablePool` table engines allow you to define a table whose rows are generated from a script that you define (by writing rows to **stdout**)."
+slug: /engines/table-engines/special/executable
+title: 'Executable and ExecutablePool Table Engines'
 ---
 
 # Executable and ExecutablePool Table Engines
@@ -217,12 +219,12 @@ CREATE TABLE sentiment_pooled (
    sentiment Float32
 )
 ENGINE = ExecutablePool(
-	'sentiment.py',
-	TabSeparated,
-	(SELECT id, comment FROM hackernews WHERE id > 0 AND comment != '' LIMIT 20000)
+    'sentiment.py',
+    TabSeparated,
+    (SELECT id, comment FROM hackernews WHERE id > 0 AND comment != '' LIMIT 20000)
 )
 SETTINGS
-	pool_size = 4;
+    pool_size = 4;
 ```
 
 ClickHouse will maintain 4 processes on-demand when your client queries the `sentiment_pooled` table.
