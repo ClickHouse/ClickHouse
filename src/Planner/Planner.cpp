@@ -1317,7 +1317,7 @@ void Planner::buildQueryPlanIfNeeded()
         return;
 
     LOG_TRACE(
-        getLogger("Planner"),
+        log,
         "Query to stage {}{}",
         QueryProcessingStage::toString(select_query_options.to_stage),
         select_query_options.only_analyze ? " only analyze" : "");
@@ -1483,7 +1483,7 @@ void Planner::buildPlanForQueryNode()
 
             auto & mutable_context = planner_context->getMutableQueryContext();
             mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-            LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas to execute a query with IN with subquery");
+            LOG_DEBUG(log, "Disabling parallel replicas to execute a query with IN with subquery");
         }
     }
 
@@ -1520,9 +1520,7 @@ void Planner::buildPlanForQueryNode()
                 if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FINAL modifier is not supported with parallel replicas");
 
-                LOG_DEBUG(
-                    getLogger("Planner"),
-                    "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
+                LOG_DEBUG(log, "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
                 auto & mutable_context = planner_context->getMutableQueryContext();
                 mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
             }
@@ -1537,7 +1535,7 @@ void Planner::buildPlanForQueryNode()
             if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOINs are not supported with parallel replicas");
 
-            LOG_DEBUG(getLogger("Planner"), "JOINs are not supported with parallel replicas. Query will be executed without using them.");
+            LOG_DEBUG(log, "JOINs are not supported with parallel replicas. Query will be executed without using them.");
 
             auto & mutable_context = planner_context->getMutableQueryContext();
             mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
@@ -1568,7 +1566,7 @@ void Planner::buildPlanForQueryNode()
     query_node_to_plan_step_mapping.insert(mapping.begin(), mapping.end());
 
     LOG_TRACE(
-        getLogger("Planner"),
+        log,
         "Query from stage {} to stage {}{}",
         QueryProcessingStage::toString(from_stage),
         QueryProcessingStage::toString(select_query_options.to_stage),
