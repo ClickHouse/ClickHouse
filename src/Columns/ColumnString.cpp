@@ -41,10 +41,6 @@ ColumnString::ColumnString(const ColumnString & src)
             last_offset, chars.size());
 }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
-void ColumnString::insertManyFrom(const IColumn & src, size_t position, size_t length)
-#else
-
 void ColumnString::insert(const Field & x)
 {
     const String & s = x.safeGet<String>();
@@ -61,6 +57,9 @@ void ColumnString::insert(const Field & x)
     offsets.push_back(new_size);
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+void ColumnString::insertManyFrom(const IColumn & src, size_t position, size_t length)
+#else
 void ColumnString::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
 #endif
 {
