@@ -53,7 +53,7 @@ void ColumnString::insert(const Field & x)
 
     /// First check if new_size won't overflow before resizing.
     if (size_to_append > std::numeric_limits<size_t>::max() - old_size)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "ColumnString array size too large for resizing, it will overflow.");
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "ColumnString array size is too large for resizing, it will overflow.");
 
     const size_t new_size = old_size + size_to_append;
     chars.resize(new_size);
