@@ -8,20 +8,29 @@
 #include <Core/YTsaurus/YTsaurusClient.h>
 #include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
 
-
+#include <optional>
 #include <memory>
 
 namespace DB
 {
 
-class YTsaurusTableSource final : public ISource
+struct YTsaurusTableSourceOptions
+{
+    const String cypress_path;
+    std::optional<Block> lookup_input_block = std::nullopt;
+
+    bool force_read_table = false;
+    bool skip_unknown_columns = true;
+};
+
+class YTsaurusTableSourceStaticTable final : public ISource
 {
 public:
-    YTsaurusTableSource(
-        YTsaurusClientPtr client_, const String & cypress_path, const Block & sample_block_, const UInt64 & max_block_size_, bool is_dynamic_table, bool skip_unknown_columns = true);
-    ~YTsaurusTableSource() override = default;
+    YTsaurusTableSourceStaticTable(
+        YTsaurusClientPtr client_, const String & cypress_path, const Block & sample_block_, const UInt64 & max_block_size_, bool skip_unknown_columns = true);
+    ~YTsaurusTableSourceStaticTable() override = default;
 
-    String getName() const override { return "YTsaurusTableSource"; }
+    String getName() const override { return "YTsaurusTableSourceStaticTable"; }
 
 private:
     Chunk generate() override { return json_row_format->read(); }
@@ -33,11 +42,33 @@ private:
     std::unique_ptr<JSONEachRowRowInputFormat> json_row_format;
 };
 
+class YTsaurusTableSourceDynamicTable final : public ISource
+{
+public:
+    YTsaurusTableSourceDynamicTable(
+        YTsaurusClientPtr client_, const YTsaurusTableSourceOptions& table_options, const Block & sample_block_, const UInt64 & max_block_size_);
+    ~YTsaurusTableSourceDynamicTable() override = default;
+
+    String getName() const override { return "YTsaurusTableSourceDynamicTable"; }
+
+private:
+    Chunk generate() override { return json_row_format->read(); }
+
+    YTsaurusClientPtr client;
+    const YTsaurusTableSourceOptions & source_options;
+    const Block sample_block;
+    UInt64 max_block_size;
+    FormatSettings format_settings;
+    ReadBufferPtr read_buffer;
+    std::unique_ptr<JSONEachRowRowInputFormat> json_row_format;
+
+    bool use_lookups;
+};
 
 struct YTsaurusSourceFactory
 {
     static std::shared_ptr<ISource>
-    createSource(YTsaurusClientPtr client, const String & cypress_path, const Block & sample_block, UInt64 max_block_size);
+    createSource(YTsaurusClientPtr client, const YTsaurusTableSourceOptions source_options, const Block & sample_block, UInt64 max_block_size);
 };
 
 }

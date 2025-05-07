@@ -1,8 +1,8 @@
-import time
-
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+
+from .yt_helpers import YT_DEFAULT_TOKEN, YT_HOST, YT_PORT, YT_URI, YTsaurusCLI
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -24,95 +24,8 @@ def started_cluster():
         cluster.shutdown()
 
 
-class YTsaurusCLI:
-    def __init__(self, instance, proxy, port):
-        self.instance = instance
-        self.proxy = proxy
-        self.port = port
-
-    def create_table(
-        self,
-        table_path,
-        data,
-        dynamic=False,
-        schema=None,
-        retry_count=0,
-        time_to_sleep=10,
-    ):
-
-        schema_arribute = ""
-
-        if schema:
-            schema_arribute = (
-                '--attributes "{'
-                + ("dynamic=%true;" if dynamic else "")
-                + "schema= ["
-                + ";".join(
-                    f"{{name = {name}; type = {type}}}" for name, type in schema.items()
-                )
-                + ']}"'
-            )
-
-        for retry in range(retry_count):
-            try:
-                cluster.exec_in_container(
-                    cluster.get_container_id(self.proxy),
-                    [
-                        "bash",
-                        "-c",
-                        "yt create table {} {}".format(table_path, schema_arribute),
-                    ],
-                )
-                break
-            except Exception:
-                ## For some reasons ytstaurs can receive queries with not fully loaded resouces.
-                ## And we can have errors like:
-                ## ` Account <acc> is over tablet count limit `
-                ## Haven't found better solution then simple retries.
-                print(f"Exception : {retry}/{retry_count}")
-                if retry == retry_count - 1:
-                    raise
-                time.sleep(time_to_sleep)
-
-        if dynamic:
-            cluster.exec_in_container(
-                cluster.get_container_id(self.proxy),
-                [
-                    "bash",
-                    "-c",
-                    "yt mount-table {}".format(table_path),
-                ],
-            )
-        cluster.exec_in_container(
-            cluster.get_container_id(self.proxy),
-            [
-                "bash",
-                "-c",
-                "echo '{}' | yt {} '{}' --format json".format(
-                    data, "insert-rows" if dynamic else "write-table", table_path
-                ),
-            ],
-        )
-
-    def remove_table(self, table_path):
-        cluster.exec_in_container(
-            cluster.get_container_id(self.proxy),
-            [
-                "bash",
-                "-c",
-                "yt remove {}".format(table_path),
-            ],
-        )
-
-
-YT_HOST = "ytsaurus_backend1"
-YT_PORT = 80
-YT_URI = f"http://{YT_HOST}:{YT_PORT}"
-YT_DEFAULT_TOKEN = "password"
-
-
 def test_yt_simple_table_engine(started_cluster):
-    yt = YTsaurusCLI(instance, YT_HOST, YT_PORT)
+    yt = YTsaurusCLI(started_cluster, instance, YT_HOST, YT_PORT)
     yt.create_table("//tmp/table", '{"a":"10","b":"20"}\n{"a":"20","b":"40"}')
 
     instance.query(
@@ -131,7 +44,7 @@ def test_yt_simple_table_engine(started_cluster):
 
 
 def test_yt_simple_table_function(started_cluster):
-    yt = YTsaurusCLI(instance, YT_HOST, YT_PORT)
+    yt = YTsaurusCLI(started_cluster, instance, YT_HOST, YT_PORT)
     yt.create_table("//tmp/table", '{"a":"10","b":"20"}\n{"a":"20","b":"40"}')
 
     assert (
@@ -225,7 +138,7 @@ def test_yt_simple_table_function(started_cluster):
 def test_ytsaurus_types(
     started_cluster, yt_data_type, yt_data, ch_column_type, ch_data_expected
 ):
-    yt = YTsaurusCLI(instance, "ytsaurus_backend1", 80)
+    yt = YTsaurusCLI(started_cluster, instance, "ytsaurus_backend1", 80)
     table_path = "//tmp/table"
     column_name = "a"
     yt_data_json = f'{{"{column_name}":{yt_data}}}\n'
@@ -242,7 +155,7 @@ def test_ytsaurus_types(
 
 def test_ytsaurus_multiple_tables(started_cluster):
     table_path = "//tmp/table"
-    yt = YTsaurusCLI(instance, YT_HOST, YT_PORT)
+    yt = YTsaurusCLI(started_cluster, instance, YT_HOST, YT_PORT)
     yt.create_table(table_path, '{"a":"10","b":"20"}\n{"a":"20","b":"40"}')
 
     instance.query("CREATE DATABASE db")
@@ -275,7 +188,7 @@ def test_ytsaurus_multiple_tables(started_cluster):
 
 def test_ytsaurus_dynamic_table(started_cluster):
     table_path = "//tmp/dynamic_table"
-    yt = YTsaurusCLI(instance, YT_HOST, YT_PORT)
+    yt = YTsaurusCLI(started_cluster, instance, YT_HOST, YT_PORT)
     yt.create_table(
         table_path,
         '{"a":10,"b":"20"}{"a":20,"b":"40"}',

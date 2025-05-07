@@ -1,0 +1,134 @@
+#include "config.h"
+
+#include "DictionarySourceFactory.h"
+#if USE_YTSAURUS
+#include "YTsaurusDictionarySource.h"
+#include <Processors/Sources/YTsaurusSource.h>
+#include <Storages/YTsaurus/StorageYTsaurus.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
+
+
+#endif
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    #if USE_YTSAURUS
+    extern const int UNSUPPORTED_METHOD;
+    extern const int LOGICAL_ERROR;
+    #else
+    extern const int SUPPORT_IS_DISABLED;
+    #endif
+}
+
+void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
+{
+    #if USE_YTSAURUS
+    auto create_dictionary_source = [](
+        const DictionaryStructure & dict_struct,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & root_config_prefix,
+        Block & sample_block,
+        ContextPtr context,
+        const std::string & /* default_database */,
+        bool /* created_from_ddl */)
+    {
+        const auto config_prefix = root_config_prefix + ".ytsaurus";
+        auto configuration = std::make_shared<YTsaurusStorageConfiguration>();
+
+        configuration->http_proxy_url = config.getString(config_prefix + ".http_proxy_url");
+        configuration->cypress_path = config.getString(config_prefix + ".cypress_path");
+        configuration->oauth_token = config.getString(config_prefix + ".oauth_token");
+
+        return std::make_unique<YTsarususDictionarySource>(context, dict_struct, std::move(configuration), std::move(sample_block));
+    };
+
+    #else
+    auto create_dictionary_source = [](
+        const DictionaryStructure & /* dict_struct */,
+        const Poco::Util::AbstractConfiguration & /* config */,
+        const std::string & /* root_config_prefix */,
+        Block & /* sample_block */,
+        ContextPtr /* context */,
+        const std::string & /* default_database */,
+        bool /* created_from_ddl */) -> DictionarySourcePtr
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+        "Dictionary source of type `ytstautus` is disabled because ClickHouse was built without mongodb support.");
+    };
+    #endif
+
+    factory.registerSource("ytsaurus", create_dictionary_source);
+}
+
+#if USE_YTSAURUS
+static const UInt64 max_block_size = 8192;
+
+
+YTsarususDictionarySource::YTsarususDictionarySource(
+    ContextPtr context_,
+    const DictionaryStructure & dict_struct_,
+    std::shared_ptr<YTsaurusStorageConfiguration> configuration_,
+    Block sample_block_)
+    : context(context_)
+    , dict_struct{dict_struct_}
+    , configuration{configuration_}
+    , sample_block{sample_block_}
+    , client(new YTsaurusClient(context, {.http_proxy_url = configuration->http_proxy_url, .oauth_token = configuration->oauth_token}))
+{
+}
+
+YTsarususDictionarySource::YTsarususDictionarySource(const YTsarususDictionarySource & other)
+    : YTsarususDictionarySource{other.context, other.dict_struct, other.configuration, other.sample_block}
+{
+}
+
+YTsarususDictionarySource::~YTsarususDictionarySource() = default;
+
+QueryPipeline YTsarususDictionarySource::loadAll()
+{
+    return QueryPipeline(YTsaurusSourceFactory::createSource(client, {.cypress_path = configuration->cypress_path}, sample_block, max_block_size));
+}
+
+QueryPipeline YTsarususDictionarySource::loadIds(const std::vector<UInt64> & ids)
+{
+    if (!dict_struct.id)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is required for selective loading");
+
+    if (!supportsSelectiveLoad())
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Can't make selective update of YTsaurus dictionary because data source doesn't supports lookups.");
+
+    auto block = blockForIds(dict_struct, ids);
+    return QueryPipeline(YTsaurusSourceFactory::createSource(client, {.cypress_path = configuration->cypress_path, .lookup_input_block = std::move(block)}, sample_block, max_block_size));
+}
+
+QueryPipeline YTsarususDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+{
+    if (!supportsSelectiveLoad())
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Can't make selective update of YTsaurus dictionary because data source doesn't supports lookups.");
+
+    if (!dict_struct.key)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is required for selective loading");
+
+    if (key_columns.size() != dict_struct.key->size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of key_columns does not equal to the size of dictionary key");
+
+    auto block = blockForKeys(dict_struct, key_columns, requested_rows);
+    return QueryPipeline(YTsaurusSourceFactory::createSource(client, {.cypress_path = configuration->cypress_path, .lookup_input_block = std::move(block)}, sample_block, max_block_size));
+}
+
+bool YTsarususDictionarySource::supportsSelectiveLoad() const
+{
+    return client->getNodeType(configuration->cypress_path) == YTsaurusNodeType::DYNAMIC_TABLE;
+}
+
+
+std::string YTsarususDictionarySource::toString() const
+{
+    return fmt::format("YTsaurus: {}", configuration->cypress_path);
+}
+#endif
+
+}
