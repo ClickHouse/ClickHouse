@@ -79,13 +79,17 @@ void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams &
     if (!params.isCollectionAndUseEnabled())
         return;
 
-    std::vector<size_t> sizes(hash_joins.size());
-    for (size_t i = 0; i < hash_joins.size(); ++i)
-        sizes[i] = hash_joins[i]->data->getTotalRowCount();
-    const auto median_size = sizes.begin() + sizes.size() / 2; // not precisely though...
-    std::nth_element(sizes.begin(), median_size, sizes.end());
-    if (auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull))
-        DB::getHashTablesStatistics().update(sum_of_sizes, *median_size, params);
+    const auto ht_size = hash_joins.at(0)->data->getTotalRowCount();
+    if (!std::ranges::all_of(hash_joins, [&](const auto & hash_join) { return hash_join->data->getTotalRowCount() == ht_size; }))
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "HashJoin instances have different sizes");
+   
+    const auto source_rows = std::accumulate(
+        hash_joins.begin(),
+        hash_joins.end(),
+        0ull,
+        [](auto acc, const auto & hash_join) { return acc + hash_join->data->getJoinedData()->rows_to_join; });
+    if (ht_size)
+        DB::getHashTablesStatistics<DB::HashJoinEntry>().update({.ht_size = ht_size, .source_rows = source_rows}, params);
 }
 
 UInt32 toPowerOfTwo(UInt32 x)
