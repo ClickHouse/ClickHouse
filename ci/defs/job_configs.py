@@ -2,6 +2,22 @@ from praktika import Job
 
 from ci.defs.defs import ArtifactNames, BuildTypes, JobNames, RunnerLabels
 
+build_digest_config = Job.CacheDigestConfig(
+    include_paths=[
+        "./src",
+        "./contrib/",
+        "./CMakeLists.txt",
+        "./PreLoad.cmake",
+        "./cmake",
+        "./base",
+        "./programs",
+        "./rust",
+        "./ci/jobs/build_clickhouse.py",
+        "./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+    ],
+    with_git_submodules=True,
+)
+
 
 class JobConfigs:
     docker_build_arm = Job.Config(
@@ -97,20 +113,7 @@ class JobConfigs:
         run_in_docker="clickhouse/binary-builder+--network=host",
         timeout=3600 * 4,
         allow_merge_on_failure=True,
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./src",
-                "./contrib/",
-                "./CMakeLists.txt",
-                "./PreLoad.cmake",
-                "./cmake",
-                "./base",
-                "./programs",
-                "./rust",
-                "./ci/jobs/build_clickhouse.py",
-            ],
-            with_git_submodules=True,
-        ),
+        digest_config=build_digest_config,
     ).parametrize(
         parameter=[
             BuildTypes.ARM_TIDY,
@@ -127,21 +130,11 @@ class JobConfigs:
         # --network=host required for ec2 metadata http endpoint to work
         run_in_docker="clickhouse/binary-builder+--network=host",
         timeout=3600 * 2,
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./src",
-                "./contrib/",
-                "./CMakeLists.txt",
-                "./PreLoad.cmake",
-                "./cmake",
-                "./base",
-                "./programs",
-                "./rust",
-                "./ci/jobs/build_clickhouse.py",
-            ],
-            with_git_submodules=True,
-        ),
-        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/build_post_hook.py"],
+        digest_config=build_digest_config,
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
+            "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+        ],
     ).parametrize(
         parameter=[
             BuildTypes.AMD_DEBUG,
@@ -225,21 +218,11 @@ class JobConfigs:
         # --network=host required for ec2 metadata http endpoint to work
         run_in_docker="clickhouse/binary-builder+--network=host",
         timeout=3600 * 2,
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./src",
-                "./contrib/",
-                "./CMakeLists.txt",
-                "./PreLoad.cmake",
-                "./cmake",
-                "./base",
-                "./programs",
-                "./rust",
-                "./ci/jobs/build_clickhouse.py",
-            ],
-            with_git_submodules=True,
-        ),
-        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/build_post_hook.py"],
+        digest_config=build_digest_config,
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
+            "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+        ],
     ).parametrize(
         parameter=[
             BuildTypes.AMD_DARWIN,

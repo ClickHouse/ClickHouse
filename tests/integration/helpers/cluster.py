@@ -348,7 +348,11 @@ def rabbitmq_debuginfo(rabbitmq_id, cookie):
 
 async def check_nats_is_available(nats_port, ssl_ctx=None):
     nc = await nats_connect_ssl(
-        nats_port, user="click", password="house", ssl_ctx=ssl_ctx, max_reconnect_attempts=1
+        nats_port,
+        user="click",
+        password="house",
+        ssl_ctx=ssl_ctx,
+        max_reconnect_attempts=1,
     )
     available = nc.is_connected
     await nc.close()
@@ -365,7 +369,7 @@ async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None, **connect_op
         user=user,
         password=password,
         tls=ssl_ctx,
-        **connect_options
+        **connect_options,
     )
     return nc
 
@@ -1415,15 +1419,11 @@ class ClickHouseCluster:
         )
         return self.base_minio_cmd
 
-    def setup_glue_catalog_cmd(
-        self, instance, env_variables, docker_compose_yml_dir
-    ):
+    def setup_glue_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.base_cmd.extend(
             [
                 "--file",
-                p.join(
-                    docker_compose_yml_dir, "docker_compose_glue_catalog.yml"
-                ),
+                p.join(docker_compose_yml_dir, "docker_compose_glue_catalog.yml"),
             ]
         )
         self.base_iceberg_catalog_cmd = self.compose_cmd(
@@ -1752,7 +1752,10 @@ class ClickHouseCluster:
             with_rabbitmq=with_rabbitmq,
             with_nats=with_nats,
             with_nginx=with_nginx,
-            with_secrets=with_secrets or with_kerberos_kdc or with_kerberized_kafka or with_kafka_sasl,
+            with_secrets=with_secrets
+            or with_kerberos_kdc
+            or with_kerberized_kafka
+            or with_kafka_sasl,
             with_mongo=with_mongo,
             with_redis=with_redis,
             with_minio=with_minio,
@@ -1898,7 +1901,9 @@ class ClickHouseCluster:
 
         if with_kafka_sasl and not self.with_kafka_sasl:
             cmds.append(
-                self.setup_kafka_sasl_cmd(instance, env_variables, docker_compose_yml_dir)
+                self.setup_kafka_sasl_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
             )
 
         if with_kerberized_kafka and not self.with_kerberized_kafka:
@@ -2466,10 +2471,14 @@ class ClickHouseCluster:
         raise RuntimeError("Cannot wait RabbitMQ container")
 
     def stop_rabbitmq_app(self, timeout=120):
-        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "stop_app", timeout)
+        run_rabbitmqctl(
+            self.rabbitmq_docker_id, self.rabbitmq_cookie, "stop_app", timeout
+        )
 
     def start_rabbitmq_app(self, timeout=120):
-        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout)
+        run_rabbitmqctl(
+            self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout
+        )
         self.wait_rabbitmq_to_start()
 
     def reset_rabbitmq(self, timeout=120):
@@ -2561,7 +2570,10 @@ class ClickHouseCluster:
 
     def wait_mongo_to_start(self, timeout=30, secure=False):
         connection_str = "mongodb://{user}:{password}@{host}:{port}".format(
-            host="localhost", port=self.mongo_port, user=mongo_user, password=urllib.parse.quote_plus(mongo_pass)
+            host="localhost",
+            port=self.mongo_port,
+            user=mongo_user,
+            password=urllib.parse.quote_plus(mongo_pass),
         )
         if secure:
             connection_str += "/?tls=true&tlsAllowInvalidCertificates=true"
@@ -2609,7 +2621,9 @@ class ClickHouseCluster:
                         )
                         errors = minio_client.remove_objects(bucket, delete_object_list)
                         for error in errors:
-                            logging.error(f"Error occurred when deleting object {error}")
+                            logging.error(
+                                f"Error occurred when deleting object {error}"
+                            )
                         minio_client.remove_bucket(bucket)
                     minio_client.make_bucket(bucket)
                     logging.debug("S3 bucket '%s' created", bucket)
@@ -3315,10 +3329,10 @@ class ClickHouseCluster:
 
     @contextmanager
     def pause_container(self, instance_name):
-        '''Use it as following:
+        """Use it as following:
         with cluster.pause_container(name):
             useful_stuff()
-        '''
+        """
         self._pause_container(instance_name)
         try:
             yield
@@ -3390,6 +3404,12 @@ class ClickHouseCluster:
         for n in zk_nodes:
             logging.info("Stopping zookeeper node: %s", n)
             subprocess_check_call(self.base_zookeeper_cmd + ["stop", n])
+
+    # Faster than waiting for clean stop
+    def kill_zookeeper_nodes(self, zk_nodes):
+        for n in zk_nodes:
+            logging.info("Killing zookeeper node: %s", n)
+            subprocess_check_call(self.base_zookeeper_cmd + ["kill", n])
 
     def start_zookeeper_nodes(self, zk_nodes):
         for n in zk_nodes:
@@ -4634,13 +4654,15 @@ class ClickHouseInstance:
                 delimiter = d
                 break
         else:
-            raise Exception(
-                f"Couldn't find a suitable delimiter"
-            )
+            raise Exception(f"Couldn't find a suitable delimiter")
         replace = shlex.quote(replace)
         replacement = shlex.quote(replacement)
         self.exec_in_container(
-            ["bash", "-c", f"sed -i 's{delimiter}'{replace}'{delimiter}'{replacement}'{delimiter}g' {path_to_config}"]
+            [
+                "bash",
+                "-c",
+                f"sed -i 's{delimiter}'{replace}'{delimiter}'{replacement}'{delimiter}g' {path_to_config}",
+            ]
         )
 
     def create_dir(self):
@@ -4707,7 +4729,9 @@ class ClickHouseInstance:
             write_embedded_config("0_common_max_cpu_load.xml", users_d_dir)
 
         use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
-        use_distributed_plan = os.environ.get("CLICKHOUSE_USE_DISTRIBUTED_PLAN") is not None
+        use_distributed_plan = (
+            os.environ.get("CLICKHOUSE_USE_DISTRIBUTED_PLAN") is not None
+        )
 
         # If specific version was used there can be no
         # enable_analyzer setting, so do this only if it was

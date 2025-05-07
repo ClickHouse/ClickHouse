@@ -5,7 +5,6 @@ DROP TABLE IF EXISTS h3_indexes;
 --Note: id column just exists to keep the test results sorted.
 -- Order is not guaranteed with h3_index or res columns as we test the same h3_index at various resolutions.
 CREATE TABLE h3_indexes (id UInt8, h3_index UInt64, res UInt8) ENGINE = Memory;
-
 -- Test cases taken from fixture: https://github.com/uber/h3/blob/master/src/apps/testapps/testCellToCenterChild.c
 
 INSERT INTO h3_indexes VALUES (1,577023702256844799,1);
