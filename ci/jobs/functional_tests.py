@@ -117,6 +117,8 @@ def main():
         commands = [
             f"rm -rf {temp_dir}/var/log/clickhouse-server/clickhouse-server.*",
             f"chmod +x {ch_path}/clickhouse",
+            # google *.proto files
+            f"mkdir -p /usr/share/clickhouse/ && ln -sf /usr/local/include /usr/share/clickhouse/protos",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-server",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-client",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-compressor",
@@ -154,7 +156,7 @@ def main():
             and CH.start_minio(test_type="stateless", log_file_path=minio_log)
             and CH.start_azurite(log_file_path=azurite_log)
         )
-        logs_to_attach += [minio_log]
+        logs_to_attach += [minio_log, azurite_log]
         time.sleep(10)
         Shell.check("ps -ef | grep minio", verbose=True)
         res = res and Shell.check(

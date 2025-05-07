@@ -413,9 +413,9 @@
         localStorage.setItem('filter', newFilter);
         const toggle = document.getElementById('status-filter-toggle');
         if (toggle) {
-            const greenTick = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgZmlsbD0ibm9uZSIgdmlld0JveD0iMCAwIDE2IDE2Ij48cGF0aCBkPSJNNCw4TDcsMTFMMTIsNSIgc3Ryb2tlPSJncmVlbiIgc3Ryb2tlLXdpZHRoPSIyIiBmaWxsPSJub25lIi8+PC9zdmc+" width="20" height="20" style="vertical-align: middle;">`;
-            const redCross = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgZmlsbD0ibm9uZSIgdmlld0JveD0iMCAwIDE2IDE2Ij48cGF0aCBkPSJNNCw0TDEyLDEyTTEyLDRMNCwxMiIgc3Ryb2tlPSJyZWQiIHN0cm9rZS13aWR0aD0iMiIgZmlsbD0ibm9uZSIvPjwvc3ZnPg==" width="20" height="20" style="vertical-align: middle;">`;
-            const yellowExclamationMark = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDE2IDE2IiBmaWxsPSJub25lIj48cmVjdCB4PSI2LjUiIHk9IjIiIHdpZHRoPSIzIiBoZWlnaHQ9IjgiIGZpbGw9IiNGRkQ3MDAiIHJ4PSIxLjUiLz48Y2lyY2xlIGN4PSI4IiBjeT0iMTIuNSIgcj0iMS41IiBmaWxsPSIjRkZENzAwIi8+PC9zdmc+" width="16" height="16" style="vertical-align: middle;">`;
+            const greenTick = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8cGF0aCBmaWxsPSJncmVlbiIgZD0iTTAgMTEgTDcgMTggTDIwIDIgTDE4IDAgTDcgMTQgTDIgOSBaIi8+Cjwvc3ZnPgoK">`;
+            const redCross = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8bGluZSB4MT0iMiIgeTE9IjIiIHgyPSIxOCIgeTI9IjE4IiBzdHJva2U9InJlZCIgc3Ryb2tlLXdpZHRoPSIyIi8+CiAgPGxpbmUgeDE9IjIiIHkxPSIxOCIgeDI9IjE4IiB5Mj0iMiIgc3Ryb2tlPSJyZWQiIHN0cm9rZS13aWR0aD0iMiIvPgo8L3N2Zz4KCg==">`;
+            const yellowExclamationMark = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8cG9seWdvbiBwb2ludHM9IjEwLDAgMCwyMCAyMCwyMCIgZmlsbD0ieWVsbG93Ii8+CiAgPHJlY3QgeD0iOSIgeT0iNiIgd2lkdGg9IjIiIGhlaWdodD0iNyIgZmlsbD0iYmxhY2siLz4KICA8Y2lyY2xlIGN4PSIxMCIgY3k9IjE2IiByPSIxIiBmaWxsPSJibGFjayIvPgo8L3N2Zz4KCg==">`;
             toggle.innerHTML =
                 newFilter === 'failures' ? redCross :
                     newFilter === 'warnings' ? yellowExclamationMark :
@@ -1172,7 +1172,7 @@
                     row.dataset.status = value ? value.toLowerCase() : "";
                     if ((result.info && result.info.trim() !== "") || (Array.isArray(result.links) && result.links.length > 0)) {
                         span.style.cursor = "pointer";
-                        span.addEventListener('click', () => toggleInfoRow(row, result.info, result.links));
+                        span.addEventListener('click', () => toggleInfoRow(row, result.info, result.ext && result.ext.results_preview, result.links));
                     }
                     td.appendChild(span);
 
@@ -1235,7 +1235,7 @@
     /**
      * Toggles an additional row below the clicked row to display the "info" text.
      */
-    function toggleInfoRow(row, infoText, links = []) {
+    function toggleInfoRow(row, infoText, previewData = [], links = []) {
         if (!infoText && links.length === 0) return;
 
         let nextRow = row.nextElementSibling;
@@ -1258,6 +1258,49 @@
                 // Append content securely, without interpreting HTML tags.
                 infoCell.firstChild.textContent = infoText;
                 infoCell.appendChild(content);
+            }
+
+            // Handle previewData recursively
+            if (previewData) {
+                const previewContainer = document.createElement('div');
+                previewContainer.classList.add('preview-container');
+
+                function renderPreview(data, indent = 0) {
+                    const container = document.createElement('div');
+                    container.style.marginLeft = `${indent * 20}px`;
+
+                    if (data.name && data.status) {
+                        const line = document.createElement('div');
+
+                        const nameSpan = document.createElement('span');
+                        nameSpan.textContent = `${data.name}: `;
+
+                        const statusSpan = document.createElement('span');
+                        statusSpan.textContent = data.status;
+                        statusSpan.className = getStatusClass(data.status); // ✅ apply status color class
+
+                        line.appendChild(nameSpan);
+                        line.appendChild(statusSpan);
+                        container.appendChild(line);
+                    }
+
+                    if (Array.isArray(data.results) && data.results.length > 0) {
+                        data.results.forEach(sub => {
+                            const child = renderPreview(sub, indent + 1);
+                            container.appendChild(child);
+                        });
+                    }
+
+                    return container;
+                }
+
+                // If previewData is an array of root results
+                const roots = Array.isArray(previewData) ? previewData : [previewData];
+                roots.forEach(result => {
+                    previewContainer.appendChild(renderPreview(result));
+                });
+
+                infoCell.appendChild(previewContainer);
             }
 
             // If there are links, create a list of links
