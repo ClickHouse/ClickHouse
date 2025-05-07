@@ -64,8 +64,7 @@ void MergeTreeSink::onStart()
 
 void MergeTreeSink::onFinish()
 {
-    if (isCancelled())
-        return;
+    chassert(!isCancelled());
 
     finishDelayedChunk();
 }
