@@ -6,12 +6,12 @@ sidebar_label: Time
 
 # Time
 
-The `Time` data type is used to store a time-of-day value independent of any calendar date. It is ideal for representing daily schedules, event times, or any situation where only the time component (hours, minutes, seconds, and optionally fractions of a second) is important.
+The `Time` data type is used to store a time value independent of any calendar date. It is ideal for representing daily schedules, event times, or any situation where only the time component (hours, minutes, seconds) is important.
 
 Syntax:
 
 ``` sql
-Time([timezone])
+Time()
 ```
 
 Supported range of values: \[-999:59:59, 999:59:59\].

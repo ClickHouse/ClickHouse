@@ -1313,6 +1313,7 @@ public:
         if (unlikely(t < 0))
         {
             is_negative = true;
+            t = -t;
         }
         res.second = t % 60;
         res.minute = t / 60 % 60;

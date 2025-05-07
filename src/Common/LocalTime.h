@@ -4,6 +4,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/LocalDate.h>
 
 /**
@@ -23,9 +24,6 @@ private:
     unsigned char m_minute;                 /// Minutes (0-59)
     unsigned char m_second;                 /// Seconds (0-59)
 
-    /// Padding to fill the structure to 8 bytes and ensure safe invocation of `memcmp`.
-    unsigned char pad[4] = {0};
-
     /**
      * Initializes time from `time_t` and time zone.
      *
@@ -44,9 +42,6 @@ private:
         m_hour = components.hour;
         m_minute = components.minute;
         m_second = components.second;
-
-        // Initialize padding
-        std::memset(pad, 0, sizeof(pad));
     }
 
     /**
@@ -133,9 +128,6 @@ private:
         }
         else
             throw std::runtime_error("Cannot parse LocalTime: " + std::string(s, length));
-
-        // Initialize padding
-        std::memset(pad, 0, sizeof(pad));
     }
 
     // Helper function to compute the total seconds represented by the LocalTime.
@@ -170,9 +162,7 @@ public:
      */
     LocalTime(bool is_negative_, uint64_t hour_, unsigned char minute_, unsigned char second_) /// NOLINT
         : is_negative(is_negative_), m_hour(hour_), m_minute(minute_), m_second(second_)
-    {
-        std::memset(pad, 0, sizeof(pad));
-    }
+    {}
 
     /**
      * Constructor from a string.
@@ -191,9 +181,7 @@ public:
      * Default constructor initializes time to 0000:00:00.
      */
     LocalTime() : m_hour(0), m_minute(0), m_second(0)
-    {
-        std::memset(pad, 0, sizeof(pad));
-    }
+    {}
 
     /**
      * Constructor from data pointer and length.

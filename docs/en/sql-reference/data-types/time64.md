@@ -6,7 +6,7 @@ sidebar_label: Time64
 
 # Time64
 
-The Time64 data type allows storing time-of-day values with sub-second precision. Unlike DateTime64, it does not include a calendar date, but only represents time within a single day. The precision defines the resolution of stored values in fractional seconds.
+The Time64 data type allows storing time values with sub-second precision. Unlike DateTime64, it does not include a calendar date, but only represents time. The precision defines the resolution of stored values in fractional seconds.
 
 Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ].
 Typically, are used - 3 (milliseconds), 6 (microseconds), 9 (nanoseconds).
@@ -14,12 +14,12 @@ Typically, are used - 3 (milliseconds), 6 (microseconds), 9 (nanoseconds).
 **Syntax:**
 
 ``` sql
-Time64(precision, [timezone])
+Time64(precision)
 ```
 
 Internally, Time64 stores data as an Int64 number of ticks since the start of the day (000:00:00.000000000). The tick resolution is determined by the precision parameter. Optionally, a time zone can be specified at the column level, which affects how time values are interpreted and displayed in text format.
 
-Unlike DateTime64, Time64 does not store a date component, meaning that it only represents a time within a 24-hour cycle. See details in [Time](../../sql-reference/data-types/time.md).
+Unlike DateTime64, Time64 does not store a date component, meaning that it only represents time. See details in [Time](../../sql-reference/data-types/time.md).
 
 Supported range of values: \[000:00:00, 999:59:59.99999999\]
 
