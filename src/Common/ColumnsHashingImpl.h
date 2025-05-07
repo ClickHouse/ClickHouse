@@ -56,6 +56,13 @@ struct LastElementCacheStats
     }
 };
 
+struct OptimizationDataOneExpression
+{
+    UInt64 index_of_expression_in_group_by;
+    SortDirection sort_direction;
+    bool is_type_signed_integer;
+};
+
 namespace columns_hashing_impl
 {
 
@@ -301,7 +308,7 @@ public:
     ALWAYS_INLINE void reduceHashTable(
         Data & data,
         size_t limit_plus_offset_length,
-        const std::vector<std::tuple<UInt64, SortDirection, bool>> & optimization_indexes)
+        const std::vector<OptimizationDataOneExpression> & optimization_indexes)
     {
         if constexpr (HasBegin<Data>::value)
         {
@@ -309,7 +316,7 @@ public:
             && !std::is_same_v<decltype(data.begin()->getKey()), Int128>
             && !std::is_same_v<decltype(data.begin()->getKey()), UInt128>
             && !std::is_same_v<decltype(data.begin()->getKey()), Int256>
-            && !std::is_same_v<decltype(data.begin()->getKey()), UInt256>) { // MVP. TODO support all types
+            && !std::is_same_v<decltype(data.begin()->getKey()), UInt256>) { // TODO support all types
                 if constexpr (!std::is_same_v<decltype(data.begin()->getKey()), const VoidKey> && HasErase<Data, decltype(data.begin()->getKey())>::value)
                 {
                     // TODO Remove after support more types
@@ -342,12 +349,12 @@ public:
                     for (const auto element : elements_to_erase)
                         data.erase(element);
                 }
-            } else if constexpr (HasForEachMapped<Data>::value)
-            {
-                // TODO implement
-                // data.forEachMapped([](auto el) {
-                // });
             }
+        } else if constexpr (HasForEachMapped<Data>::value)
+        {
+            // TODO implement
+            // data.forEachMapped([](auto el) {
+            // });
         }
     }
 
@@ -410,23 +417,23 @@ protected:
     };
 
     template <typename KeyHolder>
-    bool compareKeyHolders(const KeyHolder & lhs, const KeyHolder & rhs, const std::vector<std::tuple<UInt64, SortDirection, bool>> & optimization_indexes)
+    bool compareKeyHolders(const KeyHolder & lhs, const KeyHolder & rhs, const std::vector<OptimizationDataOneExpression> & optimization_indexes)
     {
         const auto & lhs_key = keyHolderGetKey(lhs);
         const auto & rhs_key = keyHolderGetKey(rhs);
 
-        assert(optimization_indexes.size() == 1); // MVP. TODO remove after supporting several expressions in findOptimizationSublistIndexes
+        assert(optimization_indexes.size() == 1); // TODO remove after supporting several expressions in findOptimizationSublistIndexes
 
-        if (std::get<2>(optimization_indexes[0]))
+        if (optimization_indexes[0].is_type_signed_integer)
         {
             auto lhs_key_signed = static_cast<typename MakeSignedType<KeyHolder>::type>(lhs_key);
             auto rhs_key_signed = static_cast<typename MakeSignedType<KeyHolder>::type>(rhs_key);
-            if (std::get<1>(optimization_indexes[0]) == SortDirection::ASCENDING)
+            if (optimization_indexes[0].sort_direction == SortDirection::ASCENDING)
                 return lhs_key_signed < rhs_key_signed;
             return rhs_key_signed < lhs_key_signed;
         }
 
-        if (std::get<1>(optimization_indexes[0]) == SortDirection::ASCENDING) // MVP. TODO support all types. Now only numeric types (int, float) are supported.
+        if (optimization_indexes[0].sort_direction == SortDirection::ASCENDING)
             return lhs_key < rhs_key;
         return rhs_key < lhs_key;
     }

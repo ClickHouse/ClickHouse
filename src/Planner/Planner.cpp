@@ -479,23 +479,22 @@ void addFilterStep(
 // Finds indexes of ORDER BY expressions in the GROUP BY expression list
 // if the first one is a subset of the second one.
 // Example: (GROUP BY a, b, c ORDER BY c, a) => {2, 0}.
-// The second elements of tuples are sort directions.
-// The third elements of tuples are flags, if type signed or not
-std::optional<std::vector<std::tuple<UInt64, SortDirection, bool>>> findOptimizationSublistIndexes(const QueryTreeNodes& group_by_nodes, const QueryTreeNodes& order_by_nodes)
+// Also finds sort directions and flags, is type signed or not
+std::optional<std::vector<ColumnsHashing::OptimizationDataOneExpression>> findOptimizationSublistIndexes(const QueryTreeNodes& group_by_nodes, const QueryTreeNodes& order_by_nodes)
 {
     if (order_by_nodes.empty())
         return std::nullopt;
 
-    if (group_by_nodes.size() != 1) // MVP. TODO allow more than one expression
+    if (group_by_nodes.size() != 1) // TODO allow more than one expression
         return std::nullopt;
 
-    std::vector<std::tuple<UInt64, SortDirection, bool>> result(order_by_nodes.size());
+    std::vector<ColumnsHashing::OptimizationDataOneExpression> result(order_by_nodes.size());
     std::unordered_map<std::string, size_t> index_of_group_by_expression;
     std::unordered_map<std::string, bool> expression_signed_or_not;
     for (size_t i = 0; i < group_by_nodes.size(); ++i)
     {
         if (group_by_nodes[i]->getNodeType() != QueryTreeNodeType::COLUMN)
-            continue; // MVP
+            continue; // TODO allow another types of expressions
         const auto& group_by_node_typed = group_by_nodes[i]->template as<ColumnNode &>();
         index_of_group_by_expression[group_by_node_typed.getColumnName()] = i;
         const DataTypePtr & column_type = group_by_node_typed.getColumnType();
@@ -508,13 +507,17 @@ std::optional<std::vector<std::tuple<UInt64, SortDirection, bool>>> findOptimiza
         const auto& order_by_node_typed = order_by_nodes[i]->template as<SortNode &>();
         const auto& order_by_expression = order_by_node_typed.getExpression();
         if (order_by_expression->getNodeType() != QueryTreeNodeType::COLUMN)
-            return std::nullopt; // MVP. TODO FUNCTION and maybe some others are also possible for optimization
+            return std::nullopt; // TODO FUNCTION and maybe some others are also possible for optimization
         const auto& order_by_expression_as_column = order_by_expression->template as<ColumnNode &>();
         auto order_by_column_name = order_by_expression_as_column.getColumnName();
         auto group_by_map_iter = index_of_group_by_expression.find(order_by_column_name);
         if (group_by_map_iter == index_of_group_by_expression.end())
             return std::nullopt;
-        result[i] = {group_by_map_iter->second, order_by_node_typed.getSortDirection(), expression_signed_or_not[order_by_column_name]};
+        result[i] = {
+            group_by_map_iter->second,
+            order_by_node_typed.getSortDirection(),
+            expression_signed_or_not[order_by_column_name]
+        };
     }
     return result;
 }
@@ -542,7 +545,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
             aggregate_description.argument_names.clear();
     }
 
-    std::optional<std::vector<std::tuple<UInt64, SortDirection, bool>>> optimization_indexes;
+    std::optional<std::vector<ColumnsHashing::OptimizationDataOneExpression>> optimization_indexes;
     if (!query_node.isGroupByWithTotals() && !query_node.hasHaving())
     {
         const auto& group_by_nodes = query_node.getGroupBy().getNodes();
