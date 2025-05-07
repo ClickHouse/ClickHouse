@@ -86,6 +86,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"force_exchange_kind", "", "", "New experimental setting."},
             {"allow_experimental_delta_kernel_rs", true, true, "New setting"},
             {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
+            {"allow_experimental_ytsaurus_table_engine", false, false, "New setting."},
+            {"allow_experimental_ytsaurus_table_function", false, false, "New setting."},
+            {"allow_experimental_ytsaurus_dictionary_source", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
@@ -133,8 +136,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_hash_join_threshold", 0, 0, "New setting"},
             /// Release closed. Please use 25.4
             {"use_local_cache_for_remote_storage", true, false, "Obsolete setting."},
-            {"allow_experimental_ytsaurus_table_engine", false, false, "New setting."},
-            {"allow_experimental_ytsaurus_table_function", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.2",
         {

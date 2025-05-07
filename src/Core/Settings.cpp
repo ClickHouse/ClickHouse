@@ -6690,6 +6690,9 @@ Experimental table engine for integration with YTsaurus.
     DECLARE(Bool, allow_experimental_ytsaurus_table_function, false, R"(
 Experimental table engine for integration with YTsaurus.
 )", EXPERIMENTAL) \
+DECLARE(Bool, allow_experimental_ytsaurus_dictionary_source, false, R"(
+    Experimental dictinary source for integration with YTsaurus.
+    )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

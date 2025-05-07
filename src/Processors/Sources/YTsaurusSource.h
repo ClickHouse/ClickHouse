@@ -46,7 +46,7 @@ class YTsaurusTableSourceDynamicTable final : public ISource
 {
 public:
     YTsaurusTableSourceDynamicTable(
-        YTsaurusClientPtr client_, const YTsaurusTableSourceOptions& table_options, const Block & sample_block_, const UInt64 & max_block_size_);
+        YTsaurusClientPtr client_, const YTsaurusTableSourceOptions & source_options_, const Block & sample_block_, const UInt64 & max_block_size_);
     ~YTsaurusTableSourceDynamicTable() override = default;
 
     String getName() const override { return "YTsaurusTableSourceDynamicTable"; }
@@ -68,7 +68,7 @@ private:
 struct YTsaurusSourceFactory
 {
     static std::shared_ptr<ISource>
-    createSource(YTsaurusClientPtr client, const YTsaurusTableSourceOptions source_options, const Block & sample_block, UInt64 max_block_size);
+    createSource(YTsaurusClientPtr client, YTsaurusTableSourceOptions source_options, const Block & sample_block, UInt64 max_block_size);
 };
 
 }
