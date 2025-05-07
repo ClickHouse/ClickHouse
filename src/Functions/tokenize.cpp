@@ -153,7 +153,7 @@ public:
                 "Only {} tokenizers are supported, but got '{}'",
                 [&supported_tokenizers]
                 {
-                    std::stringstream out{};
+                    std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
                     for (size_t i = 0; i < supported_tokenizers.size() - 1; ++i)
                         out << supported_tokenizers[i].first << ", ";
                     out << supported_tokenizers.back().first;

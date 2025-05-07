@@ -410,9 +410,10 @@ Splits text into tokens / words by the given tokenizer.
 
 **Arguments**
 
-- `tokenizer_string` — The tokenizer to use. Valid arguments are 'default', 'none', 'ngram', and 'chinese'.
+- `tokenizer_string` — The tokenizer to use. Valid arguments are 'default', 'noop', 'ngram', and 'chinese'.
 - `input_string` — Any set of bytes represented as the [String](../data-types/string.md) data type object.
 - `ngram_size` - A mandatory `UInt8` that defines size of ngram when `tokenizer` is set to `ngram`.
+- `mode` - An optional parameter to control granularity of the Chinese tokenizer. Supports only `fine-grained` and `coarse-grained` values, default is `fine-grained`.
 
 **Returned value**
 
@@ -433,7 +434,7 @@ Result:
 ```
 
 ```sql
-SELECT tokenize('none', 'foo bar') AS tokens;
+SELECT tokenize('noop', 'foo bar') AS tokens;
 ```
 
 Result:
@@ -467,3 +468,28 @@ Result:
 │ ['你好','世界','！'] │
 └──────────────────────┘
 ```
+
+```sql
+SELECT tokenize('chinese', 'fine-grained', '南京市长江大桥') AS tokens;
+```
+
+Result:
+
+```text
+┌─tokens────────────────────────────────────────────┐
+│ ['南京','京市','南京市','长江','大桥','长江大桥'] │
+└───────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT tokenize('chinese', 'coarse-grained', '南京市长江大桥') AS tokens;
+```
+
+Result:
+
+```text
+┌─tokens───────────────────────────────────────────────────┐
+│ ['南京','南京市','京市','市长','长江','长江大桥','大桥'] │
+└──────────────────────────────────────────────────────────┘
+```
+

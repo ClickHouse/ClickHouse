@@ -22,10 +22,10 @@
 namespace DB
 {
 
-std::vector<std::string> NgramTokenExtractor::getTokens(const char* data, size_t length) const {
-    if (n > length) {
+std::vector<std::string> NgramTokenExtractor::getTokens(const char* data, size_t length) const
+{
+    if (n > length)
         return std::vector<std::string>{{data, length}};
-    }
 
     std::vector<std::string> tokens;
     tokens.reserve(length - n + 1);
@@ -102,7 +102,8 @@ bool NgramTokenExtractor::nextInStringLike(const char * data, size_t length, siz
     return false;
 }
 
-std::vector<std::string> SplitTokenExtractor::getTokens(const char* data, size_t length) const {
+std::vector<std::string> SplitTokenExtractor::getTokens(const char* data, size_t length) const
+{
     std::vector<std::string> tokens;
     tokens.reserve(length / 5 /* assuming average length of word is 5. */);
 

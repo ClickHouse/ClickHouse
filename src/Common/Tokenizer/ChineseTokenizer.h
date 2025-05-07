@@ -12,7 +12,8 @@ class Jieba;
 namespace DB
 {
 
-enum class ChineseGranularMode {
+enum class ChineseGranularMode
+{
     Fine,
     Coarse
 };

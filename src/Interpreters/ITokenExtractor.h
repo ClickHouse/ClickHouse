@@ -195,7 +195,8 @@ struct NoOpTokenExtractor final : public ITokenExtractorHelper<NoOpTokenExtracto
 {
     static const char * getName() { return "noop_v1"; }
 
-    std::vector<String> getTokens(const char* data, size_t length) const override {
+    std::vector<String> getTokens(const char* data, size_t length) const override
+    {
         return {{data, length}};
     }
 
