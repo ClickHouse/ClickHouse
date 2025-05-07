@@ -25,7 +25,7 @@ struct BlockIO
     QueryPipeline pipeline;
 
     /// Callbacks for query logging could be set here.
-    std::function<void(QueryPipeline &, std::chrono::system_clock::time_point)> finish_callback;
+    std::function<void(QueryPipeline &&, std::chrono::system_clock::time_point)> finish_callback;
     std::function<void(bool)> exception_callback;
 
     /// When it is true, don't bother sending any non-empty blocks to the out stream
