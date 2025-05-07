@@ -1,3 +1,4 @@
+#include <memory>
 #include <Server/DistributedQuery/StreamingExchangeSource.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -5,6 +6,7 @@
 #include <Formats/NativeReader.h>
 #include <Core/ProtocolDefines.h>
 #include <IO/ReadHelpers.h>
+#include <Poco/Net/NetException.h>
 #include <Common/logger_useful.h>
 #include "base/types.h"
 
@@ -52,7 +54,7 @@ IProcessor::Status StreamingExchangeSource::prepare()
 
     /// TODO: handle cancelled state?
 
-    if (in.available() > 0)
+    if (packet_in)
         return Status::Ready;
 
     return Status::Async;
@@ -71,11 +73,72 @@ void StreamingExchangeSource::sendNoMoreDataNeeded()
     out.next();
 }
 
-Chunk StreamingExchangeSource::generate()
+void StreamingExchangeSource::readFromSocket(char * buffer, size_t buffer_size, size_t & position)
+{
+    while (position < buffer_size)
+    {
+        size_t remaining_size = buffer_size - position;
+
+        ssize_t received = socket.receiveBytes(buffer + position, remaining_size);
+        if (received < 0)
+        {
+            auto last_error = errno;
+            if (last_error == EINTR)
+            {
+                continue;
+            }
+            else if (last_error == EAGAIN || last_error == EWOULDBLOCK)
+            {
+                /// Socket is not ready for reading, wait for epoll event
+                break;
+            }
+            else
+            {
+                throw Poco::Net::NetException("Failed to send data to socket", last_error);
+            }
+        }
+
+        LOG_TEST(log, "Received {} bytes from exchange stream {}, fd: {}", received, stream_name, socket.sockfd());
+
+        position += received;
+        bytes_read += received;
+    }
+}
+
+void StreamingExchangeSource::tryReadHeader()
+{
+    /// Read remaining size to header buffer
+    readFromSocket(reinterpret_cast<char*>(&current_packet_header) , sizeof(current_packet_header), current_packet_header_bytes_filled);
+    if (current_packet_header_bytes_filled == sizeof(current_packet_header))
+    {
+        if (current_packet_header.packet_type != StreamingExchangeProtocol::PacketType::Data)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet type {}", current_packet_header.packet_type);
+
+        current_packet_body.resize(current_packet_header.bytes_size);
+        current_packet_body_bytes_filled = 0;
+        packet_receive_state = ReceivingBody;
+
+        LOG_TEST(log, "Expecting packet with {} bytes from exchange stream {}, fd: {}", current_packet_header.bytes_size, stream_name, socket.sockfd());
+    }
+}
+
+void StreamingExchangeSource::tryReadBody()
+{
+    /// Read remaining size of the packet
+    readFromSocket(current_packet_body.data() , current_packet_body.size(), current_packet_body_bytes_filled);
+    if (current_packet_body_bytes_filled == current_packet_body.size())
+    {
+        packet_receive_state = ReceivingHeader;
+        current_packet_header_bytes_filled = 0;
+        packet_in = std::make_unique<ReadBufferFromMemory>(current_packet_body.data(), current_packet_body.size());
+    }
+}
+
+std::optional<Chunk> StreamingExchangeSource::tryGenerate()
 {
     if (output_finished)
     {
-        LOG_TRACE(log, "NoMoreDataNeeded from exchange stream {}, total rows: {}, bytes: {}", stream_name, rows_read, in.count());
+        LOG_TRACE(log, "NoMoreDataNeeded from exchange stream {}, total rows: {}, bytes: {}", stream_name, rows_read, bytes_read);
 
         sendNoMoreDataNeeded();
         finished_reading = true;
@@ -84,20 +147,25 @@ Chunk StreamingExchangeSource::generate()
 
     LOG_TEST(log, "Reading from exchange stream {}", stream_name);
 
-    UInt64 packet_type = 0;
-    readVarUInt(packet_type, in);
-    if (packet_type != StreamingExchangeProtocol::PacketType::Data)
-        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet type {}", packet_type);
+    if (packet_receive_state == ReceivingHeader)
+        tryReadHeader();
+
+    if (packet_receive_state == ReceivingBody)
+        tryReadBody();
+
+    /// If a whole packet has been read, we can parse it.
+    if (!packet_in)
+        return Chunk(); /// Empty chunk means that we currently heve no data but we have not finished yet.
 
     UInt64 num_rows = 0;
-    readVarUInt(num_rows, in);
+    readVarUInt(num_rows, *packet_in);
     UInt64 num_columns = 0;
-    readVarUInt(num_columns, in);
+    readVarUInt(num_columns, *packet_in);
 
-    Chunk result;
+    std::optional<Chunk> result;
     if (num_rows != 0)
     {
-        auto compressed_buf = std::make_unique<CompressedReadBuffer>(in);
+        auto compressed_buf = std::make_unique<CompressedReadBuffer>(*packet_in);
         auto reader = std::make_unique<NativeReader>(*compressed_buf, output.getHeader(), DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS);
         Block block = reader->read();
 
@@ -124,8 +192,13 @@ Chunk StreamingExchangeSource::generate()
         /// Empty chunk with no columns means end of stream.
         finished_reading = true;
         LOG_TRACE(log, "Finished reading from exchange stream {}, total rows: {}, bytes: {}",
-            stream_name, rows_read, in.count());
+            stream_name, rows_read, bytes_read);
     }
+
+    packet_in.reset();
+    packet_receive_state = ReceivingHeader;
+    current_packet_body.clear();
+    current_packet_body_bytes_filled = 0;
 
     return result;
 }

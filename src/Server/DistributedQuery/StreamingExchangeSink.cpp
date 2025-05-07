@@ -218,8 +218,11 @@ void StreamingExchangeSink::consume(Chunk chunk)
 
     LOG_TEST(log, "Writing chunk with {} rows to exchange stream {}", chunk.getNumRows(), stream_name);
 
-    /// Write packet type
-    writeVarUInt(StreamingExchangeProtocol::PacketType::Data, *out);
+    /// Write packet header stub.
+    /// The actual size will be calculated and overwritten after the chuck is serialized
+    const ssize_t packet_header_offset = out->count();
+    StreamingExchangeProtocol::DataPacketHeader packet_header{.packet_type = StreamingExchangeProtocol::PacketType::Data, .bytes_size = 0};
+    out->write(reinterpret_cast<const char*>(&packet_header), sizeof(packet_header));
 
     writeVarUInt(chunk.getNumRows(), *out);
     writeVarUInt(chunk.getNumColumns(), *out);
@@ -235,7 +238,24 @@ void StreamingExchangeSink::consume(Chunk chunk)
         writer->flush();
         compressed_buf->finalize();
     }
-    else
+
+    /// Fill the actual size in the header
+    {
+        /// `out` is a WriteBufferFromString to we can rely on count() for getting curretn position in the buffer.
+        const ssize_t end_of_packet_offset = out->count();
+        const ssize_t packet_data_size = end_of_packet_offset - packet_header_offset - sizeof(StreamingExchangeProtocol::DataPacketHeader);
+
+        if (packet_data_size < 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid packet data size: {}", packet_data_size);
+
+        StreamingExchangeProtocol::DataPacketHeader * current_packet_header =
+            reinterpret_cast<StreamingExchangeProtocol::DataPacketHeader *>(const_cast<char*>(out->stringView().data()) + packet_header_offset);
+        current_packet_header->bytes_size = packet_data_size;
+
+        LOG_TEST(log, "Packet with {} bytes was added to exchange stream {}", current_packet_header->bytes_size, stream_name);
+    }
+
+    if (chunk.getNumRows() == 0)
     {
         /// Just in case, flush buffer to the socket
         tryToSwitchSendBuffer();
