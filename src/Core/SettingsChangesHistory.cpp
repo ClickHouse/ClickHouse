@@ -114,6 +114,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_url_encoding", true, false, "Changed existing setting's default value"},
             {"s3_slow_all_threads_after_network_error", false, true, "New setting"},
             /// Release closed. Please use 25.6
+            {"allow_experimental_ytsaurus_table_engine", false, false, "New setting."},
+            {"allow_experimental_ytsaurus_table_function", false, false, "New setting."},
+            {"allow_experimental_ytsaurus_dictionary_source", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
@@ -161,8 +164,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_hash_join_threshold", 0, 0, "New setting"},
             /// Release closed. Please use 25.4
             {"use_local_cache_for_remote_storage", true, false, "Obsolete setting."},
-            {"allow_experimental_ytsaurus_table_engine", false, false, "New setting."},
-            {"allow_experimental_ytsaurus_table_function", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.2",
         {

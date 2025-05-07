@@ -60,7 +60,7 @@ private:
 
     YTsaurusNodeType getNodeTypeFromAttributes(Poco::JSON::Object::Ptr json_ptr);
 
-    ReadBufferPtr createQueryRWBuffer(const YTsaurusQueryPtr query, ReadWriteBufferFromHTTP::OutStreamCallback out_callback = nullptr);
+    ReadBufferPtr createQueryRWBuffer(YTsaurusQueryPtr query, ReadWriteBufferFromHTTP::OutStreamCallback out_callback = nullptr);
     ContextPtr context;
 
     ConnectionInfo connection_info;

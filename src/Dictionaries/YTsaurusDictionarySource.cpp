@@ -6,7 +6,7 @@
 #include <Processors/Sources/YTsaurusSource.h>
 #include <Storages/YTsaurus/StorageYTsaurus.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
-
+#include <Core/Settings.h>
 
 #endif
 
@@ -18,10 +18,17 @@ namespace ErrorCodes
     #if USE_YTSAURUS
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_STORAGE;
     #else
     extern const int SUPPORT_IS_DISABLED;
     #endif
 }
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_ytsaurus_dictionary_source;
+}
+
 
 void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
 {
@@ -35,6 +42,10 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
         const std::string & /* default_database */,
         bool /* created_from_ddl */)
     {
+        if (!context->getSettingsRef()[Setting::allow_experimental_ytsaurus_dictionary_source])
+            throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Dictionary source YTsaurus is experimental. "
+                "Set `allow_experimental_ytsaurus_dictionary_source` setting to enable it");
+
         const auto config_prefix = root_config_prefix + ".ytsaurus";
         auto configuration = std::make_shared<YTsaurusStorageConfiguration>();
 
@@ -56,7 +67,7 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
         bool /* created_from_ddl */) -> DictionarySourcePtr
     {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-        "Dictionary source of type `ytstautus` is disabled because ClickHouse was built without mongodb support.");
+        "Dictionary source of type `ytsaurus` is disabled because ClickHouse was built without YTsaurus support.");
     };
     #endif
 
