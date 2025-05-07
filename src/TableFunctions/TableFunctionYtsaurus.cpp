@@ -117,7 +117,7 @@ void registerTableFunctionYTsaurus(TableFunctionFactory & factory)
                     .examples = {
                         {"Fetch collection by URI", "SELECT * FROM ytsaurus('localhost:80', '//tmp/test', 'auth_token', 'key UInt64, data String')", ""},
                     },
-                    .category = {""},
+                    .category = FunctionDocumentation::Category::TableFunction
             },
     });
 }

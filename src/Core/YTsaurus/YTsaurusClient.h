@@ -14,6 +14,7 @@
 #include <Poco/URI.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Parser.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 
 
 #include <boost/noncopyable.hpp>
@@ -47,9 +48,11 @@ public:
 
     const ConnectionInfo & getConnectionInfo() { return connection_info; }
 
-    DB::ReadBufferPtr readTable(const String & cypress_path);
+    ReadBufferPtr readTable(const String & cypress_path);
 
-    DB::ReadBufferPtr selectRows(const String & cypress_path);
+    ReadBufferPtr lookupRows(const String & cypress_path, const Block & lookup_block_input);
+
+    ReadBufferPtr selectRows(const String & cypress_path);
 
     YTsaurusNodeType getNodeType(const String & cypress_path);
 
@@ -57,14 +60,14 @@ private:
 
     YTsaurusNodeType getNodeTypeFromAttributes(Poco::JSON::Object::Ptr json_ptr);
 
-    ReadBufferPtr execQuery(YTsaurusQueryPtr query);
+    ReadBufferPtr createQueryRWBuffer(const YTsaurusQueryPtr query, ReadWriteBufferFromHTTP::OutStreamCallback out_callback = nullptr);
     ContextPtr context;
 
     ConnectionInfo connection_info;
     LoggerPtr log;
 };
 
-using YTsaurusClientPtr = std::unique_ptr<YTsaurusClient>;
+using YTsaurusClientPtr = std::shared_ptr<YTsaurusClient>;
 
 }
 

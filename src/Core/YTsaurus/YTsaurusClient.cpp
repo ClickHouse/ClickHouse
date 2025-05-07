@@ -6,11 +6,18 @@
 
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
+#include <IO/WriteBufferFromOStream.h>
+#include <Formats/formatBlock.h>
+#include <Core/Block.h>
+#include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/JSON/Parser.h>
+
+#include <Interpreters/Context_fwd.h>
+#include <QueryPipeline/Pipe.h>
+
 
 #include <memory>
 
@@ -36,14 +43,14 @@ YTsaurusClient::YTsaurusClient(ContextPtr context_, const ConnectionInfo & conne
 DB::ReadBufferPtr YTsaurusClient::readTable(const String & cypress_path)
 {
     YTsaurusQueryPtr read_table_query(new YTsaurusReadTableQuery(cypress_path));
-    return execQuery(read_table_query);
+    return createQueryRWBuffer(read_table_query);
 }
 
 YTsaurusNodeType YTsaurusClient::getNodeType(const String & cypress_path)
 {
     String attributes_path = cypress_path + "/@";
     YTsaurusQueryPtr get_query(new YTsaurusGetQuery(attributes_path));
-    auto buf = execQuery(get_query);
+    auto buf = createQueryRWBuffer(get_query);
 
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
@@ -76,11 +83,26 @@ YTsaurusNodeType YTsaurusClient::getNodeTypeFromAttributes(const Poco::JSON::Obj
 DB::ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path)
 {
     YTsaurusQueryPtr select_rows_query(new YTsaurusSelectRowsQuery(cypress_path));
-    return execQuery(select_rows_query);
+    return createQueryRWBuffer(select_rows_query);
+}
+
+DB::ReadBufferPtr YTsaurusClient::lookupRows(const String & cypress_path, const Block & lookup_block_input)
+{
+    YTsaurusQueryPtr lookup_rows_query(new YTsaurusLookupRows(cypress_path));
+    auto out_callback = [lookup_block_input, this](std::ostream & ostr)
+    {
+        FormatSettings format_settings;
+        format_settings.json.quote_64bit_integers = false;
+        WriteBufferFromOStream out_buffer(ostr);
+        auto output_format = context->getOutputFormat("JSONEachRow", out_buffer, lookup_block_input.cloneEmpty(), format_settings);
+        formatBlock(output_format, lookup_block_input);
+        out_buffer.finalize();
+    };
+    return createQueryRWBuffer(lookup_rows_query, std::move(out_callback));
 }
 
 
-DB::ReadBufferPtr YTsaurusClient::execQuery(const YTsaurusQueryPtr query)
+DB::ReadBufferPtr YTsaurusClient::createQueryRWBuffer(const YTsaurusQueryPtr query, ReadWriteBufferFromHTTP::OutStreamCallback out_callback)
 {
     Poco::URI uri(connection_info.http_proxy_url.c_str());
     uri.setPath(fmt::format("/api/{}/{}", connection_info.api_version, query->getQueryName()));
@@ -91,7 +113,9 @@ DB::ReadBufferPtr YTsaurusClient::execQuery(const YTsaurusQueryPtr query)
     }
 
     DB::HTTPHeaderEntries http_headers{
+        /// Always use json format for input and output.
         {"Accept", "application/json"},
+        {"Content-Type", "application/json"},
         {"Authorization", fmt::format("OAuth {}", connection_info.oauth_token)},
     };
 
@@ -99,11 +123,12 @@ DB::ReadBufferPtr YTsaurusClient::execQuery(const YTsaurusQueryPtr query)
     Poco::Net::HTTPBasicCredentials creds;
     auto buf = DB::BuilderRWBufferFromHTTP(uri)
                 .withConnectionGroup(DB::HTTPConnectionGroupType::STORAGE)
-                .withMethod(Poco::Net::HTTPRequest::HTTP_GET)
+                .withMethod(query->getHTTPMethod())
                 .withSettings(context->getReadSettings())
                 .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
                 .withHostFilter(&context->getRemoteHostFilter())
                 .withRedirects(context->getSettingsRef()[Setting::max_http_get_redirects])
+                .withOutCallback(out_callback)
                 .withHeaders(http_headers)
                 .create(creds);
 

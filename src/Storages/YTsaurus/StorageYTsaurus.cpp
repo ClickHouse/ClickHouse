@@ -66,7 +66,7 @@ Pipe StorageYTsaurus::read(
     YTsaurusClient::ConnectionInfo connection_info{.http_proxy_url = configuration.http_proxy_url, .oauth_token = configuration.oauth_token};
     YTsaurusClientPtr client = std::make_unique<YTsaurusClient>(context, connection_info);
 
-    auto ptr = YTsaurusSourceFactory::createSource(std::move(client), configuration.cypress_path, sample_block, max_block_size);
+    auto ptr = YTsaurusSourceFactory::createSource(client, {.cypress_path = configuration.cypress_path}, sample_block, max_block_size);
 
     return Pipe(ptr);
 }
