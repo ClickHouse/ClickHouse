@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include "config.h"
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
@@ -14,7 +16,6 @@
 namespace DB
 {
 
-class Block;
 class Chunk;
 
 class ArrowColumnToCHColumn
@@ -29,14 +30,20 @@ public:
         bool case_insensitive_matching_ = false,
         bool is_stream_ = false);
 
-    Chunk arrowTableToCHChunk(const std::shared_ptr<arrow::Table> & table, size_t num_rows, BlockMissingValues * block_missing_values = nullptr);
+    Chunk arrowTableToCHChunk(
+        const std::shared_ptr<arrow::Table> & table,
+        size_t num_rows,
+        std::shared_ptr<const arrow::KeyValueMetadata> metadata,
+        BlockMissingValues * block_missing_values = nullptr);
 
     /// Transform arrow schema to ClickHouse header
     static Block arrowSchemaToCHHeader(
         const arrow::Schema & schema,
+        std::shared_ptr<const arrow::KeyValueMetadata> metadata,
         const std::string & format_name,
         bool skip_columns_with_unsupported_types = false,
-        bool allow_inferring_nullable_columns = true);
+        bool allow_inferring_nullable_columns = true,
+        bool case_insensitive_matching = false);
 
     struct DictionaryInfo
     {
@@ -44,7 +51,6 @@ public:
         Int64 default_value_index = -1;
         UInt64 dictionary_size;
     };
-
 
 private:
     struct ArrowColumn
@@ -55,7 +61,11 @@ private:
 
     using NameToArrowColumn = std::unordered_map<std::string, ArrowColumn>;
 
-    Chunk arrowColumnsToCHChunk(const NameToArrowColumn & name_to_arrow_column, size_t num_rows, BlockMissingValues * block_missing_values);
+    Chunk arrowColumnsToCHChunk(
+        const NameToArrowColumn & name_to_arrow_column,
+        size_t num_rows,
+        std::shared_ptr<const arrow::KeyValueMetadata> metadata,
+        BlockMissingValues * block_missing_values);
 
     const Block & header;
     const std::string format_name;

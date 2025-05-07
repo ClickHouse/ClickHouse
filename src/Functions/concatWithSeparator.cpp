@@ -186,16 +186,16 @@ REGISTER_FUNCTION(ConcatWithSeparator)
 Returns the concatenation strings separated by string separator. Syntax: concatWithSeparator(sep, expr1, expr2, expr3...)
         )",
         .examples{{"concatWithSeparator", "SELECT concatWithSeparator('a', '1', '2', '3')", ""}},
-        .category{"Strings"}});
+        .category = FunctionDocumentation::Category::String});
 
     factory.registerFunction<FunctionConcatWithSeparatorAssumeInjective>(FunctionDocumentation{
         .description = R"(
 Same as concatWithSeparator, the difference is that you need to ensure that concatWithSeparator(sep, expr1, expr2, expr3...) → result is injective, it will be used for optimization of GROUP BY.
 
-The function is named “injective” if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.
+The function is named "injective" if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.
         )",
         .examples{{"concatWithSeparatorAssumeInjective", "SELECT concatWithSeparatorAssumeInjective('a', '1', '2', '3')", ""}},
-        .category{"String"}});
+        .category = FunctionDocumentation::Category::String});
 
     /// Compatibility with Spark and MySQL:
     factory.registerAlias("concat_ws", "concatWithSeparator", FunctionFactory::Case::Insensitive);

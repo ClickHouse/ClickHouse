@@ -1,36 +1,43 @@
 ---
-slug: /en/sql-reference/table-functions/deltalake
+description: 'Provides a read-only table-like interface to the Delta Lake tables in
+  Amazon S3.'
+sidebar_label: 'deltaLake'
 sidebar_position: 45
-sidebar_label: deltaLake
+slug: /sql-reference/table-functions/deltalake
+title: 'deltaLake'
 ---
 
 # deltaLake Table Function
 
-Provides a read-only table-like interface to [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3.
+Provides a read-only table-like interface to [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3 or Azure Blob Storage.
 
-## Syntax
+## Syntax {#syntax}
 
-``` sql
+`deltaLake` is an alias of `deltaLakeS3`, its supported for compatibility.
+
+
+```sql
 deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+
+deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+
+deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
 ```
 
-## Arguments
+## Arguments {#arguments}
 
-- `url` — Bucket url with path to existing Delta Lake table in S3.
-- `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. These parameters are optional. If credentials are not specified, they are used from the ClickHouse configuration. For more information see [Using S3 for Data Storage](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-s3).
-- `format` — The [format](/docs/en/interfaces/formats.md/#formats) of the file.
-- `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
-- `compression` — Parameter is optional. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, compression will be autodetected by the file extension.
+Description of the arguments coincides with description of arguments in table functions `s3`, `azureBlobStorage`, `HDFS` and `file` correspondingly.
+`format` stands for the format of data files in the Delta lake table.
 
 **Returned value**
 
-A table with the specified structure for reading data in the specified Delta Lake table in S3.
+A table with the specified structure for reading data in the specified Delta Lake table.
 
 **Examples**
 
 Selecting rows from the table in S3 `https://clickhouse-public-datasets.s3.amazonaws.com/delta_lake/hits/`:
 
-``` sql
+```sql
 SELECT
     URL,
     UserAgent
@@ -39,7 +46,7 @@ WHERE URL IS NOT NULL
 LIMIT 2
 ```
 
-``` response
+```response
 ┌─URL───────────────────────────────────────────────────────────────────┬─UserAgent─┐
 │ http://auto.ria.ua/search/index.kz/jobinmoscow/detail/55089/hasimages │         1 │
 │ http://auto.ria.ua/search/index.kz/jobinmoscow.ru/gosushi             │         1 │
@@ -48,5 +55,5 @@ LIMIT 2
 
 **See Also**
 
-- [DeltaLake engine](/docs/en/engines/table-engines/integrations/deltalake.md)
-- [DeltaLake cluster table function](/docs/en/sql-reference/table-functions/deltalakeCluster.md)
+- [DeltaLake engine](engines/table-engines/integrations/deltalake.md)
+- [DeltaLake cluster table function](sql-reference/table-functions/deltalakeCluster.md)

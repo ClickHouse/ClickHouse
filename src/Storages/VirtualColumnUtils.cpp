@@ -1,14 +1,19 @@
 #include <memory>
 #include <stack>
-#include <unordered_set>
+
+#include <Storages/VirtualColumnUtils.h>
+#include "Formats/NumpyDataTypes.h"
+
 #include <Core/NamesAndTypes.h>
 #include <Core/TypeId.h>
 
+#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/TreeRewriter.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
 
 #include <Parsers/ASTIdentifier.h>
@@ -23,36 +28,35 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
 
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeDateTime.h>
 
+#include <Processors/Port.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/Sinks/EmptySink.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 
-#include <Storages/VirtualColumnUtils.h>
-#include <IO/WriteHelpers.h>
-#include <Common/re2.h>
+#include <Columns/ColumnSet.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
-#include <Formats/SchemaInferenceUtils.h>
+#include <Core/Settings.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
-#include <Core/Settings.h>
-#include "Functions/FunctionsLogical.h"
-#include "Functions/IFunction.h"
-#include "Functions/IFunctionAdaptors.h"
-#include "Functions/indexHint.h"
-#include <IO/ReadBufferFromString.h>
-#include <Interpreters/convertFieldToType.h>
-#include <Parsers/makeASTForLogicalFunction.h>
-#include <Columns/ColumnSet.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <Functions/FunctionHelpers.h>
-#include <Interpreters/ActionsVisitor.h>
+#include <Functions/FunctionsLogical.h>
+#include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/indexHint.h>
+#include <Functions/keyvaluepair/impl/KeyValuePairExtractorBuilder.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Parsers/makeASTForLogicalFunction.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Functions/keyvaluepair/impl/DuplicateKeyFoundException.h>
 
 
 namespace DB
@@ -144,25 +148,38 @@ NameSet getVirtualNamesForFileLikeStorage()
     return getCommonVirtualsForFileLikeStorage().getNameSet();
 }
 
-static std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValues(const String & path)
+static auto makeExtractor()
 {
-    std::string pattern = "([^/]+)=([^/]+)/";
-    re2::StringPiece input_piece(path);
+    return KeyValuePairExtractorBuilder().withItemDelimiters({'/'}).withKeyValueDelimiter('=').buildWithReferenceMap();
+}
 
-    std::unordered_map<std::string, std::string> key_values;
-    std::string key;
-    std::string value;
-    std::unordered_map<std::string, std::string> used_keys;
-    while (RE2::FindAndConsume(&input_piece, pattern, &key, &value))
+HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & path)
+{
+    static auto extractor = makeExtractor();
+
+    HivePartitioningKeysAndValues key_values;
+
+    // cutting the filename to prevent malformed filenames that contain key-value-pairs from being extracted
+    // not sure if we actually need to do that, but just in case. Plus, the previous regex impl took care of it
+    const auto last_slash_pos = path.find_last_of('/');
+
+    if (last_slash_pos == std::string::npos)
     {
-        auto it = used_keys.find(key);
-        if (it != used_keys.end() && it->second != value)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Path '{}' to file with enabled hive-style partitioning contains duplicated partition key {} with different values, only unique keys are allowed", path, key);
-        used_keys.insert({key, value});
-
-        auto col_name = key;
-        key_values[col_name] = value;
+        // nothing to extract, there is no path, just a filename
+        return key_values;
     }
+
+    std::string_view path_without_filename(path.data(), last_slash_pos);
+
+    try
+    {
+        extractor.extract(path_without_filename, key_values);
+    }
+    catch (const extractKV::DuplicateKeyFoundException & ex)
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Path '{}' to file with enabled hive-style partitioning contains duplicated partition key {} with different values, only unique keys are allowed", path, ex.key);
+    }
+
     return key_values;
 }
 
@@ -195,17 +212,22 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
 
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
     {
-        auto map = parseHivePartitioningKeysAndValues(path);
+        const auto map = parseHivePartitioningKeysAndValues(path);
         auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
-        for (auto & item : map)
+
+        for (const auto & item : map)
         {
-            auto type = tryInferDataTypeByEscapingRule(item.second, format_settings, FormatSettings::EscapingRule::Raw);
+            const std::string key(item.first);
+            const std::string value(item.second);
+
+            auto type = tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Raw);
+
             if (type == nullptr)
                 type = std::make_shared<DataTypeString>();
             if (type->canBeInsideLowCardinality())
-                add_virtual({item.first, std::make_shared<DataTypeLowCardinality>(type)}, true);
+                add_virtual({key, std::make_shared<DataTypeLowCardinality>(type)}, true);
             else
-                add_virtual({item.first, type}, true);
+                add_virtual({key, type}, true);
         }
     }
 
@@ -231,7 +253,7 @@ static void addPathAndFileToVirtualColumns(Block & block, const String & path, s
 
     if (use_hive_partitioning)
     {
-        auto keys_and_values = parseHivePartitioningKeysAndValues(path);
+        const auto keys_and_values = parseHivePartitioningKeysAndValues(path);
         for (const auto & [key, value] : keys_and_values)
         {
             if (const auto * column = block.findByName(key))
@@ -285,7 +307,7 @@ void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
     VirtualsForFileLikeStorage virtual_values, ContextPtr context)
 {
-    std::unordered_map<std::string, std::string> hive_map;
+    HivePartitioningKeysAndValues hive_map;
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
         hive_map = parseHivePartitioningKeysAndValues(virtual_values.path);
 
@@ -354,6 +376,23 @@ static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block * allo
         for (const auto * child : cur->children)
             nodes.push(child);
     }
+
+    return true;
+}
+
+bool isDeterministic(const ActionsDAG::Node * node)
+{
+    for (const auto * child : node->children)
+    {
+        if (!isDeterministic(child))
+            return false;
+    }
+
+    if (node->type != ActionsDAG::ActionType::FUNCTION)
+        return true;
+
+    if (!node->function_base->isDeterministic())
+        return false;
 
     return true;
 }

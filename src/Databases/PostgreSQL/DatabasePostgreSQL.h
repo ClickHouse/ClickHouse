@@ -5,7 +5,7 @@
 #if USE_LIBPQXX
 
 #include <Databases/DatabasesCommon.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
 
@@ -13,6 +13,7 @@ namespace DB
 {
 
 class Context;
+struct AlterCommand;
 
 
 /** Real-time access to table list and table structure from remote PostgreSQL.
@@ -60,6 +61,8 @@ public:
     void drop(ContextPtr /*context*/) override;
     void shutdown() override;
 
+    void alterDatabaseComment(const AlterCommand & command) override;
+
 protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
 
@@ -72,7 +75,7 @@ private:
 
     mutable Tables cached_tables;
     std::unordered_set<std::string> detached_or_dropped;
-    BackgroundSchedulePool::TaskHolder cleaner_task;
+    BackgroundSchedulePoolTaskHolder cleaner_task;
     std::shared_ptr<IDisk> db_disk;
     LoggerPtr log;
 

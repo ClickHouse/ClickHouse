@@ -1,3 +1,5 @@
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
@@ -113,6 +115,14 @@ void ColumnNullable::get(size_t n, Field & res) const
         res = Null();
     else
         getNestedColumn().get(n, res);
+}
+
+std::pair<String, DataTypePtr> ColumnNullable::getValueNameAndType(size_t n) const
+{
+    if (isNullAt(n))
+        return {"NULL", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())};
+
+    return getNestedColumn().getValueNameAndType(n);
 }
 
 Float64 ColumnNullable::getFloat64(size_t n) const
@@ -726,7 +736,7 @@ size_t ColumnNullable::capacity() const
     return getNullMapData().capacity();
 }
 
-void ColumnNullable::prepareForSquashing(const Columns & source_columns)
+void ColumnNullable::prepareForSquashing(const Columns & source_columns, size_t factor)
 {
     size_t new_size = size();
     Columns nested_source_columns;
@@ -738,8 +748,8 @@ void ColumnNullable::prepareForSquashing(const Columns & source_columns)
         nested_source_columns.push_back(source_nullable_column.getNestedColumnPtr());
     }
 
-    nested_column->prepareForSquashing(nested_source_columns);
-    getNullMapData().reserve(new_size);
+    nested_column->prepareForSquashing(nested_source_columns, factor);
+    getNullMapData().reserve(new_size * factor);
 }
 
 void ColumnNullable::shrinkToFit()

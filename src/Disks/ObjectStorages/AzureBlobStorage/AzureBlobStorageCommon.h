@@ -15,6 +15,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <base/strong_typedef.h>
 #include <filesystem>
+#include <variant>
 
 namespace fs = std::filesystem;
 

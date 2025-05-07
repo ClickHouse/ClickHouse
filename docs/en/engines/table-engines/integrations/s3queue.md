@@ -1,8 +1,14 @@
 ---
-slug: /en/engines/table-engines/integrations/s3queue
+description: 'This engine provides integration with the Amazon S3 ecosystem and allows
+  streaming imports. Similar to the Kafka and RabbitMQ engines, but provides S3-specific
+  features.'
+sidebar_label: 'S3Queue'
 sidebar_position: 181
-sidebar_label: S3Queue
+slug: /engines/table-engines/integrations/s3queue
+title: 'S3Queue Table Engine'
 ---
+
+import ScalePlanFeatureBadge from '@theme/badges/ScalePlanFeatureBadge'
 
 # S3Queue Table Engine
 
@@ -10,7 +16,7 @@ This engine provides integration with [Amazon S3](https://aws.amazon.com/s3/) ec
 
 ## Create Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     ENGINE = S3Queue(path, [NOSIGN, | aws_access_key_id, aws_secret_access_key,] format, [compression], [headers])
     [SETTINGS]
@@ -18,15 +24,24 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     [after_processing = 'keep',]
     [keeper_path = '',]
     [loading_retries = 0,]
-    [processing_threads_num = 1,]
-    [enable_logging_to_s3queue_log = 0,]
+    [processing_threads_num = 16,]
+    [parallel_inserts = false,]
+    [enable_logging_to_queue_log = true,]
+    [last_processed_path = "",]
+    [tracked_files_limit = 1000,]
+    [tracked_file_ttl_sec = 0,]
     [polling_min_timeout_ms = 1000,]
     [polling_max_timeout_ms = 10000,]
     [polling_backoff_ms = 0,]
-    [tracked_file_ttl_sec = 0,]
-    [tracked_files_limit = 1000,]
     [cleanup_interval_min_ms = 10000,]
     [cleanup_interval_max_ms = 30000,]
+    [buckets = 0,]
+    [list_objects_batch_size = 1000,]
+    [enable_hash_ring_filtering = 0,]
+    [max_processed_files_before_commit = 100,]
+    [max_processed_rows_before_commit = 0,]
+    [max_processed_bytes_before_commit = 0,]
+    [max_processing_time_sec_before_commit = 0,]
 ```
 
 :::warning
@@ -48,7 +63,7 @@ SETTINGS
 
 Using named collections:
 
-``` xml
+```xml
 <clickhouse>
     <named_collections>
         <s3queue_conf>
@@ -112,7 +127,18 @@ Default value: `0`.
 
 Number of threads to perform processing. Applies only for `Unordered` mode.
 
-Default value: `1`.
+Default value: Number of CPUs or 16.
+
+### s3queue_parallel_inserts {#parallel_inserts}
+
+By default `processing_threads_num` will produce one `INSERT`, so it will only download files and parse in multiple threads.
+But this limits the parallelism, so for better throughput use `parallel_inserts=true`, this will allow to insert data in parallel (but keep in mind that it will result in higher number of generated data parts for MergeTree family).
+
+:::note
+`INSERT`s will be spawned with respect to `max_process*_before_commit` settings.
+:::
+
+Default value: `false`.
 
 ### s3queue_enable_logging_to_s3queue_log {#enable_logging_to_s3queue_log}
 
@@ -192,10 +218,12 @@ For 'Ordered' mode. Available since `24.6`. If there are several replicas of S3Q
 
 Engine supports all s3 related settings. For more information about S3 settings see [here](../../../engines/table-engines/integrations/s3.md).
 
-## S3 role-based access
+## S3 role-based access {#s3-role-based-access}
+
+<ScalePlanFeatureBadge feature="S3 Role-Based Access" />
 
 The s3Queue table engine supports role-based access.
-Refer to the documentation [here](https://clickhouse.com/docs/en/cloud/security/secure-s3) for steps to configure a role to access your bucket.
+Refer to the documentation [here](/cloud/security/secure-s3) for steps to configure a role to access your bucket.
 
 Once the role is configured, a `roleARN` can be passed via an `extra_credentials` parameter as shown below:
 ```sql
@@ -233,7 +261,7 @@ When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the 
 
 Example:
 
-``` sql
+```sql
   CREATE TABLE s3queue_engine_table (name String, value UInt32)
     ENGINE=S3Queue('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/*', 'CSV', 'gzip')
     SETTINGS
@@ -287,7 +315,7 @@ For introspection use `system.s3queue` stateless table and `system.s3queue_log` 
 
 1. `system.s3queue`. This table is not persistent and shows in-memory state of `S3Queue`: which files are currently being processed, which files are processed or failed.
 
-``` sql
+```sql
 ┌─statement──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ CREATE TABLE system.s3queue
 (
@@ -308,7 +336,7 @@ COMMENT 'Contains in-memory state of S3Queue metadata and currently processed ro
 
 Example:
 
-``` sql
+```sql
 
 SELECT *
 FROM system.s3queue
@@ -329,7 +357,7 @@ exception:
 
 The table has the following structure:
 
-``` sql
+```sql
 SHOW CREATE TABLE system.s3queue_log
 
 Query id: 0ad619c3-0f2a-4ee4-8b40-c73d86e04314
@@ -357,7 +385,7 @@ SETTINGS index_granularity = 8192 │
 
 In order to use `system.s3queue_log` define its configuration in server config file:
 
-``` xml
+```xml
     <s3queue_log>
         <database>system</database>
         <table>s3queue_log</table>
@@ -366,7 +394,7 @@ In order to use `system.s3queue_log` define its configuration in server config f
 
 Example:
 
-``` sql
+```sql
 SELECT *
 FROM system.s3queue_log
 

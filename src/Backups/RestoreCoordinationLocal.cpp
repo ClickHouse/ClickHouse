@@ -1,7 +1,6 @@
 #include <Backups/RestoreCoordinationLocal.h>
 
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/logger_useful.h>
 
@@ -53,7 +52,7 @@ bool RestoreCoordinationLocal::acquireInsertingDataForKeeperMap(const String & r
 
 void RestoreCoordinationLocal::generateUUIDForTable(ASTCreateQuery & create_query)
 {
-    String query_str = serializeAST(create_query);
+    String query_str = create_query.formatWithSecretsOneLine();
 
     auto find_in_map = [&]() TSA_REQUIRES(mutex)
     {

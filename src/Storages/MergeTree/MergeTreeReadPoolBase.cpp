@@ -1,8 +1,10 @@
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 
 #include <Core/Settings.h>
+#include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 namespace DB
 {
@@ -99,8 +101,9 @@ calculateMinMarksPerTask(
             const auto min_bytes_per_task = settings[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
             /// We're taking min here because number of tasks shouldn't be too low - it will make task stealing impossible.
             /// We also create at least two tasks per thread to have something to steal from a slow thread.
-            const auto heuristic_min_marks
-                = std::min<size_t>(pool_settings.sum_marks / pool_settings.threads / 2, min_bytes_per_task / avg_mark_bytes);
+            const auto heuristic_min_marks = std::min<size_t>(
+                pool_settings.sum_marks / (pool_settings.threads * pool_settings.total_query_nodes) / 2,
+                min_bytes_per_task / avg_mark_bytes);
             if (heuristic_min_marks > min_marks_per_task)
             {
                 LOG_TEST(
@@ -151,21 +154,42 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
         }
 
         read_task_info.part_index_in_query = part_with_ranges.part_index_in_query;
-        read_task_info.alter_conversions = MergeTreeData::getAlterConversionsForPart(part_with_ranges.data_part, mutations_snapshot, storage_snapshot->metadata, getContext());
+        read_task_info.part_starting_offset_in_query = part_with_ranges.part_starting_offset_in_query;
+        read_task_info.alter_conversions = MergeTreeData::getAlterConversionsForPart(part_with_ranges.data_part, mutations_snapshot, getContext());
 
         LoadedMergeTreeDataPartInfoForReader part_info(part_with_ranges.data_part, read_task_info.alter_conversions);
+
+        if (reader_settings.apply_deleted_mask && read_task_info.hasLightweightDelete())
+        {
+            bool remove_filter_column = std::ranges::find(column_names, RowExistsColumn::name) == column_names.end();
+            read_task_info.mutation_steps.push_back(createLightweightDeleteStep(remove_filter_column));
+        }
+
+        if (read_task_info.alter_conversions->hasMutations())
+        {
+            auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+                .withExtendedObjects()
+                .withVirtuals()
+                .withSubcolumns();
+
+            auto columns_list = storage_snapshot->getColumnsByNames(options, column_names);
+            auto mutation_steps = read_task_info.alter_conversions->getMutationSteps(part_info, columns_list, storage_snapshot->metadata, getContext());
+            std::move(mutation_steps.begin(), mutation_steps.end(), std::back_inserter(read_task_info.mutation_steps));
+        }
 
         read_task_info.task_columns = getReadTaskColumns(
             part_info,
             storage_snapshot,
             column_names,
             prewhere_info,
+            read_task_info.mutation_steps,
             actions_settings,
             reader_settings,
-            /*with_subcolumns=*/true);
+            /*with_subcolumns=*/ true);
 
         read_task_info.const_virtual_fields = shared_virtual_fields;
         read_task_info.const_virtual_fields.emplace("_part_index", read_task_info.part_index_in_query);
+        read_task_info.const_virtual_fields.emplace("_part_starting_offset", read_task_info.part_starting_offset_in_query);
 
         if (pool_settings.preferred_block_size_bytes > 0)
         {
@@ -183,6 +207,8 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
                 Names(all_column_names.begin(), all_column_names.end()),
                 sample_block);
         }
+
+        read_task_info.deserialization_prefixes_cache = std::make_shared<DeserializationPrefixesCache>();
 
         is_part_on_remote_disk.push_back(part_with_ranges.data_part->isStoredOnRemoteDisk());
         std::tie(read_task_info.min_marks_per_task, read_task_info.approx_size_of_mark)

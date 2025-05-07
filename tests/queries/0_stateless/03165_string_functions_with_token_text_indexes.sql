@@ -124,12 +124,11 @@ CREATE TABLE 03165_token_ft
 (
     id Int64,
     message String,
-    INDEX idx_message message TYPE full_text() GRANULARITY 1
+    INDEX idx_message message TYPE gin() GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY id
--- Full text index works only with full parts.
-SETTINGS min_bytes_for_full_part_storage=0;
+SETTINGS min_bytes_for_full_part_storage = 0; -- GIN indexes currently don't work with packed parts
 
 INSERT INTO 03165_token_ft VALUES(1, 'Service is not ready');
 

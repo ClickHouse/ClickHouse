@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Types_fwd.h>
 
 namespace DB
@@ -20,7 +20,7 @@ public:
 
     void start();
 
-    void stop() { task->deactivate(); }
+    void stop();
 
     Strings detectConflicts(const Strings & paths, UInt64 & last_version);
 
@@ -39,7 +39,7 @@ private:
 
     const String path;
 
-    BackgroundSchedulePool::TaskHolder task;
+    BackgroundSchedulePoolTaskHolder task;
 
     const String log_name;
     LoggerPtr log;

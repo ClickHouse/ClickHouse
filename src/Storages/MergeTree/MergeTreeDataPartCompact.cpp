@@ -31,24 +31,23 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
 {
 }
 
-IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
+MergeTreeReaderPtr createMergeTreeReaderCompact(
+    const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
     MarkCache * mark_cache,
-    const AlterConversionsPtr & alter_conversions,
+    DeserializationPrefixesCache * deserialization_prefixes_cache,
     const MergeTreeReaderSettings & reader_settings,
     const ValueSizeMap & avg_value_size_hints,
-    const ReadBufferFromFileBase::ProfileCallback & profile_callback) const
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback)
 {
-    auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
-
     return std::make_unique<MergeTreeReaderCompactSingleBuffer>(
         read_info, columns_to_read, virtual_fields,
         storage_snapshot, uncompressed_cache,
-        mark_cache, mark_ranges, reader_settings,
+        mark_cache, deserialization_prefixes_cache, mark_ranges, reader_settings,
         avg_value_size_hints, profile_callback, CLOCK_MONOTONIC_COARSE);
 }
 
@@ -103,7 +102,7 @@ void MergeTreeDataPartCompact::calculateEachColumnSizes(ColumnSizeByName & /*eac
 void MergeTreeDataPartCompact::loadIndexGranularityImpl(
     MergeTreeIndexGranularityPtr & index_granularity_ptr,
     const MergeTreeIndexGranularityInfo & index_granularity_info_,
-    size_t columns_count,
+    size_t marks_per_granule,
     const IDataPartStorage & data_part_storage_,
     const MergeTreeSettings & storage_settings)
 {
@@ -128,7 +127,7 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
 
     while (!marks_reader->eof())
     {
-        marks_reader->ignore(columns_count * sizeof(MarkInCompressedFile));
+        marks_reader->ignore(marks_per_granule * sizeof(MarkInCompressedFile));
         size_t granularity;
         readBinaryLittleEndian(granularity, *marks_reader);
         index_granularity_ptr->appendMark(granularity);
@@ -146,7 +145,12 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
     if (columns.empty())
         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
-    loadIndexGranularityImpl(index_granularity, index_granularity_info, columns.size(), getDataPartStorage(), *storage.getSettings());
+    loadIndexGranularityImpl(
+        index_granularity,
+        index_granularity_info,
+        index_granularity_info.mark_type.with_substreams ? columns_substreams.getTotalSubstreams() : columns.size(),
+        getDataPartStorage(),
+        *storage.getSettings());
 }
 
 void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const
@@ -170,7 +174,7 @@ void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, Mark
         /*save_marks_in_cache=*/ true,
         read_settings,
         load_marks_threadpool,
-        columns.size());
+        index_granularity_info.mark_type.with_substreams ? columns_substreams.getTotalSubstreams() : columns.size());
 
     loader.loadMarks();
 }

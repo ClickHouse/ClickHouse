@@ -2,6 +2,7 @@
 
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -36,6 +37,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
@@ -181,7 +183,7 @@ StorageKafka::StorageKafka(
     , max_rows_per_message((*kafka_settings)[KafkaSetting::kafka_max_rows_per_message].value)
     , schema_name(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_schema].value, macros_info))
     , num_consumers((*kafka_settings)[KafkaSetting::kafka_num_consumers].value)
-    , log(getLogger("StorageKafka (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageKafka (" + table_id_.getFullTableName() + ")"))
     , intermediate_commit((*kafka_settings)[KafkaSetting::kafka_commit_every_batch].value)
     , settings_adjustments(StorageKafkaUtils::createSettingsAdjustments(*kafka_settings, schema_name))
     , thread_per_consumer((*kafka_settings)[KafkaSetting::kafka_thread_per_consumer].value)
@@ -222,7 +224,11 @@ StorageKafka::StorageKafka(
     });
 }
 
-StorageKafka::~StorageKafka() = default;
+StorageKafka::~StorageKafka()
+{
+    if (!shutdown_called)
+        shutdown(false);
+}
 
 void StorageKafka::read(
     QueryPlan & query_plan,
@@ -282,6 +288,10 @@ void StorageKafka::startup()
 
 void StorageKafka::shutdown(bool)
 {
+    // Interrupt streaming, inform consumers to stop
+    for (auto & task : tasks)
+        task->stream_cancelled = true;
+
     shutdown_called = true;
     cleanup_cv.notify_one();
 
@@ -301,9 +311,6 @@ void StorageKafka::shutdown(bool)
         Stopwatch watch;
         for (auto & task : tasks)
         {
-            // Interrupt streaming thread
-            task->stream_cancelled = true;
-
             LOG_TEST(log, "Waiting for cleanup of a task");
             task->holder->deactivate();
         }
@@ -377,7 +384,7 @@ KafkaConsumerPtr StorageKafka::popConsumer(std::chrono::milliseconds timeout)
     {
         ret_consumer_ptr = consumers[*closed_consumer_index];
 
-        cppkafka::Configuration consumer_config = getConsumerConfiguration(*closed_consumer_index);
+        cppkafka::Configuration consumer_config = getConsumerConfiguration(*closed_consumer_index, ret_consumer_ptr);
         /// It should be OK to create consumer under lock, since it should be fast (without subscribing).
         ret_consumer_ptr->createConsumer(consumer_config);
         LOG_TRACE(log, "Created #{} consumer", *closed_consumer_index);
@@ -428,7 +435,7 @@ KafkaConsumerPtr StorageKafka::createKafkaConsumer(size_t consumer_number)
         topics);
     return kafka_consumer_ptr;
 }
-cppkafka::Configuration StorageKafka::getConsumerConfiguration(size_t consumer_number)
+cppkafka::Configuration StorageKafka::getConsumerConfiguration(size_t consumer_number, IKafkaExceptionInfoSinkPtr exception_info_sink_ptr)
 {
     KafkaConfigLoader::ConsumerConfigParams params{
         {getContext()->getConfigRef(), collection_name, topics, log},
@@ -438,7 +445,7 @@ cppkafka::Configuration StorageKafka::getConsumerConfiguration(size_t consumer_n
         consumer_number,
         client_id,
         getMaxBlockSize()};
-    return KafkaConfigLoader::getConsumerConfiguration(*this, params);
+    return KafkaConfigLoader::getConsumerConfiguration(*this, params, exception_info_sink_ptr);
 }
 
 cppkafka::Configuration StorageKafka::getProducerConfiguration()
@@ -461,7 +468,7 @@ void StorageKafka::cleanConsumers()
         /// Copy consumers for closing to a new vector to close them without a lock
         std::vector<ConsumerPtr> consumers_to_close;
 
-        UInt64 now_usec = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        UInt64 now_usec = timeInMicroseconds(std::chrono::system_clock::now());
         {
             for (size_t i = 0; i < consumers.size(); ++i)
             {
@@ -564,6 +571,9 @@ void StorageKafka::threadFunc(size_t idx)
                 }
             }
         }
+        else
+            LOG_DEBUG(log, "No attached views");
+
     }
     catch (...)
     {

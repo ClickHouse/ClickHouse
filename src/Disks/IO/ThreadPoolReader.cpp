@@ -1,20 +1,20 @@
 #include "ThreadPoolReader.h"
-#include <Common/VersionNumber.h>
-#include <Common/assert_cast.h>
+#include <future>
+#include <fcntl.h>
+#include <unistd.h>
+#include <base/MemorySanitizer.h>
+#include <base/errnoToString.h>
+#include <Poco/Environment.h>
+#include <Poco/Event.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
-#include <Common/setThreadName.h>
-#include <Common/MemorySanitizer.h>
-#include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
-#include <Poco/Environment.h>
-#include <base/errnoToString.h>
-#include <Poco/Event.h>
-#include <future>
-#include <unistd.h>
-#include <fcntl.h>
+#include <Common/VersionNumber.h>
+#include <Common/assert_cast.h>
+#include <Common/setThreadName.h>
 
 #if defined(OS_LINUX)
 

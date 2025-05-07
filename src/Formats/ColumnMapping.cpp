@@ -1,3 +1,5 @@
+#include <Columns/IColumn.h>
+#include <Core/Block.h>
 #include <Formats/ColumnMapping.h>
 #include <Formats/FormatSettings.h>
 
@@ -19,7 +21,7 @@ void ColumnMapping::setupByHeader(const Block & header)
 }
 
 void ColumnMapping::addColumns(
-    const Names & column_names, const Block::NameMap & column_indexes_by_names, const FormatSettings & settings)
+    const Names & column_names, const BlockNameMap & column_indexes_by_names, const FormatSettings & settings)
 {
     std::vector<bool> read_columns(column_indexes_by_names.size(), false);
 

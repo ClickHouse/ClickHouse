@@ -24,6 +24,7 @@ ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFa
     if (it == metadata_by_path.end())
     {
         it = metadata_by_path.emplace(zookeeper_path, std::move(metadata)).first;
+        it->second.metadata->setMetadataRefCount(*it->second.ref_count);
     }
     else
     {
@@ -33,12 +34,12 @@ ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFa
         metadata_from_table.checkEquals(metadata_from_keeper);
     }
 
-    it->second.metadata->registerIfNot(storage_id);
-    it->second.ref_count += 1;
+    it->second.metadata->registerIfNot(storage_id, false);
+    *it->second.ref_count += 1;
     return it->second.metadata;
 }
 
-void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_path, const StorageID & storage_id)
+void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_path, const StorageID & storage_id, bool remove_metadata_if_no_registered)
 {
     std::lock_guard lock(mutex);
     auto it = metadata_by_path.find(zookeeper_path);
@@ -46,44 +47,23 @@ void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_pat
     if (it == metadata_by_path.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Metadata with zookeeper path {} does not exist", zookeeper_path);
 
-    it->second.ref_count -= 1;
+    *it->second.ref_count -= 1;
 
-    size_t registry_size;
     try
     {
-        registry_size = it->second.metadata->unregister(storage_id);
+        const auto registry_size = it->second.metadata->unregister(
+            storage_id,
+            /* active */ false,
+            remove_metadata_if_no_registered);
+
         LOG_TRACE(log, "Remaining registry size: {}", registry_size);
-    }
-    catch (const zkutil::KeeperException & e)
-    {
-        if (!Coordination::isHardwareError(e.code))
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-        /// Any non-zero value would do.
-        registry_size = 1;
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
-        /// Any non-zero value would do.
-        registry_size = 1;
     }
 
-    if (registry_size == 0)
-    {
-        try
-        {
-            auto zk_client = Context::getGlobalContextInstance()->getZooKeeper();
-            zk_client->removeRecursive(it->first);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-        }
-    }
-
-    if (!it->second.ref_count)
+    if (*it->second.ref_count == 0)
         metadata_by_path.erase(it);
 }
 

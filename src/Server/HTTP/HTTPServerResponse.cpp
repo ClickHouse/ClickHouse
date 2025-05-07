@@ -1,15 +1,14 @@
 #include <Server/HTTP/HTTPServerResponse.h>
-#include <Server/HTTP/HTTPServerRequest.h>
+
+#include <IO/AutoFinalizedWriteBuffer.h>
 #include <IO/WriteBuffer.h>
-#include <Poco/CountingStream.h>
+#include <Server/HTTP/HTTPServerRequest.h>
 #include <Poco/DateTimeFormat.h>
 #include <Poco/DateTimeFormatter.h>
-#include <Poco/FileStream.h>
 #include <Poco/Net/HTTPChunkedStream.h>
 #include <Poco/Net/HTTPFixedLengthStream.h>
 #include <Poco/Net/HTTPHeaderStream.h>
 #include <Poco/Net/HTTPStream.h>
-#include <Poco/StreamCopier.h>
 #include <sstream>
 
 

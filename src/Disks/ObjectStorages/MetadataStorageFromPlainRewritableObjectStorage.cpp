@@ -3,32 +3,33 @@
 #include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorage.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
 
-#include <algorithm>
 #include <any>
 #include <cstddef>
 #include <exception>
 #include <iterator>
-#include <mutex>
 #include <optional>
-#include <unordered_map>
 #include <unordered_set>
 #include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
+#include <Storages/PartitionCommands.h>
 #include <Poco/Timestamp.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
-#include <Common/SharedLockGuard.h>
-#include <Common/SharedMutex.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
-#include "CommonPathPrefixKeyGenerator.h"
 
 #if USE_AZURE_BLOB_STORAGE
 #    include <azure/storage/common/storage_exception.hpp>
 #endif
 
+
+namespace ProfileEvents
+{
+extern const Event DiskPlainRewritableLegacyLayoutDiskCount;
+}
 
 namespace DB
 {
@@ -40,7 +41,7 @@ namespace ErrorCodes
 
 namespace FailPoints
 {
-extern const char plain_rewritable_object_storage_azure_not_found_on_init[];
+    extern const char plain_rewritable_object_storage_azure_not_found_on_init[];
 }
 
 namespace
@@ -49,79 +50,11 @@ namespace
 constexpr auto PREFIX_PATH_FILE_NAME = "prefix.path";
 constexpr auto METADATA_PATH_TOKEN = "__meta/";
 
-/// Use a separate layout for metadata if:
-/// 1. The disk endpoint does not contain any objects yet (empty), OR
-/// 2. The metadata is already stored behind a separate endpoint.
-/// Otherwise, store metadata along with regular data for backward compatibility.
-std::string getMetadataKeyPrefix(ObjectStoragePtr object_storage)
-{
-    const auto common_key_prefix = std::filesystem::path(object_storage->getCommonKeyPrefix());
-    const auto metadata_key_prefix = std::filesystem::path(common_key_prefix) / METADATA_PATH_TOKEN;
-    return !object_storage->existsOrHasAnyChild(metadata_key_prefix / "") && object_storage->existsOrHasAnyChild(common_key_prefix / "")
-        ? common_key_prefix
-        : metadata_key_prefix;
 }
 
-void loadDirectoryTree(
-    InMemoryDirectoryPathMap::Map & map, InMemoryDirectoryPathMap::FileNames & unique_filenames, ObjectStoragePtr object_storage)
+
+void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
 {
-    using FileNamesIterator = InMemoryDirectoryPathMap::FileNamesIterator;
-    using FileNameIteratorComparator = InMemoryDirectoryPathMap::FileNameIteratorComparator;
-    const auto common_key_prefix = object_storage->getCommonKeyPrefix();
-    ThreadPool & pool = getIOThreadPool().get();
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, "PlainRWTreeLoad");
-
-    std::atomic<size_t> num_files = 0;
-    LOG_DEBUG(getLogger("MetadataStorageFromPlainObjectStorage"), "Loading directory tree");
-    std::mutex mutex;
-    for (auto & item : map)
-    {
-        auto & remote_path_info = item.second;
-        const auto remote_path = std::filesystem::path(common_key_prefix) / remote_path_info.path / "";
-        runner(
-            [remote_path, &mutex, &remote_path_info, &unique_filenames, &object_storage, &num_files]
-            {
-                setThreadName("PlainRWTreeLoad");
-                std::set<FileNamesIterator, FileNameIteratorComparator> filename_iterators;
-                for (auto iterator = object_storage->iterate(remote_path, 0); iterator->isValid(); iterator->next())
-                {
-                    auto file = iterator->current();
-                    String path = file->getPath();
-                    chassert(path.starts_with(remote_path.string()));
-                    auto filename = std::filesystem::path(path).filename();
-                    /// Check that the file is a direct child.
-                    if (path.substr(remote_path.string().size()) == filename)
-                    {
-                        auto filename_it = unique_filenames.end();
-                        {
-                            std::lock_guard lock(mutex);
-                            filename_it = unique_filenames.emplace(filename).first;
-                        }
-                        auto inserted = filename_iterators.emplace(filename_it).second;
-                        chassert(inserted);
-                        if (inserted)
-                            ++num_files;
-                    }
-                }
-
-                auto metric = object_storage->getMetadataStorageMetrics().file_count;
-                CurrentMetrics::add(metric, filename_iterators.size());
-                remote_path_info.filename_iterators = std::move(filename_iterators);
-            });
-    }
-    runner.waitForAllToFinishAndRethrowFirstError();
-    LOG_DEBUG(
-        getLogger("MetadataStorageFromPlainObjectStorage"),
-        "Loaded directory tree for {} directories, found {} files",
-        map.size(),
-        num_files);
-}
-
-std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & metadata_key_prefix, ObjectStoragePtr object_storage)
-{
-    auto result = std::make_shared<InMemoryDirectoryPathMap>();
-    using Map = InMemoryDirectoryPathMap::Map;
-
     ThreadPool & pool = getIOThreadPool().get();
     ThreadPoolCallbackRunnerLocal<void> runner(pool, "PlainRWMetaLoad");
 
@@ -129,98 +62,165 @@ std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & 
 
     auto settings = getReadSettings();
     settings.enable_filesystem_cache = false;
-    settings.remote_fs_method = RemoteFSReadMethod::read;
+    settings.remote_fs_method = RemoteFSReadMethod::threadpool;
+    settings.remote_fs_prefetch = false;
     settings.remote_fs_buffer_size = 1024;  /// These files are small.
 
     LOG_DEBUG(log, "Loading metadata");
-    size_t num_files = 0;
 
-    std::mutex mutex;
-    InMemoryDirectoryPathMap::Map map;
+    /// This method can do both initial loading and incremental refresh of the metadata.
+    ///
+    /// We will list directories under __meta and compare it with the current list in memory.
+    /// Some directories may be new and some no longer exist in the storage.
+    /// We want to update the state in memory without holding a lock,
+    /// and we can do it while allowing certain race-conditions.
+
+    /// So, we obtain a list, then apply changes by:
+    /// 1. Deleting every directory in memory that no longer present in the storage;
+    ///    This works correctly under the assumption that if a directory with a certain name was deleted it cannot appear again.
+    ///    And this assumption is satisfied, because every name is a unique random value.
+    /// 2. Checking the value of `prefix.path` for every new directory and adding it to the state in memory.
+    ///    There is (?) a race condition, leading to the possibility to add a directory that was just deleted.
+    ///    This race condition can be ignored for MergeTree tables.
+    /// 3. Checking if the value of `prefix.path` changed for any already existing directory
+    ///    and apply the corresponding rename.
+
+    size_t num_dirs_found = 0;
+    size_t num_dirs_added = 0;
+    size_t num_dirs_removed = 0;
+
+    std::set<std::string> set_of_remote_paths;
+
+    bool has_metadata = object_storage->existsOrHasAnyChild(metadata_key_prefix);
+
+    if (is_initial_load)
+    {
+        /// Use iteration to determine if the disk contains data.
+        /// LocalObjectStorage creates an empty top-level directory even when no data is stored,
+        /// unlike blob storage, which has no concept of directories, therefore existsOrHasAnyChild
+        /// is not applicable.
+        auto common_key_prefix = fs::path(object_storage->getCommonKeyPrefix()) / "";
+        bool has_data = object_storage->isRemote() ? object_storage->existsOrHasAnyChild(common_key_prefix) : object_storage->iterate(common_key_prefix, 0)->isValid();
+        /// No metadata directory: legacy layout is likely in use.
+        if (has_data && !has_metadata)
+        {
+            ProfileEvents::increment(ProfileEvents::DiskPlainRewritableLegacyLayoutDiskCount, 1);
+            LOG_WARNING(log, "Legacy layout is likely used for disk '{}'", object_storage->getCommonKeyPrefix());
+        }
+
+        if (!has_metadata)
+        {
+            LOG_DEBUG(log, "Loaded metadata (empty)");
+            return;
+        }
+    }
+
     try
     {
         for (auto iterator = object_storage->iterate(metadata_key_prefix, 0); iterator->isValid(); iterator->next())
         {
-            ++num_files;
             auto file = iterator->current();
             String path = file->getPath();
+
+            /// __meta/randomlygenerated/prefix.path
             auto remote_metadata_path = std::filesystem::path(path);
             if (remote_metadata_path.filename() != PREFIX_PATH_FILE_NAME)
                 continue;
 
-            runner(
-                [remote_metadata_path, path, &object_storage, &mutex, &map, &log, &settings, &metadata_key_prefix]
+            chassert(remote_metadata_path.has_parent_path());
+            chassert(remote_metadata_path.string().starts_with(metadata_key_prefix));
+
+            /// randomlygenerated/prefix.path
+            auto suffix = remote_metadata_path.string().substr(metadata_key_prefix.size());
+            auto rel_path = std::filesystem::path(std::move(suffix));
+
+            /// randomlygenerated
+            auto remote_path = rel_path.parent_path();
+            set_of_remote_paths.insert(remote_path);
+
+            ++num_dirs_found;
+            if (path_map->existsRemotePathUnchanged(remote_path, file->metadata->etag))
+            {
+                /// Already loaded.
+                continue;
+            }
+
+            ++num_dirs_added;
+            runner([remote_metadata_path, remote_path, path, metadata = file->metadata, &log, &settings, this]
+            {
+                setThreadName("PlainRWMetaLoad");
+
+                StoredObject object{path};
+                String local_path;
+                /// Assuming that local and the object storage clocks are synchronized.
+                Poco::Timestamp last_modified = metadata->last_modified;
+                InMemoryDirectoryPathMap::FileNames files;
+
+                try
                 {
-                    setThreadName("PlainRWMetaLoad");
+                    auto read_buf = object_storage->readObject(object, settings);
+                    readStringUntilEOF(local_path, *read_buf);
 
-                    StoredObject object{path};
-                    String local_path;
-                    Poco::Timestamp last_modified{};
-
-                    try
+                    /// Load the list of files inside the directory.
+                    fs::path full_remote_path = object_storage->getCommonKeyPrefix() / remote_path;
+                    size_t full_prefix_length = full_remote_path.string().size() + 1; /// common/key/prefix/randomlygenerated/
+                    for (auto dir_iterator = object_storage->iterate(full_remote_path, 0); dir_iterator->isValid(); dir_iterator->next())
                     {
-                        auto read_buf = object_storage->readObject(object, settings);
-                        readStringUntilEOF(local_path, *read_buf);
-                        auto object_metadata = object_storage->tryGetObjectMetadata(path);
-                        /// It ok if a directory was removed just now.
-                        /// We support attaching a filesystem that is concurrently modified by someone else.
-                        if (!object_metadata)
-                            return;
-                        /// Assuming that local and the object storage clocks are synchronized.
-                        last_modified = object_metadata->last_modified;
-#if USE_AZURE_BLOB_STORAGE
-                        fiu_do_on(FailPoints::plain_rewritable_object_storage_azure_not_found_on_init, {
-                            std::bernoulli_distribution fault(0.25);
-                            if (fault(thread_local_rng))
-                            {
-                                LOG_TEST(log, "Fault injection");
-                                throw Azure::Storage::StorageException::CreateFromResponse(std::make_unique<Azure::Core::Http::RawResponse>(
-                                    1, 0, Azure::Core::Http::HttpStatusCode::NotFound, "Fault injected"));
-                            }
-                        });
-#endif
+                        auto remote_file = dir_iterator->current();
+                        String remote_file_path = remote_file->getPath();
+                        chassert(remote_file_path.starts_with(full_remote_path.string()));
+                        auto filename = fs::path(remote_file_path).filename();
+                        /// Skip metadata files.
+                        if (filename == PREFIX_PATH_FILE_NAME)
+                        {
+                            LOG_WARNING(log, "Legacy layout is in use, ignoring '{}'", remote_file_path);
+                            continue;
+                        }
+
+                        /// Check that the file is a direct child.
+                        chassert(full_prefix_length < remote_file_path.size());
+                        if (std::string_view(remote_file_path.data() + full_prefix_length) == filename)
+                            files.insert(std::move(filename));
                     }
+
+#if USE_AZURE_BLOB_STORAGE
+                    fiu_do_on(FailPoints::plain_rewritable_object_storage_azure_not_found_on_init, {
+                        std::bernoulli_distribution fault(0.25);
+                        if (fault(thread_local_rng))
+                        {
+                            LOG_TEST(log, "Fault injection");
+                            throw Azure::Storage::StorageException::CreateFromResponse(std::make_unique<Azure::Core::Http::RawResponse>(
+                                1, 0, Azure::Core::Http::HttpStatusCode::NotFound, "Fault injected"));
+                        }
+                    });
+#endif
+                }
 #if USE_AWS_S3
-                    catch (const S3Exception & e)
-                    {
-                        /// It is ok if a directory was removed just now.
-                        if (e.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY)
-                            return;
-                        throw;
-                    }
+                catch (const S3Exception & e)
+                {
+                    /// It is ok if a directory was removed just now.
+                    if (e.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY)
+                        return;
+                    throw;
+                }
 #endif
 #if USE_AZURE_BLOB_STORAGE
-                    catch (const Azure::Storage::StorageException & e)
-                    {
-                        if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
-                            return;
-                        throw;
-                    }
+                catch (const Azure::Storage::StorageException & e)
+                {
+                    if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+                        return;
+                    throw;
+                }
 #endif
-                    catch (...)
-                    {
-                        throw;
-                    }
+                catch (...)
+                {
+                    throw;
+                }
 
-                    chassert(remote_metadata_path.has_parent_path());
-                    chassert(remote_metadata_path.string().starts_with(metadata_key_prefix));
-                    auto suffix = remote_metadata_path.string().substr(metadata_key_prefix.size());
-                    auto rel_path = std::filesystem::path(std::move(suffix));
-                    std::lock_guard lock(mutex);
-                    std::pair<Map::iterator, bool> res = map.emplace(
-                        std::filesystem::path(local_path).parent_path(),
-                        InMemoryDirectoryPathMap::RemotePathInfo{rel_path.parent_path(), last_modified.epochTime(), {}});
-
-                    /// This can happen if table replication is enabled, then the same local path is written
-                    /// in `prefix.path` of each replica.
-                    if (!res.second)
-                        LOG_WARNING(
-                            log,
-                            "The local path '{}' is already mapped to a remote path '{}', ignoring: '{}'",
-                            local_path,
-                            res.first->second.path,
-                            rel_path.parent_path().string());
-                });
+                path_map->addOrReplacePath(
+                    fs::path(local_path).parent_path(),
+                    InMemoryDirectoryPathMap::RemotePathInfo{remote_path, metadata->etag, last_modified.epochTime(), std::move(files)});
+            });
         }
     }
     catch (...)
@@ -231,27 +231,34 @@ std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & 
 
     runner.waitForAllToFinishAndRethrowFirstError();
 
-    InMemoryDirectoryPathMap::FileNames unique_filenames;
-    LOG_DEBUG(log, "Loaded metadata for {} files, found {} directories", num_files, map.size());
-    loadDirectoryTree(map, unique_filenames, object_storage);
-    {
-        std::lock_guard lock(result->mutex);
-        result->map = std::move(map);
-        result->unique_filenames = std::move(unique_filenames);
+    /// Now check which paths have to be removed in memory.
+    num_dirs_removed = path_map->removeOutdatedPaths(set_of_remote_paths);
 
-        auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
-        CurrentMetrics::add(metric, result->map.size());
-    }
-    return result;
+    size_t num_dirs_in_memory = path_map->directoriesCount();
+
+    LOG_DEBUG(log, "Loaded metadata for {} directories ({} currently, {} added, {} removed)",
+        num_dirs_found, num_dirs_in_memory, num_dirs_added, num_dirs_removed);
+
+    previous_refresh.restart();
 }
 
+void MetadataStorageFromPlainRewritableObjectStorage::refresh(UInt64 not_sooner_than_milliseconds)
+{
+    if (!previous_refresh.compareAndRestart(0.001 * not_sooner_than_milliseconds))
+        return;
+
+    std::unique_lock lock(load_mutex, std::defer_lock);
+    if (lock.try_lock())
+        load(/*is_initial_load*/ false);
 }
 
 MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewritableObjectStorage(
     ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t object_metadata_cache_size)
     : MetadataStorageFromPlainObjectStorage(object_storage_, storage_path_prefix_, object_metadata_cache_size)
-    , metadata_key_prefix(DB::getMetadataKeyPrefix(object_storage))
-    , path_map(loadPathPrefixMap(metadata_key_prefix, object_storage))
+    , metadata_key_prefix(std::filesystem::path(object_storage->getCommonKeyPrefix()) / METADATA_PATH_TOKEN)
+    , path_map(std::make_shared<InMemoryDirectoryPathMap>(
+        object_storage->getMetadataStorageMetrics().directory_map_size,
+        object_storage->getMetadataStorageMetrics().file_count))
 {
     if (object_storage->isWriteOnce())
         throw Exception(
@@ -259,26 +266,11 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
             "MetadataStorageFromPlainRewritableObjectStorage is not compatible with write-once storage '{}'",
             object_storage->getName());
 
-    if (useSeparateLayoutForMetadata())
-    {
-        /// Use flat directory structure if the metadata is stored separately from the table data.
-        auto keys_gen = std::make_shared<FlatDirectoryStructureKeyGenerator>(object_storage->getCommonKeyPrefix(), path_map);
-        object_storage->setKeysGenerator(keys_gen);
-    }
-    else
-    {
-        auto keys_gen = std::make_shared<CommonPathPrefixKeyGenerator>(object_storage->getCommonKeyPrefix(), path_map);
-        object_storage->setKeysGenerator(keys_gen);
-    }
+    load(/*is_initial_load*/ true);
 
-    auto metric = object_storage->getMetadataStorageMetrics().unique_filenames_count;
-    CurrentMetrics::add(metric, path_map->unique_filenames.size());
-}
-
-MetadataStorageFromPlainRewritableObjectStorage::~MetadataStorageFromPlainRewritableObjectStorage()
-{
-    auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
-    CurrentMetrics::sub(metric, path_map->map.size());
+    /// Use flat directory structure if the metadata is stored separately from the table data.
+    auto keys_gen = std::make_shared<FlatDirectoryStructureKeyGenerator>(object_storage->getCommonKeyPrefix(), path_map);
+    object_storage->setKeysGenerator(keys_gen);
 }
 
 bool MetadataStorageFromPlainRewritableObjectStorage::existsFileOrDirectory(const std::string & path) const
@@ -287,6 +279,13 @@ bool MetadataStorageFromPlainRewritableObjectStorage::existsFileOrDirectory(cons
         return true;
 
     return getObjectMetadataEntryWithCache(path) != nullptr;
+}
+
+bool MetadataStorageFromPlainRewritableObjectStorage::supportsPartitionCommand(const PartitionCommand & command) const
+{
+    return command.type == PartitionCommand::DROP_PARTITION || command.type == PartitionCommand::DROP_DETACHED_PARTITION
+        || command.type == PartitionCommand::ATTACH_PARTITION || command.type == PartitionCommand::MOVE_PARTITION
+        || command.type == PartitionCommand::REPLACE_PARTITION;
 }
 
 bool MetadataStorageFromPlainRewritableObjectStorage::existsFile(const std::string & path) const
@@ -304,7 +303,7 @@ bool MetadataStorageFromPlainRewritableObjectStorage::existsDirectory(const std:
 
 std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDirectory(const std::string & path) const
 {
-    std::unordered_set<std::string> result = getDirectChildrenOnDisk(std::filesystem::path(path) / "");
+    std::unordered_set<std::string> result = getDirectChildrenOnDisk(fs::path(path) / "");
     return std::vector<std::string>(std::make_move_iterator(result.begin()), std::make_move_iterator(result.end()));
 }
 
@@ -321,44 +320,12 @@ std::optional<Poco::Timestamp> MetadataStorageFromPlainRewritableObjectStorage::
 }
 
 std::unordered_set<std::string>
-MetadataStorageFromPlainRewritableObjectStorage::getDirectChildrenOnDisk(const std::filesystem::path & local_path) const
+MetadataStorageFromPlainRewritableObjectStorage::getDirectChildrenOnDisk(const fs::path & local_path) const
 {
     std::unordered_set<std::string> result;
-    SharedLockGuard lock(path_map->mutex);
-    const auto end_it = path_map->map.end();
-    /// Directories.
-    for (auto it = path_map->map.lower_bound(local_path); it != end_it; ++it)
-    {
-        const auto & subdirectory = it->first.string();
-        if (!subdirectory.starts_with(local_path.string()))
-            break;
-
-        auto slash_num = count(subdirectory.begin() + local_path.string().size(), subdirectory.end(), '/');
-        /// The directory map comparator ensures that the paths with the smallest number of
-        /// hops from the local_path are iterated first. The paths do not end with '/', hence
-        /// break the loop if the number of slashes to the right from the offset is greater than 0.
-        if (slash_num != 0)
-            break;
-
-        result.emplace(std::string(subdirectory.begin() + local_path.string().size(), subdirectory.end()) + "/");
-    }
-
-    /// Files.
-    auto it = path_map->map.find(local_path.parent_path());
-    if (it != path_map->map.end())
-    {
-        for (const auto & filename_it : it->second.filename_iterators)
-        {
-            chassert(filename_it != path_map->unique_filenames.end());
-            result.insert(*filename_it);
-        }
-    }
-
+    path_map->iterateSubdirectories(local_path, [&](const auto & elem){ result.emplace(elem); });
+    path_map->iterateFiles(local_path, [&](const auto & elem){ result.emplace(elem); });
     return result;
 }
 
-bool MetadataStorageFromPlainRewritableObjectStorage::useSeparateLayoutForMetadata() const
-{
-    return getMetadataKeyPrefix() != object_storage->getCommonKeyPrefix();
-}
 }

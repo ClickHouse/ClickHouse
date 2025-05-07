@@ -361,6 +361,7 @@ class Utils:
             (",", "_"),
             ("/", "_"),
             ("-", "_"),
+            (":", "_"),
         ):
             res = res.replace(*r)
         return res

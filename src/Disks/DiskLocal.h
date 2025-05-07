@@ -91,6 +91,7 @@ public:
         const WriteSettings & settings) override;
 
     Strings getBlobPath(const String & path) const override;
+    bool areBlobPathsRandom() const override { return false; }
     void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
 
     void removeFile(const String & path) override;
@@ -115,7 +116,7 @@ public:
 
     bool isSymlinkNoThrow(const String & path) const override;
 
-    void createDirectoriesSymlink(const String & target, const String & link) override;
+    void createDirectorySymlink(const String & target, const String & link) override;
 
     String readSymlink(const fs::path & path) const override;
 

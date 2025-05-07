@@ -1,12 +1,14 @@
 #include <IO/Operators.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
+#include <Core/BlockNameMap.h>
 #include <Processors/Transforms/ColumnPermuteTransform.h>
 
 namespace DB
@@ -35,9 +37,8 @@ std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join)
     if (!table_join.getClauses().empty())
         description.emplace_back("Clauses", TableJoin::formatClauses(table_join.getClauses(), true /*short_format*/));
 
-    // TODO: print mixed join expressions, something like the following but it should be single line
-    // if (table_join.getMixedJoinExpression() != nullptr)
-    //     description.emplace_back("Mixed join expressions", table_join.getMixedJoinExpression()->dumpActions());
+    if (const auto & mixed_expression = table_join.getMixedJoinExpression())
+        description.emplace_back("Residual filter", mixed_expression->getSampleBlock().dumpNames());
 
     return description;
 }
@@ -50,7 +51,7 @@ std::vector<size_t> getPermutationForBlock(
 {
     std::vector<size_t> permutation;
     permutation.reserve(block.columns());
-    Block::NameMap name_map = block.getNamesToIndexesMap();
+    BlockNameMap name_map = getNamesToIndexesMap(block);
 
     bool is_trivial = true;
     for (const auto & other_block : {lhs_block, rhs_block})
@@ -108,24 +109,45 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         std::swap(pipelines[0], pipelines[1]);
 
     std::unique_ptr<QueryPipelineBuilder> joined_pipeline;
-    if (join->pipelineType() == JoinPipelineType::YShaped)
+    if (primary_key_sharding.empty())
     {
-        joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
-            std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, &processors);
-        joined_pipeline->resize(max_streams);
+        if (join->pipelineType() == JoinPipelineType::YShaped)
+        {
+            joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
+                std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, &processors);
+            joined_pipeline->resize(max_streams);
+        }
+        else
+        {
+            joined_pipeline = QueryPipelineBuilder::joinPipelinesRightLeft(
+                std::move(pipelines[0]),
+                std::move(pipelines[1]),
+                join,
+                join_algorithm_header,
+                max_block_size,
+                min_block_size_bytes,
+                max_streams,
+                keep_left_read_in_order,
+                &processors);
+        }
     }
     else
     {
-        joined_pipeline = QueryPipelineBuilder::joinPipelinesRightLeft(
-            std::move(pipelines[0]),
-            std::move(pipelines[1]),
-            join,
-            join_algorithm_header,
-            max_block_size,
-            min_block_size_bytes,
-            max_streams,
-            keep_left_read_in_order,
-            &processors);
+        if (join->pipelineType() == JoinPipelineType::YShaped)
+        {
+            joined_pipeline = QueryPipelineBuilder::joinPipelinesYShapedByShards(
+                std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, &processors);
+        }
+        else
+        {
+            joined_pipeline = QueryPipelineBuilder::joinPipelinesByShards(
+                std::move(pipelines[0]),
+                std::move(pipelines[1]),
+                join,
+                join_algorithm_header,
+                max_block_size,
+                &processors);
+        }
     }
 
     if (!use_new_analyzer)
@@ -143,7 +165,15 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     if (join->supportParallelJoin())
     {
         joined_pipeline->addSimpleTransform([&](const Block & header)
-                                     { return std::make_shared<SimpleSquashingChunksTransform>(header, 0, min_block_size_bytes); });
+                                            { return std::make_shared<SimpleSquashingChunksTransform>(header, 0, min_block_size_bytes); });
+    }
+
+    const auto & pipeline_output_header = joined_pipeline->getHeader();
+    const auto & expected_output_header = getOutputHeader();
+    if (!isCompatibleHeader(pipeline_output_header, expected_output_header))
+    {
+        assertBlocksHaveEqualStructure(pipeline_output_header, expected_output_header,
+            fmt::format("JoinStep: [{}] and [{}]", pipeline_output_header.dumpNames(), expected_output_header.dumpNames()));
     }
 
     return joined_pipeline;
@@ -167,6 +197,21 @@ void JoinStep::describeActions(FormatSettings & settings) const
         settings.out << prefix << name << ": " << value << '\n';
     if (swap_streams)
         settings.out << prefix << "Swapped: true\n";
+    if (!primary_key_sharding.empty())
+    {
+        settings.out << prefix << "Sharding: [";
+        bool first = true;
+        for (const auto & [lhs, rhs] : primary_key_sharding)
+        {
+            if (!first)
+                settings.out << ", ";
+            first = false;
+
+            settings.out << "(" << lhs << " = " << rhs << ")";
+        }
+
+        settings.out << "]\n";
+    }
 }
 
 void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -175,6 +220,18 @@ void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
         map.add(name, value);
     if (swap_streams)
         map.add("Swapped", true);
+    if (!primary_key_sharding.empty())
+    {
+        auto array = std::make_unique<JSONBuilder::JSONArray>();
+        for (const auto & [lhs, rhs] : primary_key_sharding)
+        {
+            auto item = std::make_unique<JSONBuilder::JSONArray>();
+            item->add(lhs);
+            item->add(rhs);
+            array->add(std::move(item));
+        }
+        map.add("Sharding", std::move(array));
+    }
 }
 
 void JoinStep::setJoin(JoinPtr join_, bool swap_streams_)
@@ -246,7 +303,7 @@ void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
         default_totals = true;
     }
 
-    auto finish_counter = std::make_shared<JoiningTransform::FinishCounter>(pipeline.getNumStreams());
+    auto finish_counter = std::make_shared<FinishCounter>(pipeline.getNumStreams());
 
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
     {

@@ -5,7 +5,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
@@ -1804,7 +1803,7 @@ bool FunctionArrayElement<mode>::matchKeyToIndexStringConst(
             using DataColumn = std::decay_t<decltype(data_column)>;
             if (index.getType() != Field::Types::String)
                 return false;
-            MatcherStringConst<DataColumn> matcher{data_column, index.safeGet<const String &>()};
+            MatcherStringConst<DataColumn> matcher{data_column, index.safeGet<String>()};
             executeMatchKeyToIndex(offsets, matched_idxs, matcher);
             return true;
         });
@@ -2211,7 +2210,7 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
 
 If the index falls outside of the bounds of an array, it returns some default value (0 for numbers, an empty string for strings, etc.), except for the case with a non-constant array and a constant index 0 (in this case there will be an error `Array indices are 1-based`).
         )",
-        .category{"Array"}});
+        .category = FunctionDocumentation::Category::Array});
     factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Null>>(FunctionDocumentation{
         .description = R"(
 Get the element with the index `n`from the array `arr`. `n` must be any integer type. Indexes in an array begin from one.
@@ -2220,6 +2219,6 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
 
 If the index falls outside of the bounds of an array, it returns `NULL` instead of a default value.
         )",
-        .category{"Array"}});
+        .category = FunctionDocumentation::Category::Array});
 }
 }
