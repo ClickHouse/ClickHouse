@@ -24,6 +24,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 
@@ -43,6 +44,23 @@ ColumnString::ColumnString(const ColumnString & src)
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnString::insertManyFrom(const IColumn & src, size_t position, size_t length)
 #else
+
+void ColumnString::insert(const Field & x)
+{
+    const String & s = x.safeGet<String>();
+    const size_t old_size = chars.size();
+    const size_t size_to_append = s.size() + 1;
+
+    /// First check if new_size won't overflow before resizing.
+    if (size_to_append > std::numeric_limits<size_t>::max() - old_size)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "ColumnString array size too large for resizing, it will overflow.");
+
+    const size_t new_size = old_size + size_to_append;
+    chars.resize(new_size);
+    memcpy(chars.data() + old_size, s.c_str(), size_to_append);
+    offsets.push_back(new_size);
+}
+
 void ColumnString::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
 #endif
 {

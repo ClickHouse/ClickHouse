@@ -21,11 +21,6 @@ class SipHash;
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 class Arena;
 
 /** Column for String values.
@@ -136,21 +131,7 @@ public:
         return sizeAt(n) == 1;
     }
 
-    void insert(const Field & x) override
-    {
-        const String & s = x.safeGet<String>();
-        const size_t old_size = chars.size();
-        const size_t size_to_append = s.size() + 1;
-
-        /// First check if new_size won't overflow before resizing.
-        if (size_to_append > std::numeric_limits<size_t>::max() - old_size)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnString Field size too large for resizing, it will overflow.");
-
-        const size_t new_size = old_size + size_to_append;
-        chars.resize(new_size);
-        memcpy(chars.data() + old_size, s.c_str(), size_to_append);
-        offsets.push_back(new_size);
-    }
+    void insert(const Field & x) override;
 
     bool tryInsert(const Field & x) override
     {
