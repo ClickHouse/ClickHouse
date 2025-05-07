@@ -5,6 +5,7 @@
 #include <Core/Joins.h>
 #include <Core/Block.h>
 #include <Interpreters/joinDispatch.h>
+#include <mutex>
 
 namespace DB
 {
@@ -44,7 +45,8 @@ class JoinUsedFlags
     /// For single dicunct we store all flags in `nullptr` entry, index is the offset in FindResult
     std::unordered_map<RawBlockPtr, UsedFlagsForBlock> flags;
 
-    bool need_flags;
+    bool need_flags = false;
+    mutable std::mutex mutex;
 
 public:
 
@@ -64,6 +66,7 @@ public:
     template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all>
     void reinit(size_t size)
     {
+        std::lock_guard lock(mutex);
         if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
         {
             assert(flags[nullptr].size() <= size);
@@ -81,6 +84,7 @@ public:
     template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all>
     void reinit(const Block * block_ptr)
     {
+        std::lock_guard lock(mutex);
         if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
         {
             assert(flags[block_ptr].size() <= block_ptr->rows());

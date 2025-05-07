@@ -82,12 +82,6 @@ public:
 
     bool hasNonJoinedRows() const;
 
-    /// New method to check if a specific slot has non-joined rows during preprocessing
-    bool slotHasNonJoinedRows(size_t slot_index) const;
-
-    /// Mark a slot as having non-joined rows during preprocessing
-    void markSlotHasNonJoinedRows(size_t slot_index);
-
     static bool canProcessNonJoinedBlocks(const TableJoin & table_join_)
     {
         return isRight(table_join_.kind());
@@ -117,16 +111,15 @@ public:
     friend class NotJoinedHash;
 
 private:
-    void mergeBucketsIntoSlot0();
-    void mergeUsageFlags();
-    void mergeNonJoinedMarkers();
+    /// Finalize each slot after build-phase.
     void finalizeSlots();
-    void finalizeNullsAndNonJoined();
 
     std::shared_ptr<TableJoin> table_join;
     size_t slots;
     std::unique_ptr<ThreadPool> pool;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
+    /// Shared flags map for all HashJoin instances.
+    std::shared_ptr<JoinStuff::JoinUsedFlags> shared_used_flags;
 
     StatsCollectingParams stats_collecting_params;
 

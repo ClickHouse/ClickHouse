@@ -141,7 +141,8 @@ HashJoin::HashJoin(
     bool any_take_last_row_,
     size_t reserve_num_,
     const String & instance_id_,
-    bool use_two_level_maps)
+    bool use_two_level_maps,
+    std::shared_ptr<JoinStuff::JoinUsedFlags> shared_used_flags_)
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
@@ -174,7 +175,11 @@ HashJoin::HashJoin(
 
     validateAdditionalFilterExpression(table_join->getMixedJoinExpression());
 
-    used_flags = std::make_unique<JoinStuff::JoinUsedFlags>();
+    // Initialize used_flags: use shared instance if provided, else create a new one.
+    if (shared_used_flags_)
+        used_flags = std::move(shared_used_flags_);
+    else
+        used_flags = std::make_shared<JoinStuff::JoinUsedFlags>();
 
     if (isCrossOrComma(kind))
     {
@@ -1208,7 +1213,7 @@ void HashJoin::updateNonJoinedRowsStatus() const
         // Check if there are any non-joined rows by sampling some flags
         // This is a fast check that avoids scanning the entire hash table
         found_non_joined = true;
-
+        
         // If we wanted to check all flags, we'd do it like this:
         // But that might be too expensive, so we just assume there are non-joined rows
         // if we have any data and used_flags
@@ -1467,14 +1472,14 @@ private:
 
             for (size_t row = 0; row < num_rows && rows_added < max_block_size; ++row)
             {
-                try
+                try 
                 {
                     if ((*nullmap)[row])
                     {
                         // Make sure we have columns to insert into
                         if (columns_keys_and_right.empty())
                             continue;
-
+                            
                         for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
                         {
                             // Ensure the block has enough columns
