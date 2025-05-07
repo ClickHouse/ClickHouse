@@ -5,6 +5,10 @@
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/GinFilter.h>
 
+#if USE_CPPJIEBA
+#include <Common/Tokenizer/ChineseTokenizer.h>
+#endif
+
 namespace DB
 {
 
@@ -227,6 +231,8 @@ struct NoOpTokenExtractor final : public ITokenExtractorHelper<NoOpTokenExtracto
 /// Parser extracting tokens for Chinese.
 struct ChineseTokenExtractor final : public ITokenExtractorHelper<ChineseTokenExtractor>
 {
+    explicit ChineseTokenExtractor(ChineseGranularMode granular_mode_): granular_mode(granular_mode_) {}
+
     static const char * getName() { return "chinese_v1"; }
 
     std::vector<String> getTokens(const char* data, size_t length) const override;
@@ -234,6 +240,8 @@ struct ChineseTokenExtractor final : public ITokenExtractorHelper<ChineseTokenEx
     bool nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
 
     bool nextInStringLike(const char * data, size_t length, size_t * __restrict pos, String & token) const override;
+private:
+    ChineseGranularMode granular_mode;
 };
 
 #endif

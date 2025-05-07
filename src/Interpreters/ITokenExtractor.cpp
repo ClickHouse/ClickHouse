@@ -309,7 +309,7 @@ void SplitTokenExtractor::substringToGinFilter(const char * data, size_t length,
 
 std::vector<std::string> ChineseTokenExtractor::getTokens(const char * data, [[maybe_unused]] size_t length) const
 {
-    return ChineseTokenizer::instance().tokenize(data);
+    return ChineseTokenizer::instance().tokenize(data, granular_mode);
 }
 
 bool ChineseTokenExtractor::nextInString(

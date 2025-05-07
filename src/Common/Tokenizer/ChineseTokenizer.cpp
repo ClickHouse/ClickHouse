@@ -11,10 +11,13 @@ ChineseTokenizer & ChineseTokenizer::instance()
     return tokenizer;
 }
 
-std::vector<std::string> ChineseTokenizer::tokenize(const std::string & str)
+std::vector<std::string> ChineseTokenizer::tokenize(const std::string & str, ChineseGranularMode granular_mode)
 {
     std::vector<std::string> tokens;
-    jieba_instance->CutForSearch(str, tokens);
+    if (granular_mode == ChineseGranularMode::Fine)
+        jieba_instance->CutForSearch(str, tokens);
+    else
+        jieba_instance->CutAll(str, tokens);
     return tokens;
 }
 

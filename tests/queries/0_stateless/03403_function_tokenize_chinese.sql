@@ -47,3 +47,15 @@ WITH '我来自北京邮电大学。。。学号123456' as text
 SELECT tokenize('chinese', text) as tokenized, length(tokenized) as length;
 WITH '小明硕士毕业于中国科学院计算所，后在日本京都大学深造' as text
 SELECT tokenize('chinese', text) as tokenized, length(tokenized) as length;
+
+SELECT 'With constant values, coarse grained.';
+WITH '他来到了网易杭研大厦' as text
+SELECT tokenize('chinese', 'coarse-grained', text) as tokenized, length(tokenized) as length;
+WITH '我来自北京邮电大学。' as text
+SELECT tokenize('chinese', 'coarse-grained', text) as tokenized, length(tokenized) as length;
+WITH '南京市长江大桥' as text
+SELECT tokenize('chinese', 'coarse-grained', text) as tokenized, length(tokenized) as length;
+WITH '我来自北京邮电大学。。。学号123456' as text
+SELECT tokenize('chinese', 'coarse-grained', text) as tokenized, length(tokenized) as length;
+WITH '小明硕士毕业于中国科学院计算所，后在日本京都大学深造' as text
+SELECT tokenize('chinese', 'coarse-grained', text) as tokenized, length(tokenized) as length;

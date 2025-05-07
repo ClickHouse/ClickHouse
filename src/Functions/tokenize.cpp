@@ -1,14 +1,14 @@
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeArray.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ITokenExtractor.h>
-#include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionFactory.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -23,13 +23,15 @@ static constexpr std::string_view TOKENIZER_NOOP = "noop";
 
 #if USE_CPPJIEBA
 static constexpr std::string_view TOKENIZER_CHINESE = "chinese";
+static constexpr std::string_view TOKENIZER_CHINESE_MODE_FINE_GRAINED = "fine-grained";
+static constexpr std::string_view TOKENIZER_CHINESE_MODE_COARSE_GRAINED = "coarse-grained";
 #endif
 }
 
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+extern const int BAD_ARGUMENTS;
 }
 
 class FunctionTokenize : public IFunction
@@ -37,10 +39,7 @@ class FunctionTokenize : public IFunction
 public:
     static constexpr auto name = "tokenize";
 
-    static FunctionPtr create(ContextPtr)
-    {
-        return std::make_shared<FunctionTokenize>();
-    }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTokenize>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -55,8 +54,9 @@ public:
         if (arguments.size() < 2 || arguments.size() > 3)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} argument count does not match.", getName());
 
-        const bool is_ngram_tokenizer = boost::iequals(arguments[0].column->getDataAt(0).toString(), details::TOKENIZER_NGRAM);
-        if (is_ngram_tokenizer)
+        const auto tokenizer = arguments[0].column->getDataAt(0).toString();
+
+        if (boost::iequals(tokenizer, details::TOKENIZER_NGRAM))
         {
             FunctionArgumentDescriptors args{
                 {"tokenizer",
@@ -64,12 +64,28 @@ public:
                  nullptr,
                  "String or FixedString"},
                 {"ngram_size", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), nullptr, "Number"},
-                {"value",
+                {"input",
                  static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString),
                  nullptr,
                  "String or FixedString"}};
             validateFunctionArguments(*this, arguments, args);
         }
+#if USE_CPPJIEBA
+        else if (boost::iequals(tokenizer, details::TOKENIZER_CHINESE) && arguments.size() == 3)
+        {
+            FunctionArgumentDescriptors args{
+                {"tokenizer",
+                 static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString),
+                 nullptr,
+                 "String or FixedString"},
+                {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
+                {"input",
+                 static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString),
+                 nullptr,
+                 "String or FixedString"}};
+            validateFunctionArguments(*this, arguments, args);
+        }
+#endif
         else
         {
             FunctionArgumentDescriptors args{
@@ -106,7 +122,25 @@ public:
 
 #if USE_CPPJIEBA
             supported_tokenizers.emplace_back(
-                std::string{details::TOKENIZER_CHINESE}, [] { return std::make_unique<ChineseTokenExtractor>(); });
+                std::string{details::TOKENIZER_CHINESE},
+                [&]
+                {
+                    ChineseGranularMode granular_mode = ChineseGranularMode::Fine;
+                    if (arguments.size() == 3)
+                    {
+                        auto input_mode = arguments[1].column->getDataAt(0).toString();
+                        if (boost::iequals(input_mode, details::TOKENIZER_CHINESE_MODE_FINE_GRAINED))
+                            granular_mode = ChineseGranularMode::Fine;
+                        else if (boost::iequals(input_mode, details::TOKENIZER_CHINESE_MODE_COARSE_GRAINED))
+                            granular_mode = ChineseGranularMode::Coarse;
+                        else
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Chinese tokenizer supports only 'fine' or 'coarse' grained modes, but got {}",
+                                input_mode);
+                    }
+                    return std::make_unique<ChineseTokenExtractor>(granular_mode);
+                });
 #endif
 
             const auto tokenizer = arguments[0].column->getDataAt(0).toString();
