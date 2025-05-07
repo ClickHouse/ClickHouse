@@ -12,6 +12,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+VersionNumber VERSION_UNKNOWN = {0};
+
 std::string FunctionDocumentation::argumentsAsString() const
 {
     std::string res;
@@ -35,6 +37,14 @@ std::string FunctionDocumentation::examplesAsString() const
         res += "```\n";
     }
     return res;
+}
+
+std::string FunctionDocumentation::introducedInAsString() const
+{
+    if (introduced_in == FunctionDocumentation::VERSION_UNKNOWN)
+        return ""; /// we could show "unknown" here but for consistency with other fields return the empty string
+    else
+        return introduced_in.toString();
 }
 
 std::string FunctionDocumentation::categoryAsString() const
