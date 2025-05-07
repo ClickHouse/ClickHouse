@@ -623,7 +623,7 @@ protected:
             /// PostgreSQL('host:port', 'database', 'user', 'password')
             findMySQLDatabaseSecretArguments();
         }
-        else if (engine_name == "S3")
+        else if (engine_name == "S3" || engine_name == "DataLakeCatalog")
         {
             /// S3('url', 'access_key_id', 'secret_access_key')
             findS3DatabaseSecretArguments();
