@@ -86,6 +86,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"force_exchange_kind", "", "", "New experimental setting."},
             {"allow_experimental_delta_kernel_rs", true, true, "New setting"},
             {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
+            {"use_legacy_to_time", false, false, "New setting. Allows for user to use the old function logic for toTime, which works as toTimeWithFixedDate."},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
@@ -118,7 +119,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {
-            {"use_legacy_to_time", false, false, "New setting. Allows for user to use the old function logic for toTime, which works as toTimeWithFixedDate."},
             /// Release closed. Please use 25.4
             {"enable_json_type", false, true, "JSON data type is production-ready"},
             {"enable_dynamic_type", false, true, "Dynamic data type is production-ready"},
