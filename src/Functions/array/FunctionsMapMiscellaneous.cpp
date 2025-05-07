@@ -506,7 +506,7 @@ REGISTER_FUNCTION(MapMiscellaneous)
         FunctionDocumentation{
             .description="Checks whether the map has the specified value.",
             .examples{{"mapContainsValue", "SELECT mapContainsValue(map('k1', 'v1', 'k2', 'v2'), 'v1')", ""}},
-            .category{category_map},
+            .category = category_map,
         });
 
     factory.registerFunction<FunctionMapFilter>(
@@ -576,7 +576,7 @@ REGISTER_FUNCTION(MapMiscellaneous)
         FunctionDocumentation{
             .description="Checks whether map contains value LIKE specified pattern.",
             .examples{{"mapContainsValueLike", "SELECT mapContainsValueLike(map(1, 'v1-1', '2, 'v2-2'), 'v1%')", ""}},
-            .category{category_map},
+            .category = category_map,
     });
 
     factory.registerFunction<FunctionMapExtractKeyLike>(
@@ -590,7 +590,7 @@ REGISTER_FUNCTION(MapMiscellaneous)
         FunctionDocumentation{
             .description="Returns a map with elements which value matches the specified pattern.",
             .examples{{"mapExtractValueLike", "SELECT mapExtractValueLike(map('k1-1', 'v1-1', 'k2-1', 'v2-1'), 'v1%')", ""}},
-            .category{category_map},
+            .category = category_map,
     });
 }
 
