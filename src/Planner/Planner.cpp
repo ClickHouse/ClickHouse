@@ -51,6 +51,8 @@
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
 
+#include <AggregateFunctions/IAggregateFunction.h>
+
 #include <Analyzer/Utils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -564,13 +566,21 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
       * but it can work more slowly.
       */
 
-    auto keys = aggregation_analysis_result.aggregation_keys;
+    const auto & keys = aggregation_analysis_result.aggregation_keys;
+
+    /// For count() without parameters try to use just one thread
+    /// Typically this will either be a trivial count or a really small number of states
+    size_t max_threads = settings[Setting::max_threads];
+    if (keys.empty() && aggregation_analysis_result.aggregate_descriptions.size() == 1
+        && aggregation_analysis_result.aggregate_descriptions[0].function->getName() == String{"count"}
+        && aggregation_analysis_result.grouping_sets_parameters_list.empty())
+        max_threads = 1;
 
     Aggregator::Params params(
         keys,
         aggregation_analysis_result.aggregate_descriptions,
         query_analysis_result.aggregate_overflow_row,
-        settings[Setting::max_threads],
+        max_threads,
         settings[Setting::max_block_size],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization]);
 
