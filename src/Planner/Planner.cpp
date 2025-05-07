@@ -550,9 +550,9 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         optimization_indexes = findOptimizationSublistIndexes(group_by_nodes, order_by_nodes);
     }
 
-    size_t limit_offset_plus_length = 18446744073709551615ull;
+    size_t limit_plus_offset_length = 18446744073709551615ull;
     if (query_analysis_result.limit_offset == 0 && query_analysis_result.limit_length > 1)
-        limit_offset_plus_length = query_analysis_result.limit_length;
+        limit_plus_offset_length = query_analysis_result.limit_length;
     Aggregator::Params aggregator_params = Aggregator::Params(
         aggregation_analysis_result.aggregation_keys,
         aggregate_descriptions,
@@ -576,7 +576,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::optimize_group_by_constant_keys],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
         stats_collecting_params,
-        limit_offset_plus_length,
+        limit_plus_offset_length,
         optimization_indexes);
 
     return aggregator_params;

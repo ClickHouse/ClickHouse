@@ -300,7 +300,7 @@ public:
     template <typename Data>
     ALWAYS_INLINE void reduceHashTable(
         Data & data,
-        size_t limit_offset_plus_length,
+        size_t limit_plus_offset_length,
         const std::vector<std::tuple<UInt64, SortDirection, bool>> & optimization_indexes)
     {
         if constexpr (HasBegin<Data>::value)
@@ -321,9 +321,10 @@ public:
 
                     // apply n-th element to data
                     std::vector<typename Data::iterator> data_iterators;
+                    data_iterators.reserve(data.size());
                     for (auto iter = data.begin(); iter != data.end(); ++iter)
                         data_iterators.push_back(iter);
-                    std::nth_element(data_iterators.begin(), data_iterators.begin() + (limit_offset_plus_length - 1), data_iterators.end(), [this, &optimization_indexes](const typename Data::iterator& lhs, const typename Data::iterator& rhs)
+                    std::nth_element(data_iterators.begin(), data_iterators.begin() + (limit_plus_offset_length - 1), data_iterators.end(), [this, &optimization_indexes](const typename Data::iterator& lhs, const typename Data::iterator& rhs)
                     {
                         return compareKeyHolders(lhs->getKey(), rhs->getKey(), optimization_indexes);
                     });
@@ -335,8 +336,8 @@ public:
                     TODO Maybe there is a way not to invalidate them?
                     */
                     std::vector<std::remove_const_t<std::remove_reference_t<decltype(data.begin()->getKey())>>> elements_to_erase;
-                    elements_to_erase.reserve(data_iterators.size() - limit_offset_plus_length);
-                    for (size_t i = limit_offset_plus_length; i < data_iterators.size(); ++i)
+                    elements_to_erase.reserve(data_iterators.size() - limit_plus_offset_length);
+                    for (size_t i = limit_plus_offset_length; i < data_iterators.size(); ++i)
                         elements_to_erase.push_back(data_iterators[i]->getKey());
                     for (const auto element : elements_to_erase)
                         data.erase(element);

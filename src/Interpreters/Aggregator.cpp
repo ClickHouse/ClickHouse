@@ -210,7 +210,7 @@ Aggregator::Params::Params(
     bool optimize_group_by_constant_keys_,
     float min_hit_rate_to_use_consecutive_keys_optimization_,
     const StatsCollectingParams & stats_collecting_params_,
-    size_t limit_offset_plus_length_,
+    size_t limit_plus_offset_length_,
     std::optional<std::vector<std::tuple<UInt64, SortDirection, bool>>> optimization_indexes_)
     : keys(keys_)
     , keys_size(keys.size())
@@ -234,7 +234,7 @@ Aggregator::Params::Params(
     , optimize_group_by_constant_keys(optimize_group_by_constant_keys_)
     , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
     , stats_collecting_params(stats_collecting_params_)
-    , limit_offset_plus_length(limit_offset_plus_length_)
+    , limit_plus_offset_length(limit_plus_offset_length_)
     , optimization_indexes(std::move(optimization_indexes_))
 {
 }
@@ -1245,8 +1245,8 @@ void NO_INLINE Aggregator::executeImplBatch(
     {
         size_t left_bound = key_start;
         size_t iterations_number = 1;
-        if (params.optimization_indexes != std::nullopt && params.limit_offset_plus_length < (key_end - key_start) / 2)
-            iterations_number = std::max(static_cast<size_t>(1), (key_end - key_start) / params.limit_offset_plus_length / 2);
+        if (params.optimization_indexes != std::nullopt && params.limit_plus_offset_length < (key_end - key_start) / 2)
+            iterations_number = std::min(static_cast<size_t>(5), key_end - key_start);
         for (size_t iteration = 0; iteration < iterations_number; ++iteration)
         {
             size_t iteration_length = (key_end - key_start) / iterations_number + (iteration < (key_end - key_start) % iterations_number);
@@ -1306,7 +1306,8 @@ void NO_INLINE Aggregator::executeImplBatch(
             if (iteration + 1 < iterations_number)
             {
                 left_bound = right_bound;
-                state.reduceHashTable(method.data, params.limit_offset_plus_length, params.optimization_indexes.value());
+                if (method.data.size() / 2 >= params.limit_plus_offset_length)
+                    state.reduceHashTable(method.data, params.limit_plus_offset_length, params.optimization_indexes.value());
             }
         }
     }

@@ -216,12 +216,6 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     }
 
     template <typename Data>
-    ALWAYS_INLINE std::optional<EmplaceResult> emplaceKey(Data & data, size_t row_, Arena & pool, const std::optional<std::vector<std::tuple<UInt64, SortDirection, std::string>>> &, size_t)
-    {
-        return emplaceKey(data, row_, pool);
-    }
-
-    template <typename Data>
     ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row_, Arena & pool)
     {
         size_t row = getIndexAt(row_);
