@@ -4,7 +4,7 @@
 
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Interpreters/Context.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 
 namespace Poco { class Logger; }
 
@@ -69,7 +69,7 @@ private:
     /// It's used to prevent doing finish logic more than once.
     std::atomic<bool> finished = false;
 
-    BackgroundSchedulePool::TaskHolder producing_task;
+    BackgroundSchedulePoolTaskHolder producing_task;
 
     std::atomic<bool> scheduled;
 };

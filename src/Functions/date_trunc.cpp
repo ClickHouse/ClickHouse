@@ -86,6 +86,16 @@ public:
             if (second_argument_is_date && ((datepart_kind == IntervalKind::Kind::Hour)
                 || (datepart_kind == IntervalKind::Kind::Minute) || (datepart_kind == IntervalKind::Kind::Second)))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for function {}", arguments[1].type->getName(), getName());
+
+            /// If we have a DateTime64 or Date32 as an input, it can be negative.
+            /// In this case, we should provide the corresponding return type, which supports negative values.
+            if (isDateTime64(arguments[1].type) || isDate32(arguments[1].type))
+            {
+                if (result_type == ResultType::Date)
+                    result_type = Date32;
+                else if (result_type == ResultType::DateTime)
+                    result_type = DateTime64;
+            }
         };
 
         auto check_timezone_argument = [&] {
@@ -126,7 +136,7 @@ public:
         if (result_type == ResultType::DateTime)
             return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 1, false));
 
-        size_t scale;
+        size_t scale = 0;
         if (datepart_kind == IntervalKind::Kind::Millisecond)
             scale = 3;
         else if (datepart_kind == IntervalKind::Kind::Microsecond)

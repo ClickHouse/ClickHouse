@@ -4,9 +4,12 @@
 #include <Formats/FormatFactory.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <TableFunctions/ITableFunction.h>
+
 #include "config.h"
+
 
 namespace DB
 {
@@ -98,6 +101,18 @@ struct DeltaLakeDefinition
     static constexpr auto storage_type_name = "S3";
 };
 
+struct DeltaLakeS3Definition
+{
+    static constexpr auto name = "deltaLakeS3";
+    static constexpr auto storage_type_name = "S3";
+};
+
+struct DeltaLakeAzureDefinition
+{
+    static constexpr auto name = "deltaLakeAzure";
+    static constexpr auto storage_type_name = "Azure";
+};
+
 struct HudiDefinition
 {
     static constexpr auto name = "hudi";
@@ -130,7 +145,7 @@ public:
 
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context)
     {
-        StorageObjectStorage::Configuration::initialize(*getConfiguration(), args, context, true, nullptr);
+        StorageObjectStorage::Configuration::initialize(*getConfiguration(), args, context, true, settings);
     }
 
     static void updateStructureAndFormatArgumentsIfNeeded(
@@ -163,6 +178,7 @@ protected:
     mutable ConfigurationPtr configuration;
     mutable ObjectStoragePtr object_storage;
     ColumnsDescription structure_hint;
+    std::shared_ptr<StorageObjectStorageSettings> settings;
 
     std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 };
@@ -195,10 +211,16 @@ using TableFunctionIcebergHDFS = TableFunctionObjectStorage<IcebergHDFSDefinitio
 #    endif
 using TableFunctionIcebergLocal = TableFunctionObjectStorage<IcebergLocalDefinition, StorageLocalIcebergConfiguration>;
 #endif
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
 #if USE_AWS_S3
-#    if USE_PARQUET
 using TableFunctionDeltaLake = TableFunctionObjectStorage<DeltaLakeDefinition, StorageS3DeltaLakeConfiguration>;
-#    endif
+using TableFunctionDeltaLakeS3 = TableFunctionObjectStorage<DeltaLakeS3Definition, StorageS3DeltaLakeConfiguration>;
+#endif
+#if USE_AZURE_BLOB_STORAGE
+using TableFunctionDeltaLakeAzure = TableFunctionObjectStorage<DeltaLakeAzureDefinition, StorageAzureDeltaLakeConfiguration>;
+#endif
+#endif
+#if USE_AWS_S3
 using TableFunctionHudi = TableFunctionObjectStorage<HudiDefinition, StorageS3HudiConfiguration>;
 #endif
 }

@@ -4,6 +4,7 @@
 
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
 #include <Common/isValidUTF8.h>
 #include <DataTypes/DataTypeMap.h>

@@ -33,6 +33,7 @@ public:
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
+    /// Sanitizer build may crash with max_keys=1; this looks like a false positive.
     ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const override;
 
     std::string getName() const override { return "AzureObjectStorage"; }
@@ -91,6 +92,8 @@ public:
         ContextPtr context) override;
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
+
+    bool areObjectKeysRandom() const override { return true; }
 
     bool isRemote() const override { return true; }
 

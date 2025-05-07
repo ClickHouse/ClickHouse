@@ -1,6 +1,5 @@
 #include <Formats/FormatFactory.h>
 
-#include <algorithm>
 #include <unistd.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context.h>
@@ -28,9 +27,9 @@ namespace DB
 namespace Setting
 {
     /// There are way too many format settings to handle extern declarations manually.
-#define DECLARE_FORMAT_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
+#define DECLARE_FORMAT_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
     extern Settings ## TYPE NAME;
-FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, SKIP_ALIAS)
+FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
 #undef DECLARE_FORMAT_EXTERN
 
     extern const SettingsBool allow_experimental_object_type;
@@ -46,10 +45,11 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, SKIP_ALIAS)
     extern const SettingsUInt64 max_memory_usage;
     extern const SettingsUInt64 max_memory_usage_for_user;
     extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 min_chunk_bytes_for_parallel_parsing;
+    extern const SettingsNonZeroUInt64 min_chunk_bytes_for_parallel_parsing;
     extern const SettingsBool output_format_parallel_formatting;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsInt64 zstd_window_log_max;
+    extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 interactive_delay;
 }
 
@@ -202,16 +202,21 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.max_block_size = settings[Setting::input_format_parquet_max_block_size];
     format_settings.parquet.prefer_block_bytes = settings[Setting::input_format_parquet_prefer_block_bytes];
     format_settings.parquet.output_compression_method = settings[Setting::output_format_parquet_compression_method];
+    format_settings.parquet.output_compression_level = settings[Setting::output_format_compression_level];
     format_settings.parquet.output_compliant_nested_types = settings[Setting::output_format_parquet_compliant_nested_types];
     format_settings.parquet.use_custom_encoder = settings[Setting::output_format_parquet_use_custom_encoder];
     format_settings.parquet.parallel_encoding = settings[Setting::output_format_parquet_parallel_encoding];
     format_settings.parquet.data_page_size = settings[Setting::output_format_parquet_data_page_size];
     format_settings.parquet.write_batch_size = settings[Setting::output_format_parquet_batch_size];
     format_settings.parquet.write_page_index = settings[Setting::output_format_parquet_write_page_index];
+    format_settings.parquet.write_bloom_filter = settings[Setting::output_format_parquet_write_bloom_filter];
+    format_settings.parquet.bloom_filter_bits_per_value = settings[Setting::output_format_parquet_bloom_filter_bits_per_value];
+    format_settings.parquet.bloom_filter_flush_threshold_bytes = settings[Setting::output_format_parquet_bloom_filter_flush_threshold_bytes];
     format_settings.parquet.local_read_min_bytes_for_seek = settings[Setting::input_format_parquet_local_file_min_bytes_for_seek];
     format_settings.parquet.enable_row_group_prefetch = settings[Setting::input_format_parquet_enable_row_group_prefetch];
     format_settings.pretty.charset = settings[Setting::output_format_pretty_grid_charset].toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings[Setting::output_format_pretty_color].valueOr(2);
+    format_settings.pretty.glue_chunks = settings[Setting::output_format_pretty_glue_chunks].valueOr(2);
     format_settings.pretty.max_column_pad_width = settings[Setting::output_format_pretty_max_column_pad_width];
     format_settings.pretty.max_rows = settings[Setting::output_format_pretty_max_rows];
     format_settings.pretty.max_column_name_width_cut_to = settings[Setting::output_format_pretty_max_column_name_width_cut_to];
@@ -230,6 +235,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.pretty.fallback_to_vertical = settings[Setting::output_format_pretty_fallback_to_vertical];
     format_settings.pretty.fallback_to_vertical_max_rows_per_chunk = settings[Setting::output_format_pretty_fallback_to_vertical_max_rows_per_chunk];
     format_settings.pretty.fallback_to_vertical_min_table_width = settings[Setting::output_format_pretty_fallback_to_vertical_min_table_width];
+    format_settings.pretty.fallback_to_vertical_min_columns = settings[Setting::output_format_pretty_fallback_to_vertical_min_columns];
     format_settings.protobuf.input_flatten_google_wrappers = settings[Setting::input_format_protobuf_flatten_google_wrappers];
     format_settings.protobuf.output_nullables_with_google_wrappers = settings[Setting::output_format_protobuf_nullables_with_google_wrappers];
     format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference = settings[Setting::input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference];
@@ -300,6 +306,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.column_names_for_schema_inference = settings[Setting::column_names_for_schema_inference];
     format_settings.schema_inference_hints = settings[Setting::schema_inference_hints];
     format_settings.schema_inference_make_columns_nullable = settings[Setting::schema_inference_make_columns_nullable].valueOr(2);
+    format_settings.schema_inference_make_json_columns_nullable = settings[Setting::schema_inference_make_json_columns_nullable];
     format_settings.mysql_dump.table_name = settings[Setting::input_format_mysql_dump_table_name];
     format_settings.mysql_dump.map_column_names = settings[Setting::input_format_mysql_dump_map_column_names];
     format_settings.sql_insert.max_batch_size = settings[Setting::output_format_sql_insert_max_batch_size];
@@ -329,6 +336,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.date_time_overflow_behavior = settings[Setting::date_time_overflow_behavior];
     format_settings.try_infer_variant = settings[Setting::input_format_try_infer_variants];
     format_settings.client_protocol_version = context->getClientProtocolVersion();
+    format_settings.allow_special_bool_values_inside_variant = settings[Setting::allow_special_bool_values_inside_variant];
+    format_settings.max_block_size_bytes = settings[Setting::input_format_max_block_size_bytes];
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
@@ -373,6 +382,7 @@ InputFormatPtr FormatFactory::getInput(
 
     RowInputFormatParams row_input_format_params;
     row_input_format_params.max_block_size = max_block_size;
+    row_input_format_params.max_block_size_bytes = format_settings.max_block_size_bytes;
     row_input_format_params.allow_errors_num = format_settings.input_allow_errors_num;
     row_input_format_params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
     row_input_format_params.max_execution_time = settings[Setting::max_execution_time];
@@ -502,7 +512,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
             getLogger("FormatFactory"),
             "Using ParallelReadBuffer with {} workers with chunks of {} bytes",
             max_download_threads,
-            settings[Setting::max_download_buffer_size]);
+            settings[Setting::max_download_buffer_size].value);
 
         res = wrapInParallelReadBufferIfSupported(
             buf,
@@ -530,7 +540,8 @@ static void addExistingProgressToOutputFormat(OutputFormatPtr format, const Cont
         /// While preparing the query there might have been progress (for example in subscalar subqueries) so add it here
         auto current_progress = element_id->getProgressIn();
         Progress read_progress{current_progress.read_rows, current_progress.read_bytes, current_progress.total_rows_to_read};
-        format->onProgress(read_progress);
+        if (!read_progress.empty())
+            format->setProgress(std::move(read_progress));
 
         /// Update the start of the statistics to use the start of the query, and not the creation of the format class
         format->setStartTime(element_id->getQueryCPUStartTime(), true);
@@ -549,8 +560,6 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
         throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output", name);
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
-    format_settings.is_writing_to_terminal = isWritingToTerminal(buf);
-
     const Settings & settings = context->getSettingsRef();
 
     if (settings[Setting::output_format_parallel_formatting] && getCreators(name).supports_parallel_formatting
@@ -591,7 +600,6 @@ OutputFormatPtr FormatFactory::getOutputFormat(
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     format_settings.max_threads = context->getSettingsRef()[Setting::max_threads];
-    format_settings.is_writing_to_terminal = format_settings.is_writing_to_terminal = isWritingToTerminal(buf);
 
     auto format = output_getter(buf, sample, format_settings);
 

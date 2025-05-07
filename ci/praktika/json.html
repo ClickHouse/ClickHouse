@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>praktika report</title>
-    <link rel="icon" href="https://w4z3pajszlbkfcw2wcylfei5km0xmwag.lambda-url.us-east-1.on.aws/" type="image/x-icon">
     <style>
 
         /* Default (Day Theme) */
@@ -15,6 +14,20 @@
             --footer-background: #f1f1f1;
             --footer-text-color: #000;
             --status-width: 300px;
+            --pending-bar-color: #f5e6a3;
+            --skipped-bar-color: #ccc;
+        }
+
+        .hidden {
+            transform: translateX(-100%); /* Moves status-container out of view */
+        }
+
+        .expanded {
+            left: 10px !important; /* Move result-container to the left */
+        }
+
+        .button-moved {
+            left: 0 !important; /* Move button to the left when sidebar is hidden */
         }
 
         body {
@@ -24,8 +37,15 @@
             margin: 0;
             display: flex;
             flex-direction: column;
-            font-family: 'IBM Plex Mono Condensed', monospace, sans-serif;
+            font-family: 'Source Code Pro', monospace, sans-serif;
+            letter-spacing: -0.5px;
             --header-background-color: #f4f4f4;
+            --link-color: blue;
+            --link-hover-color: darkblue;
+            --job-name-color: var(--text-color);
+            --file-link-color: blue;
+            --file-link-hover-color: darkblue;
+            --table-border-color: #ccc;
         }
 
         body.night-theme {
@@ -33,62 +53,95 @@
             --text-color: #dedede;
             --tile-background: #1F1F1C;
             --header-background-color: #1F1F1C;
-        }
-
-        #info-container {
-            margin-left: calc(var(--status-width) + 20px);
-            margin-bottom: 10px;
-            background-color: var(--tile-background);
-            padding: 10px;
-            text-align: left;
+            --pending-bar-color: #595801;
+            --skipped-bar-color: #575757;
+            --table-border-color: #444;
+            --job-name-color: var(--text-color);
+            --link-color: #ffea00;
+            --link-hover-color: #ffaa00;
+            --file-link-color: #007efc;
+            --file-link-hover-color: #004d9a;
         }
 
         #status-container {
             position: fixed;
             top: 0;
-            bottom: 0;
+            bottom: 40px;
             left: 0;
             width: var(--status-width);
             background-color: var(--tile-background);
-            padding: 20px;
+            padding: 0;
             box-sizing: border-box;
-            font-size: 18px;
+            /*font-size: 18px;*/
             margin: 0;
+            overflow-y: auto;
         }
 
-        #status-container a {
-            color: #007bff;
-            text-decoration: underline;
+        .status-widget {
+            border: 1px solid var(--table-border-color, #ccc); /* fallback to #ccc */
+            padding: 10px;
+            margin-bottom: 5px;
+            text-align: right;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        #toggle-status-bar {
+            position: fixed;
+            top: 40%;
+            left: calc(var(--status-width));
+            background-color: var(--pending-bar-color);
+            color: var(--tile-background);
+            border: none;
+            padding: 20px 4px 20px 4px;
+            cursor: pointer;
+            border-top-right-radius: 8px;
+            border-bottom-right-radius: 8px;
+        }
+
+        @media (min-width: 1200px) {
+            #toggle-status-bar {
+                display: none;
+            }
+        }
+
+        .file-link {
+            color: var(--file-link-color);
             font-weight: bold;
+            font-size: 0.7em;
+            font-family: 'Roboto Condensed', sans-serif;
+            font-stretch: ultra-condensed;
             cursor: pointer;
             display: inline-block;
             margin-top: 5px;
-            margin-left: 20px;
-            padding: 2px 0;
-            font-size: 0.8em;
-        }
-
-        #status-container a:hover {
-            color: #0056b3;
             text-decoration: none;
+            word-break: break-word;       /* allows long strings to wrap mid-word */
+            white-space: normal;          /* enables wrapping */
+            max-width: 100%;              /* make sure it doesn’t overflow parent */
         }
 
-        .key-value-pair {
-            display: flex;               /* Enable Flexbox for alignment */
-            justify-content: space-between; /* Distribute space between key and value */
-            margin-bottom: 20px;         /* Add space between each pair */
+        .file-link:hover {
+            color: var(--file-link-hover-color);
+            text-decoration: none;
         }
 
         .json-key {
             font-weight: bold;
         }
-
-        .json-value {
-            font-weight: normal;
+        .external-link {
+            color: var(--file-link-color);
             font-family: 'Source Code Pro', monospace, sans-serif;
-            letter-spacing: -0.5px;
+            cursor: pointer;
+            display: inline-block;
+            text-decoration: none;
         }
 
+        .external-link:hover {
+            color: var(--file-link-hover-color);
+            text-decoration: underline;
+        }
         .dropdown-value {
             width: 100px;
             font-weight: normal;
@@ -102,14 +155,29 @@
 
         #result-container {
             background-color: var(--tile-background);
-            margin-left: calc(var(--status-width) + 20px);
+            position: fixed;
+            top: 0;
+            bottom: 40px;
+            left: calc(var(--status-width) + 10px); /* Align with status container */
+            right: 0; /* Stretch to the right edge */
+
             padding: 0;
             box-sizing: border-box;
-            text-align: center;
-            font-size: 18px;
             font-weight: normal;
-            flex-grow: 1;
-            margin-bottom: 40px;
+
+            overflow: auto;
+            white-space: nowrap;
+        }
+
+        .info-text {
+            white-space: normal; /* Allow text to wrap */
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            max-width: 100%; /* Prevent overflow */
+        }
+        #info-content {
+            text-align: left;
+            padding: 10px;
         }
 
         #footer {
@@ -135,7 +203,6 @@
             flex-grow: 1; /* Takes up all the available space */
         }
 
-        /* make some space around '/' in the navigation line */
         #footer .left span.separator {
             margin-left: 5px;
             margin-right: 5px;
@@ -144,6 +211,7 @@
         #footer .right, #footer .settings {
             display: flex;
             align-items: center;
+            margin-right: 20px;
         }
 
         #footer .right a::before {
@@ -154,14 +222,13 @@
 
         #footer .right::before, #footer .settings::before {
             content: "|"; /* Add separator before right and settings sections */
-            margin-left: 10px;
+            margin-left: 0px;
             margin-right: 10px;
             color: #e0e0e0;
         }
 
         #theme-toggle {
             cursor: pointer;
-            font-size: 20px;
             color: white;
         }
 
@@ -173,57 +240,59 @@
             text-decoration: underline;
         }
 
-        #links {
-            margin-top: 10px;
-            padding: 15px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            background-color: #f9f9f9;
-        }
-
-        #links a {
-            display: block;
-            margin-bottom: 5px;
-            padding: 5px 10px;
-            background-color: #D5D5D5;
-            color: black;
-            text-decoration: none;
-            border-radius: 5px;
-        }
-
-        #links a:hover {
-            background-color: #D5D5D5;
-        }
-
         table {
-            width: 100%;
+            table-layout: fixed; /* Ensures columns behave properly */
+            width: auto; /* Table shrinks to fit content */
+            max-width: 100%; /* Prevents overflow */
             border-collapse: collapse;
         }
 
-        th.name-column, td.name-column {
-            min-width: 350px;
+        th, td {
+            white-space: nowrap; /* Prevent text wrapping */
         }
 
-        th.status-column, td.status-column {
-            max-width: 100px; /* Set the maximum width for the column */
-            white-space: nowrap; /* Prevent text from wrapping */
-            overflow: hidden; /* Hide the overflowed text */
-            text-overflow: ellipsis; /* Show ellipsis (...) for overflowed text */
+        th.name-column, td.name-column,
+        th.status-column, td.status-column,
+        td.dur-column, th.dur-column {
+            width: 1px;
+            max-width: fit-content;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
-        th.time-column, td.time-column {
-            max-width: 120px; /* Set the maximum width for the column */
-            white-space: nowrap; /* Prevent text from wrapping */
+        td.dur-column {
             text-align: right;
         }
 
-        th.info-column, td.info-column {
-            width: 100%; /* Allow the column to take all the remaining space */
+        th.time-column, td.time-column {
+            width: auto; /* This column takes remaining space */
+            text-align: left;
+        }
+
+        .name-column a {
+            color: var(--job-name-color);
+            text-decoration: underline;
+            display: inline-block;
+        }
+
+        /*.name-column a:hover {*/
+        /*    color: var(--link-hover-color);*/
+        /*}*/
+
+        /* Non-clickable text should look similar but without underline */
+        .name-column .disabled {
+            color: var(--job-name-color); /* Same color as links */
+            cursor: default; /* No pointer cursor */
+            text-decoration: none; /* No underline */
+        }
+
+        .status-column span[style*="pointer"] {
+            text-decoration: underline;
         }
 
         th, td {
             padding: 8px;
-            border: 1px solid #ddd;
+            border: 1px solid var(--table-border-color);
             text-align: left;
         }
 
@@ -252,7 +321,7 @@
         }
 
         .status-run {
-            color: blue;
+            color: #0080ff;
             font-weight: bold;
         }
 
@@ -268,26 +337,41 @@
     </style>
 </head>
 <body>
-<div id="info-container"></div>
 <div id="status-container"></div>
 <div id="result-container"></div>
+<button id="toggle-status-bar" onclick="toggleStatusBar()">‖</button>
 
 <footer id="footer">
     <div class="left"></div>
     <div class="right"></div>
     <div class="settings">
-        <span id="theme-toggle">☀️</span>
+        <span id="theme-toggle">🔆️</span>
     </div>
 </footer>
 
 <script>
     function toggleTheme() {
         document.body.classList.toggle('night-theme');
-        const toggleIcon = document.getElementById('theme-toggle');
         if (document.body.classList.contains('night-theme')) {
-            toggleIcon.textContent = '☾'; // Moon for night mode
+            localStorage.setItem('theme', 'night');
         } else {
-            toggleIcon.textContent = '☀️'; // Sun for day mode
+            localStorage.setItem('theme', 'day');
+        }
+    }
+
+    function toggleStatusBar() {
+        var statusContainer = document.getElementById("status-container");
+        var resultContainer = document.getElementById("result-container");
+        var toggleButton = document.getElementById("toggle-status-bar");
+
+        if (statusContainer.classList.contains("hidden")) {
+            statusContainer.classList.remove("hidden");
+            resultContainer.classList.remove("expanded");
+            toggleButton.classList.remove("button-moved");
+        } else {
+            statusContainer.classList.add("hidden");
+            resultContainer.classList.add("expanded");
+            toggleButton.classList.add("button-moved");
         }
     }
 
@@ -297,7 +381,6 @@
         window.location.href = url.toString();
     }
 
-    // Attach the toggle function to the click event of the icon
     document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
 
     function formatTimestamp(timestamp, showDate = true) {
@@ -361,182 +444,611 @@
         return 'status-other';
     }
 
-    function addKeyValueToStatus(key, value, options = null) {
+    function addFileLinksWidget(links) {
+        if (!Array.isArray(links) || links.length === 0) return;
+
+        const statusContainer = document.getElementById('status-container');
+        const widget = document.createElement('div');
+        widget.className = 'status-widget';
+        widget.style.textAlign = 'left';
+
+        const base_url = window.location.origin + window.location.pathname;
+
+        links.forEach(link => {
+            const fileLink = document.createElement('a');
+            fileLink.href = link;
+            fileLink.target = '_blank';
+            fileLink.className = 'file-link';
+            fileLink.textContent = link.includes(base_url) ? "Report" : link.split('/').pop();
+
+            // Wrap each link in its own line for spacing
+            const line = document.createElement('div');
+            line.appendChild(fileLink);
+            widget.appendChild(line);
+        });
+
+        statusContainer.appendChild(widget);
+    }
+
+    function addDetailsWidget(runtimeCache, sha, PR) {
         const statusContainer = document.getElementById('status-container');
 
-        let keyValuePair = document.createElement('div');
-        keyValuePair.className = 'key-value-pair';
+        // Widget container
+        const widget = document.createElement('div');
+        widget.className = 'status-widget'
 
-        const keyElement = document.createElement('div');
-        keyElement.className = 'json-key';
-        keyElement.textContent = key + ':';
+        function addLine(text, options = {}) {
+            const el = document.createElement(options.tag || 'div');
+            el.textContent = text || 'N/A';
+            if (options.bold) el.style.fontWeight = "bold";
+            if (options.small) el.style.fontSize = "12px";
+            if (options.link) {
+                el.href = options.link;
+                el.target = "_blank";
+                el.className = "external-link";
+            }
+            widget.appendChild(el);
+        }
 
-        let valueElement;
+        function createDropdown(selected, options, optionValues, key) {
+            const select = document.createElement('select');
+            select.className = 'dropdown-value';
 
-        if (options) {
-            // Create dropdown if options are provided
-            valueElement = document.createElement('select');
-            valueElement.className = 'dropdown-value';
-
-            options.forEach(optionValue => {
-                const option = document.createElement('option');
-                option.value = optionValue;
-                option.textContent = optionValue.slice(0, 10);
-
-                // Set the initially selected option
-                if (optionValue === value) {
-                    option.selected = true;
-                }
-
-                valueElement.appendChild(option);
+            options.forEach((label, i) => {
+                const opt = document.createElement('option');
+                opt.textContent = label;
+                opt.value = optionValues[i];
+                if (optionValues[i] === selected) opt.selected = true;
+                select.appendChild(opt);
             });
 
-            // Update the URL parameter when the selected value changes
-            valueElement.addEventListener('change', (event) => {
+            select.addEventListener('change', (event) => {
                 const selectedValue = event.target.value;
                 updateUrlParameter(key, selectedValue);
             });
-        } else {
-            // Create a simple text display if no options are provided
-            valueElement = document.createElement('div');
-            valueElement.className = 'json-value';
-            valueElement.textContent = value || 'N/A'; // Display 'N/A' if value is null
+
+            return select;
         }
 
-        keyValuePair.appendChild(keyElement);
-        keyValuePair.appendChild(valueElement);
-        statusContainer.appendChild(keyValuePair);
+        // === PR + SHA ROW ===
+        const topRow = document.createElement("div");
+        topRow.style.display = "flex";
+        topRow.style.justifyContent = "space-between";
+        topRow.style.alignItems = "center";
+        topRow.style.margin = "8px 0";
+
+        // PR on the left
+        const prLabel = document.createElement("div");
+        if (PR > 0 && runtimeCache.prLink) {
+            const prLink = document.createElement("a");
+            prLink.textContent = `PR ${PR}`;
+            prLink.href = runtimeCache.prLink;
+            prLink.target = "_blank";
+            prLink.style.fontWeight = "bold";
+            prLink.className = "external-link";
+            prLabel.appendChild(prLink);
+        }
+        topRow.appendChild(prLabel);
+
+        // SHA dropdown on the right
+        const commits = runtimeCache.commits || [];
+        const shaSelectorText = commits.map(({ sha, message }) => {
+            const shortSha = (sha || "").substring(0, 8);
+            return message ? `${shortSha}: ${message}` : shortSha;
+        });
+        const shaSelectorValues = commits.map(c => c.sha);
+        shaSelectorText.push("latest");
+        shaSelectorValues.push("latest");
+
+        const currentSha = sha === "latest" ? (commits.at(-1)?.sha || "latest") : sha;
+        const shaDropdown = createDropdown(currentSha, shaSelectorText, shaSelectorValues, "sha");
+        topRow.appendChild(shaDropdown);
+
+        widget.appendChild(topRow);
+
+        // PR title / branch
+        if (PR > 0) {
+            const ext = runtimeCache.json0?.ext || {};
+            if (ext.pr_title) addLine(ext.pr_title, { small: true });
+            if (ext.git_branch) addLine(ext.git_branch, { small: true });
+        }
+
+        // Current SHA (full), small
+        addLine(currentSha, { small: true });
+
+        statusContainer.appendChild(widget);
     }
 
-    function addFileButtonToStatus(key, links) {
+    function addStatisticsWidget(jobName, duration) {
+        const statusContainer = document.getElementById("status-container");
+        const chartWrapper = document.createElement("div");
+        chartWrapper.className = 'status-widget';
 
-        if (links == null) {
-            return
+        const stats = persistentStorage.statisticsObject?.[jobName]?.["3d"];
+        if (!stats) {
+            console.warn(`No stats found for job: ${jobName}`);
+            return;
         }
 
-        const statusContainer = document.getElementById('status-container');
+        const quantiles = stats.quantiles;
+        const keys = Object.keys(quantiles).map(Number).sort((a, b) => a - b);
+        const values = keys.map(k => quantiles[k]);
+        values[0] = Math.min(duration, values[0]);
+        values[values.length - 1] = Math.max(duration, values[values.length - 1]);
 
-        const keyElement = document.createElement('div');
-        keyElement.className = 'json-key';
-        //keyElement.textContent = columnSymbols[key] + ':' || key;
-        keyElement.textContent = '';
-        statusContainer.appendChild(keyElement);
+        const minValue = values[0];
+        const maxValue = values[values.length - 1];
+        const range = maxValue - minValue;
 
-        if (Array.isArray(links) && links.length > 0) {
-            links.forEach(link => {
-                const textLink = document.createElement('a');
-                textLink.href = link;
-                textLink.textContent = link.split('/').pop();
-                textLink.target = '_blank';
-                statusContainer.appendChild(textLink);
-                statusContainer.appendChild(document.createElement('br'));
+        // --- Density Segments
+        const densitySegments = [];
+        for (let i = 0; i < keys.length - 1; i++) {
+            const q1 = keys[i], q2 = keys[i + 1];
+            const v1 = quantiles[q1], v2 = quantiles[q2];
+
+            const x1 = ((v1 - minValue) / range) * 100;
+            const x2 = ((v2 - minValue) / range) * 100;
+            const dq = q2 - q1;
+            const dv = v2 - v1 || 1e-6;
+
+            const density = dq / dv;
+            densitySegments.push({ x1, x2, density });
+        }
+
+        // --- Normalize densities
+        const allDensities = densitySegments.map(seg => seg.density);
+        const maxDensity = Math.max(...allDensities);
+        const minDensity = Math.min(...allDensities);
+
+        const gradientStops = densitySegments.flatMap((seg, i) => {
+            const next = densitySegments[i + 1] ?? seg;
+
+            const norm1 = (seg.density - minDensity) / (maxDensity - minDensity || 1);
+            const norm2 = (next.density - minDensity) / (maxDensity - minDensity || 1);
+
+            const curved1 = Math.pow(norm1, 0.5);
+            const curved2 = Math.pow(norm2, 0.5);
+
+            const alpha1 = (0.3 + 0.7 * curved1).toFixed(2);
+            const alpha2 = (0.3 + 0.7 * curved2).toFixed(2);
+
+            const color1 = `rgba(0, 123, 255, ${alpha1})`;
+            const color2 = `rgba(0, 123, 255, ${alpha2})`;
+
+            return [
+                `${color1} ${seg.x1.toFixed(2)}%`,
+                `${color2} ${seg.x2.toFixed(2)}%`
+            ];
+        });
+
+        const gradient = `linear-gradient(to right, ${gradientStops.join(', ')})`;
+
+        const clampedDuration = Math.max(minValue, Math.min(duration, maxValue));
+        const durationLeft = ((clampedDuration - minValue) / range) * 100;
+
+        const topLabelBox = document.createElement("div");
+        //topLabelBox.style.fontSize = "10px";
+        topLabelBox.style.marginBottom = "4px";
+
+        const currentLabel = document.createElement("div");
+        currentLabel.style.textAlign = "left";
+        currentLabel.textContent = `duration: ${formatDuration(duration)}`;
+
+        topLabelBox.appendChild(currentLabel);
+
+        topLabelBox.appendChild(currentLabel);
+        chartWrapper.appendChild(topLabelBox);
+
+        // --- Bar
+        const bar = document.createElement("div");
+        bar.style.position = "relative";
+        bar.style.height = "24px";
+        bar.style.background = gradient;
+
+        const durationLine = document.createElement("div");
+        durationLine.style.position = "absolute";
+        durationLine.style.left = `${durationLeft}%`;
+        durationLine.style.top = "0";
+        durationLine.style.bottom = "0";
+        durationLine.style.width = "2px";
+        durationLine.style.background = "red";
+        bar.appendChild(durationLine);
+
+        chartWrapper.appendChild(bar);
+
+        // --- Min / Max labels below bar
+        const bottomLabels = document.createElement("div");
+        bottomLabels.style.display = "flex";
+        bottomLabels.style.justifyContent = "space-between";
+        bottomLabels.style.fontSize = "10px";
+        bottomLabels.style.color = "#444";
+
+        const minLabel = document.createElement("div");
+        minLabel.textContent = formatDuration(minValue);
+
+        const maxLabel = document.createElement("div");
+        maxLabel.textContent = formatDuration(maxValue);
+
+        bottomLabels.appendChild(minLabel);
+        bottomLabels.appendChild(maxLabel);
+        chartWrapper.appendChild(bottomLabels);
+
+        // --- Final assemble
+        statusContainer.appendChild(chartWrapper);
+
+        function formatDuration(ms) {
+            const s = Math.floor(ms / 1000);
+            const h = Math.floor(s / 3600);
+            const m = Math.floor((s % 3600) / 60);
+            const sec = s % 60;
+
+            const parts = [];
+            if (h > 0) parts.push(`${h}h`);
+            parts.push(`${m}m`);
+            parts.push(`${sec}s`);
+
+            return parts.join(' ');
+        }
+    }
+
+    function addStorageUsageChartToStatus(usage_data) {
+        const statusContainer = document.getElementById("status-container");
+
+        if (!usage_data || !usage_data.uploaded || !usage_data.uploaded_details) {
+            console.error("Invalid or missing storage usage data.");
+            return;
+        }
+
+        const uploaded = usage_data.uploaded;
+        const originalDetails = usage_data.uploaded_details;
+
+        // Group small files and sort
+        let sortedEntries = Object.entries(originalDetails)
+            .map(([name, size]) => [name, size])
+            .sort((a, b) => b[1] - a[1]);
+
+        // Take top 20, rest go to "other"
+        let grouped = sortedEntries.slice(0, 20);
+        const rest = sortedEntries.slice(20);
+        const otherTotal = rest.reduce((sum, [, value]) => sum + value, 0);
+        if (otherTotal > 0) grouped.push(["other", otherTotal]);
+
+        const labels = grouped.map(([label]) => label);
+        const values = grouped.map(([, value]) => value);
+
+        const chartWrapper = document.createElement("div");
+        chartWrapper.className = 'status-widget'
+
+        // Total uploaded row
+        const totalRow = document.createElement("div");
+        totalRow.style.display = "flex";
+        totalRow.style.justifyContent = "space-between";
+        totalRow.style.margin = 0;
+
+        const totalLabel = document.createElement("span");
+        totalLabel.textContent = "uploaded:";
+        const uploadedMB = (uploaded / (1024 * 1024)).toFixed(2);
+        const totalSize = document.createElement("span");
+        totalSize.textContent = `${uploadedMB} MB`;
+
+        totalRow.appendChild(totalLabel);
+        totalRow.appendChild(totalSize);
+        chartWrapper.appendChild(totalRow);
+
+        // Canvas
+        const canvas = document.createElement("canvas");
+        canvas.width = 400;
+        canvas.height = 400;
+        canvas.style.width = "100%";
+        canvas.style.maxWidth = "400px";
+        canvas.style.margin = "0";
+        chartWrapper.appendChild(canvas);
+
+        const ctx = canvas.getContext("2d");
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const radius = 150;
+
+        const sliceData = [];
+        let startAngle = 0;
+        labels.forEach((label, index) => {
+            const value = values[index];
+            const sliceAngle = (value / uploaded) * 2 * Math.PI;
+            const color = stringToColor(label);
+
+            sliceData.push({
+                label,
+                startAngle,
+                endAngle: startAngle + sliceAngle,
+                color,
+            });
+
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            ctx.arc(centerX, centerY, radius, startAngle, startAngle + sliceAngle);
+            ctx.closePath();
+            ctx.fillStyle = color;
+            ctx.fill();
+
+            startAngle += sliceAngle;
+        });
+
+        // Legend + label mapping
+        const legend = document.createElement("div");
+        const legendMap = {}; // label => element
+
+        labels.forEach((label, index) => {
+            const value = values[index];
+            const percent = ((value / uploaded) * 100).toFixed(1);
+            const sizeMB = (value / (1024 * 1024)).toFixed(2);
+            const color = stringToColor(label);
+
+            const row = document.createElement("div");
+            row.style.display = "flex";
+            row.style.alignItems = "center";
+            row.style.justifyContent = "space-between";
+            row.style.fontSize = "10px";
+            row.style.cursor = "pointer";
+
+            const left = document.createElement("span");
+            left.style.display = "flex";
+            left.style.alignItems = "center";
+
+            const dot = document.createElement("span");
+            dot.style.display = "inline-block";
+            dot.style.width = "8px";
+            dot.style.height = "8px";
+            dot.style.flexShrink = "0";
+            dot.style.marginRight = "6px";
+            dot.style.backgroundColor = color;
+
+            const labelText = document.createElement("span");
+            labelText.textContent = label;
+
+            left.appendChild(dot);
+            left.appendChild(labelText);
+
+            const right = document.createElement("span");
+            right.textContent = `${sizeMB} MB (${percent}%)`;
+
+            row.appendChild(left);
+            row.appendChild(right);
+            legend.appendChild(row);
+
+            legendMap[label] = row;
+
+            // Hover from legend to chart
+            row.addEventListener("mouseenter", () => drawChart(label));
+            row.addEventListener("mouseleave", () => drawChart(null));
+        });
+
+        chartWrapper.appendChild(legend);
+        statusContainer.appendChild(chartWrapper);
+
+        function drawChart(hoveredLabel) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            sliceData.forEach((slice) => {
+                ctx.beginPath();
+                ctx.moveTo(centerX, centerY);
+                ctx.arc(centerX, centerY, radius, slice.startAngle, slice.endAngle);
+                ctx.closePath();
+                ctx.fillStyle = slice.color;
+                ctx.fill();
+                if (slice.label === hoveredLabel) {
+                    ctx.strokeStyle = "#000";
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+
+                // Legend underline toggle
+                const row = legendMap[slice.label];
+                if (row) {
+                    row.style.textDecoration = slice.label === hoveredLabel ? "underline" : "none";
+                }
             });
         }
-    }
 
-    function addStatusToStatus(status, start_time, duration) {
-        const statusContainer = document.getElementById('status-container')
+        drawChart(null); // Initial draw
 
-        let keyValuePair = document.createElement('div');
-        keyValuePair.className = 'key-value-pair';
-        let keyElement = document.createElement('div');
-        let valueElement = document.createElement('div');
-        keyElement.className = 'json-key';
-        valueElement.className = 'json-value';
-        //keyElement.textContent = columnSymbols['status'] + ':' || 'status:';
-        keyElement.textContent = '';
-        valueElement.classList.add('status-value');
-        valueElement.classList.add(getStatusClass(status));
-        valueElement.textContent = status;
-        keyValuePair.appendChild(keyElement);
-        keyValuePair.appendChild(valueElement);
-        statusContainer.appendChild(keyValuePair);
-
-        keyValuePair = document.createElement('div');
-        keyValuePair.className = 'key-value-pair';
-        keyElement = document.createElement('div');
-        valueElement = document.createElement('div');
-        keyElement.className = 'json-key';
-        valueElement.className = 'json-value';
-        //keyElement.textContent = columnSymbols['start_time'] + ':' || 'start_time:';
-        keyElement.textContent = ''
-        valueElement.textContent = formatTimestamp(start_time);
-        keyValuePair.appendChild(keyElement);
-        keyValuePair.appendChild(valueElement);
-        statusContainer.appendChild(keyValuePair);
-
-        keyValuePair = document.createElement('div');
-        keyValuePair.className = 'key-value-pair';
-        keyElement = document.createElement('div');
-        valueElement = document.createElement('div');
-        keyElement.className = 'json-key';
-        valueElement.className = 'json-value';
-        //keyElement.textContent = columnSymbols['duration'] + ':' || 'duration:';
-        keyElement.textContent = ''
-        if (duration === null) {
-            // Set initial value to 0 and add a unique ID or data attribute to identify the duration element
-            valueElement.textContent = '00:00:00';
-            valueElement.setAttribute('id', 'duration-value');
-        } else {
-            // Format the duration if it's a valid number
-            valueElement.textContent = formatDuration(duration, true);
-        }
-        keyValuePair.appendChild(keyElement);
-        keyValuePair.appendChild(valueElement);
-        statusContainer.appendChild(keyValuePair);
-    }
-
-    function navigatePath(jsonObj, nameArray) {
-        let baseParams = new URLSearchParams(window.location.search);
-        let keysToDelete = [];
-        baseParams.forEach((value, key) => {
-            if (key.startsWith('name_')) {
-                keysToDelete.push(key); // Collect the keys to delete
+        // Color utility
+        function stringToColor(str) {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                hash = str.charCodeAt(i) + ((hash << 5) - hash);
             }
-        });
-        keysToDelete.forEach((key) => baseParams.delete(key));
-        let pathNames = [];
-        let pathLinks = [];
-        let currentObj = jsonObj;
+            const hue = hash % 360;
+            return `hsl(${hue}, 60%, 60%)`;
+        }
+    }
 
-        // Add the first entry (root level)
-        baseParams.set(`name_0`, currentObj.name);
-        pathNames.push(currentObj.name);
-        pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}">${currentObj.name}</a>`);
-        // Iterate through the nameArray starting at index 0
-        for (const [index, name] of nameArray.entries()) {
-            if (index === 0) continue;
-            if (currentObj && Array.isArray(currentObj.results)) {
-                const nextResult = currentObj.results.find(result => result.name === name);
-                if (nextResult) {
-                    baseParams.set(`name_${index}`, nextResult.name);
-                    pathNames.push(nextResult.name);  // Correctly push nextResult name, not currentObj.name
-                    pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}">${nextResult.name}</a>`);
-                    currentObj = nextResult; // Move to the next object in the hierarchy
+    function addTimeTraceWidget(results, statusWidget, originalTask) {
+        const statusContainer = document.getElementById("status-container");
+        if (!results || results.length === 0) {
+            console.error("No results to visualize.");
+            return;
+        }
+
+        const lineWidth = 5;
+        const padding = 1;
+        const totalHeight = (lineWidth + padding) * results.length;
+
+        const widget = document.createElement("div");
+        widget.className = 'status-widget'
+        widget.style.height = `${totalHeight}px`;
+        widget.style.padding = "0";
+        statusContainer.appendChild(widget);
+
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+
+        canvas.style.width = "100%";
+        canvas.style.height = `${totalHeight}px`;
+        canvas.style.display = "block";
+        widget.appendChild(canvas);
+
+        function resizeCanvas() {
+            canvas.width = widget.clientWidth;
+            canvas.height = totalHeight;
+            drawTimeline();
+        }
+        resizeCanvas();
+        window.addEventListener("resize", resizeCanvas);
+
+        function getColorFromName(name) {
+            let hash = 0;
+            for (let i = 0; i < name.length; i++) {
+                hash = name.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const hue = Math.abs(hash % 360);
+            return `hsl(${hue}, 70%, 60%)`;
+        }
+
+        function drawTimeline() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            let taskRects = [];
+            const failedMarkers = [];
+
+            const minStartTime = runtimeCache.json0.start_time;
+            const currentUtcTimestamp = Date.now() / 1000;
+            const maxTime = runtimeCache.json0?.duration ?? (currentUtcTimestamp - minStartTime);
+            const scaleX = canvas.width / maxTime;
+
+            results.forEach((task, index) => {
+                const y = index * (lineWidth + padding);
+                const height = lineWidth;
+
+                let x, width, color;
+                if (task.start_time === null) {
+                    x = 0;
+                    width = canvas.width;
+                    const getCss = (name) => getComputedStyle(document.body).getPropertyValue(name).trim();
+                    color = task.status === "pending" ? getCss('--pending-bar-color') : getCss('--skipped-bar-color');
+                } else if (task.duration === null) {
+                    x = (task.start_time - minStartTime) * scaleX;
+                    width = (maxTime - (task.start_time - minStartTime)) * scaleX;
+                    color = getColorFromName(task.name);
                 } else {
-                    console.error(`Name "${name}" not found in results array.`);
-                    return null; // Name not found in results array
+                    x = (task.start_time - minStartTime) * scaleX;
+                    width = task.duration * scaleX;
+                    color = getColorFromName(task.name);
                 }
-            } else {
-                console.error(`Current object is not structured as expected.`);
-                return null; // Current object is not structured as expected
-            }
-        }
-        const footerLeft = document.querySelector('#footer .left');
-        footerLeft.innerHTML = pathLinks.join('');
 
-        return currentObj;
+                ctx.fillStyle = color;
+                ctx.fillRect(x, y, width, height);
+
+                taskRects.push({ x, y, width, height, task });
+
+                // Save failure marker position for second pass
+                if (task.status === "failure" || task.status === "error") {
+                    failedMarkers.push({ x: x + width, y: y + height / 2 });
+                }
+            });
+
+            // Draw failure markers on top
+            failedMarkers.forEach(({ x, y }) => {
+                ctx.font = "12px sans-serif";
+                ctx.fillText("❌", Math.max(x - 14, 0), y + 4);
+            });
+
+            // Event listeners
+            canvas.addEventListener("mousemove", (event) => {
+                const rect = canvas.getBoundingClientRect();
+                const mouseY = event.clientY - rect.top;
+
+                let hoveredTask = null;
+                for (let { y, height, task } of taskRects) {
+                    if (mouseY >= y && mouseY <= y + height) {
+                        hoveredTask = task;
+                        break;
+                    }
+                }
+
+                if (hoveredTask && statusWidget?.update) {
+                    statusWidget.update(
+                        hoveredTask.name,
+                        hoveredTask.status,
+                        hoveredTask.start_time,
+                        hoveredTask.duration
+                    );
+                }
+            });
+
+            canvas.addEventListener("mouseleave", () => {
+                if (statusWidget?.update && originalTask) {
+                    statusWidget.update(
+                        originalTask.name,
+                        originalTask.status,
+                        originalTask.start_time,
+                        originalTask.duration
+                    );
+                }
+            });
+        }
+
+        drawTimeline();
+        setInterval(drawTimeline, 5000);
     }
 
-    // Define the fixed columns globally, so both functions can use it
-    const columns = ['name', 'status', 'start_time', 'duration', 'info'];
+    function addStatusWidget(name, status, start_time, duration, container = null) {
+        const statusContainer = container || document.getElementById('status-container');
+
+        // Widget container
+        const widget = document.createElement('div');
+        const color = getComputedStyle(document.body).getPropertyValue('--table-border-color').trim();
+        widget.className = 'status-widget'
+
+        // Helper to create a line
+        function addLine(value, className = '') {
+            const line = document.createElement('div');
+            line.textContent = value;
+
+            // Truncate long names
+            line.style.whiteSpace = "nowrap";
+            line.style.overflow = "hidden";
+            line.style.textOverflow = "ellipsis";
+
+            if (className) line.classList.add(className);
+            widget.appendChild(line);
+        }
+
+        // Make widget re-usable by external updates
+        widget.update = function (name, status, start_time, duration) {
+            widget.innerHTML = '';
+
+            addLine(name);
+            addLine(status, getStatusClass(status));
+            addLine(start_time ? formatTimestamp(start_time) : "0:00:00");
+            if (duration != null) {
+                addLine(formatDuration(duration, true));
+            } else if (start_time != null) {
+                const durationLine = document.createElement('div');
+                let seconds = Math.floor(Date.now() / 1000 - start_time);
+                durationLine.textContent = formatDuration(seconds, true);
+                setInterval(() => {
+                    seconds++;
+                    durationLine.textContent = formatDuration(seconds, true);
+                }, 1000);
+
+                widget.appendChild(durationLine);
+            } else {
+                addLine("--s");
+            }
+        };
+
+        // Initial fill
+        widget.update(name, status, start_time, duration);
+        statusContainer.appendChild(widget);
+        return widget;
+    }
+
+    const columns = ['status', 'name', 'duration', 'start_time'];
 
     const columnSymbols = {
-        name: '🗂️',
-        status: '✅',
-        start_time: '🕒',
-        duration: '⏳',
-        info: '📝',
+        // name: '🗂️',
+        // status: '✅',
+        start_time: 'start',
+        duration: 'dur',
+        // info: '📝',
         files: '📎'
     };
 
@@ -553,13 +1065,13 @@
                 th.textContent = columnSymbols[column] || column;
                 th.style.cursor = 'pointer'; // Make headers clickable
                 th.setAttribute('data-sort-direction', 'asc'); // Default sort direction
-                th.addEventListener('click', () => sortTable(results, column, columnSymbols[column] || column, tbody, nest_level, columns)); // Add click event to sort the table
+                th.addEventListener('click', () => sortTable(results, column, columnSymbols[column] || column, tbody, nest_level, columns));
                 headerRow.appendChild(th);
             });
             thead.appendChild(headerRow);
 
             // Create table rows
-            populateTableRows(tbody, results, columns, nest_level);
+            populateTableRows(tbody, results, nest_level);
 
             table.appendChild(thead);
             table.appendChild(tbody);
@@ -569,51 +1081,128 @@
         return null;
     }
 
-    function populateTableRows(tbody, results, columns, nest_level) {
-        const currentUrl = new URL(window.location.href);  // Get the current URL
+    function populateTableRows(tbody, results, nest_level) {
+        const currentUrl = new URL(window.location.href);
 
         // Clear existing rows if re-rendering (used in sorting)
         tbody.innerHTML = '';
 
-        results.forEach((result, index) => {
+        results.forEach((result, _index) => {
             const row = document.createElement('tr');
 
             columns.forEach(column => {
                 const td = document.createElement('td');
                 const value = result[column];
 
-                if (column === 'name') {
-                    // Create a link for the name field, using name_X
-                    const link = document.createElement('a');
-                    const newUrl = new URL(currentUrl); // Create a fresh copy of the URL for each row
-                    newUrl.searchParams.set(`name_${nest_level}`, value); // Use backticks for string interpolation
-                    link.href = newUrl.toString();
-                    link.textContent = value;
-                    td.classList.add('name-column');
-                    td.appendChild(link);
-                } else if (column === 'status') {
-                    // Apply status formatting
+                if (column === 'status') {
+                    // Apply status formatting and make it clickable
                     const span = document.createElement('span');
                     span.className = getStatusClass(value);
                     span.textContent = value;
                     td.classList.add('status-column');
+                    row.dataset.status = value ? value.toLowerCase() : "";
+                    if ((result.info && result.info.trim() !== "") || (Array.isArray(result.links) && result.links.length > 0)) {
+                        span.style.cursor = "pointer";
+                        span.addEventListener('click', () => toggleInfoRow(row, result.info, result.links));
+                    }
                     td.appendChild(span);
+
+                } else if (column === 'name') {
+                    const statusValue = result["status"] ? result["status"].toLowerCase() : "";
+
+                    if (
+                        (nest_level === 1 && ["pending", "skipped", "running"].includes(statusValue)) ||
+                        (nest_level > 1 && (!Array.isArray(result.results) || result.results.length === 0))
+                    ) {
+                        // If status is pending, just show plain text
+                        const span = document.createElement('span');
+                        span.textContent = value;
+                        span.classList.add('disabled');
+                        td.classList.add('name-column');
+                        td.appendChild(span);
+                    } else {
+                        // Create a link for the name field
+                        const newUrl = new URL(currentUrl);
+                        newUrl.searchParams.set(`name_${nest_level}`, value);
+
+                        const link = document.createElement('a');
+                        link.href = newUrl.toString();
+                        link.textContent = value;
+                        td.classList.add('name-column');
+                        td.appendChild(link);
+                    }
+
                 } else if (column === 'start_time') {
                     td.classList.add('time-column');
                     td.textContent = value ? formatTimestamp(value, false) : '';
-                } else if (column === 'duration') {
-                    td.classList.add('time-column');
-                    td.textContent = value ? formatDuration(value) : '';
-                } else if (column === 'info') {
-                    td.textContent = value && value.includes('\n') ? '↵' : (value || '');
-                    td.classList.add('info-column');
-                }
 
+                } else if (column === 'duration') {
+                    td.classList.add('dur-column');
+                    td.textContent = value ? formatDuration(value) : '';
+
+                }
                 row.appendChild(td);
             });
 
             tbody.appendChild(row);
         });
+    }
+
+    /**
+     * Toggles an additional row below the clicked row to display the "info" text.
+     */
+    function toggleInfoRow(row, infoText, links = []) {
+        if (!infoText && links.length === 0) return;
+
+        let nextRow = row.nextElementSibling;
+
+        // Check if the next row is already an "info" row
+        if (nextRow && nextRow.classList.contains('info-row')) {
+            nextRow.remove(); // If it's there, remove it
+        } else {
+            // Otherwise, create a new row for the info text
+            const infoRow = document.createElement('tr');
+            infoRow.classList.add('info-row');
+
+            const infoCell = document.createElement('td');
+            infoCell.colSpan = row.children.length; // Make it span the full width
+            infoCell.classList.add('info-text');
+
+            if (infoText) {
+                let content = document.createElement('div');
+                infoCell.innerHTML = '<pre></pre>';
+                // Append content securely, without interpreting HTML tags.
+                infoCell.firstChild.textContent = infoText;
+                infoCell.appendChild(content);
+            }
+
+            // If there are links, create a list of links
+            if (Array.isArray(links) && links.length > 0) {
+                const linksContainer = document.createElement('div');
+                linksContainer.classList.add('file-link');
+                let base_url = window.location.origin + window.location.pathname;
+
+                links.forEach(link => {
+                    let linkElement = document.createElement('a');
+                    linkElement.href = link;
+                    linkElement.target = "_blank"; // Open in a new tab
+                    linkElement.style.display = "block"; // Each link on a new line
+
+                    if (!link.includes(base_url)) {
+                        // External link: Show file name
+                        linkElement.textContent = link.split('/').pop();
+                    } else {
+                        linkElement.textContent = "Report";
+                    }
+                    linksContainer.appendChild(linkElement);
+                });
+
+                infoCell.appendChild(linksContainer);
+            }
+
+            infoRow.appendChild(infoCell);
+            row.parentNode.insertBefore(infoRow, row.nextSibling); // Insert below the clicked row
+        }
     }
 
     function sortTable(results, column, key, tbody, nest_level, columns) {
@@ -639,119 +1228,357 @@
         tbody.innerHTML = '';
 
         // Re-populate the table with sorted data
-        populateTableRows(tbody, results, columns, nest_level);
+        populateTableRows(tbody, results, nest_level);
     }
 
-    function loadResultsJSON(PR, sha, nameParams) {
-        const infoElement = document.getElementById('info-container');
-        let lastModifiedTime = null;
-        const task = nameParams[0].toLowerCase();
+    async function fetchJson(path, lastModifiedTime = null, eTag = null) {
+        try {
+            // Set headers if lastModifiedTime or eTag are available
+            const headers = {};
+            if (lastModifiedTime) headers["If-Modified-Since"] = lastModifiedTime;
+            if (eTag) headers["If-None-Match"] = eTag;
 
-        // Construct the URL dynamically based on PR, sha, and name_X
-        const baseUrl = window.location.origin + window.location.pathname.replace('/json.html', '');
-        const path = `${baseUrl}/${encodeURIComponent(PR)}/${encodeURIComponent(sha)}/result_${task}.json`;
+            // Fetch with conditional headers
+            const response = await fetch(path, {
+                cache: "no-cache",
+                headers
+            });
 
-        fetch(path, {cache: "no-cache"})
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                lastModifiedTime = response.headers.get('Last-Modified');
-                return response.json();
-            })
-            .then(data => {
-                const linksDiv = document.getElementById('links');
-                const resultsDiv = document.getElementById('result-container');
-                const footerRight = document.querySelector('#footer .right');
+            // If the response is 304 (Not Modified), return existing metadata without fetching new data
+            if (response.status === 304) {
+                return { data: null, lastModifiedTime, eTag, updated: false };
+            } else if (response.status === 403)
+                return { data: null, lastModifiedTime: null, eTag: null, updated: true };
+            // Extract headers
+            const newLastModifiedTime = response.headers.get('Last-Modified');
+            const newETag = response.headers.get('ETag');
+            const jsonData = await response.json();
 
-                let targetData = navigatePath(data, nameParams);
-                let nest_level = nameParams.length;
-
-                // Add footer links from top-level  Result
-                if (Array.isArray(data.links) && data.links.length > 0) {
-                    data.links.forEach(link => {
-                        const a = document.createElement('a');
-                        a.href = link;
-                        a.textContent = link.split('/').pop();
-                        a.target = '_blank';
-                        footerRight.appendChild(a);
-                    });
-                }
-
-                if (targetData) {
-                    //infoElement.style.display = 'none';
-                    infoElement.innerHTML = (targetData.info || '').replace(/\n/g, '<br>');
-
-                    addStatusToStatus(targetData.status, targetData.start_time, targetData.duration)
-
-                    // Handle links
-                    if (nameParams.length > 1) {
-                        addFileButtonToStatus('files', targetData.links)
-                    }
-
-
-                    // Handle duration update if duration is null and start_time exists
-                    if (targetData.duration === null && targetData.start_time) {
-                        let duration = Math.floor(Date.now() / 1000 - targetData.start_time);
-                        const durationElement = document.getElementById('duration-value');
-
-                        const intervalId = setInterval(() => {
-                            duration++;
-                            durationElement.textContent = formatDuration(duration, true);
-                        }, 1000);
-                    }
-
-                    // If 'results' exists and is non-empty, create the table
-                    const resultsData = targetData.results;
-                    if (Array.isArray(resultsData) && resultsData.length > 0) {
-                        const table = createResultsTable(resultsData, nest_level);
-                        if (table) {
-                            resultsDiv.appendChild(table);
-                        }
-                    }
-                } else {
-                    infoElement.textContent = 'Object Not Found';
-                    infoElement.style.display = 'block';
-                }
-
-                // Set up auto-reload if Last-Modified header is present
-                if (lastModifiedTime) {
-                    setInterval(() => {
-                        checkForUpdate(path, lastModifiedTime);
-                    }, 30000); // 30000 milliseconds = 30 seconds
-                }
-            })
-            .catch(error => {
-                console.error('Error loading JSON:', error);
+            return { data: jsonData, lastModifiedTime: newLastModifiedTime, eTag: newETag, updated: true };
+        } catch (error) {
+            console.error('Error loading Results:', error);
+            if (infoElement) {
                 infoElement.textContent = 'Error loading data';
                 infoElement.style.display = 'block';
-            });
+            }
+            return { data: null, lastModifiedTime: null, eTag: null, updated: true };
+        }
     }
 
-    // Function to check if the JSON file is updated
-    function checkForUpdate(path, lastModifiedTime) {
-        fetch(path, {method: 'HEAD'})
-            .then(response => {
+    const runtimeCache = {
+        commits: null,
+        json0: null,
+        json1: null,
+        prLink: null,
+        commitLink: null,
+        runLink: null,
+        sha: null
+    };
+
+    function storeLink(link) {
+        if (link.includes('/pull/')) runtimeCache.prLink = link;
+        else if (link.includes('/commit/')) runtimeCache.commitLink = link;
+        else if (link.includes('/actions/runs/')) runtimeCache.runLink = link;
+    }
+
+    function getTargetResults(nameParams) {
+        let resolvedNames = [];
+        let data = runtimeCache.json0;
+
+        if (data !== null) {
+            resolvedNames.push(nameParams[0]);  // Initialize resolvedNames with the first parameter
+        } else {
+            return null;  // Return an object containing data and resolvedNames
+        }
+
+        // Check if we have more than one name to resolve
+        if (nameParams.length > 1) {
+            if (runtimeCache.json1) {
+                data = runtimeCache.json1;  // If json1 exists, use it directly
+            } else {
+                let found = false;
+                // Iterate through data.results to find the target name in json0
+                for (let result of data.results) {
+                    if (result.name === nameParams[1]) {
+                        resolvedNames.push(nameParams[1]);
+                        data = result;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    console.log("No data for", nameParams[1]);
+                    return data;  // Return current data and resolvedNames if no match is found
+                }
+            }
+
+            // Now resolve remaining names starting from index 2
+            for (let i = 2; i < nameParams.length; i++) {
+                let name = nameParams[i];
+                let found = false;
+
+                // Iterate through data.results to find the target name
+                for (let result of data.results) {
+                    if (result.name === name) {
+                        resolvedNames.push(name);
+                        data = result;
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found) {
+                    console.log("No data for", name);
+                    return data;  // Return current data and resolvedNames if no match is found
+                }
+            }
+        }
+
+        return data;  // Return the resolved data and names at the end
+    }
+
+    function fillInNavigationBar(nameArray) {
+        let baseParams = new URLSearchParams(window.location.search);
+        let keysToDelete = [];
+        baseParams.forEach((value, key) => {
+            if (key.startsWith('name_')) {
+                keysToDelete.push(key);
+            }
+        });
+        keysToDelete.forEach((key) => baseParams.delete(key));
+
+        let pathNames = [];
+        let pathLinks = [];
+        for (const [index, name] of nameArray.entries()) {
+            baseParams.set(`name_${index}`, name);
+            pathNames.push(name);
+            pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}" class="nav-link">${name}</a>`);
+        }
+
+        const footerLeft = document.querySelector('#footer .left');
+        footerLeft.innerHTML = pathLinks.join('');
+    }
+
+    function renderFooter(nameParams) {
+        const footerRight = document.querySelector('#footer .right');
+        function createLinkElement(href, textContent, footer) {
+            const a = document.createElement('a');
+            a.href = href;
+            a.textContent = textContent;
+            a.target = '_blank';
+            footer.appendChild(a);
+        }
+        if (runtimeCache.prLink) createLinkElement(runtimeCache.prLink, 'PR', footerRight);
+        if (runtimeCache.commitLink) createLinkElement(runtimeCache.commitLink, 'Commit', footerRight);
+        if (runtimeCache.runLink) createLinkElement(runtimeCache.runLink, 'Run', footerRight);
+        const result = getTargetResults(nameParams)
+        let i = 1;
+        for (const name of nameParams) {
+            if (name === result.name) {
+                break;
+            }
+            i++;
+        }
+        fillInNavigationBar(nameParams.slice(0, i + 1))
+    }
+
+    async function renderResults(PR, sha, nameParams) {
+        const result = getTargetResults(nameParams)
+        let i = 1;
+        for (const name of nameParams) {
+            if (name === result.name) {
+                break;
+            }
+            i++;
+        }
+
+        const resultsDiv = document.getElementById('result-container');
+        if (result.info) {
+            const textDiv = document.createElement('div');
+            textDiv.id = 'info-content';
+            textDiv.innerHTML = (result.info || '').replace(/\n/g, '<br>');
+            resultsDiv.appendChild(textDiv);
+        }
+
+        const resultsData = result.results;
+        if (Array.isArray(resultsData) && resultsData.length > 0) {
+            const table = createResultsTable(resultsData, i);
+            if (table) {
+                resultsDiv.appendChild(table); // Appends table correctly
+            }
+        }
+        addDetailsWidget(runtimeCache, sha, PR)
+        //addInfoLineToStatus(current_sha);
+        const originalWorkflowDetails = {
+            name: result.name,
+            status: result.status,
+            start_time: result.start_time,
+            duration: result.duration
+        };
+        let statusWidget = addStatusWidget(result.name, result.status, result.start_time, result.duration);
+        if (nameParams.length > 1) {
+            addFileLinksWidget(result.links);
+            if (nameParams.length === 2) {
+                addStatisticsWidget(nameParams[1], result.duration * 1000)
+            }
+        } else {
+            addTimeTraceWidget(result.results, statusWidget, originalWorkflowDetails);
+        }
+        addStorageUsageChartToStatus(result.ext?.storage_usage)
+    }
+
+    const persistentStorage = {
+        get updatedAt() {
+            const value = localStorage.getItem('updatedAt');
+            return value ? parseInt(value, 10) : null;
+        },
+
+        set updatedAt(timestamp) {
+            localStorage.setItem('updatedAt', timestamp.toString());
+        },
+
+        get statisticsObject() {
+            const value = localStorage.getItem('statisticsObject');
+            return value ? JSON.parse(value) : null;
+        },
+
+        set statisticsObject(obj) {
+            localStorage.setItem('statisticsObject', JSON.stringify(obj));
+        },
+    };
+
+    async function fetchStatistics(name) {
+        const HALF_DAY = 12 * 60 * 60 * 1000;
+        const now = Date.now();
+
+        // Get the first path segment after the domain
+        const pathParts = window.location.pathname.split('/');
+        const bucketName = pathParts.length >= 2 ? pathParts[1] : 'default-bucket';
+
+        if (
+            !persistentStorage.updatedAt ||
+            now > persistentStorage.updatedAt + HALF_DAY
+        ) {
+            const url = `https://s3.amazonaws.com/${bucketName}/statistics/statistics.json.gz`;
+
+            try {
+                const response = await fetch(url);
+
                 if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    throw new Error(`HTTP ${response.status}`);
                 }
-                const newLastModifiedTime = response.headers.get('Last-Modified');
-                if (newLastModifiedTime && new Date(newLastModifiedTime) > new Date(lastModifiedTime)) {
-                    // If the JSON file has been updated, reload the page
-                    window.location.reload();
-                }
-            })
-            .catch(error => {
-                console.error('Error checking for update:', error);
-            });
+
+                persistentStorage.statisticsObject = await response.json();
+                persistentStorage.updatedAt = now;
+            } catch (error) {
+                console.error('Error fetching statistics:', error);
+            }
+        }
     }
 
-    // Initialize the page and load JSON from URL parameter
-    function init() {
+    async function fetchData(PR, REF, sha, nameParams) {
+        function normalizeTaskName(name) {
+            return name.toLowerCase()
+                .replace(/[^a-z0-9]/g, '_')
+                .replace(/_+/g, '_')
+                .replace(/_+$/, '');
+        }
+
+        const baseUrl = window.location.origin + window.location.pathname.split('/').slice(0, -1).join('/');
+        let suffix = '';
+
+        if (PR) {
+            suffix = `PRs/${encodeURIComponent(PR)}`;
+        } else if (REF) {
+            suffix = `REFs/${encodeURIComponent(REF)}`;
+        }
+
+        let hasNewData = false;
+
+        if (!runtimeCache.commits || sha === 'latest') {
+            const { data, updated } = await fetchJson(`${baseUrl}/${suffix}/commits.json`);
+            if (updated) {
+                runtimeCache.commits = data ? data : [];
+                hasNewData = true;
+            }
+        }
+
+        const shaToLoad = (sha === 'latest') ? runtimeCache.commits[runtimeCache.commits.length - 1]?.sha : sha;
+
+        const fetchTasks = [];
+        if (nameParams.length > 1) {
+            const task1 = normalizeTaskName(nameParams[1]);
+            const path1 = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/result_${task1}.json`;
+            fetchTasks.push(fetchJson(path1));
+        }
+
+        const task0 = normalizeTaskName(nameParams[0]);
+        const path0 = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/result_${task0}.json`;
+        fetchTasks.push(fetchJson(path0));
+
+        // Run fetchJson calls in parallel
+        const results = await Promise.all(fetchTasks);
+
+        if (nameParams.length > 1) {
+            const { data, updated } = results[0]; // First request result
+            if (updated) {
+                runtimeCache.json1 = data;
+                hasNewData = true;
+            }
+        }
+
+        const { data, updated } = results[fetchTasks.length - 1]; // Last request result (always task0)
+        if (updated) {
+            runtimeCache.json0 = data;
+            hasNewData = true;
+            data.links.forEach(storeLink);
+        }
+
+        return hasNewData;
+    }
+
+    function startAutoRefresh(PR, REF, sha, nameParams) {
+        function clearPage() {
+            // Clear the main content areas
+            // document.getElementById('content').innerHTML = '';
+            document.getElementById('result-container').innerHTML = '';
+            document.getElementById('status-container').innerHTML = '';
+        }
+        async function checkForUpdates() {
+            const statusContainer = document.getElementById('status-container');
+            const scrollTop = statusContainer.scrollTop;
+
+            if (await fetchData(PR, REF, sha, nameParams)) {
+                clearPage();
+                await renderResults(PR, sha, nameParams);
+
+                statusContainer.scrollTop = scrollTop;
+            }
+        }
+        setInterval(checkForUpdates, 30000);
+    }
+
+    function updatePageTitle(PR, REF, sha, nameParams) {
+        let title = "";
+        if (Array.isArray(nameParams) && nameParams.length > 0) {
+            title += ` ${nameParams[0]}`;
+        }
+        if (Array.isArray(nameParams) && nameParams.length > 1) {
+            title += `/${nameParams[1]}`;
+        }
+        if (PR > 0) {
+            title += `, PR#${PR}`;
+        } else {
+            title += `, sha#${sha.substring(0, 8)}`;
+        }
+        document.title = title.trim();
+    }
+
+    async function init() {
         const urlParams = new URLSearchParams(window.location.search);
         const PR = urlParams.get('PR');
+        const REF = urlParams.get('REF');
         const sha = urlParams.get('sha');
-        const root_name = urlParams.get('name_0');
         const nameParams = [];
 
         urlParams.forEach((value, key) => {
@@ -761,66 +1588,74 @@
             }
         });
 
-        let path_commits_json = '';
-        let commitsArray = [];
-
-        if (PR) {
-            addKeyValueToStatus("PR", PR);
-            const baseUrl = window.location.origin + window.location.pathname.replace('/json.html', '');
-            path_commits_json = `${baseUrl}/${encodeURIComponent(PR)}/commits.json`;
-        } else {
-            // Placeholder for a different path when PR is missing
-            console.error("PR parameter is missing. Setting alternate commits path.");
-            path_commits_json = '/path/to/alternative/commits.json';
+        await fetchData(PR, REF, sha, nameParams);
+        await renderResults(PR, sha, nameParams);
+        renderFooter(nameParams)
+        updatePageTitle(PR, REF, sha, nameParams)
+        fetchStatistics(nameParams[0])
+        if (
+            (nameParams?.length === 1 &&
+                ["running", "pending"].includes(runtimeCache?.json0?.status)) ||
+            (nameParams?.length === 2 &&
+                (["running", "pending"].includes(runtimeCache?.json1?.status) || runtimeCache?.json1 == null))
+        ) {
+            console.log("Auto-reload started");
+            startAutoRefresh(PR, REF, sha, nameParams);
         }
-
-        function loadCommitsArray(path) {
-            return fetch(path, { cache: "no-cache" })
-                .then(response => {
-                    if (!response.ok) {
-                        console.error(`HTTP error! status: ${response.status}`)
-                        return [];
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    if (Array.isArray(data) && data.every(item => typeof item === 'object' && item.hasOwnProperty('sha'))) {
-                        return data.map(item => item.sha);
-                    } else {
-                        throw new Error('Invalid data format: expected array of objects with a "sha" key');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error loading commits JSON:', error);
-                    return []; // Return an empty array if an error occurs
-                });
-        }
-
-        loadCommitsArray(path_commits_json)
-            .then(data => {
-                commitsArray = data;
-            })
-            .finally(() => {
-                // Proceed with the rest of the initialization
-                addKeyValueToStatus("sha", sha || "latest", commitsArray.concat(["latest"]));
-
-                // These are present in naviagation bar at the bottom. Try to remove as names might be long and do not fit status bar
-                // if (nameParams[1]) {
-                //     addKeyValueToStatus("job", nameParams[1]);
-                // }
-                // addKeyValueToStatus("workflow", nameParams[0]);
-
-                // Check if all required parameters are present to load JSON
-                if (PR && sha && root_name) {
-                    const shaToLoad = (sha === 'latest') ? commitsArray[commitsArray.length - 1] : sha;
-                    loadResultsJSON(PR, shaToLoad, nameParams);
-                } else {
-                    document.getElementById('title').textContent = 'Error: Missing required URL parameters: PR, sha, or name_0';
-                }
-            });
     }
 
-    window.onload = init;
+    document.addEventListener('DOMContentLoaded', () => {
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'night') {
+            document.body.classList.add('night-theme');
+        }
+        init();
+    });
+
+    function createFavicon() {
+        const width = 32;
+        const height = 32;
+        const lineColor = "rgb(0, 0, 0)";
+        const lineWidth = 4;
+        const spaceWidth = 3;
+        const lineNumber = 4;
+
+        // Create a canvas
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+
+        // Set transparent background
+        ctx.clearRect(0, 0, width, height);
+
+        // Draw vertical lines
+        let xStart = spaceWidth;
+        for (let i = 0; i < lineNumber; i++) {
+            let yStart = Math.floor(Math.random() * height); // Random Y start position
+
+            ctx.fillStyle = lineColor;
+            for (let y = 0; y < height - spaceWidth; y++) {
+                let yPos = (y + yStart) % height;
+                ctx.fillRect(xStart, yPos, lineWidth, 1); // Draw a 1-pixel high line segment
+            }
+
+            xStart += lineWidth + spaceWidth;
+        }
+
+        // Convert canvas to Data URL (PNG format)
+        const faviconURL = canvas.toDataURL("image/png");
+
+        // Set the favicon dynamically
+        let link = document.querySelector("link[rel='icon']");
+        if (!link) {
+            link = document.createElement("link");
+            link.rel = "icon";
+            document.head.appendChild(link);
+        }
+        link.href = faviconURL;
+    }
+    createFavicon();
 </script>
 </body>
 </html>

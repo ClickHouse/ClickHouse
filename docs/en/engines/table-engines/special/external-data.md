@@ -1,12 +1,16 @@
 ---
-slug: /en/engines/table-engines/special/external-data
+description: 'ClickHouse allows sending a server the data that is needed for processing
+  a query, together with a `SELECT` query. This data is put in a temporary table and
+  can be used in the query (for example, in `IN` operators).'
+sidebar_label: 'External Data'
 sidebar_position: 130
-sidebar_label: External Data
+slug: /engines/table-engines/special/external-data
+title: 'External Data for Query Processing'
 ---
 
 # External Data for Query Processing
 
-ClickHouse allows sending a server the data that is needed for processing a query, together with a `SELECT` query. This data is put in a temporary table (see the section “Temporary tables”) and can be used in the query (for example, in `IN` operators).
+ClickHouse allows sending a server the data that is needed for processing a query, together with a `SELECT` query. This data is put in a temporary table (see the section "Temporary tables") and can be used in the query (for example, in `IN` operators).
 
 For example, if you have a text file with important user identifiers, you can upload it to the server along with a query that uses filtration by this list.
 
@@ -16,7 +20,7 @@ External data can be uploaded using the command-line client (in non-interactive 
 
 In the command-line client, you can specify a parameters section in the format
 
-``` bash
+```bash
 --external --file=... [--name=...] [--format=...] [--types=...|--structure=...]
 ```
 
@@ -32,11 +36,11 @@ The following parameters are optional: **–name**– Name of the table. If omit
 One of the following parameters is required:**–types** – A list of comma-separated column types. For example: `UInt64,String`. The columns will be named _1, _2, ...
 **–structure**– The table structure in the format`UserID UInt64`, `URL String`. Defines the column names and types.
 
-The files specified in ‘file’ will be parsed by the format specified in ‘format’, using the data types specified in ‘types’ or ‘structure’. The table will be uploaded to the server and accessible there as a temporary table with the name in ‘name’.
+The files specified in 'file' will be parsed by the format specified in 'format', using the data types specified in 'types' or 'structure'. The table will be uploaded to the server and accessible there as a temporary table with the name in 'name'.
 
 Examples:
 
-``` bash
+```bash
 $ echo -ne "1\n2\n3\n" | clickhouse-client --query="SELECT count() FROM test.visits WHERE TraficSourceID IN _data" --external --file=- --types=Int8
 849897
 $ cat /etc/passwd | sed 's/:/\t/g' | clickhouse-client --query="SELECT shell, count() AS c FROM passwd GROUP BY shell ORDER BY c DESC" --external --file=- --name=passwd --structure='login String, unused String, uid UInt16, gid UInt16, comment String, home String, shell String'
@@ -51,7 +55,7 @@ When using the HTTP interface, external data is passed in the multipart/form-dat
 
 Example:
 
-``` bash
+```bash
 $ cat /etc/passwd | sed 's/:/\t/g' > passwd.tsv
 
 $ curl -F 'passwd=@passwd.tsv;' 'http://localhost:8123/?query=SELECT+shell,+count()+AS+c+FROM+passwd+GROUP+BY+shell+ORDER+BY+c+DESC&passwd_structure=login+String,+unused+String,+uid+UInt16,+gid+UInt16,+comment+String,+home+String,+shell+String'

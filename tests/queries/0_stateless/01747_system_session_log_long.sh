@@ -358,7 +358,7 @@ testAsUserIdentifiedBy "sha256_password"
 testAsUserIdentifiedBy "double_sha1_password"
 
 executeQuery <<EOF
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS session_log;
 
 WITH
     now64(6) as n,

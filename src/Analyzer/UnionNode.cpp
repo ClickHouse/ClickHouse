@@ -1,7 +1,7 @@
 #include <Analyzer/UnionNode.h>
 
+#include <Common/assert_cast.h>
 #include <Common/SipHash.h>
-#include <Common/FieldVisitorToString.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -25,6 +25,7 @@
 
 #include <Interpreters/Context.h>
 
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/Utils.h>
 
@@ -49,6 +50,7 @@ UnionNode::UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNION mode {} must be normalized", toString(union_mode));
 
     children[queries_child_index] = std::make_shared<ListNode>();
+    children[correlated_columns_list_index] = std::make_shared<ListNode>();
 }
 
 bool UnionNode::isResolved() const
@@ -115,32 +117,6 @@ NamesAndTypes UnionNode::computeProjectionColumns() const
     return result_columns;
 }
 
-void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<std::string> & used_projection_columns)
-{
-    if (recursive_cte_table)
-        return;
-
-    auto projection_columns = computeProjectionColumns();
-    size_t projection_columns_size = projection_columns.size();
-    std::unordered_set<size_t> used_projection_column_indexes;
-
-    for (size_t i = 0; i < projection_columns_size; ++i)
-    {
-        const auto & projection_column = projection_columns[i];
-        if (used_projection_columns.contains(projection_column.name))
-            used_projection_column_indexes.insert(i);
-    }
-
-    auto & query_nodes = getQueries().getNodes();
-    for (auto & query_node : query_nodes)
-    {
-        if (auto * query_node_typed = query_node->as<QueryNode>())
-            query_node_typed->removeUnusedProjectionColumns(used_projection_column_indexes);
-        else if (auto * union_node_typed = query_node->as<UnionNode>())
-            union_node_typed->removeUnusedProjectionColumns(used_projection_column_indexes);
-    }
-}
-
 void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes)
 {
     if (recursive_cte_table)
@@ -154,6 +130,17 @@ void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
         else if (auto * union_node_typed = query_node->as<UnionNode>())
             union_node_typed->removeUnusedProjectionColumns(used_projection_columns_indexes);
     }
+}
+
+void UnionNode::addCorrelatedColumn(const QueryTreeNodePtr & correlated_column)
+{
+    auto & correlated_columns = getCorrelatedColumns().getNodes();
+    for (const auto & column : correlated_columns)
+    {
+        if (column->isEqual(*correlated_column))
+            return;
+    }
+    correlated_columns.push_back(correlated_column);
 }
 
 void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
@@ -179,6 +166,12 @@ void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         buffer << ", cte_name: " << cte_name;
 
     buffer << ", union_mode: " << toString(union_mode);
+
+    if (isCorrelated())
+    {
+        buffer << ", is_correlated: 1\n" << std::string(indent + 2, ' ') << "CORRELATED COLUMNS\n";
+        getCorrelatedColumns().dumpTreeImpl(buffer, format_state, indent + 4);
+    }
 
     buffer << '\n' << std::string(indent + 2, ' ') << "QUERIES\n";
     getQueriesNode()->dumpTreeImpl(buffer, format_state, indent + 4);

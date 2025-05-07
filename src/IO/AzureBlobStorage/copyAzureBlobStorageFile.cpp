@@ -8,10 +8,11 @@
 #include <Interpreters/Context.h>
 #include <IO/LimitSeekableReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>
+#include <IO/SharedThreadPools.h>
+#include <IO/WriteBufferFromVector.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <Common/getRandomASCIIString.h>
-#include <IO/SharedThreadPools.h>
 
 namespace ProfileEvents
 {
@@ -60,6 +61,7 @@ namespace
             , schedule(schedule_)
             , log(log_)
             , max_single_part_upload_size(settings_->max_single_part_upload_size)
+            , normal_part_size(0)
         {
         }
 

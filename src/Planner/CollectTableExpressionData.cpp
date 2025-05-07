@@ -2,17 +2,20 @@
 
 #include <Storages/IStorage.h>
 
-#include <Analyzer/Utils.h>
-#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ColumnNode.h>
-#include <Analyzer/QueryNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/TableFunctionNode.h>
-#include <Analyzer/JoinNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ListNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/UnionNode.h>
+#include <Analyzer/Utils.h>
 
-#include <Planner/PlannerContext.h>
 #include <Planner/PlannerActionsVisitor.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/PlannerCorrelatedSubqueries.h>
+
 
 namespace DB
 {
@@ -26,21 +29,57 @@ namespace ErrorCodes
 namespace
 {
 
-class CollectSourceColumnsVisitor : public InDepthQueryTreeVisitor<CollectSourceColumnsVisitor>
+class CollectSourceColumnsVisitor : public InDepthQueryTreeVisitorWithContext<CollectSourceColumnsVisitor>
 {
 public:
     explicit CollectSourceColumnsVisitor(PlannerContextPtr & planner_context_, bool keep_alias_columns_ = true)
-        : planner_context(planner_context_)
+        : InDepthQueryTreeVisitorWithContext(planner_context_->getQueryContext())
+        , planner_context(planner_context_)
         , keep_alias_columns(keep_alias_columns_)
-    {}
-
-    void visitImpl(QueryTreeNodePtr & node)
     {
+    }
+
+    void enterImpl(QueryTreeNodePtr & node)
+    {
+        if (isIndexHintFunction(node))
+        {
+            is_inside_index_hint_function = true;
+            return;
+        }
+
+        if (auto * function_node = node->as<FunctionNode>())
+        {
+            /// Add used in correlated subquery columns to the table expression data.
+            /// These columns can be used only by correlated subquery, but still they
+            /// must be read by query plan for current query.
+            ///
+            /// Example: SELECT 1 FROM table as t WHERE EXISTS (SELECT * FROM numbers(10) WHERE t.id = number);
+            for (const auto & argument : function_node->getArguments().getNodes())
+            {
+                if (!isCorrelatedQueryOrUnionNode(argument))
+                    continue;
+
+                auto * query_node = argument->as<QueryNode>();
+                auto * union_node = argument->as<UnionNode>();
+                chassert(query_node != nullptr || union_node != nullptr);
+
+                auto & correlated_columns = query_node ? query_node->getCorrelatedColumnsNode() : union_node->getCorrelatedColumnsNode();
+                visit(correlated_columns);
+            }
+            return;
+        }
+
         auto * column_node = node->as<ColumnNode>();
         if (!column_node)
             return;
 
         if (column_node->getColumnName() == "__grouping_set")
+            return;
+
+        /// A special case for the "indexHint" function. We don't need its arguments for execution if column's source table is MergeTree.
+        /// Instead, we prepare an ActionsDAG for its arguments and store it inside a function (see ActionsDAG::buildFilterActionsDAG).
+        /// So this optimization allows not to read arguments of "indexHint" (if not needed in other contexts) but only to use index analysis for them.
+        if (is_inside_index_hint_function && isColumnSourceMergeTree(*column_node))
             return;
 
         auto column_source_node = column_node->getColumnSource();
@@ -89,14 +128,21 @@ public:
                 auto column_identifier = planner_context->getGlobalPlannerContext()->createColumnIdentifier(node);
 
                 ActionsDAG alias_column_actions_dag;
-                PlannerActionsVisitor actions_visitor(planner_context, false);
-                auto outputs = actions_visitor.visit(alias_column_actions_dag, column_node->getExpression());
+                ColumnNodePtrWithHashSet empty_correlated_columns_set;
+                PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set, false);
+                auto [outputs, correlated_subtrees] = actions_visitor.visit(alias_column_actions_dag, column_node->getExpression());
                 if (outputs.size() != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Expected single output in actions dag for alias column {}. Actual {}", column_node->dumpTree(), outputs.size());
+                if (correlated_subtrees.notEmpty())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Correlated subquery in alias column expression {}. Actual {}", column_node->dumpTree(), outputs.size());
+
+                auto & alias_node = outputs[0];
                 const auto & column_name = column_node->getColumnName();
-                const auto & alias_node = alias_column_actions_dag.addAlias(*outputs[0], column_name);
-                alias_column_actions_dag.addOrReplaceInOutputs(alias_node);
+                alias_node = &alias_column_actions_dag.addAlias(*alias_node, column_name);
+
+                alias_column_actions_dag.getOutputs() = std::move(outputs);
                 table_expression_data.addAliasColumn(column_node->getColumn(), column_identifier, std::move(alias_column_actions_dag), select_added_columns);
             }
             else
@@ -128,6 +174,15 @@ public:
         table_expression_data.addColumn(column_node->getColumn(), column_identifier, select_added_columns);
     }
 
+    void leaveImpl(QueryTreeNodePtr & node)
+    {
+        if (isIndexHintFunction(node))
+        {
+            is_inside_index_hint_function = false;
+            return;
+        }
+    }
+
     static bool isAliasColumn(const QueryTreeNodePtr & node)
     {
         const auto * column_node = node->as<ColumnNode>();
@@ -147,6 +202,17 @@ public:
         return !(child_node_type == QueryTreeNodeType::QUERY ||
                  child_node_type == QueryTreeNodeType::UNION ||
                  isAliasColumn(parent_node));
+    }
+
+    static bool isIndexHintFunction(const QueryTreeNodePtr & node)
+    {
+        return node->as<FunctionNode>() && node->as<FunctionNode>()->getFunctionName() == "indexHint";
+    }
+
+    static bool isColumnSourceMergeTree(const ColumnNode & node)
+    {
+        const auto * source_table = node.getColumnSource()->as<TableNode>();
+        return source_table && source_table->getStorage()->isMergeTree();
     }
 
     void setKeepAliasColumns(bool keep_alias_columns_)
@@ -169,6 +235,9 @@ private:
     /// Column `b` is selected explicitly by user, but not `a` (that is also read though).
     /// Distinguishing such columns is important for checking access rights for ALIAS columns.
     bool select_added_columns = true;
+
+    /// True if we are traversing arguments of function "indexHint".
+    bool is_inside_index_hint_function = false;
 };
 
 class CollectPrewhereTableExpressionVisitor : public ConstInDepthQueryTreeVisitor<CollectPrewhereTableExpressionVisitor>
@@ -341,12 +410,17 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
         ActionsDAG prewhere_actions_dag;
 
         QueryTreeNodePtr query_tree_node = query_node_typed.getPrewhere();
+        auto correlated_columns_set = query_node_typed.getCorrelatedColumnsSet();
 
-        PlannerActionsVisitor visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
-        auto expression_nodes = visitor.visit(prewhere_actions_dag, query_tree_node);
+        PlannerActionsVisitor visitor(planner_context, /*correlated_columns_set_=*/correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
+        auto [expression_nodes, correlated_subtrees] = visitor.visit(prewhere_actions_dag, query_tree_node);
         if (expression_nodes.size() != 1)
             throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                 "Invalid PREWHERE. Expected single boolean expression. In query {}",
+                query_node->formatASTForErrorMessage());
+        if (correlated_subtrees.notEmpty())
+            throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+                "Correlated subqueries are not allowed in PREWHERE expression. In query {}",
                 query_node->formatASTForErrorMessage());
 
         prewhere_actions_dag.getOutputs().push_back(expression_nodes.back());

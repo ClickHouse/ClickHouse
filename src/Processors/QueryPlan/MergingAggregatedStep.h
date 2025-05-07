@@ -19,7 +19,6 @@ public:
         GroupingSetsParamsList grouping_sets_params_,
         bool final_,
         bool memory_efficient_aggregation_,
-        size_t max_threads_,
         size_t memory_efficient_merge_threads_,
         bool should_produce_results_in_order_of_bucket_number_,
         size_t max_block_size_,
@@ -45,7 +44,6 @@ public:
 
 private:
     void updateOutputHeader() override;
-
 
     Aggregator::Params params;
     GroupingSetsParamsList grouping_sets_params;

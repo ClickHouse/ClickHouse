@@ -108,14 +108,28 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     else
         return updated_layers;
 
-    /// Extract reference_vec. It is expected to be a COLUMN-type node and of type Const(Array(Float*)).
+    /// Extract stuff from the ORDER BY clause. It is expected to look like this: ORDER BY cosineDistance(vec1, [1.0, 2.0 ...])
+    /// - The search column is 'vec1'.
+    /// - The reference vector is [1.0, 2.0, ...].
     const ActionsDAG::NodeRawConstPtrs & sort_column_node_children = sort_column_node->children;
     std::vector<Float64> reference_vector;
+    String search_column;
+
     for (const auto * child : sort_column_node_children)
     {
-        if (child->type == ActionsDAG::ActionType::COLUMN)
+        if (child->type == ActionsDAG::ActionType::ALIAS) /// new analyzer
         {
-            /// Is it an Array(Float32) or Array(Float64) column?
+            const auto * search_column_node = child->children.at(0);
+            if (search_column_node->type == ActionsDAG::ActionType::INPUT)
+                search_column = search_column_node->result_name;
+        }
+        else if (child->type == ActionsDAG::ActionType::INPUT) /// old analyzer
+        {
+            search_column = child->result_name;
+        }
+        else if (child->type == ActionsDAG::ActionType::COLUMN)
+        {
+            /// Is it an Array(Float32), Array(Float64) or Array(BFloat16) column?
             const DataTypePtr & data_type = child->result_type;
             const auto * data_type_array = typeid_cast<const DataTypeArray *>(data_type.get());
             if (data_type_array == nullptr)
@@ -123,7 +137,8 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
             DataTypePtr data_type_array_nested = data_type_array->getNestedType();
             const auto * data_type_nested_float64 = typeid_cast<const DataTypeFloat64 *>(data_type_array_nested.get());
             const auto * data_type_nested_float32 = typeid_cast<const DataTypeFloat32 *>(data_type_array_nested.get());
-            if (data_type_nested_float64 == nullptr && data_type_nested_float32 == nullptr)
+            const auto * data_type_nested_bfloat16 = typeid_cast<const DataTypeBFloat16 *>(data_type_array_nested.get());
+            if (data_type_nested_float64 == nullptr && data_type_nested_float32 == nullptr && data_type_nested_bfloat16 == nullptr)
                 continue;
 
             /// Read value from column
@@ -148,10 +163,10 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
         }
     }
 
-    if (reference_vector.empty())
+    if (search_column.empty() || reference_vector.empty())
         return updated_layers;
 
-    auto vector_search_parameters = std::make_optional<VectorSearchParameters>(distance_function, n, reference_vector);
+    auto vector_search_parameters = std::make_optional<VectorSearchParameters>(search_column, distance_function, n, reference_vector);
     read_from_mergetree_step->setVectorSearchParameters(std::move(vector_search_parameters));
 
     return updated_layers;

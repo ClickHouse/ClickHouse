@@ -578,14 +578,11 @@ def cleanup_child_processes(pid):
     # But we are hoping that nobody creates session in the tests (though it is
     # possible via timeout(), but we are assuming that they will be killed by
     # timeout).
-    processes = subprocess.check_output(
+    pgrep = subprocess.check_output(
         f"pgrep --parent {pid}", shell=True, stderr=subprocess.STDOUT
     )
-    processes = processes.decode("utf-8")
-    processes = processes.strip()
-    processes = processes.split("\n")
-    processes = map(lambda x: int(x.strip()), processes)
-    processes = list(processes)
+    proc_list = pgrep.decode("utf-8").strip().split("\n")
+    processes = list(map(lambda x: int(x.strip()), proc_list))
     for child in processes:
         child_pgid = os.getpgid(child)
         if child_pgid != pgid:
@@ -907,12 +904,15 @@ class FailureReason(enum.Enum):
     REPLICATED_DB = "replicated-database"
     NON_ATOMIC_DB = "database engine not Atomic"
     OBJECT_STORAGE = "object-storage"
+    COVERAGE = "coverage"
     S3_STORAGE = "s3-storage"
     AZURE_BLOB_STORAGE = "azure-blob-storage"
     BUILD = "not running for current build"
     NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
     SHARED_MERGE_TREE = "no-shared-merge-tree"
     DISTRIBUTED_CACHE = "distributed-cache"
+    NO_STATELESS = "no-stateless"
+    NO_STATEFUL = "no-stateful"
 
     # UNKNOWN reasons
     NO_REFERENCE = "no reference file"
@@ -982,6 +982,7 @@ class SettingsRandomizer:
         "max_joined_block_size_rows": lambda: random.randint(8000, 100000),
         "max_threads": lambda: 32 if random.random() < 0.03 else random.randint(1, 3),
         "optimize_append_index": lambda: random.randint(0, 1),
+        "use_hedged_requests": lambda: random.randint(0, 1),
         "optimize_if_chain_to_multiif": lambda: random.randint(0, 1),
         "optimize_if_transform_strings_to_enum": lambda: random.randint(0, 1),
         "optimize_read_in_order": lambda: random.randint(0, 1),
@@ -999,10 +1000,7 @@ class SettingsRandomizer:
             0.2, 0.5, 1, 10 * 1024 * 1024 * 1024
         ),
         "local_filesystem_read_method": lambda: random.choice(
-            # Allow to use uring only when running on Linux
-            ["read", "pread", "mmap", "pread_threadpool", "io_uring"]
-            if platform.system().lower() == "linux"
-            else ["read", "pread", "mmap", "pread_threadpool"]
+            ["read", "pread", "mmap", "pread_threadpool"]
         ),
         "remote_filesystem_read_method": lambda: random.choice(["read", "threadpool"]),
         "local_filesystem_read_prefetch": lambda: random.randint(0, 1),
@@ -1085,9 +1083,16 @@ class SettingsRandomizer:
         "optimize_functions_to_subcolumns": lambda: random.randint(0, 1),
         "parallel_replicas_local_plan": lambda: random.randint(0, 1),
         "query_plan_join_swap_table": lambda: random.choice(["auto", "false", "true"]),
-        "output_format_native_write_json_as_string": lambda: random.randint(0, 1),
         "enable_vertical_final": lambda: random.randint(0, 1),
+        "optimize_extract_common_expressions": lambda: random.randint(0, 1),
+        "use_query_condition_cache": lambda: random.randint(0, 1),
+        "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
+        "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         **randomize_external_sort_group_by(),
+    }
+
+    dependent_settings = {
+        "use_skip_indexes_if_final_exact_mode": "use_skip_indexes_if_final",
     }
 
     @staticmethod
@@ -1102,6 +1107,8 @@ class SettingsRandomizer:
                 random_settings[setting] = 0
             else:
                 random_settings[setting] = generator()
+        for setting, other_setting in SettingsRandomizer.dependent_settings.items():
+            random_settings[setting] = random_settings[other_setting]
         return random_settings
 
 
@@ -1308,10 +1315,11 @@ class TestCase:
 
         if new_options != "":
             new_options += " --allow_repeated_settings"
-
             os.environ["CLICKHOUSE_CLIENT_OPT"] = (
                 self.base_client_options + new_options + " "
             )
+        elif client_options:
+            client_options += " --allow_repeated_settings"
 
         return client_options + new_options
 
@@ -1505,6 +1513,12 @@ class TestCase:
             and BuildFlags.RELEASE not in args.build_flags
         ):
             return FailureReason.OBJECT_STORAGE
+        if (
+            tags
+            and ("no-coverage" in tags)
+            and (args.collect_per_test_coverage)
+        ):
+            return FailureReason.COVERAGE
 
         if "no-batch" in tags and (
             args.run_by_hash_num is not None or args.run_by_hash_total is not None
@@ -1513,6 +1527,10 @@ class TestCase:
 
         if "no-flaky-check" in tags and (1 == int(os.environ.get("IS_FLAKY_CHECK", 0))):
             return FailureReason.SKIP
+        if "stateful" in tags and args.no_stateful:
+            return FailureReason.NO_STATEFUL
+        if "stateful" not in tags and args.no_stateless:
+            return FailureReason.NO_STATELESS
 
         if tags:
             for build_flag in args.build_flags:
@@ -1554,7 +1572,7 @@ class TestCase:
                 stderr += str(stdfd.read(), errors="replace", encoding="utf-8")
 
         if debug_log:
-            debug_log = "\n".join(debug_log.splitlines()[:100])
+            debug_log = "\n".join(debug_log.splitlines()[-100:])
 
         if proc:
             if proc.returncode is None:
@@ -1628,7 +1646,9 @@ class TestCase:
                 description,
             )
 
-        if "Exception" in stdout:
+        # "X-ClickHouse-Exception-Code" included in "Access-Control-Expose-Headers"
+        # "Exception" may be included into i.e. metric name
+        if re.search(r'(^|\W)(Net|Errno|)Exception(\W|$)', stdout) and "X-ClickHouse-Exception-Code" not in stdout:
             description += "\n{}\n".format("\n".join(stdout.splitlines()[:100]))
             if debug_log:
                 description += "\n"
@@ -1734,9 +1754,7 @@ class TestCase:
         return TestResult(self.name, TestStatus.OK, None, total_time, description)
 
     def print_test_time(self, test_time) -> str:
-        if self.args.print_time:
-            return f" {test_time:.2f} sec."
-        return ""
+        return f" {test_time:.2f} sec."
 
     def process_result(self, result: TestResult, messages):
         args = self.args
@@ -1847,6 +1865,10 @@ class TestCase:
                 + database
                 + "_1"
             )
+            for env_to_param in ["CLICKHOUSE_USER_FILES", "CLICKHOUSE_USER_FILES_UNIQUE"]:
+                value = os.environ.get(env_to_param, None)
+                if value:
+                    query_params += f" --param_{env_to_param}={value}"
 
         params = {
             "client": client + " --database=" + database + query_params,
@@ -1862,6 +1884,9 @@ class TestCase:
         # because there are also output of per test database creation
         pattern = "{test} > {stdout} 2> {stderr}"
 
+        tests_env = os.environ.copy()
+        tests_env["CLICKHOUSE_BASH_TRACING_FILE"] = args.debug_log_file
+
         if self.ext == ".sql" and args.cloud:
             # Get at least some logs, because we don't have access to system.text_log and pods...
             pattern = (
@@ -1873,6 +1898,8 @@ class TestCase:
                 "{client} --send_logs_level={logs_level} {secure} --multiquery {options} < "
                 + pattern
             )
+
+        command = pattern.format(**params)
 
         # We want to calculate per-test code coverage. That's why we reset it before each test.
         if (
@@ -1886,10 +1913,8 @@ class TestCase:
                 retry_error_codes=True,
             )
 
-        command = pattern.format(**params)
-
         # pylint:disable-next=consider-using-with; TODO: fix
-        proc = Popen(command, shell=True, env=os.environ, start_new_session=True)
+        proc = Popen(command, shell=True, env=tests_env, start_new_session=True)
 
         try:
             proc.wait(args.timeout)
@@ -2118,6 +2143,7 @@ class TestCase:
         drop_database_query = f"DROP DATABASE IF EXISTS {database}"
         if args.replicated_database:
             drop_database_query += " ON CLUSTER test_cluster_database_replicated"
+        drop_database_query += " SYNC"
 
         # It's possible to get an error "New table appeared in database being dropped or detached. Try again."
         for _ in range(1, 60):
@@ -2261,7 +2287,7 @@ class TestSuite:
                 try:
                     if filepath.endswith(".sql"):
                         for line in lines:
-                            if "{CLICKHOUSE_DATABASE" in line:
+                            if "{CLICKHOUSE_" in line:
                                 need_query_params = True
                 except UnicodeDecodeError:
                     pass
@@ -2320,13 +2346,11 @@ class TestSuite:
                 _ = x
                 return True
 
-        self.all_tests: List[str] = self.get_tests_list(
-            self.tests_in_suite_key_func, filter_func
-        )
+        all_tests = list(self.get_selected_tests(filter_func))
 
         all_tags_and_random_settings_limits = (
             self.read_test_tags_and_random_settings_limits(
-                self.suite_path, self.all_tests
+                self.suite_path, all_tests
             )
         )
         self.all_tags: Dict[str, Set[str]] = all_tags_and_random_settings_limits[0]
@@ -2335,6 +2359,10 @@ class TestSuite:
         )
         self.sequential_tests = []
         self.parallel_tests = []
+
+        self.all_tests = self.apply_test_runs(all_tests)
+        self.all_tests.sort(key=self.tests_in_suite_key_func)
+
         for test_name in self.all_tests:
             if self.is_sequential_test(test_name):
                 if not args.no_sequential:
@@ -2342,6 +2370,19 @@ class TestSuite:
             else:
                 if not args.no_parallel:
                     self.parallel_tests.append(test_name)
+
+    def apply_test_runs(self, all_tests):
+        test_runs = self.args.test_runs
+        long_test_runs = max(int(self.args.test_runs * self.args.long_test_runs_ratio), 1)
+
+        all_tests = map(lambda test: [test] * (long_test_runs if self.is_long_test(test) else test_runs), all_tests)
+        all_tests = [item for sublist in all_tests for item in sublist]
+        return all_tests
+
+    def is_long_test(self, test_name):
+        if test_name not in self.all_tags:
+            return False
+        return "long" in self.all_tags[test_name]
 
     def is_sequential_test(self, test_name):
         if args.sequential:
@@ -2351,19 +2392,11 @@ class TestSuite:
         if test_name not in self.all_tags:
             return False
 
-        return ("no-parallel" in self.all_tags[test_name]) or (
-            "sequential" in self.all_tags[test_name]
+        return (
+            ("no-parallel" in self.all_tags[test_name])
+            or ("sequential" in self.all_tags[test_name])
+            or ("stateful" in self.all_tags[test_name])
         )
-
-    def get_tests_list(self, sort_key, filter_func):
-        """
-        Return list of tests file names to run
-        """
-
-        all_tests = list(self.get_selected_tests(filter_func))
-        all_tests = all_tests * self.args.test_runs
-        all_tests.sort(key=sort_key)
-        return all_tests
 
     def get_selected_tests(self, filter_func):
         """
@@ -2454,7 +2487,7 @@ def run_tests_array(
         multiprocessing.sharedctypes.Synchronized,
         multiprocessing.synchronize.Event,
         multiprocessing.managers.ListProxy,
-    ]
+    ],
 ):
     (
         all_tests,
@@ -2534,6 +2567,8 @@ def run_tests_array(
         try:
             description = ""
             test_case_name = removesuffix(test_case.name, ".gen", ".sql") + ": "
+            # A value to store the cleaning children output to not mess up with the description
+            cleanup_output = io.StringIO()
 
             if is_concurrent:
                 description = f"{test_case_name:72}"
@@ -2549,7 +2584,8 @@ def run_tests_array(
                 # This is the upper level timeout
                 # It helps with completely frozen processes, like in case of gdb errors
                 def timeout_handler(_signum, _frame):
-                    stop_tests()
+                    with redirect_stdout(cleanup_output):
+                        stop_tests()
                     raise TimeoutError("Test execution timed out")
 
                 signal.signal(signal.SIGALRM, timeout_handler)
@@ -2574,6 +2610,11 @@ def run_tests_array(
 
             if description and not description.endswith("\n"):
                 description += "\n"
+
+            if cleanup_output.getvalue():
+                description += cleanup_output.getvalue()
+                if not cleanup_output.getvalue().endswith("\n"):
+                    description += "\n"
 
             sys.stdout.write(description)
             sys.stdout.flush()
@@ -2817,6 +2858,7 @@ def do_run_tests(
         len(test_suite.sequential_tests),
         "sequential tests",
     )
+    total_tests = len(test_suite.sequential_tests) + len(test_suite.parallel_tests)
 
     if test_suite.parallel_tests:
         tests_n = len(test_suite.parallel_tests)
@@ -2903,7 +2945,7 @@ def do_run_tests(
             )
         )
 
-    return len(test_suite.sequential_tests) + len(test_suite.parallel_tests)
+    return total_tests
 
 
 def is_test_from_dir(suite_dir, case):
@@ -3253,7 +3295,7 @@ def main(args):
     private_skip_list = try_get_skip_list(base_dir, "../queries-no-private-tests.txt")
     skip_list = []
 
-    if args.parallel_replicas is True:
+    if args.no_parallel_replicas is True:
         skip_list_parallel_replicas = try_get_skip_list(
             base_dir, "../parallel_replicas_blacklist.txt"
         )
@@ -3429,12 +3471,6 @@ def parse_args():
         type=find_binary,
         help="Path to clickhouse binary or name of binary in PATH",
     )
-    parser.add_argument(
-        "-c",
-        "--client",
-        help="Path to clickhouse-client, this option is useless"
-        "name of binary in PATH",
-    )
 
     parser.add_argument("--extract_from_config", help="extract-from-config program")
     parser.add_argument(
@@ -3518,6 +3554,13 @@ def parse_args():
         help="Run each test many times (useful for e.g. flaky check)",
     )
     parser.add_argument(
+        "--long-test-runs-ratio",
+        default=0.1,
+        nargs="?",
+        type=float,
+        help="Ratio from --test-runs for long tests",
+    )
+    parser.add_argument(
         "-U",
         "--unified",
         default=3,
@@ -3561,9 +3604,6 @@ def parse_args():
     )
     parser.add_argument(
         "--client-option", nargs="+", help="Specify additional client argument"
-    )
-    parser.add_argument(
-        "--print-time", action="store_true", dest="print_time", help="Print test time"
     )
     parser.add_argument(
         "--check-zookeeper-session",
@@ -3749,12 +3789,6 @@ def parse_args():
         default=os.environ.get("REPLACE_MT_WITH_SMT", False),
         help="Replace ordinary MergeTree engine with SharedMergeTree",
     )
-    parser.add_argument(
-        "--parallel-replicas",
-        action="store_true",
-        default=False,
-        help="Skip certain tests specific to the parallel replicas configuration",
-    )
 
     parser.add_argument(
         "--client-log",
@@ -3844,12 +3878,6 @@ if __name__ == "__main__":
 
     if args.tmp is None:
         args.tmp = args.queries
-
-    if args.client:
-        print(
-            "WARNING: --client option is deprecated and will be removed the the future, use --binary instead",
-            file=sys.stderr,
-        )
 
     args.client = find_clickhouse_command(args.binary, "client")
 

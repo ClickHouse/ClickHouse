@@ -1,6 +1,7 @@
 #include "ProtobufListInputFormat.h"
 
 #if USE_PROTOBUF
+#   include <Columns/IColumn.h>
 #   include <Core/Block.h>
 #   include <Formats/FormatFactory.h>
 #   include <Formats/ProtobufReader.h>
@@ -19,12 +20,13 @@ ProtobufListInputFormat::ProtobufListInputFormat(
     const String & google_protos_path)
     : IRowInputFormat(header_, in_, params_)
     , reader(std::make_unique<ProtobufReader>(in_))
+    , descriptor_holder(ProtobufSchemas::instance().getMessageTypeForFormatSchema(
+          schema_info_.getSchemaInfo(), ProtobufSchemas::WithEnvelope::Yes, google_protos_path))
     , serializer(ProtobufSerializer::create(
           header_.getNames(),
           header_.getDataTypes(),
           missing_column_indices,
-          ProtobufSchemas::instance().getMessageTypeForFormatSchema(
-              schema_info_.getSchemaInfo(), ProtobufSchemas::WithEnvelope::Yes, google_protos_path),
+          descriptor_holder,
           /* with_length_delimiter = */ true,
           /* with_envelope = */ true,
           flatten_google_wrappers_,

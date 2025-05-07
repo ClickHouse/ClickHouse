@@ -90,6 +90,7 @@ SELECT * FROM fuzzJSON(02918_json_fuzzer, max_string_value_length=65537) LIMIT 1
 SELECT * FROM fuzzJSON(02918_json_fuzzer, max_key_length=65537) LIMIT 10; -- { serverError BAD_ARGUMENTS }
 SELECT * FROM fuzzJSON(02918_json_fuzzer, max_key_length=10, min_key_length=0) LIMIT 10; -- { serverError BAD_ARGUMENTS }
 SELECT * FROM fuzzJSON(02918_json_fuzzer, max_key_length=10, min_key_length=11) LIMIT 10; -- { serverError BAD_ARGUMENTS }
+SELECT * FROM fuzzJSON(02918_json_fuzzer, equals(random_seed, viewExplain('EXPLAIN', 'actions = 1', (SELECT count(*) FROM numbers(10))), 54321)) LIMIT 10; -- { serverError BAD_ARGUMENTS }
 
 --
 DROP TABLE IF EXISTS 02918_table_obj1;

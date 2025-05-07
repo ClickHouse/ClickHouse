@@ -1,8 +1,9 @@
 ---
-slug: /en/sql-reference/statements/alter/projection
+description: 'Documentation for Manipulating Projections'
+sidebar_label: 'PROJECTION'
 sidebar_position: 49
-sidebar_label: PROJECTION
-title: "Projections"
+slug: /sql-reference/statements/alter/projection
+title: 'Projections'
 ---
 
 Projections store data in a format that optimizes query execution, this feature is useful for:
@@ -17,9 +18,9 @@ Projections will create internally a new hidden table, this means that more IO a
 Example, If the projection has defined a different primary key, all the data from the original table will be duplicated.
 :::
 
-You can see more technical details about how projections work internally on this [page](/docs/en/guides/best-practices/sparse-primary-indexes.md/#option-3-projections).
+You can see more technical details about how projections work internally on this [page](/guides/best-practices/sparse-primary-indexes.md/#option-3-projections).
 
-## Example filtering without using primary keys
+## Example filtering without using primary keys {#example-filtering-without-using-primary-keys}
 
 Creating the table:
 ```sql
@@ -68,7 +69,7 @@ To verify that a query is using the projection, we could review the `system.quer
 SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
 ```
 
-## Example pre-aggregation query
+## Example pre-aggregation query {#example-pre-aggregation-query}
 
 Creating the table with the Projection:
 ```sql
@@ -123,7 +124,7 @@ FROM visits
 WHERE user_id > 50 AND user_id < 150
 GROUP BY user_agent
 ```
-```
+```sql
 SELECT
     user_agent,
     sum(pages_visited)
@@ -136,25 +137,68 @@ As mentioned before, we could review the `system.query_log` table. On the `proje
 SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
 ```
 
+## Normal projection with `_part_offset` field {#normal-projection-with-part-offset-field}
+
+Creating a table with a normal projection that utilizes the `_part_offset` field:
+
+```sql
+CREATE TABLE events
+(
+    `event_time` DateTime,
+    `event_id` UInt64,
+    `user_id` UInt64,
+    `huge_string` String,
+    PROJECTION order_by_user_id
+    (
+        SELECT
+            _part_offset
+        ORDER BY user_id
+    )
+)
+ENGINE = MergeTree()
+ORDER BY (event_id);
+```
+
+Inserting some sample data:
+
+```sql
+INSERT INTO events SELECT * FROM generateRandom() LIMIT 100000;
+```
+
+### Using `_part_offset` as a secondary index {#normal-projection-secondary-index}
+
+The `_part_offset` field preserves its value through merges and mutations, making it valuable for secondary indexing. We can leverage this in queries:
+
+```sql
+SELECT
+    count()
+FROM events
+WHERE (_part, _part_offset) IN (
+    SELECT _part, _part_offset
+    FROM events
+    WHERE user_id = 42
+)
+```
+
 # Manipulating Projections
 
-The following operations with [projections](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#projections) are available:
+The following operations with [projections](/engines/table-engines/mergetree-family/mergetree.md/#projections) are available:
 
-## ADD PROJECTION
+## ADD PROJECTION {#add-projection}
 
 `ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY] )` - Adds projection description to tables metadata.
 
-## DROP PROJECTION
+## DROP PROJECTION {#drop-projection}
 
-`ALTER TABLE [db.]name [ON CLUSTER cluster] DROP PROJECTION [IF EXISTS] name` - Removes projection description from tables metadata and deletes projection files from disk. Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md#mutations).
+`ALTER TABLE [db.]name [ON CLUSTER cluster] DROP PROJECTION [IF EXISTS] name` - Removes projection description from tables metadata and deletes projection files from disk. Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).
 
-## MATERIALIZE PROJECTION
+## MATERIALIZE PROJECTION {#materialize-projection}
 
-`ALTER TABLE [db.]table [ON CLUSTER cluster] MATERIALIZE PROJECTION [IF EXISTS] name [IN PARTITION partition_name]` - The query rebuilds the projection `name` in the partition `partition_name`. Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md#mutations).
+`ALTER TABLE [db.]table [ON CLUSTER cluster] MATERIALIZE PROJECTION [IF EXISTS] name [IN PARTITION partition_name]` - The query rebuilds the projection `name` in the partition `partition_name`. Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).
 
-## CLEAR PROJECTION
+## CLEAR PROJECTION {#clear-projection}
 
-`ALTER TABLE [db.]table [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN PARTITION partition_name]` - Deletes projection files from disk without removing description. Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md#mutations).
+`ALTER TABLE [db.]table [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN PARTITION partition_name]` - Deletes projection files from disk without removing description. Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).
 
 
 The commands `ADD`, `DROP` and `CLEAR` are lightweight in a sense that they only change metadata or remove files.
@@ -162,5 +206,5 @@ The commands `ADD`, `DROP` and `CLEAR` are lightweight in a sense that they only
 Also, they are replicated, syncing projections metadata via ClickHouse Keeper or ZooKeeper.
 
 :::note
-Projection manipulation is supported only for tables with [`*MergeTree`](/docs/en/engines/table-engines/mergetree-family/mergetree.md) engine (including [replicated](/docs/en/engines/table-engines/mergetree-family/replication.md) variants).
+Projection manipulation is supported only for tables with [`*MergeTree`](/engines/table-engines/mergetree-family/mergetree.md) engine (including [replicated](/engines/table-engines/mergetree-family/replication.md) variants).
 :::

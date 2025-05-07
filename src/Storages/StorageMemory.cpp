@@ -2,6 +2,7 @@
 #include <Core/Settings.h>
 
 #include <boost/noncopyable.hpp>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -26,6 +27,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromAppendOnlyFile.h>
 #include <Backups/BackupEntryFromMemory.h>
@@ -611,14 +613,14 @@ void StorageMemory::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 }
 
-std::optional<UInt64> StorageMemory::totalRows(const Settings &) const
+std::optional<UInt64> StorageMemory::totalRows(ContextPtr) const
 {
     /// All modifications of these counters are done under mutex which automatically guarantees synchronization/consistency
     /// When run concurrently we are fine with any value: "before" or "after"
     return total_size_rows.load(std::memory_order_relaxed);
 }
 
-std::optional<UInt64> StorageMemory::totalBytes(const Settings &) const
+std::optional<UInt64> StorageMemory::totalBytes(ContextPtr) const
 {
     return total_size_bytes.load(std::memory_order_relaxed);
 }

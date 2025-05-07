@@ -57,18 +57,13 @@ private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
     const char * getStorageTypeName() const override { return "Merge"; }
 
-    using TableSet = std::set<String>;
-    using DBToTableSetMap = std::map<String, TableSet>;
-    const DBToTableSetMap & getSourceDatabasesAndTables(ContextPtr context) const;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
-    static TableSet getMatchedTablesWithAccess(const String & database_name, const String & table_regexp, const ContextPtr & context);
 
     String source_database_name_or_regexp;
     String source_table_regexp;
     bool database_is_regexp = false;
-    mutable std::optional<DBToTableSetMap> source_databases_and_tables;
 };
 
 std::vector<size_t> TableFunctionMerge::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
@@ -129,63 +124,18 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
     }
 }
 
-
-const TableFunctionMerge::DBToTableSetMap & TableFunctionMerge::getSourceDatabasesAndTables(ContextPtr context) const
-{
-    if (source_databases_and_tables)
-        return *source_databases_and_tables;
-
-    source_databases_and_tables.emplace();
-
-    /// database_name is not a regexp
-    if (!database_is_regexp)
-    {
-        auto source_tables = getMatchedTablesWithAccess(source_database_name_or_regexp, source_table_regexp, context);
-        if (source_tables.empty())
-            throwNoTablesMatchRegexp(source_database_name_or_regexp, source_table_regexp);
-        (*source_databases_and_tables)[source_database_name_or_regexp] = source_tables;
-    }
-
-    /// database_name is a regexp
-    else
-    {
-        OptimizedRegularExpression database_re(source_database_name_or_regexp);
-        auto databases = DatabaseCatalog::instance().getDatabases();
-
-        for (const auto & db : databases)
-            if (database_re.match(db.first))
-                (*source_databases_and_tables)[db.first] = getMatchedTablesWithAccess(db.first, source_table_regexp, context);
-
-        if (source_databases_and_tables->empty())
-            throwNoTablesMatchRegexp(source_database_name_or_regexp, source_table_regexp);
-    }
-
-    return *source_databases_and_tables;
-}
-
 ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    size_t table_num = 0;
-    size_t max_tables_to_look = context->getSettingsRef()[Setting::merge_table_max_tables_to_look_for_schema_inference];
+    auto res = StorageMerge::getColumnsDescriptionFromSourceTables(
+        context,
+        source_database_name_or_regexp,
+        database_is_regexp,
+        source_table_regexp,
+        context->getSettingsRef()[Setting::merge_table_max_tables_to_look_for_schema_inference]);
+    if (res.empty())
+        throwNoTablesMatchRegexp(source_database_name_or_regexp, source_table_regexp);
 
-    return StorageMerge::unifyColumnsDescription([&table_num, &context, max_tables_to_look, this](std::function<void(const StoragePtr &)> callback)
-    {
-        for (const auto & db_with_tables : getSourceDatabasesAndTables(context))
-        {
-            for (const auto & table : db_with_tables.second)
-            {
-                if (table_num >= max_tables_to_look)
-                    return;
-
-                auto storage = DatabaseCatalog::instance().tryGetTable(StorageID{db_with_tables.first, table}, context);
-                if (storage)
-                {
-                    ++table_num;
-                    callback(storage);
-                }
-            }
-        }
-    });
+    return res;
 }
 
 
@@ -197,41 +147,11 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, Cont
         String{},
         source_database_name_or_regexp,
         database_is_regexp,
-        getSourceDatabasesAndTables(context),
+        source_table_regexp,
         context);
 
     res->startup();
     return res;
-}
-
-TableFunctionMerge::TableSet
-TableFunctionMerge::getMatchedTablesWithAccess(const String & database_name, const String & table_regexp, const ContextPtr & context)
-{
-    OptimizedRegularExpression table_re(table_regexp);
-
-    auto table_name_match = [&](const String & table_name) { return table_re.match(table_name); };
-
-    auto access = context->getAccess();
-
-    auto database = DatabaseCatalog::instance().getDatabase(database_name);
-
-    bool granted_show_on_all_tables = access->isGranted(AccessType::SHOW_TABLES, database_name);
-    bool granted_select_on_all_tables = access->isGranted(AccessType::SELECT, database_name);
-
-    TableSet tables;
-
-    for (auto it = database->getTablesIterator(context, table_name_match); it->isValid(); it->next())
-    {
-        if (!it->table())
-            continue;
-        bool granted_show = granted_show_on_all_tables || access->isGranted(AccessType::SHOW_TABLES, database_name, it->name());
-        if (!granted_show)
-            continue;
-        if (!granted_select_on_all_tables)
-            access->checkAccess(AccessType::SELECT, database_name, it->name());
-        tables.emplace(it->name());
-    }
-    return tables;
 }
 
 }

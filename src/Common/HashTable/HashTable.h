@@ -12,13 +12,12 @@
 #include <Core/Defines.h>
 #include <base/types.h>
 #include <Common/Exception.h>
-#include <Common/MemorySanitizer.h>
 
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
 
 #include <Common/HashTable/HashTableAllocator.h>
 #include <Common/HashTable/HashTableKeyHolder.h>

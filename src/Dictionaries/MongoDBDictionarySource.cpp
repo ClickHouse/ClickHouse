@@ -5,9 +5,12 @@
 #include "MongoDBDictionarySource.h"
 #include "DictionaryStructure.h"
 
+#include <Columns/IColumn.h>
 #include <Common/logger_useful.h>
 #include <Processors/Sources/MongoDBSource.h>
 #include <Storages/NamedCollectionsHelpers.h>
+
+#include <Poco/URI.h>
 
 #include <bsoncxx/builder/basic/array.hpp>
 
@@ -55,8 +58,10 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
                 validateNamedCollection(*named_collection, {"host", "db", "collection"}, {"port", "user", "password", "options"});
                 String user = named_collection->get<String>("user");
                 String auth_string;
+                String escaped_password;
+                Poco::URI::encode(named_collection->get<String>("password"), "!?#/'\",;:$&()[]*+=@", escaped_password);
                 if (!user.empty())
-                    auth_string = fmt::format("{}:{}@", user, named_collection->get<String>("password"));
+                    auth_string = fmt::format("{}:{}@", user, escaped_password);
                 configuration->uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
                                                                                  auth_string,
                                                                                  named_collection->get<String>("host"),
@@ -76,8 +81,10 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
             {
                 String user = config.getString(config_prefix + ".user", "");
                 String auth_string;
+                String escaped_password;
+                Poco::URI::encode(config.getString(config_prefix + ".password", ""), "!?#/'\",;:$&()[]*+=@", escaped_password);
                 if (!user.empty())
-                    auth_string = fmt::format("{}:{}@", user, config.getString(config_prefix + ".password", ""));
+                    auth_string = fmt::format("{}:{}@", user, escaped_password);
                 configuration->uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
                                                                                  auth_string,
                                                                                  config.getString(config_prefix + ".host"),
