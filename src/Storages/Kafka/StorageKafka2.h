@@ -257,14 +257,17 @@ private:
     void createReplica();
     void dropReplica();
 
-    TopicPartitionSet getLockedTopicPartitions(zkutil::ZooKeeper & keeper_to_use);
-    TopicPartitions getAvailableTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & all_topic_partitions);
-    std::atomic<UInt32> active_replica_count{0};
+    // The second number in the pair is the number of active replicas
+    std::pair<TopicPartitionSet, UInt32> getLockedTopicPartitions(zkutil::ZooKeeper & keeper_to_use);
+    std::pair<TopicPartitions, UInt32> getAvailableTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & all_topic_partitions);
     std::optional<LockedTopicPartitionInfo> createLocksInfo(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & partition_to_lock);
 
-    // Takes lock over topic partitions and sets the committed offset in topic_partitions.
+    // Takes lock over topic partitions and sets the committed offset in topic_partitions
     void updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & tmp_locks, size_t & tmp_locks_quota);
     void updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & permanent_locks, bool & permanent_locks_changed);
+
+    // To save commit and intent nodes
+    void saveTopicPartitionInfo(zkutil::ZooKeeper & keeper_to_use, const std::filesystem::path & keeper_path_to_data, const String & data);
     void saveCommittedOffset(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition);
     void saveIntent(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition, int64_t intent);
 

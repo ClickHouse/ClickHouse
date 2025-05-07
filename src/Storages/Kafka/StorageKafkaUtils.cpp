@@ -347,7 +347,7 @@ void stopConsumerImpl(
     }
     catch (const cppkafka::HandleException & e)
     {
-        LOG_ERROR(log, "Error during pause (consumerGracefulStop): {}", e.what());
+        LOG_ERROR(log, "Error during pause (stopConsumerImpl): {}", e.what());
     }
 
     StorageKafkaUtils::drainConsumer(consumer, drain_timeout, log, std::move(error_handler));
