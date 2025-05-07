@@ -2,7 +2,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Context.h>
-#include "Common/ProfileEvents.h"
+#include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <filesystem>
@@ -198,18 +198,7 @@ CacheMetadata::CacheMetadata(
     , log(getLogger("CacheMetadata"))
     , download_threads_num(background_download_threads_)
 {
-    try
-    {
-        if (!FS::exists(path))
-        {
-            chassert(fs::create_directories(path));
-        }
-        path_stat = getStatVFS(path);
-    }
-    catch (...)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Couldn't initialize cache directory {}", path);
-    }
+
 }
 
 size_t CacheMetadata::alignFileSize(size_t file_size) const
@@ -798,6 +787,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
 void CacheMetadata::startup()
 {
     download_threads.reserve(download_threads_num);
+    path_stat = getStatVFS(path);
     for (size_t i = 0; i < download_threads_num; ++i)
     {
         download_threads.emplace_back(std::make_shared<DownloadThread>());
