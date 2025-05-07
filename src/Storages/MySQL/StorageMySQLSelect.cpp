@@ -20,6 +20,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/MySQL/MySQLHelpers.h>
 #include <Storages/MySQL/MySQLSettings.h>
+#include <Storages/NamedCollectionsHelpers.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/algorithm/transform.hpp>
@@ -117,9 +118,43 @@ Pipe StorageMySQLSelect::read(
 }
 
 
-StorageMySQLSelect::Configuration StorageMySQLSelect::getConfiguration(ASTs storage_args, ContextPtr context_)
+StorageMySQLSelect::Configuration
+StorageMySQLSelect::getConfiguration(ASTs storage_args, ContextPtr context_, MySQLSettings & storage_settings)
 {
     Configuration configuration;
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(storage_args, context_))
+    {
+        ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments = {"addresses_expr", "host", "hostname", "port"};
+        auto mysql_settings_names = storage_settings.getAllRegisteredNames();
+        for (const auto & name : mysql_settings_names)
+            optional_arguments.insert(name);
+
+        ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db", "query"};
+        validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
+            *named_collection, required_arguments, optional_arguments);
+
+        configuration.addresses_expr = named_collection->getOrDefault<String>("addresses_expr", "");
+        if (configuration.addresses_expr.empty())
+        {
+            configuration.host = named_collection->getAnyOrDefault<String>({"host", "hostname"}, "");
+            configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
+            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
+        }
+        else
+        {
+            size_t max_addresses = context_->getSettingsRef()[Setting::glob_expansion_max_elements];
+            configuration.addresses = parseRemoteDescriptionForExternalDatabase(configuration.addresses_expr, max_addresses, 3306);
+        }
+
+        configuration.username = named_collection->getAny<String>({"username", "user"});
+        configuration.password = named_collection->get<String>("password");
+        configuration.database = named_collection->getAny<String>({"db", "database"});
+        configuration.select_query = named_collection->get<String>("query");
+
+        storage_settings.loadFromNamedCollection(*named_collection);
+
+        return configuration;
+    }
     if (storage_args.size() != 5)
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,

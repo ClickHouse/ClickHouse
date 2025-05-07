@@ -60,7 +60,7 @@ public:
         String addresses_expr;
     };
 
-    static Configuration getConfiguration(ASTs storage_args, ContextPtr context_);
+    static Configuration getConfiguration(ASTs storage_args, ContextPtr context_, MySQLSettings & storage_settings);
 
     // Performs a query to MySQL and returns the structure of the result.
     static ColumnsDescription

@@ -14,6 +14,7 @@
 #include <Storages/MySQL/MySQLHelpers.h>
 #include <Storages/MySQL/MySQLSettings.h>
 #include <Storages/MySQL/StorageMySQLSelect.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -104,6 +105,15 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
             break;
         }
     }
+    // Check for named collection args with `query` option -> user's query syntax
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context); named_collection && named_collection->has("query"))
+    {
+        auto select_cfg = StorageMySQLSelect::getConfiguration(args, context, mysql_settings);
+        configuration = select_cfg;
+        pool.emplace(createMySQLPoolWithFailover(
+            select_cfg.database, select_cfg.addresses, select_cfg.username, select_cfg.password, "", "", "", mysql_settings));
+        return;
+    }
     bool pass_select_query = false;
     // Check for `mysql('host:port', database, <SELECT query>, ...)` syntax and put <SELECT query> as string literal
     if (args.size() > 2)
@@ -131,7 +141,7 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
     }
     if (pass_select_query)
     {
-        auto select_cfg = StorageMySQLSelect::getConfiguration(args, context);
+        auto select_cfg = StorageMySQLSelect::getConfiguration(args, context, mysql_settings);
         configuration = select_cfg;
         pool.emplace(createMySQLPoolWithFailover(
             select_cfg.database, select_cfg.addresses, select_cfg.username, select_cfg.password, "", "", "", mysql_settings));
@@ -172,6 +182,7 @@ StoragePtr TableFunctionMySQL::executeImpl(
             select_cfg.database,
             select_cfg.select_query,
             cached_columns,
+            /*comment=*/String{},
             context,
             MySQLSettings{});
         pool.reset();
