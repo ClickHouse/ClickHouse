@@ -18,6 +18,7 @@ public:
     bool is_into_outfile_with_stdout = false;
     bool is_outfile_append = false;
     bool is_outfile_truncate = false;
+    ASTPtr partition_by;
     ASTPtr format_ast;
     ASTPtr settings_ast;
     ASTPtr compression;
