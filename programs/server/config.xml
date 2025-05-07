@@ -1688,7 +1688,7 @@
     -->
 
     <send_crash_reports>
-        <!-- Changing <enabled> to true allows sending crash reports to -->
+        <!-- Setting <enabled> to true allows sending crash reports to -->
         <!-- the ClickHouse core developers team via Sentry https://sentry.io -->
         <!-- Doing so at least in pre-production environments is highly appreciated -->
         <enabled>true</enabled>
