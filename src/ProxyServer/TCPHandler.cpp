@@ -491,7 +491,7 @@ void TCPHandler::doRedirection()
 {
     const auto & assigned_server = action->getTarget().value();
 
-    constexpr size_t buffer_size = 64 * 1024;
+    constexpr size_t buffer_size = 32 * 1024;
     char buffer[buffer_size];
 
     Poco::Net::Socket::SocketList read_list;

@@ -5,7 +5,7 @@ namespace Proxy
 
 LoadBalancingPolicy parseLoadBalancingPolicy(const std::string & policy_str)
 {
-    if (policy_str == "")
+    if (policy_str.empty())
         return defaultLoadBalancingPolicy;
     if (policy_str == "round_robin")
         return LoadBalancingPolicy::RoundRobin;
