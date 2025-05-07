@@ -179,7 +179,7 @@ try
 
         // TODO: support systemd
 
-        // TODO: gracefull shutdown
+        // TODO: graceful shutdown
 
         waitForTerminationRequest();
     }

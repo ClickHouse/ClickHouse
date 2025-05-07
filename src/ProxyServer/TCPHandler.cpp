@@ -630,4 +630,4 @@ void TCPHandler::doRedirection()
     LOG_DEBUG(log, "Proxy redirection completed");
 }
 
-} // namespace Proxy
+}
