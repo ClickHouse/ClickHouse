@@ -335,67 +335,11 @@ std::optional<ActionsDAG> analyzeAggregateProjection(
 
     /// Here we want to match query keys with projection keys.
     /// Query key can be any expression depending on projection keys.
+    auto new_inputs = resolveMatchedInputs(matches, proj_key_nodes, query_key_nodes);
+    if (!new_inputs)
+        return {};
 
-    struct Frame
-    {
-        const ActionsDAG::Node * node;
-        size_t next_child_to_visit = 0;
-    };
-
-    std::stack<Frame> stack;
-    std::unordered_set<const ActionsDAG::Node *> visited;
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> new_inputs;
-
-    for (const auto * key_node : query_key_nodes)
-    {
-        if (visited.contains(key_node))
-            continue;
-
-        stack.push({.node = key_node});
-
-        while (!stack.empty())
-        {
-            auto & frame = stack.top();
-
-            if (frame.next_child_to_visit == 0)
-            {
-                auto jt = matches.find(frame.node);
-                if (jt != matches.end())
-                {
-                    auto & match = jt->second;
-                    if (match.node && !match.monotonicity && proj_key_nodes.contains(match.node))
-                    {
-                        visited.insert(frame.node);
-                        new_inputs[frame.node] = match.node;
-                        stack.pop();
-                        continue;
-                    }
-                }
-            }
-
-            if (frame.next_child_to_visit < frame.node->children.size())
-            {
-                stack.push({.node = frame.node->children[frame.next_child_to_visit]});
-                ++frame.next_child_to_visit;
-                continue;
-            }
-
-            /// Not a match and there is no matched child.
-            if (frame.node->type == ActionsDAG::ActionType::INPUT)
-            {
-                // LOG_TRACE(getLogger("optimizeUseProjections"), "Cannot find match for {}", frame.node->result_name);
-                return {};
-            }
-
-            /// Not a match, but all children matched.
-            visited.insert(frame.node);
-            stack.pop();
-        }
-    }
-
-    // LOG_TRACE(getLogger("optimizeUseProjections"), "Folding actions by projection");
-
-    auto proj_dag = ActionsDAG::foldActionsByProjection(new_inputs, query_key_nodes);
+    auto proj_dag = ActionsDAG::foldActionsByProjection(*new_inputs, query_key_nodes);
     appendAggregateFunctions(proj_dag, aggregates, *matched_aggregates);
     return proj_dag;
 }
@@ -433,7 +377,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
     QueryPlan::Node & node,
     AggregatingStep & aggregating,
     ReadFromMergeTree & reading,
-    const std::shared_ptr<PartitionIdToMaxBlock> & max_added_blocks,
+    const PartitionIdToMaxBlockPtr & max_added_blocks,
     bool allow_implicit_projections)
 {
     const auto & keys = aggregating.getParams().keys;
@@ -588,7 +532,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
     if (!canUseProjectionForReadingStep(reading))
         return {};
 
-    std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks = getMaxAddedBlocks(reading);
+    PartitionIdToMaxBlockPtr max_added_blocks = getMaxAddedBlocks(reading);
 
     auto candidates = getAggregateProjectionCandidates(node, *aggregating, *reading, max_added_blocks, allow_implicit_projections);
 

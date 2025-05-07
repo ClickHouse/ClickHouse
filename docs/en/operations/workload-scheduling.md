@@ -237,7 +237,7 @@ CPU time is consumed by threads when they are not blocked and work on CPU-intens
 * Master thread — the first thread that starts working on a query or background activity like a merge or a mutation.
 * Worker thread — the additional threads that master can spawn to work on CPU-intensive tasks.
 
-It may be desirable to use separate resources for master and worker threads to achieve better responsiveness. A high number of worker threads can easily monopolize CPU resource when high `max_thread` query setting values are used. Then incoming queries should block and wait a CPU slot for its master thread to start execution. To avoid this the following configuration could be used:
+It may be desirable to use separate resources for master and worker threads to achieve better responsiveness. A high number of worker threads can easily monopolize CPU resource when high `max_threads` query setting values are used. Then incoming queries should block and wait a CPU slot for its master thread to start execution. To avoid this the following configuration could be used:
 
 ```sql
 CREATE RESOURCE worker_cpu (WORKER THREAD)

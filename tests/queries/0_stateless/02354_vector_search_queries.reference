@@ -1,22 +1,3 @@
-6	[0,2]	0
-7	[0,2.1]	0.09999990463256836
-8	[0,2.2]	0.20000004768371582
-Expression (Projection)
-  LazilyRead (Lazily Read)
-    Limit (preliminary LIMIT (without OFFSET))
-      Sorting (Sorting for ORDER BY)
-        Expression (Before ORDER BY)
-          ReadFromMergeTree (default.tab)
-          Indexes:
-            PrimaryKey
-              Condition: true
-              Parts: 1/1
-              Granules: 4/4
-            Skip
-              Name: idx
-              Description: vector_similarity GRANULARITY 2
-              Parts: 1/1
-              Granules: 2/4
 10 rows, index_granularity = 8192, GRANULARITY = 1 million --> 1 granule, 1 indexed block
 5	[0,2]	0
 6	[0,2.1]	0.09999990463256836
@@ -285,3 +266,7 @@ Expression (Project names)
 6	[0,2]	0
 7	[0,2.1]	0.10000000000000009
 8	[0,2.2]	0.20000000000000018
+-- Index on Array(BFloat16) column
+6	[0,2]	0
+7	[0,2.09375]	0.09375
+8	[0,2.1875]	0.1875

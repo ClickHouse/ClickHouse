@@ -80,6 +80,7 @@ const char * errorMessage(Error code)
         case Error::ZOPERATIONTIMEOUT:        return "Operation timeout";
         case Error::ZBADARGUMENTS:            return "Bad arguments";
         case Error::ZINVALIDSTATE:            return "Invalid zhandle state";
+        case Error::ZOUTOFMEMORY:             return "Out of Memory";
         case Error::ZAPIERROR:                return "API error";
         case Error::ZNONODE:                  return "No node";
         case Error::ZNOAUTH:                  return "Not authenticated";

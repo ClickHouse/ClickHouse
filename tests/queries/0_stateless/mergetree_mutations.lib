@@ -7,18 +7,16 @@ function wait_for_mutation()
     local database=$3
     database=${database:="${CLICKHOUSE_DATABASE}"}
 
-    for i in {1..100}
+    for _ in {1..300}
     do
         sleep 0.1
         if [[ $(${CLICKHOUSE_CLIENT} --query="SELECT min(is_done) FROM system.mutations WHERE database='$database' AND table='$table' AND mutation_id='$mutation_id'") -eq 1 ]]; then
-            break
+            return
         fi
-
-        if [[ $i -eq 100 ]]; then
-            echo "Timed out while waiting for mutation to execute!"
-        fi
-
     done
+
+    echo "Timed out while waiting for mutation to execute!"
+    ${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.mutations WHERE database='$database' AND table like '$table' AND mutation_id='$mutation_id' AND is_done=0"
 }
 
 function wait_for_all_mutations()
@@ -27,19 +25,16 @@ function wait_for_all_mutations()
     local database=$2
     database=${database:="${CLICKHOUSE_DATABASE}"}
 
-    for i in {1..200}
+    for _ in {1..600}
     do
         if [[ $(${CLICKHOUSE_CLIENT} --query="SELECT coalesce(minOrNull(is_done), 1) FROM system.mutations WHERE database='$database' AND table like '$table'") -eq 1 ]]; then
-            break
+            return
         fi
-
-        if [[ $i -eq 200 ]]; then
-            echo "Timed out while waiting for mutation to execute!"
-            ${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.mutations WHERE database='$database' AND table like '$table' AND is_done=0"
-        fi
-
         sleep 0.3
     done
+
+    echo "Timed out while waiting for mutation to execute!"
+    ${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.mutations WHERE database='$database' AND table like '$table' AND is_done=0"
 }
 
 # vi: ft=bash

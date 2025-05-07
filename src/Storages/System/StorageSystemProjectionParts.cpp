@@ -173,7 +173,7 @@ void StorageSystemProjectionParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(static_cast<UInt32>(min_max_time.second));
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(parent_part->info.partition_id);
+            columns[res_index++]->insert(parent_part->info.getPartitionId());
         if (columns_mask[src_index++])
             columns[res_index++]->insert(parent_part->info.min_block);
         if (columns_mask[src_index++])

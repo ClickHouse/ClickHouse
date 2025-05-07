@@ -77,8 +77,10 @@ public:
     template <typename LoadFunc>
     MergeTreeIndexGranulePtr getOrSet(const Key & key, LoadFunc && load)
     {
-        auto wrapped_load = [&]() -> std::shared_ptr<VectorSimilarityIndexCacheCell> {
-            MergeTreeIndexGranulePtr granule = load();
+        auto wrapped_load = [&]() -> std::shared_ptr<VectorSimilarityIndexCacheCell>
+        {
+            MergeTreeIndexGranulePtr granule;
+            load(granule);
             return std::make_shared<VectorSimilarityIndexCacheCell>(std::move(granule));
         };
 

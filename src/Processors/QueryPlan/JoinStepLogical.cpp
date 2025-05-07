@@ -112,9 +112,9 @@ JoinStepLogical::JoinStepLogical(
     : expression_actions(std::move(join_expression_actions_))
     , join_info(std::move(join_info_))
     , required_output_columns(std::move(required_output_columns_))
-    , use_nulls(use_nulls_) // query_context_->getSettingsRef()[Setting::join_use_nulls])
-    , join_settings(std::move(join_settings_)) // JoinSettings::create(query_context_->getSettingsRef()))
-    , sorting_settings(std::move(sorting_settings_)) //*query_context_)
+    , use_nulls(use_nulls_)
+    , join_settings(std::move(join_settings_))
+    , sorting_settings(std::move(sorting_settings_))
 {
     updateInputHeaders({left_header_, right_header_});
 }
@@ -548,7 +548,8 @@ JoinPtr JoinStepLogical::convertToPhysical(
     UInt64 max_entries_for_hash_table_stats,
     String initial_query_id,
     std::chrono::milliseconds lock_acquire_timeout,
-    const ExpressionActionsSettings & actions_settings)
+    const ExpressionActionsSettings & actions_settings,
+    std::optional<UInt64> rhs_size_estimation)
 {
     auto table_join = std::make_shared<TableJoin>(join_settings, use_nulls,
         Context::getGlobalContextInstance()->getGlobalTemporaryVolume(),
@@ -736,7 +737,8 @@ JoinPtr JoinStepLogical::convertToPhysical(
     {
         table_join->swapSides();
         std::swap(left_sample_block, right_sample_block);
-        std::swap(hash_table_key_hash_left, hash_table_key_hash_right);
+        if (hash_table_key_hashes)
+            std::swap(hash_table_key_hashes->key_hash_left, hash_table_key_hashes->key_hash_right);
     }
 
     JoinAlgorithmSettings algo_settings(
@@ -747,7 +749,13 @@ JoinPtr JoinStepLogical::convertToPhysical(
         lock_acquire_timeout);
 
     auto join_algorithm_ptr = chooseJoinAlgorithm(
-        table_join, prepared_join_storage, left_sample_block, right_sample_block, algo_settings, hash_table_key_hash_right.value_or(0));
+        table_join,
+        prepared_join_storage,
+        left_sample_block,
+        right_sample_block,
+        algo_settings,
+        hash_table_key_hashes ? hash_table_key_hashes->key_hash_right : 0,
+        rhs_size_estimation);
     runtime_info_description.emplace_back("Algorithm", join_algorithm_ptr->getName());
     return join_algorithm_ptr;
 }
@@ -879,6 +887,23 @@ std::unique_ptr<IQueryPlanStep> JoinStepLogical::deserialize(Deserialization & c
         use_nulls,
         std::move(join_settings),
         std::move(sort_settings));
+}
+
+QueryPlanStepPtr JoinStepLogical::clone() const
+{
+    auto new_expression_actions = expression_actions.clone();
+    auto new_join_info = join_info.clone(new_expression_actions);
+
+    auto result_step = std::make_unique<JoinStepLogical>(
+        getInputHeaders().front(), getInputHeaders().back(),
+        std::move(new_join_info),
+        std::move(new_expression_actions),
+        required_output_columns,
+        use_nulls,
+        join_settings,
+        sorting_settings);
+    result_step->setStepDescription(getStepDescription());
+    return result_step;
 }
 
 void registerJoinStep(QueryPlanStepRegistry & registry)

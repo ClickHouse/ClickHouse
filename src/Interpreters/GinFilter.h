@@ -8,6 +8,7 @@ namespace DB
 
 static inline constexpr auto FULL_TEXT_INDEX_NAME = "full_text";
 static inline constexpr auto INVERTED_INDEX_NAME = "inverted";
+static inline constexpr auto GIN_INDEX_NAME = "gin";
 static inline constexpr UInt64 UNLIMITED_ROWS_PER_POSTINGS_LIST = 0;
 static inline constexpr UInt64 MIN_ROWS_PER_POSTINGS_LIST = 8 * 1024;
 static inline constexpr UInt64 DEFAULT_MAX_ROWS_PER_POSTINGS_LIST = 64 * 1024;

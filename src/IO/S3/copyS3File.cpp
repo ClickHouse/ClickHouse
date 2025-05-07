@@ -84,6 +84,8 @@ namespace
             , schedule(schedule_)
             , blob_storage_log(blob_storage_log_)
             , log(log_)
+            , num_parts(0)
+            , normal_part_size(0)
         {
         }
 
