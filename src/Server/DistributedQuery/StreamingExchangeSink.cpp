@@ -248,11 +248,12 @@ void StreamingExchangeSink::consume(Chunk chunk)
         if (packet_data_size < 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid packet data size: {}", packet_data_size);
 
-        StreamingExchangeProtocol::DataPacketHeader * current_packet_header =
-            reinterpret_cast<StreamingExchangeProtocol::DataPacketHeader *>(const_cast<char*>(out->stringView().data()) + packet_header_offset);
-        current_packet_header->bytes_size = packet_data_size;
+        /// Fill bytes_size field using memcpy because packet header address in the buffer might not be properly aligned.
+        char * packet_header_start = const_cast<char*>(out->stringView().data()) + packet_header_offset;
+        static_assert(sizeof(StreamingExchangeProtocol::DataPacketHeader::bytes_size) == sizeof(packet_data_size));
+        memcpy(packet_header_start + offsetof(StreamingExchangeProtocol::DataPacketHeader, bytes_size), &packet_data_size, sizeof(packet_data_size));
 
-        LOG_TEST(log, "Packet with {} bytes was added to exchange stream {}", current_packet_header->bytes_size, stream_name);
+        LOG_TEST(log, "Packet with {} bytes was added to exchange stream {}", packet_data_size, stream_name);
     }
 
     if (chunk.getNumRows() == 0)
