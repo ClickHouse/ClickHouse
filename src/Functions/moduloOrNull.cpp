@@ -28,7 +28,7 @@ Calculates the remainder when dividing `a` by `b`. Similar to function `positive
 if the right argument is 0.
         )",
             .examples{{"positiveModuloOrNull", "SELECT positiveModuloOrNull(1, 0);", ""}},
-            .category{"Arithmetic"}},
+            .category = FunctionDocumentation::Category::Arithmetic},
         FunctionFactory::Case::Insensitive);
 
     factory.registerAlias("positive_modulo_or_null", "positiveModuloOrNull", FunctionFactory::Case::Insensitive);
