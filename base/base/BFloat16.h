@@ -336,7 +336,7 @@ namespace std
         static constexpr BFloat16 max() noexcept { return BFloat16::fromBits(0b0111111101111111); }
         static constexpr BFloat16 infinity() noexcept { return BFloat16::fromBits(0b0111111110000000); }
     };
-    
+
     template <>
     struct hash<BFloat16>
     {
