@@ -2717,7 +2717,7 @@ public:
         else if (isInteger(*from_type))
         {
             ColumnPtr nested_column;
-            if(checkAndGetDataType<DataTypeUInt64>(from_type))
+            if (checkAndGetDataType<DataTypeUInt64>(from_type))
             {
                 // We are not supporting uint64 to DateTime conversion, return default value
                 auto temp_nested_column = DataTypeUInt32().createColumn();
@@ -2725,17 +2725,17 @@ public:
                 auto null_map = ColumnUInt8::create(1, 1);
                 return ColumnNullable::create(std::move(temp_nested_column), std::move(null_map));
             }
-            else if(checkAndGetDataType<DataTypeUInt32>(from_type))
+            else if (checkAndGetDataType<DataTypeUInt32>(from_type))
             {
                 nested_column = ConvertImpl<DataTypeUInt32, ConvertToDataType, Name, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(
                 arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag, scale);
             }
-            if(checkAndGetDataType<DataTypeUInt16>(from_type))
+            else if (checkAndGetDataType<DataTypeUInt16>(from_type))
             {
                 nested_column = ConvertImpl<DataTypeUInt16, ConvertToDataType, Name, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(
                 arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag, scale);
             }
-            if(checkAndGetDataType<DataTypeUInt8>(from_type))
+            else if (checkAndGetDataType<DataTypeUInt8>(from_type))
             {
                 nested_column = ConvertImpl<DataTypeUInt8, ConvertToDataType, Name, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(
                 arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag, scale);
