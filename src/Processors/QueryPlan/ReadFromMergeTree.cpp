@@ -2612,6 +2612,8 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
                 format_settings.out << '/' << index_stats[i - 1].num_granules_after;
             format_settings.out << '\n';
         }
+
+        format_settings.out << prefix << indent << indent << "Ranges: " << result.selected_ranges << '\n';
     }
 }
 
