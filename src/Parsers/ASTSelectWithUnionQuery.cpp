@@ -18,7 +18,7 @@ ASTPtr ASTSelectWithUnionQuery::clone() const
     res->children.push_back(res->list_of_selects);
 
     res->union_mode = union_mode;
-
+    res->is_normalized = is_normalized;
     res->list_of_modes = list_of_modes;
     res->set_of_modes = set_of_modes;
 
