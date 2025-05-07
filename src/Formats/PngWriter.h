@@ -50,7 +50,7 @@ private:
 class PngWriter : private boost::noncopyable
 {
 public:
-    explicit PngWriter(WriteBuffer &, int, int, int);
+    PngWriter(WriteBuffer & out, int bit_depth, int color_type, int compression_level);
 
     ~PngWriter();
 
@@ -78,7 +78,7 @@ private:
 
     std::unique_ptr<PngStructWrapper> png_resource;
 
-    LoggerPtr log;
+    LoggerPtr log = nullptr;
 };
 
 }

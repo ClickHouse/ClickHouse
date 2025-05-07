@@ -56,7 +56,7 @@ const FormatNameMapping & lookupFormat(const String & mode_str)
 
     throw Exception(
         ErrorCodes::UNKNOWN_FORMAT,
-        "Invalid pixel mode: '{}'. Supported modes are BINARY, GRAYSCALE, RGB, RGBA (case-insensitive)",
+        "Invalid pixel mode: '{}'. Supported modes are: BINARY, GRAYSCALE, RGB, RGBA (case-insensitive)",
         mode_str);
 }
 }
@@ -66,6 +66,8 @@ PngOutputFormat::PngOutputFormat(WriteBuffer & out_, const Block & header_, cons
     , format_settings{settings_}
     , serializations(header_.getSerializations())
 {
+    log = getLogger("PngOutputFormat");
+
     const auto & mapping = lookupFormat(format_settings.png_image.pixel_output_format);
 
     output_format = mapping.format;
@@ -80,7 +82,7 @@ PngOutputFormat::PngOutputFormat(WriteBuffer & out_, const Block & header_, cons
     }
     else if (mapping.force_8bit && requested_bit_depth != 8)
     {
-        // LOG_WARNING(getLogger("PngOutputFormat"), "Bit depth overridden to 8 for 'BINARY' format");
+        LOG_WARNING(log, "Bit depth overridden to 8 for 'BINARY' format");
     }
 
     DataTypes data_types = header_.getDataTypes();
@@ -145,9 +147,9 @@ void PngOutputFormat::writeSuffix()
     {
         png_serializer->finalizeWrite(final_width, final_height);
     }
-    catch ([[maybe_unused]] const Poco::Exception & e)
+    catch (const Poco::Exception & e)
     {
-        // LOG_ERROR(getLogger("PngOutputFormat"), "Failed to write png image: {}", e.what());
+        LOG_ERROR(log, "Failed to write png image: {}", e.what());
         throw;
     }
 }

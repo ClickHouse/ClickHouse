@@ -35,13 +35,18 @@ public:
 
     void reset();
 
-    static std::unique_ptr<PngSerializer>
-    create(const DataTypes & data_types, size_t width, size_t height, PngPixelFormat pixel_format, PngWriter & writer, int bit_depth);
+    static std::unique_ptr<PngSerializer> create(
+        const DataTypes & data_types,
+        size_t width,
+        size_t height,
+        PngPixelFormat pixel_format,
+        PngWriter & writer,
+        int bit_depth);
 
 protected:
     class SerializerImpl;
     std::unique_ptr<SerializerImpl> impl;
-
+    
     PngSerializer(size_t width_, size_t height_, PngWriter & writer_, int bit_depth_, size_t channels);
 };
 

@@ -68,7 +68,7 @@ PngWriter::PngWriter(WriteBuffer & out_, int bit_depth_, int color_type_, int co
     }
 
     if (compression_level < -1 || compression_level > 9)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid compression level ({}). Must be between -1 and 9.", compression_level);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid compression level ({}). Must be between -1 and 9", compression_level);
 
     switch (color_type)
     {
@@ -108,17 +108,13 @@ void PngWriter::startImage(size_t width_, size_t height_)
     width = width_;
     height = height_;
 
-    // LOG_INFO(getLogger("PngWriter"), "Starting new png image with resolution {}x{}", width, height);
+    LOG_INFO(log, "Starting new png image with resolution {}x{}", width, height);
 
     auto * png_ptr = png_create_write_struct(
         PNG_LIBPNG_VER_STRING,
         nullptr,
-        /// Error handling function
-        [](png_structp, png_const_charp msg) { throw Exception(ErrorCodes::LOGICAL_ERROR, "libpng error: {}", std::string(msg)); },
-        /// Warning handling function
-        [](png_structp, [[maybe_unused]] png_const_charp msg)
-        {
-            // LOG_WARNING(getLogger("pngWriter"), "libpng warning: {}", std::string(msg));
+        /* libpng exception cb */ [](png_structp, png_const_charp msg) { throw Exception(ErrorCodes::LOGICAL_ERROR, "libpng error: {}", std::string(msg)); },
+        /* libpng warning cb */ [](png_structp, [[maybe_unused]] png_const_charp msg) { /* LOG_WARNING(log, "libpng warning: {}", std::string(msg)) */
         });
 
     if (!png_ptr)
@@ -140,8 +136,7 @@ void PngWriter::startImage(size_t width_, size_t height_)
 
     png_resource = std::make_unique<PngStructWrapper>(png_ptr, info_ptr);
 
-    /// png_set_write_fn(png_ptr, reinterpret_cast<void *>(this), &PngWriter::writeDataCallback, &PngWriter::flushDataCallback);
-    png_set_write_fn(png_ptr, reinterpret_cast<void *>(this), &PngWriter::writeDataCallback, nullptr);
+    png_set_write_fn(png_ptr, reinterpret_cast<void *>(this), &PngWriter::writeDataCallback, &PngWriter::flushDataCallback);
 
     png_set_IHDR(
         png_ptr,
@@ -162,7 +157,7 @@ void PngWriter::startImage(size_t width_, size_t height_)
     
     png_set_compression_level(png_ptr, compression_level);
 
-    // LOG_INFO(getLogger("PngWriter"), "Image header set: {}x{} with bit_depth {} and color_type RGBA", width, height, bit_depth);
+    LOG_INFO(log, "Image header set: {}x{} with bit_depth {} and color_type RGBA", width, height, bit_depth);
 }
 
 void PngWriter::writeEntireImage(const unsigned char * data, size_t data_size)
@@ -220,7 +215,7 @@ void PngWriter::writeEntireImage(const unsigned char * data, size_t data_size)
     for (size_t y = 0; y < height; ++y)
         row_pointers[y] = const_cast<png_bytep>(data + (y * row_bytes));
 
-    // LOG_INFO(getLogger("PngWriter"), "Writing png image data: {} rows", height);
+    LOG_INFO(log, "Writing png image data: {} rows", height);
 
     png_write_info(png_resource->getPngPtr(), png_resource->getInfoPtr());
     png_write_image(png_resource->getPngPtr(), row_pointers.data());
@@ -242,7 +237,7 @@ void PngWriter::finishImage()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Setjmp triggered an error during finishing to write png image");
     }
 
-    // LOG_INFO(getLogger("PngWriter"), "Successfully finished writing png image");
+    LOG_INFO(log, "Successfully finished writing png image");
 
     cleanup();
 }

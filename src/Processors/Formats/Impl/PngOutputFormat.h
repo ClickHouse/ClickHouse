@@ -31,6 +31,8 @@ private:
     size_t max_width;
     size_t max_height;
 
+    LoggerPtr log = nullptr;
+
     FormatSettings format_settings;
     Serializations serializations;
     std::unique_ptr<PngWriter> writer;
