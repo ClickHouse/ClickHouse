@@ -753,6 +753,20 @@ void AsynchronousMetrics::processWarningForMutationStats(const AsynchronousMetri
     }
     if (num_pending_mutations <= max_pending_mutations_to_warn)
         context->removeWarningMessage(Context::WarningType::MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT);
+
+    if (auto num_pending_mutations_over_execution_time = tryGetMetricValue(new_values, "NumberOfPendingMutationsOverExecutionTime");
+        num_pending_mutations_over_execution_time > 0)
+    {
+        context->addOrUpdateWarningMessage(
+            Context::WarningType::MAX_PENDING_MUTATIONS_OVER_THRESHOLD,
+            PreformattedMessage::create(
+                "There are {} pending mutations that exceed the max_pending_mutations_execution_time_to_warn threshold.",
+                num_pending_mutations_over_execution_time));
+    }
+    else
+    {
+        context->removeWarningMessage(Context::WarningType::MAX_PENDING_MUTATIONS_OVER_THRESHOLD);
+    }
 }
 
 void AsynchronousMetrics::update(TimePoint update_time, bool force_update)

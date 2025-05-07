@@ -75,6 +75,7 @@ namespace FileCacheSetting
     extern const FileCacheSettingsBool write_cache_per_user_id_directory;
     extern const FileCacheSettingsUInt64 cache_hits_threshold;
     extern const FileCacheSettingsBool enable_filesystem_query_cache_limit;
+    extern const FileCacheSettingsBool allow_dynamic_cache_resize;
 }
 
 namespace
@@ -116,6 +117,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , load_metadata_threads(settings[FileCacheSetting::load_metadata_threads])
     , load_metadata_asynchronously(settings[FileCacheSetting::load_metadata_asynchronously])
     , write_cache_per_user_directory(settings[FileCacheSetting::write_cache_per_user_id_directory])
+    , allow_dynamic_cache_resize(settings[FileCacheSetting::allow_dynamic_cache_resize])
     , keep_current_size_to_max_ratio(1 - settings[FileCacheSetting::keep_free_space_size_ratio])
     , keep_current_elements_to_max_ratio(1 - settings[FileCacheSetting::keep_free_space_elements_ratio])
     , keep_up_free_space_remove_batch(settings[FileCacheSetting::keep_free_space_remove_batch])
@@ -1611,6 +1613,11 @@ size_t FileCache::getUsedCacheSize() const
     return main_priority->getSizeApprox();
 }
 
+size_t FileCache::getMaxCacheSize() const
+{
+    return main_priority->getSizeLimitApprox();
+}
+
 size_t FileCache::getFileSegmentsNum() const
 {
     /// We use this method for metrics, so it is ok to get approximate result.
@@ -1679,8 +1686,10 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
         actual_settings[FileCacheSetting::background_download_max_file_segment_size] = new_settings[FileCacheSetting::background_download_max_file_segment_size];
     }
 
-    if (new_settings[FileCacheSetting::max_size] != actual_settings[FileCacheSetting::max_size]
-        || new_settings[FileCacheSetting::max_elements] != actual_settings[FileCacheSetting::max_elements])
+    const bool cache_size_changed = new_settings[FileCacheSetting::max_size] != actual_settings[FileCacheSetting::max_size]
+        || new_settings[FileCacheSetting::max_elements] != actual_settings[FileCacheSetting::max_elements];
+
+    if (allow_dynamic_cache_resize && cache_size_changed)
     {
         EvictionCandidates eviction_candidates;
         bool modified_size_limit = false;
@@ -1844,6 +1853,13 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
 
         chassert(main_priority->getSizeLimit(lockCache()) == actual_settings[FileCacheSetting::max_size]);
         chassert(main_priority->getElementsLimit(lockCache()) == actual_settings[FileCacheSetting::max_elements]);
+    }
+    else if (cache_size_changed)
+    {
+        LOG_WARNING(
+            log, "Filesystem cache size was modified, "
+            "but dynamic cache resize is disabled, therefore cache size will not be changed without server restart. "
+            "To enable dynamic cache resize, add `allow_dynamic_cache_resize` to cache configuration");
     }
 
     if (new_settings[FileCacheSetting::max_file_segment_size] != actual_settings[FileCacheSetting::max_file_segment_size])

@@ -511,8 +511,8 @@ void SummingSortedAlgorithm::SummingMergedData::initialize(const DB::Block & hea
     /// Just to make startGroup() simpler.
     if (def.allocates_memory_in_arena)
     {
-        arena = std::make_unique<Arena>();
-        arena_size = arena->allocatedBytes();
+        def.arena = std::make_unique<Arena>();
+        def.arena_size = def.arena->allocatedBytes();
     }
 }
 
@@ -526,10 +526,10 @@ void SummingSortedAlgorithm::SummingMergedData::startGroup(ColumnRawPtrs & raw_c
     for (auto & desc : def.columns_to_aggregate)
         desc.createState();
 
-    if (def.allocates_memory_in_arena && arena->allocatedBytes() > arena_size)
+    if (def.allocates_memory_in_arena && def.arena->allocatedBytes() > def.arena_size)
     {
-        arena = std::make_unique<Arena>();
-        arena_size = arena->allocatedBytes();
+        def.arena = std::make_unique<Arena>();
+        def.arena_size = def.arena->allocatedBytes();
     }
 
     if (def.maps_to_sum.empty())
@@ -570,7 +570,7 @@ void SummingSortedAlgorithm::SummingMergedData::finishGroup()
             {
                 try
                 {
-                    desc.function->insertResultInto(desc.state.data(), *desc.merged_column, arena.get());
+                    desc.function->insertResultInto(desc.state.data(), *desc.merged_column, def.arena.get());
 
                     /// Update zero status of current row
                     if (!desc.is_simple_agg_func_type && desc.column_numbers.size() == 1)
@@ -650,7 +650,7 @@ void SummingSortedAlgorithm::SummingMergedData::addRowImpl(ColumnRawPtrs & raw_c
             if (desc.column_numbers.size() == 1)
             {
                 auto & col = raw_columns[desc.column_numbers[0]];
-                desc.add_function(desc.function.get(), desc.state.data(), &col, row, arena.get());
+                desc.add_function(desc.function.get(), desc.state.data(), &col, row, def.arena.get());
             }
             else
             {
@@ -659,7 +659,7 @@ void SummingSortedAlgorithm::SummingMergedData::addRowImpl(ColumnRawPtrs & raw_c
                 for (size_t i = 0; i < desc.column_numbers.size(); ++i)
                     column_ptrs[i] = raw_columns[desc.column_numbers[i]];
 
-                desc.add_function(desc.function.get(), desc.state.data(), column_ptrs.data(), row, arena.get());
+                desc.add_function(desc.function.get(), desc.state.data(), column_ptrs.data(), row, def.arena.get());
             }
         }
     }
