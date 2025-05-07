@@ -292,9 +292,7 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
     TemporaryClonedPart cloned_part;
     cloned_part.temporary_directory_lock = data->getTemporaryPartDirectoryHolder(part->name);
 
-    MutableDataPartStoragePtr cloned_part_storage;
-    bool preserve_blobs;
-    std::tie(cloned_part_storage, preserve_blobs) = clonePartImpl(part, disk, read_settings, write_settings, cancellation_hook);
+    auto [cloned_part_storage, preserve_blobs] = clonePartImpl(part, disk, read_settings, write_settings, cancellation_hook);
 
     MergeTreeDataPartBuilder builder(*data, moving_part.part->name, cloned_part_storage, getReadSettings());
     cloned_part.part = std::move(builder).withPartFormatFromDisk().build();
