@@ -47,23 +47,24 @@ static ASTPtr makeUsingAST(const QueryTreeNodePtr & node)
 
     for (const auto & child : list_node.getNodes())
     {
-        const auto & column_node = child->as<ColumnNode &>();
         ASTPtr node_ast;
-
-        if (const auto expr = column_node.getExpression())
+        if (const auto * column_node = child->as<ColumnNode>())
         {
-            if (const auto * expr_list_node = expr->as<ListNode>())
+            if (const auto expr = column_node->getExpression())
             {
-                if (expr_list_node->getNodes().size() == 2)
+                if (const auto * expr_list_node = expr->as<ListNode>())
                 {
-                    const auto * lhs_column_node = expr_list_node->getNodes()[0]->as<ColumnNode>();
-                    const auto * rhs_column_node = expr_list_node->getNodes()[1]->as<ColumnNode>();
-                    if (lhs_column_node && rhs_column_node)
+                    if (expr_list_node->getNodes().size() == 2)
                     {
-                        if (lhs_column_node->getColumnName() != rhs_column_node->getColumnName())
+                        const auto * lhs_column_node = expr_list_node->getNodes()[0]->as<ColumnNode>();
+                        const auto * rhs_column_node = expr_list_node->getNodes()[1]->as<ColumnNode>();
+                        if (lhs_column_node && rhs_column_node)
                         {
-                            node_ast = std::make_shared<ASTIdentifier>(lhs_column_node->getColumnName());
-                            node_ast->setAlias(rhs_column_node->getColumnName());
+                            if (lhs_column_node->getColumnName() != rhs_column_node->getColumnName())
+                            {
+                                node_ast = std::make_shared<ASTIdentifier>(lhs_column_node->getColumnName());
+                                node_ast->setAlias(rhs_column_node->getColumnName());
+                            }
                         }
                     }
                 }
@@ -71,7 +72,7 @@ static ASTPtr makeUsingAST(const QueryTreeNodePtr & node)
         }
 
         if (!node_ast)
-            node_ast = column_node.toAST();
+            node_ast = child->toAST();
 
         expr_list->children.push_back(std::move(node_ast));
     }
