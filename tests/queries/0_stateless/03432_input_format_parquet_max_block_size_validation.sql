@@ -5,5 +5,5 @@ SET input_format_parquet_max_block_size = 0; -- { serverError BAD_ARGUMENTS }
 SET input_format_parquet_max_block_size = -1; -- { serverError CANNOT_CONVERT_TYPE }
 
 -- Test that valid positive values are allowed
-SET input_format_parquet_max_block_size = 8192;
-SELECT name, value FROM system.settings WHERE name = 'input_format_parquet_max_block_size' FORMAT TSV;
+SET input_format_parquet_max_block_size = 1024;
+SELECT 'a' INTO OUTFILE '/dev/null' TRUNCATE FORMAT Parquet SETTINGS input_format_parquet_max_block_size = 1024;
