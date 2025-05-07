@@ -106,6 +106,8 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     const UInt64 * saved_hash = nullptr;
     /// Hold dictionary in case saved_hash is from cache to be sure it won't be deleted.
     ColumnPtr dictionary_holder;
+    /// Nested column in case ColumnUnique is compressed (as getNestedColumn() returns temporary object)
+    ColumnPtr lc_nested_column;
 
     /// Cache AggregateDataPtr for current column in order to decrease the number of hash table usages.
     columns_hashing_impl::MappedCache<Mapped> mapped_cache;
@@ -125,7 +127,14 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
     HashMethodSingleLowCardinalityColumn(
         const ColumnRawPtrs & key_columns_low_cardinality, const Sizes & key_sizes, const HashMethodContextPtr & context)
-        : Base({getLowCardinalityColumn(key_columns_low_cardinality[0]).getDictionary().getNestedNotNullableColumn().get()}, key_sizes, context)
+        : HashMethodSingleLowCardinalityColumn(key_columns_low_cardinality, key_sizes, context, getLowCardinalityColumn(key_columns_low_cardinality[0]).getDictionary().getNestedNotNullableColumn())
+    {
+    }
+
+
+    HashMethodSingleLowCardinalityColumn(
+        const ColumnRawPtrs & key_columns_low_cardinality, const Sizes & key_sizes, const HashMethodContextPtr & context, ColumnPtr nested_column)
+        : Base({nested_column.get()}, key_sizes, context), lc_nested_column(std::move(nested_column))
     {
         const auto * column = &getLowCardinalityColumn(key_columns_low_cardinality[0]);
 
@@ -144,7 +153,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             }
         }
 
-        const auto * dict = column->getDictionary().getNestedNotNullableColumn().get();
+        const auto * dict = lc_nested_column.get();
         is_nullable = column->getDictionary().nestedColumnIsNullable();
         key_columns = {dict};
         const bool is_shared_dict = column->isSharedDictionary();
