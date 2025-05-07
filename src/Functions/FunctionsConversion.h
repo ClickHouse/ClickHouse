@@ -3723,11 +3723,9 @@ template <> struct FunctionTo<DataTypeFloat64> { using Type = FunctionToFloat64;
 template <> struct FunctionTo<DataTypeDate> { using Type = FunctionToDate; };
 template <> struct FunctionTo<DataTypeDate32> { using Type = FunctionToDate32; };
 template <> struct FunctionTo<DataTypeTime> { using Type = FunctionToTime; };
+template <> struct FunctionTo<DataTypeTime64> { using Type = FunctionToTime64; };
 template <> struct FunctionTo<DataTypeDateTime> { using Type = FunctionToDateTime; };
 template <> struct FunctionTo<DataTypeDateTime64> { using Type = FunctionToDateTime64; };
-
-template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct FunctionTo<DataTypeTime64, date_time_overflow_behavior> { using Type = FunctionToTime64; };
 
 template <> struct FunctionTo<DataTypeUUID> { using Type = FunctionToUUID; };
 template <> struct FunctionTo<DataTypeIPv4> { using Type = FunctionToIPv4; };
