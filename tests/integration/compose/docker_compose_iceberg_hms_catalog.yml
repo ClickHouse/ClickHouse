@@ -1,7 +1,6 @@
 services:
   spark-iceberg:
     image: tabulario/spark-iceberg
-    container_name: spark-iceberg
     build: spark/
     depends_on:
       hive:
@@ -19,8 +18,10 @@ services:
 
   hive:
     build: ./../../hms_extensions/
-    container_name: hive
     restart: unless-stopped
+    depends_on:
+      minio:
+        condition: service_started
     ports:
       - "9083:9083"
     environment:
@@ -28,14 +29,13 @@ services:
       SERVICE_OPTS: "-Dmetastore.warehouse.dir=s3a://warehouse/data/"
     healthcheck:
       test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/9083"]
-      interval: 1s
+      interval: 2s
       timeout: 5s
-      retries: 10
-      start_period: 30s
+      retries: 15
+      start_period: 45s
 
   minio:
     image: minio/minio
-    container_name: minio
     environment:
       - MINIO_ROOT_USER=minio
       - MINIO_ROOT_PASSWORD=minio123
@@ -53,7 +53,6 @@ services:
     depends_on:
       - minio
     image: minio/mc
-    container_name: mc
     environment:
       - AWS_ACCESS_KEY_ID=minio
       - AWS_SECRET_ACCESS_KEY=minio123
