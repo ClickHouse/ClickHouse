@@ -1,7 +1,8 @@
 #include <Interpreters/applyTableOverride.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/formatAST.h>
 
 #include <iostream>
 #include <gtest/gtest.h>
@@ -50,7 +51,7 @@ TEST_P(TableOverrideTest, applyOverrides)
         ASSERT_NE(nullptr, override_table_ast);
         applyTableOverrideToCreateQuery(*override_table_ast, table);
     }
-    EXPECT_EQ(expected_query, serializeAST(*table));
+    EXPECT_EQ(expected_query, table->formatWithSecretsOneLine());
 }
 
 INSTANTIATE_TEST_SUITE_P(ApplyTableOverrides, TableOverrideTest,

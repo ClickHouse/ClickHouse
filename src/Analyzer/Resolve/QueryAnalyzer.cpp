@@ -18,6 +18,7 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/exists.h>
 #include <Functions/grouping.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
@@ -66,6 +67,7 @@
 #include <Analyzer/Resolve/QueryExpressionsAliasVisitor.h>
 #include <Analyzer/Resolve/ReplaceColumnsVisitor.h>
 #include <Analyzer/Resolve/TableExpressionsAliasVisitor.h>
+#include <Analyzer/Resolve/TableFunctionsWithClusterAlternativesVisitor.h>
 #include <Analyzer/Resolve/TypoCorrection.h>
 
 #include <Planner/PlannerActionsVisitor.h>
@@ -112,6 +114,8 @@ namespace Setting
     extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsBool allow_not_comparable_types_in_order_by;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsBool allow_experimental_correlated_subqueries;
+    extern const SettingsString implicit_table_at_top_level;
 }
 
 
@@ -543,6 +547,11 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             node->getNodeTypeName(),
             node->formatASTForErrorMessage());
 
+    bool is_correlated_subquery = (query_node != nullptr && query_node->isCorrelated())
+                                || (union_node != nullptr && union_node->isCorrelated());
+    if (is_correlated_subquery)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot evaluate correlated scalar subquery");
+
     auto & context = scope.context;
 
     Block scalar_block;
@@ -580,6 +589,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         Settings subquery_settings = context->getSettingsCopy();
         subquery_settings[Setting::max_result_rows] = 1;
         subquery_settings[Setting::extremes] = false;
+        subquery_settings[Setting::implicit_table_at_top_level] = "";
         /// When execute `INSERT INTO t WITH ... SELECT ...`, it may lead to `Unknown columns`
         /// exception with this settings enabled(https://github.com/ClickHouse/ClickHouse/issues/52494).
         subquery_settings[Setting::use_structure_from_insertion_table_in_table_functions] = false;
@@ -603,6 +613,35 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             replaceStorageInQueryTree(query_tree, subquery_context, storage);
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_tree, subquery_context, options);
 
+        auto wrap_with_nullable_or_tuple = [](Block & block)
+        {
+            block = materializeBlock(block);
+            if (block.columns() == 1)
+            {
+                auto & column = block.getByPosition(0);
+                /// Here we wrap type to nullable if we can.
+                /// It is needed cause if subquery return no rows, it's result will be Null.
+                /// In case of many columns, do not check it cause tuple can't be nullable.
+                if (!column.type->isNullable() && column.type->canBeInsideNullable())
+                {
+                    column.type = makeNullable(column.type);
+                    column.column = makeNullable(column.column);
+                }
+            } else
+            {
+                /** Make unique column names for tuple.
+                *
+                * Example: SELECT (SELECT 2 AS x, x)
+                */
+                makeUniqueColumnNamesInBlock(block);
+                block = Block({{
+                        ColumnTuple::create(block.getColumns()),
+                        std::make_shared<DataTypeTuple>(block.getDataTypes(), block.getNames()),
+                        "tuple"
+                    }});
+            }
+        };
+
         if (only_analyze)
         {
             /// If query is only analyzed, then constants are not correct.
@@ -616,6 +655,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                     column.column = std::move(mut_col);
                 }
             }
+
+            wrap_with_nullable_or_tuple(scalar_block);
         }
         else
         {
@@ -665,36 +706,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 if (tmp_block.rows() != 0)
                     throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
-                block = materializeBlock(block);
-                size_t columns = block.columns();
-
-                if (columns == 1)
-                {
-                    auto & column = block.getByPosition(0);
-                    /// Here we wrap type to nullable if we can.
-                    /// It is needed cause if subquery return no rows, it's result will be Null.
-                    /// In case of many columns, do not check it cause tuple can't be nullable.
-                    if (!column.type->isNullable() && column.type->canBeInsideNullable())
-                    {
-                        column.type = makeNullable(column.type);
-                        column.column = makeNullable(column.column);
-                    }
-
-                    scalar_block = block;
-                }
-                else
-                {
-                    /** Make unique column names for tuple.
-                      *
-                      * Example: SELECT (SELECT 2 AS x, x)
-                      */
-                    makeUniqueColumnNamesInBlock(block);
-
-                    scalar_block.insert({
-                        ColumnTuple::create(block.getColumns()),
-                        std::make_shared<DataTypeTuple>(block.getDataTypes(), block.getNames()),
-                        "tuple"});
-                }
+                wrap_with_nullable_or_tuple(block);
+                scalar_block = std::move(block);
             }
 
             logProcessorProfile(context, io.pipeline.getProcessors());
@@ -1374,15 +1387,17 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
     {
         auto current = nodes_to_process.back();
         nodes_to_process.pop_back();
-        if (auto * current_column = current->as<ColumnNode>())
+        if (current->getNodeType() == QueryTreeNodeType::COLUMN)
         {
-            if (isDependentColumn(&scope, current_column->getColumnSource()))
+            auto is_correlated_column = checkCorrelatedColumn(&scope, current);
+            if (is_correlated_column && !scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
             {
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "Resolved identifier '{}' in parent scope to expression '{}' with correlated column '{}'. In scope {}",
+                    "Resolved identifier '{}' in parent scope to expression '{}' with correlated column '{}'"
+                    " (Enable 'allow_experimental_correlated_subqueries' setting to allow correlated subqueries execution). In scope {}",
                     identifier_lookup.identifier.getFullName(),
                     resolved_identifier->formatASTForErrorMessage(),
-                    current_column->getColumnName(),
+                    current->as<ColumnNode>()->getColumnName(),
                     scope.scope_node->formatASTForErrorMessage());
             }
         }
@@ -1395,6 +1410,16 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
     }
 
     return resolve_result;
+}
+
+static void correctColumnExpressionType(ColumnNode & column_node, const ContextPtr & context)
+{
+    if (!column_node.hasExpression())
+        return;
+    auto & column_expression = column_node.getExpression();
+    if (column_node.getColumnType()->equals(*column_expression->getResultType()))
+        return;
+    column_expression = buildCastFunction(column_expression, column_node.getColumnType(), context, true);
 }
 
 /** Resolve identifier in scope.
@@ -1508,7 +1533,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
                 if (auto * column_node = typeid_cast<ColumnNode *>(node))
                     if (column_node->hasExpression())
+                    {
                         resolveExpressionNode(column_node->getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+                        correctColumnExpressionType(*column_node, scope.context);
+                    }
             }
         }
     }
@@ -1793,6 +1821,7 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
                     node_to_projection_name.emplace(matched_column_node, it->second);
 
                 matched_column_node->as<ColumnNode &>().setColumnType(join_using_column_node.getResultType());
+                correctColumnExpressionType(matched_column_node->as<ColumnNode &>(), scope.context);
                 if (!matched_column_node->isEqual(*join_using_column_nodes.at(0)))
                     scope.join_columns_with_changed_types[matched_column_node] = join_using_column_nodes.at(0);
             }
@@ -2108,6 +2137,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
 
                     matched_column_node = matched_column_node->clone();
                     matched_column_node->as<ColumnNode &>().setColumnType(join_using_column_node.getResultType());
+                    correctColumnExpressionType(matched_column_node->as<ColumnNode &>(), scope.context);
                     if (!matched_column_node->isEqual(*join_using_column_nodes.at(0)))
                         scope.join_columns_with_changed_types[matched_column_node] = join_using_column_nodes.at(0);
 
@@ -2508,7 +2538,8 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
     auto & window_node = node->as<WindowNode &>();
     window_node.setParentWindowName({});
 
-    ProjectionNames partition_by_projection_names = resolveExpressionNodeList(window_node.getPartitionByNode(),
+    ProjectionNames partition_by_projection_names = resolveExpressionNodeList(
+        window_node.getPartitionByNode(),
         scope,
         false /*allow_lambda_expression*/,
         false /*allow_table_expression*/);
@@ -2718,7 +2749,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     /// Resolve function parameters
 
-    auto parameters_projection_names = resolveExpressionNodeList(function_node_ptr->getParametersNode(),
+    auto parameters_projection_names = resolveExpressionNodeList(
+        function_node_ptr->getParametersNode(),
         scope,
         false /*allow_lambda_expression*/,
         false /*allow_table_expression*/);
@@ -2842,27 +2874,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
     }
 
-    if (is_special_function_exists)
-    {
-        checkFunctionNodeHasEmptyNullsAction(*function_node_ptr);
-        /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
-        auto & exists_subquery_argument = function_node_ptr->getArguments().getNodes().at(0);
-
-        auto constant_data_type = std::make_shared<DataTypeUInt64>();
-
-        auto in_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
-        in_subquery->setIsSubquery(true);
-        in_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
-        in_subquery->getJoinTree() = exists_subquery_argument;
-        in_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
-
-        function_node_ptr = std::make_shared<FunctionNode>("in");
-        function_node_ptr->getArguments().getNodes() = {std::make_shared<ConstantNode>(1UL, constant_data_type), in_subquery};
-        node = function_node_ptr;
-        function_name = "in";
-        is_special_function_in = true;
-    }
-
     if (is_special_function_if && !function_node_ptr->getArguments().getNodes().empty())
     {
         checkFunctionNodeHasEmptyNullsAction(*function_node_ptr);
@@ -2919,11 +2930,61 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     /// Resolve function arguments
-    bool allow_table_expressions = is_special_function_in;
-    auto arguments_projection_names = resolveExpressionNodeList(function_node_ptr->getArgumentsNode(),
+    bool allow_table_expressions = is_special_function_in || is_special_function_exists;
+    auto arguments_projection_names = resolveExpressionNodeList(
+        function_node_ptr->getArgumentsNode(),
         scope,
         true /*allow_lambda_expression*/,
         allow_table_expressions /*allow_table_expression*/);
+
+    if (is_special_function_exists)
+    {
+        checkFunctionNodeHasEmptyNullsAction(*function_node_ptr);
+        auto & exists_subquery_argument = function_node_ptr->getArguments().getNodes().at(0);
+        bool correlated_exists_subquery = exists_subquery_argument->getNodeType() == QueryTreeNodeType::QUERY
+            ? exists_subquery_argument->as<QueryNode>()->isCorrelated()
+            : exists_subquery_argument->as<UnionNode>()->isCorrelated();
+        if (!correlated_exists_subquery)
+        {
+            /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
+            auto constant_data_type = std::make_shared<DataTypeUInt64>();
+
+            auto in_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
+            in_subquery->setIsSubquery(true);
+            in_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
+            in_subquery->getJoinTree() = exists_subquery_argument;
+            in_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
+
+            function_node_ptr = std::make_shared<FunctionNode>("in");
+            function_node_ptr->getArguments().getNodes() = {
+                std::make_shared<ConstantNode>(1UL, constant_data_type),
+                std::move(in_subquery)
+            };
+
+            /// Resolve modified arguments
+            arguments_projection_names = resolveExpressionNodeList(function_node_ptr->getArgumentsNode(),
+                scope,
+                true /*allow_lambda_expression*/,
+                true /*allow_table_expression*/);
+
+            node = function_node_ptr;
+            function_name = "in";
+            is_special_function_in = true;
+        }
+        else
+        {
+            /// Subquery is correlated and EXISTS can not be replaced by IN function.
+            /// EXISTS function will be replated by JOIN during query planning.
+            auto function_exists = std::make_shared<FunctionExists>();
+            function_node_ptr->resolveAsFunction(
+                std::make_shared<FunctionToFunctionBaseAdaptor>(
+                    function_exists, DataTypes{}, function_exists->getReturnTypeImpl({})
+                )
+            );
+
+            return { calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names) };
+        }
+    }
 
     /// Mask arguments if needed
     if (!scope.context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
@@ -2975,6 +3036,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function '{}' expects 2 arguments", function_name);
 
         auto & in_second_argument = function_in_arguments_nodes[1];
+        if (isCorrelatedQueryOrUnionNode(function_in_arguments_nodes[0]) || isCorrelatedQueryOrUnionNode(function_in_arguments_nodes[1]))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Correlated subqueries are not supported as IN function arguments yet, but found in expression: {}",
+                node->formatASTForErrorMessage());
         auto * table_node = in_second_argument->as<TableNode>();
         auto * table_function_node = in_second_argument->as<TableFunctionNode>();
 
@@ -3824,7 +3889,10 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
         {
             auto & column_node = node->as<ColumnNode &>();
             if (column_node.hasExpression())
+            {
                 resolveExpressionNode(column_node.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+                correctColumnExpressionType(column_node, scope.context);
+            }
 
             if (result_projection_names.empty())
                 result_projection_names.push_back(column_node.getColumnName());
@@ -3869,7 +3937,11 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
             else
                 resolveUnion(node, subquery_scope);
 
-            if (!allow_table_expression)
+            bool is_correlated_subquery = node_type == QueryTreeNodeType::QUERY
+                ? node->as<QueryNode>()->isCorrelated()
+                : node->as<UnionNode>()->isCorrelated();
+
+            if (!allow_table_expression && !is_correlated_subquery)
                 evaluateScalarSubqueryIfNeeded(node, subquery_scope);
 
             if (result_projection_names.empty())
@@ -3921,7 +3993,13 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
     /// Most likely only the root scope can have an aggregate function, but let's check all just in case.
     bool in_aggregate_function_scope = false;
     for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
+    {
         in_aggregate_function_scope = in_aggregate_function_scope || scope_ptr->expressions_in_resolve_process_stack.hasAggregateFunction();
+
+        /// Check parent scopes until find current query scope.
+        if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY)
+            break;
+    }
 
     if (!in_aggregate_function_scope)
     {
@@ -3956,7 +4034,12 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
   * Example: CREATE TABLE test_table (id UInt64, value UInt64) ENGINE=TinyLog; SELECT plus(*) FROM test_table;
   * Example: SELECT *** FROM system.one;
   */
-ProjectionNames QueryAnalyzer::resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression)
+ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
+    QueryTreeNodePtr & node_list,
+    IdentifierResolveScope & scope,
+    bool allow_lambda_expression,
+    bool allow_table_expression
+)
 {
     auto & node_list_typed = node_list->as<ListNode &>();
     size_t node_list_size = node_list_typed.getNodes().size();
@@ -4674,7 +4757,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             table_name = table_identifier[1];
         }
 
-        /// Collect parametrized view arguments
+        /// Collect parameterized view arguments
         NameToNameMap view_params;
         for (const auto & argument : table_function_node_typed.getArguments())
         {
@@ -4707,18 +4790,18 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         }
 
         auto context = scope_context->getQueryContext();
-        auto parametrized_view_storage = context->buildParametrizedViewStorage(
+        auto parameterized_view_storage = context->buildParameterizedViewStorage(
             database_name,
             table_name,
             view_params);
 
-        if (parametrized_view_storage)
+        if (parameterized_view_storage)
         {
             /// Remove initial TableFunctionNode from the set. Otherwise it may lead to segfault
             /// when IdentifierResolveScope::dump() is used.
             scope.table_expressions_in_resolve_process.erase(table_function_node.get());
 
-            auto fake_table_node = std::make_shared<TableNode>(parametrized_view_storage, scope_context);
+            auto fake_table_node = std::make_shared<TableNode>(parameterized_view_storage, scope_context);
             fake_table_node->setAlias(table_function_node->getAlias());
             table_function_node = fake_table_node;
             return;
@@ -5130,6 +5213,16 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
     resolveQueryJoinTreeNode(join_node_typed.getRightTableExpression(), scope, expressions_visitor);
     validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getRightTableExpression(), scope);
+
+    if (isCorrelatedQueryOrUnionNode(join_node_typed.getLeftTableExpression()))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Correlated subqueries are not supported in JOINs yet, but found in expression: {}",
+            join_node_typed.getLeftTableExpression()->formatASTForErrorMessage());
+
+    if (isCorrelatedQueryOrUnionNode(join_node_typed.getRightTableExpression()))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Correlated subqueries are not supported in JOINs yet, but found in expression: {}",
+            join_node_typed.getRightTableExpression()->formatASTForErrorMessage());
 
     if (!join_node_typed.getLeftTableExpression()->hasAlias() && !join_node_typed.getRightTableExpression()->hasAlias())
         checkDuplicateTableNamesOrAliasForPasteJoin(join_node_typed, scope);
@@ -5563,6 +5656,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     TableExpressionsAliasVisitor table_expressions_visitor(scope);
     table_expressions_visitor.visit(query_node_typed.getJoinTree());
+
+    TableFunctionsWithClusterAlternativesVisitor table_function_visitor;
+    table_function_visitor.visit(query_node);
+    if (!table_function_visitor.shouldReplaceWithClusterAlternatives() && scope.context->hasQueryContext())
+        scope.context->getQueryContext()->setSetting("parallel_replicas_for_cluster_engines", false);
 
     initializeQueryJoinTreeNode(query_node_typed.getJoinTree(), scope);
     scope.aliases.alias_name_to_table_expression_node = std::move(transitive_aliases);

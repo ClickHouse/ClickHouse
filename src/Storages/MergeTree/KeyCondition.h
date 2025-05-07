@@ -28,6 +28,18 @@ struct ActionDAGNodes;
 class MergeTreeSetIndex;
 
 
+/// Canonize the predicate
+/// * push down NOT to leaf nodes
+/// * remove aliases and re-generate function names
+/// * remove unneeded functions (e.g. materialize)
+struct ActionsDAGWithInversionPushDown
+{
+    std::optional<ActionsDAG> dag;
+    const ActionsDAG::Node * predicate = nullptr;
+
+    explicit ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context);
+};
+
 /** Condition on the index.
   *
   * Consists of the conditions for the key belonging to all possible ranges or sets,
@@ -41,7 +53,7 @@ class KeyCondition
 public:
     /// Construct key condition from ActionsDAG nodes
     KeyCondition(
-        const ActionsDAG * filter_dag,
+        const ActionsDAGWithInversionPushDown & filter_dag,
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
@@ -148,8 +160,6 @@ public:
         const MonotonicFunctionsChain & functions,
         DataTypePtr current_type,
         bool single_point = false);
-
-    static ActionsDAG cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context);
 
     bool matchesExactContinuousRange() const;
 
@@ -408,6 +418,15 @@ private:
     /// transformed by any deterministic functions. It is used by
     /// PartitionPruner.
     bool single_point;
+
+
+    /// Determines if a function maintains monotonicity.
+    /// Currently only does special checks for toDateTime monotonicity.
+    bool isFunctionReallyMonotonic(const IFunctionBase & func, const IDataType & arg_type) const;
+
+    /// Holds the result of (setting.date_time_overflow_behavior == DateTimeOverflowBehavior::Ignore)
+    /// Used to check toDateTime monotonicity.
+    bool date_time_overflow_behavior_ignore;
 
     /// If true, this key condition is relaxed. When a key condition is relaxed, it
     /// is considered weakened. This is because keys may not always align perfectly

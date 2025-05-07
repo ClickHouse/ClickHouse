@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/count
+description: 'Counts the number of rows or not-NULL values.'
 sidebar_position: 120
-title: "count"
-description: "Counts the number of rows or not-NULL values."
+slug: /sql-reference/aggregate-functions/reference/count
+title: 'count'
 ---
 
 # count
@@ -44,11 +44,11 @@ If your `COUNT(DISTINCT expr)` query is slow, consider adding a [`GROUP BY`](/sq
 
 Example 1:
 
-``` sql
+```sql
 SELECT count() FROM t
 ```
 
-``` text
+```text
 ┌─count()─┐
 │       5 │
 └─────────┘
@@ -56,21 +56,21 @@ SELECT count() FROM t
 
 Example 2:
 
-``` sql
+```sql
 SELECT name, value FROM system.settings WHERE name = 'count_distinct_implementation'
 ```
 
-``` text
+```text
 ┌─name──────────────────────────┬─value─────┐
 │ count_distinct_implementation │ uniqExact │
 └───────────────────────────────┴───────────┘
 ```
 
-``` sql
+```sql
 SELECT count(DISTINCT num) FROM t
 ```
 
-``` text
+```text
 ┌─uniqExact(num)─┐
 │              3 │
 └────────────────┘

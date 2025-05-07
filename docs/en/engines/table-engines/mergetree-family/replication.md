@@ -1,9 +1,9 @@
 ---
-slug: /engines/table-engines/mergetree-family/replication
+description: 'Overview of Data Replication in ClickHouse'
+sidebar_label: 'Data Replication'
 sidebar_position: 20
-sidebar_label: Data Replication
-title: "Data Replication"
-description: "Overview of Data Replication in ClickHouse"
+slug: /engines/table-engines/mergetree-family/replication
+title: 'Data Replication'
 ---
 
 # Data Replication
@@ -58,7 +58,7 @@ Don't neglect the security setting. ClickHouse supports the `digest` [ACL scheme
 
 Example of setting the addresses of the ClickHouse Keeper cluster:
 
-``` xml
+```xml
 <zookeeper>
     <node>
         <host>example1</host>
@@ -80,7 +80,7 @@ In other words, it supports storing the metadata of different tables in differen
 
 Example of setting the addresses of the auxiliary ZooKeeper cluster:
 
-``` xml
+```xml
 <auxiliary_zookeepers>
     <zookeeper2>
         <node>
@@ -172,7 +172,7 @@ Adding `Replicated` is optional in ClickHouse Cloud, as all of the tables are re
 
 Example:
 
-``` sql
+```sql
 CREATE TABLE table_name
 (
     EventDate DateTime,
@@ -189,7 +189,7 @@ SAMPLE BY intHash32(UserID);
 
 <summary>Example in deprecated syntax</summary>
 
-``` sql
+```sql
 CREATE TABLE table_name
 (
     EventDate DateTime,
@@ -204,7 +204,7 @@ As the example shows, these parameters can contain substitutions in curly bracke
 
 Example:
 
-``` xml
+```xml
 <macros>
     <shard>02</shard>
     <replica>example05-02-1</replica>
@@ -239,18 +239,18 @@ You can specify default arguments for `Replicated` table engine in the server co
 
 In this case, you can omit arguments when creating tables:
 
-``` sql
+```sql
 CREATE TABLE table_name (
-	x UInt32
+    x UInt32
 ) ENGINE = ReplicatedMergeTree
 ORDER BY x;
 ```
 
 It is equivalent to:
 
-``` sql
+```sql
 CREATE TABLE table_name (
-	x UInt32
+    x UInt32
 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/table_name', '{replica}')
 ORDER BY x;
 ```
@@ -279,7 +279,7 @@ If the local set of data differs too much from the expected one, a safety mechan
 
 To start recovery, create the node `/path_to_table/replica_name/flags/force_restore_data` in ClickHouse Keeper with any content, or run the command to restore all replicated tables:
 
-``` bash
+```bash
 sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 ```
 

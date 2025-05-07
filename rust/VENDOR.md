@@ -35,7 +35,6 @@ cargo local-registry --git --sync Cargo.lock "$CH_TOP_DIR"/contrib/rust_vendor
 
 # Now handle delta-lake
 cd "$DELTA_LAKE_DIR"
-cargo generate-lockfile
 cargo local-registry --no-delete --git --sync "$DELTA_LAKE_DIR/Cargo.lock" "$CH_TOP_DIR"/contrib/rust_vendor
 
 # Standard library deps

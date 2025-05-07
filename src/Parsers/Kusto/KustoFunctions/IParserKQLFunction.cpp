@@ -6,7 +6,7 @@
 #include <base/EnumReflection.h>
 #include <pcg_random.hpp>
 #include <Poco/String.h>
-#include <format>
+
 #include <numeric>
 #include <stack>
 
@@ -197,7 +197,7 @@ String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser:
                         array_index += getExpression(pos);
                         ++pos;
                     }
-                    token = std::format("[ {0} >=0 ? {0} + 1 : {0}]", array_index);
+                    token = fmt::format("[ {0} >=0 ? {0} + 1 : {0}]", array_index);
                 }
                 else
                     token = String(pos->begin, pos->end);
@@ -301,7 +301,7 @@ String IParserKQLFunction::kqlCallToExpression(
             return acc;
         });
 
-    const auto kql_call = std::format("{}({})", function_name, params_str);
+    const auto kql_call = fmt::format("{}({})", function_name, params_str);
     Tokens call_tokens(kql_call.data(), kql_call.data() + kql_call.length(), 0, true);
     IParser::Pos tokens_pos(call_tokens, max_depth, max_backtracks);
     return DB::IParserKQLFunction::getExpression(tokens_pos);
@@ -363,7 +363,7 @@ String IParserKQLFunction::getExpression(IParser::Pos & pos)
             array_index += getExpression(pos);
             ++pos;
         }
-        arg = std::format("[ {0} >=0 ? {0} + 1 : {0}]", array_index);
+        arg = fmt::format("[ {0} >=0 ? {0} + 1 : {0}]", array_index);
     }
 
     return arg;

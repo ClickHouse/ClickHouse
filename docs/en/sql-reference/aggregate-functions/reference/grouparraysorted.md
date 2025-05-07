@@ -1,15 +1,15 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/grouparraysorted
+description: 'Returns an array with the first N items in ascending order.'
 sidebar_position: 146
-title: "groupArraySorted"
-description: "Returns an array with the first N items in ascending order."
+slug: /sql-reference/aggregate-functions/reference/grouparraysorted
+title: 'groupArraySorted'
 ---
 
 # groupArraySorted
 
 Returns an array with the first N items in ascending order.
 
-``` sql
+```sql
 groupArraySorted(N)(column)
 ```
 
@@ -23,11 +23,11 @@ groupArraySorted(N)(column)
 
 Gets the first 10 numbers:
 
-``` sql
+```sql
 SELECT groupArraySorted(10)(number) FROM numbers(100)
 ```
 
-``` text
+```text
 ┌─groupArraySorted(10)(number)─┐
 │ [0,1,2,3,4,5,6,7,8,9]        │
 └──────────────────────────────┘
@@ -35,11 +35,11 @@ SELECT groupArraySorted(10)(number) FROM numbers(100)
 
 Gets all the String implementations of all numbers in column:
 
-``` sql
+```sql
 SELECT groupArraySorted(5)(str) FROM (SELECT toString(number) as str FROM numbers(5));
 ```
 
-``` text
+```text
 ┌─groupArraySorted(5)(str)─┐
 │ ['0','1','2','3','4']    │
 └──────────────────────────┘

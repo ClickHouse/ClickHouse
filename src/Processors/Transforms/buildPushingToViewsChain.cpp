@@ -1,6 +1,7 @@
 #include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -556,10 +557,11 @@ Chain buildPushingToViewsChain(
         }
     }
 
+    const Settings & settings = context->getSettingsRef();
+
     if (views_data && !views_data->views.empty())
     {
         size_t num_views = views_data->views.size();
-        const Settings & settings = context->getSettingsRef();
         if (settings[Setting::parallel_view_processing])
             views_data->max_threads = settings[Setting::max_threads] ? std::min(static_cast<size_t>(settings[Setting::max_threads]), num_views) : num_views;
 
@@ -601,7 +603,8 @@ Chain buildPushingToViewsChain(
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
 
-        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(result_chain.getInputHeader()));
+        if (settings[Setting::deduplicate_blocks_in_dependent_materialized_views])
+            result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(result_chain.getInputHeader()));
     }
     else if (auto * window_view = dynamic_cast<StorageWindowView *>(storage.get()))
     {
@@ -609,7 +612,8 @@ Chain buildPushingToViewsChain(
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
 
-        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(result_chain.getInputHeader()));
+        if (settings[Setting::deduplicate_blocks_in_dependent_materialized_views])
+            result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(result_chain.getInputHeader()));
     }
     else if (dynamic_cast<StorageMaterializedView *>(storage.get()))
     {
@@ -618,7 +622,8 @@ Chain buildPushingToViewsChain(
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
 
-        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(result_chain.getInputHeader()));
+        if (settings[Setting::deduplicate_blocks_in_dependent_materialized_views])
+            result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(result_chain.getInputHeader()));
     }
     /// Do not push to destination table if the flag is set
     else if (!no_destination)
@@ -627,13 +632,15 @@ Chain buildPushingToViewsChain(
         metadata_snapshot->check(sink->getHeader().getColumnsWithTypeAndName());
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
 
-        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(sink->getHeader()));
+        if (settings[Setting::deduplicate_blocks_in_dependent_materialized_views])
+            result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(sink->getHeader()));
 
         result_chain.addSource(std::move(sink));
     }
     else
     {
-        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(storage_header));
+        if (settings[Setting::deduplicate_blocks_in_dependent_materialized_views])
+            result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(storage_header));
     }
 
     if (result_chain.empty())

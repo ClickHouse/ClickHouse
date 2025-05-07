@@ -201,9 +201,11 @@ function setup_logs_replication
         echo "Creating materialized view system.${table}_watcher" >&2
 
         clickhouse-client --query "
-            CREATE MATERIALIZED VIEW system.${table}_watcher TO system.${table}_sender AS
-            SELECT ${EXTRA_COLUMNS_EXPRESSION_FOR_TABLE}, *
-            FROM system.${table}
+            CREATE MATERIALIZED VIEW system.${table}_watcher
+            TO system.${table}_sender
+            DEFINER = ci_logs_sender
+            AS
+            SELECT ${EXTRA_COLUMNS_EXPRESSION_FOR_TABLE}, * FROM system.${table}
         " || continue
     done
 )

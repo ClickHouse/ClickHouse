@@ -1,13 +1,15 @@
 ---
-slug: /sql-reference/statements/truncate
+description: 'Documentation for TRUNCATE Statements'
+sidebar_label: 'TRUNCATE'
 sidebar_position: 52
-sidebar_label: TRUNCATE
+slug: /sql-reference/statements/truncate
+title: 'TRUNCATE Statements'
 ---
 
 # TRUNCATE Statements
 
 ## TRUNCATE TABLE {#truncate-table}
-``` sql
+```sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
@@ -24,15 +26,19 @@ If the `alter_sync` is set to `2` and some replicas are not active for more than
 :::
 
 ## TRUNCATE ALL TABLES {#truncate-all-tables}
-``` sql
+```sql
 TRUNCATE ALL TABLES FROM [IF EXISTS] db [ON CLUSTER cluster]
 ```
 
 Removes all data from all tables in a database.
 
 ## TRUNCATE DATABASE {#truncate-database}
-``` sql
+```sql
 TRUNCATE DATABASE [IF EXISTS] db [ON CLUSTER cluster]
 ```
 
 Removes all tables from a database but keeps the database itself. When the clause `IF EXISTS` is omitted, the query returns an error if the database does not exist.
+
+:::note
+`TRUNCATE DATABASE` is not supported for `Replicated` databases. Instead, just `DROP` and `CREATE` the database.
+:::

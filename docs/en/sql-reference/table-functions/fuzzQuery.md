@@ -1,16 +1,16 @@
 ---
-slug: /sql-reference/table-functions/fuzzQuery
+description: 'Perturbs the given query string with random variations.'
+sidebar_label: 'fuzzQuery'
 sidebar_position: 75
-sidebar_label: fuzzQuery
-title: "fuzzQuery"
-description: "Perturbs the given query string with random variations."
+slug: /sql-reference/table-functions/fuzzQuery
+title: 'fuzzQuery'
 ---
 
 # fuzzQuery Table Function
 
 Perturbs the given query string with random variations.
 
-``` sql
+```sql
 fuzzQuery(query[, max_query_length[, random_seed]])
 ```
 

@@ -1,9 +1,9 @@
 ---
-slug: /sql-reference/table-functions/deltalakeCluster
+description: 'This is an extension to the deltaLake table function.'
+sidebar_label: 'deltaLakeCluster'
 sidebar_position: 46
-sidebar_label: deltaLakeCluster
-title: "deltaLakeCluster"
-description: "This is an extension to the deltaLake table function."
+slug: /sql-reference/table-functions/deltalakeCluster
+title: 'deltaLakeCluster'
 ---
 
 # deltaLakeCluster Table Function
@@ -14,7 +14,7 @@ Allows processing files from [Delta Lake](https://github.com/delta-io/delta) tab
 
 **Syntax**
 
-``` sql
+```sql
 deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
 ```
 

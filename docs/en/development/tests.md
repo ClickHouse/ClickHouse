@@ -1,10 +1,12 @@
 ---
-slug: /development/tests
+description: 'Guide to testing ClickHouse and running the test suite'
+sidebar_label: 'Testing'
 sidebar_position: 40
-sidebar_label: Testing
+slug: /development/tests
+title: 'Testing ClickHouse'
 ---
 
-# Testing
+# Testing ClickHouse
 
 ## Functional Tests {#functional-tests}
 
@@ -16,7 +18,7 @@ Each functional test sends one or multiple queries to the running ClickHouse ser
 Tests are located in `queries` directory.
 There are two subdirectories: `stateless` and `stateful`.
 - Stateless tests run queries without any preloaded test data - they often create small synthetic datasets on the fly, within the test itself.
-- Stateful tests require preloaded test data from ClickHouse and it is available to general public.
+- Stateful tests require preloaded test data from ClickHouse and it is available to general public. See [stateful test in continuous integration](continuous-integration.md#functional-stateful-tests).
 
 Each test can be one of two types: `.sql` and `.sh`.
 - An `.sql` test is the simple SQL script that is piped to `clickhouse-client`.
@@ -269,7 +271,7 @@ Look for logs at `/etc/clickhouse-server/clickhouse-server.log`.
 
 When ClickHouse is already installed on your system, you can build a new `clickhouse` binary and replace the existing binary:
 
-``` bash
+```bash
 $ sudo clickhouse stop
 $ sudo cp ./clickhouse /usr/bin/
 $ sudo clickhouse start
@@ -277,14 +279,14 @@ $ sudo clickhouse start
 
 Also you can stop system clickhouse-server and run your own with the same configuration but with logging to terminal:
 
-``` bash
+```bash
 $ sudo clickhouse stop
 $ sudo -u clickhouse /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 
 Example with gdb:
 
-``` bash
+```bash
 $ sudo -u clickhouse gdb --args /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 
@@ -327,13 +329,12 @@ We also test some cases automatically with integrational tests:
 
 ## Help from the Compiler {#help-from-the-compiler}
 
-Main ClickHouse code (that is located in `dbms` directory) is built with `-Wall -Wextra -Werror` and with some additional enabled warnings.
+Main ClickHouse code (that is located in `src` directory) is built with `-Wall -Wextra -Werror` and with some additional enabled warnings.
 Although these options are not enabled for third-party libraries.
 
 Clang has even more useful warnings - you can look for them with `-Weverything` and pick something to default build.
 
-For production builds, clang is used, but we also test make gcc builds.
-For development, clang is usually more convenient to use.
+We always use clang to build ClickHouse, both for development and production.
 You can build on your own machine with debug mode (to save battery of your laptop), but please note that compiler is able to generate more warnings with `-O3` due to better control flow and inter-procedure analysis.
 When building with clang in debug mode, debug version of `libc++` is used that allows to catch more errors at runtime.
 

@@ -1,6 +1,7 @@
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
@@ -33,12 +34,12 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
     const auto context = args.getLocalContext();
-    auto queue_settings = std::make_unique<StorageObjectStorageSettings>();
+    auto storage_settings = std::make_shared<StorageObjectStorageSettings>();
 
     if (args.storage_def->settings)
-        queue_settings->loadFromQuery(*args.storage_def->settings);
+        storage_settings->loadFromQuery(*args.storage_def->settings);
 
-    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, context, false, queue_settings.get());
+    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, context, false, storage_settings);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
@@ -263,6 +264,34 @@ void registerStorageDeltaLake(StorageFactory & factory)
             .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessType::S3,
+            .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
+        });
+    factory.registerStorage(
+        "DeltaLakeS3",
+        [&](const StorageFactory::Arguments & args)
+        {
+            auto configuration = std::make_shared<StorageS3DeltaLakeConfiguration>();
+            return createStorageObjectStorage(args, configuration);
+        },
+        {
+            .supports_settings = true,
+            .supports_schema_inference = true,
+            .source_access_type = AccessType::S3,
+            .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
+        });
+#    endif
+#    if USE_AZURE_BLOB_STORAGE
+    factory.registerStorage(
+        "DeltaLakeAzure",
+        [&](const StorageFactory::Arguments & args)
+        {
+            auto configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>();
+            return createStorageObjectStorage(args, configuration);
+        },
+        {
+            .supports_settings = true,
+            .supports_schema_inference = true,
+            .source_access_type = AccessType::AZURE,
             .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
         });
 #    endif

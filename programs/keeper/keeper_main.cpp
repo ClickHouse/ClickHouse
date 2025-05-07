@@ -19,6 +19,7 @@
 #include <Common/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/IO.h>
+#include <Common/Crypto/OpenSSLInitializer.h>
 
 #include <base/coverage.h>
 #include <base/phdr_cache.h>
@@ -151,6 +152,14 @@ __attribute__((constructor(0))) void init_je_malloc_message()
     };
 }
 #endif
+
+/// OpenSSL early initialization.
+/// See also EnvironmentChecks.cpp for other static initializers.
+/// Must be ran after EnvironmentChecks.cpp, as OpenSSL uses SSE4.1 and POPCNT.
+__attribute__((constructor(202))) void init_ssl()
+{
+    DB::OpenSSLInitializer::initialize();
+}
 
 /// This allows to implement assert to forbid initialization of a class in static constructors.
 /// Usage:

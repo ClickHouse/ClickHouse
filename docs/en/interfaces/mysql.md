@@ -1,9 +1,13 @@
 ---
+description: 'Documentation for the MySQL protocol interface in ClickHouse, allowing
+  MySQL clients to connect to ClickHouse'
+sidebar_label: 'MySQL Interface'
+sidebar_position: 25
 slug: /interfaces/mysql
-sidebar_position: 20
-sidebar_label: MySQL Interface
+title: 'MySQL Interface'
 ---
 
+import Image from '@theme/IdealImage';
 import mysql0 from '@site/static/images/interfaces/mysql0.png';
 import mysql1 from '@site/static/images/interfaces/mysql1.png';
 import mysql2 from '@site/static/images/interfaces/mysql2.png';
@@ -37,23 +41,23 @@ This cannot be turned off and it can lead in rare edge cases to different behavi
 
 <br/>
 
-<img src={mysql0} alt="Credentials screen - Prompt" />
+<Image img={mysql0} alt="Credentials screen - Prompt" size="md"/>
 
 2. Change the `Connect with` drop-down to `MySQL`. 
 
 <br/>
 
-<img src={mysql1} alt="Credentials screen - MySQL selected" />
+<Image img={mysql1} alt="Credentials screen - MySQL selected" size="md" />
 
 3. Toggle the switch to enable the MySQL interface for this specific service. This will expose port `3306` for this service and prompt you with your MySQL connection screen that include your unique MySQL username. The password will be the same as the service's default user password.
 
 <br/>
 
-<img src={mysql2} alt="Credentials screen - Enabled MySQL" />
+<Image img={mysql2} alt="Credentials screen - Enabled MySQL" size="md"/>
 
 Copy the MySQL connection string shown.
 
-<img src={mysql3} alt="Credentials screen - Connection String" />
+<Image img={mysql3} alt="Credentials screen - Connection String" size="md"/>
 
 ## Creating multiple MySQL users in ClickHouse Cloud {#creating-multiple-mysql-users-in-clickhouse-cloud}
 
@@ -109,7 +113,7 @@ In this case, ensure that the username follows the `mysql4<subdomain>_<username>
 
 Add the [mysql_port](../operations/server-configuration-parameters/settings.md#mysql_port) setting to your server's configuration file. For example, you could define the port in a new XML file in your `config.d/` [folder](../operations/configuration-files):
 
-``` xml
+```xml
 <clickhouse>
     <mysql_port>9004</mysql_port>
 </clickhouse>
@@ -131,13 +135,13 @@ mysql --protocol tcp -h [hostname] -u [username] -P [port_number] [database_name
 
 For example:
 
-``` bash
+```bash
 $ mysql --protocol tcp -h 127.0.0.1 -u default -P 9004 default
 ```
 
 Output if a connection succeeded:
 
-``` text
+```text
 Welcome to the MySQL monitor.  Commands end with ; or \g.
 Your MySQL connection id is 4
 Server version: 20.2.1.1-ClickHouse
@@ -164,6 +168,6 @@ Restrictions:
 
 To cancel a long query use `KILL QUERY connection_id` statement (it is replaced with `KILL QUERY WHERE query_id = connection_id` while proceeding). For example:
 
-``` bash
+```bash
 $ mysql --protocol tcp -h mysql_server -P 9004 default -u default --password=123 -e "KILL QUERY 123456;"
 ```

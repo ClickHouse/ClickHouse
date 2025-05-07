@@ -5,9 +5,9 @@ import random
 import string
 
 import pytest
-from kazoo.client import KazooClient
 
 import helpers.keeper_utils as keeper_utils
+from helpers.test_tools import get_retry_number
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -42,10 +42,7 @@ def started_cluster():
 
 
 def get_connection_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
+    _fake_zk_instance = keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
     return _fake_zk_instance
 
 
@@ -54,44 +51,46 @@ def restart_clickhouse():
     keeper_utils.wait_until_connected(cluster, node)
 
 
-def test_state_after_restart(started_cluster):
+def test_state_after_restart(started_cluster, request):
     keeper_utils.wait_until_connected(started_cluster, node)
     node_zk = None
     node_zk2 = None
     try:
         node_zk = get_connection_zk("node")
 
-        node_zk.create("/test_state_after_restart", b"somevalue")
+        chroot = f"/test_state_after_restart_{get_retry_number(request)}"
+        node_zk.create(chroot, b"somevalue")
+        node_zk.chroot = chroot
+
         strs = []
         for i in range(100):
             strs.append(random_string(123).encode())
-            node_zk.create("/test_state_after_restart/node" + str(i), strs[i])
+            node_zk.create("/node" + str(i), strs[i])
 
         existing_children = []
         for i in range(100):
             if i % 7 == 0:
-                node_zk.delete("/test_state_after_restart/node" + str(i))
+                node_zk.delete("/node" + str(i))
             else:
                 existing_children.append("node" + str(i))
 
         restart_clickhouse()
 
         node_zk2 = get_connection_zk("node")
+        node_zk2.chroot = chroot
 
-        assert node_zk2.get("/test_state_after_restart")[0] == b"somevalue"
+        assert node_zk2.get("/")[0] == b"somevalue"
         for i in range(100):
             if i % 7 == 0:
-                assert (
-                    node_zk2.exists("/test_state_after_restart/node" + str(i)) is None
-                )
+                assert node_zk2.exists("/node" + str(i)) is None
             else:
-                data, stat = node_zk2.get("/test_state_after_restart/node" + str(i))
+                data, stat = node_zk2.get("/node" + str(i))
                 assert len(data) == 123
                 assert data == strs[i]
                 assert stat.ephemeralOwner == 0
 
         assert list(sorted(existing_children)) == list(
-            sorted(node_zk2.get_children("/test_state_after_restart"))
+            sorted(node_zk2.get_children("/"))
         )
     finally:
         try:
@@ -106,7 +105,7 @@ def test_state_after_restart(started_cluster):
             pass
 
 
-def test_ephemeral_after_restart(started_cluster):
+def test_ephemeral_after_restart(started_cluster, request):
     keeper_utils.wait_until_connected(started_cluster, node)
     node_zk = None
     node_zk2 = None
@@ -114,39 +113,39 @@ def test_ephemeral_after_restart(started_cluster):
         node_zk = get_connection_zk("node")
 
         session_id = node_zk._session_id
-        node_zk.create("/test_ephemeral_after_restart", b"somevalue")
+
+        chroot = f"/test_ephemeral_after_restart_{get_retry_number(request)}"
+        node_zk.create(chroot, b"somevalue")
+        node_zk.chroot = chroot
+
         strs = []
         for i in range(100):
             strs.append(random_string(123).encode())
-            node_zk.create(
-                "/test_ephemeral_after_restart/node" + str(i), strs[i], ephemeral=True
-            )
+            node_zk.create("/node" + str(i), strs[i], ephemeral=True)
 
         existing_children = []
         for i in range(100):
             if i % 7 == 0:
-                node_zk.delete("/test_ephemeral_after_restart/node" + str(i))
+                node_zk.delete("/node" + str(i))
             else:
                 existing_children.append("node" + str(i))
 
         restart_clickhouse()
 
         node_zk2 = get_connection_zk("node")
+        node_zk2.chroot = chroot
 
-        assert node_zk2.get("/test_ephemeral_after_restart")[0] == b"somevalue"
+        assert node_zk2.get("/")[0] == b"somevalue"
         for i in range(100):
             if i % 7 == 0:
-                assert (
-                    node_zk2.exists("/test_ephemeral_after_restart/node" + str(i))
-                    is None
-                )
+                assert node_zk2.exists("/node" + str(i)) is None
             else:
-                data, stat = node_zk2.get("/test_ephemeral_after_restart/node" + str(i))
+                data, stat = node_zk2.get("/node" + str(i))
                 assert len(data) == 123
                 assert data == strs[i]
                 assert stat.ephemeralOwner == session_id
         assert list(sorted(existing_children)) == list(
-            sorted(node_zk2.get_children("/test_ephemeral_after_restart"))
+            sorted(node_zk2.get_children("/"))
         )
     finally:
         try:
@@ -161,12 +160,16 @@ def test_ephemeral_after_restart(started_cluster):
             pass
 
 
-def test_invalid_snapshot(started_cluster):
+def test_invalid_snapshot(started_cluster, request):
     keeper_utils.wait_until_connected(started_cluster, node)
     node_zk = None
     try:
         node_zk = get_connection_zk("node")
-        node_zk.create("/test_invalid_snapshot", b"somevalue")
+
+        chroot = f"/test_invalid_snapshot_{get_retry_number(request)}"
+        node_zk.create(chroot, b"somevalue")
+        node_zk.chroot = chroot
+
         keeper_utils.send_4lw_cmd(started_cluster, node, "csnp")
         node.stop_clickhouse()
         snapshots = (
@@ -213,17 +216,20 @@ def test_invalid_snapshot(started_cluster):
             pass
 
 
-def test_snapshot_size(started_cluster):
+def test_snapshot_size(started_cluster, request):
     keeper_utils.wait_until_connected(started_cluster, node)
     node_zk = None
     try:
         node_zk = get_connection_zk("node")
 
-        node_zk.create("/test_state_size", b"somevalue")
+        chroot = f"/test_state_size_{get_retry_number(request)}"
+        node_zk.create(chroot, b"somevalue")
+        node_zk.chroot = chroot
+
         strs = []
         for i in range(100):
             strs.append(random_string(123).encode())
-            node_zk.create("/test_state_size/node" + str(i), strs[i])
+            node_zk.create("/node" + str(i), strs[i])
 
         node_zk.stop()
         node_zk.close()
