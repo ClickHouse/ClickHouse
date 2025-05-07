@@ -1,4 +1,5 @@
 #include "ORCBlockInputFormat.h"
+#include "Common/Exception.h"
 
 #if USE_ORC
 #    include <DataTypes/NestedUtils.h>
@@ -77,7 +78,13 @@ Chunk ORCBlockInputFormat::read()
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
     BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
-    return arrow_column_to_ch_column->arrowTableToCHChunk(table, num_rows, block_missing_values_ptr);
+    std::shared_ptr<const arrow::KeyValueMetadata> metadata;
+    if (auto status = file_reader->ReadMetadata(); status.ok())
+        metadata = status.ValueOrDie();
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected error while reading parquet metadata {}", status.status().message());
+
+    return arrow_column_to_ch_column->arrowTableToCHChunk(table, num_rows, metadata, block_missing_values_ptr);
 }
 
 void ORCBlockInputFormat::resetParser()
@@ -155,6 +162,11 @@ void ORCSchemaReader::initializeIfNeeded()
     if (file_reader)
         return;
 
+    if (auto status = file_reader->ReadMetadata(); status.ok())
+        metadata = status.ValueUnsafe();
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading incorrect metadata of ORC {}", status.status().message());
+
     std::atomic<int> is_stopped = 0;
     getFileReaderAndSchema(in, file_reader, schema, format_settings, is_stopped);
 }
@@ -164,6 +176,7 @@ NamesAndTypesList ORCSchemaReader::readSchema()
     initializeIfNeeded();
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         *schema,
+        metadata,
         "ORC",
         format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference,
         format_settings.schema_inference_make_columns_nullable != 0);

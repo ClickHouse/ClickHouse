@@ -160,7 +160,7 @@ function wait_for_queries_to_finish()
 {
     local max_tries="${1:-20}"
     # Wait for all queries to finish (query may still be running if a thread is killed by timeout)
-    num_tries=0
+    local num_tries=0
     while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database=currentDatabase() AND query NOT LIKE '%system.processes%'") -ne 0 ]]; do
         sleep 0.5;
         num_tries=$((num_tries+1))
@@ -214,7 +214,8 @@ function run_with_error()
     return 0
 }
 
-if [[ -n $CLICKHOUSE_BASH_TRACING_FILE ]]; then
+# BASH_XTRACEFD is supported only since 4.1
+if [[ -n $CLICKHOUSE_BASH_TRACING_FILE ]] && [[ ${BASH_VERSINFO[0]} -gt 4 || (${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 1) ]]; then
     exec 3>"$CLICKHOUSE_BASH_TRACING_FILE"
     # It will be also nice to have stderr in the tracing output, but:
     # - exec 2>&3

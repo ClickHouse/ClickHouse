@@ -1515,7 +1515,7 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
     auto hash_table_stat_cache_key = preCalculateCacheKey(right_table_expression, select_query_info);
     const auto cache_key_for_parallel_hash = calculateCacheKey(table_join, hash_table_stat_cache_key);
     auto join_algorithm = chooseJoinAlgorithm(
-        table_join, prepared_join_storage, left_header, right_header, JoinAlgorithmSettings(*planner_context->getQueryContext()), cache_key_for_parallel_hash);
+        table_join, prepared_join_storage, left_header, right_header, JoinAlgorithmSettings(*planner_context->getQueryContext()), cache_key_for_parallel_hash, /*rhs_size_estimation=*/{});
     auto result_plan = QueryPlan();
 
     bool is_filled_join = join_algorithm->isFilled();
@@ -1837,19 +1837,27 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
             auto & inner_columns_list = join_node_using_column_node.getExpressionOrThrow()->as<ListNode &>();
 
             auto & left_inner_column_node = inner_columns_list.getNodes().at(0);
-            auto & left_inner_column = left_inner_column_node->as<ColumnNode &>();
+            auto * left_inner_column = left_inner_column_node->as<ColumnNode>();
+            if (!left_inner_column)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "JOIN USING clause expected column identifier. Actual {}",
+                    left_inner_column_node->formatASTForErrorMessage());
 
             auto & right_inner_column_node = inner_columns_list.getNodes().at(1);
-            auto & right_inner_column = right_inner_column_node->as<ColumnNode &>();
+            auto * right_inner_column = right_inner_column_node->as<ColumnNode>();
+            if (!right_inner_column)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "JOIN USING clause expected column identifier. Actual {}",
+                    right_inner_column_node->formatASTForErrorMessage());
 
             const auto & join_node_using_column_node_type = join_node_using_column_node.getColumnType();
-            if (!left_inner_column.getColumnType()->equals(*join_node_using_column_node_type))
+            if (!left_inner_column->getColumnType()->equals(*join_node_using_column_node_type))
             {
                 const auto & left_inner_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(left_inner_column_node);
                 left_plan_column_name_to_cast_type.emplace(left_inner_column_identifier, join_node_using_column_node_type);
             }
 
-            if (!right_inner_column.getColumnType()->equals(*join_node_using_column_node_type))
+            if (!right_inner_column->getColumnType()->equals(*join_node_using_column_node_type))
             {
                 const auto & right_inner_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(right_inner_column_node);
                 right_plan_column_name_to_cast_type.emplace(right_inner_column_identifier, join_node_using_column_node_type);

@@ -547,6 +547,11 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             node->getNodeTypeName(),
             node->formatASTForErrorMessage());
 
+    bool is_correlated_subquery = (query_node != nullptr && query_node->isCorrelated())
+                                || (union_node != nullptr && union_node->isCorrelated());
+    if (is_correlated_subquery)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot evaluate correlated scalar subquery");
+
     auto & context = scope.context;
 
     Block scalar_block;
@@ -1382,9 +1387,9 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
     {
         auto current = nodes_to_process.back();
         nodes_to_process.pop_back();
-        if (ColumnNodePtr current_column = std::dynamic_pointer_cast<ColumnNode>(current))
+        if (current->getNodeType() == QueryTreeNodeType::COLUMN)
         {
-            auto is_correlated_column = checkCorrelatedColumn(&scope, current_column);
+            auto is_correlated_column = checkCorrelatedColumn(&scope, current);
             if (is_correlated_column && !scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
             {
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -1392,7 +1397,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
                     " (Enable 'allow_experimental_correlated_subqueries' setting to allow correlated subqueries execution). In scope {}",
                     identifier_lookup.identifier.getFullName(),
                     resolved_identifier->formatASTForErrorMessage(),
-                    current_column->getColumnName(),
+                    current->as<ColumnNode>()->getColumnName(),
                     scope.scope_node->formatASTForErrorMessage());
             }
         }
@@ -1405,6 +1410,16 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
     }
 
     return resolve_result;
+}
+
+static void correctColumnExpressionType(ColumnNode & column_node, const ContextPtr & context)
+{
+    if (!column_node.hasExpression())
+        return;
+    auto & column_expression = column_node.getExpression();
+    if (column_node.getColumnType()->equals(*column_expression->getResultType()))
+        return;
+    column_expression = buildCastFunction(column_expression, column_node.getColumnType(), context, true);
 }
 
 /** Resolve identifier in scope.
@@ -1518,7 +1533,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
                 if (auto * column_node = typeid_cast<ColumnNode *>(node))
                     if (column_node->hasExpression())
+                    {
                         resolveExpressionNode(column_node->getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+                        correctColumnExpressionType(*column_node, scope.context);
+                    }
             }
         }
     }
@@ -1803,6 +1821,7 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
                     node_to_projection_name.emplace(matched_column_node, it->second);
 
                 matched_column_node->as<ColumnNode &>().setColumnType(join_using_column_node.getResultType());
+                correctColumnExpressionType(matched_column_node->as<ColumnNode &>(), scope.context);
                 if (!matched_column_node->isEqual(*join_using_column_nodes.at(0)))
                     scope.join_columns_with_changed_types[matched_column_node] = join_using_column_nodes.at(0);
             }
@@ -2118,6 +2137,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
 
                     matched_column_node = matched_column_node->clone();
                     matched_column_node->as<ColumnNode &>().setColumnType(join_using_column_node.getResultType());
+                    correctColumnExpressionType(matched_column_node->as<ColumnNode &>(), scope.context);
                     if (!matched_column_node->isEqual(*join_using_column_nodes.at(0)))
                         scope.join_columns_with_changed_types[matched_column_node] = join_using_column_nodes.at(0);
 
@@ -2518,7 +2538,8 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
     auto & window_node = node->as<WindowNode &>();
     window_node.setParentWindowName({});
 
-    ProjectionNames partition_by_projection_names = resolveExpressionNodeList(window_node.getPartitionByNode(),
+    ProjectionNames partition_by_projection_names = resolveExpressionNodeList(
+        window_node.getPartitionByNode(),
         scope,
         false /*allow_lambda_expression*/,
         false /*allow_table_expression*/);
@@ -2728,7 +2749,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     /// Resolve function parameters
 
-    auto parameters_projection_names = resolveExpressionNodeList(function_node_ptr->getParametersNode(),
+    auto parameters_projection_names = resolveExpressionNodeList(
+        function_node_ptr->getParametersNode(),
         scope,
         false /*allow_lambda_expression*/,
         false /*allow_table_expression*/);
@@ -2909,7 +2931,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     /// Resolve function arguments
     bool allow_table_expressions = is_special_function_in || is_special_function_exists;
-    auto arguments_projection_names = resolveExpressionNodeList(function_node_ptr->getArgumentsNode(),
+    auto arguments_projection_names = resolveExpressionNodeList(
+        function_node_ptr->getArgumentsNode(),
         scope,
         true /*allow_lambda_expression*/,
         allow_table_expressions /*allow_table_expression*/);
@@ -2917,13 +2940,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     if (is_special_function_exists)
     {
         checkFunctionNodeHasEmptyNullsAction(*function_node_ptr);
-        /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
         auto & exists_subquery_argument = function_node_ptr->getArguments().getNodes().at(0);
         bool correlated_exists_subquery = exists_subquery_argument->getNodeType() == QueryTreeNodeType::QUERY
             ? exists_subquery_argument->as<QueryNode>()->isCorrelated()
             : exists_subquery_argument->as<UnionNode>()->isCorrelated();
         if (!correlated_exists_subquery)
         {
+            /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
             auto constant_data_type = std::make_shared<DataTypeUInt64>();
 
             auto in_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
@@ -3866,7 +3889,10 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
         {
             auto & column_node = node->as<ColumnNode &>();
             if (column_node.hasExpression())
+            {
                 resolveExpressionNode(column_node.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+                correctColumnExpressionType(column_node, scope.context);
+            }
 
             if (result_projection_names.empty())
                 result_projection_names.push_back(column_node.getColumnName());
@@ -3911,7 +3937,11 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
             else
                 resolveUnion(node, subquery_scope);
 
-            if (!allow_table_expression)
+            bool is_correlated_subquery = node_type == QueryTreeNodeType::QUERY
+                ? node->as<QueryNode>()->isCorrelated()
+                : node->as<UnionNode>()->isCorrelated();
+
+            if (!allow_table_expression && !is_correlated_subquery)
                 evaluateScalarSubqueryIfNeeded(node, subquery_scope);
 
             if (result_projection_names.empty())
@@ -4004,7 +4034,12 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
   * Example: CREATE TABLE test_table (id UInt64, value UInt64) ENGINE=TinyLog; SELECT plus(*) FROM test_table;
   * Example: SELECT *** FROM system.one;
   */
-ProjectionNames QueryAnalyzer::resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression)
+ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
+    QueryTreeNodePtr & node_list,
+    IdentifierResolveScope & scope,
+    bool allow_lambda_expression,
+    bool allow_table_expression
+)
 {
     auto & node_list_typed = node_list->as<ListNode &>();
     size_t node_list_size = node_list_typed.getNodes().size();
