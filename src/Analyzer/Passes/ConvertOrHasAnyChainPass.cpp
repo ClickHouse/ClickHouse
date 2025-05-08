@@ -37,11 +37,9 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<ConvertOrHasAnyChainVisitor>;
     using Base::Base;
 
-    explicit ConvertOrHasAnyChainVisitor(
-        FunctionOverloadResolverPtr or_function_resolver_, FunctionOverloadResolverPtr hasany_function_resolver_, ContextPtr context)
+    explicit ConvertOrHasAnyChainVisitor(FunctionOverloadResolverPtr or_function_resolver_, ContextPtr context)
         : Base(std::move(context))
         , or_function_resolver(std::move(or_function_resolver_))
-        , hasany_function_resolver(std::move(hasany_function_resolver_))
     {
     }
 
@@ -112,7 +110,7 @@ public:
             std::sort(std::begin(patterns), std::end(patterns));
             patterns.erase(std::unique(std::begin(patterns), std::end(patterns)), std::end(patterns));
             arguments.push_back(std::make_shared<ConstantNode>(Field{std::move(patterns)}));
-            hasany_function->resolveAsFunction(hasany_function_resolver);
+            hasany_function->resolveAsFunction(getHasAnyFunctionResolver());
         }
 
         // OR must have at least two arguments
@@ -125,19 +123,26 @@ public:
     }
 
 private:
+    FunctionOverloadResolverPtr const & getHasAnyFunctionResolver()
+    {
+        if (!hasany_function_resolver)
+            hasany_function_resolver = FunctionFactory::instance().get("hasAny", getContext());
+        return hasany_function_resolver;
+    }
+
+private:
     using FunctionNodes = std::vector<std::shared_ptr<FunctionNode>>;
     const FunctionOverloadResolverPtr or_function_resolver;
-    const FunctionOverloadResolverPtr hasany_function_resolver;
+    mutable FunctionOverloadResolverPtr hasany_function_resolver;
 };
 
 }
 
 void ConvertOrHasAnyChainPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    auto hasany_function_resolver = FunctionFactory::instance().get("hasAny", context);
     auto or_function_resolver = createInternalFunctionOrOverloadResolver();
 
-    ConvertOrHasAnyChainVisitor visitor(std::move(or_function_resolver), std::move(hasany_function_resolver), std::move(context));
+    ConvertOrHasAnyChainVisitor visitor(std::move(or_function_resolver), std::move(context));
     visitor.visit(query_tree_node);
 }
 
