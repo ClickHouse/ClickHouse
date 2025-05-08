@@ -7,6 +7,8 @@
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SipHash.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeNothing.h>
 
 namespace DB
 {
@@ -490,7 +492,11 @@ void ColumnUniqueFCBlockDF::get(size_t n, Field & res) const
 
 std::pair<String, DataTypePtr> ColumnUniqueFCBlockDF::getValueNameAndType(size_t n) const
 {
-    return data_column->getValueNameAndType(n); /// it's always String
+    if (is_nullable && n == getNullValueIndex())
+    {
+        return {"NULL", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())};
+    }
+    return data_column->getValueNameAndType(n);
 }
 
 void ColumnUniqueFCBlockDF::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const
@@ -618,6 +624,7 @@ void ColumnUniqueFCBlockDF::updateHashWithValue(size_t n, SipHash & hash_func) c
     hash_func.update(reinterpret_cast<const char *>(&size), sizeof(size));
     hash_func.update(value.prefix.data, value.prefix.size);
     hash_func.update(value.suffix.data, value.suffix.size);
+    hash_func.update('\0');
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -696,7 +703,7 @@ size_t ColumnUniqueFCBlockDF::allocatedBytes() const
 
 UInt128 ColumnUniqueFCBlockDF::getHash() const
 {
-    return hash.getHash(data_column);
+    return hash.getHash(getNestedColumn());
 }
 
 bool ColumnUniqueFCBlockDF::haveIndexesChanged() const
