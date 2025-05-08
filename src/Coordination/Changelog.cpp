@@ -139,6 +139,8 @@ Checksum computeRecordChecksum(const ChangelogRecord & record)
 class ChangelogWriter
 {
 public:
+    std::map<uint64_t, ChangelogFileDescriptionPtr> s3_changelogs;
+
     ChangelogWriter(
         std::map<uint64_t, ChangelogFileDescriptionPtr> & existing_changelogs_,
         LogEntryStorage & entry_storage_,
@@ -151,6 +153,17 @@ public:
         , log(getLogger("Changelog"))
     {
         s3_disk = keeper_context->getDisk("some_s3_plain");
+    }
+
+    ~ChangelogWriter()
+    {
+        // Print contents of s3_changelogs map in destructor
+        LOG_INFO(log, "S3 changelogs map contents:");
+        for (const auto & [index, description] : s3_changelogs)
+        {
+            LOG_INFO(log, "S3 changelog: index={}, path={}, from={}, to={}", 
+                index, description->path, description->from_log_index, description->to_log_index);
+        }
     }
 
     void setFile(ChangelogFileDescriptionPtr file_description, WriteMode mode)
@@ -228,18 +241,25 @@ public:
             last_index_written.reset();
             current_file_description = std::move(file_description);
 
-            if (!s3_file_start) {
-                s3_file_start = std::make_unique<size_t>(current_file_description->from_log_index);
-
+            if (!s3_current_file_description) {
+                // Создаем описание S3 файла при первой инициализации
+                s3_current_file_description = std::make_shared<ChangelogFileDescription>();
+                s3_current_file_description->prefix = current_file_description->prefix;
+                s3_current_file_description->from_log_index = current_file_description->from_log_index;
+                s3_current_file_description->to_log_index = current_file_description->to_log_index;
+                s3_current_file_description->extension = current_file_description->extension;
+                s3_current_file_description->disk = s3_disk;
+                
                 s3_cur_path = formatChangelogPath(
-                    current_file_description->prefix,
-                    current_file_description->from_log_index,
-                    current_file_description->to_log_index,
-                    current_file_description->extension
+                    s3_current_file_description->prefix,
+                    s3_current_file_description->from_log_index,
+                    s3_current_file_description->to_log_index,
+                    s3_current_file_description->extension
                 );
+                s3_current_file_description->path = s3_cur_path;
+                
                 s3_write_buffer = s3_disk->writeFile(s3_cur_path);
-
-                LOG_TRACE(log, "Initialize s3 description path: {}", s3_cur_path);
+                LOG_TRACE(log, "Initialize S3 changelog file: {}", s3_cur_path);
             }
 
             if (log_file_settings.compress_logs)
@@ -347,15 +367,23 @@ public:
     void flush(bool s3_flush = true)
     {
         if (s3_flush) {
-            /* Flusing buffer, moving file */
+            /* Check if nothing was appended */
+            if (s3_current_file_description->from_log_index > *last_index_written) {
+                LOG_TRACE(log, "Close s3 writing buffer");
+
+                s3_changelogs.erase(s3_current_file_description->from_log_index);
+                return;
+            }
+
+            /* Flushing buffer, moving file */
             LOG_TRACE(log, "Flushing s3 buffer {}", s3_write_buffer->count());
 
             auto new_path = formatChangelogPath(
-                current_file_description->prefix,
-                *s3_file_start,
+                s3_current_file_description->prefix,
+                s3_current_file_description->from_log_index,
                 *last_index_written,
-                current_file_description->extension);
-    
+                s3_current_file_description->extension);
+
             LOG_TRACE(log, "Writing s3 buffer old path: {} new path: {}", s3_cur_path, new_path);
     
             if (s3_cur_path != new_path)
@@ -370,27 +398,43 @@ public:
                     prev_writer->finalize();
 
                     s3_write_buffer->cancel();
+
+                    s3_current_file_description->path = new_path;
+                    s3_current_file_description->to_log_index = *last_index_written;
+
+                    s3_changelogs[s3_current_file_description->from_log_index] = s3_current_file_description;
                 }
                 catch (...)
                 {
                     tryLogCurrentException(log, fmt::format("File rename failed on disk {}", s3_disk->getName()));
                 }
-            } else {
+            }
+            else 
+            {
                 s3_write_buffer->sync();
                 s3_write_buffer->finalize();
+
+                s3_changelogs[s3_current_file_description->from_log_index] = s3_current_file_description;
             }
-    
-            /* Update current description (LATER IT MUST BE NEW ONE) */
-            *s3_file_start = *last_index_written + 1;
+            
+            auto new_s3_description = std::make_shared<ChangelogFileDescription>();
+            new_s3_description->prefix = s3_current_file_description->prefix;
+            new_s3_description->from_log_index = *last_index_written + 1;
+            new_s3_description->to_log_index = new_s3_description->from_log_index + log_file_settings.rotate_interval - 1;
+            new_s3_description->extension = s3_current_file_description->extension;
+            new_s3_description->disk = s3_disk;
+            
             s3_cur_path = formatChangelogPath(
-                current_file_description->prefix,
-                *s3_file_start,
-                *s3_file_start + log_file_settings.rotate_interval,
-            current_file_description->extension);
-    
+                new_s3_description->prefix,
+                new_s3_description->from_log_index,
+                new_s3_description->to_log_index,
+                new_s3_description->extension);
+
+            new_s3_description->path = s3_cur_path;
+            s3_current_file_description = new_s3_description;
+
             LOG_TRACE(log, "Open new s3 buffer with path {}", s3_cur_path);
-    
-            /* Init new buffer */
+
             s3_write_buffer = s3_disk->writeFile(s3_cur_path);
         }
 
@@ -440,6 +484,7 @@ public:
 
     void finalize()
     {
+        finilizeS3();
         if (isFileSet() && prealloc_done)
             finalizeCurrentFile();
         else
@@ -449,8 +494,8 @@ public:
 private:
     DiskPtr s3_disk;
     std::unique_ptr<WriteBufferFromFileBase> s3_write_buffer;
-    std::unique_ptr<size_t> s3_file_start{nullptr};
     std::string s3_cur_path;
+    ChangelogFileDescriptionPtr s3_current_file_description;
 
     void finalizeCurrentFile()
     {
@@ -484,6 +529,17 @@ private:
 
         compressed_buffer.reset();
         file_buf.reset();
+    }
+
+    void finilizeS3() {
+        LOG_TRACE(log, "Finalize S3");
+
+        flush(true);
+
+        if (s3_write_buffer) {
+            s3_write_buffer->cancel();
+            s3_write_buffer.reset();
+        }
     }
 
     void cancelCurrentFile()
