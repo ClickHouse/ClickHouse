@@ -146,7 +146,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
         {
             search_column = child->result_name;
             /// if there is a Filter step, then the result_name is "__table1.vec"
-            if (search_column.find('.') != std::string::npos)
+            if (search_column.contains('.'))
             {
                 search_column = search_column.substr(search_column.find('.') + 1);
             }
