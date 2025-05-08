@@ -117,7 +117,8 @@ public:
 
     auto merge(const UniqExactSet & other, ThreadPool * thread_pool = nullptr, std::atomic<bool> * is_cancelled = nullptr)
     {
-        if (isSingleLevel() && other.isTwoLevel())
+        const bool worth_converting_to_two_level = other.isTwoLevel() || (worthConvertingToTwoLevel(std::max(size(), other.size())));
+        if (isSingleLevel() && worth_converting_to_two_level)
             convertToTwoLevel();
 
         if (isSingleLevel())
@@ -127,6 +128,10 @@ public:
         else
         {
             auto & lhs = asTwoLevel();
+
+            if (other.isSingleLevel())
+                return lhs.merge(other.asSingleLevel());
+
             const auto rhs_ptr = other.getTwoLevelSet();
             const auto & rhs = *rhs_ptr;
             if (!thread_pool)
