@@ -6,13 +6,12 @@ namespace DB
 {
 
 /** Query like this:
-  * DELETE FROM [db.]name WHERE ...
+  * UPDATE [db.]name SET ... WHERE ...
   */
-
-class ParserDeleteQuery : public IParserBase
+class ParserUpdateQuery : public IParserBase
 {
 protected:
-    const char * getName() const override { return "Delete query"; }
+    const char * getName() const override { return "Update query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

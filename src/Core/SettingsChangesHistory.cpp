@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <boost/algorithm/string.hpp>
+#include <Core/SettingsEnums.h>
 
 #include <fmt/ranges.h>
 
@@ -77,6 +78,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"page_cache_block_size", 1048576, 1048576, "Made this setting adjustable on a per-query level."},
             {"page_cache_lookahead_blocks", 16, 16, "Made this setting adjustable on a per-query level."},
             {"output_format_pretty_glue_chunks", "0", "auto", "A new setting to make Pretty formats prettier."},
+            {"distributed_cache_read_only_from_current_az", true, true, "New setting"},
             {"parallel_hash_join_threshold", 0, 100'000, "New setting"},
             {"make_distributed_plan", 0, 0, "New experimental setting."},
             {"execute_distributed_plan_locally", 0, 0, "New experimental setting."},
@@ -84,6 +86,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"default_reader_bucket_count", 8, 8, "New experimental setting."},
             {"optimize_exchanges", 0, 0, "New experimental setting."},
             {"force_exchange_kind", "", "", "New experimental setting."},
+            {"allow_experimental_delta_kernel_rs", false, false, "New setting"},
+            {"update_sequential_consistency", true, true, "A new setting"},
+            {"update_parallel_mode", "auto", "auto", "A new setting"},
+            {"lightweight_delete_mode", "alter_update", "alter_update", "A new setting"},
+            {"alter_update_mode", "heavy", "heavy", "A new setting"},
+            {"apply_patch_parts", false, true, "A new setting"},
+            {"allow_experimental_lightweight_update", false, false, "A new setting"},
             {"allow_experimental_delta_kernel_rs", true, true, "New setting"},
             {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
         });
@@ -733,6 +742,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.5",
         {
+            {"apply_patches_on_merge", true, true, "New setting"},
+            {"remove_unused_patch_parts", true, true, "New setting"},
             {"write_marks_for_substreams_in_compact_parts", false, true, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",

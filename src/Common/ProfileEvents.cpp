@@ -136,8 +136,16 @@
     M(LocalWriteThrottlerBytes, "Bytes passed through 'max_local_write_bandwidth_for_server'/'max_local_write_bandwidth' throttler.", ValueType::Bytes) \
     M(LocalWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_local_write_bandwidth_for_server'/'max_local_write_bandwidth' throttling.", ValueType::Microseconds) \
     M(ThrottlerSleepMicroseconds, "Total time a query was sleeping to conform all throttling settings.", ValueType::Microseconds) \
-    M(ReadTasksWithAppliedMutationsOnFly, "Total number of parts for which there was any mutation applied on fly", ValueType::Number) \
-    M(MutationsAppliedOnFlyInAllReadTasks, "The sum of number of applied mutations on-fly for part among all read parts", ValueType::Number) \
+    M(ReadTasksWithAppliedPatches, "Total number of read tasks for which there was any patch part applied", ValueType::Number) \
+    M(PatchesAppliedInAllReadTasks, "Total number of applied patch parts among all read tasks", ValueType::Number) \
+    M(PatchesMergeAppliedInAllReadTasks, "Total number of applied patch parts with Merge mode among all read tasks", ValueType::Number) \
+    M(PatchesJoinAppliedInAllReadTasks, "Total number of applied patch parts with Join mode among all read tasks", ValueType::Number) \
+    M(ApplyPatchesMicroseconds, "Total time spent applying patch parts", ValueType::Number) \
+    M(ApplyPatchesMergeMicroseconds, "Total time spent applying patch parts with Merge mode", ValueType::Number) \
+    M(ApplyPatchesJoinMicroseconds, "Total time spent applying patch parts with Join mode", ValueType::Number) \
+    M(AnalyzePatchRangesMicroseconds, "Total time spent analyzing index of patch parts", ValueType::Number) \
+    M(ReadTasksWithAppliedMutationsOnFly, "Total number of read tasks for which there was any mutation applied on fly", ValueType::Number) \
+    M(MutationsAppliedOnFlyInAllReadTasks, "Total number of applied mutations on-fly among all read tasks", ValueType::Number) \
     \
     M(SchedulerIOReadRequests, "Resource requests passed through scheduler for IO reads.", ValueType::Number) \
     M(SchedulerIOReadBytes, "Bytes passed through scheduler for IO reads.", ValueType::Bytes) \
