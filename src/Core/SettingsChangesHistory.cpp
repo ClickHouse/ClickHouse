@@ -733,6 +733,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.5",
         {
+            {"escape_variant_subcolumn_filenames", false, true, "Escape special symbols for filenames created for Variant type subcolumns in Wide parts"},
             {"write_marks_for_substreams_in_compact_parts", false, true, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",

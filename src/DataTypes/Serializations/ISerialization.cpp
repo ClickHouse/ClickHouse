@@ -7,10 +7,15 @@
 #include <Common/escapeForFileName.h>
 #include <DataTypes/NestedUtils.h>
 #include <base/EnumReflection.h>
-
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 namespace DB
 {
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool escape_variant_subcolumn_filenames;
+}
 
 namespace ErrorCodes
 {
@@ -162,7 +167,8 @@ String getNameForSubstreamPath(
     String stream_name,
     SubstreamIterator begin,
     SubstreamIterator end,
-    bool escape_for_file_name)
+    bool escape_for_file_name,
+    bool escape_variant_substreams)
 {
     using Substream = ISerialization::Substream;
 
@@ -201,9 +207,19 @@ String getNameForSubstreamPath(
         else if (it->type == Substream::VariantOffsets)
             stream_name += ".variant_offsets";
         else if (it->type == Substream::VariantElement)
-            stream_name += "." + it->variant_element_name;
+        {
+            if (escape_for_file_name && escape_variant_substreams)
+                stream_name += "." + escapeForFileName(it->variant_element_name);
+            else
+                stream_name += "." + it->variant_element_name;
+        }
         else if (it->type == Substream::VariantElementNullMap)
-            stream_name += "." + it->variant_element_name + ".null";
+        {
+            if (escape_for_file_name && escape_variant_substreams)
+                stream_name += "." + escapeForFileName(it->variant_element_name) + ".null";
+            else
+                stream_name += "." + it->variant_element_name + ".null";
+        }
         else if (it->type == SubstreamType::DynamicStructure)
             stream_name += ".dynamic_structure";
         else if (it->type == SubstreamType::ObjectStructure)
@@ -219,9 +235,9 @@ String getNameForSubstreamPath(
 
 }
 
-String ISerialization::getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path)
+String ISerialization::getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path, const StreamFileNameSettings & settings)
 {
-    return getFileNameForStream(column.getNameInStorage(), path);
+    return getFileNameForStream(column.getNameInStorage(), path, settings);
 }
 
 static bool isPossibleOffsetsOfNested(const ISerialization::SubstreamPath & path)
@@ -244,7 +260,7 @@ static bool isPossibleOffsetsOfNested(const ISerialization::SubstreamPath & path
     return false;
 }
 
-String ISerialization::getFileNameForStream(const String & name_in_storage, const SubstreamPath & path)
+String ISerialization::getFileNameForStream(const String & name_in_storage, const SubstreamPath & path, const StreamFileNameSettings & settings)
 {
     String stream_name;
     auto nested_storage_name = Nested::extractTableName(name_in_storage);
@@ -253,7 +269,7 @@ String ISerialization::getFileNameForStream(const String & name_in_storage, cons
     else
         stream_name = escapeForFileName(name_in_storage);
 
-    return getNameForSubstreamPath(std::move(stream_name), path.begin(), path.end(), true);
+    return getNameForSubstreamPath(std::move(stream_name), path.begin(), path.end(), true, settings.escape_variant_substreams);
 }
 
 String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path)
@@ -263,7 +279,7 @@ String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path)
 
 String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len)
 {
-    auto subcolumn_name = getNameForSubstreamPath("", path.begin(), path.begin() + prefix_len, false);
+    auto subcolumn_name = getNameForSubstreamPath("", path.begin(), path.begin() + prefix_len, false, false);
     if (!subcolumn_name.empty())
         subcolumn_name = subcolumn_name.substr(1); // It starts with a dot.
 
@@ -510,6 +526,11 @@ void ISerialization::throwUnexpectedDataAfterParsedValue(IColumn & column, ReadB
         std::string(istr.position(), std::min(size_t(10), istr.available())),
         type_name,
         ostr.str());
+}
+
+ISerialization::StreamFileNameSettings::StreamFileNameSettings(const MergeTreeSettings & merge_tree_settings)
+{
+    escape_variant_substreams = merge_tree_settings[MergeTreeSetting::escape_variant_subcolumn_filenames];
 }
 
 }
