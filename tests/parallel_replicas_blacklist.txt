@@ -33,9 +33,6 @@
     Duplicates on RIGHT JOIN with Values table
 03006_join_on_inequal_expression_3.gen
 
-    optimize_read_in_order=0 leads to "Replica 1 decided to read in Default mode, not in WithOrder. This is a bug: While executing Remote. (LOGICAL_ERROR)"
-02317_distinct_in_order_optimization
-
     https://github.com/ClickHouse/ClickHouse/issues/74343
     Cannot find column `tuple(col_a, type)` in source stream, there are only columns: [__table1.id, tuple(replaceAll(__table1.data, 'a'_String, 'e'_String), __table1.type), tuple(replaceAll(__table1.data, 'a'_String, 'e'_String), __table1.type)]. (THERE_IS_NO_COLUMN) (in query: SELECT id, tuple(replaceAll(data, 'a', 'e') AS col_a, type) AS a, tuple(replaceAll(data, 'a', 'e') AS col_b, type) AS b FROM src;)
 03240_insert_select_named_tuple
@@ -513,7 +510,6 @@
 
 00955_test_final_mark_use
 01624_soft_constraints
-02968_file_log_multiple_read
 03031_minmax_index_for_pointinpolygon
 
     ORDER BY ALL is missing for multiple queries
