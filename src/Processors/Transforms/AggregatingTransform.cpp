@@ -11,6 +11,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 
+#include <algorithm>
 #include <atomic>
 
 namespace ProfileEvents
@@ -284,6 +285,7 @@ public:
         , data(std::move(data_))
         , shared_data(std::make_shared<ConvertingAggregatedToChunksWithMergingSource::SharedData>())
         , num_threads(num_threads_)
+        , delayed_buckets(2, -1)
     {
     }
 
@@ -394,15 +396,13 @@ private:
         return Status::PortFull;
     }
 
-    static void encodeDelayedBucketId(Chunk & chunk, const Int32 delayed_buckets[2])
+    static void encodeDelayedBucketId(Chunk & chunk, const std::vector<Int32> & delayed_buckets)
     {
         auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
         if (!agg_info)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have AggregatedChunkInfo.");
 
-        // agg_info->bucket_num |= (delayed_buckets[0] << 16) & 0x00FF0000;
-        // agg_info->bucket_num |= (delayed_buckets[1] << 24) & 0xFF000000;
-        agg_info->delayed_buckets = {delayed_buckets[0], delayed_buckets[1]};
+        agg_info->delayed_buckets = delayed_buckets;
     }
 
     /// Read all sources and try to push current bucket.
@@ -434,26 +434,29 @@ private:
         while (current_bucket_num < NUM_BUCKETS)
         {
             Chunk chunk;
-            if (delayed_buckets[0] != -1 && (chunk = get_bucket_if_ready(delayed_buckets[0])))
+            for (auto & delayed_bucket : delayed_buckets)
             {
-                delayed_buckets[0] = -1;
-            }
-            else if (delayed_buckets[1] != -1 && (chunk = get_bucket_if_ready(delayed_buckets[1])))
-            {
-                delayed_buckets[1] = -1;
-            }
-            else if ((chunk = get_bucket_if_ready(current_bucket_num)))
-            {
-                ++current_bucket_num;
-            }
-            else
-            {
-                auto & empty = delayed_buckets[0] == -1 ? delayed_buckets[0] : delayed_buckets[1];
-                if (empty == -1)
+                if (delayed_bucket != -1 && (chunk = get_bucket_if_ready(delayed_bucket)))
                 {
-                    empty = current_bucket_num;
+                    delayed_bucket = -1;
+                    break;
+                }
+            }
+            if (!chunk)
+            {
+                if ((chunk = get_bucket_if_ready(current_bucket_num)))
+                {
                     ++current_bucket_num;
-                    continue;
+                }
+                else
+                {
+                    auto empty_it = std::ranges::find(delayed_buckets, -1);
+                    if (empty_it != delayed_buckets.end())
+                    {
+                        *empty_it = current_bucket_num;
+                        ++current_bucket_num;
+                        continue;
+                    }
                 }
             }
 
@@ -485,9 +488,11 @@ private:
             return false;
         };
 
-        if (try_push_delayed_bucket(delayed_buckets[0]) || try_push_delayed_bucket(delayed_buckets[1]))
-            return Status::PortFull;
-        else if (delayed_buckets[0] != -1 || delayed_buckets[1] != -1)
+        for (auto & delayed_bucket : delayed_buckets)
+            if (try_push_delayed_bucket(delayed_bucket))
+                return Status::PortFull;
+
+        if (std::ranges::any_of(delayed_buckets, [](auto delayed_bucket) { return delayed_bucket != -1; }))
             return Status::NeedData;
 
         output.finish();
@@ -510,7 +515,7 @@ private:
     static constexpr Int32 NUM_BUCKETS = 256;
     std::array<Chunk, NUM_BUCKETS> two_level_chunks;
 
-    Int32 delayed_buckets[2] = {-1, -1};
+    std::vector<Int32> delayed_buckets;
 
     Processors processors;
 
