@@ -105,6 +105,12 @@ bool MutatePlainMergeTreeTask::executeStep()
                 if (data_part_storage.hasActiveTransaction())
                     data_part_storage.precommitTransaction();
 
+                for (const auto & [_, projection] : new_part->getProjectionParts())
+                {
+                    if (projection->getDataPartStorage().hasActiveTransaction())
+                        projection->getDataPartStorage().precommitTransaction();
+                }
+
                 MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
                 /// FIXME Transactions: it's too optimistic, better to lock parts before starting transaction
                 storage.renameTempPartAndReplace(new_part, transaction, /*rename_in_transaction=*/ true);
