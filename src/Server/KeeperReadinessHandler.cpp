@@ -20,7 +20,7 @@
 namespace DB
 {
 
-void KeeperReadinessHandler::handleRequest(HTTPServerRequest & /*request*/, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void KeeperReadinessHandler::handleRequest(HTTPServerRequest & /*request*/, HTTPServerResponseBase & response, const ProfileEvents::Event & /*write_event*/)
 {
     try
     {
@@ -47,7 +47,9 @@ void KeeperReadinessHandler::handleRequest(HTTPServerRequest & /*request*/, HTTP
         if (!status)
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
 
-        *response.send() << oss.str();
+        auto wb = response.makeStream();
+        *wb << oss.str();
+        wb->finalize();
     }
     catch (...)
     {
@@ -57,10 +59,12 @@ void KeeperReadinessHandler::handleRequest(HTTPServerRequest & /*request*/, HTTP
         {
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
 
-            if (!response.sent())
+            if (!response.sendStarted())
             {
                 /// We have not sent anything yet and we don't even know if we need to compress response.
-                *response.send() << getCurrentExceptionMessage(false) << '\n';
+                auto wb = response.makeStream();
+                *wb << getCurrentExceptionMessage(false) << '\n';
+                wb->finalize();
             }
         }
         catch (...)

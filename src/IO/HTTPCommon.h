@@ -55,7 +55,7 @@ private:
 
 using HTTPSessionPtr = std::shared_ptr<Poco::Net::HTTPClientSession>;
 
-void setResponseDefaultHeaders(HTTPServerResponse & response);
+// void setResponseDefaultHeaders(HTTPServerResponse & response);
 
 /// Create session object to perform requests and set required parameters.
 HTTPSessionPtr makeHTTPSession(

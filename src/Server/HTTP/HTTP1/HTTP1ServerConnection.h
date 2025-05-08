@@ -39,9 +39,6 @@ public:
 
     void run() override;
 
-protected:
-    static void sendErrorResponse(Poco::Net::HTTPServerSession & session, Poco::Net::HTTPResponse::HTTPStatus status);
-
 private:
     HTTPContextPtr context;
     TCPServer & tcp_server;

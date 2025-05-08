@@ -28,7 +28,7 @@ public:
     ///        via unique_ptr - but we can't inherit HTTPServerRequest from ReadBuffer and pass it around,
     ///        since we also need it in other places.
 
-    ReadBuffer & getStream()
+    ReadBuffer & getStream() const
     {
         poco_check_ptr(body);
         return *body;
