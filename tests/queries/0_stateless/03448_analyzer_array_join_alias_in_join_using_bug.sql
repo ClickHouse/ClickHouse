@@ -39,3 +39,7 @@ SELECT arr, arr_item
 FROM remote('127.0.0.{1,2}', currentDatabase(), local_table) r
 ARRAY JOIN arr AS arr_item
 INNER JOIN (SELECT 1 + number as arr_item from numbers(2)) AS foo USING (arr_item);
+
+-- Fuzzed
+
+SELECT arr FROM remote('127.0.0.2', currentDatabase(), local_table) AS r ARRAY JOIN arr AS arr_item GLOBAL RIGHT JOIN (SELECT 1 AS arr_item) AS foo USING (arr_item);

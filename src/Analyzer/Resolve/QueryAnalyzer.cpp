@@ -5355,6 +5355,8 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                     identifier_full_name,
                     scope.scope_node->formatASTForErrorMessage());
 
+            /// Here we allow syntax 'USING (a AS b)' which means that 'a' is taken from left and 'b' is taken from right.
+            /// See 03449_join_using_allow_alias.sql and the comment in JoinNode.cpp
             const auto & right_name = identifier_node->hasAlias() ? identifier_node->getAlias() : identifier_full_name;
             IdentifierLookup identifier_lookup{Identifier(right_name), IdentifierLookupContext::EXPRESSION};
             auto result_right_table_expression = identifier_resolver.tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getRightTableExpression(), scope).resolved_identifier;
