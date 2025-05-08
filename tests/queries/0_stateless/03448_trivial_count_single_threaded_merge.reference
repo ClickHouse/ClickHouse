@@ -53,3 +53,4 @@ ExpressionTransform × 4
       ExpressionTransform
         (ReadFromMergeTree)
         MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+DROP TABLE IF EXISTS trivial_count;
