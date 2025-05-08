@@ -369,4 +369,13 @@ enum class DatabaseDataLakeCatalogType : uint8_t
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
 
+enum class VectorSearchFilteringType : uint8_t
+{
+    AUTO,
+    PREFILTER,
+    POSTFILTER,
+};
+
+DECLARE_SETTING_ENUM(VectorSearchFilteringType)
+
 }

@@ -1,5 +1,5 @@
 -- Tags: no-fasttest, no-ordinary-database
--- Tests for vector search and post-filtering
+-- Tests for vector search and pre-filtering/post-filtering.
 
 SET allow_experimental_vector_similarity_index = 1;
 SET enable_analyzer = 1;
@@ -36,7 +36,57 @@ INSERT INTO tab VALUES
   ('2025-01-03', 11, 111, 1009, [2.0, 0.0]),
   ('2025-01-03', 12, 112, 1010, [2.1, 0.0]);
 
-SET ann_prefer_pre_filtering = 0; -- default is 0
+-- Even with prefiltering=True, vector index should be used if there are no predicates.
+-- Verify that vector index is used and 3 out of 4 granules are read.
+SELECT count(explain) FROM (
+EXPLAIN indexes=1
+SELECT id
+FROM tab
+ORDER BY L2Distance(vector, [1.0, 1.0])
+LIMIT 2
+SETTINGS vector_search_filtering='prefilter'
+)
+WHERE explain LIKE '%vector_similarity%' OR explain LIKE '%Granules: 3/4%';
+
+-- Additional predicate present, vector index will not be used
+SELECT count(explain) FROM (
+EXPLAIN indexes=1
+SELECT id
+FROM tab
+WHERE attr2 >= 1006
+ORDER BY L2Distance(vector, [1.0, 1.0])
+LIMIT 2
+SETTINGS vector_search_filtering='prefilter'
+)
+WHERE explain LIKE '%vector_similarity%';
+
+-- Additional predicate present, vector index will not be used
+SELECT count(explain) FROM (
+EXPLAIN indexes=1
+SELECT id
+FROM tab
+WHERE attr1 <= 105
+ORDER BY L2Distance(vector, [1.0, 1.0])
+LIMIT 2
+SETTINGS vector_search_filtering='prefilter'
+)
+WHERE explain LIKE '%vector_similarity%';
+
+-- Additional predicate present, vector index will not be used
+SELECT count(explain) FROM (
+EXPLAIN indexes=1
+SELECT id
+FROM tab
+WHERE id <= 6
+ORDER BY L2Distance(vector, [1.0, 1.0])
+LIMIT 2
+SETTINGS vector_search_filtering='prefilter'
+)
+WHERE explain LIKE '%vector_similarity%';
+
+-- Tests for post-filtering
+
+SET vector_search_filtering = 'postfilter'; -- default is POSTFILTER
 
 -- Base case - no predicates, vector index will be used and 3 out of 4 granules will be shortlisted from all the partitions
 SELECT count(explain) FROM (
@@ -89,3 +139,25 @@ FROM system.query_log
 WHERE log_comment = '02354_vector_search_post_filtering_query1'
 AND current_database = currentDatabase()
 AND type = 'QueryFinish';
+
+-- The first 3 neighbours returned by vector index don't pass the
+-- "attr2 >= 1008" filter. Hence no rows returned by below query.
+SELECT id
+FROM tab
+WHERE dt = '2025-01-03'
+AND attr2 >= 1008
+ORDER BY L2Distance(vector, [1.0, 1.0])
+LIMIT 3;
+
+-- The first 3 neighbours returned by vector index don't pass the
+-- "attr2 >= 1008" filter. Use the multiplier setting to fetch more
+-- neighbours from the index and then rows pass the filter.
+SELECT id
+FROM tab
+WHERE dt = '2025-01-03'
+AND attr2 >= 1008
+ORDER BY L2Distance(vector, [1.0, 1.0])
+LIMIT 3
+SETTINGS vector_search_postfilter_multiplier = 2;
+
+DROP TABLE tab;

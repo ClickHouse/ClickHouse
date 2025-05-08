@@ -85,11 +85,13 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
             return updated_layers;
         node = node->children.front();
         read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
+        if (!read_from_mergetree_step)
+            return updated_layers;
         additional_filters_present = true;
     }
     if (const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo())
         additional_filters_present = true;
-    if (additional_filters_present && settings.ann_prefer_pre_filtering) /// user wants KNN
+    if (additional_filters_present && settings.vector_search_filtering == VectorSearchFilteringType::PREFILTER) /// user wants KNN
         return updated_layers;
 
     /// Extract N

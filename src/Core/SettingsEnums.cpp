@@ -290,4 +290,9 @@ IMPLEMENT_SETTING_ENUM(
      {"glue", DatabaseDataLakeCatalogType::GLUE},
      {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE}})
 
+IMPLEMENT_SETTING_ENUM(VectorSearchFilteringType, ErrorCodes::BAD_ARGUMENTS,
+    {{"auto", VectorSearchFilteringType::AUTO},
+     {"prefilter", VectorSearchFilteringType::PREFILTER},
+     {"postfilter", VectorSearchFilteringType::POSTFILTER}})
+
 }
