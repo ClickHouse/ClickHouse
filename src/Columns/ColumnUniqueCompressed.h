@@ -77,8 +77,8 @@ public:
     void get(size_t n, Field & res) const override;
     std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
-    bool isDefaultAt(size_t n) const override { return n == getNestedTypeDefaultValueIndex(); }
-    bool isNullAt(size_t n) const override { return n == getNullValueIndex(); }
+    bool isDefaultAt(size_t n) const override { return n == getDefaultValueIndex(); }
+    bool isNullAt(size_t n) const override { return is_nullable && n == getNullValueIndex(); }
 
     /// This methos is not implemented as there is no continuous memory chunk containing the value
     StringRef getDataAt(size_t) const override

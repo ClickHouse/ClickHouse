@@ -406,10 +406,9 @@ ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t
         return index.has_value() || to_add_strings.contains(value);
     };
 
-    size_t partition_index = start;
+    size_t first_overflowed = start + length;
     for (size_t i = start; i < start + length; ++i)
     {
-        partition_index = i;
         if (src.isNullAt(i))
         {
             continue;
@@ -417,6 +416,7 @@ ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t
         const StringRef data = src.getDataAt(i);
         if (size() + to_add_strings.size() >= max_dictionary_size)
         {
+            first_overflowed = i;
             break;
         }
         if (!is_already_present(data))
@@ -429,7 +429,7 @@ ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t
 
     const ColumnString * src_column = getAndCheckColumnString(&src);
 
-    auto to_add = src_column->cut(start, partition_index);
+    auto to_add = src_column->cut(start, first_overflowed);
 
     ColumnPtr sorted_column;
     old_indexes_mapping = prepareForInsert(values, to_add, sorted_column);
@@ -438,7 +438,7 @@ ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t
     MutableColumnPtr indexes = ColumnVector<UInt64>::create();
     if (is_nullable) /// keeping it outside of loop for performance
     {
-        for (size_t i = 0; i < partition_index; ++i)
+        for (size_t i = 0; i < first_overflowed; ++i)
         {
             if (src.isNullAt(i))
             {
@@ -452,13 +452,13 @@ ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t
     }
     else
     {
-        for (size_t i = start; i < partition_index; ++i)
+        for (size_t i = start; i < first_overflowed; ++i)
         {
             indexes->insert(getPosToInsert(src.getDataAt(i)));
         }
     }
 
-    auto overflow = src.cut(partition_index, start + length - partition_index);
+    auto overflow = src.cut(first_overflowed, start + length - first_overflowed);
     return {std::move(indexes), IColumn::mutate(std::move(overflow))};
 }
 
