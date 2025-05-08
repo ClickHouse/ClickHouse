@@ -22,6 +22,7 @@ REGISTER_FUNCTION(NumericIndexedVector)
 │     │ AggregateFunction(groupNumericIndexedVector, UInt8, UInt8) │
 └─────┴────────────────────────────────────────────────────────────┘
             )"}},
+        .introduced_in = {25, 5},
         .category = FunctionDocumentation::Category::Arithmetic,
     });
     factory.registerFunction<FunctionNumericIndexedVectorPointwiseAdd>(FunctionDocumentation{
@@ -45,6 +46,7 @@ SELECT
 │ {1:10,2:30,3:50,4:30} │ {1:12,2:22,3:32} │
 └───────────────────────┴──────────────────┘
             )"}},
+        .introduced_in = {25, 5},
         .category = FunctionDocumentation::Category::Arithmetic,
     });
     factory.registerFunction<FunctionNumericIndexedVectorPointwiseSubtract>(FunctionDocumentation{
@@ -68,6 +70,7 @@ SELECT
 │ {1:10,2:10,3:10,4:-30} │ {1:8,2:18,3:28} │
 └────────────────────────┴─────────────────┘
             )"}},
+        .introduced_in = {25, 5},
         .category = FunctionDocumentation::Category::Arithmetic,
     });
     factory.registerFunction<FunctionNumericIndexedVectorPointwiseMultiply>(FunctionDocumentation{
@@ -91,6 +94,7 @@ SELECT
 │ {2:200,3:600} │ {1:20,2:40,3:60} │
 └───────────────┴──────────────────┘
             )"}},
+        .introduced_in = {25, 5},
         .category = FunctionDocumentation::Category::Arithmetic,
     });
     factory.registerFunction<FunctionNumericIndexedVectorPointwiseDivide>(FunctionDocumentation{
@@ -114,6 +118,7 @@ SELECT
 │ {2:2,3:1.5} │ {1:5,2:10,3:15} │
 └─────────────┴─────────────────┘
             )"}},
+        .introduced_in = {25, 5},
         .category = FunctionDocumentation::Category::Arithmetic,
     });
     factory.registerFunction<FunctionNumericIndexedVectorPointwiseEqual>(FunctionDocumentation{
@@ -137,6 +142,7 @@ SELECT
 │ {2:1} │ {2:1} │
 └───────┴───────┘
             )"}},
+        .introduced_in = {25, 5},
         .category = FunctionDocumentation::Category::Arithmetic,
     });
     factory.registerFunction<FunctionNumericIndexedVectorPointwiseNotEqual>(FunctionDocumentation{
@@ -160,6 +166,7 @@ SELECT
 │ {1:1,3:1,4:1} │ {1:1,3:1} │
 └───────────────┴───────────┘
             )"}},
+        .introduced_in = {25, 5},
         .category = FunctionDocumentation::Category::Arithmetic,
     });
     factory.registerFunction<FunctionNumericIndexedVectorPointwiseLess>(FunctionDocumentation{
@@ -183,6 +190,7 @@ SELECT
 │ {3:1,4:1} │ {1:1} │
 └───────────┴───────┘
             )"}},
+        .introduced_in = {25, 5},
         .category = FunctionDocumentation::Category::Arithmetic,
     });
     factory.registerFunction<FunctionNumericIndexedVectorPointwiseLessEqual>(FunctionDocumentation{
@@ -206,6 +214,7 @@ SELECT
 │ {2:1,3:1,4:1} │ {1:1,2:1} │
 └───────────────┴───────────┘
             )"}},
+        .introduced_in = {25, 5},
         .category = FunctionDocumentation::Category::Arithmetic,
     });
     factory.registerFunction<FunctionNumericIndexedVectorPointwiseGreater>(FunctionDocumentation{
@@ -229,6 +238,7 @@ SELECT
 │ {1:1,3:1} │ {3:1} │
 └───────────┴───────┘
             )"}},
+        .introduced_in = {25, 5},
         .category = FunctionDocumentation::Category::Arithmetic,
     });
     factory.registerFunction<FunctionNumericIndexedVectorPointwiseGreaterEqual>(FunctionDocumentation{
@@ -252,6 +262,7 @@ SELECT
 │ {1:1,2:1,3:1} │ {2:1,3:1} │
 └───────────────┴───────────┘
             )"}},
+        .introduced_in = {25, 5},
         .category = FunctionDocumentation::Category::Arithmetic,
     });
     factory.registerFunction<FunctionNumericIndexedVectorGetValueImpl>(FunctionDocumentation{
@@ -270,6 +281,7 @@ SELECT numericIndexedVectorGetValue(numericIndexedVectorBuild(mapFromArrays([1, 
 │  30 │
 └─────┘
             )"}},
+        .introduced_in = {25, 5},
         .category = FunctionDocumentation::Category::Arithmetic,
     });
     factory.registerFunction<FunctionNumericIndexedVectorCardinality>(FunctionDocumentation{
@@ -290,6 +302,7 @@ SELECT numericIndexedVectorCardinality(numericIndexedVectorBuild(mapFromArrays([
 └─────┘
             )"
         }},
+        .introduced_in = {25, 5},
         .category = FunctionDocumentation::Category::Arithmetic,
     });
     factory.registerFunction<FunctionNumericIndexedVectorAllValueSum>(FunctionDocumentation{
@@ -310,6 +323,7 @@ SELECT numericIndexedVectorAllValueSum(numericIndexedVectorBuild(mapFromArrays([
 └─────┘
             )"
         }},
+        .introduced_in = {25, 5},
         .category = FunctionDocumentation::Category::Arithmetic,
     });
     factory.registerFunction<FunctionNumericIndexedVectorShortDebugString>(FunctionDocumentation{
@@ -331,6 +345,7 @@ SELECT numericIndexedVectorShortDebugString(numericIndexedVectorBuild(mapFromArr
 
             )"
         }},
+        .introduced_in = {25, 5},
         .category = FunctionDocumentation::Category::Arithmetic,
     });
     factory.registerFunction<FunctionNumericIndexedVectorToMap>(FunctionDocumentation{
@@ -351,6 +366,7 @@ SELECT numericIndexedVectorToMap(numericIndexedVectorBuild(mapFromArrays([1, 2, 
 └──────────────────┘
             )"
         }},
+        .introduced_in = {25, 5},
         .category = FunctionDocumentation::Category::Arithmetic,
     });
 }

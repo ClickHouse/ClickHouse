@@ -23,14 +23,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int LOGICAL_ERROR;
-extern const int BAD_ARGUMENTS;
-extern const int INCORRECT_DATA;
-}
-
 #define FOR_NUMERIC_INDEXED_VECTOR_INDEX_TYPES(M) \
     M(UInt8) \
     M(UInt16) \
