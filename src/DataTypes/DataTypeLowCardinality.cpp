@@ -76,9 +76,10 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
 
     if (which.isString())
     {
+        auto temp = creator(static_cast<ColumnString *>(nullptr));
+        auto nested = static_cast<ColumnUnique<ColumnString>*>(temp.get())->getNestedNotNullableColumn();
         const size_t block_size = 4;
-        return ColumnUniqueFCBlockDF::create(ColumnString::create(), block_size, keys_type.isNullable());
-        //return creator(static_cast<ColumnString *>(nullptr));
+        return ColumnUniqueFCBlockDF::create(std::move(nested), block_size, keys_type.isNullable());
     }
     if (which.isFixedString())
         return creator(static_cast<ColumnFixedString *>(nullptr));
