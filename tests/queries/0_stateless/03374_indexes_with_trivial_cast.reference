@@ -1,0 +1,45 @@
+Expression ((Project names + Projection))
+  Filter ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test)
+    Indexes:
+      Skip
+        Name: idx1
+        Description: bloom_filter GRANULARITY 1
+        Parts: 1/1
+        Granules: 33/1000
+Expression ((Project names + Projection))
+  Filter ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test)
+    Indexes:
+      Skip
+        Name: idx1
+        Description: set GRANULARITY 1
+        Parts: 1/1
+        Granules: 1/1000
+Expression ((Project names + Projection))
+  Filter ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test)
+    Indexes:
+      Skip
+        Name: idx1
+        Description: tokenbf_v1 GRANULARITY 1
+        Parts: 1/1
+        Granules: 1/1000
+Expression ((Project names + Projection))
+  Filter ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test)
+    Indexes:
+      Skip
+        Name: idx1
+        Description: ngrambf_v1 GRANULARITY 1
+        Parts: 1/1
+        Granules: 1000/1000
+Expression ((Project names + Projection))
+  Filter ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test)
+    Indexes:
+      Skip
+        Name: idx1
+        Description: minmax GRANULARITY 1
+        Parts: 1/1
+        Granules: 1/1000

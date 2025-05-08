@@ -815,6 +815,7 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr bool is_modulo = IsOperation<Op>::modulo;
     static constexpr bool is_int_div = IsOperation<Op>::int_div;
     static constexpr bool is_int_div_or_zero = IsOperation<Op>::int_div_or_zero;
+    static constexpr bool is_division_or_null = IsOperation<Op>::division_or_null;
 
     ContextPtr context;
     bool check_decimal_overflow = true;
@@ -1615,7 +1616,10 @@ public:
         /// We shouldn't use default implementation for nulls for the case when operation is divide,
         /// intDiv or modulo and denominator is Nullable(Something), because it may cause division
         /// by zero error (when value is Null we store default value 0 in nested column).
-        return !division_by_nullable;
+        /// And we also shouldn't use default implementation for nulls for the case when operation is
+        /// divideOrNull, intDivOrNull, moduloOrNull or positiveModuloOrNull, because it will return
+        /// null when the divisor is zero, and it is conflict with the default implementation.
+        return !division_by_nullable && !is_division_or_null;
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
@@ -1926,7 +1930,12 @@ public:
         });
 
         if (valid)
-            return type_res;
+        {
+            if constexpr (is_division_or_null)
+                return makeNullable(type_res);
+            else
+                return type_res;
+        }
 
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types {} and {} of arguments of function {}",
             arguments[0]->getName(), arguments[1]->getName(), String(name));
@@ -2420,7 +2429,6 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         if (division_by_nullable && !right_nullmap)
         {
             assert(right_argument.type->isNullable());
-
             bool is_const = checkColumnConst<ColumnNullable>(right_argument.column.get());
             const ColumnNullable * nullable_column = is_const ? checkAndGetColumnConstData<ColumnNullable>(right_argument.column.get())
                                                               : checkAndGetColumn<ColumnNullable>(right_argument.column.get());
@@ -2428,6 +2436,27 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             const auto & null_bytemap = nullable_column->getNullMapData();
             auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &null_bytemap);
             return wrapInNullable(res, arguments, result_type, input_rows_count);
+        }
+
+        /// Process special case when operation is divideOrNull, intDivOrNull, moduloOrNull or positiveModuloOrNull.
+        if (is_division_or_null)
+        {
+            if (left_argument.column->onlyNull() || right_argument.column->onlyNull())
+            {
+                auto res = removeNullable(result_type)->createColumn();
+                res->insertManyDefaults(input_rows_count);
+                auto null_map_col = ColumnUInt8::create(input_rows_count, 1);
+                return !null_map_col->empty() ? wrapInNullable(std::move(res), std::move(null_map_col)) : makeNullable(std::move(res));
+            }
+            else if (result_type->isNullable())
+            {
+                auto null_map_col = ColumnUInt8::create(input_rows_count, 0);
+                PaddedPODArray<UInt8> & null_map_data = null_map_col->getData();
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    null_map_data[i] = left_argument.column->isNullAt(i) || !right_argument.column->getBool(i);
+                auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, right_nullmap);
+                return !null_map_col->empty() ? wrapInNullable(res, std::move(null_map_col)) : makeNullable(res);
+            }
         }
 
         /// Special case - one or both arguments are IPv4

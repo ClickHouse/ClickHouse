@@ -12,13 +12,17 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Poco/JSON/Object.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
 namespace StorageObjectStorageSetting
 {
-extern const StorageObjectStorageSettingsBool allow_experimental_delta_kernel_rs;
 extern const StorageObjectStorageSettingsBool delta_lake_read_schema_same_as_table_schema;
+}
+namespace Setting
+{
+extern const SettingsBool allow_experimental_delta_kernel_rs;
 }
 
 struct DeltaLakePartitionColumn
@@ -41,8 +45,6 @@ public:
 
     DeltaLakeMetadata(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_);
 
-    Strings getDataFiles() const override { return data_files; }
-
     NamesAndTypesList getTableSchema() const override { return schema; }
 
     DeltaLakePartitionColumns getPartitionColumns() const { return partition_columns; }
@@ -62,12 +64,21 @@ public:
     {
 #if USE_DELTA_KERNEL_RS
         auto configuration_ptr = configuration.lock();
-        const auto & settings_ref = configuration_ptr->getSettingsRef();
-        if (settings_ref[StorageObjectStorageSetting::allow_experimental_delta_kernel_rs])
+
+        const auto & storage_settings_ref = configuration_ptr->getSettingsRef();
+        const auto & query_settings_ref = local_context->getSettingsRef();
+
+        const auto storage_type = configuration_ptr->getType();
+        const bool supports_delta_kernel = storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Local;
+
+        bool enable_delta_kernel = query_settings_ref[Setting::allow_experimental_delta_kernel_rs];
+        if (supports_delta_kernel && enable_delta_kernel)
+        {
             return std::make_unique<DeltaLakeMetadataDeltaKernel>(
                 object_storage,
                 configuration,
-                settings_ref[StorageObjectStorageSetting::delta_lake_read_schema_same_as_table_schema]);
+                storage_settings_ref[StorageObjectStorageSetting::delta_lake_read_schema_same_as_table_schema]);
+        }
         else
             return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
 #else
@@ -80,10 +91,19 @@ public:
     static DataTypePtr getFieldValue(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
     static Field getFieldValue(const String & value, DataTypePtr data_type);
 
+protected:
+    ObjectIterator iterate(
+        const ActionsDAG * filter_dag,
+        FileProgressCallback callback,
+        size_t list_batch_size) const override;
+
 private:
     mutable Strings data_files;
     NamesAndTypesList schema;
     DeltaLakePartitionColumns partition_columns;
+    ObjectStoragePtr object_storage;
+
+    Strings getDataFiles(const ActionsDAG *) const { return data_files; }
 };
 
 }

@@ -87,7 +87,7 @@ void SecureStreamSocketImpl::connect(const SocketAddress& address, const Poco::T
 	_impl.connect(address, timeout, !_lazyHandshake);
 	reset(_impl.sockfd());
 }
-	
+
 
 void SecureStreamSocketImpl::connectNB(const SocketAddress& address)
 {
@@ -100,19 +100,20 @@ void SecureStreamSocketImpl::connectSSL()
 {
 	_impl.connectSSL(!_lazyHandshake);
 }
-	
+
 
 void SecureStreamSocketImpl::bind(const SocketAddress& address, bool reuseAddress)
 {
        _impl.bind(address, reuseAddress);
        reset(_impl.sockfd());
 }
-	
+
+
 void SecureStreamSocketImpl::listen(int backlog)
 {
 	throw Poco::InvalidAccessException("Cannot listen() on a SecureStreamSocketImpl");
 }
-	
+
 
 void SecureStreamSocketImpl::close()
 {
@@ -168,12 +169,12 @@ void SecureStreamSocketImpl::shutdownReceive()
 {
 }
 
-	
+
 void SecureStreamSocketImpl::shutdownSend()
 {
 }
 
-	
+
 void SecureStreamSocketImpl::shutdown()
 {
 	_impl.shutdown();
@@ -198,11 +199,11 @@ bool SecureStreamSocketImpl::havePeerCertificate() const
 }
 
 
-X509Certificate SecureStreamSocketImpl::peerCertificate() const
+X509 * SecureStreamSocketImpl::peerCertificate() const
 {
-	X509* pCert = _impl.peerCertificate();
+	X509 * pCert = _impl.peerCertificate();
 	if (pCert)
-		return X509Certificate(pCert);
+        return pCert;
 	else
 		throw SSLException("No certificate available");
 }
@@ -213,7 +214,7 @@ void SecureStreamSocketImpl::setLazyHandshake(bool flag)
 	_lazyHandshake = flag;
 }
 
-	
+
 bool SecureStreamSocketImpl::getLazyHandshake() const
 {
 	return _lazyHandshake;

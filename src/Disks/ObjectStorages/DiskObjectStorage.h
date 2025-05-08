@@ -146,9 +146,9 @@ public:
 
     void startupImpl(ContextPtr context) override;
 
-    void refresh() override
+    void refresh(UInt64 not_sooner_than_milliseconds) override
     {
-        metadata_storage->refresh();
+        metadata_storage->refresh(not_sooner_than_milliseconds);
     }
 
     ReservationPtr reserve(UInt64 bytes) override;

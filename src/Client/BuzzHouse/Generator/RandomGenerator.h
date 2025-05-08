@@ -29,7 +29,7 @@ private:
     std::uniform_int_distribution<int32_t> ints32;
 
     std::uniform_int_distribution<uint32_t> uints32, dist1, dist2, dist3, dist4, date_years, datetime_years, datetime64_years, months,
-        hours, minutes;
+        hours, minutes, subseconds;
 
     std::uniform_int_distribution<int64_t> ints64;
 
@@ -105,6 +105,7 @@ public:
         , months(1, 12)
         , hours(0, 23)
         , minutes(0, 59)
+        , subseconds(0, UINT32_C(1000000000))
         , ints64(std::numeric_limits<int64_t>::min(), std::numeric_limits<int64_t>::max())
         , uints64(std::numeric_limits<uint64_t>::min(), std::numeric_limits<uint64_t>::max())
         , zero_one(0, 1)
@@ -151,10 +152,10 @@ public:
     String nextDate32();
 
     /// Range [1970-01-01 00:00:00, 2106-02-07 06:28:15]
-    String nextDateTime();
+    String nextDateTime(bool has_subseconds);
 
     /// Range [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]
-    String nextDateTime64();
+    String nextDateTime64(bool has_subseconds);
 
     template <typename T>
     T thresholdGenerator(const double always_on_prob, const double always_off_prob, T min_val, T max_val)

@@ -40,13 +40,17 @@ public:
 
     bool update(const ContextPtr & context) override;
 
-    Strings getDataFiles() const override;
-
     NamesAndTypesList getTableSchema() const override;
 
-    NamesAndTypesList getReadSchema() const override;
+    DB::ReadFromFormatInfo prepareReadingFromFormat(
+        const Strings & requested_columns,
+        const DB::StorageSnapshotPtr & storage_snapshot,
+        const ContextPtr & context,
+        bool supports_subset_of_columns) override;
 
     bool operator ==(const IDataLakeMetadata &) const override;
+
+    void modifyFormatSettings(FormatSettings & format_settings) const override;
 
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
@@ -60,8 +64,6 @@ public:
             configuration,
             settings_ref[StorageObjectStorageSetting::delta_lake_read_schema_same_as_table_schema]);
     }
-
-    bool supportsFileIterator() const override { return true; }
 
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,

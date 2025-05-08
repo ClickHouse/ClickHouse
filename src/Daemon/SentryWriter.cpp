@@ -262,7 +262,6 @@ void SentryWriter::resetInstance() {}
 
 SentryWriter::SentryWriter(Poco::Util::LayeredConfiguration &) {}
 SentryWriter::~SentryWriter() = default;
-void SentryWriter::sendError(Type, int, const std::string &, const FramePointers &, size_t, size_t) {}
 void SentryWriter::onSignal(int, const std::string &, const FramePointers &, size_t, size_t) {}
 void SentryWriter::onException(int, const std::string &, const FramePointers &, size_t, size_t) {}
 

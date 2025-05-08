@@ -18,6 +18,11 @@ SET enable_json_type = 1
 
 However, if you are using ClickHouse Cloud, you must first [get in touch with support](https://clickhouse.com/docs/about-us/support) to enable the usage of the `JSON` type.
 
+:::note
+In ClickHouse Open-Source JSON data type is marked as production ready in version 25.3. It's not recommended to use this type in production in previous versions.
+:::
+
+
 To declare a column of `JSON` type, you can use the following syntax:
 
 ```sql
@@ -827,7 +832,7 @@ SELECT json1, json2, json1 < json2, json1 = json2, json1 > json2 FROM test;
 └────────────┴─────────────────────┴────────────────────┴──────────────────────┴───────────────────────┘
 ```
 
-**Note:** when 2 paths contain values of different data types, they are compared according to [comparison rule](variant.md#comparing-values-of-variant-type-comparing-values-of-variant-data) of `Variant` data type.
+**Note:** when 2 paths contain values of different data types, they are compared according to [comparison rule](/sql-reference/data-types/variant#comparing-values-of-variant-data) of `Variant` data type.
 
 ## Tips for better usage of the JSON type {#tips-for-better-usage-of-the-json-type}
 

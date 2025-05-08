@@ -1,3 +1,4 @@
+import datetime
 import pymongo
 import pytest
 import urllib
@@ -5,6 +6,7 @@ import urllib
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import mongo_pass
+from helpers.test_tools import TSV
 
 
 @pytest.fixture(scope="module")
@@ -477,3 +479,65 @@ def test_oid(started_cluster):
 
 
     oid_mongo_table.drop()
+
+def test_datetime_condition(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster, with_credentials=False)
+    db = mongo_connection["test"]
+    datetime_mongo_table = db["datetime_mongo_table"]
+    data = []
+
+    data.append({"key": 0, "timestamp": datetime.datetime(2025, 1, 11, 0, 0, 0)})
+    data.append({"key": 1, "timestamp": datetime.datetime(2025, 1, 15, 0, 0, 0)})
+    data.append({"key": 2, "timestamp": datetime.datetime(2025, 1, 20, 0, 0, 0)})
+
+    datetime_mongo_table.insert_many(data)
+
+    node = started_cluster.instances["node"]
+    table_func = "mongodb('mongo_no_cred:27017', 'test', 'datetime_mongo_table', '', '', structure='key UInt64, timestamp DateTime')"
+
+    assert TSV(node.query(f"SELECT count(), any(toTypeName(timestamp)) FROM {table_func}")) == TSV("3\tDateTime\n")
+
+    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE timestamp = '2025-01-11 00:00:00'")) == TSV("1\n")
+    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE timestamp = toDateTime('2025-01-11 00:00:00')" )) == TSV("1\n")
+
+    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE timestamp > '2025-01-11 00:00:00'")) == TSV("2\n")
+    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE timestamp > toDateTime('2025-01-11 00:00:00')")) == TSV("2\n")
+
+    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE timestamp > '2025-01-11 00:00:00' AND key = 2")) == TSV("1\n")
+    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE timestamp > toDateTime('2025-01-11 00:00:00') AND key = 2")) == TSV("1\n")
+
+    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE timestamp > '2025-01-11 00:00:00' OR key = 0")) == TSV("3\n")
+    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE timestamp > toDateTime('2025-01-11 00:00:00') OR key = 0")) == TSV("3\n")
+
+    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE timestamp IN '2025-01-11 00:00:00'")) == TSV("1\n")
+    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE timestamp IN ('2025-01-11 00:00:00', '2025-01-15 00:00:00', '2025-01-30 00:00:00')")) == TSV("2\n")
+    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE timestamp IN ['2025-01-11 00:00:00', '2025-01-15 00:00:00', '2025-01-30 00:00:00']")) == TSV("2\n")
+
+    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE '2025-01-11 00:00:00' = timestamp")) == TSV("1\n")
+    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE toDateTime('2025-01-11 00:00:00') = timestamp" )) == TSV("1\n")
+
+    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE '2025-01-11 00:00:00' < timestamp")) == TSV("2\n")
+    assert TSV(node.query(f"SELECT count() FROM {table_func} WHERE toDateTime('2025-01-11 00:00:00') < timestamp")) == TSV("2\n")
+
+    datetime_mongo_table.drop()
+
+
+def test_limit(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster, with_credentials=False)
+    db = mongo_connection["test"]
+    group_by_limit_mongo_table = db["group_by_limit_mongo_table"]
+    data = []
+
+    for i in range(0, 100):
+        data.append({"key": i % 10, "value": i})
+
+    group_by_limit_mongo_table.insert_many(data)
+
+    node = started_cluster.instances["node"]
+    table_func = "mongodb('mongo_no_cred:27017', 'test', 'group_by_limit_mongo_table', '', '', structure='key UInt64, value UInt64')"
+
+    assert TSV(node.query(f"SELECT sum(value) FROM {table_func} GROUP BY key ORDER BY key LIMIT 1 SETTINGS mongodb_throw_on_unsupported_query = 0")) == TSV("450\n")
+    assert TSV(node.query(f"SELECT value FROM {table_func} ORDER BY value LIMIT 5 SETTINGS mongodb_throw_on_unsupported_query = 1")) == TSV("0\n1\n2\n3\n4\n")
+    assert TSV(node.query(f"SELECT value FROM {table_func} ORDER BY value LIMIT 5 OFFSET 5 SETTINGS mongodb_throw_on_unsupported_query = 1")) == TSV("5\n6\n7\n8\n9\n")
+
+    group_by_limit_mongo_table.drop()
