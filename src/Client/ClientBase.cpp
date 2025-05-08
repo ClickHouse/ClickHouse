@@ -1931,7 +1931,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
                 client_context->getSettingsRef()[Setting::max_block_size],
                 getNumberOfCPUCoresToUse());
 
-            auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(client_context), BuildQueryPipelineSettings(client_context));
+            auto builder = plan.buildQueryPipeline(*client_context, QueryPlanOptimizationSettings(client_context), BuildQueryPipelineSettings(client_context));
 
             QueryPlanResourceHolder resources;
             auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);

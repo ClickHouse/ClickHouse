@@ -1393,7 +1393,7 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
     QueryPlanOptimizationSettings do_not_optimize_plan_settings(context);
     do_not_optimize_plan_settings.optimize_plan = false;
 
-    auto pipeline = std::move(*plan.buildQueryPipeline(do_not_optimize_plan_settings, BuildQueryPipelineSettings(context)));
+    auto pipeline = std::move(*plan.buildQueryPipeline(*context, do_not_optimize_plan_settings, BuildQueryPipelineSettings(context)));
 
     pipeline.addSimpleTransform([&](const Block & header)
     {

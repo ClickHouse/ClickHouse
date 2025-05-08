@@ -301,7 +301,7 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 
     QueryPlanOptimizationSettings optimization_settings(mutable_context);
     BuildQueryPipelineSettings build_pipeline_settings(mutable_context);
-    auto builder = query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings);
+    auto builder = query_plan.buildQueryPipeline(*mutable_context, optimization_settings, build_pipeline_settings);
 
     size_t min_block_size_rows = mutable_context->getSettingsRef()[Setting::min_external_table_block_size_rows];
     size_t min_block_size_bytes = mutable_context->getSettingsRef()[Setting::min_external_table_block_size_bytes];

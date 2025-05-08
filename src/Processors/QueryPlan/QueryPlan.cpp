@@ -1,6 +1,7 @@
 #include <stack>
 
 #include <Common/JSONBuilder.h>
+#include "Core/Settings.h"
 
 #include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
@@ -19,9 +20,15 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsUInt64 max_estimated_rows_to_read;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int TOO_MANY_ROWS;
 }
 
 SettingsChanges ExplainPlanOptions::toSettingsChanges() const
@@ -163,6 +170,7 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
 }
 
 QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
+    const Context & context,
     const QueryPlanOptimizationSettings & optimization_settings,
     const BuildQueryPipelineSettings & build_pipeline_settings,
     bool do_optimize)
@@ -212,6 +220,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     last_pipeline->addResources(std::move(resources));
     last_pipeline->setConcurrencyControl(getConcurrencyControl());
 
+    this->checkLimits(context);
     return last_pipeline;
 }
 
@@ -489,20 +498,10 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
         QueryPlanOptimizations::addStepsToBuildSets(optimization_settings, *this, *root, nodes);
 }
 
-void QueryPlan::explainEstimate(MutableColumns & columns) const
+std::unordered_map<std::string, QueryPlan::CountersPtr> QueryPlan::buildExplainEstimation() const
 {
     checkInitialized();
 
-    struct EstimateCounters
-    {
-        std::string database_name;
-        std::string table_name;
-        UInt64 parts = 0;
-        UInt64 rows = 0;
-        UInt64 marks = 0;
-    };
-
-    using CountersPtr = std::shared_ptr<EstimateCounters>;
     std::unordered_map<std::string, CountersPtr> counters;
     using processNodeFuncType = std::function<void(const Node * node)>;
     processNodeFuncType process_node = [&counters, &process_node] (const Node * node)
@@ -527,6 +526,13 @@ void QueryPlan::explainEstimate(MutableColumns & columns) const
     };
     process_node(root);
 
+    return counters;
+}
+
+void QueryPlan::explainEstimate(MutableColumns & columns) const
+{
+    auto counters = buildExplainEstimation();
+
     for (const auto & counter : counters)
     {
         size_t index = 0;
@@ -537,6 +543,26 @@ void QueryPlan::explainEstimate(MutableColumns & columns) const
         columns[index++]->insert(counter.second->parts);
         columns[index++]->insert(counter.second->rows);
         columns[index++]->insert(counter.second->marks);
+    }
+}
+
+void QueryPlan::checkLimits(const Context & context) const
+{
+    const auto & settings = context.getSettingsRef();
+    const auto max_rows = settings[Setting::max_estimated_rows_to_read];
+
+    if (max_rows == 0)
+    {
+        return;
+    }
+
+    const auto counters = buildExplainEstimation();
+    const auto rows_limit = SizeLimits(max_rows, 0, OverflowMode::THROW);
+
+    for (const auto & counter: counters)
+    {
+        const auto rows = counter.second->rows;
+        rows_limit.check(rows, 0, "rows (controlled by 'max_estimated_rows_to_read' setting)", ErrorCodes::TOO_MANY_ROWS);
     }
 }
 

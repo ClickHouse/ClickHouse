@@ -1603,6 +1603,7 @@ static BlockIO executeQueryImpl(
             LOG_TRACE(getLogger("executeQuery"), "Deserialized Query Plan:\n{}", buf.str());
 
             auto pipeline = plan.buildQueryPipeline(
+                    *context,
                     QueryPlanOptimizationSettings(context),
                     BuildQueryPipelineSettings(context),
                     /*do_optimize=*/ false);

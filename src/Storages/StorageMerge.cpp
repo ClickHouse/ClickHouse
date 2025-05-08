@@ -1141,7 +1141,7 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
     QueryPlanOptimizationSettings optimization_settings(context);
     /// All optimisations will be done at plans creation
     optimization_settings.optimize_plan = false;
-    auto builder = child.plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
+    auto builder = child.plan.buildQueryPipeline(*context, optimization_settings, BuildQueryPipelineSettings(context));
 
     if (!builder->initialized())
         return builder;

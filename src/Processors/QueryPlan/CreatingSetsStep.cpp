@@ -196,7 +196,7 @@ QueryPipelineBuilderPtr addCreatingSetsTransform(QueryPipelineBuilderPtr pipelin
             continue;
 
         input_headers.emplace_back(plan->getCurrentHeader());
-        pipelines.emplace_back(plan->buildQueryPipeline(plan_settings, pipeline_settings));
+        pipelines.emplace_back(plan->buildQueryPipeline(*context, plan_settings, pipeline_settings));
     }
 
     return CreatingSetsStep(input_headers).updatePipeline(std::move(pipelines), pipeline_settings);

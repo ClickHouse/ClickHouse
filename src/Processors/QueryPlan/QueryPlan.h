@@ -6,6 +6,7 @@
 #include <Columns/IColumn_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Parsers/IAST_fwd.h>
+#include "base/types.h"
 
 #include <list>
 #include <memory>
@@ -93,6 +94,7 @@ public:
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
 
     QueryPipelineBuilderPtr buildQueryPipeline(
+        const Context & context,
         const QueryPlanOptimizationSettings & optimization_settings,
         const BuildQueryPipelineSettings & build_pipeline_settings,
         bool do_optimize=true);
@@ -107,6 +109,8 @@ public:
     void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent = 0) const;
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const;
     void explainEstimate(MutableColumns & columns) const;
+
+    void checkLimits(const Context & context) const;
 
     /// Do not allow to change the table while the pipeline alive.
     void addTableLock(TableLockHolder lock) { resources.table_locks.emplace_back(std::move(lock)); }
@@ -143,6 +147,19 @@ public:
     QueryPlan clone() const;
 
 private:
+    struct EstimateCounters
+    {
+        std::string database_name;
+        std::string table_name;
+        UInt64 parts = 0;
+        UInt64 rows = 0;
+        UInt64 marks = 0;
+    };
+
+    using CountersPtr = std::shared_ptr<EstimateCounters>;
+
+    std::unordered_map<std::string, CountersPtr> buildExplainEstimation() const;
+
     struct SerializationFlags;
 
     void serialize(WriteBuffer & out, const SerializationFlags & flags) const;
