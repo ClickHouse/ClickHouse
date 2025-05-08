@@ -272,7 +272,7 @@ void Exception::clearThreadFramePointers()
 
 Exception::~Exception()
 {
-    if (logged && logged->load(std::memory_order_relaxed))
+    if (logged != nullptr && logged->load(std::memory_order_relaxed))
     {
         const int error_code = code();
         const bool is_error_important = error_code == ErrorCodes::LOGICAL_ERROR
@@ -282,7 +282,7 @@ Exception::~Exception()
             || error_code == ErrorCodes::CORRUPTED_DATA
             || error_code == ErrorCodes::CHECKSUM_DOESNT_MATCH
             || error_code == ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR;
-        tryLogException(getLogger("~Exception"), *this, "An important exception was likely ignored, here it is");
+        tryLogException(*this, getLogger("~Exception"), "An important exception was likely ignored, here it is");
     }
 }
 
