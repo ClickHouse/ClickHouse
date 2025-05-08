@@ -21,9 +21,11 @@ public:
         const std::string & url_,
         const DatabaseDataLakeSettings & settings_,
         ASTPtr database_engine_definition_,
-        ASTPtr table_engine_definition_);
+        ASTPtr table_engine_definition_,
+        UUID uuid);
 
     String getEngineName() const override { return DataLake::DATABASE_ENGINE_NAME; }
+    UUID getUUID() const override { return db_uuid; }
 
     bool canContainMergeTreeTables() const override { return false; }
     bool canContainDistributedTables() const override { return false; }
@@ -49,6 +51,8 @@ public:
 
     ASTPtr getCreateDatabaseQuery() const override;
 
+    std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
+
 protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
 
@@ -73,6 +77,8 @@ private:
 
 
     StoragePtr tryGetTableImpl(const String & name, ContextPtr context, bool lightweight) const;
+
+    const UUID db_uuid;
 };
 
 }
