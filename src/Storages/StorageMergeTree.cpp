@@ -323,7 +323,7 @@ std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr) const
 std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr local_context) const
 {
     auto parts = getVisibleDataPartsVector(local_context);
-    return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, parts);
+    return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts));
 }
 
 std::optional<UInt64> StorageMergeTree::totalBytes(ContextPtr) const
