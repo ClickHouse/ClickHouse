@@ -11,7 +11,7 @@ cluster = ClickHouseCluster(__file__)
 
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/kafka.xml", "configs/zookeeper.xml"],
+    main_configs=["configs/kafka.xml"],
     user_configs=[],
     with_kafka=True,
     with_zookeeper=True,
