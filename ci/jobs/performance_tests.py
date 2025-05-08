@@ -5,6 +5,7 @@ import re
 import subprocess
 import time
 import traceback
+from datetime import datetime
 from pathlib import Path
 
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
@@ -35,6 +36,28 @@ where event_date between now() - interval 10 month - interval 1 week
     and pr_number = 0
 group by test, query_index, query_display_name
 having count(*) > 100
+"""
+
+INSERT_HISTORICAL_DATA = """
+insert into query_metrics_v2
+select
+    '{EVENT_DATE}' event_date,
+    '{EVENT_DATE_TIME}' event_time,
+    {PR_NUMBER} pr_number,
+    '{REF_SHA}' old_sha,
+    '{CUR_SHA}' new_sha,
+    test,
+    query_index,
+    query_display_name,
+    metric_name as metric,
+    old_value,
+    new_value,
+    diff,
+    stat_threshold
+from input('metric_name text, old_value float, new_value float, diff float,
+ratio_display_text text, stat_threshold float,
+test text, query_index int, query_display_name text')
+    format TSV
 """
 
 # Precision is going to be 1.5 times worse for PRs, because we run the queries
@@ -208,7 +231,6 @@ class CHServer:
         if res != 0:
             with open(f"{results_path}/{test_name}-err.log", "w") as f:
                 f.write(err)
-            err = Shell.get_output(f"echo \"{err}\" | grep '{test_name}\t'")
         with open(f"{results_path}/{test_name}-raw.tsv", "w") as f:
             f.write(out)
         with open(f"{results_path}/wall-clock-times.tsv", "a") as f:
@@ -373,6 +395,7 @@ def main():
         )
         res = results[-1].is_ok()
 
+    reference_sha = ""
     if res and JobStages.INSTALL_CLICKHOUSE_REFERENCE in stages:
         print("Install Reference")
         if not Path(f"{perf_left}/.done").is_file():
@@ -391,20 +414,28 @@ def main():
                     name="Install Reference ClickHouse", command=commands
                 )
             )
+            reference_sha = Shell.get_output(
+                f"{perf_left}/clickhouse -q \"SELECT value FROM system.build_options WHERE name='GIT_HASH'\""
+            )
             res = results[-1].is_ok()
             Shell.check(f"touch {perf_left}/.done")
 
     if res:
+
         def prepare_historical_data():
             cidb = CIDBCluster()
             assert cidb.is_ready()
-            result = cidb.do_select_query(query=GET_HISTORICAL_TRESHOLDS_QUERY)
-            with open(f"{perf_wd}/historical-thresholds.tsv", "w", encoding="utf-8") as f:
+            result = cidb.do_select_query(
+                query=GET_HISTORICAL_TRESHOLDS_QUERY, timeout=10, retries=3
+            )
+            with open(
+                f"{perf_wd}/historical-thresholds.tsv", "w", encoding="utf-8"
+            ) as f:
                 f.write(result)
 
         results.append(
             Result.from_commands_run(
-                name="Get Historical Data", command=prepare_historical_data
+                name="Select historical data", command=prepare_historical_data
             )
         )
         res = results[-1].is_ok()
@@ -601,6 +632,44 @@ def main():
 
         res = results[-1].is_ok()
 
+    if res and not info.is_local_run:
+
+        def insert_historical_data():
+            cidb = CIDBCluster()
+            assert cidb.is_ready()
+
+            now = datetime.now()
+            date = now.date().isoformat()
+            date_time = now.isoformat(sep=" ")
+
+            report_path = f"{perf_wd}/report/all-query-metrics.tsv"
+            with open(report_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+                data = "".join(lines[1:])  # Skip header
+
+            query = INSERT_HISTORICAL_DATA.format(
+                EVENT_DATE=date,
+                EVENT_DATE_TIME=date_time,
+                PR_NUMBER=info.pr_number,
+                REF_SHA=reference_sha,
+                CUR_SHA=info.sha,
+            )
+
+            cidb.do_insert_query(
+                query=query,
+                data=data,
+                timeout=10,
+                retries=3,
+            )
+            print(f"Inserted [{len(lines)}] lines")
+
+        results.append(
+            Result.from_commands_run(
+                name="Insert historical data", command=insert_historical_data
+            )
+        )
+        results[-1].set_ignorable_flag()
+
     # TODO: code to fetch status was taken from old script as is - status is to be correctly set in Test stage and this stage is to be removed!
     message = ""
     if res and JobStages.CHECK_RESULTS in stages:
@@ -645,29 +714,6 @@ def main():
                 name="Check Results", status=status, info=message, duration=sw.duration
             )
         )
-
-    # TODO: UPLOAD query metrics
-    #     "${client[@]}" --query "
-    #     insert into query_metrics_v2
-    #     select
-    #     toDate(event_time) event_date,
-    #     toDateTime('$(git -C right/ch log -1 --format=%cd --date=iso "$SHA_TO_TEST" | cut -d' ' -f-2)') event_time,
-    #     $PR_TO_TEST pr_number,
-    #     '$REF_SHA' old_sha,
-    #     '$SHA_TO_TEST' new_sha,
-    #     test,
-    #     query_index,
-    #     query_display_name,
-    #     metric_name as metric,
-    #     old_value,
-    #     new_value,
-    #     diff,
-    #     stat_threshold
-    # from input('metric_name text, old_value float, new_value float, diff float,
-    # ratio_display_text text, stat_threshold float,
-    # test text, query_index int, query_display_name text')
-    # format TSV
-    # " < report/all-query-metrics.tsv # Don't leave whitespace after INSERT: https://github.com/ClickHouse/ClickHouse/issues/16652
 
     # dmesg -T > dmesg.log
     #

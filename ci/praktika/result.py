@@ -106,7 +106,10 @@ class Result(MetaClasses.Serializable):
                 infos += info
         if results and not status:
             for result in results:
-                if result.status in (Result.Status.SUCCESS, Result.Status.SKIPPED):
+                if (
+                    result.status in (Result.Status.SUCCESS, Result.Status.SKIPPED)
+                    or result.is_ignorable()
+                ):
                     continue
                 elif result.status == Result.Status.ERROR:
                     result_status = Result.Status.ERROR
@@ -202,6 +205,14 @@ class Result(MetaClasses.Serializable):
         self.links.append(link)
         self.dump()
         return self
+
+    def set_ignorable_flag(self, value=True) -> "Result":
+        self.ext["ignorable"] = 1 if value else 0
+        self.dump()
+        return self
+
+    def is_ignorable(self) -> bool:
+        return bool(self.ext["ignorable"])
 
     def _add_job_summary_to_info(self):
         subresult_with_tests = self
