@@ -86,6 +86,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"force_exchange_kind", "", "", "New experimental setting."},
             {"allow_experimental_delta_kernel_rs", true, true, "New setting"},
             {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
+            {"skip_unavailable_shards_mode", "unavailable_or_exception", "unavailable", "If set to `unavailable`, connection-related exceptions are ignored, whereas `unavailable_or_exception` ignores all exceptions from remote instances."},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
