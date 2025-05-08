@@ -1,3 +1,4 @@
+#include <chrono>
 #include <exception>
 #include <filesystem>
 #include <functional>
@@ -348,10 +349,7 @@ public:
         if (s3_flush) {
             /* Flusing buffer, moving file */
             LOG_TRACE(log, "Flushing s3 buffer {}", s3_write_buffer->count());
-    
-            s3_write_buffer->sync();
-            s3_write_buffer->finalize();
-    
+
             auto new_path = formatChangelogPath(
                 current_file_description->prefix,
                 *s3_file_start,
@@ -364,12 +362,22 @@ public:
             {
                 try
                 {
-                    // s3_disk->moveFile(s3_cur_path, new_path);
+                    auto prev_reader{ReadBufferFromMemory(s3_write_buffer->buffer().begin(), s3_write_buffer->count())};
+                    auto prev_writer = s3_disk->writeFile(new_path);
+                    copyData(prev_reader, *prev_writer);
+
+                    prev_writer->sync();
+                    prev_writer->finalize();
+
+                    s3_write_buffer->cancel();
                 }
                 catch (...)
                 {
                     tryLogCurrentException(log, fmt::format("File rename failed on disk {}", s3_disk->getName()));
                 }
+            } else {
+                s3_write_buffer->sync();
+                s3_write_buffer->finalize();
             }
     
             /* Update current description (LATER IT MUST BE NEW ONE) */
@@ -2131,12 +2139,38 @@ void Changelog::appendCompletionThread()
     }
 }
 
+namespace {
+    class Timer {
+    public:
+        void start() {
+            start_time = std::chrono::high_resolution_clock::now();
+        }
+
+        void reload() {
+            start();
+        }
+
+        int64_t elapsedMs() const {
+            auto current = std::chrono::high_resolution_clock::now();
+            return std::chrono::duration_cast<std::chrono::milliseconds>(
+                current - start_time).count();
+        }
+
+    private:
+        std::chrono::time_point<
+            std::chrono::high_resolution_clock
+        > start_time;
+    };
+}
+
 void Changelog::writeThread()
 {
     WriteOperation write_operation;
     bool batch_append_ok = true;
     size_t pending_appends = 0;
     bool try_batch_flush = false;
+    Timer timer;
+    timer.start();
 
     const auto flush_logs = [&](const auto & flush)
     {
@@ -2153,6 +2187,7 @@ void Changelog::writeThread()
         }
 
         pending_appends = 0;
+        timer.reload();
     };
 
     const auto notify_append_completion = [&]
@@ -2176,19 +2211,26 @@ void Changelog::writeThread()
         {
             if (try_batch_flush)
             {
-                try_batch_flush = false;
+                // try_batch_flush = false;
+
                 /// we have Flush request stored in write operation
                 /// but we try to get new append operations
                 /// if there are none, we apply the currently set Flush
                 chassert(std::holds_alternative<Flush>(write_operation));
                 if (!write_operations.tryPop(write_operation))
                 {
+                    if (timer.elapsedMs() < 1000) {
+                        continue;
+                    }
                     chassert(batch_append_ok);
                     const auto & flush = std::get<Flush>(write_operation);
                     flush_logs(flush);
                     notify_append_completion();
+                    try_batch_flush = false;
                     if (!write_operations.pop(write_operation))
                         break;
+                } else {
+                    try_batch_flush = false;
                 }
             }
             else if (!write_operations.pop(write_operation))
@@ -2200,6 +2242,8 @@ void Changelog::writeThread()
 
             if (auto * append_log = std::get_if<AppendLog>(&write_operation))
             {
+                LOG_TEST(log, "Current append {}", append_log->index);
+
                 if (!batch_append_ok)
                     continue;
 
@@ -2212,6 +2256,8 @@ void Changelog::writeThread()
             else
             {
                 const auto & flush = std::get<Flush>(write_operation);
+
+                LOG_TEST(log, "Current flush {}", flush.index);
 
                 LOG_DEBUG(log, "Get flush: {}", flush.index);
 

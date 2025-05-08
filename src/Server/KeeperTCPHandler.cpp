@@ -448,6 +448,7 @@ void KeeperTCPHandler::runImpl()
     auto response_callback = [my_responses = this->responses, my_poll_wrapper = this->poll_wrapper](
                                  const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
     {
+        LOG_INFO(log, "Got response: {}", response->zxid);
         if (!my_responses->push(RequestWithResponse{response, std::move(request)}))
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with xid {} and zxid {}", response->xid, response->zxid);
 
@@ -486,6 +487,8 @@ void KeeperTCPHandler::runImpl()
                     break;
                 }
 
+                LOG_INFO(log, "Try to receive");
+
                 auto [received_op, received_xid] = receiveRequest();
                 packageReceived();
                 log_long_operation("Receiving request");
@@ -512,6 +515,8 @@ void KeeperTCPHandler::runImpl()
             /// became inconsistent and race condition is possible.
             while (result.responses_count != 0)
             {
+                LOG_INFO(log, "Waiting: {}", result.responses_count);
+
                 RequestWithResponse request_with_response;
 
                 if (!responses->tryPop(request_with_response))
@@ -519,6 +524,9 @@ void KeeperTCPHandler::runImpl()
                 log_long_operation("Waiting for response to be ready");
 
                 auto & response = request_with_response.response;
+
+                LOG_INFO(log, "Got response: {}, {}", response->getOpNum(), response->xid);
+
                 if (response->xid == close_xid)
                 {
                     LOG_DEBUG(log, "Session #{} successfully closed", session_id);
