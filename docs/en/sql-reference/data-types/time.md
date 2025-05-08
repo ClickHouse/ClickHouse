@@ -1,7 +1,10 @@
 ---
+description: 'Documentation for the Time data type in ClickHouse, which stores
+  the time range with second precision'
 slug: /sql-reference/data-types/time
 sidebar_position: 15
-sidebar_label: Time
+sidebar_label: 'Time'
+title: 'Time'
 ---
 
 # Time
