@@ -2,11 +2,12 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/KeyHolderHelpers.h>
-#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeArray.h>
-#include <Common/HashTable/HashSet.h>
-#include <Common/HashTable/HashMap.h>
 #include <IO/ReadHelpersArena.h>
+#include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/HashSet.h>
+#include <Common/PODArray.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -19,12 +20,12 @@ struct AggregateFunctionDistinctSingleNumericData
 {
     /// When creating, the hash table must be small.
     using Set = HashSetWithStackMemory<T, DefaultHash<T>, 4>;
+    using Array = PODArrayWithStackMemory<T, 16>;
     using Self = AggregateFunctionDistinctSingleNumericData<T>;
 
-    /// queue will hold values that are not yet processed. Once processed, the
-    /// contents of the queue will be passed to history.
+    /// queue will hold values that are not yet processed.
     mutable Set history;
-    mutable Set queue;
+    mutable Array queue;
 
     void add(const IColumn ** columns, size_t /* columns_num */, size_t row_num, Arena *)
     {
@@ -33,47 +34,74 @@ struct AggregateFunctionDistinctSingleNumericData
 
         if (!history.contains(value))
         {
-            queue.insert(value);
+            history.insert(value);
+            queue.push_back(value);
         }
     }
 
-    /// We make sure that the merged queue does not contain values that are
+    /// We make sure that the new queue does not contain values that are
     /// already processed by rhs.
     void merge(const Self & rhs, Arena *)
     {
-        std::vector<T> to_erase;
-        to_erase.reserve(queue.size());
+        Array new_queue;
+        new_queue.reserve(queue.size() + rhs.queue.size());
 
-        for (auto it = queue.begin(); it != queue.end(); ++it)
+        Set seen;
+        seen.reserve(new_queue.capacity());
+
+        auto push_if_not_seen = [&](const auto & v)
         {
-            const T v = it->getValue();
-            if (rhs.history.contains(v))
-                to_erase.push_back(v);
+            if (seen.contains(v))
+                return;
+            new_queue.push_back(v);
+            seen.insert(v);
+        };
+
+        Set rhs_queue_set;
+        rhs_queue_set.reserve(rhs.queue.size());
+        for (const auto & v : rhs.queue)
+            rhs_queue_set.insert(v);
+
+        for (const auto & v : queue)
+        {
+            // This condition makes sure that v is not yet processed by rhs.
+            if (rhs_queue_set.contains(v) || !rhs.history.contains(v))
+                push_if_not_seen(v);
         }
-        for (const T v : to_erase)
-            queue.erase(v);
+
+        Set queue_set;
+        queue_set.reserve(queue.size());
+        for (const auto & v : queue)
+            queue_set.insert(v);
+
+        for (const auto & v : rhs.queue)
+        {
+            if (queue_set.contains(v) || !history.contains(v))
+            {
+                push_if_not_seen(v);
+            }
+        }
+
+        queue.swap(new_queue);
 
         history.merge(rhs.history);
-
-        /// Make sure queue does not contain elements that exist in history
-        for (const auto & elem : rhs.queue)
-        {
-            const T v = elem.getValue();
-            if (!history.contains(v))
-                queue.insert(v);
-        }
     }
 
     void serialize(WriteBuffer & buf) const
     {
         history.write(buf);
-        queue.write(buf);
+        size_t size = queue.size();
+        writeVarUInt(size, buf);
+        buf.write(reinterpret_cast<const char *>(queue.data()), size * sizeof(T));
     }
 
     void deserialize(ReadBuffer & buf, Arena *)
     {
         history.read(buf);
-        queue.read(buf);
+        size_t size = 0;
+        readVarUInt(size, buf);
+        queue.resize(size);
+        buf.readStrict(reinterpret_cast<char *>(queue.data()), size * sizeof(T));
     }
 
     MutableColumns getArguments(const DataTypes & argument_types) const
@@ -82,15 +110,12 @@ struct AggregateFunctionDistinctSingleNumericData
         argument_columns.emplace_back(argument_types[0]->createColumn());
 
         /// Only sending the contents of the queue.
-        for (const auto & elem : queue)
+        for (const auto & v : queue)
         {
-            const auto value = elem.getValue();
-            argument_columns[0]->insert(value);
-            history.insert(value);
+            argument_columns[0]->insert(v);
         }
 
-        queue.~Set();
-        new (&queue) Set{};
+        queue.clear();
         return argument_columns;
     }
 };
@@ -99,43 +124,59 @@ struct AggregateFunctionDistinctGenericData
 {
     /// When creating, the hash table must be small.
     using Set = HashSetWithSavedHashWithStackMemory<StringRef, StringRefHash, 4>;
+    using Array = PODArrayWithStackMemory<StringRef, 16>;
     using Self = AggregateFunctionDistinctGenericData;
 
     mutable Set history;
-    mutable Set queue;
+    mutable Array queue;
 
     void merge(const Self & rhs, Arena * arena)
     {
-        std::vector<StringRef> to_erase;
-        to_erase.reserve(queue.size());
+        Array new_queue;
+        new_queue.reserve(queue.size() + rhs.queue.size());
 
-        for (auto it = queue.begin(); it != queue.end(); ++it)
+        Set seen;
+        seen.reserve(new_queue.capacity());
+
+        auto push_if_not_seen = [&](const auto & v)
         {
-            const auto v = it->getValue();
-            if (rhs.history.contains(v))
-                to_erase.push_back(v);
+            if (seen.contains(v))
+                return;
+            new_queue.push_back(v);
+            seen.insert(v);
+        };
+
+        Set rhs_queue_set;
+        rhs_queue_set.reserve(rhs.queue.size());
+        for (const auto & v : rhs.queue)
+            rhs_queue_set.insert(v);
+
+        for (const auto & v : queue)
+        {
+            if (rhs_queue_set.contains(v) || !rhs.history.contains(v))
+                push_if_not_seen(v);
         }
 
-        for (const auto & v : to_erase)
-            queue.erase(v);
+        Set queue_set;
+        queue_set.reserve(queue.size());
+        for (const auto & v : queue)
+            queue_set.insert(v);
 
+        /// Make sure queue does not contain elements that exist in history
+        for (const auto & v : rhs.queue)
         {
-            Set::LookupResult it;
-            bool inserted;
-            for (const auto & elem : rhs.history)
-                history.emplace(ArenaKeyHolder{elem.getValue(), *arena}, it, inserted);
-        }
-
-        {
-            Set::LookupResult it;
-            bool inserted;
-            for (const auto & elem : rhs.queue)
+            if (queue_set.contains(v) || !history.contains(v))
             {
-                const StringRef v = elem.getValue();
-                if (!history.contains(v))
-                    queue.emplace(ArenaKeyHolder{v, *arena}, it, inserted);
+                push_if_not_seen(v);
             }
         }
+
+        queue.swap(new_queue);
+
+        Set::LookupResult it;
+        bool inserted = false;
+        for (const auto & elem : rhs.history)
+            history.emplace(ArenaKeyHolder{elem.getValue(), *arena}, it, inserted);
     }
 
     void serialize(WriteBuffer & buf) const
@@ -145,8 +186,8 @@ struct AggregateFunctionDistinctGenericData
             writeStringBinary(elem.getValue(), buf);
 
         writeVarUInt(queue.size(), buf);
-        for (const auto & elem : queue)
-            writeStringBinary(elem.getValue(), buf);
+        for (const auto & v : queue)
+            writeStringBinary(v, buf);
     }
 
     void deserialize(ReadBuffer & buf, Arena * arena)
@@ -157,8 +198,9 @@ struct AggregateFunctionDistinctGenericData
             history.insert(readStringBinaryInto(*arena, buf));
 
         readVarUInt(size, buf);
+        queue.resize(size);
         for (size_t i = 0; i < size; ++i)
-            queue.insert(readStringBinaryInto(*arena, buf));
+            queue[i] = readStringBinaryInto(*arena, buf);
     }
 };
 
@@ -173,7 +215,9 @@ struct AggregateFunctionDistinctSingleGenericData : public AggregateFunctionDist
         {
             Set::LookupResult it;
             bool inserted;
-            queue.emplace(key_holder, it, inserted);
+            history.emplace(key_holder, it, inserted);
+
+            queue.push_back(key_holder.key);
         }
     }
 
@@ -182,15 +226,12 @@ struct AggregateFunctionDistinctSingleGenericData : public AggregateFunctionDist
         MutableColumns argument_columns;
         argument_columns.emplace_back(argument_types[0]->createColumn());
 
-        for (const auto & elem : queue)
+        for (const auto & v : queue)
         {
-            const auto v = elem.getValue();
             deserializeAndInsert<is_plain_column>(v, *argument_columns[0]);
-            history.insert(v);
         }
 
-        queue.~Set();
-        new (&queue) Set{};
+        queue.clear();
         return argument_columns;
     }
 };
@@ -213,7 +254,9 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
             Set::LookupResult it;
             bool inserted;
             auto key_holder = SerializedKeyHolder{value, *arena};
-            queue.emplace(key_holder, it, inserted);
+            history.emplace(key_holder, it, inserted);
+
+            queue.push_back(key_holder.key);
         }
     }
 
@@ -223,17 +266,14 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
         for (size_t i = 0; i < argument_types.size(); ++i)
             argument_columns[i] = argument_types[i]->createColumn();
 
-        for (const auto & elem : queue)
+        for (const auto & v : queue)
         {
-            const char * begin = elem.getValue().data;
+            const char * pos = v.data;
             for (auto & column : argument_columns)
-                begin = column->deserializeAndInsertFromArena(begin);
-
-            history.insert(elem.getValue());
+                pos = column->deserializeAndInsertFromArena(pos);
         }
 
-        queue.~Set();
-        new (&queue) Set{};
+        queue.clear();
         return argument_columns;
     }
 };
