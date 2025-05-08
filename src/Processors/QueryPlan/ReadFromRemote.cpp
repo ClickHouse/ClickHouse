@@ -62,6 +62,7 @@ namespace Setting
     extern const SettingsBool enable_optimize_predicate_expression_to_final_subquery;
     extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
+    extern const SettingsMaxThreads max_threads;
 }
 
 namespace ErrorCodes
@@ -464,7 +465,8 @@ static void addFilters(
     data.rewriteSubquery(getSelectQuery(query_ast), tables_with_columns.front().columns.getNames());
 }
 
-void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header)
+void ReadFromRemote::addLazyPipe(
+    Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header, size_t parallel_marshalling_threads)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
@@ -498,7 +500,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
             my_stage = stage, my_storage = storage,
             add_agg_info, add_totals, add_extremes, async_read, async_query_sending,
             query_tree = shard.query_tree, planner_context = shard.planner_context,
-            pushed_down_filters]() mutable
+            pushed_down_filters, parallel_marshalling_threads]() mutable
         -> QueryPipelineBuilder
     {
         auto current_settings = my_context->getSettingsRef();
@@ -584,7 +586,8 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use, my_shard.query_plan);
 
-        auto pipe = createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending);
+        auto pipe = createRemoteSourcePipe(
+            remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads);
         QueryPipelineBuilder builder;
         builder.init(std::move(pipe));
         return builder;
@@ -594,7 +597,8 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
     addConvertingActions(pipes.back(), out_header, shard.has_missing_objects);
 }
 
-void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header)
+void ReadFromRemote::addPipe(
+    Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header, size_t parallel_marshalling_threads)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
@@ -676,7 +680,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
                 remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
 
             pipes.emplace_back(
-                createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
+                createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads));
             addConvertingActions(pipes.back(), *output_header, shard.has_missing_objects);
         }
     }
@@ -711,7 +715,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
             remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
 
         pipes.emplace_back(
-            createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
+            createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads));
         addConvertingActions(pipes.back(), out_header, shard.has_missing_objects);
     }
 }
@@ -722,10 +726,12 @@ Pipes ReadFromRemote::addPipes(const ClusterProxy::SelectStreamFactory::Shards &
 
     for (const auto & shard : used_shards)
     {
+        const size_t parallel_marshalling_threads
+            = (context->getSettingsRef()[Setting::max_threads] + used_shards.size() - 1) / used_shards.size();
         if (shard.lazy)
-            addLazyPipe(pipes, shard, out_header);
+            addLazyPipe(pipes, shard, out_header, parallel_marshalling_threads);
         else
-            addPipe(pipes, shard, out_header);
+            addPipe(pipes, shard, out_header, parallel_marshalling_threads);
     }
 
     return pipes;
@@ -907,14 +913,21 @@ Pipes ReadFromParallelRemoteReplicasStep::addPipes(ASTPtr ast, const Header & ou
             .number_of_current_replica = i,
         };
 
-        addPipeForSingeReplica(pipes, pools_to_use[i], ast, replica_info, out_header);
+        const size_t parallel_marshalling_threads
+            = (context->getSettingsRef()[Setting::max_threads] + pools_to_use.size() - 1) / pools_to_use.size();
+        addPipeForSingeReplica(pipes, pools_to_use[i], ast, replica_info, out_header, parallel_marshalling_threads);
     }
 
     return pipes;
 }
 
 void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(
-    Pipes & pipes, const ConnectionPoolPtr & pool, ASTPtr ast, IConnections::ReplicaInfo replica_info, const Header & out_header)
+    Pipes & pipes,
+    const ConnectionPoolPtr & pool,
+    ASTPtr ast,
+    IConnections::ReplicaInfo replica_info,
+    const Header & out_header,
+    size_t parallel_marshalling_threads)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
@@ -944,7 +957,14 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(
     remote_query_executor->setLogger(log);
     remote_query_executor->setMainTable(storage_id);
 
-    pipes.emplace_back(createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
+    pipes.emplace_back(createRemoteSourcePipe(
+        std::move(remote_query_executor),
+        add_agg_info,
+        add_totals,
+        add_extremes,
+        async_read,
+        async_query_sending,
+        parallel_marshalling_threads));
     addConvertingActions(pipes.back(), out_header);
 }
 
