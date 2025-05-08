@@ -108,6 +108,5 @@ SELECT toTime(now()) AS column, toTypeName(column) AS x
 - [The `date_time_output_format` setting](../../operations/settings/settings-formats.md#date_time_output_format)
 - [The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#timezone)
 - [The `session_timezone` setting](../../operations/settings/settings.md#session_timezone)
-- [Operators for working with dates and times](../operators/index.md#operators-datetime)
 - [The `DateTime` data type](datetime.md)
 - [The `Date` data type](date.md)
