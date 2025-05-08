@@ -49,14 +49,6 @@ struct AggregateFunctionDistinctSingleNumericData
         Set seen;
         seen.reserve(new_queue.capacity());
 
-        auto push_if_not_seen = [&](const auto & v)
-        {
-            if (seen.contains(v))
-                return;
-            new_queue.push_back(v);
-            seen.insert(v);
-        };
-
         Set rhs_queue_set;
         rhs_queue_set.reserve(rhs.queue.size());
         for (const auto & v : rhs.queue)
@@ -66,19 +58,20 @@ struct AggregateFunctionDistinctSingleNumericData
         {
             // This condition makes sure that v is not yet processed by rhs.
             if (rhs_queue_set.contains(v) || !rhs.history.contains(v))
-                push_if_not_seen(v);
+            {
+                new_queue.push_back(v);
+                seen.insert(v);
+            }
         }
-
-        Set queue_set;
-        queue_set.reserve(queue.size());
-        for (const auto & v : queue)
-            queue_set.insert(v);
 
         for (const auto & v : rhs.queue)
         {
-            if (queue_set.contains(v) || !history.contains(v))
+            if (seen.contains(v))
+                continue;
+
+            if (!history.contains(v))
             {
-                push_if_not_seen(v);
+                new_queue.push_back(v);
             }
         }
 
@@ -152,21 +145,20 @@ struct AggregateFunctionDistinctGenericData
             }
         }
 
-        Set queue_set;
-        queue_set.reserve(queue.size());
-        for (const auto & v : queue)
-            queue_set.insert(v);
-
-        /// Make sure queue does not contain elements that exist in history
         for (const auto & v : rhs.queue)
         {
             if (seen.contains(v))
                 continue;
-            if (queue_set.contains(v) || !history.contains(v))
+
+            if (!history.contains(v)) /// We must now allocate the String in our arena
             {
+                Set::LookupResult it;
+                bool inserted;
                 auto key_holder = ArenaKeyHolder{v, *arena};
-                new_queue.push_back(key_holder.key);
-                seen.insert(key_holder.key);
+
+                /// No need to insert to seen because rhs.queue is already unique
+                history.emplace(key_holder, it, inserted);
+                new_queue.push_back(it->getValue());
             }
         }
 
@@ -175,7 +167,9 @@ struct AggregateFunctionDistinctGenericData
         Set::LookupResult it;
         bool inserted = false;
         for (const auto & elem : rhs.history)
+        {
             history.emplace(ArenaKeyHolder{elem.getValue(), *arena}, it, inserted);
+        }
     }
 
     void serialize(WriteBuffer & buf) const
@@ -215,8 +209,7 @@ struct AggregateFunctionDistinctSingleGenericData : public AggregateFunctionDist
             Set::LookupResult it;
             bool inserted;
             history.emplace(key_holder, it, inserted);
-
-            queue.push_back(key_holder.key);
+            queue.push_back(it->getValue());
         }
     }
 
@@ -254,8 +247,7 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
             bool inserted;
             auto key_holder = SerializedKeyHolder{value, *arena};
             history.emplace(key_holder, it, inserted);
-
-            queue.push_back(key_holder.key);
+            queue.push_back(it->getValue());
         }
     }
 
