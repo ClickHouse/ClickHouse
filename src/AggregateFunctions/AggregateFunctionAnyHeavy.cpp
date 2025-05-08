@@ -36,7 +36,7 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionAnyHeavyData initialized empty");
     }
 
-    explicit AggregateFunctionAnyHeavyData(TypeIndex value_type) { generateSingleValueFromTypeIndex(value_type, v_data); }
+    explicit AggregateFunctionAnyHeavyData(const DataTypePtr & value_type) { generateSingleValueFromType(value_type, v_data); }
 
     ~AggregateFunctionAnyHeavyData() { data().~SingleValueDataBase(); }
 
@@ -102,17 +102,15 @@ class AggregateFunctionAnyHeavy final : public IAggregateFunctionDataHelper<Aggr
 {
 private:
     SerializationPtr serialization;
-    const TypeIndex value_type_index;
 
 public:
     explicit AggregateFunctionAnyHeavy(const DataTypePtr & type)
         : IAggregateFunctionDataHelper<AggregateFunctionAnyHeavyData, AggregateFunctionAnyHeavy>({type}, {}, type)
         , serialization(type->getDefaultSerialization())
-        , value_type_index(WhichDataType(type).idx)
     {
     }
 
-    void create(AggregateDataPtr __restrict place) const override { new (place) AggregateFunctionAnyHeavyData(value_type_index); }
+    void create(AggregateDataPtr __restrict place) const override { new (place) AggregateFunctionAnyHeavyData(result_type); }
 
     String getName() const override { return "anyHeavy"; }
 
@@ -141,7 +139,7 @@ public:
         data(place).read(buf, *serialization, result_type, arena);
     }
 
-    bool allocatesMemoryInArena() const override { return singleValueTypeAllocatesMemoryInArena(value_type_index); }
+    bool allocatesMemoryInArena() const override { return singleValueTypeAllocatesMemoryInArena(result_type->getTypeId()); }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {

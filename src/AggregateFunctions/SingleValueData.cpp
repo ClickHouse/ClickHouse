@@ -1313,73 +1313,48 @@ bool SingleValueDataString::setIfGreater(const SingleValueDataBase & other, Aren
     return false;
 }
 
-void SingleValueDataGeneric::insertResultInto(IColumn & to, const DataTypePtr & type) const
+void SingleValueDataGeneric::insertResultInto(IColumn & to, const DataTypePtr &) const
 {
-    LOG_DEBUG(getLogger("SingleValueDataGeneric"), "Insert to {} from {}", to.getName(), value ? value->getName() : "None");
     if (has())
-        to.insertFrom(*value, 0);
+        to.insert(value);
     else
-        type->insertDefaultInto(to);
+        to.insertDefault();
 }
 
-void SingleValueDataGeneric::write(WriteBuffer & buf, const ISerialization & serialization, const DataTypePtr & type) const
+void SingleValueDataGeneric::write(WriteBuffer & buf, const ISerialization & serialization, const DataTypePtr &) const
 {
-    if (value)
+    if (!value.isNull())
     {
         writeBinary(true, buf);
-        /// Binary serialization of the value inside Field and inside IColumn are different for AggregateFunction data type.
-        /// Previously SingleValueDataGeneric used Field to store the value, but now it uses IColumn.
-        /// For compatibility we should serialize/deserialize values of type AggregateFunction using Field here.
-        if (hasAggregateFunctionType(type))
-            serialization.serializeBinary((*value)[0], buf, {});
-        else
-            serialization.serializeBinary(*value, 0, buf, {});
+        serialization.serializeBinary(value, buf, {});
     }
     else
         writeBinary(false, buf);
 }
 
-void SingleValueDataGeneric::read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr & type, Arena *)
+void SingleValueDataGeneric::read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr &, Arena *)
 {
     bool is_not_null;
     readBinary(is_not_null, buf);
 
     if (is_not_null)
-    {
-        auto new_value = type->createColumn();
-        /// Binary serialization of the value inside Field and inside IColumn are different for AggregateFunction data type.
-        /// Previously SingleValueDataGeneric used Field to store the value, but now it uses IColumn.
-        /// For compatibility we should serialize/deserialize values of type AggregateFunction using Field here.
-        if (hasAggregateFunctionType(type))
-        {
-            Field value_field;
-            serialization.deserializeBinary(value_field, buf, {});
-            new_value->insert(value_field);
-        }
-        else
-        {
-            serialization.deserializeBinary(*new_value, buf, {});
-        }
-        value = std::move(new_value);
-    }
+        serialization.deserializeBinary(value, buf, {});
 }
 
 bool SingleValueDataGeneric::isEqualTo(const IColumn & column, size_t row_num) const
 {
-    return has() && !column.compareAt(row_num, 0, *value, -1);
+    return has() && value == column[row_num];
 }
 
 bool SingleValueDataGeneric::isEqualTo(const DB::SingleValueDataBase & other) const
 {
     auto const & to = assert_cast<const Self &>(other);
-    return has() && to.has() && !to.value->compareAt(0, 0, *value, -1);
+    return has() && to.value == value;
 }
 
 void SingleValueDataGeneric::set(const IColumn & column, size_t row_num, Arena *)
 {
-    auto new_value = column.cloneEmpty();
-    new_value->insertFrom(column, row_num);
-    value = recursiveRemoveSparse(std::move(new_value));
+    column.get(row_num, value);
 }
 
 void SingleValueDataGeneric::set(const SingleValueDataBase & other, Arena *)
@@ -1396,6 +1371,131 @@ bool SingleValueDataGeneric::setIfSmaller(const IColumn & column, size_t row_num
         set(column, row_num, arena);
         return true;
     }
+    else
+    {
+        Field new_value;
+        column.get(row_num, new_value);
+        if (new_value < value)
+        {
+            value = new_value;
+            return true;
+        }
+        else
+            return false;
+    }
+}
+
+bool SingleValueDataGeneric::setIfSmaller(const SingleValueDataBase & other, Arena *)
+{
+    auto const & to = assert_cast<const Self &>(other);
+    if (to.has() && (!has() || to.value < value))
+    {
+        value = to.value;
+        return true;
+    }
+    else
+        return false;
+}
+
+bool SingleValueDataGeneric::setIfGreater(const IColumn & column, size_t row_num, Arena * arena)
+{
+    if (!has())
+    {
+        set(column, row_num, arena);
+        return true;
+    }
+    else
+    {
+        Field new_value;
+        column.get(row_num, new_value);
+        if (new_value > value)
+        {
+            value = new_value;
+            return true;
+        }
+        else
+            return false;
+    }
+}
+
+bool SingleValueDataGeneric::setIfGreater(const SingleValueDataBase & other, Arena *)
+{
+    auto const & to = assert_cast<const Self &>(other);
+    if (to.has() && (!has() || to.value > value))
+    {
+        value = to.value;
+        return true;
+    }
+    else
+        return false;
+}
+
+void SingleValueDataGenericWithColumn::insertResultInto(IColumn & to, const DataTypePtr & type) const
+{
+    if (has())
+        to.insertFrom(*value, 0);
+    else
+        type->insertDefaultInto(to);
+}
+
+void SingleValueDataGenericWithColumn::write(WriteBuffer & buf, const ISerialization & serialization, const DataTypePtr &) const
+{
+    if (value)
+    {
+        writeBinary(true, buf);
+        serialization.serializeBinary(*value, 0, buf, {});
+    }
+    else
+        writeBinary(false, buf);
+}
+
+void SingleValueDataGenericWithColumn::read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr & type, Arena *)
+{
+    bool is_not_null;
+    readBinary(is_not_null, buf);
+
+    if (is_not_null)
+    {
+        auto new_value = type->createColumn();
+        new_value->reserve(1);
+        serialization.deserializeBinary(*new_value, buf, {});
+        value = std::move(new_value);
+    }
+}
+
+bool SingleValueDataGenericWithColumn::isEqualTo(const IColumn & column, size_t row_num) const
+{
+    return has() && !column.compareAt(row_num, 0, *value, -1);
+}
+
+bool SingleValueDataGenericWithColumn::isEqualTo(const DB::SingleValueDataBase & other) const
+{
+    auto const & to = assert_cast<const Self &>(other);
+    return has() && to.has() && !to.value->compareAt(0, 0, *value, -1);
+}
+
+void SingleValueDataGenericWithColumn::set(const IColumn & column, size_t row_num, Arena *)
+{
+    auto new_value = column.cloneEmpty();
+    new_value->reserve(1);
+    new_value->insertFrom(column, row_num);
+    value = recursiveRemoveSparse(std::move(new_value));
+}
+
+void SingleValueDataGenericWithColumn::set(const SingleValueDataBase & other, Arena *)
+{
+    auto const & to = assert_cast<const Self &>(other);
+    if (other.has())
+        value = to.value;
+}
+
+bool SingleValueDataGenericWithColumn::setIfSmaller(const IColumn & column, size_t row_num, Arena * arena)
+{
+    if (!has())
+    {
+        set(column, row_num, arena);
+        return true;
+    }
 
     if (column.compareAt(row_num, 0, *value, -1) < 0)
     {
@@ -1405,7 +1505,7 @@ bool SingleValueDataGeneric::setIfSmaller(const IColumn & column, size_t row_num
     return false;
 }
 
-bool SingleValueDataGeneric::setIfSmaller(const SingleValueDataBase & other, Arena *)
+bool SingleValueDataGenericWithColumn::setIfSmaller(const SingleValueDataBase & other, Arena *)
 {
     auto const & to = assert_cast<const Self &>(other);
     if (to.has() && (!has() || to.value->compareAt(0, 0, *value, -1) < 0))
@@ -1416,7 +1516,7 @@ bool SingleValueDataGeneric::setIfSmaller(const SingleValueDataBase & other, Are
     return false;
 }
 
-bool SingleValueDataGeneric::setIfGreater(const IColumn & column, size_t row_num, Arena * arena)
+bool SingleValueDataGenericWithColumn::setIfGreater(const IColumn & column, size_t row_num, Arena * arena)
 {
     if (!has())
     {
@@ -1432,7 +1532,7 @@ bool SingleValueDataGeneric::setIfGreater(const IColumn & column, size_t row_num
     return false;
 }
 
-bool SingleValueDataGeneric::setIfGreater(const SingleValueDataBase & other, Arena *)
+bool SingleValueDataGenericWithColumn::setIfGreater(const SingleValueDataBase & other, Arena *)
 {
     auto const & to = assert_cast<const Self &>(other);
     if (to.has() && (!has() || to.value->compareAt(0, 0, *value, -1) > 0))
@@ -1443,8 +1543,24 @@ bool SingleValueDataGeneric::setIfGreater(const SingleValueDataBase & other, Are
     return false;
 }
 
-void generateSingleValueFromTypeIndex(TypeIndex idx, SingleValueDataBaseMemoryBlock & data)
+bool canUseFieldForValueData(const DataTypePtr & value_type)
 {
+    bool result = true;
+    auto check = [&](const IDataType & type)
+    {
+        /// Variant, Dynamic and Object types doesn't work well with Field
+        /// because they can store values of different data types in a single column.
+        result &= !isVariant(type) && !isDynamic(type) && !isObject(type);
+    };
+
+    check(*value_type);
+    value_type->forEachChild(check);
+    return result;
+};
+
+void generateSingleValueFromType(const DataTypePtr & type, SingleValueDataBaseMemoryBlock & data)
+{
+    auto idx = type->getTypeId();
 #define DISPATCH(TYPE) \
     if (idx == TypeIndex::TYPE) \
     { \
@@ -1478,9 +1594,18 @@ void generateSingleValueFromTypeIndex(TypeIndex idx, SingleValueDataBaseMemoryBl
         new (&data.memory) SingleValueDataString;
         return;
     }
-    static_assert(sizeof(SingleValueDataGeneric) <= sizeof(SingleValueDataBaseMemoryBlock::memory));
-    static_assert(alignof(SingleValueDataGeneric) <= alignof(SingleValueDataBaseMemoryBlock));
-    new (&data.memory) SingleValueDataGeneric;
+
+    if (canUseFieldForValueData(type))
+    {
+        static_assert(sizeof(SingleValueDataGeneric) <= sizeof(SingleValueDataBaseMemoryBlock::memory));
+        static_assert(alignof(SingleValueDataGeneric) <= alignof(SingleValueDataBaseMemoryBlock));
+        new (&data.memory) SingleValueDataGeneric;
+        return;
+    }
+
+    static_assert(sizeof(SingleValueDataGenericWithColumn) <= sizeof(SingleValueDataBaseMemoryBlock::memory));
+    static_assert(alignof(SingleValueDataGenericWithColumn) <= alignof(SingleValueDataBaseMemoryBlock));
+    new (&data.memory) SingleValueDataGenericWithColumn;
 }
 
 bool singleValueTypeAllocatesMemoryInArena(TypeIndex idx)

@@ -35,7 +35,7 @@ public:
     const ValueType & value() const { return value_data; }
 
     AggregateFunctionArgMinMaxData() = default;
-    explicit AggregateFunctionArgMinMaxData(TypeIndex) {}
+    explicit AggregateFunctionArgMinMaxData(const DataTypePtr &) {}
 
     static bool allocatesMemoryInArena(TypeIndex)
     {
@@ -61,9 +61,9 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionArgMinMaxData initialized empty");
     }
 
-    explicit AggregateFunctionArgMinMaxDataGeneric(TypeIndex result_type) : value_data()
+    explicit AggregateFunctionArgMinMaxDataGeneric(const DataTypePtr & result_type) : value_data()
     {
-        generateSingleValueFromTypeIndex(result_type, result_data);
+        generateSingleValueFromType(result_type, result_data);
     }
 
     static bool allocatesMemoryInArena(TypeIndex result_type_index)
@@ -122,7 +122,7 @@ public:
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
-        new (place) Data(result_type_index);
+        new (place) Data(data_type_res);
     }
 
     String getName() const override
@@ -371,7 +371,9 @@ AggregateFunctionPtr createAggregateFunctionArgMinMax(const std::string & name, 
         if (which.idx == TypeIndex::String)
             return AggregateFunctionPtr(new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataString>, isMin>(argument_types));
 
-        return AggregateFunctionPtr(new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataGeneric>, isMin>(argument_types));
+        if (canUseFieldForValueData(value_type))
+            return AggregateFunctionPtr(new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataGeneric>, isMin>(argument_types));
+        return AggregateFunctionPtr(new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataGenericWithColumn>, isMin>(argument_types));
     }
     return result;
 }
