@@ -1313,12 +1313,12 @@ bool SingleValueDataString::setIfGreater(const SingleValueDataBase & other, Aren
     return false;
 }
 
-void SingleValueDataGeneric::insertResultInto(IColumn & to, const DataTypePtr &) const
+void SingleValueDataGeneric::insertResultInto(IColumn & to, const DataTypePtr & type) const
 {
     if (has())
         to.insert(value);
     else
-        to.insertDefault();
+        type->insertDefaultInto(to);
 }
 
 void SingleValueDataGeneric::write(WriteBuffer & buf, const ISerialization & serialization, const DataTypePtr &) const
@@ -1332,7 +1332,7 @@ void SingleValueDataGeneric::write(WriteBuffer & buf, const ISerialization & ser
         writeBinary(false, buf);
 }
 
-void SingleValueDataGeneric::read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr &, Arena *)
+void SingleValueDataGeneric::read(ReadBuffer & buf, const ISerialization & serialization,  const DataTypePtr &, Arena *)
 {
     bool is_not_null;
     readBinary(is_not_null, buf);
@@ -1349,7 +1349,7 @@ bool SingleValueDataGeneric::isEqualTo(const IColumn & column, size_t row_num) c
 bool SingleValueDataGeneric::isEqualTo(const DB::SingleValueDataBase & other) const
 {
     auto const & to = assert_cast<const Self &>(other);
-    return has() && to.value == value;
+    return has() && to.has() && to.value == value;
 }
 
 void SingleValueDataGeneric::set(const IColumn & column, size_t row_num, Arena *)
@@ -1371,18 +1371,15 @@ bool SingleValueDataGeneric::setIfSmaller(const IColumn & column, size_t row_num
         set(column, row_num, arena);
         return true;
     }
-    else
+
+    Field new_value;
+    column.get(row_num, new_value);
+    if (new_value < value)
     {
-        Field new_value;
-        column.get(row_num, new_value);
-        if (new_value < value)
-        {
-            value = new_value;
-            return true;
-        }
-        else
-            return false;
+        value = new_value;
+        return true;
     }
+    return false;
 }
 
 bool SingleValueDataGeneric::setIfSmaller(const SingleValueDataBase & other, Arena *)
@@ -1393,8 +1390,7 @@ bool SingleValueDataGeneric::setIfSmaller(const SingleValueDataBase & other, Are
         value = to.value;
         return true;
     }
-    else
-        return false;
+    return false;
 }
 
 bool SingleValueDataGeneric::setIfGreater(const IColumn & column, size_t row_num, Arena * arena)
@@ -1404,18 +1400,15 @@ bool SingleValueDataGeneric::setIfGreater(const IColumn & column, size_t row_num
         set(column, row_num, arena);
         return true;
     }
-    else
+
+    Field new_value;
+    column.get(row_num, new_value);
+    if (new_value > value)
     {
-        Field new_value;
-        column.get(row_num, new_value);
-        if (new_value > value)
-        {
-            value = new_value;
-            return true;
-        }
-        else
-            return false;
+        value = new_value;
+        return true;
     }
+    return false;
 }
 
 bool SingleValueDataGeneric::setIfGreater(const SingleValueDataBase & other, Arena *)
@@ -1426,8 +1419,7 @@ bool SingleValueDataGeneric::setIfGreater(const SingleValueDataBase & other, Are
         value = to.value;
         return true;
     }
-    else
-        return false;
+    return false;
 }
 
 void SingleValueDataGenericWithColumn::insertResultInto(IColumn & to, const DataTypePtr & type) const
