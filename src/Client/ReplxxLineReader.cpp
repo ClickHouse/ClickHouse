@@ -536,6 +536,9 @@ void ReplxxLineReader::addToHistory(const String & line)
 
 void ReplxxLineReader::openEditor(bool format_query)
 {
+    /// We need to clear till the end of screen *before*, to avoid extra new-line in case of multi-line queries
+    rx.invoke(replxx::Replxx::ACTION::CLEAR_SELF, 0);
+
     try
     {
         String query = rx.get_state().text();
