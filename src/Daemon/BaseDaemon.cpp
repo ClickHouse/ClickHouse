@@ -419,7 +419,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
         /// In release builds send it to sentry (if it is configured)
         if (auto * sentry = SentryWriter::getInstance())
         {
-            LOG_DEBUG(&logger(), "Enable sending LOGICAL_ERRORs to sentry");
+            LOG_DEBUG(&logger(), "Enable sending logical errors to sentry");
             Exception::callback = [sentry](const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
             {
                 if (!remote && code == ErrorCodes::LOGICAL_ERROR)
