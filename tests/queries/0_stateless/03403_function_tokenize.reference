@@ -1,4 +1,5 @@
 Default tokenizer.
+['abc','def','foo','bar','baz','code','hello','world']	8
 ['abc','def','foo','bar']	4
 ['abc','def','foo','bar','baz','code','hello','world']	8
 Ngram tokenizer.

@@ -2,12 +2,17 @@
 
 SELECT 'Default tokenizer.';
 
+WITH 'abc+ def- foo! bar? baz= code; hello: world/' as text
+SELECT tokenize(text) as tokenized, length(tokenized) as length;
 WITH 'abc def foo! bar.' as text
 SELECT tokenize('default', text) as tokenized, length(tokenized) as length;
 WITH 'abc+ def- foo! bar? baz= code; hello: world/' as text
 SELECT tokenize('default', text) as tokenized, length(tokenized) as length;
 
 SELECT 'Ngram tokenizer.';
+
+WITH 'abc def' as text
+SELECT tokenize('ngram', 0, text) as tokenized, length(tokenized) as length; -- { serverError BAD_ARGUMENTS }
 
 WITH 'abc def' as text
 SELECT tokenize('ngram', 1, text) as tokenized, length(tokenized) as length;

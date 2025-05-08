@@ -15,20 +15,6 @@
 namespace DB
 {
 
-namespace details
-{
-static constexpr std::string_view TOKENIZER_DEFAULT = "default";
-static constexpr std::string_view TOKENIZER_NGRAM = "ngram";
-static constexpr std::string_view TOKENIZER_NOOP = "noop";
-
-#if USE_CPPJIEBA
-static constexpr std::string_view TOKENIZER_CHINESE = "chinese";
-static constexpr std::string_view TOKENIZER_CHINESE_MODE_FINE_GRAINED = "fine-grained";
-static constexpr std::string_view TOKENIZER_CHINESE_MODE_COARSE_GRAINED = "coarse-grained";
-#endif
-}
-
-
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
@@ -51,54 +37,45 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() < 2 || arguments.size() > 3)
+        if (arguments.empty() || arguments.size() > 3)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} argument count does not match.", getName());
 
-        const auto tokenizer = arguments[0].column->getDataAt(0).toString();
+        FunctionArgumentDescriptors args;
+        args.reserve(arguments.size());
 
-        if (boost::iequals(tokenizer, details::TOKENIZER_NGRAM))
+        if (arguments.size() > 1)
         {
-            FunctionArgumentDescriptors args{
-                {"tokenizer",
-                 static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString),
-                 nullptr,
-                 "String or FixedString"},
-                {"ngram_size", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), nullptr, "Number"},
-                {"input",
-                 static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString),
-                 nullptr,
-                 "String or FixedString"}};
-            validateFunctionArguments(*this, arguments, args);
-        }
+            args.emplace_back(
+                "tokenizer",
+                static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString),
+                nullptr,
+                "String or FixedString");
+            validateFunctionArguments(*this, {arguments[0]}, args);
+
+            const auto tokenizer = arguments[0].column->getDataAt(0).toString();
+
+            if (boost::iequals(tokenizer, details::TOKENIZER_NGRAM))
+            {
+                // ngram size arg
+                args.emplace_back("ngram_size", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), nullptr, "Number");
+            }
 #if USE_CPPJIEBA
-        else if (boost::iequals(tokenizer, details::TOKENIZER_CHINESE) && arguments.size() == 3)
-        {
-            FunctionArgumentDescriptors args{
-                {"tokenizer",
-                 static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString),
-                 nullptr,
-                 "String or FixedString"},
-                {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
-                {"input",
-                 static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString),
-                 nullptr,
-                 "String or FixedString"}};
-            validateFunctionArguments(*this, arguments, args);
-        }
+            else if (boost::iequals(tokenizer, details::TOKENIZER_CHINESE) && arguments.size() == 3)
+            {
+                // chinese mode arg
+                args.emplace_back(
+                    "mode",
+                    static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString),
+                    nullptr,
+                    "String or FixedString");
+            }
 #endif
-        else
-        {
-            FunctionArgumentDescriptors args{
-                {"tokenizer",
-                 static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString),
-                 nullptr,
-                 "String or FixedString"},
-                {"value",
-                 static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString),
-                 nullptr,
-                 "String or FixedString"}};
-            validateFunctionArguments(*this, arguments, args);
         }
+
+        args.emplace_back(
+            "value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString");
+
+        validateFunctionArguments(*this, arguments, args);
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
@@ -108,7 +85,7 @@ public:
         auto column_offsets = ColumnArray::ColumnOffsets::create();
         auto result_column = ColumnString::create();
 
-        auto token_extractor = [&arguments]
+        std::unique_ptr<ITokenExtractor> token_extractor = [&arguments]
         {
             std::vector<std::pair<std::string_view, std::function<std::unique_ptr<ITokenExtractor>(void)>>> supported_tokenizers{
                 {details::TOKENIZER_DEFAULT, [] { return std::make_unique<SplitTokenExtractor>(); }},
@@ -117,6 +94,8 @@ public:
                  [&]
                  {
                      const auto ngram_size = arguments[1].column->getUInt(0);
+                     if (ngram_size <= 0)
+                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Ngram size should be at least 1, but got {}", ngram_size);
                      return std::make_unique<NgramTokenExtractor>(ngram_size);
                  }}};
 
@@ -143,7 +122,7 @@ public:
                 });
 #endif
 
-            const auto tokenizer = arguments[0].column->getDataAt(0).toString();
+            const auto tokenizer = arguments.size() == 1 ? String{details::TOKENIZER_DEFAULT} : arguments[0].column->getDataAt(0).toString();
             for (const auto & supported_tokenizer : supported_tokenizers)
                 if (boost::iequals(supported_tokenizer.first, tokenizer))
                     return supported_tokenizer.second();
@@ -162,7 +141,7 @@ public:
                 tokenizer);
         }();
 
-        auto input_column = arguments.size() == 2 ? arguments[1].column : arguments[2].column;
+        auto input_column = arguments.back().column;
 
         if (const auto * column_string = checkAndGetColumn<ColumnString>(input_column.get()))
             executeImpl(std::move(token_extractor), *column_string, *column_offsets, input_rows_count, *result_column);
