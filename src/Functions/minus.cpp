@@ -61,8 +61,9 @@ Additionally, subtraction between date with time is supported, resulting in the 
     FunctionDocumentation::Example example1 = {"Subtracting two numbers", "SELECT minus(10,5)", "5"};
     FunctionDocumentation::Example example2 = {"Subtracting an integer and a date", "SELECT minus(toDate('2025-01-01'),5)", "2024-12-27"};
     FunctionDocumentation::Examples examples = {example1, example2};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
 
     factory.registerFunction<FunctionMinus>(documentation);
 }

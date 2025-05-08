@@ -32,8 +32,9 @@ REGISTER_FUNCTION(Min2)
     FunctionDocumentation::ReturnedValue returned_value = "Returns the smaller value of `x` and `y`";
     FunctionDocumentation::Example example1 = {"", "SELECT min2(-1, 2)", "-1"};
     FunctionDocumentation::Examples examples = {example1};
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
 
     factory.registerFunction<FunctionMin2>(documentation, FunctionFactory::Case::Insensitive);
 }
