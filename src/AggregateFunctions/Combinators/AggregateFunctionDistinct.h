@@ -24,7 +24,7 @@ struct AggregateFunctionDistinctSingleNumericData
     using Self = AggregateFunctionDistinctSingleNumericData<T>;
 
     /// queue will hold values that are not yet processed.
-    mutable Set history;
+    Set history;
     mutable Array queue;
 
     void add(const IColumn ** columns, size_t /* columns_num */, size_t row_num, Arena *)
@@ -127,7 +127,7 @@ struct AggregateFunctionDistinctGenericData
     using Array = PODArrayWithStackMemory<StringRef, 16>;
     using Self = AggregateFunctionDistinctGenericData;
 
-    mutable Set history;
+    Set history;
     mutable Array queue;
 
     void merge(const Self & rhs, Arena * arena)
@@ -138,14 +138,6 @@ struct AggregateFunctionDistinctGenericData
         Set seen;
         seen.reserve(new_queue.capacity());
 
-        auto push_if_not_seen = [&](const auto & v)
-        {
-            if (seen.contains(v))
-                return;
-            new_queue.push_back(v);
-            seen.insert(v);
-        };
-
         Set rhs_queue_set;
         rhs_queue_set.reserve(rhs.queue.size());
         for (const auto & v : rhs.queue)
@@ -154,7 +146,10 @@ struct AggregateFunctionDistinctGenericData
         for (const auto & v : queue)
         {
             if (rhs_queue_set.contains(v) || !rhs.history.contains(v))
-                push_if_not_seen(v);
+            {
+                new_queue.push_back(v);
+                seen.insert(v);
+            }
         }
 
         Set queue_set;
@@ -165,9 +160,13 @@ struct AggregateFunctionDistinctGenericData
         /// Make sure queue does not contain elements that exist in history
         for (const auto & v : rhs.queue)
         {
+            if (seen.contains(v))
+                continue;
             if (queue_set.contains(v) || !history.contains(v))
             {
-                push_if_not_seen(v);
+                auto key_holder = ArenaKeyHolder{v, *arena};
+                new_queue.push_back(key_holder.key);
+                seen.insert(key_holder.key);
             }
         }
 
