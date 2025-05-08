@@ -160,6 +160,7 @@ private:
     const unum::usearch::metric_kind_t metric_kind;
     const size_t expansion_search;
     const size_t vector_search_postfilter_multiplier;
+    const size_t max_limit_for_ann_queries;
 };
 
 

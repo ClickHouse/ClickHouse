@@ -41,6 +41,7 @@ namespace Setting
 {
     extern const SettingsUInt64 hnsw_candidate_list_size_for_search;
     extern const SettingsUInt64 vector_search_postfilter_multiplier;
+    extern const SettingsUInt64 max_limit_for_ann_queries;
 }
 
 namespace ServerSetting
@@ -417,6 +418,7 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
     , metric_kind(metric_kind_)
     , expansion_search(context->getSettingsRef()[Setting::hnsw_candidate_list_size_for_search])
     , vector_search_postfilter_multiplier(context->getSettingsRef()[Setting::vector_search_postfilter_multiplier])
+    , max_limit_for_ann_queries(context->getSettingsRef()[Setting::max_limit_for_ann_queries])
 {
     if (expansion_search == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'hnsw_candidate_list_size_for_search' must not be 0");
@@ -467,7 +469,7 @@ std::vector<UInt64> MergeTreeIndexConditionVectorSimilarity::calculateApproximat
     /// to accept a custom expansion_add setting. The config value is only used on the fly, i.e. not persisted in the index.
     size_t k = parameters->limit;
     if (parameters->additional_filters_present)
-        k = k * vector_search_postfilter_multiplier; /// help post-filtering by fetching "more" neighbours
+        k = std::min(k * vector_search_postfilter_multiplier, max_limit_for_ann_queries); /// help post-filtering by fetching "more" neighbours
     auto search_result = index->search(parameters->reference_vector.data(), k, USearchIndex::any_thread(), false, expansion_search);
     if (!search_result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not search in vector similarity index. Error: {}", search_result.error.release());

@@ -267,10 +267,8 @@ In case additional filter conditions on columns can make use of skip indexes (mi
 
 Clickhouse provides 2 settings for finer control on post-filtering and pre-filtering -
 
-```
-ann_prefer_pre_filtering
-```
-When the additional filter conditions are extremely selective, it is possible that brute force search on a small filtered set of rows gives better results then post-filtering using the vector search. Users can request explicit pre-filtering by setting ```ann_prefer_pre_filtering``` to True (default is False). An example query where pre-filtering could be a good choice is -
+- vector_search_filtering
+When the additional filter conditions are extremely selective, it is possible that brute force search on a small filtered set of rows gives better results then post-filtering using the vector search. Users can request explicit pre-filtering by setting ```vector_search_filtering``` to "prefilter" (default is "Auto" which equates to "Postfilter"). An example query where pre-filtering could be a good choice is -
 
 ```sql
 SELECT bookid, author, title
@@ -280,12 +278,10 @@ ORDER BY cosineDistance(book_vector, getEmbedding('Books on ancient Asian empire
 LIMIT 10
 ```
 
-Assuming books priced less that $2 are a tiny portion, post-filtering approach may return 0 rows because the top LIMIT <N> matches returned by the vector index could all be priced above $2. By opting for explicit pre-filtering, the subset of all books priced less than $2 are shortlisted and then brute-force vector search executed on the subset to return the closest matches.
+Assuming books priced less that $2 are a tiny portion, post-filtering approach may return 0 rows because the top `LIMIT <N>` matches returned by the vector index could all be priced above $2. By opting for explicit pre-filtering, the subset of all books priced less than $2 are shortlisted and then brute-force vector search executed on the subset to return the closest matches.
 
-```
-ann_post_filter_multiplier
-```
-As explained above in the trade-offs, post-filtering could return lesser number of rows then specified in the 'LIMIT <N>' clause. Consider this query -
+- vector_search_postfilter_multiplier
+As explained above in the trade-offs, post-filtering could return lesser number of rows then specified in the `LIMIT <N>` clause. Consider this query -
 
 ```sql
 SELECT bookid, author, title
@@ -294,7 +290,7 @@ WHERE published_year <= 2000
 ORDER BY cosineDistance(book_vector, getEmbedding('Books on ancient Asian empires'))
 LIMIT 10
 ```
-One or more of the 10 nearest matching books returned by the vector index could be published after year 2000. Hence the query will end up returning less than 10 rows, contrary to user expectations. For such cases, the parameter ```ann_post_filter_multiplier``` can be set to a value like 2 or 10 to indicate that 20 or 100 nearest matching books should be returned by the vector index and then the additional filter to be applied on those rows to return the result of 10 rows.
+One or more of the 10 nearest matching books returned by the vector index could be published after year 2000. Hence the query will end up returning less than 10 rows, contrary to user expectations. For such cases, the parameter ```vector_search_postfilter_multiplier``` can be set to a value like 2 or 10 to indicate that 20 or 100 nearest matching books should be returned by the vector index and then the additional filter to be applied on those rows to return the result of 10 rows.
 
 ### Performance Tuning {#performance-tuning}
 
