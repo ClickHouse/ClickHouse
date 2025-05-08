@@ -6,7 +6,7 @@ SYSTEM DROP QUERY CACHE;
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab(c UInt64) ENGINE = Memory AS SELECT 1;
 
-SELECT c FROM tab SETTINGS use_query_cache = 1;
+SELECT c FROM tab SETTINGS use_query_cache = 1, log_comment='';
 SELECT c FROM tab SETTINGS use_query_cache = 1, log_comment='aaa';
 SELECT c FROM tab SETTINGS use_query_cache = 1, log_comment='bbb';
 
