@@ -4979,6 +4979,16 @@ std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
     return shared->system_logs->blob_storage_log;
 }
 
+std::shared_ptr<UDFLog> Context::getUDFLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+    
+    return shared->system_logs->udf_log;
+}
+
 SystemLogs Context::getSystemLogs() const
 {
     SharedLockGuard lock(shared->mutex);
