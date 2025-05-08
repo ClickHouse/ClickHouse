@@ -94,8 +94,12 @@ void StreamingExchangeSource::readFromSocket(char * buffer, size_t buffer_size, 
             }
             else
             {
-                throw Poco::Net::NetException("Failed to send data to socket", last_error);
+                throw Poco::Net::NetException("Failed to receive data from socket for exchange {}, error {}", stream_name, last_error);
             }
+        }
+        else if (received == 0)
+        {
+            throw Poco::Net::NetException("Failed to receive data from socket for exchange {}, socket was unexpectedly closed", stream_name);
         }
 
         LOG_TEST(log, "Received {} bytes from exchange stream {}, fd: {}", received, stream_name, socket.sockfd());
