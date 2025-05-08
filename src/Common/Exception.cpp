@@ -270,19 +270,23 @@ void Exception::clearThreadFramePointers()
         thread_frame_pointers.frame_pointers.clear();
 }
 
+bool Exception::isErrorCodeImportant() const
+{
+    const int error_code = code();
+    return error_code == ErrorCodes::LOGICAL_ERROR
+        || error_code == ErrorCodes::POTENTIALLY_BROKEN_DATA_PART
+        || error_code == ErrorCodes::REPLICA_ALREADY_EXISTS
+        || error_code == ErrorCodes::NOT_ENOUGH_SPACE
+        || error_code == ErrorCodes::CORRUPTED_DATA
+        || error_code == ErrorCodes::CHECKSUM_DOESNT_MATCH
+        || error_code == ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR;
+}
+
 Exception::~Exception()
 {
-    if (logged != nullptr && logged->load(std::memory_order_relaxed))
+    if (logged != nullptr && !logged->load(std::memory_order_relaxed) && isErrorCodeImportant())
     {
-        const int error_code = code();
-        const bool is_error_important = error_code == ErrorCodes::LOGICAL_ERROR
-            || error_code == ErrorCodes::POTENTIALLY_BROKEN_DATA_PART
-            || error_code == ErrorCodes::REPLICA_ALREADY_EXISTS
-            || error_code == ErrorCodes::NOT_ENOUGH_SPACE
-            || error_code == ErrorCodes::CORRUPTED_DATA
-            || error_code == ErrorCodes::CHECKSUM_DOESNT_MATCH
-            || error_code == ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR;
-        tryLogException(*this, getLogger("~Exception"), "An important exception was likely ignored, here it is");
+        LOG_ERROR(getLogger("~Exception"), "An important exception was likely ignored, here it is: {}", getExceptionMessage(*this, /*with_stacktrace=*/ true));
     }
 }
 

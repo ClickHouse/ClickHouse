@@ -181,6 +181,9 @@ public:
         }
     }
 
+    /// Indicates if the error code triggers alerts in ClickHouse Cloud
+    bool isErrorCodeImportant() const;
+
 private:
 #ifndef STD_EXCEPTION_HAS_STACK_TRACE
     StackTrace trace;
