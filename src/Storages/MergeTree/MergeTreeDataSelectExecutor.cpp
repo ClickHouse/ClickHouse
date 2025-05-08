@@ -98,7 +98,6 @@ namespace Setting
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
-    extern const SettingsBool ann_prefer_pre_filtering;
 }
 
 namespace MergeTreeSetting
