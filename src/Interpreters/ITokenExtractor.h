@@ -12,6 +12,20 @@
 namespace DB
 {
 
+namespace details
+{
+static constexpr std::string_view TOKENIZER_DEFAULT = "default";
+static constexpr std::string_view TOKENIZER_NGRAM = "ngram";
+static constexpr std::string_view TOKENIZER_NOOP = "noop";
+
+#if USE_CPPJIEBA
+static constexpr std::string_view TOKENIZER_CHINESE = "chinese";
+static constexpr std::string_view TOKENIZER_CHINESE_MODE_FINE_GRAINED = "fine-grained";
+static constexpr std::string_view TOKENIZER_CHINESE_MODE_COARSE_GRAINED = "coarse-grained";
+#endif
+}
+
+
 /// Interface for string parsers.
 struct ITokenExtractor
 {

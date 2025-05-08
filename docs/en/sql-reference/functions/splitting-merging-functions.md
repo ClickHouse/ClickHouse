@@ -347,6 +347,12 @@ Result:
 
 ## ngrams {#ngrams}
 
+<DeprecatedBadge/>
+
+:::warning
+This function is deprecated and prefer to use [tokens](#tokens) with the `ngram` tokenizer. The function will be removed at some point in future.
+:::
+
 Splits a UTF-8 string into n-grams of `ngramsize` symbols.
 
 **Syntax** 
@@ -380,11 +386,14 @@ Result:
 
 ## tokens {#tokens}
 
-Splits a string into tokens using non-alphanumeric ASCII characters as separators.
+Splits a string into tokens by the given tokenizer (by default using non-alphanumeric ASCII characters as separators).
 
 **Arguments**
 
 - `input_string` — Any set of bytes represented as the [String](../data-types/string.md) data type object.
+- `tokenizer_string` — The tokenizer to use. Valid arguments are 'default', 'noop', 'ngram', and 'chinese'.
+- `ngram_size` - A mandatory `UInt8` that defines size of ngram when `tokenizer` is set to `ngram`.
+- `mode_string` - An optional parameter to control granularity of the Chinese tokenizer. Supports only `fine-grained` and `coarse-grained` values, by default it is set to `fine-grained`.
 
 **Returned value**
 
@@ -404,25 +413,9 @@ Result:
 └───────────────────────────────────┘
 ```
 
-## tokenize {#tokenize}
-
-Splits text into tokens / words by the given tokenizer.
-
-**Arguments**
-
-- `tokenizer_string` — The tokenizer to use. Valid arguments are 'default', 'noop', 'ngram', and 'chinese'.
-- `input_string` — Any set of bytes represented as the [String](../data-types/string.md) data type object.
-- `ngram_size` - A mandatory `UInt8` that defines size of ngram when `tokenizer` is set to `ngram`.
-- `mode` - An optional parameter to control granularity of the Chinese tokenizer. Supports only `fine-grained` and `coarse-grained` values, default is `fine-grained`.
-
-**Returned value**
-
-- The resulting array of tokens from input string. [Array](../data-types/array.md).
-
-**Example**
 
 ```sql
-SELECT tokenize('default', 'foo bar') AS tokens;
+SELECT tokens('foo bar', 'default') AS tokens;
 ```
 
 Result:
@@ -434,7 +427,7 @@ Result:
 ```
 
 ```sql
-SELECT tokenize('noop', 'foo bar') AS tokens;
+SELECT tokens('foo bar', 'noop') AS tokens;
 ```
 
 Result:
@@ -446,7 +439,7 @@ Result:
 ```
 
 ```sql
-SELECT tokenize('ngram', 3, 'abc def') AS tokens;
+SELECT tokens('abc def', 'ngram', 3) AS tokens;
 ```
 
 Result:
@@ -458,7 +451,7 @@ Result:
 ```
 
 ```sql
-SELECT tokenize('chinese', '你好世界！') AS tokens;
+SELECT tokens('你好世界！', 'chinese') AS tokens;
 ```
 
 Result:
@@ -470,7 +463,7 @@ Result:
 ```
 
 ```sql
-SELECT tokenize('chinese', 'fine-grained', '南京市长江大桥') AS tokens;
+SELECT tokens('南京市长江大桥', 'chinese', 'fine-grained') AS tokens;
 ```
 
 Result:
@@ -482,7 +475,7 @@ Result:
 ```
 
 ```sql
-SELECT tokenize('chinese', 'coarse-grained', '南京市长江大桥') AS tokens;
+SELECT tokens('南京市长江大桥', 'chinese', 'coarse-grained') AS tokens;
 ```
 
 Result:

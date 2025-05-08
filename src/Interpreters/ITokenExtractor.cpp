@@ -22,12 +22,12 @@
 namespace DB
 {
 
-std::vector<std::string> NgramTokenExtractor::getTokens(const char* data, size_t length) const
+std::vector<String> NgramTokenExtractor::getTokens(const char* data, size_t length) const
 {
     if (n > length)
-        return std::vector<std::string>{{data, length}};
+        return std::vector<String>{{data, length}};
 
-    std::vector<std::string> tokens;
+    std::vector<String> tokens;
     tokens.reserve(length - n + 1);
 
     size_t cur = 0;
@@ -102,9 +102,9 @@ bool NgramTokenExtractor::nextInStringLike(const char * data, size_t length, siz
     return false;
 }
 
-std::vector<std::string> SplitTokenExtractor::getTokens(const char* data, size_t length) const
+std::vector<String> SplitTokenExtractor::getTokens(const char* data, size_t length) const
 {
-    std::vector<std::string> tokens;
+    std::vector<String> tokens;
     tokens.reserve(length / 5 /* assuming average length of word is 5. */);
 
     size_t cur = 0;
@@ -308,7 +308,7 @@ void SplitTokenExtractor::substringToGinFilter(const char * data, size_t length,
 
 #if USE_CPPJIEBA
 
-std::vector<std::string> ChineseTokenExtractor::getTokens(const char * data, [[maybe_unused]] size_t length) const
+std::vector<String> ChineseTokenExtractor::getTokens(const char * data, [[maybe_unused]] size_t length) const
 {
     return ChineseTokenizer::instance().tokenize(data, granular_mode);
 }

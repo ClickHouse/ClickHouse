@@ -15,31 +15,22 @@
 namespace DB
 {
 
-namespace details
-{
-static constexpr std::string_view TOKENIZER_DEFAULT = "default";
-static constexpr std::string_view TOKENIZER_NGRAM = "ngram";
-static constexpr std::string_view TOKENIZER_NOOP = "noop";
-
-#if USE_CPPJIEBA
-static constexpr std::string_view TOKENIZER_CHINESE = "chinese";
-static constexpr std::string_view TOKENIZER_CHINESE_MODE_FINE_GRAINED = "fine-grained";
-static constexpr std::string_view TOKENIZER_CHINESE_MODE_COARSE_GRAINED = "coarse-grained";
-#endif
-}
-
-
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 }
 
-class FunctionTokenize : public IFunction
+class FunctionTokens : public IFunction
 {
-public:
-    static constexpr auto name = "tokenize";
+    static const size_t arg_index_index = 0;
+    static const size_t arg_tokenizer_index = 1;
+    static const size_t arg_ngram_size_index = 2;
+    static const size_t arg_chinese_mode_index = 2;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTokenize>(); }
+public:
+    static constexpr auto name = "tokens";
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTokens>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -51,64 +42,49 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() < 2 || arguments.size() > 3)
+        if (arguments.empty() || arguments.size() > 3)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} argument count does not match.", getName());
 
-        const auto tokenizer = arguments[0].column->getDataAt(0).toString();
+        FunctionArgumentDescriptors args{
+            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}};
 
-        if (boost::iequals(tokenizer, details::TOKENIZER_NGRAM))
+        if (arguments.size() > 1)
         {
-            FunctionArgumentDescriptors args{
-                {"tokenizer",
-                 static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString),
-                 nullptr,
-                 "String or FixedString"},
-                {"ngram_size", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), nullptr, "Number"},
-                {"input",
-                 static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString),
-                 nullptr,
-                 "String or FixedString"}};
-            validateFunctionArguments(*this, arguments, args);
-        }
+            args.emplace_back(
+                "tokenizer",
+                static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString),
+                nullptr,
+                "String or FixedString");
+            validateFunctionArguments(*this, {arguments[arg_index_index], arguments[arg_tokenizer_index]}, args);
+
+            const auto tokenizer = arguments[arg_tokenizer_index].column->getDataAt(0).toString();
+
+            if (boost::iequals(tokenizer, details::TOKENIZER_NGRAM))
+            {
+                // ngram size arg
+                args.emplace_back("ngram_size", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), nullptr, "Number");
+            }
 #if USE_CPPJIEBA
-        else if (boost::iequals(tokenizer, details::TOKENIZER_CHINESE) && arguments.size() == 3)
-        {
-            FunctionArgumentDescriptors args{
-                {"tokenizer",
-                 static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString),
-                 nullptr,
-                 "String or FixedString"},
-                {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
-                {"input",
-                 static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString),
-                 nullptr,
-                 "String or FixedString"}};
-            validateFunctionArguments(*this, arguments, args);
-        }
+            else if (boost::iequals(tokenizer, details::TOKENIZER_CHINESE) && arguments.size() == 3)
+            {
+                // chinese mode arg
+                args.emplace_back(
+                    "mode",
+                    static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString),
+                    nullptr,
+                    "String or FixedString");
+            }
 #endif
-        else
-        {
-            FunctionArgumentDescriptors args{
-                {"tokenizer",
-                 static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString),
-                 nullptr,
-                 "String or FixedString"},
-                {"value",
-                 static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString),
-                 nullptr,
-                 "String or FixedString"}};
-            validateFunctionArguments(*this, arguments, args);
         }
+
+        validateFunctionArguments(*this, arguments, args);
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto column_offsets = ColumnArray::ColumnOffsets::create();
-        auto result_column = ColumnString::create();
-
-        auto token_extractor = [&arguments]
+        std::unique_ptr<ITokenExtractor> token_extractor = [&arguments]
         {
             std::vector<std::pair<std::string_view, std::function<std::unique_ptr<ITokenExtractor>(void)>>> supported_tokenizers{
                 {details::TOKENIZER_DEFAULT, [] { return std::make_unique<SplitTokenExtractor>(); }},
@@ -116,7 +92,9 @@ public:
                 {details::TOKENIZER_NGRAM,
                  [&]
                  {
-                     const auto ngram_size = arguments[1].column->getUInt(0);
+                     const auto ngram_size = arguments[arg_ngram_size_index].column->getUInt(0);
+                     if (ngram_size < 2 || ngram_size > 8)
+                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Ngram size should be between 2 and 8, but got {}", ngram_size);
                      return std::make_unique<NgramTokenExtractor>(ngram_size);
                  }}};
 
@@ -128,22 +106,23 @@ public:
                     ChineseGranularMode granular_mode = ChineseGranularMode::Fine;
                     if (arguments.size() == 3)
                     {
-                        auto input_mode = arguments[1].column->getDataAt(0).toString();
-                        if (boost::iequals(input_mode, details::TOKENIZER_CHINESE_MODE_FINE_GRAINED))
+                        auto mode = arguments[arg_chinese_mode_index].column->getDataAt(0).toString();
+                        if (boost::iequals(mode, details::TOKENIZER_CHINESE_MODE_FINE_GRAINED))
                             granular_mode = ChineseGranularMode::Fine;
-                        else if (boost::iequals(input_mode, details::TOKENIZER_CHINESE_MODE_COARSE_GRAINED))
+                        else if (boost::iequals(mode, details::TOKENIZER_CHINESE_MODE_COARSE_GRAINED))
                             granular_mode = ChineseGranularMode::Coarse;
                         else
                             throw Exception(
                                 ErrorCodes::BAD_ARGUMENTS,
-                                "Chinese tokenizer supports only 'fine' or 'coarse' grained modes, but got {}",
-                                input_mode);
+                                "Chinese tokenizer supports only 'fine-grained' or 'coarse-grained' modes, but got {}",
+                                mode);
                     }
                     return std::make_unique<ChineseTokenExtractor>(granular_mode);
                 });
 #endif
 
-            const auto tokenizer = arguments[0].column->getDataAt(0).toString();
+            const auto tokenizer = arguments.size() == 1 ? String{details::TOKENIZER_DEFAULT}
+                                                         : arguments[arg_tokenizer_index].column->getDataAt(0).toString();
             for (const auto & supported_tokenizer : supported_tokenizers)
                 if (boost::iequals(supported_tokenizer.first, tokenizer))
                     return supported_tokenizer.second();
@@ -162,7 +141,10 @@ public:
                 tokenizer);
         }();
 
-        auto input_column = arguments.size() == 2 ? arguments[1].column : arguments[2].column;
+        auto input_column = arguments[arg_index_index].column;
+
+        auto column_offsets = ColumnArray::ColumnOffsets::create();
+        auto result_column = ColumnString::create();
 
         if (const auto * column_string = checkAndGetColumn<ColumnString>(input_column.get()))
             executeImpl(std::move(token_extractor), *column_string, *column_offsets, input_rows_count, *result_column);
@@ -181,6 +163,7 @@ private:
         size_t rows_count_input,
         ColumnString & column_result) const
     {
+        size_t current_tokens_size = 0;
         auto & offsets_data = column_offsets_input.getData();
 
         offsets_data.resize(rows_count_input);
@@ -190,26 +173,23 @@ private:
         {
             const StringRef input = column_input.getDataAt(i);
             tokens = token_extractor->getTokens(input.data, input.size);
+            current_tokens_size += tokens.size();
 
             for (const auto & token : tokens)
-            {
                 column_result.insertData(token.data(), token.size());
-            }
-
-            offsets_data[i] = tokens.size();
             tokens.clear();
+
+            offsets_data[i] = current_tokens_size;
         }
     }
 };
 
-REGISTER_FUNCTION(Tokenizer)
+REGISTER_FUNCTION(Tokens)
 {
-    factory.registerFunction<FunctionTokenize>(FunctionDocumentation{
+    factory.registerFunction<FunctionTokens>(FunctionDocumentation{
         .description = R"(
-Splits the text into tokens by the given tokenizer. Supports 'default', 'none', 'ngram' and 'chinese' tokenizers.
+Splits the text into tokens by the given tokenizer. Supports 'default', 'noop', 'ngram' and 'chinese' tokenizers.
     )",
-        .category = FunctionDocumentation::Category::StringSplitting}
-
-    );
+        .category = FunctionDocumentation::Category::StringSplitting});
 }
 }
