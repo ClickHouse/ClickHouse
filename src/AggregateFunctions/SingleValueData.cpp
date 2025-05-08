@@ -1331,7 +1331,7 @@ void SingleValueDataGeneric::write(WriteBuffer & buf, const ISerialization & ser
         writeBinary(false, buf);
 }
 
-void SingleValueDataGeneric::read(ReadBuffer & buf, const ISerialization & serialization,  const DataTypePtr &, Arena *)
+void SingleValueDataGeneric::read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr &, Arena *)
 {
     bool is_not_null;
     readBinary(is_not_null, buf);
