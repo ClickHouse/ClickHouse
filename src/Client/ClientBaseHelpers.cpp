@@ -3,6 +3,7 @@
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/LocalDate.h>
+#include <Parsers/Lexer.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -15,11 +16,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 namespace Setting
 {
@@ -247,6 +243,9 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
 String formatQuery(String query)
 {
+    const unsigned max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
+    const unsigned max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
+
     ParserQuery parser(query.data() + query.size(), /*allow_settings_after_format_in_insert_=*/ false, /*implicit_select_=*/ false);
 
     String res;
@@ -259,31 +258,33 @@ String formatQuery(String query)
     {
         const char * query_start = pos;
 
-        const ASTPtr ast = parseQueryAndMovePosition(parser, pos, end, "query in editor", true,
-            /*max_query_size=*/ 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        Tokens tokens(pos, end);
+        IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
+        while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
+            ++token_iterator;
+        const char * query_end = token_iterator->end;
+        bool has_semicolon = token_iterator.isValid() && token_iterator->type == TokenType::Semicolon;
 
-        bool multiline_query = std::string_view(query_start, pos).contains('\n');
-        bool insert_with_data = false;
-        if (auto * insert_query = ast->as<ASTInsertQuery>(); insert_query && insert_query->hasInlinedData())
-            insert_with_data = true;
+        const ASTPtr ast = parseQueryAndMovePosition(parser, pos, query_end, "query in editor", true, /*max_query_size=*/ 0, max_parser_depth, max_parser_backtracks);
 
-        if (insert_with_data)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "INSERT query with inline data cannot be re-formatted");
-
+        bool multiline_query = std::string_view(query_start, query_end).contains('\n');
         if (multiline_query)
             res += ast->formatWithSecretsMultiLine();
         else
             res += ast->formatWithSecretsOneLine();
 
-        if (*(pos - 1) == ';')
-            res.push_back(';');
-
-        while (isWhitespaceASCII(*pos) || *pos == ';')
+        if (const auto * insert_ast = ast->as<ASTInsertQuery>(); insert_ast && insert_ast->data)
         {
-            if (*pos != ';')
-                res.push_back(*pos);
-            ++pos;
+            res += ' ';
+            res += std::string_view(insert_ast->data, insert_ast->end);
+            pos = insert_ast->end;
         }
+
+        if (has_semicolon)
+            res += ';';
+
+        while (pos < end && isWhitespaceASCII(*pos))
+            res.push_back(*pos++);
     }
 
     return res;
