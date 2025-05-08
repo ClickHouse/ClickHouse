@@ -25,6 +25,25 @@ instance = cluster.add_instance(
     stay_alive=True,
 )
 
+instance2 = cluster.add_instance(
+    "instance2",
+    user_configs=["configs/users.xml"],
+    with_rabbitmq=True,
+)
+
+instance3 = cluster.add_instance(
+    "instance3",
+    user_configs=["configs/users.xml"],
+    main_configs=[
+        "configs/rabbitmq.xml",
+        "configs/macros.xml",
+        "configs/named_collection.xml",
+        "configs/mergetree.xml",
+    ],
+    with_rabbitmq=True,
+    stay_alive=True,
+)
+
 # Helpers
 
 
@@ -156,10 +175,12 @@ def rabbitmq_cluster():
 def rabbitmq_monitor():
     logging.debug("RabbitMQ is available - running test")
     instance.query("CREATE DATABASE test")
+    instance3.query("CREATE DATABASE test")
     monitor = RabbitMQMonitor()
     monitor.start(cluster)
     yield monitor
     instance.query("DROP DATABASE test SYNC")
+    instance3.query("DROP DATABASE test SYNC")
     monitor.check()
     monitor.stop()
     cluster.reset_rabbitmq()

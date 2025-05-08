@@ -49,8 +49,9 @@ otherwise this function returns `0`.
     FunctionDocumentation::Arguments arguments = {argument1};
     FunctionDocumentation::ReturnedValue returned_value = "`1` if x is not infinite and not `NaN`, otherwise `0`.";
     FunctionDocumentation::Examples examples = {{"Test if a number is finite", "SELECT isFinite(inf)", "0"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
 
     factory.registerFunction<FunctionIsFinite>(documentation);
 }

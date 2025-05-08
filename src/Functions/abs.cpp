@@ -56,8 +56,9 @@ REGISTER_FUNCTION(Abs)
     FunctionDocumentation::Arguments argument = {{"x", "Value to get the absolute value of"}};
     FunctionDocumentation::ReturnedValue returned_value = "The absolute value of `x`";
     FunctionDocumentation::Examples examples = {{"", "SELECT abs(-0.5)", "0.5"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, categories};
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, categories};
 
     factory.registerFunction<FunctionAbs>(documentation, FunctionFactory::Case::Insensitive);
 }

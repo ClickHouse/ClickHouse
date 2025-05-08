@@ -579,7 +579,7 @@ bool StorageNATS::checkDependencies(const StorageID & table_id)
     // Check if all dependencies are attached
     auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
     if (view_ids.empty())
-        return false;
+        return true;
 
     // Check the dependencies are ready?
     for (const auto & view_id : view_ids)
@@ -591,6 +591,10 @@ bool StorageNATS::checkDependencies(const StorageID & table_id)
         // If it materialized view, check it's target table
         auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
         if (materialized_view && !materialized_view->tryGetTargetTable())
+            return false;
+
+        // Check all its dependencies
+        if (!checkDependencies(view_id))
             return false;
     }
 
@@ -615,10 +619,7 @@ void StorageNATS::streamingToViewsFunc()
             while (!shutdown_called && num_created_consumers > 0)
             {
                 if (!checkDependencies(table_id))
-                {
-                    consumers_queues_are_empty = true;
                     break;
-                }
 
                 LOG_DEBUG(log, "Started streaming to attached views");
 
@@ -649,7 +650,6 @@ void StorageNATS::streamingToViewsFunc()
         return;
 
     size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-
     if (num_views != 0)
     {
         if (consumers_queues_are_empty)

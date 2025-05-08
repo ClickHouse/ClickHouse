@@ -24,18 +24,19 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_INDEX;
+    extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INCORRECT_QUERY;
+    extern const int LOGICAL_ERROR;
 }
 
 MergeTreeIndexGranuleGin::MergeTreeIndexGranuleGin(
     const String & index_name_,
     size_t columns_number,
-    const GinFilterParameters & params_)
+    const GinFilterParameters & gin_filter_params_)
     : index_name(index_name_)
-    , params(params_)
-    , gin_filters(columns_number, GinFilter(params))
+    , gin_filter_params(gin_filter_params_)
+    , gin_filters(columns_number, GinFilter(gin_filter_params))
     , has_elems(false)
 {
 }
@@ -93,23 +94,21 @@ MergeTreeIndexAggregatorGin::MergeTreeIndexAggregatorGin(
     GinIndexStorePtr store_,
     const Names & index_columns_,
     const String & index_name_,
-    const GinFilterParameters & params_,
+    const GinFilterParameters & gin_filter_params_,
     TokenExtractorPtr token_extractor_)
     : store(store_)
     , index_columns(index_columns_)
     , index_name (index_name_)
-    , params(params_)
+    , gin_filter_params(gin_filter_params_)
     , token_extractor(token_extractor_)
-    , granule(
-        std::make_shared<MergeTreeIndexGranuleGin>(
-            index_name, index_columns.size(), params))
+    , granule(std::make_shared<MergeTreeIndexGranuleGin>(index_name, index_columns.size(), gin_filter_params))
 {
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorGin::getGranuleAndReset()
 {
     auto new_granule = std::make_shared<MergeTreeIndexGranuleGin>(
-        index_name, index_columns.size(), params);
+        index_name, index_columns.size(), gin_filter_params);
     new_granule.swap(granule);
     return new_granule;
 }
@@ -192,10 +191,11 @@ MergeTreeIndexConditionGin::MergeTreeIndexConditionGin(
     const ActionsDAG::Node * predicate,
     ContextPtr context_,
     const Block & index_sample_block,
-    const GinFilterParameters & params_,
+    const GinFilterParameters & gin_filter_params_,
     TokenExtractorPtr token_extactor_)
-    :  WithContext(context_), header(index_sample_block)
-    , params(params_)
+    : WithContext(context_)
+    , header(index_sample_block)
+    , gin_filter_params(gin_filter_params_)
     , token_extractor(token_extactor_)
 {
     if (!predicate)
@@ -227,7 +227,14 @@ bool MergeTreeIndexConditionGin::alwaysUnknownOrTrue() const
          RPNElement::FUNCTION_MATCH});
 }
 
-bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranulePtr idx_granule,[[maybe_unused]] PostingsCacheForStore & cache_store) const
+bool MergeTreeIndexConditionGin::mayBeTrueOnGranule([[maybe_unused]] MergeTreeIndexGranulePtr idx_granule) const
+{
+    /// should call mayBeTrueOnGranuleInPart instead
+    assert(false);
+    return false;
+}
+
+bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranulePtr idx_granule, [[maybe_unused]] PostingsCacheForStore & cache_store) const
 {
     std::shared_ptr<MergeTreeIndexGranuleGin> granule
             = std::dynamic_pointer_cast<MergeTreeIndexGranuleGin>(idx_granule);
@@ -497,7 +504,7 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     {
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_HAS;
-        out.gin_filter = std::make_unique<GinFilter>(params);
+        out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         auto & value = const_value.safeGet<String>();
         token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
@@ -506,7 +513,7 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     {
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_HAS;
-        out.gin_filter = std::make_unique<GinFilter>(params);
+        out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         auto & value = const_value.safeGet<String>();
         token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
@@ -516,7 +523,7 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     {
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
-        out.gin_filter = std::make_unique<GinFilter>(params);
+        out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
         token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
@@ -525,7 +532,7 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     {
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.gin_filter = std::make_unique<GinFilter>(params);
+        out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
         token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
@@ -534,7 +541,7 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     {
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.gin_filter = std::make_unique<GinFilter>(params);
+        out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
         token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
@@ -543,7 +550,7 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     {
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
-        out.gin_filter = std::make_unique<GinFilter>(params);
+        out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
         token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
@@ -552,7 +559,7 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     {
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.gin_filter = std::make_unique<GinFilter>(params);
+        out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
         token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
@@ -561,7 +568,7 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     {
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.gin_filter = std::make_unique<GinFilter>(params);
+        out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
         token_extractor->substringToGinFilter(value.data(), value.size(), *out.gin_filter, true, false);
         return true;
@@ -570,7 +577,7 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     {
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.gin_filter = std::make_unique<GinFilter>(params);
+        out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
         token_extractor->substringToGinFilter(value.data(), value.size(), *out.gin_filter, false, true);
         return true;
@@ -588,7 +595,7 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
             if (element.getType() != Field::Types::String)
                 return false;
 
-            gin_filters.back().emplace_back(params);
+            gin_filters.back().emplace_back(gin_filter_params);
             const auto & value = element.safeGet<String>();
             token_extractor->substringToGinFilter(value.data(), value.size(), gin_filters.back().back(), false, false);
         }
@@ -618,14 +625,14 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
             gin_filters.emplace_back();
             for (const auto & alternative : alternatives)
             {
-                gin_filters.back().emplace_back(params);
+                gin_filters.back().emplace_back(gin_filter_params);
                 token_extractor->substringToGinFilter(alternative.data(), alternative.size(), gin_filters.back().back(), false, false);
             }
             out.set_gin_filters = std::move(gin_filters);
         }
         else
         {
-            out.gin_filter = std::make_unique<GinFilter>(params);
+            out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
             token_extractor->substringToGinFilter(required_substring.data(), required_substring.size(), *out.gin_filter, false, false);
         }
 
@@ -696,7 +703,7 @@ bool MergeTreeIndexConditionGin::tryPrepareSetGinFilter(
         const auto & column = columns[tuple_idx];
         for (size_t row = 0; row < prepared_set->getTotalRowCount(); ++row)
         {
-            gin_filters.back().emplace_back(params);
+            gin_filters.back().emplace_back(gin_filter_params);
             auto ref = column->getDataAt(row);
             token_extractor->stringToGinFilter(ref.data, ref.size, gin_filters.back().back());
         }
@@ -706,6 +713,16 @@ bool MergeTreeIndexConditionGin::tryPrepareSetGinFilter(
     out.set_gin_filters = std::move(gin_filters);
 
     return true;
+}
+
+MergeTreeIndexGin::MergeTreeIndexGin(
+    const IndexDescription & index_,
+    const GinFilterParameters & gin_filter_params_,
+    std::unique_ptr<ITokenExtractor> && token_extractor_)
+    : IMergeTreeIndex(index_)
+    , gin_filter_params(gin_filter_params_)
+    , token_extractor(std::move(token_extractor_))
+{
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexGin::createIndexGranule() const
@@ -721,7 +738,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexGin::createIndexGranule() const
     if (index.type == INVERTED_INDEX_NAME || index.type == FULL_TEXT_INDEX_NAME)
         throw Exception(ErrorCodes::ILLEGAL_INDEX, "Indexes of type 'inverted' and 'full_text' are no longer supported. Please drop and recreate the index as type 'gin'");
 
-    return std::make_shared<MergeTreeIndexGranuleGin>(index.name, index.column_names.size(), params);
+    return std::make_shared<MergeTreeIndexGranuleGin>(index.name, index.column_names.size(), gin_filter_params);
 }
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexGin::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
@@ -733,72 +750,76 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexGin::createIndexAggregator(const Merge
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexGin::createIndexAggregatorForPart(const GinIndexStorePtr & store, const MergeTreeWriterSettings & /*settings*/) const
 {
-    return std::make_shared<MergeTreeIndexAggregatorGin>(store, index.column_names, index.name, params, token_extractor.get());
+    return std::make_shared<MergeTreeIndexAggregatorGin>(store, index.column_names, index.name, gin_filter_params, token_extractor.get());
 }
 
-MergeTreeIndexConditionPtr MergeTreeIndexGin::createIndexCondition(
-    const ActionsDAG::Node * predicate, ContextPtr context) const
+MergeTreeIndexConditionPtr MergeTreeIndexGin::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionGin>(predicate, context, index.sample_block, params, token_extractor.get());
-};
+    return std::make_shared<MergeTreeIndexConditionGin>(predicate, context, index.sample_block, gin_filter_params, token_extractor.get());
+}
 
-MergeTreeIndexPtr ginIndexCreator(
-    const IndexDescription & index)
+MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index)
 {
-    size_t n = index.arguments.empty() ? 0 : index.arguments[0].safeGet<size_t>();
+    size_t ngram_length = index.arguments.empty() ? 0 : index.arguments[0].safeGet<size_t>();
     UInt64 max_rows = index.arguments.size() < 2 ? DEFAULT_MAX_ROWS_PER_POSTINGS_LIST : index.arguments[1].safeGet<UInt64>();
-    GinFilterParameters params(n, max_rows);
+    GinFilterParameters gin_filter_params(ngram_length, max_rows);
 
-    /// Use SplitTokenExtractor when n is 0, otherwise use NgramTokenExtractor
-    if (n > 0)
+    if (ngram_length == 0)
     {
-        auto tokenizer = std::make_unique<NgramTokenExtractor>(n);
-        return std::make_shared<MergeTreeIndexGin>(index, params, std::move(tokenizer));
+        auto tokenizer = std::make_unique<SplitTokenExtractor>();
+        return std::make_shared<MergeTreeIndexGin>(index, gin_filter_params, std::move(tokenizer));
     }
-
-    auto tokenizer = std::make_unique<SplitTokenExtractor>();
-    return std::make_shared<MergeTreeIndexGin>(index, params, std::move(tokenizer));
+    else
+    {
+        auto tokenizer = std::make_unique<NgramTokenExtractor>(ngram_length);
+        return std::make_shared<MergeTreeIndexGin>(index, gin_filter_params, std::move(tokenizer));
+    }
 }
 
 void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
-    for (const auto & index_data_type : index.data_types)
-    {
-        WhichDataType data_type(index_data_type);
-
-        if (data_type.isArray())
-        {
-            const auto & gin_type = assert_cast<const DataTypeArray &>(*index_data_type);
-            data_type = WhichDataType(gin_type.getNestedType());
-        }
-        else if (data_type.isLowCardinality())
-        {
-            const auto & low_cardinality = assert_cast<const DataTypeLowCardinality &>(*index_data_type);
-            data_type = WhichDataType(low_cardinality.getDictionaryType());
-        }
-
-        if (!data_type.isString() && !data_type.isFixedString())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "GIN indexes can be used only with `String`, `FixedString`,"
-                            "`LowCardinality(String)`, `LowCardinality(FixedString)` "
-                            "column or Array with `String` or `FixedString` values column.");
-    }
-
+    /// Check number and type of arguments
     if (index.arguments.size() > 2)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "GIN indexes must have less than two arguments.");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "GIN index must have less than two arguments");
 
     if (!index.arguments.empty() && index.arguments[0].getType() != Field::Types::UInt64)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "The first GIN index argument must be positive integer.");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "First argument of GIN index (tokenizer) must be of type UInt64");
 
     if (index.arguments.size() == 2)
     {
         if (index.arguments[1].getType() != Field::Types::UInt64)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "The second GIN index argument must be UInt64");
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Second argument of GIN index (max_rows_per_postings_list) must be of type UInt64");
         if (index.arguments[1].safeGet<UInt64>() != UNLIMITED_ROWS_PER_POSTINGS_LIST && index.arguments[1].safeGet<UInt64>() < MIN_ROWS_PER_POSTINGS_LIST)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "The maximum rows per postings list must be no less than {}", MIN_ROWS_PER_POSTINGS_LIST);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Second argument of GIN index (max_rows_per_postings_list) must not be less than {}", MIN_ROWS_PER_POSTINGS_LIST);
     }
-    /// Just validate
-    size_t ngrams = index.arguments.empty() ? 0 : index.arguments[0].safeGet<size_t>();
+
+    size_t ngram_length = index.arguments.empty() ? 0 : index.arguments[0].safeGet<size_t>();
     UInt64 max_rows_per_postings_list = index.arguments.size() < 2 ? DEFAULT_MAX_ROWS_PER_POSTINGS_LIST : index.arguments[1].safeGet<UInt64>();
-    GinFilterParameters params(ngrams, max_rows_per_postings_list);
+    GinFilterParameters gin_filter_params(ngram_length, max_rows_per_postings_list); /// Just validate
+
+    /// Check that the index is created on a single column
+    if (index.column_names.size() != 1 || index.data_types.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "GIN index must be created on a single column");
+
+    WhichDataType data_type(index.data_types[0]);
+    if (data_type.isArray())
+    {
+        /// TODO consider removing support for Array
+        const auto & gin_type = assert_cast<const DataTypeArray &>(*index.data_types[0]);
+        data_type = WhichDataType(gin_type.getNestedType());
+    }
+    else if (data_type.isLowCardinality())
+    {
+        /// TODO Consider removing support for LowCardinality. The index exists for high-cardinality cases.
+        const auto & low_cardinality = assert_cast<const DataTypeLowCardinality &>(*index.data_types[0]);
+        data_type = WhichDataType(low_cardinality.getDictionaryType());
+    }
+
+    if (!data_type.isString() && !data_type.isFixedString())
+        throw Exception(
+            ErrorCodes::INCORRECT_QUERY,
+            "GIN index can be created on columns of type `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)` or `Array(FixedString)`");
+
 }
+
 }
