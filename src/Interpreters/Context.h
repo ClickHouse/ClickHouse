@@ -371,8 +371,8 @@ public:
             columns = rhs.columns;
             partitions = rhs.partitions;
             projections = rhs.projections;
-            views = rhs.views;
             skip_indexes = rhs.skip_indexes;
+            views = rhs.views;
         }
 
         QueryAccessInfo(QueryAccessInfo && rhs) = delete;
@@ -392,8 +392,8 @@ public:
             std::swap(columns, rhs.columns);
             std::swap(partitions, rhs.partitions);
             std::swap(projections, rhs.projections);
-            std::swap(views, rhs.views);
             std::swap(skip_indexes, rhs.skip_indexes);
+            std::swap(views, rhs.views);
         }
 
         /// To prevent a race between copy-constructor and other uses of this structure.
@@ -403,8 +403,8 @@ public:
         std::set<std::string> columns TSA_GUARDED_BY(mutex){};
         std::set<std::string> partitions TSA_GUARDED_BY(mutex){};
         std::set<std::string> projections TSA_GUARDED_BY(mutex){};
-        std::set<std::string> views TSA_GUARDED_BY(mutex){};
         std::set<std::string> skip_indexes TSA_GUARDED_BY(mutex){};
+        std::set<std::string> views TSA_GUARDED_BY(mutex){};
     };
     using QueryAccessInfoPtr = std::shared_ptr<QueryAccessInfo>;
 
@@ -854,8 +854,7 @@ public:
     };
 
     void addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name);
-    void
-    addQueryAccessInfo(const String & full_quoted_table_name, const TableAccessInfoType & entity_type, const Names & table_entity_names);
+    void addQueryAccessInfo(const String & full_quoted_table_name, const TableAccessInfoType & entity_type, const Names & table_entity_names);
     void addViewAccessInfo(const String & view_name);
 
 

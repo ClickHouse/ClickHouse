@@ -2315,7 +2315,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         result.selected_marks,
         result.selected_ranges);
 
-    // Adding partition info to QueryAccessInfo.
+    // Add partition info and skipping index info to QueryAccessInfo.
     if (context->hasQueryContext() && !query_info.is_internal)
     {
         Names partition_names;

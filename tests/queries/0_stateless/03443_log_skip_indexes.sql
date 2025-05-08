@@ -1,19 +1,31 @@
+-- Check that skip indexes are logged correctly in scenarios like filtering by single 
+-- and multiple indexed columns, and in JOINs with indexed join key in right table.
 SET log_queries = 1;
-
-CREATE TABLE users (uid Int16, name String, age Int16, parent_id Int16) 
+DROP TABLE IF EXISTS users;
+CREATE TABLE users (
+    uid Int16, 
+    name String, 
+    age Int16, 
+    parent_id Int16,
+    INDEX age_i age TYPE set(10) GRANULARITY 2,
+    INDEX name_i name TYPE tokenbf_v1(8192, 1, 0) GRANULARITY 1
+    ) 
 ENGINE = MergeTree()
 ORDER BY uid;
-ALTER TABLE users ADD INDEX age_i age TYPE set(10) GRANULARITY 2;
-ALTER TABLE users ADD INDEX name_i name TYPE tokenbf_v1(8192, 1, 0) GRANULARITY 1;
 
 INSERT INTO users VALUES (1231, 'John', 33, 1);
 INSERT INTO users VALUES (6666, 'Ksenia', 48, 2);
 INSERT INTO users VALUES (8888, 'Alice', 50, 2);
 
-CREATE TABLE parents (uid Int16, name String, age Int16) 
+DROP TABLE IF EXISTS parents;
+CREATE TABLE parents (
+    uid Int16, 
+    name String, 
+    age Int16,
+    INDEX age_i age TYPE set(10) GRANULARITY 2
+    ) 
 ENGINE = MergeTree()
 ORDER BY uid;
-ALTER TABLE parents ADD INDEX age_i age TYPE set(10) GRANULARITY 2;
 
 INSERT INTO parents VALUES (1, 'Carry', 100);
 INSERT INTO parents VALUES (2, 'Jim', 99);
@@ -41,5 +53,5 @@ WHERE
     AND type = 'QueryFinish'
     AND current_database = currentDatabase()
     AND log_comment in ('1', '2', '3', '4', '5')
-ORDER BY log_comment asc, event_time desc 
-limit 1 by log_comment;
+ORDER BY log_comment ASC, event_time DESC 
+LIMIT 1 BY log_comment;
