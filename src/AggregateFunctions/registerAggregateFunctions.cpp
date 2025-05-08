@@ -62,6 +62,7 @@ void registerAggregateFunctionUniqUpTo(AggregateFunctionFactory &);
 void registerAggregateFunctionTopK(AggregateFunctionFactory &);
 void registerAggregateFunctionsBitwise(AggregateFunctionFactory &);
 void registerAggregateFunctionsBitmap(AggregateFunctionFactory &);
+void registerAggregateFunctionsNumericIndexedVector(AggregateFunctionFactory &);
 void registerAggregateFunctionsMaxIntersections(AggregateFunctionFactory &);
 void registerAggregateFunctionHistogram(AggregateFunctionFactory &);
 void registerAggregateFunctionRetention(AggregateFunctionFactory &);
@@ -108,8 +109,6 @@ void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory &
 void registerAggregateFunctionCombinatorsArgMinArgMax(AggregateFunctionCombinatorFactory & factory);
 
 void registerWindowFunctions(AggregateFunctionFactory & factory);
-
-void registerAggregateFunctionsNumericIndexedVector(AggregateFunctionFactory & factory);
 
 void registerAggregateFunctions()
 {
@@ -173,6 +172,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionContingency(factory);
         registerAggregateFunctionCramersVBiasCorrected(factory);
         registerAggregateFunctionsBitmap(factory);
+        registerAggregateFunctionsNumericIndexedVector(factory);
         registerAggregateFunctionsMaxIntersections(factory);
         registerAggregateFunctionHistogram(factory);
         registerAggregateFunctionRetention(factory);
@@ -201,8 +201,6 @@ void registerAggregateFunctions()
         registerAggregateFunctionDistinctJSONPathsAndTypes(factory);
 
         registerWindowFunctions(factory);
-
-        registerAggregateFunctionsNumericIndexedVector(factory);
     }
 
     {

@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 
-// TODO include this last because of a broken roaring header. See the comment inside.
+/// Include this last — see the reason inside
 #include <Functions/FunctionsNumericIndexedVector.h>
 
 namespace DB

@@ -24,6 +24,19 @@ select numericIndexedVectorCardinality(groupNumericIndexedVectorState(uin, value
 select numericIndexedVectorShortDebugString(groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-26')) from uin_value_details;
 select numericIndexedVectorShortDebugString(groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-27')) from uin_value_details;
 
+-- Test numericIndexedVectorBuild
+with 
+  numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30])) AS res1, 
+  numericIndexedVectorBuild(mapFromArrays(arrayMap(x -> toUInt32(x), [1, 2, 3]), [10.5, 20.3, 30.892])) AS res2
+select tuple(
+  numericIndexedVectorAllValueSum(res1),
+  numericIndexedVectorCardinality(res1),
+  toTypeName(res1),
+  numericIndexedVectorAllValueSum(res2),
+  numericIndexedVectorCardinality(res2),
+  toTypeName(res2)
+);
+
 
 -- TEST numericIndexedVectorPointwise operations: Add Subtract Multiply Divide Equal NotEqual Less LessEqual Greater GreaterEqual
 select 'TEST numericIndexedVectorPointwise operations: Add Subtract Multiply Divide Equal NotEqual Less LessEqual Greater GreaterEqual';

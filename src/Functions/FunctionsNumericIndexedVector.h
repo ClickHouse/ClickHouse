@@ -15,7 +15,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -23,22 +22,13 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/IDataType.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsExternalDictionaries.h>
-#include <Functions/IFunction.h>
 #include <Interpreters/castColumn.h>
-#include <base/types.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/PODArray_fwd.h>
-#include <Common/typeid_cast.h>
-#include "AggregateFunctions/IAggregateFunction.h"
-#include "FunctionHelpers.h"
 
-#include <absl/strings/str_split.h>
-#include <fmt/format.h>
-
+/// Include this last — see the reason inside
 #include <AggregateFunctions/AggregateFunctionGroupNumericIndexedVectorData.h>
 
 namespace DB
@@ -72,14 +62,13 @@ public:
         const auto * arg = checkAndGetDataType<DataTypeMap>(arguments[0].get());
         if (!arg)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument for function {} must be Map type", getName());
-
         DataTypes argument_types = {arg->getKeyType(), arg->getValueType()};
         Array params_row;
         AggregateFunctionProperties properties;
         AggregateFunctionPtr numeric_indexed_vector_function;
         auto action = NullsAction::EMPTY;
         numeric_indexed_vector_function = AggregateFunctionFactory::instance().get(
-            AggregateFunctionGroupNumericIndexedVectorData<BSINumericIndexedVector<UInt32, Float64>>::name(),
+            NameAggregateFunctionGroupNumericIndexedVector::name,
             action,
             argument_types,
             params_row,
@@ -138,6 +127,7 @@ private:
         }
         else
         {
+            /// This is a placeholder for implementing NumericIndexedVector with various storage structures.
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported parameters");
         }
     }
@@ -193,6 +183,7 @@ template <template <class> class FuncImpl>
 class FunctionNumericIndexedVector : public IFunction
 {
 public:
+    /// The template parameters in BSINumericIndexedVector are randomly filled.
     static constexpr auto name = FuncImpl<BSINumericIndexedVector<UInt8, Float64>>::name;
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionNumericIndexedVector>(); }
@@ -208,7 +199,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
-        if (!(type0 && type0->getFunctionName() == "groupNumericIndexedVector"))
+        if (!(type0 && type0->getFunctionName() == NameAggregateFunctionGroupNumericIndexedVector::name))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument for function {} must be a NumericIndexedVector but it has type {}",
@@ -217,7 +208,7 @@ public:
 
         const auto * type1 = typeid_cast<const DataTypeAggregateFunction *>(arguments[1].get());
 
-        if (type1 && type1->getFunctionName() != "groupNumericIndexedVector")
+        if (type1 && type1->getFunctionName() != NameAggregateFunctionGroupNumericIndexedVector::name)
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Second argument for function {} must be a NumericIndexedVector or Numeric Value",
@@ -295,7 +286,7 @@ private:
         for (int i = 0; i < 2; ++i)
             is_column_const[i] = isColumnConst(*arguments[i].column);
 
-        // First argument
+        /// First argument
         const ColumnAggregateFunction * first_column_ptr = nullptr;
         if (is_column_const[0])
             first_column_ptr = typeid_cast<const ColumnAggregateFunction *>(
@@ -303,7 +294,7 @@ private:
         else
             first_column_ptr = typeid_cast<const ColumnAggregateFunction *>(arguments[0].column.get());
 
-        // Second argument
+        /// Second argument
         bool is_second_column_agg = WhichDataType(arguments[1].column->getDataType()).isAggregateFunction();
         if (is_second_column_agg)
         {
@@ -353,7 +344,6 @@ private:
             AggregateDataPtr second_data_ptr = is_second_column_const ? second_column_ptr->getData()[0] : second_column_ptr->getData()[i];
             auto rhs = reinterpret_cast<const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> *>(second_data_ptr);
 
-            // check the name of operation (bitmapAnd) and check if it is the situation mentioned above
             col_to->insertDefault();
             auto res = reinterpret_cast<AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> *>(col_to->getData()[i]);
             res->init = true;
@@ -641,7 +631,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * bitmap_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
-        if (!(bitmap_type && bitmap_type->getFunctionName() == "groupNumericIndexedVector"))
+        if (!(bitmap_type && bitmap_type->getFunctionName() == NameAggregateFunctionGroupNumericIndexedVector::name))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument for function {} must be a vectorBitmap but it has type {}",
@@ -705,7 +695,7 @@ private:
     {
         bool is_column_const = isColumnConst(*arguments[0].column);
 
-        // First argument
+        /// First argument
         const ColumnAggregateFunction * column_ptr = nullptr;
         if (is_column_const)
             column_ptr = typeid_cast<const ColumnAggregateFunction *>(
@@ -774,7 +764,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
-        if (!(type0 && type0->getFunctionName() == "groupNumericIndexedVector"))
+        if (!(type0 && type0->getFunctionName() == NameAggregateFunctionGroupNumericIndexedVector::name))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument for function {} must be a vectorBitmap but it has type {}",
@@ -850,7 +840,7 @@ private:
         for (int i = 0; i < 2; ++i)
             is_column_const[i] = isColumnConst(*arguments[i].column);
 
-        // First argument
+        /// First argument
         const ColumnAggregateFunction * column_ptr = nullptr;
         if (is_column_const[0])
             column_ptr = typeid_cast<const ColumnAggregateFunction *>(
@@ -859,7 +849,7 @@ private:
             column_ptr = typeid_cast<const ColumnAggregateFunction *>(arguments[0].column.get());
         const PaddedPODArray<AggregateDataPtr> & container = column_ptr->getData();
 
-        // Second argument
+        /// Second argument
         auto uint64_column = castColumn(arguments[1], std::make_shared<DataTypeUInt64>());
         const IColumn * second_column_ptr = uint64_column.get();
 
@@ -905,7 +895,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * bitmap_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
-        if (!(bitmap_type && bitmap_type->getFunctionName() == "groupNumericIndexedVector"))
+        if (!(bitmap_type && bitmap_type->getFunctionName() == NameAggregateFunctionGroupNumericIndexedVector::name))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument for function {} must be a vectorBitmap but it has type {}",
@@ -969,7 +959,7 @@ private:
     {
         bool is_column_const = isColumnConst(*arguments[0].column);
 
-        // First argument
+        /// First argument
         const ColumnAggregateFunction * column_ptr = nullptr;
         if (is_column_const)
             column_ptr = typeid_cast<const ColumnAggregateFunction *>(
@@ -1023,7 +1013,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const DataTypeAggregateFunction * type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
-        if (!(type && type->getFunctionName() == "groupNumericIndexedVector"))
+        if (!(type && type->getFunctionName() == NameAggregateFunctionGroupNumericIndexedVector::name))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument for function {} must be a vectorBitmap but it has type {}.",
@@ -1098,7 +1088,7 @@ private:
     {
         bool is_column_const = isColumnConst(*arguments[0].column);
 
-        // First argument
+        /// First argument
         const ColumnAggregateFunction * column_ptr = nullptr;
         if (is_column_const)
             column_ptr = typeid_cast<const ColumnAggregateFunction *>(

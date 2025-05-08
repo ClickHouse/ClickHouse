@@ -6,7 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/assert_cast.h>
 
-// TODO include this last because of a broken roaring header. See the comment inside.
+/// Include this last — see the reason inside
 #include <AggregateFunctions/AggregateFunctionGroupNumericIndexedVectorData.h>
 
 namespace DB

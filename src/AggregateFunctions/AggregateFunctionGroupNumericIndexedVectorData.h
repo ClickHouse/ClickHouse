@@ -6,6 +6,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/IColumn.h>
+#include <Common/Exception.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -14,10 +15,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
-#include <base/types.h>
-#include <Common/Exception.h>
-#include <Common/PODArray_fwd.h>
-#include <Common/logger_useful.h>
+
+/// Include this last — see the reason inside
 #include <AggregateFunctions/AggregateFunctionGroupNumericIndexedVectorDataBSI.h>
 
 namespace DB
@@ -46,8 +45,7 @@ namespace DB
     M(Float64)
 
 
-/**
- * `NumericIndexedVector` encapsulates the vector (in mathematics) data structure and exposes the following operations.
+/** `NumericIndexedVector` encapsulates the vector (in mathematics) data structure and exposes the following operations.
  * Operations on a single vector:
  *  - addValue(index, value): v[index] += value;
  *  - getAllValueSum(): Get the sum of all elements of a vector;
@@ -66,10 +64,11 @@ class NumericIndexedVector
 private:
     VectorImpl impl;
 
-    /// Use IndexType to indicate the type of the subscript. It determines the length of the vector.
-    /// If it is UInt8, the maximum length of the vector is 256, and
-    /// if it is UInt32, the maximum length is 4,294,967,296.
-    /// The supported index types are defined in FOR_NUMERIC_INDEXED_VECTOR_INDEX_TYPES
+    /** Use IndexType to indicate the type of the subscript. It determines the length of the vector.
+     * If it is UInt8, the maximum length of the vector is 256, and
+     * if it is UInt32, the maximum length is 4,294,967,296.
+     * The supported index types are defined in FOR_NUMERIC_INDEXED_VECTOR_INDEX_TYPES
+     */
     using IndexType = typename VectorImpl::IndexType;
 
     /// The supported value types are defined in FOR_NUMERIC_INDEXED_VECTOR_VALUE_TYPES
@@ -86,7 +85,7 @@ public:
     void merge(const NumericIndexedVector & rhs) { impl.merge(rhs.impl); }
 
 
-    // Performs pointwise addition between two vectors.
+    /// Performs pointwise addition between two vectors.
     static void pointwiseAdd(const NumericIndexedVector & lhs, const NumericIndexedVector & rhs, NumericIndexedVector & res)
     {
         VectorImpl::pointwiseAdd(lhs.impl, rhs.impl, res.impl);
@@ -97,7 +96,7 @@ public:
         VectorImpl::pointwiseAdd(lhs.impl, rhs, res.impl);
     }
 
-    // Performs pointwise subtraction between two vectors.
+    /// Performs pointwise subtraction between two vectors.
     static void pointwiseSubtract(const NumericIndexedVector & lhs, const NumericIndexedVector & rhs, NumericIndexedVector & res)
     {
         VectorImpl::pointwiseSubtract(lhs.impl, rhs.impl, res.impl);
@@ -108,7 +107,7 @@ public:
         VectorImpl::pointwiseSubtract(lhs.impl, rhs, res.impl);
     }
 
-    // Performs pointwise multiplication between two vectors.
+    /// Performs pointwise multiplication between two vectors.
     static void pointwiseMultiply(const NumericIndexedVector & lhs, const NumericIndexedVector & rhs, NumericIndexedVector & res)
     {
         VectorImpl::pointwiseMultiply(lhs.impl, rhs.impl, res.impl);
@@ -119,7 +118,7 @@ public:
         VectorImpl::pointwiseMultiply(lhs.impl, rhs, res.impl);
     }
 
-    // Performs pointwise division between two vectors.
+    /// Performs pointwise division between two vectors.
     static void pointwiseDivide(const NumericIndexedVector & lhs, const NumericIndexedVector & rhs, NumericIndexedVector & res)
     {
         VectorImpl::pointwiseDivide(lhs.impl, rhs.impl, res.impl);
@@ -130,8 +129,9 @@ public:
         VectorImpl::pointwiseDivide(lhs.impl, rhs, res.impl);
     }
 
-    // Performs pointwise equality between two vectors.
-    // The result is a vector with all non-zero value is 1.
+    /** Performs pointwise equality between two vectors.
+     * The result is a vector with all non-zero value is 1.
+     */
     static void pointwiseEqual(const NumericIndexedVector & lhs, const NumericIndexedVector & rhs, NumericIndexedVector & res)
     {
         VectorImpl::pointwiseEqual(lhs.impl, rhs.impl, res.impl);
@@ -212,12 +212,17 @@ public:
     void write(DB::WriteBuffer & out) const { impl.write(out); }
 };
 
+struct NameAggregateFunctionGroupNumericIndexedVector
+{
+    static constexpr auto name = "groupNumericIndexedVector";
+};
+
 template <typename VectorImpl>
 struct AggregateFunctionGroupNumericIndexedVectorData
 {
     bool init = false;
     NumericIndexedVector<VectorImpl> vector;
-    static const char * name() { return "groupNumericIndexedVector"; }
+    static const char * name() { return NameAggregateFunctionGroupNumericIndexedVector::name; }
 };
 
 }

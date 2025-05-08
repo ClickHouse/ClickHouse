@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/AggregateFunctionGroupNumericIndexedVectorData.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -6,7 +7,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
 
-// TODO include this last because of a broken roaring header. See the comment inside.
+/// Include this last — see the reason inside
 #include <AggregateFunctions/AggregateFunctionGroupNumericIndexedVector.h>
 
 namespace DB
@@ -151,7 +152,7 @@ AggregateFunctionPtr createAggregateFunctionNumericIndexedVector(
 
 void registerAggregateFunctionsNumericIndexedVector(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("groupNumericIndexedVector", createAggregateFunctionNumericIndexedVector);
+    factory.registerFunction(NameAggregateFunctionGroupNumericIndexedVector::name, createAggregateFunctionNumericIndexedVector);
 }
 
 

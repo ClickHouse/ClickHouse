@@ -7,6 +7,8 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/IColumn.h>
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -15,16 +17,9 @@
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
-#include <base/types.h>
-#include <Common/Exception.h>
-#include <Common/PODArray_fwd.h>
-#include <Common/logger_useful.h>
 
-// Include this header last, because it is an auto-generated dump of questionable
-// garbage that breaks the build (e.g. it changes _POSIX_C_SOURCE).
-// TODO: find out what it is. On github, they have proper interface headers like
-// this one: https://github.com/RoaringBitmap/CRoaring/blob/master/include/roaring/roaring.h
-#include "AggregateFunctions/AggregateFunctionGroupBitmapData.h"
+/// Include this last — see the reason inside
+#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 
 namespace DB
 {
@@ -37,8 +32,7 @@ extern const int BAD_ARGUMENTS;
 extern const int INCORRECT_DATA;
 }
 
-/**
- * The following example demonstrates the BSI storage mechanism.
+/** The following example demonstrates the BSI storage mechanism.
  * Original Vector:
  *  Suppose we have a sparse vector with:
  *  - Length: 4294967295 (UINT32_MAX).
@@ -89,7 +83,7 @@ public:
     static constexpr UInt32 MAX_INTEGER_BIT_NUM = 64;
     static constexpr UInt32 MAX_FRACTION_BIT_NUM = 24;
 
-    // integer_bit_num + fraction_bit_num <= MAX_TOTAL_BIT_NUM.
+    /// integer_bit_num + fraction_bit_num <= MAX_TOTAL_BIT_NUM.
     static constexpr UInt32 MAX_TOTAL_BIT_NUM = 64;
 
     static constexpr size_t max_size = 10_GiB;
@@ -352,8 +346,7 @@ public:
         return data_array[index];
     }
 
-    /**
-     * Performs pointwise addition between two origin vectors directly on the BSI bitmap data_array.
+    /** Performs pointwise addition between two origin vectors directly on the BSI bitmap data_array.
      * The result is stored in the current object. (original_vector(this) += original_vector(rhs))
      * Reference full adder implementation: https://en.wikipedia.org/wiki/Adder_(electronics)#Full_adder
      */
@@ -393,8 +386,7 @@ public:
         res.pointwiseAddInplace(rhs);
     }
 
-    /*
-     * Performs pointwise addition between vector and a scalar value rhs.
+    /** Performs pointwise addition between vector and a scalar value rhs.
      * The result is stored in the current object. (original_vector(this) += rhs)
      */
     static void pointwiseAdd(const BSINumericIndexedVector & lhs, const ValueType & rhs, BSINumericIndexedVector & res)
@@ -407,8 +399,7 @@ public:
 
     void merge(const BSINumericIndexedVector & rhs) { pointwiseAddInplace(rhs); }
 
-    /**
-     * Performs pointwise subtraction between two origin vectors directly on the BSI structure.
+    /** Performs pointwise subtraction between two origin vectors directly on the BSI structure.
      * The result is stored in the current object. (original_vector(this) -= original_vector(rhs))
      * Reference full subtractor implementation: https://en.wikipedia.org/wiki/Subtractor#Full_subtractor
      */
@@ -496,9 +487,7 @@ public:
         return res;
     }
 
-    /**
-     * Set Roaring containers to RoaringBitmapWithSmallSet
-     */
+    /// Set Roaring containers to RoaringBitmapWithSmallSet
     static inline void setContainers(
         std::vector<roaring::internal::container_t *> & ctns,
         std::vector<UInt8> & types,
@@ -519,8 +508,7 @@ public:
         return static_cast<UInt64>(d);
     }
 
-    /**
-     * There are three main types of containers in Roaring Bitmap: array, bitset and run.
+    /** There are three main types of containers in Roaring Bitmap: array, bitset and run.
      * This function converts the original vector to array format container.
      **/
     static void toVectorCompactArray(
@@ -564,7 +552,7 @@ public:
 
         constexpr UInt32 k_batch_size = 256;
         std::vector<std::vector<UInt16>> bit_buffer(64, std::vector<UInt16>(k_batch_size, 0));
-        // number of keys in each bitmap of vector.
+        /// number of keys in each bitmap of vector.
         std::vector<UInt16> cnt(64);
 
         for (UInt32 offset = 0; offset < length; offset += k_batch_size)
@@ -576,8 +564,10 @@ public:
                 UInt64 w = buffer[offset + j];
                 while (w)
                 {
-                    UInt64 t = w & (~w + 1); // on x64, should compile to BLSI (careful: the Intel compiler seems to fail)
-                    int i = __builtin_ctzll(w); // on x64, should compile to TZCNT
+                    /// on x64, should compile to BLSI (careful: the Intel compiler seems to fail)
+                    UInt64 t = w & (~w + 1);
+                    /// on x64, should compile to TZCNT
+                    int i = __builtin_ctzll(w);
                     bit_buffer[i][cnt[i]++] = indexes[offset + j];
                     w ^= t;
                 }
@@ -626,8 +616,7 @@ public:
         return number_of_1s;
     }
 
-    /**
-     * There are three main types of containers in Roaring Bitmap: Array, bitset and run.
+    /** There are three main types of containers in Roaring Bitmap: Array, bitset and run.
      * This function converts the original vector to container with bitset format and dense version.
      **/
     static void toVectorCompactBitsetDense(
@@ -663,7 +652,12 @@ public:
         for (UInt32 offset = 0; offset < length; offset += k_batch_size)
         {
             UInt32 len = std::min(k_batch_size, length - offset);
+
+#if defined(__x86_64__)
             cnt = roaring::internal::bitset_extract_setbits_avx2(buffer.data() + offset, len, bit_buffer.data(), k_batch_size * 64, 0);
+#else
+            cnt = roaring::internal::bitset_extract_setbits(buffer.data() + offset, len, bit_buffer.data(), 0);
+#endif
             for (size_t i = 0; i < cnt; ++i)
             {
                 UInt64 val = bit_buffer[i];
@@ -701,8 +695,7 @@ public:
         setContainers(ctns, types, container_id, vector);
     }
 
-    /**
-     * There are three main types of containers in Roaring Bitmap: Array, bitset and run.
+    /** There are three main types of containers in Roaring Bitmap: Array, bitset and run.
      * This function converts the original vector to bitset format container.
      **/
     static void toVectorCompactBitset(
@@ -742,8 +735,10 @@ public:
                 UInt16 key = indexes[offset + j];
                 while (w)
                 {
-                    UInt64 t = w & (~w + 1); // on x64, should compile to BLSI (careful: the Intel compiler seems to fail)
-                    int i = __builtin_ctzll(w); // on x64, should compile to TZCNT
+                    /// on x64, should compile to BLSI (careful: the Intel compiler seems to fail)
+                    UInt64 t = w & (~w + 1);
+                    /// on x64, should compile to TZCNT
+                    int i = __builtin_ctzll(w);
                     bit_buffer[i][cnt[i]++] = key;
                     w ^= t;
                 }
@@ -810,15 +805,14 @@ public:
             UInt32 number_of_1s = prepareBuffer(values, length, vector.fraction_bit_num, vector.getTotalBitNum(), buffer, nonzero_cnt);
             if (number_of_1s * 8 > nonzero_cnt * 64)
             {
-                // 1/8 of the bits are filled with 1s in nonzero elements, we use Dense version for acceleration
+                /// 1/8 of the bits are filled with 1s in nonzero elements, we use Dense version for acceleration
                 return toVectorCompactBitsetDense(indexes, values, length, container_id, buffer, vector);
             }
             return toVectorCompactBitset(indexes, values, length, container_id, buffer, vector);
         }
     }
 
-    /**
-     * Convert the original vector(represented by indexes and values) to Roaring Bitmap container.
+    /** Convert the original vector(represented by indexes and values) to Roaring Bitmap container.
      * The result container is stored in BSINumericIndexedVector's data_array.
      * Only convert the target container_id.
      */
@@ -834,8 +828,7 @@ public:
     }
 
 
-    /**
-     * Extract the value from the vector.
+    /** Extract the value from the vector.
      *  The selected index belongs to the container_id and in mask bitmap.
      *  The results are sorted from small to large by index and saved in the output array.
      * Returns the number of extracted values. Since a container has a maximum of 2^16 elements,
@@ -869,8 +862,7 @@ public:
         return result_cnt;
     }
 
-    /**
-     * Addition and subtraction are implemented directly in the compressed domain of BSI using
+    /** Addition and subtraction are implemented directly in the compressed domain of BSI using
      *  hardware full adders and full subtractors.
      * Hardware multiplication and division are complex and therefore very slow. Here we
      *  convert to the original vectors and then do multiplication and division.
@@ -918,14 +910,12 @@ public:
                     break;
                 default:
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported op_code: {}", op_code);
-
             }
             toVector(indexes, res_values, indexes_size, container_id, res);
         }
     }
 
-    /**
-     * Performs pointwise multiplication and division of the original vector and a scalar.
+    /** Performs pointwise multiplication and division of the original vector and a scalar.
      *  Example: v_res = v * 3; v_res = v / 3;
      */
     static void pointwiseRawBinaryOperate(
@@ -972,8 +962,7 @@ public:
         }
     }
 
-    /**
-     * Performs pointwise multiplication of two original vectors.
+    /** Performs pointwise multiplication of two original vectors.
      * The result is stored in the res.
      */
     static void pointwiseMultiply(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, BSINumericIndexedVector & res)
@@ -996,8 +985,7 @@ public:
         res.initialize(max_integer_bit_num, max_fraction_bit_num);
         pointwiseRawBinaryOperate(lhs, rhs, multiply_op_code, res);
     }
-    /**
-     * Performs pointwise multiplication of vector and scalar.
+    /** Performs pointwise multiplication of vector and scalar.
      * The result is stored in the res.
      */
     static void pointwiseMultiply(const BSINumericIndexedVector & lhs, const ValueType & rhs, BSINumericIndexedVector & res)
@@ -1011,8 +999,7 @@ public:
         pointwiseRawBinaryOperate(lhs, rhs, multiply_op_code, res);
     }
 
-    /**
-     * Performs pointwise division of two original vectors.
+    /** Performs pointwise division of two original vectors.
      * The result is stored in the res.
      */
     static void pointwiseDivide(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, BSINumericIndexedVector & res)
@@ -1031,8 +1018,7 @@ public:
         pointwiseRawBinaryOperate(lhs, rhs, divide_op_code, res);
     }
 
-    /**
-     * Performs pointwise division of vector and scalar.
+    /** Performs pointwise division of vector and scalar.
      * The result is stored in the res.
      */
     static void pointwiseDivide(const BSINumericIndexedVector & lhs, const ValueType & rhs, BSINumericIndexedVector & res)
@@ -1046,8 +1032,7 @@ public:
         pointwiseRawBinaryOperate(lhs, rhs, divide_op_code, res);
     }
 
-    /**
-     * Performs pointwise equality comparison between two original vectors.
+    /** Performs pointwise equality comparison between two original vectors.
      * The returned Roaring Bitmap contains indexes that satisfy:
      *  original_vector(lhs)[index] != 0 and original_vector(lhs)[index] == original_vector(rhs)[index].
      */
@@ -1070,8 +1055,7 @@ public:
         return res_bm;
     }
 
-    /**
-     * Performs pointwise equality comparison between original vector and a scalar value.
+    /** Performs pointwise equality comparison between original vector and a scalar value.
      * The returned Roaring Bitmap contains indexes that satisfy:
      *  original_vector(lhs)[index] != 0 and original_vector(lhs)[index] == rhs
      */
@@ -1129,8 +1113,7 @@ public:
         res.getDataArrayAt(res.fraction_bit_num)->rb_or(*pointwiseEqual(lhs, rhs));
     }
 
-    /**
-     * Performs pointwise inequality comparison between two origin vectors.
+    /** Performs pointwise inequality comparison between two origin vectors.
      * The returned Roaring Bitmap contains indexes that satisfy:
      *  original_vector(lhs)[index] != original_vector(rhs)[index].
      */
@@ -1155,8 +1138,7 @@ public:
         }
     }
 
-    /**
-     * Performs pointwise inequality comparison between vector and a scalar value.
+    /** Performs pointwise inequality comparison between vector and a scalar value.
      * The returned Roaring Bitmap contains indexes that satisfy:
      *  original_vector(lhs)[index] != 0 && original_vector(lhs)[index] != rhs
      */
@@ -1171,8 +1153,7 @@ public:
         res_bm = lhs_all_indexes;
     }
 
-    /**
-     * Performs pointwise less comparison between two origin vectors.
+    /** Performs pointwise less comparison between two origin vectors.
      * The returned Roaring Bitmap contains indexes that satisfy:
      *  v1[index] != 0 && v2[index] != 0 && v1[index] < v2[index]
      *      with v1 = original_vector(lhs)[index], v2 = original_vector(rhs)[index]
@@ -1204,8 +1185,7 @@ public:
         return res_bm;
     }
 
-    /**
-     * Performs pointwise less comparison between vector and a scalar value.
+    /** Performs pointwise less comparison between vector and a scalar value.
      * The returned Roaring Bitmap contains indexes that satisfy:
      *  v1[index] != 0 && v1[index] < rhs. with v1 = original_vector(lhs)[index]
      */
@@ -1231,8 +1211,7 @@ public:
     }
 
 
-    /**
-     * Performs pointwise less than or equal comparison between two origin vectors.
+    /** Performs pointwise less than or equal comparison between two origin vectors.
      * The returned Roaring Bitmap contains indexes that satisfy:
      *  v1[index] != 0 && v2[index] != 0 && v1[index] <= v2[index]
      *      with v1 = original_vector(lhs)[index], v2 = original_vector(rhs)[index]
@@ -1276,7 +1255,7 @@ public:
         res_bm = pointwiseLess(rhs_vec, lhs);
     }
 
-    // Greater Equal
+    /// Greater Equal
     static void
     pointwiseGreaterEqual(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, BSINumericIndexedVector & res)
     {
@@ -1303,7 +1282,7 @@ public:
         res_bm->rb_or(*eq_bm);
     }
 
-    // original_vector(this)[index] += value.
+    /// original_vector(this)[index] += value.
     void addValue(IndexType index, ValueType value)
     {
         const UInt32 total_bit_num = getTotalBitNum();
@@ -1349,7 +1328,7 @@ public:
         }
     }
 
-    // return origin_vector(this)[index]
+    /// return origin_vector(this)[index]
     ValueType getValue(IndexType index) const
     {
         const UInt32 total_bit_num = getTotalBitNum();
@@ -1390,7 +1369,7 @@ public:
             Roaring negative_indexes;
             negative_indexes.rb_or(*getDataArrayAt(sign_bit_index));
 
-            // Handle positive indexes
+            /// Handle positive indexes
             for (size_t i = 0; i < total_bit_num - 1; ++i)
             {
                 Float64 bit_contribution = std::pow(2.0, int(i) - int(fraction_bit_num));
@@ -1402,7 +1381,7 @@ public:
                 value += positive_indexes.size() * bit_contribution;
             }
 
-            // Handle negative indexes
+            /// Handle negative indexes
             Roaring cin;
             cin.rb_or(negative_indexes);
 
@@ -1441,30 +1420,31 @@ public:
     }
 
 
-    // Converts the internal bit-level representation into an index-to-value mapping.
-    // The mapping is then stored into the provided `indexes_pod` and `values_pod` arrays.
-    //
-    // @param indexes_pod    [out] Array that will be filled with the indexes.
-    // @param values_pod     [out] Array that will be filled with the corresponding values.
-    // @return               The number of unique indexes in the mapping.
-    //
-    // Processing logic:
-    // 1. Unsigned integer path:
-    //    - Iterate through all bits (0 to total_bit_num-1)
-    //    - Merge bit information into index2value map
-    //    - Apply precision scaling using fraction_bit_num
-    //
-    // 2. Signed integer/float path:
-    //    - Uses highest bit (total_bit_num-1) as sign bit
-    //    - Separates processing for positive/negative indexes:
-    //      * Positive values: Direct bit merging
-    //      * Negative values: Two's complement handling with sign adjustment
-    //    - Final values include sign correction and precision scaling
-    //
-    // Implementation notes:
-    // - Uses Roaring Bitmap library for efficient bit set operations
-    // - fraction_bit_num controls fixed-point precision scaling
-    // - Result values are statically cast to target type
+    /** Converts the internal bit-level representation into an index-to-value mapping.
+     * The mapping is then stored into the provided `indexes_pod` and `values_pod` arrays.
+     *
+     * @param indexes_pod    [out] Array that will be filled with the indexes.
+     * @param values_pod     [out] Array that will be filled with the corresponding values.
+     * @return               The number of unique indexes in the mapping.
+     *
+     * Processing logic:
+     * 1. Unsigned integer path:
+     *    - Iterate through all bits (0 to total_bit_num-1)
+     *    - Merge bit information into index2value map
+     *    - Apply precision scaling using fraction_bit_num
+     *
+     * 2. Signed integer/float path:
+     *    - Uses highest bit (total_bit_num-1) as sign bit
+     *    - Separates processing for positive/negative indexes:
+     *      * Positive values: Direct bit merging
+     *      * Negative values: Two's complement handling with sign adjustment
+     *    - Final values include sign correction and precision scaling
+     *
+     * Implementation notes:
+     * - Uses Roaring Bitmap library for efficient bit set operations
+     * - fraction_bit_num controls fixed-point precision scaling
+     * - Result values are statically cast to target type
+     */
     UInt64 toIndexValueMap(PaddedPODArray<IndexType> & indexes_pod, PaddedPODArray<ValueType> & values_pod) const
     {
         const UInt32 total_bit_num = getTotalBitNum();
