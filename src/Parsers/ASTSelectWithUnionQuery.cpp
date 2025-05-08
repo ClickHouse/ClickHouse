@@ -83,7 +83,7 @@ void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSe
         /// SELECT * EXCEPT SELECT 1 -- two queries
         /// SELECT * EXCEPT col      -- a modifier for asterisk
         /// For this reason, add parentheses when formatting any side of EXCEPT.
-        auto next = it;
+        ASTs::const_iterator next = it;
         ++next;
         if ((it != list_of_selects->children.begin() && is_except(get_mode(it)))
             || (next != list_of_selects->children.end() && is_except(get_mode(next))))
