@@ -139,6 +139,9 @@ endif()
 add_subdirectory(JSONPath)
 list (APPEND PRIVATE_LIBS clickhouse_functions_jsonpath)
 
+add_subdirectory(XPath)
+list (APPEND PRIVATE_LIBS clickhouse_functions_xpath)
+
 add_subdirectory(keyvaluepair)
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_extractkeyvaluepairs>)
 
