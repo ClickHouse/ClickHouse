@@ -6349,7 +6349,7 @@ Use local pipeline during distributed INSERT SELECT with parallel replicas
     DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
 Replace table function engines with their -Cluster alternatives
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_analyzer, false, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_analyzer, true, R"(
 Allow new query analyzer.
 )", IMPORTANT, enable_analyzer) \
     DECLARE(Bool, analyzer_compatibility_join_using_top_level_identifier, false, R"(
