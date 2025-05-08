@@ -731,7 +731,8 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     /// Remove duplicated columns from USING(...).
     optimizeUsing(select_query);
 
-    if (settings[Setting::optimize_or_has_any_chain]) {
+    if (settings[Setting::optimize_or_has_any_chain])
+    {
         optimizeOrHasAnyChain(query);
     }
 

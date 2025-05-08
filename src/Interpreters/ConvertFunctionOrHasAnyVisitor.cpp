@@ -9,10 +9,10 @@
 namespace DB
 {
 
-/** 
+/**
  * Optimizes chains of OR-ed hasAny calls by merging constant arrays.
  * Example: hasAny(col,[1,2]) OR hasAny(col,[3,4]) -> hasAny(col,[1,2,3,4])
- * 
+ *
  * The optimization is applied only when:
  * - All hasAny calls reference the same column
  * - All patterns are constant arrays
