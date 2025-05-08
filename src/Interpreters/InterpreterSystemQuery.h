@@ -87,6 +87,7 @@ private:
 
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     void startStopAction(StorageActionBlockType action_type, bool start);
+    void startStopReloadDictionaries(bool start);
 
     void prewarmMarkCache();
     void prewarmPrimaryIndexCache();
