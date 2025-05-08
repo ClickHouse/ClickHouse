@@ -87,7 +87,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_delta_kernel_rs", true, true, "New setting"},
             {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
             {"use_legacy_to_time", false, false, "New setting. Allows for user to use the old function logic for toTime, which works as toTimeWithFixedDate."},
-						{"optimize_or_has_any_chain", true, false, "Optimize multiple hasAny(arr,arr0) OR ... hasAny(arr,arrN) into hasArr(arr,arr0+...+arrN)"},
+            {"optimize_or_has_any_chain", true, false, "Optimize multiple hasAny(arr,arr0) OR ... hasAny(arr,arrN) into hasArr(arr,arr0+...+arrN)"},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
