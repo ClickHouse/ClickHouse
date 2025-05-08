@@ -1135,7 +1135,7 @@ Event end() { return END; }
 
 bool checkCPUOverload(Int64 os_cpu_busy_time_threshold, double min_ratio, double max_ratio, bool should_throw)
 {
-    if ((max_ratio <= 0.0) ||  (max_ratio <= min_ratio))
+    if ((max_ratio <= 0.0) || (max_ratio <= min_ratio))
         return false;
     double cpu_load = global_counters.getCPUOverload(os_cpu_busy_time_threshold);
 
