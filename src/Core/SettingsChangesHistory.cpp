@@ -78,6 +78,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"page_cache_lookahead_blocks", 16, 16, "Made this setting adjustable on a per-query level."},
             {"output_format_pretty_glue_chunks", "0", "auto", "A new setting to make Pretty formats prettier."},
             {"parallel_hash_join_threshold", 0, 100'000, "New setting"},
+            {"min_os_cpu_wait_time_ratio_to_throw", 0, 0, "Setting values were changed and backported to 25.4"},
+            {"max_os_cpu_wait_time_ratio_to_throw", 0, 0, "Setting values were changed and backported to 25.4"},
             {"make_distributed_plan", 0, 0, "New experimental setting."},
             {"execute_distributed_plan_locally", 0, 0, "New experimental setting."},
             {"default_shuffle_join_bucket_count", 8, 8, "New experimental setting."},
