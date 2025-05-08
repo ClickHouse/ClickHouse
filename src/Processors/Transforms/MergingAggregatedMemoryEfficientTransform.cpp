@@ -39,7 +39,6 @@ void GroupingAggregatedTransform::pushData(Chunks chunks, Int32 bucket, bool is_
     Chunk chunk;
     chunk.getChunkInfos().add(std::move(info));
     output.push(std::move(chunk));
-    span_holder.reset();
 }
 
 bool GroupingAggregatedTransform::tryPushTwoLevelData()
@@ -83,7 +82,7 @@ bool GroupingAggregatedTransform::tryPushTwoLevelData()
                     break;
                 }
             }
-            if (ok && std::ranges::all_of(last_bucket_number, [delayed_bucket](auto last_bucket) { return last_bucket > delayed_bucket; }))
+            if (ok && std::ranges::all_of(last_bucket_number, [delayed_bucket](auto last_bucket) { return last_bucket >= delayed_bucket; }))
             {
                 if (try_push_by_iter(chunks_map.find(delayed_bucket)))
                 {
@@ -180,10 +179,7 @@ IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & upda
         }
 
         if (!wait_input_ports_numbers.empty())
-        {
-            span_holder.emplace("GroupingAggregatedTransform::wait");
             return Status::NeedData;
-        }
     }
 
     if (!output.canPush())
@@ -253,10 +249,7 @@ IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & upda
             continue;
 
         if (need_data)
-        {
-            span_holder.emplace("GroupingAggregatedTransform::wait");
             return Status::NeedData;
-        }
     }
 
     if (pushed_to_output)
@@ -302,19 +295,6 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
     if (auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>())
     {
         Int32 bucket = agg_info->bucket_num;
-        Int32 delayed[2] = {-1, -1};
-        if (bucket != -1)
-        {
-            const UInt32 bucket_num = bucket;
-            constexpr UInt32 low_mask = 0x00FF0000;
-            delayed[0] = (bucket_num & low_mask) != low_mask ? (bucket_num & low_mask) >> 16 : -1;
-            constexpr UInt32 high_mask = 0xFF000000;
-            delayed[1] = (bucket_num & high_mask) != high_mask ? (bucket_num & high_mask) >> 24 : -1;
-            bucket &= 0xFFFF;
-            agg_info->bucket_num = bucket;
-        }
-        if (delayed[0] != -1 && delayed[1] != -1)
-            LOG_DEBUG(&Poco::Logger::get("debug"), "delayed[0]={}, delayed[1]={}", delayed[0], delayed[1]);
         bool is_overflows = agg_info->is_overflows;
 
         if (is_overflows)
@@ -326,12 +306,10 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
             chunks_map[bucket].emplace_back(std::move(chunk));
             has_two_level = true;
             last_bucket_number[input] = bucket;
-            delayed_bucket_number[input][0] = delayed[0];
-            delayed_bucket_number[input][1] = delayed[1];
-            if (delayed[0] != -1)
-                delayed_buckets.insert(delayed[0]);
-            if (delayed[1] != -1)
-                delayed_buckets.insert(delayed[1]);
+            for (auto delayed_bucket : agg_info->delayed_buckets)
+                delayed_buckets.insert(delayed_bucket);
+            delayed_bucket_number[input] = agg_info->delayed_buckets;
+            LOG_DEBUG(&Poco::Logger::get("debug"), "fmtdelayed_bucket_number[input]={}", fmt::join(delayed_bucket_number[input], ","));
         }
     }
     else if (chunk.getChunkInfos().get<ChunkInfoWithAllocatedBytes>())
@@ -399,6 +377,7 @@ void MergingAggregatedBucketTransform::transform(Chunk & chunk)
             Block block = header.cloneWithColumns(cur_chunk.detachColumns());
             block.info.is_overflows = agg_info->is_overflows;
             block.info.bucket_num = agg_info->bucket_num;
+            block.info.delayed_buckets = agg_info->delayed_buckets;
 
             blocks_list.emplace_back(std::move(block));
         }

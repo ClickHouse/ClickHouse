@@ -18,7 +18,7 @@ namespace ErrorCodes
 
 
 /// Write values in binary form. NOTE: You could use protobuf, but it would be overkill for this case.
-void BlockInfo::write(WriteBuffer & out) const
+void BlockInfo::write(WriteBuffer & out, UInt64) const
 {
 /// Set of pairs `FIELD_NUM`, value in binary form. Then 0.
 #define WRITE_FIELD(TYPE, NAME, DEFAULT, FIELD_NUM) \
@@ -32,7 +32,7 @@ void BlockInfo::write(WriteBuffer & out) const
 }
 
 /// Read values in binary form.
-void BlockInfo::read(ReadBuffer & in)
+void BlockInfo::read(ReadBuffer & in, UInt64)
 {
     UInt64 field_num = 0;
 

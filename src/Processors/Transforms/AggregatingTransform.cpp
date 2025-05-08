@@ -1,17 +1,17 @@
-#include <atomic>
 #include <Processors/Transforms/AggregatingTransform.h>
 
 #include <Core/ProtocolDefines.h>
 #include <Formats/NativeReader.h>
+#include <Processors/Chunk.h>
 #include <Processors/ISource.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/Pipe.h>
+#include <base/types.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
-#include "Processors/Chunk.h"
-#include "base/types.h"
 
+#include <atomic>
 
 namespace ProfileEvents
 {
@@ -33,6 +33,7 @@ Chunk convertToChunk(const Block & block)
     auto info = std::make_shared<AggregatedChunkInfo>();
     info->bucket_num = block.info.bucket_num;
     info->is_overflows = block.info.is_overflows;
+    info->delayed_buckets = block.info.delayed_buckets;
 
     UInt64 num_rows = block.rows();
     Chunk chunk(block.getColumns(), num_rows);
@@ -399,8 +400,9 @@ private:
         if (!agg_info)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have AggregatedChunkInfo.");
 
-        agg_info->bucket_num |= (delayed_buckets[0] << 16) & 0x00FF0000;
-        agg_info->bucket_num |= (delayed_buckets[1] << 24) & 0xFF000000;
+        // agg_info->bucket_num |= (delayed_buckets[0] << 16) & 0x00FF0000;
+        // agg_info->bucket_num |= (delayed_buckets[1] << 24) & 0xFF000000;
+        agg_info->delayed_buckets = {delayed_buckets[0], delayed_buckets[1]};
     }
 
     /// Read all sources and try to push current bucket.

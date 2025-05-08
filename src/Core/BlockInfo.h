@@ -2,6 +2,8 @@
 
 #include <base/types.h>
 
+#include <vector>
+
 namespace DB
 {
 
@@ -24,9 +26,10 @@ struct BlockInfo
       * Otherwise -1.
       */
 
-#define APPLY_FOR_BLOCK_INFO_FIELDS(M) \
-    M(bool,     is_overflows,     false,     1) \
-    M(Int32,    bucket_num,     -1,     2)
+#define APPLY_FOR_BLOCK_INFO_FIELDS(M)               \
+    M(bool,               is_overflows,    false, 1) \
+    M(Int32,              bucket_num,      -1,    2) \
+    M(std::vector<Int32>, delayed_buckets, {},    3)
 
 #define DECLARE_FIELD(TYPE, NAME, DEFAULT, FIELD_NUM) \
     TYPE NAME = DEFAULT;
@@ -36,10 +39,10 @@ struct BlockInfo
 #undef DECLARE_FIELD
 
     /// Write the values in binary form. NOTE: You could use protobuf, but it would be overkill for this case.
-    void write(WriteBuffer & out) const;
+    void write(WriteBuffer & out, UInt64 server_protocol_revision) const;
 
     /// Read the values in binary form.
-    void read(ReadBuffer & in);
+    void read(ReadBuffer & in, UInt64 client_protocol_revision);
 };
 
 }
