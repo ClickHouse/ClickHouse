@@ -1312,7 +1312,7 @@ Result:
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
 
-Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
+Can be used with [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance) for estimation of duplicate or highly-similar (`0`), partially-similar (`1`), and dissimilar (`2`) content.
 
 **Syntax**
 
@@ -1350,7 +1350,7 @@ Result:
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
 
-Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
+Can be used with [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance) for estimation of duplicate or highly-similar (`0`), partially-similar (`1`), and dissimilar (`2`) content.
 
 **Syntax**
 
@@ -1388,7 +1388,7 @@ Result:
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
 
-Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
+Can be used with [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance) for estimation of duplicate or highly-similar (`0`), partially-similar (`1`), and dissimilar (`2`) content.
 
 **Syntax**
 
@@ -1426,7 +1426,7 @@ Result:
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
 
-Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
+Can be used with [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance) for estimation of duplicate or highly-similar (`0`), partially-similar (`1`), and dissimilar (`2`) content.
 
 **Syntax**
 
@@ -1608,7 +1608,7 @@ Result:
 
 Splits a ASCII string into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
 
-Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
+Can be used with [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance) for estimation of duplicate or highly-similar (`0`), partially-similar (`1`), and dissimilar (`2`) content.
 
 **Syntax**
 
@@ -1646,7 +1646,7 @@ Result:
 
 Splits a ASCII string into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
 
-Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
+Can be used with [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance) for estimation of duplicate or highly-similar (`0`), partially-similar (`1`), and dissimilar (`2`) content.
 
 **Syntax**
 
@@ -1684,7 +1684,7 @@ Result:
 
 Splits a UTF-8 string into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
 
-Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
+Can be used with [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance) for estimation of duplicate or highly-similar (`0`), partially-similar (`1`), and dissimilar (`2`) content.
 
 **Syntax**
 
@@ -1722,7 +1722,7 @@ Result:
 
 Splits a UTF-8 string into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
 
-Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
+Can be used with [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance) for estimation of duplicate or highly-similar (`0`), partially-similar (`1`), and dissimilar (`2`) content.
 
 **Syntax**
 
