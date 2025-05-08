@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-cpu-aarch64, no-random-settings, no-random-merge-tree-settings
+# Tags: no-cpu-aarch64, no-random-settings, no-random-merge-tree-settings, no-fasttest
 # Some settings can be different for builds with aarch64
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
