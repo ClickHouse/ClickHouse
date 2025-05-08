@@ -501,6 +501,9 @@ std::pair<String, DataTypePtr> ColumnUniqueFCBlockDF::getValueNameAndType(size_t
 
 void ColumnUniqueFCBlockDF::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const
 {
+    /// nullable is handled internally
+    chassert(!is_null);
+
     if (empty())
     {
         return;
@@ -516,19 +519,13 @@ void ColumnUniqueFCBlockDF::collectSerializedValueSizes(PaddedPODArray<UInt64> &
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of sizes: {} doesn't match rows_num: {}. It is a bug", sizes.size(), rows_count);
     }
 
-    if (is_null)
+    if (is_nullable)
     {
-        for (size_t i = 0; i < rows_count; ++i)
+        ++sizes[0]; /* instead of checking i == getNullValueIndex() in the loop for performance, assumes getNullValueIndex is 0 */
+        for (size_t i = 1; i < rows_count; ++i)
         {
-            if (is_null[i])
-            {
-                ++sizes[i];
-            }
-            else
-            {
-                const size_t string_size = getSizeAt(i);
-                sizes[i] += sizeof(string_size) + string_size + 2 /* null byte and null terminator */;
-            }
+            const size_t string_size = getSizeAt(i);
+            sizes[i] += sizeof(string_size) + string_size + 2 /* null byte and null terminator */;
         }
     }
     else
