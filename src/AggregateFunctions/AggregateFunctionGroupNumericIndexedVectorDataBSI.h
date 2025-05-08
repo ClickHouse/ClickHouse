@@ -37,6 +37,38 @@ extern const int BAD_ARGUMENTS;
 extern const int INCORRECT_DATA;
 }
 
+/**
+ * The following example demonstrates the BSI storage mechanism.
+ * Original Vector:
+ *  Suppose we have a sparse vector with:
+ *  - Length: 4294967295 (UINT32_MAX).
+ *  - Value range: [0, 15] with 3 non-zero elements.
+ *  - Non-zero indexes: 1000, 2000, 3000.
+ *           0, 1, 2, ..., 1000, ..., 2000, ...,  3000, ..., 4294967295
+ *      v = [0, 0, 0, ..., 5.25, ...,  8.5, ..., 7.625, ...,          0]
+ * Binary Conversion(4 bits for integer part, 3 bits for decimal part):
+ *  (Because value range in [0, 15], 4 bits for integer is enough),
+ *  (For the decimal part, a fixed number of bits is used to represent it, we use 3 in this example),
+ *      index      value      binary(value)
+ *       1000       5.25           0101.010 (5.25 = 5 + 0.25)
+ *       2000        8.5           1000.100 (8.5 = 8 + 0.5)
+ *       3000      7.625           0111.101 (7.625 = 7 + 0.625)
+ * From right to left(LSB -> MSB), each bit using RoargingBitmap to stores indexes which value is 1
+ *      Bit position            Roaring Bitmap                  Converge
+ *        bm0 (bit0)       bitmapBuild([3000])        Fractional 1st bit
+ *        bm1 (bit1)       bitmapBuild([1000])        Fractional 2nd bit
+ *        bm2 (bit2) bitmapBuild([2000, 3000])        Fractional 3rd bit
+ *        bm3 (bit3) bitmapBuild([1000, 3000])           Integer 1st bit
+ *        bm4 (bit4)       bitmapBuild([3000])           Integer 2nd bit
+ *        bm5 (bit5) bitmapBuild([1000, 3000])           Integer 3rd bit
+ *        bm6 (bit6)       bitmapBuild([2000])           Integer 4th bit
+ * Data array organization
+ *      data_array = [bm0, bm1, bm2, bm3, bm4, bm5, bm6]
+ *                    \___________/  \________________/
+ *             fraction_bit_num = 3  interger_bit_num = 4
+ * In subsequent comments, we denote the original vector v stored in a NumericIndexedVector object obj as
+ *      v = original_vector(obj).
+ */
 template <typename IT, typename VT>
 class BSINumericIndexedVector
 {
@@ -45,11 +77,21 @@ public:
     using ValueType = VT;
 
     static constexpr auto type = "BSI";
+
+    /** For Floar ValueType:
+     * - Use 40-bit fixed-point representation for integer part.
+     *   Which means supported value range is [0, 2^40 - 1] in the unsigned scenario.
+     * - Use 24-bit represent decimal part, provides about 10^-7~10^-8(2^-24) resolution.
+     */
     static constexpr UInt32 DEFAULT_INTEGER_BIT_NUM = 40;
     static constexpr UInt32 DEFAULT_FRACTION_BIT_NUM = 24;
+
     static constexpr UInt32 MAX_INTEGER_BIT_NUM = 64;
     static constexpr UInt32 MAX_FRACTION_BIT_NUM = 24;
+
+    // integer_bit_num + fraction_bit_num <= MAX_TOTAL_BIT_NUM.
     static constexpr UInt32 MAX_TOTAL_BIT_NUM = 64;
+
     static constexpr size_t max_size = 10_GiB;
 
     static constexpr UInt32 multiply_op_code = 2;
@@ -310,6 +352,11 @@ public:
         return data_array[index];
     }
 
+    /**
+     * Performs pointwise addition between two origin vectors directly on the BSI bitmap data_array.
+     * The result is stored in the current object. (original_vector(this) += original_vector(rhs))
+     * Reference full adder implementation: https://en.wikipedia.org/wiki/Adder_(electronics)#Full_adder
+     */
     void pointwiseAddInplace(const BSINumericIndexedVector & rhs)
     {
         BSINumericIndexedVector rhs_ref;
@@ -346,6 +393,10 @@ public:
         res.pointwiseAddInplace(rhs);
     }
 
+    /*
+     * Performs pointwise addition between vector and a scalar value rhs.
+     * The result is stored in the current object. (original_vector(this) += rhs)
+     */
     static void pointwiseAdd(const BSINumericIndexedVector & lhs, const ValueType & rhs, BSINumericIndexedVector & res)
     {
         BSINumericIndexedVector rhs_vec;
@@ -356,6 +407,11 @@ public:
 
     void merge(const BSINumericIndexedVector & rhs) { pointwiseAddInplace(rhs); }
 
+    /**
+     * Performs pointwise subtraction between two origin vectors directly on the BSI structure.
+     * The result is stored in the current object. (original_vector(this) -= original_vector(rhs))
+     * Reference full subtractor implementation: https://en.wikipedia.org/wiki/Subtractor#Full_subtractor
+     */
     void pointwiseSubtractInplace(const BSINumericIndexedVector & rhs)
     {
         BSINumericIndexedVector rhs_ref;
@@ -440,6 +496,9 @@ public:
         return res;
     }
 
+    /**
+     * Set Roaring containers to RoaringBitmapWithSmallSet
+     */
     static inline void setContainers(
         std::vector<roaring::internal::container_t *> & ctns,
         std::vector<UInt8> & types,
@@ -460,6 +519,10 @@ public:
         return static_cast<UInt64>(d);
     }
 
+    /**
+     * There are three main types of containers in Roaring Bitmap: array, bitset and run.
+     * This function converts the original vector to array format container.
+     **/
     static void toVectorCompactArray(
         const PaddedPODArray<UInt32> & indexes,
         const PaddedPODArray<Float64> & values,
@@ -563,6 +626,10 @@ public:
         return number_of_1s;
     }
 
+    /**
+     * There are three main types of containers in Roaring Bitmap: Array, bitset and run.
+     * This function converts the original vector to container with bitset format and dense version.
+     **/
     static void toVectorCompactBitsetDense(
         const PaddedPODArray<UInt32> & indexes,
         const PaddedPODArray<Float64> & values,
@@ -634,6 +701,10 @@ public:
         setContainers(ctns, types, container_id, vector);
     }
 
+    /**
+     * There are three main types of containers in Roaring Bitmap: Array, bitset and run.
+     * This function converts the original vector to bitset format container.
+     **/
     static void toVectorCompactBitset(
         const PaddedPODArray<UInt32> & indexes,
         const PaddedPODArray<Float64> & values,
@@ -746,6 +817,11 @@ public:
         }
     }
 
+    /**
+     * Convert the original vector(represented by indexes and values) to Roaring Bitmap container.
+     * The result container is stored in BSINumericIndexedVector's data_array.
+     * Only convert the target container_id.
+     */
     static void toVector(
         const PaddedPODArray<UInt32> & indexes,
         const PaddedPODArray<Float64> & values,
@@ -757,6 +833,14 @@ public:
         toVectorCompact(indexes, values, length, container_id, buffer, vector);
     }
 
+
+    /**
+     * Extract the value from the vector.
+     *  The selected index belongs to the container_id and in mask bitmap.
+     *  The results are sorted from small to large by index and saved in the output array.
+     * Returns the number of extracted values. Since a container has a maximum of 2^16 elements,
+     *  the return type UInt16 is sufficient.
+     */
     static UInt16 valueToColumn(
         const BSINumericIndexedVector & vector, const std::shared_ptr<Roaring> & mask, const UInt32 & container_id, Float64 * output)
     {
@@ -785,6 +869,12 @@ public:
         return result_cnt;
     }
 
+    /**
+     * Addition and subtraction are implemented directly in the compressed domain of BSI using
+     *  hardware full adders and full subtractors.
+     * Hardware multiplication and division are complex and therefore very slow. Here we
+     *  convert to the original vectors and then do multiplication and division.
+     */
     static void pointwiseRawBinaryOperate(
         const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, const UInt32 op_code, BSINumericIndexedVector & res)
     {
@@ -834,6 +924,10 @@ public:
         }
     }
 
+    /**
+     * Performs pointwise multiplication and division of the original vector and a scalar.
+     *  Example: v_res = v * 3; v_res = v / 3;
+     */
     static void pointwiseRawBinaryOperate(
         const BSINumericIndexedVector & lhs, const ValueType & rhs, const UInt32 op_code, BSINumericIndexedVector & res)
     {
@@ -878,7 +972,10 @@ public:
         }
     }
 
-    // Multiply
+    /**
+     * Performs pointwise multiplication of two original vectors.
+     * The result is stored in the res.
+     */
     static void pointwiseMultiply(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, BSINumericIndexedVector & res)
     {
         if (lhs.allValuesEqualOne())
@@ -899,6 +996,10 @@ public:
         res.initialize(max_integer_bit_num, max_fraction_bit_num);
         pointwiseRawBinaryOperate(lhs, rhs, multiply_op_code, res);
     }
+    /**
+     * Performs pointwise multiplication of vector and scalar.
+     * The result is stored in the res.
+     */
     static void pointwiseMultiply(const BSINumericIndexedVector & lhs, const ValueType & rhs, BSINumericIndexedVector & res)
     {
         if (lhs.allValuesEqualOne())
@@ -910,7 +1011,10 @@ public:
         pointwiseRawBinaryOperate(lhs, rhs, multiply_op_code, res);
     }
 
-    // Divide
+    /**
+     * Performs pointwise division of two original vectors.
+     * The result is stored in the res.
+     */
     static void pointwiseDivide(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, BSINumericIndexedVector & res)
     {
         if (rhs.allValuesEqualOne())
@@ -926,6 +1030,11 @@ public:
         res.initialize(max_integer_bit_num, max_fraction_bit_num);
         pointwiseRawBinaryOperate(lhs, rhs, divide_op_code, res);
     }
+
+    /**
+     * Performs pointwise division of vector and scalar.
+     * The result is stored in the res.
+     */
     static void pointwiseDivide(const BSINumericIndexedVector & lhs, const ValueType & rhs, BSINumericIndexedVector & res)
     {
         if (rhs == 1)
@@ -937,6 +1046,11 @@ public:
         pointwiseRawBinaryOperate(lhs, rhs, divide_op_code, res);
     }
 
+    /**
+     * Performs pointwise equality comparison between two original vectors.
+     * The returned Roaring Bitmap contains indexes that satisfy:
+     *  original_vector(lhs)[index] != 0 and original_vector(lhs)[index] == original_vector(rhs)[index].
+     */
     static std::shared_ptr<Roaring> pointwiseEqual(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs)
     {
         auto res_bm = lhs.allIndexes();
@@ -956,6 +1070,11 @@ public:
         return res_bm;
     }
 
+    /**
+     * Performs pointwise equality comparison between original vector and a scalar value.
+     * The returned Roaring Bitmap contains indexes that satisfy:
+     *  original_vector(lhs)[index] != 0 and original_vector(lhs)[index] == rhs
+     */
     static std::shared_ptr<Roaring> pointwiseEqual(const BSINumericIndexedVector & lhs, const ValueType & rhs)
     {
         auto res_bm = lhs.allIndexes();
@@ -997,7 +1116,6 @@ public:
         return res_bm;
     }
 
-    // Equal
     static void pointwiseEqual(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, BSINumericIndexedVector & res)
     {
         res.initialize(2, 0);
@@ -1011,7 +1129,11 @@ public:
         res.getDataArrayAt(res.fraction_bit_num)->rb_or(*pointwiseEqual(lhs, rhs));
     }
 
-    // Not equal
+    /**
+     * Performs pointwise inequality comparison between two origin vectors.
+     * The returned Roaring Bitmap contains indexes that satisfy:
+     *  original_vector(lhs)[index] != original_vector(rhs)[index].
+     */
     static void pointwiseNotEqual(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, BSINumericIndexedVector & res)
     {
         res.initialize(2, 0);
@@ -1033,6 +1155,11 @@ public:
         }
     }
 
+    /**
+     * Performs pointwise inequality comparison between vector and a scalar value.
+     * The returned Roaring Bitmap contains indexes that satisfy:
+     *  original_vector(lhs)[index] != 0 && original_vector(lhs)[index] != rhs
+     */
     static void pointwiseNotEqual(const BSINumericIndexedVector & lhs, const ValueType & rhs, BSINumericIndexedVector & res)
     {
         pointwiseEqual(lhs, rhs, res);
@@ -1044,7 +1171,12 @@ public:
         res_bm = lhs_all_indexes;
     }
 
-    // Less
+    /**
+     * Performs pointwise less comparison between two origin vectors.
+     * The returned Roaring Bitmap contains indexes that satisfy:
+     *  v1[index] != 0 && v2[index] != 0 && v1[index] < v2[index]
+     *      with v1 = original_vector(lhs)[index], v2 = original_vector(rhs)[index]
+     */
     static std::shared_ptr<Roaring> pointwiseLess(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs)
     {
         auto res_bm = std::make_shared<Roaring>();
@@ -1072,6 +1204,11 @@ public:
         return res_bm;
     }
 
+    /**
+     * Performs pointwise less comparison between vector and a scalar value.
+     * The returned Roaring Bitmap contains indexes that satisfy:
+     *  v1[index] != 0 && v1[index] < rhs. with v1 = original_vector(lhs)[index]
+     */
     static std::shared_ptr<Roaring> pointwiseLess(const BSINumericIndexedVector & lhs, const ValueType & rhs)
     {
         BSINumericIndexedVector rhs_vec;
@@ -1079,7 +1216,6 @@ public:
         return pointwiseLess(lhs, rhs_vec);
     }
 
-    // Less
     static void pointwiseLess(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, BSINumericIndexedVector & res)
     {
         res.initialize(2, 0);
@@ -1095,7 +1231,12 @@ public:
     }
 
 
-    // Less Equal
+    /**
+     * Performs pointwise less than or equal comparison between two origin vectors.
+     * The returned Roaring Bitmap contains indexes that satisfy:
+     *  v1[index] != 0 && v2[index] != 0 && v1[index] <= v2[index]
+     *      with v1 = original_vector(lhs)[index], v2 = original_vector(rhs)[index]
+     */
     static void pointwiseLessEqual(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, BSINumericIndexedVector & res)
     {
         auto lt_bm = pointwiseLess(lhs, rhs);
@@ -1118,7 +1259,6 @@ public:
         res_bm->rb_or(*eq_bm);
     }
 
-    // Greater
     static void pointwiseGreater(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, BSINumericIndexedVector & res)
     {
         res.initialize(2, 0);
@@ -1163,6 +1303,7 @@ public:
         res_bm->rb_or(*eq_bm);
     }
 
+    // original_vector(this)[index] += value.
     void addValue(IndexType index, ValueType value)
     {
         const UInt32 total_bit_num = getTotalBitNum();
@@ -1208,6 +1349,7 @@ public:
         }
     }
 
+    // return origin_vector(this)[index]
     ValueType getValue(IndexType index) const
     {
         const UInt32 total_bit_num = getTotalBitNum();
@@ -1314,13 +1456,13 @@ public:
     //
     // 2. Signed integer/float path:
     //    - Uses highest bit (total_bit_num-1) as sign bit
-    //    - Separates processing for positive/negative indices:
+    //    - Separates processing for positive/negative indexes:
     //      * Positive values: Direct bit merging
     //      * Negative values: Two's complement handling with sign adjustment
     //    - Final values include sign correction and precision scaling
     //
     // Implementation notes:
-    // - Uses Roaring bitmap library for efficient bit set operations
+    // - Uses Roaring Bitmap library for efficient bit set operations
     // - fraction_bit_num controls fixed-point precision scaling
     // - Result values are statically cast to target type
     UInt64 toIndexValueMap(PaddedPODArray<IndexType> & indexes_pod, PaddedPODArray<ValueType> & values_pod) const

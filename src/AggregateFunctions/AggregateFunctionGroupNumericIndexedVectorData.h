@@ -85,6 +85,8 @@ public:
 
     void merge(const NumericIndexedVector & rhs) { impl.merge(rhs.impl); }
 
+
+    // Performs pointwise addition between two vectors.
     static void pointwiseAdd(const NumericIndexedVector & lhs, const NumericIndexedVector & rhs, NumericIndexedVector & res)
     {
         VectorImpl::pointwiseAdd(lhs.impl, rhs.impl, res.impl);
@@ -95,6 +97,7 @@ public:
         VectorImpl::pointwiseAdd(lhs.impl, rhs, res.impl);
     }
 
+    // Performs pointwise subtraction between two vectors.
     static void pointwiseSubtract(const NumericIndexedVector & lhs, const NumericIndexedVector & rhs, NumericIndexedVector & res)
     {
         VectorImpl::pointwiseSubtract(lhs.impl, rhs.impl, res.impl);
@@ -105,6 +108,7 @@ public:
         VectorImpl::pointwiseSubtract(lhs.impl, rhs, res.impl);
     }
 
+    // Performs pointwise multiplication between two vectors.
     static void pointwiseMultiply(const NumericIndexedVector & lhs, const NumericIndexedVector & rhs, NumericIndexedVector & res)
     {
         VectorImpl::pointwiseMultiply(lhs.impl, rhs.impl, res.impl);
@@ -115,6 +119,7 @@ public:
         VectorImpl::pointwiseMultiply(lhs.impl, rhs, res.impl);
     }
 
+    // Performs pointwise division between two vectors.
     static void pointwiseDivide(const NumericIndexedVector & lhs, const NumericIndexedVector & rhs, NumericIndexedVector & res)
     {
         VectorImpl::pointwiseDivide(lhs.impl, rhs.impl, res.impl);
@@ -125,6 +130,8 @@ public:
         VectorImpl::pointwiseDivide(lhs.impl, rhs, res.impl);
     }
 
+    // Performs pointwise equality between two vectors.
+    // The result is a vector with all non-zero value is 1.
     static void pointwiseEqual(const NumericIndexedVector & lhs, const NumericIndexedVector & rhs, NumericIndexedVector & res)
     {
         VectorImpl::pointwiseEqual(lhs.impl, rhs.impl, res.impl);
