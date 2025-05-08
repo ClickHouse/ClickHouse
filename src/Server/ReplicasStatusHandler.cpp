@@ -9,6 +9,7 @@
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
+#include <Server/HTTPResponseHeaderWriter.h>
 #include <Server/IServer.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -36,6 +37,8 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
 {
     try
     {
+        applyHTTPResponseHeaders(response, http_response_headers_override);
+
         HTMLForm params(getContext()->getSettingsRef(), request);
 
         const auto & config = getContext()->getConfigRef();
@@ -139,7 +142,13 @@ HTTPRequestHandlerFactoryPtr createReplicasStatusHandlerFactory(IServer & server
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix)
 {
-    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>>(server);
+    std::unordered_map<String, String> http_response_headers_override
+        = parseHTTPResponseHeaders(config, config_prefix, "text/plain; charset=UTF-8");
+
+    auto creator = [&server, http_response_headers_override]() -> std::unique_ptr<ReplicasStatusHandler>
+    { return std::make_unique<ReplicasStatusHandler>(server, http_response_headers_override); };
+
+    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>>(std::move(creator));
     factory->addFiltersFromConfig(config, config_prefix);
     return factory;
 }
