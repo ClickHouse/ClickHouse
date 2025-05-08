@@ -433,11 +433,13 @@ SinkToStoragePtr StorageObjectStorage::write(
 
     if (configuration->withPartitionWildcard())
     {
-        ASTPtr partition_by_ast = partition_by;
+        ASTPtr partition_by_ast = nullptr;
         if (auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query))
         {
             if (insert_query->partition_by)
                 partition_by_ast = insert_query->partition_by;
+            else
+                partition_by_ast = partition_by;
         }
 
         if (partition_by_ast)
