@@ -1,9 +1,17 @@
 import logging
 import string
 import time
+from contextlib import contextmanager
 
 from kafka import KafkaAdminClient, KafkaProducer
 from kafka.admin import NewTopic
+
+@contextmanager
+def existing_kafka_topic(admin_client, topic_name, max_retries=50):
+    try:
+        yield None
+    finally:
+        kafka_delete_topic(admin_client, topic_name, max_retries)
 
 def get_kafka_producer(port, serializer, retries):
     errors = []
