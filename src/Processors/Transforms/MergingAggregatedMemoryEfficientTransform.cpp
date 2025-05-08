@@ -8,9 +8,6 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <QueryPipeline/Pipe.h>
 
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
-
 namespace DB
 {
 namespace ErrorCodes
@@ -23,7 +20,7 @@ GroupingAggregatedTransform::GroupingAggregatedTransform(const Block & header_, 
     , num_inputs(num_inputs_)
     , params(std::move(params_))
     , last_bucket_number(num_inputs, -1)
-    , delayed_bucket_number(num_inputs, {-1, -1})
+    , input_out_of_order_buckets(num_inputs)
 {
 }
 
@@ -69,24 +66,18 @@ bool GroupingAggregatedTransform::tryPushTwoLevelData()
     }
     else
     {
-        for (const auto delayed_bucket : delayed_buckets)
+        for (const auto ooo_bucket : out_of_order_buckets)
         {
             /// The bucket is no longer delayed for all inputs. Either we received it from all sources (where it was not empty),
             /// or we received buckets with higher id-s and no delayed bucket information.
-            bool ok = true;
-            for (size_t input = 0; input < num_inputs; ++input)
+            bool is_not_delayed_by_any_input = true;
+            for (size_t input = 0; is_not_delayed_by_any_input && input < num_inputs; ++input)
+                is_not_delayed_by_any_input &= !std::ranges::contains(input_out_of_order_buckets[input], ooo_bucket);
+            if (is_not_delayed_by_any_input && std::ranges::all_of(last_bucket_number, [&](auto last) { return last >= ooo_bucket; }))
             {
-                if (delayed_bucket_number[input][0] == delayed_bucket || delayed_bucket_number[input][1] == delayed_bucket)
+                if (try_push_by_iter(chunks_map.find(ooo_bucket)))
                 {
-                    ok = false;
-                    break;
-                }
-            }
-            if (ok && std::ranges::all_of(last_bucket_number, [delayed_bucket](auto last_bucket) { return last_bucket >= delayed_bucket; }))
-            {
-                if (try_push_by_iter(chunks_map.find(delayed_bucket)))
-                {
-                    delayed_buckets.erase(delayed_bucket);
+                    out_of_order_buckets.erase(ooo_bucket);
                     return true;
                 }
             }
@@ -94,7 +85,7 @@ bool GroupingAggregatedTransform::tryPushTwoLevelData()
 
         for (; next_bucket_to_push < current_bucket; ++next_bucket_to_push)
         {
-            if (delayed_buckets.contains(next_bucket_to_push))
+            if (out_of_order_buckets.contains(next_bucket_to_push))
                 continue;
 
             if (try_push_by_iter(chunks_map.find(next_bucket_to_push)))
@@ -245,7 +236,7 @@ IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & upda
             break;
         }
 
-        if (delayed_buckets.contains(current_bucket))
+        if (out_of_order_buckets.contains(current_bucket))
             continue;
 
         if (need_data)
@@ -306,10 +297,8 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
             chunks_map[bucket].emplace_back(std::move(chunk));
             has_two_level = true;
             last_bucket_number[input] = bucket;
-            for (auto delayed_bucket : agg_info->delayed_buckets)
-                delayed_buckets.insert(delayed_bucket);
-            delayed_bucket_number[input] = agg_info->delayed_buckets;
-            LOG_DEBUG(&Poco::Logger::get("debug"), "fmtdelayed_bucket_number[input]={}", fmt::join(delayed_bucket_number[input], ","));
+            input_out_of_order_buckets[input] = agg_info->out_of_order_buckets;
+            out_of_order_buckets.insert(agg_info->out_of_order_buckets.begin(), agg_info->out_of_order_buckets.end());
         }
     }
     else if (chunk.getChunkInfos().get<ChunkInfoWithAllocatedBytes>())
@@ -377,7 +366,7 @@ void MergingAggregatedBucketTransform::transform(Chunk & chunk)
             Block block = header.cloneWithColumns(cur_chunk.detachColumns());
             block.info.is_overflows = agg_info->is_overflows;
             block.info.bucket_num = agg_info->bucket_num;
-            block.info.delayed_buckets = agg_info->delayed_buckets;
+            block.info.out_of_order_buckets = agg_info->out_of_order_buckets;
 
             blocks_list.emplace_back(std::move(block));
         }

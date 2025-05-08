@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/ProtocolDefines.h>
 #include <base/types.h>
 
 #include <vector>
@@ -26,12 +27,12 @@ struct BlockInfo
       * Otherwise -1.
       */
 
-#define APPLY_FOR_BLOCK_INFO_FIELDS(M)               \
-    M(bool,               is_overflows,    false, 1) \
-    M(Int32,              bucket_num,      -1,    2) \
-    M(std::vector<Int32>, delayed_buckets, {},    3)
+#define APPLY_FOR_BLOCK_INFO_FIELDS(M)                                                                                \
+    M(bool,               is_overflows,         false, 1, 0)                                                          \
+    M(Int32,              bucket_num,           -1,    2, 0)                                                          \
+    M(std::vector<Int32>, out_of_order_buckets, {},    3, DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION)
 
-#define DECLARE_FIELD(TYPE, NAME, DEFAULT, FIELD_NUM) \
+#define DECLARE_FIELD(TYPE, NAME, DEFAULT, FIELD_NUM, MIN_PROTOCOL_REVISION) \
     TYPE NAME = DEFAULT;
 
     APPLY_FOR_BLOCK_INFO_FIELDS(DECLARE_FIELD)

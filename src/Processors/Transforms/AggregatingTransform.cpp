@@ -34,7 +34,7 @@ Chunk convertToChunk(const Block & block)
     auto info = std::make_shared<AggregatedChunkInfo>();
     info->bucket_num = block.info.bucket_num;
     info->is_overflows = block.info.is_overflows;
-    info->delayed_buckets = block.info.delayed_buckets;
+    info->out_of_order_buckets = block.info.out_of_order_buckets;
 
     UInt64 num_rows = block.rows();
     Chunk chunk(block.getColumns(), num_rows);
@@ -285,7 +285,7 @@ public:
         , data(std::move(data_))
         , shared_data(std::make_shared<ConvertingAggregatedToChunksWithMergingSource::SharedData>())
         , num_threads(num_threads_)
-        , delayed_buckets(2, -1)
+        , out_of_order_buckets(NUM_OOO_BUCKETS, -1)
     {
     }
 
@@ -396,15 +396,6 @@ private:
         return Status::PortFull;
     }
 
-    static void encodeDelayedBucketId(Chunk & chunk, const std::vector<Int32> & delayed_buckets)
-    {
-        auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
-        if (!agg_info)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have AggregatedChunkInfo.");
-
-        agg_info->delayed_buckets = delayed_buckets;
-    }
-
     /// Read all sources and try to push current bucket.
     IProcessor::Status prepareTwoLevel()
     {
@@ -434,7 +425,7 @@ private:
         while (current_bucket_num < NUM_BUCKETS)
         {
             Chunk chunk;
-            for (auto & delayed_bucket : delayed_buckets)
+            for (auto & delayed_bucket : out_of_order_buckets)
             {
                 if (delayed_bucket != -1 && (chunk = get_bucket_if_ready(delayed_bucket)))
                 {
@@ -448,15 +439,11 @@ private:
                 {
                     ++current_bucket_num;
                 }
-                else
+                else if (auto empty_it = std::ranges::find(out_of_order_buckets, -1); empty_it != out_of_order_buckets.end())
                 {
-                    auto empty_it = std::ranges::find(delayed_buckets, -1);
-                    if (empty_it != delayed_buckets.end())
-                    {
-                        *empty_it = current_bucket_num;
-                        ++current_bucket_num;
-                        continue;
-                    }
+                    *empty_it = current_bucket_num;
+                    ++current_bucket_num;
+                    continue;
                 }
             }
 
@@ -466,7 +453,7 @@ private:
             const auto has_rows = chunk.hasRows();
             if (has_rows)
             {
-                encodeDelayedBucketId(chunk, delayed_buckets);
+                chunk.getChunkInfos().get<AggregatedChunkInfo>()->out_of_order_buckets = out_of_order_buckets;
                 output.push(std::move(chunk));
                 return Status::PortFull;
             }
@@ -476,11 +463,10 @@ private:
         {
             if (delayed_bucket != -1)
             {
-                auto chunk = get_bucket_if_ready(delayed_bucket);
-                if (chunk)
+                if (auto chunk = get_bucket_if_ready(delayed_bucket))
                 {
                     delayed_bucket = -1;
-                    encodeDelayedBucketId(chunk, delayed_buckets);
+                    chunk.getChunkInfos().get<AggregatedChunkInfo>()->out_of_order_buckets = out_of_order_buckets;
                     output.push(std::move(chunk));
                     return true;
                 }
@@ -488,11 +474,11 @@ private:
             return false;
         };
 
-        for (auto & delayed_bucket : delayed_buckets)
+        for (auto & delayed_bucket : out_of_order_buckets)
             if (try_push_delayed_bucket(delayed_bucket))
                 return Status::PortFull;
 
-        if (std::ranges::any_of(delayed_buckets, [](auto delayed_bucket) { return delayed_bucket != -1; }))
+        if (std::ranges::any_of(out_of_order_buckets, [](auto delayed_bucket) { return delayed_bucket != -1; }))
             return Status::NeedData;
 
         output.finish();
@@ -515,7 +501,8 @@ private:
     static constexpr Int32 NUM_BUCKETS = 256;
     std::array<Chunk, NUM_BUCKETS> two_level_chunks;
 
-    std::vector<Int32> delayed_buckets;
+    static constexpr UInt32 NUM_OOO_BUCKETS = 4;
+    std::vector<Int32> out_of_order_buckets;
 
     Processors processors;
 
@@ -556,12 +543,12 @@ private:
 
         ++current_bucket_num;
 
-    #define M(NAME) \
-                else if (first->type == AggregatedDataVariants::Type::NAME) \
-                    params->aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data, shared_data->is_cancelled);
+#define M(NAME) \
+    else if (first->type == AggregatedDataVariants::Type::NAME) \
+        params->aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data, shared_data->is_cancelled);
         if (false) {} // NOLINT
         APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
-    #undef M
+#undef M
         else
             throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
 

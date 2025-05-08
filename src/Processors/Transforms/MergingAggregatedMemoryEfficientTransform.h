@@ -78,9 +78,9 @@ private:
     AggregatingTransformParamsPtr params;
 
     std::vector<Int32> last_bucket_number; /// Last bucket read from each input.
-    std::vector<std::vector<Int32>> delayed_bucket_number; /// Delayed bucket ids for each input.
+    std::vector<std::vector<Int32>> input_out_of_order_buckets; /// Out of order bucket ids for each input.
 
-    std::unordered_set<Int32> delayed_buckets;
+    std::unordered_set<Int32> out_of_order_buckets;
 
     std::map<Int32, Chunks> chunks_map; /// bucket -> chunks
     Chunks overflow_chunks;
