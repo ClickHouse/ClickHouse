@@ -932,12 +932,12 @@ void StorageKafka2::updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, cons
 void StorageKafka2::saveTopicPartitionInfo(zkutil::ZooKeeper & keeper_to_use, const std::filesystem::path & keeper_path_to_data, const String & data)
 {
     Coordination::Requests ops;
+    keeper_to_use.checkExistsAndGetCreateAncestorsOps(keeper_path_to_data, ops);
     if (keeper_to_use.exists(keeper_path_to_data))
         ops.emplace_back(zkutil::makeSetRequest(keeper_path_to_data, data, -1));
     else
         ops.emplace_back(zkutil::makeCreateRequest(keeper_path_to_data, data, zkutil::CreateMode::Persistent));
 
-    keeper_to_use.checkExistsAndGetCreateAncestorsOps(keeper_path_to_data, ops);
     Coordination::Responses responses;
     const auto code = keeper_to_use.tryMulti(ops, responses);
     if (code != Coordination::Error::ZOK)
