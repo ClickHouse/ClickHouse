@@ -91,3 +91,6 @@ if (TARGET ch_contrib::icu)
     clickhouse_add_executable (utf8_upper_lower utf8_upper_lower.cpp)
     target_link_libraries (utf8_upper_lower PRIVATE ch_contrib::icu)
 endif ()
+
+clickhouse_add_executable (xray_tracing xray_tracing.cpp)
+target_link_libraries (xray_tracing PRIVATE dbms ch_contrib::llvm)
