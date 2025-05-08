@@ -1,14 +1,14 @@
 Single Numeric Data:
-0	2
-1	2
-2	2
-3	2
-4	2
+0	10
+1	10
+2	10
+3	10
+4	10
 0	0
-1	0.5
-2	1
-3	1.5
-4	2
+1	1
+2	3
+3	6
+4	10
 Single Generic Plain Column:
 0	0	0
 1	1	0

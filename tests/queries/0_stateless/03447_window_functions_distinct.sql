@@ -1,6 +1,6 @@
 SELECT 'Single Numeric Data:';
-SELECT number, avg(DISTINCT number) OVER () FROM numbers(0, 5) ORDER BY number;
-SELECT number, avg(DISTINCT number) OVER (ORDER BY number) FROM numbers(0, 5) ORDER BY number;
+SELECT number, sum(DISTINCT number) OVER () FROM numbers(0, 5) ORDER BY number;
+SELECT number, sum(DISTINCT number) OVER (ORDER BY number) FROM numbers(0, 5) ORDER BY number;
 
 SELECT 'Single Generic Plain Column:';
 SELECT number, s, min(DISTINCT s) OVER(PARTITION BY number % 2) AS min_varlen_string
