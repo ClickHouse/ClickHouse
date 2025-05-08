@@ -1706,15 +1706,13 @@ private:
                     path.append(".");
                 path += key;
 
-                if (visited_keys.contains(key))
+                if (!visited_keys.insert(key).second)
                 {
                     if (format_settings.json.type_json_skip_duplicated_paths)
                         continue;
                     error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
                     return false;
                 }
-
-                visited_keys.insert(key);
 
                 if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false))
                     return false;
