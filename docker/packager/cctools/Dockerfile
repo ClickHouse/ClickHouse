@@ -2,7 +2,7 @@
 
 # This is a hack to significantly reduce the build time of the clickhouse/binary-builder
 # It's based on the assumption that we don't care of the cctools version so much
-# It event does not depend on the clickhouse/fasttest in the `docker/images.json`
+# It even does not depend on the clickhouse/fasttest in the `docker/images.json`
 ARG FROM_TAG=latest
 FROM clickhouse/fasttest:$FROM_TAG AS builder
 
@@ -53,10 +53,13 @@ RUN apt-get update \
 RUN wget https://sourceware.org/pub/gdb/releases/gdb-$GDB_VERSION.tar.gz \
     && tar -xvf gdb-$GDB_VERSION.tar.gz \
     && cd gdb-$GDB_VERSION \
-    && ./configure --prefix=/opt/gdb \
+    && ./configure --prefix=/opt/gdb --with-separate-debug-dir=/usr/lib/debug \
     && make -j $(nproc) \
     && make install \
     && rm -fr gdb-$GDB_VERSION gdb-$GDB_VERSION.tar.gz
+
+# just in case
+RUN /opt/gdb/bin/gdb --version
 
 FROM scratch
 COPY --from=builder /cctools /cctools

@@ -355,7 +355,6 @@
 02149_read_in_order_fixed_prefix
 02151_hash_table_sizes_stats
 02156_storage_merge_prewhere
-02346_fulltext_index_match_predicate
 02354_vector_search_subquery
 02421_explain_subquery
 02451_order_by_monotonic
