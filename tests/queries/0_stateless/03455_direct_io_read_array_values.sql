@@ -1,3 +1,5 @@
+-- Tags: long
+
 set max_threads = 3;
 set min_bytes_to_use_direct_io = 1;
 
