@@ -205,7 +205,7 @@ impl Compiler for RustC {
     fn apply_cache(&self, bytes: &Vec<u8>) -> Result<(), Box<dyn Error>> {
         trace!("Out dir: {:?}", self.out_dir);
 
-        let cursor = Cursor::new(&bytes[..]);
+        let cursor = Cursor::new(bytes);
         let mut archive = tar::Archive::new(cursor);
         archive.set_preserve_mtime(false);
         archive.unpack(&self.out_dir)?;
