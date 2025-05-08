@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Common/formatReadable.h>
 
 namespace DB
 {
@@ -24,6 +25,11 @@ void DiskLocalCheckThread::startup()
     need_stop = false;
     retry = 0;
     task->activateAndSchedule();
+    LOG_INFO(
+        log,
+        "Disk check started for disk {} with period {}",
+        disk->getName(),
+        formatReadableTime(static_cast<double>(check_period_ms) * 1e6 /* ns */));
 }
 
 void DiskLocalCheckThread::run()
