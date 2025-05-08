@@ -78,6 +78,27 @@ static auto createPingHandlerFactory(IServer & server)
     return std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(std::move(creator));
 }
 
+static auto createPingHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+{
+    auto creator = [&server,&config,config_prefix]() -> std::unique_ptr<StaticRequestHandler>
+    {
+        constexpr auto ping_response_expression = "Ok.\n";
+        return std::make_unique<StaticRequestHandler>(
+            server, ping_response_expression, parseHTTPResponseHeaders(config, config_prefix, "text/html; charset=UTF-8"));
+    };
+    return std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(std::move(creator));
+}
+
+template <typename UIRequestHandler>
+static auto createWebUIHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+{
+    auto creator = [&server,&config,config_prefix]() -> std::unique_ptr<UIRequestHandler>
+    {
+        return std::make_unique<UIRequestHandler>(server, parseHTTPResponseHeaders(config, config_prefix, "text/html; charset=UTF-8"));
+    };
+    return std::make_shared<HandlingRuleHTTPHandlerFactory<UIRequestHandler>>(std::move(creator));
+}
+
 static inline auto createHandlersFactoryFromConfig(
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,
@@ -131,31 +152,32 @@ static inline auto createHandlersFactoryFromConfig(
             }
             else if (handler_type == "ping")
             {
-                auto handler = createPingHandlerFactory(server);
-                handler->addFiltersFromConfig(config, prefix + "." + key);
+                const String config_prefix = prefix + "." + key;
+                auto handler = createPingHandlerFactory(server, config, config_prefix);
+                handler->addFiltersFromConfig(config, config_prefix);
                 main_handler_factory->addHandler(std::move(handler));
             }
             else if (handler_type == "play")
             {
-                auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<PlayWebUIRequestHandler>>(server);
+                auto handler = createWebUIHandlerFactory<PlayWebUIRequestHandler>(server, config, prefix + "." + key);
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
             else if (handler_type == "dashboard")
             {
-                auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DashboardWebUIRequestHandler>>(server);
+                auto handler = createWebUIHandlerFactory<DashboardWebUIRequestHandler>(server, config, prefix + "." + key);
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
             else if (handler_type == "binary")
             {
-                auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<BinaryWebUIRequestHandler>>(server);
+                auto handler = createWebUIHandlerFactory<BinaryWebUIRequestHandler>(server, config, prefix + "." + key);
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
             else if (handler_type == "merges")
             {
-                auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<MergesWebUIRequestHandler>>(server);
+                auto handler = createWebUIHandlerFactory<MergesWebUIRequestHandler>(server, config, prefix + "." + key);
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
