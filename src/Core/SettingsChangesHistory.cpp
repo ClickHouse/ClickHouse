@@ -86,7 +86,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"default_reader_bucket_count", 8, 8, "New experimental setting."},
             {"optimize_exchanges", 0, 0, "New experimental setting."},
             {"force_exchange_kind", "", "", "New experimental setting."},
-            {"allow_experimental_delta_kernel_rs", false, false, "New setting"},
             {"update_sequential_consistency", true, true, "A new setting"},
             {"update_parallel_mode", "auto", "auto", "A new setting"},
             {"lightweight_delete_mode", "alter_update", "alter_update", "A new setting"},
