@@ -6,7 +6,6 @@
 #include <Common/Arena.h>
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
-#include <Common/logger_useful.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <DataTypes/Native.h>
