@@ -3,6 +3,7 @@
 #include <parquet/encoding.h>
 #include <parquet/schema.h>
 #include <arrow/util/rle_encoding.h>
+#include <arrow/util/crc32.h>
 #include <lz4.h>
 #include <xxhash.h>
 #include <Columns/MaskOperations.h>
@@ -707,8 +708,12 @@ void writeColumnImpl(
         d.__set_encoding(use_dictionary ? parq::Encoding::RLE_DICTIONARY : encoding);
         d.__set_definition_level_encoding(parq::Encoding::RLE);
         d.__set_repetition_level_encoding(parq::Encoding::RLE);
-        /// We could also put checksum in `header.crc`, but apparently no one uses it:
-        /// https://issues.apache.org/jira/browse/PARQUET-594
+
+        if (options.write_checksums)
+        {
+            uint32_t crc = arrow::internal::crc32(0, compressed.data(), compressed.size());
+            header.__set_crc(crc);
+        }
 
         parq::Statistics page_stats = page_statistics.get(options);
         bool has_null_count = s.max_def == 1 && s.max_rep == 0;
@@ -768,6 +773,12 @@ void writeColumnImpl(
         header.__isset.dictionary_page_header = true;
         header.dictionary_page_header.__set_num_values(dict_encoder->num_entries());
         header.dictionary_page_header.__set_encoding(parq::Encoding::PLAIN);
+
+        if (options.write_checksums)
+        {
+            uint32_t crc = arrow::internal::crc32(0, compressed.data(), compressed.size());
+            header.__set_crc(crc);
+        }
 
         writePage(header, compressed, s, /*add_to_offset_index*/ false, /*first_row_index*/ 0, out);
 

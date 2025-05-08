@@ -292,7 +292,9 @@ struct FormatSettings
         bool output_compliant_nested_types = true;
         bool write_page_index = false;
         bool write_bloom_filter = false;
+        bool write_checksums = true;
         bool enable_row_group_prefetch = true;
+        bool verify_checksums = true;
         std::unordered_set<int> skip_row_groups = {};
         UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
         size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;

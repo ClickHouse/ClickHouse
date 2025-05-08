@@ -109,6 +109,7 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Blo
         options.write_batch_size = format_settings.parquet.write_batch_size;
         options.write_page_index = format_settings.parquet.write_page_index;
         options.write_bloom_filter = format_settings.parquet.write_bloom_filter;
+        options.write_checksums = format_settings.parquet.write_checksums;
         options.bloom_filter_bits_per_value = format_settings.parquet.bloom_filter_bits_per_value;
         options.bloom_filter_flush_threshold_bytes = format_settings.parquet.bloom_filter_flush_threshold_bytes;
 

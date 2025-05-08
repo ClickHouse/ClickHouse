@@ -774,6 +774,7 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
     parquet::ReaderProperties reader_properties(ArrowMemoryPool::instance());
     arrow_properties.set_use_threads(false);
     arrow_properties.set_batch_size(row_group_batch.adaptive_chunk_size);
+    reader_properties.set_page_checksum_verification(format_settings.parquet.verify_checksums);
 
     // When reading a row group, arrow will:
     //  1. Look at `metadata` to get all byte ranges it'll need to read from the file (typically one
