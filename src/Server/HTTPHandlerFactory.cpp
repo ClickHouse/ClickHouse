@@ -5,6 +5,7 @@
 #include <Server/PrometheusRequestHandlerFactory.h>
 #include <Server/IServer.h>
 
+#include <Poco/Net/HTTPResponse.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include "HTTPHandler.h"
@@ -38,9 +39,13 @@ public:
     {
     }
 
-    void handleRequest(HTTPServerRequest &, HTTPServerResponse & response, const ProfileEvents::Event &) override
+    void handleRequest(HTTPServerRequest &, HTTPServerResponseBase & response, const ProfileEvents::Event &) override
     {
-        response.redirect(url);
+        response.setContentLength(Poco::Net::HTTPMessage::UNKNOWN_CONTENT_LENGTH);
+        response.setChunkedTransferEncoding(false);
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_FOUND);
+        response.set("Location", url);
+        response.makeStream()->finalize();
     }
 };
 

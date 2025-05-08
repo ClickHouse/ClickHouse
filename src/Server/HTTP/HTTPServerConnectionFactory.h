@@ -4,7 +4,6 @@
 #include <Server/HTTP/HTTPContext.h>
 #include <Server/TCPServerConnectionFactory.h>
 
-#include <Server/HTTP/HTTP1/HTTP1ServerParams.h>
 #include <Server/HTTP/HTTP2/HTTP2ServerParams.h>
 
 #include <Poco/Net/HTTPServerParams.h>

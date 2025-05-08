@@ -82,7 +82,7 @@ namespace ErrorCodes
 
 namespace
 {
-bool tryAddHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
+bool tryAddHTTPOptionHeadersFromConfig(HTTPServerResponseBase & response, const Poco::Util::LayeredConfiguration & config)
 {
     if (config.has("http_options_response"))
     {
@@ -107,14 +107,14 @@ bool tryAddHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco
 }
 
 /// Process options request. Useful for CORS.
-void processOptionsRequest(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
+void processOptionsRequest(HTTPServerResponseBase & response, const Poco::Util::LayeredConfiguration & config)
 {
     /// If can add some headers from config
     if (tryAddHTTPOptionHeadersFromConfig(response, config))
     {
         response.setKeepAlive(false);
         response.setStatusAndReason(HTTPResponse::HTTP_NO_CONTENT);
-        response.send();
+        response.makeStream()->finalize();
     }
 }
 }
@@ -203,7 +203,7 @@ HTTPHandler::HTTPHandler(IServer & server_, const HTTPHandlerConnectionConfig & 
 HTTPHandler::~HTTPHandler() = default;
 
 
-bool HTTPHandler::authenticateUser(HTTPServerRequest & request, HTMLForm & params, HTTPServerResponse & response)
+bool HTTPHandler::authenticateUser(HTTPServerRequest & request, HTMLForm & params, HTTPServerResponseBase & response)
 {
     return authenticateUserByHTTP(request, params, response, *session, request_credentials, connection_config, server.context(), log);
 }
@@ -212,10 +212,9 @@ bool HTTPHandler::authenticateUser(HTTPServerRequest & request, HTMLForm & param
 void HTTPHandler::processQuery(
     HTTPServerRequest & request,
     HTMLForm & params,
-    HTTPServerResponse & response,
+    HTTPServerResponseBase & response,
     Output & used_output,
-    std::optional<CurrentThread::QueryScope> & query_scope,
-    const ProfileEvents::Event & write_event)
+    std::optional<CurrentThread::QueryScope> & query_scope)
 {
     using namespace Poco::Net;
 
@@ -300,11 +299,7 @@ void HTTPHandler::processQuery(
     Int64 http_zlib_compression_level
         = params.getParsed<Int64>("http_zlib_compression_level", context->getSettingsRef()[Setting::http_zlib_compression_level]);
 
-    used_output.out_holder =
-        std::make_shared<WriteBufferFromHTTPServerResponse>(
-            response,
-            request.getMethod() == HTTPRequest::HTTP_HEAD,
-            write_event);
+    used_output.out_holder = response.makeStream();
     used_output.out_maybe_compressed = used_output.out_holder;
     used_output.out = used_output.out_holder;
 
@@ -561,7 +556,7 @@ void HTTPHandler::processQuery(
                         return;
                     }
 
-                    drainRequestIfNeeded(request, response);
+                    response.drainRequestIfNeeded();
                     used_output.out_holder->setExceptionCode(code);
 
                     auto output_format = FormatFactory::instance().getOutputFormat(format_name, buf, header, context_, format_settings);
@@ -580,7 +575,7 @@ void HTTPHandler::processQuery(
                 bool with_stacktrace = (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true));
                 ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
 
-                drainRequestIfNeeded(request, response);
+                response.drainRequestIfNeeded();
                 used_output.out_holder->setExceptionCode(status.code);
                 current_output_format.setException(status.message);
                 current_output_format.finalize();
@@ -620,14 +615,14 @@ void HTTPHandler::processQuery(
 }
 
 bool HTTPHandler::trySendExceptionToClient(
-    int exception_code, const std::string & message, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
+    int exception_code, const std::string & message, HTTPServerResponseBase & response, Output & used_output)
 try
 {
     if (!used_output.out_holder && !used_output.exception_is_written)
     {
         /// If nothing was sent yet and we don't even know if we must compress the response.
-        auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
-        return wb.cancelWithException(request, exception_code, message, nullptr);
+        auto wb = response.makeStream();
+        return wb->cancelWithException(exception_code, message, nullptr);
     }
 
     chassert(used_output.out_maybe_compressed);
@@ -667,7 +662,7 @@ try
     /// Send the error message into already used (and possibly compressed) stream.
     /// Note that the error message will possibly be sent after some data.
     /// Also HTTP code 200 could have already been sent.
-    return used_output.out_holder->cancelWithException(request, exception_code, message, used_output.out_maybe_compressed.get());
+    return used_output.out_holder->cancelWithException(exception_code, message, used_output.out_maybe_compressed.get());
 }
 catch (...)
 {
@@ -678,7 +673,7 @@ catch (...)
     return false;
 }
 
-void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
+void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response, const ProfileEvents::Event & /* write_event */)
 {
     setThreadName("HTTPHandler");
 
@@ -756,7 +751,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
                             "is no Content-Length header for POST request");
         }
 
-        processQuery(request, params, response, used_output, query_scope, write_event);
+        processQuery(request, params, response, used_output, query_scope);
         if (request_credentials)
             LOG_DEBUG(log, "Authentication in progress...");
         else
@@ -774,7 +769,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
           * If exception is thrown on local server, then stack trace is in separate field.
           */
         ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
-        auto error_sent = trySendExceptionToClient(status.code, status.message, request, response, used_output);
+        auto error_sent = trySendExceptionToClient(status.code, status.message, response, used_output);
 
         used_output.cancel();
 

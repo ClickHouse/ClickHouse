@@ -1,5 +1,6 @@
 #include <memory>
 #include <Server/HTTP/HTTP1/HTTP1ServerConnection.h>
+#include <Server/HTTP/HTTP1/HTTP1ServerResponse.h>
 #include <Server/HTTP/HTTP1/ReadHeaders.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Server/HTTP/HTTPServerRequest.h>
@@ -133,6 +134,15 @@ HTTPServerRequest buildRequest(HTTPContextPtr context, Poco::Net::HTTPServerSess
     return HTTPServerRequest(std::move(request), std::move(body), client_address, server_address, secure, session.socket().impl());
 }
 
+void sendErrorResponse(HTTP1ServerResponse & response, Poco::Net::HTTPResponse::HTTPStatus status)
+{
+    response.setVersion(Poco::Net::HTTPMessage::HTTP_1_1);
+    response.setStatusAndReason(status);
+    response.setKeepAlive(false);
+    response.getSession().setKeepAlive(false);
+    response.makeStream()->finalize();
+}
+
 }
 
 HTTP1ServerConnection::HTTP1ServerConnection(
@@ -161,8 +171,8 @@ void HTTP1ServerConnection::run()
             if (!stopped && tcp_server.isOpen() && session.connected())
             {
                 HTTPServerRequest request = buildRequest(context, session, read_event);
-                HTTPServerResponse response(session);
-                response.attachRequest(&request);  // make a method of HTTPServerResponse?
+                HTTP1ServerResponse response(session, write_event);
+                response.attachRequest(&request);
 
                 Poco::Timestamp now;
 
@@ -187,7 +197,7 @@ void HTTP1ServerConnection::run()
                 {
                     if (!tcp_server.isOpen())
                     {
-                        sendErrorResponse(session, Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
+                        sendErrorResponse(response, Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
                         break;
                     }
                     std::unique_ptr<HTTPRequestHandler> handler(factory->createRequestHandler(request));
@@ -195,21 +205,21 @@ void HTTP1ServerConnection::run()
                     if (handler)
                     {
                         if (request.getExpectContinue() && response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK)
-                            response.sendContinue();
+                            response.send100Continue();
 
                         handler->handleRequest(request, response, write_event);
                         session.setKeepAlive(params->getKeepAlive() && response.getKeepAlive() && session.canKeepAlive());
                     }
                     else
-                        sendErrorResponse(session, Poco::Net::HTTPResponse::HTTP_NOT_IMPLEMENTED);
+                        sendErrorResponse(response, Poco::Net::HTTPResponse::HTTP_NOT_IMPLEMENTED);
                 }
                 catch (Poco::Exception &)
                 {
-                    if (!response.sent())
+                    if (!response.sendStarted())
                     {
                         try
                         {
-                            sendErrorResponse(session, Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+                            sendErrorResponse(response, Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
                         }
                         catch (...) // NOLINT(bugprone-empty-catch)
                         {
@@ -226,7 +236,9 @@ void HTTP1ServerConnection::run()
         catch (const Poco::Net::MessageException & e)
         {
             LOG_DEBUG(LogFrequencyLimiter(getLogger("HTTPServerConnection"), 10), "HTTP request failed: {}: {}", HTTPResponse::HTTP_REASON_BAD_REQUEST, e.displayText());
-            sendErrorResponse(session, Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
+            // MessageException should be thrown only on request parsing error so it is safe to create a new response object here
+            HTTP1ServerResponse response(session, write_event);
+            sendErrorResponse(response, Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
         }
         catch (const Poco::Net::NetException & e)
         {
@@ -252,17 +264,6 @@ void HTTP1ServerConnection::run()
                 throw;
         }
     }
-}
-
-// static
-void HTTP1ServerConnection::sendErrorResponse(Poco::Net::HTTPServerSession & session, Poco::Net::HTTPResponse::HTTPStatus status)
-{
-    HTTPServerResponse response(session);
-    response.setVersion(Poco::Net::HTTPMessage::HTTP_1_1);
-    response.setStatusAndReason(status);
-    response.setKeepAlive(false);
-    response.send();
-    session.setKeepAlive(false);
 }
 
 }

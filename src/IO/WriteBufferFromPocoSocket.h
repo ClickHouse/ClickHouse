@@ -29,9 +29,6 @@ public:
     void writeln(std::string_view str) { write(str); WriteBuffer::write("\n", 1); }
     void writeln(const char * str) { write(str); WriteBuffer::write("\n", 1); }
 
-protected:
-    void nextImpl() override;
-
     void socketSendBytes(const char * ptr, size_t size);
     void socketSendStr(const std::string & str)
     {
@@ -41,6 +38,9 @@ protected:
     {
         socketSendBytes(ptr, strlen(ptr));
     }
+
+protected:
+    void nextImpl() override;
 
     Poco::Net::Socket & socket;
 

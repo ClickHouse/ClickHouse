@@ -24,7 +24,7 @@ namespace ErrorCodes
 }
 
 class HTMLForm;
-class HTTPServerResponse;
+class HTTPServerResponseBase;
 class ReadBuffer;
 class WriteBuffer;
 
@@ -34,7 +34,7 @@ class InterserverIOEndpoint
 {
 public:
     virtual std::string getId(const std::string & path) const = 0;
-    virtual void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) = 0;
+    virtual void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponseBase & response) = 0;
     virtual ~InterserverIOEndpoint() = default;
 
     /// You need to stop the data transfer if blocker is activated.
