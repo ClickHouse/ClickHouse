@@ -181,6 +181,22 @@ static inline auto createHandlersFactoryFromConfig(
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
+            else if (handler_type == "js")
+            {
+                // NOTE: JavaScriptWebUIRequestHandler only makes sense for path == "/js/"
+                // because that path is hardcoded in dashboard.html (/js/uplot.js)
+                const auto & path = config.getString(prefix + "." + key + ".url", "/js/");
+                if (path != "/js/")
+                {
+                    throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                                    "Handler type 'js' is only supported for url '/js/'. "
+                                    "Configured path here: {}", path);
+                }
+
+                auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<JavaScriptWebUIRequestHandler>>(server);
+                handler->addFiltersFromConfig(config, prefix + "." + key);
+                main_handler_factory->addHandler(std::move(handler));
+            }
             else
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Unknown handler type '{}' in config here: {}.{}.handler.type",
                     handler_type, prefix, key);
