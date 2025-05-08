@@ -1,37 +1,47 @@
 ---
-description: 'Documentation for ALTER DATABASE ... MODIFY COMMENT Statements'
+description: 'Documentation for ALTER DATABASE ... MODIFY COMMENT statements
+which allow adding, modifying, or removing database comments.'
 slug: /sql-reference/statements/alter/database-comment
 sidebar_position: 51
-sidebar_label: 'UPDATE'
+sidebar_label: 'ALTER DATABASE ... MODIFY COMMENT'
 title: 'ALTER DATABASE ... MODIFY COMMENT Statements'
+keywords: ['ALTER DATABASE', 'MODIFY COMMENT']
 ---
 
 # ALTER DATABASE ... MODIFY COMMENT
 
-Adds, modifies, or removes comment to the database, regardless of whether it was set before. Comment change is reflected in both [system.databases](/operations/system-tables/databases.md) and `SHOW CREATE DATABASE` query.
+Adds, modifies, or removes a database comment, regardless of whether it was set
+before or not. The comment change is reflected in both [`system.databases`](/operations/system-tables/databases.md) 
+and the `SHOW CREATE DATABASE` query.
 
-**Syntax**
+## Syntax {#syntax}
 
 ``` sql
 ALTER DATABASE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 ```
 
-**Examples**
+## Examples {#examples}
 
-Creating a DATABASE with comment (for more information, see the [COMMENT](/sql-reference/statements/create/table#comment-clause) clause):
+To create a `DATABASE` with a comment:
 
 ``` sql
 CREATE DATABASE database_with_comment ENGINE = Memory COMMENT 'The temporary database';
 ```
 
-Modifying the table comment:
+To modify the comment:
 
 ``` sql
-ALTER DATABASE database_with_comment MODIFY COMMENT 'new comment on a database';
-SELECT comment FROM system.databases WHERE name = 'database_with_comment';
+ALTER DATABASE database_with_comment 
+MODIFY COMMENT 'new comment on a database';
 ```
 
-Output of a new comment:
+To view the modified comment:
+
+```sql
+SELECT comment 
+FROM system.databases 
+WHERE name = 'database_with_comment';
+```
 
 ```text
 ┌─comment─────────────────┐
@@ -39,17 +49,28 @@ Output of a new comment:
 └─────────────────────────┘
 ```
 
-Removing the database comment:
+To remove the database comment:
 
 ``` sql
-ALTER DATABASE database_with_comment MODIFY COMMENT '';
-SELECT comment FROM system.databases WHERE  name = 'database_with_comment';
+ALTER DATABASE database_with_comment 
+MODIFY COMMENT '';
 ```
 
-Output of a removed comment:
+To verify that the comment was removed:
 
-```text
+```sql title="Query"
+SELECT comment 
+FROM system.databases 
+WHERE  name = 'database_with_comment';
+```
+
+```text title="Response"
 ┌─comment─┐
 │         │
 └─────────┘
 ```
+
+## Related content {#related-content}
+
+- [`COMMENT`](/sql-reference/statements/create/table#comment-clause) clause
+- [`ALTER TABLE ... MODIFY COMMENT`](./comment.md)

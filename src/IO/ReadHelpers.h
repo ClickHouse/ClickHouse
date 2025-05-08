@@ -1398,6 +1398,20 @@ inline void readBinaryEndian(T & x, ReadBuffer & buf)
 }
 
 template <typename T>
+inline void readBinaryEndian(T & x, ReadBuffer & buf, std::endian endian)
+{
+    switch (endian)
+    {
+    case std::endian::little:
+        readBinaryLittleEndian(x, buf);
+        break;
+    case std::endian::big:
+        readBinaryBigEndian(x, buf);
+        break;
+    }
+}
+
+template <typename T>
 inline void readBinaryLittleEndian(T & x, ReadBuffer & buf)
 {
     readBinaryEndian<std::endian::little>(x, buf);

@@ -718,6 +718,14 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::STOP_VIEWS:
             startStopAction(ActionLocks::ViewRefresh, false);
             break;
+        case Type::START_REPLICATED_VIEW:
+            for (const auto & task : getRefreshTasks())
+                task->startReplicated();
+            break;
+        case Type::STOP_REPLICATED_VIEW:
+            for (const auto & task : getRefreshTasks())
+                task->stopReplicated("SYSTEM STOP REPLICATED VIEW");
+            break;
         case Type::REFRESH_VIEW:
             for (const auto & task : getRefreshTasks())
                 task->run();
@@ -1625,8 +1633,10 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::WAIT_VIEW:
         case Type::START_VIEW:
         case Type::START_VIEWS:
+        case Type::START_REPLICATED_VIEW:
         case Type::STOP_VIEW:
         case Type::STOP_VIEWS:
+        case Type::STOP_REPLICATED_VIEW:
         case Type::CANCEL_VIEW:
         case Type::TEST_VIEW:
         {
