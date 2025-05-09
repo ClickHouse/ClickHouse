@@ -941,7 +941,7 @@ class ClickHouseCluster:
             try:
                 return self.docker_client.containers.get(docker_id)
             except Exception as ex:
-                logging.debug("Got exception getting docker handle", str(ex))
+                logging.debug(f"Got exception getting docker handle {ex}")
                 time.sleep(0.5)
                 exception = ex
         raise exception
