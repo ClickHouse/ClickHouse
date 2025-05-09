@@ -717,7 +717,7 @@ MutableColumnPtr ColumnUniqueFCBlockDF::detachChangedIndexes()
 
 MutableColumnPtr ColumnUniqueFCBlockDF::prepareForInsert(const MutableColumnPtr & column_to_modify, const ColumnPtr & to_insert, ColumnPtr & sorted_column)
 {
-    MutableColumnPtr mapping = ColumnUInt64::create(column_to_modify->size());
+    const size_t initial_size = column_to_modify->size();
     
     IColumn::Permutation sorted_permutation;
     column_to_modify->insertRangeFrom(*to_insert, 0, to_insert->size());
@@ -734,21 +734,40 @@ MutableColumnPtr ColumnUniqueFCBlockDF::prepareForInsert(const MutableColumnPtr 
     {
         map.insert({sorted_column->getDataAt(i), map.size()});
     }
-
-    auto * mapping_data = static_cast<ColumnUInt64 &>(*mapping).getData().data();
-
-    /// we must take into account that in nullable case there are 2 empty strings
+    
     const size_t special_values = specialValuesCount();
-    for (size_t i = 0; i < special_values; ++i)
+    const auto get_column_of_type = [&](auto type)
     {
-        mapping_data[i] = i;
-    }
-    for (size_t i = special_values; i < mapping->size(); ++i)
-    {
-        mapping_data[i] = map.at(column_to_modify->getDataAt(i)) + special_values - 1;
-    }
+        using IntType = decltype(type);
+        auto column = ColumnVector<IntType>::create(initial_size);
+        ColumnVector<IntType> * column_ptr = static_cast<ColumnVector<IntType> *>(column.get());
 
-    return mapping;
+        /// we must take into account that in nullable case there are 2 empty strings
+        for (size_t i = 0; i < special_values; ++i)
+        {
+            column_ptr->getData()[i] = i;
+        }
+        for (size_t i = special_values; i < initial_size; ++i)
+        {
+            column_ptr->getData()[i] = map.at(column_to_modify->getDataAt(i)) + special_values - 1;
+        }
+        return column;
+    };
+
+    const UInt64 max_index = map.size() + special_values - 2;
+    if (max_index <= std::numeric_limits<UInt8>::max())
+    {
+        return get_column_of_type(UInt8());
+    }
+    else if (max_index <= std::numeric_limits<UInt16>::max())
+    {
+        return get_column_of_type(UInt16());
+    }
+    else if (max_index <= std::numeric_limits<UInt32>::max())
+    {
+        return get_column_of_type(UInt32());
+    }
+    return get_column_of_type(UInt64());
 }
 
 size_t ColumnUniqueFCBlockDF::specialValuesCount() const
