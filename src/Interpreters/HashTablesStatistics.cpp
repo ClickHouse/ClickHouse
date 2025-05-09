@@ -17,8 +17,7 @@ std::optional<Entry> HashTablesStatistics<Entry>::getSizeHint(const Params & par
     if (!params.isCollectionAndUseEnabled())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Collection and use of the statistics should be enabled.");
 
-    std::lock_guard lock(mutex);
-    const auto cache = getHashTableStatsCache(params, lock);
+    const auto cache = getHashTableStatsCache(params);
     if (const auto hint = cache->get(params.key))
     {
         LOG_TRACE(getLogger("HashTablesStatistics"), "An entry for key={} found in cache: {}", params.key, hint->dump());
@@ -34,8 +33,7 @@ void HashTablesStatistics<Entry>::update(const Entry & new_entry, const Params &
     if (!params.isCollectionAndUseEnabled())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Collection and use of the statistics should be enabled.");
 
-    std::lock_guard lock(mutex);
-    const auto cache = getHashTableStatsCache(params, lock);
+    const auto cache = getHashTableStatsCache(params);
     const auto hint = cache->get(params.key);
     // We'll maintain the maximum among all the observed values until another prediction is much lower (that should indicate some change)
     if (!hint || hint->shouldBeUpdated(new_entry))
@@ -60,9 +58,9 @@ std::optional<HashTablesCacheStatistics> HashTablesStatistics<Entry>::getCacheSt
 }
 
 template <typename Entry>
-HashTablesStatistics<Entry>::CachePtr
-HashTablesStatistics<Entry>::getHashTableStatsCache(const Params & params, const std::lock_guard<std::mutex> &)
+HashTablesStatistics<Entry>::CachePtr HashTablesStatistics<Entry>::getHashTableStatsCache(const Params & params)
 {
+    std::lock_guard lock(mutex);
     if (!hash_table_stats)
         hash_table_stats = std::make_shared<Cache>(params.max_entries_for_hash_table_stats * sizeof(Entry));
     return hash_table_stats;

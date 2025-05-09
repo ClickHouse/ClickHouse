@@ -632,7 +632,7 @@ void logQueryFinishImpl(
 
     }
 
-    if (query_span)
+    if (query_span && query_span->isTraceEnabled())
     {
         query_span->addAttribute("db.statement", elem.query);
         query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
