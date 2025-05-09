@@ -3,7 +3,7 @@
 EXPLAIN indexes = 1, description=0
 SELECT arr
 FROM index_test
-WHERE has(arrayMap(x -> lowerUTF8(x), arr), lowerUTF8('a_12'))
+WHERE has(arrayMap(x -> lower(x), arr), lower('a_12'))
 SETTINGS enable_analyzer = 1;
 Expression
   Filter
@@ -16,7 +16,7 @@ Expression
         Granules: 1/4
 SELECT arr
 FROM index_test
-WHERE has(arrayMap(x -> lowerUTF8(x), arr), lowerUTF8('a_12'))
+WHERE has(arrayMap(x -> lower(x), arr), lower('a_12'))
 SETTINGS enable_analyzer = 1;
 ['A_0','A_1','A_2','A_3','A_4','A_5','A_6','A_7','A_8','A_9','A_10','A_11','A_12']
 ['A_0','A_1','A_2','A_3','A_4','A_5','A_6','A_7','A_8','A_9','A_10','A_11','A_12','A_13']
@@ -24,7 +24,7 @@ SETTINGS enable_analyzer = 1;
 EXPLAIN indexes = 1, description=0
 SELECT arr
 FROM index_test
-WHERE has(arrayMap((x, y) -> concat(lowerUTF8(x), y), arr, arr), 'a_12A_12')
+WHERE has(arrayMap((x, y) -> concat(lower(x), y), arr, arr), 'a_12A_12')
 SETTINGS enable_analyzer = 1;
 Expression
   Filter
@@ -37,7 +37,7 @@ Expression
         Granules: 1/4
 SELECT arr
 FROM index_test
-WHERE has(arrayMap((x, y) -> concat(lowerUTF8(x), y), arr, arr), 'a_12A_12')
+WHERE has(arrayMap((x, y) -> concat(lower(x), y), arr, arr), 'a_12A_12')
 SETTINGS enable_analyzer = 1;
 ['A_0','A_1','A_2','A_3','A_4','A_5','A_6','A_7','A_8','A_9','A_10','A_11','A_12']
 ['A_0','A_1','A_2','A_3','A_4','A_5','A_6','A_7','A_8','A_9','A_10','A_11','A_12','A_13']
@@ -45,7 +45,7 @@ SETTINGS enable_analyzer = 1;
 EXPLAIN indexes = 1, description=0
 SELECT arr
 FROM index_test
-WHERE has(arrayMap((x, y) -> concat(lowerUTF8(x), y, '_', toString(id)), arr, arr), 'a_12A_12_13')
+WHERE has(arrayMap((x, y) -> concat(lower(x), y, '_', toString(id)), arr, arr), 'a_12A_12_13')
 SETTINGS enable_analyzer = 1;
 Expression
   Filter
@@ -58,6 +58,6 @@ Expression
         Granules: 1/4
 SELECT arr
 FROM index_test
-WHERE has(arrayMap((x, y) -> concat(lowerUTF8(x), y, '_', toString(id)), arr, arr), 'a_12A_12_13')
+WHERE has(arrayMap((x, y) -> concat(lower(x), y, '_', toString(id)), arr, arr), 'a_12A_12_13')
 SETTINGS enable_analyzer = 1;
 ['A_0','A_1','A_2','A_3','A_4','A_5','A_6','A_7','A_8','A_9','A_10','A_11','A_12']
