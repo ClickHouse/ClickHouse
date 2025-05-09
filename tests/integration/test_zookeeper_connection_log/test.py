@@ -1,0 +1,107 @@
+import time
+
+import pytest
+import logging
+
+from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
+
+cluster = ClickHouseCluster(__file__, zookeeper_config_path="configs/zookeeper_config.xml")
+node = cluster.add_instance(
+    "node",
+    with_zookeeper=True,
+    stay_alive=True,
+    main_configs=["configs/zookeeper_connection_log.xml", "configs/auxiliary_zookeepers.xml"],
+    keeper_randomize_feature_flags=False,
+)
+
+@pytest.fixture(scope="module")
+def started_cluster():
+    try:
+        cluster.start()
+        yield cluster
+    finally:
+        cluster.shutdown()
+
+
+def test_zookeeper_connection_log(started_cluster):
+    # First flush logs to write the first connection log item, then truncate the table, drop the tables and restart ClickHouse.
+    # In this way after ClickHouse restarts, the connection log will be empty.
+    node.query("SYSTEM FLUSH LOGS")
+    node.query("TRUNCATE TABLE IF EXISTS system.zookeeper_connection_log")
+    node.query("DROP TABLE IF EXISTS simple SYNC")
+    node.query("DROP TABLE IF EXISTS simple2 SYNC")
+    node.restart_clickhouse()
+
+    node.query(
+        "CREATE TABLE simple (date Date, id UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple', 'node') ORDER BY tuple() PARTITION BY date;"
+    )
+    node.query("INSERT INTO simple VALUES ('2020-08-27', 1)")
+    node.query("INSERT INTO simple VALUES ('2020-08-28', 1)")
+    node.query("INSERT INTO simple VALUES ('2020-08-29', 1)")
+
+    node.query(
+        "CREATE TABLE simple2 (date Date, id UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/1/simple', 'node') ORDER BY tuple() PARTITION BY date;"
+    )
+
+    node.query(
+        "ALTER TABLE simple2 FETCH PARTITION '2020-08-27' FROM 'zk_conn_log_test_2:/clickhouse/tables/0/simple';"
+    )
+
+    node.query(
+        "ALTER TABLE simple2 FETCH PARTITION '2020-08-28' FROM 'zk_conn_log_test_3:/clickhouse/tables/0/simple';"
+    )
+
+    new_auxiliary_config = """<clickhouse>
+    <auxiliary_zookeepers>
+        <zk_conn_log_test_2>
+            <node index="1">
+                <host>zoo3</host>
+                <port>2181</port>
+            </node>
+        </zk_conn_log_test_2>
+        <zk_conn_log_test_4>
+            <node index="1">
+                <host>zoo2</host>
+                <port>2181</port>
+            </node>
+        </zk_conn_log_test_4>
+    </auxiliary_zookeepers>
+</clickhouse>"""
+
+    new_config = """<clickhouse>
+    <zookeeper>
+        <node index="1">
+            <host>zoo2</host>
+            <port>2181</port>
+        </node>
+        <session_timeout_ms>15000</session_timeout_ms>
+    </zookeeper>
+</clickhouse>"""
+
+    with node.with_replace_config("/etc/clickhouse-server/config.d/auxiliary_zookeepers.xml", new_auxiliary_config):
+        with node.with_replace_config("/etc/clickhouse-server/conf.d/zookeeper_config.xml", new_config):
+
+            node.query("SYSTEM RELOAD CONFIG")
+
+            time.sleep(5)
+
+            node.query(
+                "ALTER TABLE simple2 FETCH PARTITION '2020-08-29' FROM 'zk_conn_log_test_4:/clickhouse/tables/0/simple';"
+            )
+
+            node.query("SYSTEM FLUSH LOGS")
+
+            expexted = TSV("""node	Connected	default	zoo1	2181	0	5	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Initialization
+node	Connected	zk_conn_log_test_2	zoo2	2181	0	6	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Initialization
+node	Connected	zk_conn_log_test_3	zoo3	2181	0	7	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Initialization
+node	Disconnected	default	zoo1	2181	0	5	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Config changed
+node	Connected	default	zoo2	2181	0	8	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Config changed
+node	Disconnected	zk_conn_log_test_2	zoo2	2181	0	6	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Config changed
+node	Connected	zk_conn_log_test_2	zoo3	2181	0	9	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Config changed
+node	Disconnected	zk_conn_log_test_3	zoo3	2181	0	7	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Removed from config
+node	Connected	zk_conn_log_test_4	zoo2	2181	0	10	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Initialization""")
+
+            # The trick with client id is necessary for repeated tests, because Keeper's don't restart.
+            assert TSV(node.query("SELECT hostname, type, name, host, port, index, modulo(client_id-5, 6) + 5 AS client_id, keeper_api_version, enabled_feature_flags, reason FROM system.zookeeper_connection_log ORDER BY event_time_microseconds")) == expexted
