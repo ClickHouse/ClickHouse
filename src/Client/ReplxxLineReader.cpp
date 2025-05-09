@@ -1,3 +1,4 @@
+#include <Client/ClientBaseHelpers.h>
 #include <Client/ReplxxLineReader.h>
 #include <base/errnoToString.h>
 
@@ -390,7 +391,10 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
     /// We don't want to allow opening EDITOR in the embedded mode.
     if (!options.embedded_mode)
-        rx.bind_key(Replxx::KEY::meta('E'), [this](char32_t) { openEditor(); return Replxx::ACTION_RESULT::CONTINUE; });
+    {
+        rx.bind_key(Replxx::KEY::meta('E'), [this](char32_t) { openEditor(/*format_query=*/ false); return Replxx::ACTION_RESULT::CONTINUE; });
+        rx.bind_key(Replxx::KEY::meta('F'), [this](char32_t) { openEditor(/*format_query=*/ true); return Replxx::ACTION_RESULT::CONTINUE; });
+    }
 
     /// readline insert-comment
     auto insert_comment_action = [this](char32_t code)
@@ -530,12 +534,20 @@ void ReplxxLineReader::addToHistory(const String & line)
         rx.print("Unlock of history file failed: %s\n", errnoToString().c_str());
 }
 
-void ReplxxLineReader::openEditor()
+void ReplxxLineReader::openEditor(bool format_query)
 {
+    /// We need to clear till the end of screen *before*, to avoid extra new-line in case of multi-line queries
+    rx.invoke(replxx::Replxx::ACTION::CLEAR_SELF, 0);
+
     try
     {
+        String query = rx.get_state().text();
+
+        if (format_query)
+            query = formatQuery(std::move(query));
+
         TemporaryFile editor_file("clickhouse_client_editor_XXXXXX.sql");
-        editor_file.write(rx.get_state().text());
+        editor_file.write(query);
         editor_file.close();
 
         char * const argv[] = {editor.data(), editor_file.getPath().data(), nullptr};
@@ -551,11 +563,15 @@ void ReplxxLineReader::openEditor()
             rx.print(fmt::format("Editor {} terminated unsuccessfully: {}\n", backQuoteIfNeed(editor), editor_exit_code).data());
         }
     }
-    catch (const std::runtime_error & e)
+    catch (const std::exception & e)
     {
+        rx.print("\n");
         rx.print(e.what());
         rx.print("\n");
     }
+
+    rx.invoke(replxx::Replxx::ACTION::CLEAR_SELF, 0);
+    rx.invoke(replxx::Replxx::ACTION::REPAINT, 0);
 
     if (bracketed_paste_enabled)
         enableBracketedPaste();
