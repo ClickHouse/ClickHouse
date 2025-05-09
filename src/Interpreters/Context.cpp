@@ -4088,6 +4088,10 @@ DDLWorker & Context::getDDLWorker() const
     throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "DDL background thread is not initialized");
 }
 
+static constexpr auto keeper_init_reason = "Initialization";
+static constexpr auto keeper_removed_from_config = "Removed from config";
+static constexpr auto keeper_expired_reason = "Session expired";
+
 zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
@@ -4098,22 +4102,22 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     {
         shared->zookeeper = zkutil::ZooKeeper::create(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog());
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
-            zookeeper_connection_log->addConnected("default", *shared->zookeeper);
+            zookeeper_connection_log->addConnected(ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, keeper_init_reason);
     }
 
     if (shared->zookeeper->expired())
     {
         Stopwatch watch;
         LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper");
-        
+
         auto old_zookeeper = shared->zookeeper;
 
         shared->zookeeper = shared->zookeeper->startNewSession();
 
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
         {
-            zookeeper_connection_log->addDisconnected("default", *old_zookeeper);
-            zookeeper_connection_log->addConnected("default", *shared->zookeeper);
+            zookeeper_connection_log->addDisconnected(ZooKeeperConnectionLog::default_zookeeper_name, *old_zookeeper, keeper_expired_reason);
+            zookeeper_connection_log->addConnected(ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, keeper_expired_reason);
         }
 
         if (isServerCompletelyStarted())
@@ -4301,6 +4305,7 @@ void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::Abstr
 zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 {
     std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
+    const auto config_name = "auxiliary_zookeepers." + name;
 
     auto zookeeper = shared->auxiliary_zookeepers.find(name);
     if (zookeeper == shared->auxiliary_zookeepers.end())
@@ -4309,19 +4314,20 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid auxiliary ZooKeeper name {}: ':' and '/' are not allowed", name);
 
         const auto & config = shared->auxiliary_zookeepers_config ? *shared->auxiliary_zookeepers_config : getConfigRef();
-        if (!config.has("auxiliary_zookeepers." + name))
+        if (!config.has(config_name))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Unknown auxiliary ZooKeeper name '{}'. If it's required it can be added to the section <auxiliary_zookeepers> in "
                 "config.xml",
                 name);
 
+
         zookeeper = shared->auxiliary_zookeepers.emplace(name,
-                        zkutil::ZooKeeper::create(config, "auxiliary_zookeepers." + name, getZooKeeperLog())).first;
+                        zkutil::ZooKeeper::create(config, config_name, getZooKeeperLog())).first;
 
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
-            zookeeper_connection_log->addConnected(name, *zookeeper->second);
-            
+            zookeeper_connection_log->addConnected(name, *zookeeper->second, keeper_init_reason);
+
     }
     else if (zookeeper->second->expired())
     {
@@ -4330,8 +4336,8 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
         {
-            zookeeper_connection_log->addDisconnected(name, *old_zookeeper);
-            zookeeper_connection_log->addConnected(name, *zookeeper->second);
+            zookeeper_connection_log->addDisconnected(name, *old_zookeeper, keeper_expired_reason);
+            zookeeper_connection_log->addConnected(name, *zookeeper->second, keeper_expired_reason);
         }
     }
 
@@ -4350,29 +4356,20 @@ std::map<String, zkutil::ZooKeeperPtr> Context::getAuxiliaryZooKeepers() const
     return shared->auxiliary_zookeepers;
 }
 
-void Context::resetZooKeeper() const
-{
-    auto zookeeper_connection_log = DB::Context::getGlobalContextInstance()->getZooKeeperConnectionLog();
-    std::lock_guard lock(shared->zookeeper_mutex);
-
-    if (shared->zookeeper && zookeeper_connection_log)
-        zookeeper_connection_log->addDisconnected("default", *shared->zookeeper);
-
-    shared->zookeeper.reset();
-}
-
 static void reloadZooKeeperIfChangedImpl(
     const ConfigurationPtr & config,
+    const std::string_view keeper_name,
     const std::string & config_name,
     zkutil::ZooKeeperPtr & zk,
     std::shared_ptr<ZooKeeperLog> zk_log,
     std::shared_ptr<ZooKeeperConnectionLog> zk_conection_log,
     bool server_started)
 {
+    static constexpr auto reason = "Config changed";
     if (!zk || zk->configChanged(*config, config_name))
     {
         if (zk)
-            zk->finalize("Config changed");
+            zk->finalize(reason);
 
         auto old_zk = zk;
 
@@ -4380,8 +4377,8 @@ static void reloadZooKeeperIfChangedImpl(
 
         if (zk_conection_log)
         {
-            zk_conection_log->addDisconnected(config_name, *old_zk);
-            zk_conection_log->addConnected(config_name, *zk);
+            zk_conection_log->addDisconnected(keeper_name, *old_zk, reason);
+            zk_conection_log->addConnected(keeper_name, *zk, reason);
         }
 
         if (server_started)
@@ -4396,7 +4393,7 @@ void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
     std::lock_guard lock(shared->zookeeper_mutex);
     shared->zookeeper_config = config;
 
-    reloadZooKeeperIfChangedImpl(config, zkutil::getZooKeeperConfigName(*config), shared->zookeeper, getZooKeeperLog(), getZooKeeperConnectionLog(), server_started);
+    reloadZooKeeperIfChangedImpl(config, ZooKeeperConnectionLog::default_zookeeper_name, zkutil::getZooKeeperConfigName(*config), shared->zookeeper, getZooKeeperLog(), getZooKeeperConnectionLog(), server_started);
 }
 
 void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config)
@@ -4410,16 +4407,20 @@ void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & 
 
     for (auto it = shared->auxiliary_zookeepers.begin(); it != shared->auxiliary_zookeepers.end();)
     {
-        if (!config->has("auxiliary_zookeepers." + it->first))
+        const auto config_name = "auxiliary_zookeepers." + it->first;
+        LOG_TRACE(shared->log, "Reloading auxiliary ZooKeeper config for {}", it->first);
+        if (!config->has(config_name))
         {
+            LOG_TRACE(shared->log, "Removing auxiliary ZooKeeper {}", it->first);
             if (zookeeper_connection_log)
-                zookeeper_connection_log->addDisconnected(it->first, *it->second);
+                zookeeper_connection_log->addDisconnected(it->first, *it->second, keeper_removed_from_config);
 
             it = shared->auxiliary_zookeepers.erase(it);
         }
         else
         {
-            reloadZooKeeperIfChangedImpl(config, "auxiliary_zookeepers." + it->first, it->second, getZooKeeperLog(), getZooKeeperConnectionLog(), server_started);
+            LOG_TRACE(shared->log, "Replacing auxiliary ZooKeeper {}", it->first);
+            reloadZooKeeperIfChangedImpl(config, it->first, config_name, it->second, getZooKeeperLog(), zookeeper_connection_log, server_started);
             ++it;
         }
     }
@@ -5966,13 +5967,6 @@ ZooKeeperMetadataTransactionPtr Context::getZooKeeperMetadataTransaction() const
 {
     assert(!metadata_transaction || hasQueryContext());
     return metadata_transaction;
-}
-
-void Context::resetZooKeeperMetadataTransaction()
-{
-    assert(metadata_transaction);
-    assert(hasQueryContext());
-    metadata_transaction = nullptr;
 }
 
 void Context::setParentTable(UUID uuid)

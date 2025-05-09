@@ -31,49 +31,40 @@ ColumnsDescription ZooKeeperConnectionLogElement::getColumnsDescription()
             {"Disconnected",    static_cast<Int8>(EventType::Disconnected)},
         });
 
-        DataTypeEnum16::Values feature_flags_enum_values;
-        feature_flags_enum_values.reserve(magic_enum::enum_count<KeeperFeatureFlag>());
-        for (const auto & [feature_flag, feature_flag_string] : magic_enum::enum_entries<KeeperFeatureFlag>())
-            feature_flags_enum_values.push_back(std::pair{std::string{feature_flag_string}, static_cast<Int16>(feature_flag)});
+    DataTypeEnum16::Values feature_flags_enum_values;
+    feature_flags_enum_values.reserve(magic_enum::enum_count<KeeperFeatureFlag>());
+    for (const auto & [feature_flag, feature_flag_string] : magic_enum::enum_entries<KeeperFeatureFlag>())
+        feature_flags_enum_values.push_back(std::pair{std::string{feature_flag_string}, static_cast<Int16>(feature_flag)});
 
-        auto feature_flags_enum = std::make_shared<DataTypeEnum16>(std::move(feature_flags_enum_values));
+    auto feature_flags_enum = std::make_shared<DataTypeEnum16>(std::move(feature_flags_enum_values));
 
-        return ColumnsDescription{
-            {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server which is connected to or disconnected from ZooKeeper."},
-            {"type", std::move(type_enum), "The type of the event. Possible values: Connected, Disconnected."},
-            {"event_date", std::make_shared<DataTypeDate>(), "Date of the entry."},
-            {"event_time", std::make_shared<DataTypeDateTime>(), "Time of the entry"},
-            {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Time of the entry with microseconds precision."},
-            {"name", std::make_shared<DataTypeString>(), "ZooKeeper cluster's name."},
-            {"host", std::make_shared<DataTypeString>(), "The hostname/IP of the ZooKeeper node that ClickHouse connected to or disconnected from."},
-            {"port", std::make_shared<DataTypeUInt16>(), "The port of the ZooKeeper node that ClickHouse connected to or disconnected from."},
-            {"index", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "The index of the ZooKeeper node that ClickHouse connected to or disconnected from. The index is from ZooKeeper config."},
-            {"client_id", std::make_shared<DataTypeInt64>(), "Session id of the connection."},
-            {"keeper_api_version", std::make_shared<DataTypeUInt8>(), "Keeper API version."},
-            {"enabled_feature_flags", std::make_shared<DataTypeArray>(std::move(feature_flags_enum)), "Feature flags which are enabled. Only applicable to ClickHouse Keeper."},
-            {"availability_zone", std::make_shared<DataTypeString>(), "Availability zone"},
-        };
+    return ColumnsDescription{
+        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server which is connected to or disconnected from ZooKeeper."},
+        {"type", std::move(type_enum), "The type of the event. Possible values: Connected, Disconnected."},
+        {"event_date", std::make_shared<DataTypeDate>(), "Date of the entry."},
+        {"event_time", std::make_shared<DataTypeDateTime>(), "Time of the entry"},
+        {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Time of the entry with microseconds precision."},
+        {"name", std::make_shared<DataTypeString>(), "ZooKeeper cluster's name."},
+        {"host", std::make_shared<DataTypeString>(), "The hostname/IP of the ZooKeeper node that ClickHouse connected to or disconnected from."},
+        {"port", std::make_shared<DataTypeUInt16>(), "The port of the ZooKeeper node that ClickHouse connected to or disconnected from."},
+        {"index", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "The index of the ZooKeeper node that ClickHouse connected to or disconnected from. The index is from ZooKeeper config."},
+        {"client_id", std::make_shared<DataTypeInt64>(), "Session id of the connection."},
+        {"keeper_api_version", std::make_shared<DataTypeUInt8>(), "Keeper API version."},
+        {"enabled_feature_flags", std::make_shared<DataTypeArray>(std::move(feature_flags_enum)), "Feature flags which are enabled. Only applicable to ClickHouse Keeper."},
+        {"availability_zone", std::make_shared<DataTypeString>(), "Availability zone"},
+        {"reason", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Reason for the connection or disconnection."}, // Updated field
+    };
 }
 
 
-void ZooKeeperConnectionLog::addConnected(std::string_view name, const zkutil::ZooKeeper& zookeeper)
+void ZooKeeperConnectionLog::addConnected(std::string_view name, const zkutil::ZooKeeper& zookeeper, const String & reason)
 {
-    addWithEventType(ZooKeeperConnectionLogElement::EventType::Connected, name, zookeeper);
+    addWithEventType(ZooKeeperConnectionLogElement::EventType::Connected, name, zookeeper, reason);
 }
 
-void ZooKeeperConnectionLog::addDisconnected(std::string_view name, const zkutil::ZooKeeper& zookeeper)
+void ZooKeeperConnectionLog::addDisconnected(std::string_view name, const zkutil::ZooKeeper& zookeeper, const String & reason)
 {
-    addWithEventType(ZooKeeperConnectionLogElement::EventType::Disconnected, name, zookeeper);
-}
-
-ZooKeeperConnectionLogElement ZooKeeperConnectionLog::createConnected(std::string_view name, const zkutil::ZooKeeper& zookeeper)
-{
-    return createWithEventType(ZooKeeperConnectionLogElement::EventType::Connected, name, zookeeper);
-}
-
-ZooKeeperConnectionLogElement ZooKeeperConnectionLog::createDisconnected(std::string_view name, const zkutil::ZooKeeper& zookeeper)
-{
-    return createWithEventType(ZooKeeperConnectionLogElement::EventType::Disconnected, name, zookeeper);
+    addWithEventType(ZooKeeperConnectionLogElement::EventType::Disconnected, name, zookeeper, reason);
 }
 
 Array ZooKeeperConnectionLog::getEnabledFeatureFlags(const zkutil::ZooKeeper& zookeeper)
@@ -116,14 +107,14 @@ void ZooKeeperConnectionLogElement::appendToBlock(MutableColumns & columns) cons
     columns[i++]->insert(keeper_api_version);
     columns[i++]->insert(enabled_feature_flags);
     columns[i++]->insert(availability_zone);
+    columns[i++]->insert(reason);
 }
 
-void ZooKeeperConnectionLog::addWithEventType(const ZooKeeperConnectionLogElement::EventType type, std::string_view name, const zkutil::ZooKeeper& zookeeper)
-{
-    add(createWithEventType(type, name, zookeeper));
-}
-
-ZooKeeperConnectionLogElement ZooKeeperConnectionLog::createWithEventType(const ZooKeeperConnectionLogElement::EventType type, std::string_view name, const zkutil::ZooKeeper& zookeeper)
+void ZooKeeperConnectionLog::addWithEventType(
+    ZooKeeperConnectionLogElement::EventType type,
+    std::string_view name,
+    const zkutil::ZooKeeper & zookeeper,
+    const String & reason)
 {
     ZooKeeperConnectionLogElement element;
     element.event_type = type;
@@ -146,8 +137,8 @@ ZooKeeperConnectionLogElement ZooKeeperConnectionLog::createWithEventType(const 
     element.client_id = zookeeper.getClientID();
     element.enabled_feature_flags = getEnabledFeatureFlags(zookeeper);
     element.availability_zone = zookeeper.getConnectedHostAvailabilityZone();
+    element.reason = reason;
 
-    return element;
-
+    add(std::move(element));
 }
 }
