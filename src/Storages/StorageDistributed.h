@@ -78,6 +78,7 @@ public:
     bool supportsSubcolumns() const override { return true; }
     bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsDistributedProduct() const override { return getShardCount() >= 2; }
     StoragePolicyPtr getStoragePolicy() const override;
 
     /// Do not apply moving to PREWHERE optimization for distributed tables,
