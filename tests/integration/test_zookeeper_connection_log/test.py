@@ -86,8 +86,8 @@ def test_zookeeper_connection_log(started_cluster):
     </zookeeper>
 </clickhouse>"""
 
-    with node.with_replace_config("/etc/clickhouse-server/config.d/auxiliary_zookeepers.xml", new_auxiliary_config):
-        with node.with_replace_config("/etc/clickhouse-server/conf.d/zookeeper_config.xml", new_config):
+    with node.with_replace_config("/etc/clickhouse-server/conf.d/zookeeper_config.xml", new_config):
+        with node.with_replace_config("/etc/clickhouse-server/config.d/auxiliary_zookeepers.xml", new_auxiliary_config):
 
             node.query("SYSTEM RELOAD CONFIG")
 
