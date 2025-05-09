@@ -233,7 +233,7 @@ public:
     }
 
     template <typename Data>
-    ALWAYS_INLINE std::optional<EmplaceResult> emplaceKeyOptimization(Data & data, size_t row, Arena & pool, const std::vector<OptimizationDataOneExpression> & optimization_indexes, size_t limit_plus_offset_length)
+    ALWAYS_INLINE std::optional<EmplaceResult> emplaceKeyOptimization(Data & data, size_t row, Arena & pool, const std::vector<OptimizationDataOneExpression> & optimization_indexes, size_t limit_plus_offset_length, size_t max_allowable_fill)
     {
         if constexpr (nullable)
         {
@@ -259,7 +259,7 @@ public:
         }
 
         auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
-        return emplaceImplOptimization(key_holder, data, limit_plus_offset_length, optimization_indexes);
+        return emplaceImplOptimization(key_holder, data, limit_plus_offset_length, optimization_indexes, max_allowable_fill);
     }
 
     template <typename Data>
@@ -474,7 +474,8 @@ protected:
         KeyHolder & key_holder,
         Data & data,
         size_t limit_plus_offset_length,
-        const std::vector<OptimizationDataOneExpression> & optimization_indexes)
+        const std::vector<OptimizationDataOneExpression> & optimization_indexes,
+        size_t max_allowable_fill)
     {
         chassert(limit_plus_offset_length > 0);
         if constexpr (consecutive_keys_optimization)
@@ -488,9 +489,7 @@ protected:
             }
         }
 
-        typename Data::LookupResult it;
-        bool inserted = false;
-        data.emplace(key_holder, it, inserted);
+        // TODO first check is less than top of priority_queue, if more -- return std::nullopt
 
         if constexpr (!std::is_same_v<decltype(key_holder), const VoidKey>) { // TODO VoidKey doesn't work in compareKeyHolders
             if constexpr (!std::is_same_v<KeyHolder, DB::SerializedKeyHolder>
@@ -498,8 +497,8 @@ protected:
                        && !std::is_same_v<KeyHolder, Int128>
                        && !std::is_same_v<KeyHolder, UInt128>
                        && !std::is_same_v<KeyHolder, Int256>
-                       && !std::is_same_v<KeyHolder, UInt256>) { // MVP. TODO support all types
-                if (data.size() >= limit_plus_offset_length * 2)
+                       && !std::is_same_v<KeyHolder, UInt256>) { // TODO support all types
+                if (data.size() >= max_allowable_fill) // TODO ==
                 {
                     assert(optimization_indexes.size() == 1 && optimization_indexes[0].index_of_expression_in_group_by == 0); // TODO support arbitrary number of expressions in findOptimizationSublistIndexes
                     if constexpr (HasBegin<Data>::value)
@@ -535,11 +534,6 @@ protected:
                                 elements_to_erase.push_back(data_iterators[i]->getKey());
                             for (const auto element : elements_to_erase)
                                 data.erase(element);
-
-                            // renew iterator
-                            it = data.find(key_holder);
-                            if (it == data.end())
-                                return std::nullopt;
                         }
                     } else if constexpr (HasForEachMapped<Data>::value)
                     {
@@ -550,6 +544,12 @@ protected:
                 }
             }
         }
+
+        typename Data::LookupResult it;
+        bool inserted = false;
+        data.emplace(key_holder, it, inserted);
+
+        // TODO if inserted, push to priority_queue and pop largest element
 
         [[maybe_unused]] Mapped * cached = nullptr;
         if constexpr (has_mapped)
