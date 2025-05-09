@@ -1,6 +1,5 @@
 #include "WebUIRequestHandler.h"
 #include "IServer.h"
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/LayeredConfiguration.h>

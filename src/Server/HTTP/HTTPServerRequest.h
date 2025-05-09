@@ -53,7 +53,7 @@ private:
     std::unique_ptr<ReadBuffer> body;
     Poco::Net::SocketAddress client_address;
     Poco::Net::SocketAddress server_address;
-    
+
     const bool secure;
 
     /// FIXME: this field should not exist

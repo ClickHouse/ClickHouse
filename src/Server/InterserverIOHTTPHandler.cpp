@@ -8,7 +8,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterserverIOHandler.h>
 #include <Server/HTTP/HTMLForm.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 

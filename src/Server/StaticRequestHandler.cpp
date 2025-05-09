@@ -13,7 +13,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 
 #include <Common/Exception.h>
 

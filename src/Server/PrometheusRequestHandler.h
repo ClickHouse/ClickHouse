@@ -10,7 +10,6 @@ namespace DB
 class AsynchronousMetrics;
 class IServer;
 class PrometheusMetricsWriter;
-class WriteBufferFromHTTPServerResponse;
 
 /// Handles requests for prometheus protocols (expose_metrics, remote_write, remote-read).
 class PrometheusRequestHandler : public HTTPRequestHandler

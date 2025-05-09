@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <Poco/AutoPtr.h>
 #include <Poco/RefCountedObject.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -13,6 +14,15 @@ public:
     using Ptr = Poco::AutoPtr<HTTP2ServerParams>;
 
     static Ptr fromConfig(const Poco::Util::AbstractConfiguration & config);
+
+    uint32_t getMaxConcurrentStreams() const noexcept { return max_concurrent_streams; }
+    uint32_t getInitialWindowSize() const noexcept { return initial_window_size; }
+    uint32_t getMaxFrameSize() const noexcept { return max_frame_size; }
+
+private:
+    uint32_t max_concurrent_streams = 100;
+    uint32_t initial_window_size = 65535;
+    uint32_t max_frame_size = 65535;
 };
 
 }

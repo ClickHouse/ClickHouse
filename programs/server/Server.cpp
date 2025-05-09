@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/ThreadPool.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
@@ -2772,6 +2773,7 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     const std::string & protocol,
     Poco::Net::HTTPServerParams::Ptr http1_params,
     HTTP2ServerParams::Ptr http2_params,
+    Poco::ThreadPool & thread_pool,
     AsynchronousMetrics & async_metrics,
     bool & is_secure)
 {
@@ -2799,15 +2801,15 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
 #endif
         if (type == "http")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http1_params, http2_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
+                new HTTPServerConnectionFactory(httpContext(), http1_params, http2_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), thread_pool, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
             );
         if (type == "prometheus")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http1_params, http2_params, createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes)
+                new HTTPServerConnectionFactory(httpContext(), http1_params, http2_params, createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), thread_pool, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes)
             );
         if (type == "interserver")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http1_params, http2_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"), ProfileEvents::InterfaceInterserverReceiveBytes, ProfileEvents::InterfaceInterserverSendBytes)
+                new HTTPServerConnectionFactory(httpContext(), http1_params, http2_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"), thread_pool, ProfileEvents::InterfaceInterserverReceiveBytes, ProfileEvents::InterfaceInterserverSendBytes)
             );
 
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol configuration error, unknown protocol name '{}'", type);
@@ -2907,7 +2909,7 @@ void Server::createServers(
         for (const auto & host : hosts)
         {
             bool is_secure = false;
-            auto stack = buildProtocolStackFromConfig(config, protocol, http1_params, http2_params, async_metrics, is_secure);
+            auto stack = buildProtocolStackFromConfig(config, protocol, http1_params, http2_params, server_pool, async_metrics, is_secure);
 
             if (stack->empty())
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' stack empty", protocol);

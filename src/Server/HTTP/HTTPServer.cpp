@@ -15,7 +15,7 @@ HTTPServer::HTTPServer(
     const TCPServerConnectionFilter::Ptr & filter,
     const ProfileEvents::Event & read_event,
     const ProfileEvents::Event & write_event)
-    : TCPServer(new HTTPServerConnectionFactory(context, http1_params, http2_params, factory_, read_event, write_event), thread_pool, socket_, http1_params, filter), factory(factory_)
+    : TCPServer(new HTTPServerConnectionFactory(context, http1_params, http2_params, factory_, thread_pool, read_event, write_event), thread_pool, socket_, http1_params, filter), factory(factory_)
 {
 }
 
