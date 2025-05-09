@@ -352,8 +352,8 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
         {
             auto get_block_id = [&](BlockWithPartition & block_)
             {
-                block_id = AsyncInsertBlockInfo::getHashesForBlocks(block_, temp_part->part->info.partition_id);
-                LOG_TRACE(log, "async insert part, part id {}, block id {}, offsets {}, size {}", temp_part->part->info.partition_id, toString(block_id), toString(block_.offsets), block_.offsets.size());
+                block_id = AsyncInsertBlockInfo::getHashesForBlocks(block_, temp_part->part->info.getPartitionId());
+                LOG_TRACE(log, "async insert part, part id {}, block id {}, offsets {}, size {}", temp_part->part->info.getPartitionId(), toString(block_id), toString(block_.offsets), block_.offsets.size());
             };
             get_block_id(unmerged_block ? *unmerged_block : current_block);
         }
@@ -586,7 +586,7 @@ bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::Mutabl
         part->info.mutation = 0;
 
         part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
-        String block_id = deduplicate ? fmt::format("{}_{}", part->info.partition_id, part->checksums.getTotalChecksumHex()) : "";
+        String block_id = deduplicate ? fmt::format("{}_{}", part->info.getPartitionId(), part->checksums.getTotalChecksumHex()) : "";
         bool deduplicated = commitPart(zookeeper, part, block_id, replicas_num).second;
 
         int error = 0;
@@ -868,7 +868,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         /// Also, make deduplication check. If a duplicate is detected, no nodes are created.
 
         /// Allocate new block number and check for duplicates
-        auto block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zookeeper, block_id_path); /// 1 RTT
+        auto block_number_lock = storage.allocateBlockNumber(part->info.getPartitionId(), zookeeper, block_id_path); /// 1 RTT
 
         ThreadFuzzer::maybeInjectSleep();
 

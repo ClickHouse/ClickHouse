@@ -60,6 +60,7 @@
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/WindowFunctionsUtils.h>
+#include <Analyzer/Utils.h>
 
 #include <Planner/Planner.h>
 #include <Planner/Utils.h>
@@ -172,6 +173,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_distributed_insert_select;
     extern const SettingsBool prefer_localhost_replica;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool prefer_global_in_and_join;
 }
 
 namespace DistributedSetting
@@ -781,6 +783,84 @@ public:
     }
 };
 
+class RewriteInToGlobalInVisitor : public InDepthQueryTreeVisitorWithContext<RewriteInToGlobalInVisitor>
+{
+public:
+    using Base = InDepthQueryTreeVisitorWithContext<RewriteInToGlobalInVisitor>;
+    using Base::Base;
+
+    void enterImpl(QueryTreeNodePtr & node)
+    {
+        if (auto * function_node = node->as<FunctionNode>(); function_node && isNameOfLocalInFunction(function_node->getFunctionName()))
+        {
+            auto * query = function_node->getArguments().getNodes()[1]->as<QueryNode>();
+            if (!query)
+                return;
+            bool no_replace = true;
+            for (const auto & table_node : extractTableExpressions(query->getJoinTree(), false, true))
+            {
+                const StorageDistributed * storage_distributed = nullptr;
+                if (const TableNode * table_node_typed = table_node->as<TableNode>())
+                    storage_distributed = typeid_cast<const StorageDistributed *>(table_node_typed->getStorage().get());
+                else if (const TableFunctionNode * table_function_node_typed = table_node->as<TableFunctionNode>())
+                    storage_distributed = typeid_cast<const StorageDistributed *>(table_function_node_typed->getStorage().get());
+
+                if (!storage_distributed)
+                {
+                    no_replace = false;
+                    break;
+                }
+            }
+            if (no_replace)
+                return;
+
+            auto result_function = std::make_shared<FunctionNode>(getGlobalInFunctionNameForLocalInFunctionName(function_node->getFunctionName()));
+            result_function->getArguments().getNodes() = std::move(function_node->getArguments().getNodes());
+            resolveOrdinaryFunctionNodeByName(*result_function, result_function->getFunctionName(), getContext());
+            node = result_function;
+        }
+    }
+
+    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr &)
+    {
+        if (auto * function_node = parent->as<FunctionNode>(); function_node && function_node->getFunctionName().starts_with("global"))
+            return false;
+
+        return true;
+    }
+};
+
+bool rewriteJoinToGlobalJoinIfNeeded(QueryTreeNodePtr join_tree)
+{
+    bool rewrite = false;
+
+    auto * join = join_tree->as<JoinNode>();
+    if (!join)
+        return rewrite;
+
+    auto table_expression = join->getRightTableExpression();
+
+    if (QueryNode * query = table_expression->as<QueryNode>())
+        rewrite = rewriteJoinToGlobalJoinIfNeeded(query->getJoinTree());
+    else if (const TableNode * table_node_typed = table_expression->as<TableNode>())
+    {
+        if (!typeid_cast<const StorageDistributed *>(table_node_typed->getStorage().get()))
+            rewrite = true;
+    }
+    else if (const TableFunctionNode * table_function_node_typed = table_expression->as<TableFunctionNode>())
+    {
+        if (!typeid_cast<const StorageDistributed *>(table_function_node_typed->getStorage().get()))
+            rewrite = true;
+    }
+
+    if (rewrite)
+        join->setLocality(JoinLocality::Global);
+
+    rewriteJoinToGlobalJoinIfNeeded(join->getLeftTableExpression());
+
+    return rewrite;
+}
+
 QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     const StorageSnapshotPtr & distributed_storage_snapshot,
     const StorageID & remote_storage_id,
@@ -836,6 +916,20 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     ReplaseAliasColumnsVisitor replase_alias_columns_visitor;
     replase_alias_columns_visitor.visit(query_tree_to_modify);
 
+    const auto & settings = query_context->getSettingsRef();
+
+    if (settings[Setting::prefer_global_in_and_join])
+    {
+        auto & query_node = query_tree_to_modify->as<QueryNode&>();
+        if (query_node.hasWhere())
+        {
+            RewriteInToGlobalInVisitor visitor(query_context);
+            visitor.visit(query_node.getWhere());
+        }
+
+        rewriteJoinToGlobalJoinIfNeeded(query_node.getJoinTree());
+    }
+
     return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify);
 }
 
@@ -864,7 +958,7 @@ void StorageDistributed::read(
             remote_storage_id = StorageID{remote_database, remote_table};
 
         auto query_tree_distributed = buildQueryTreeDistributed(modified_query_info,
-            query_info.merge_storage_snapshot ? query_info.merge_storage_snapshot : storage_snapshot,
+            query_info.initial_storage_snapshot ? query_info.initial_storage_snapshot : storage_snapshot,
             remote_storage_id,
             remote_table_function_ptr);
         header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
@@ -1057,6 +1151,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     QueryPipeline pipeline;
     ContextMutablePtr query_context = Context::createCopy(local_context);
     query_context->increaseDistributedDepth();
+    query_context->setSetting("enable_parallel_replicas", Field{0}); // TODO: allow parallel inserts with PR for distributed tables
 
     for (size_t shard_index : collections::range(0, shards_info.size()))
     {
@@ -1153,9 +1248,6 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     if (filter)
         predicate = filter->getOutputs().at(0);
 
-    /// Select query is needed for pruining on virtual columns
-    auto extension = src_storage_cluster.getTaskIteratorExtension(predicate, local_context);
-
     auto dst_cluster = getCluster();
 
     auto new_query = std::dynamic_pointer_cast<ASTInsertQuery>(query.clone());
@@ -1182,8 +1274,14 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     const auto & current_settings = query_context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
-    /// Here we take addresses from destination cluster and assume source table exists on these nodes
     const auto cluster = getCluster();
+
+    /// Select query is needed for pruining on virtual columns
+    auto number_of_replicas = static_cast<UInt64>(cluster->getShardsInfo().size());
+    auto extension = src_storage_cluster.getTaskIteratorExtension(predicate, local_context, number_of_replicas);
+
+    /// Here we take addresses from destination cluster and assume source table exists on these nodes
+    size_t replica_index = 0;
     for (const auto & replicas : cluster->getShardsInfo())
     {
         /// Skip unavailable hosts if necessary
@@ -1192,6 +1290,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
         /// There will be only one replica, because we consider each replica as a shard
         for (const auto & try_result : try_results)
         {
+            IConnections::ReplicaInfo replica_info{ .number_of_current_replica = replica_index++ };
+
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                 std::vector<IConnectionPool::Entry>{try_result},
                 new_query_str,
@@ -1202,7 +1302,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
                 Tables{},
                 QueryProcessingStage::Complete,
                 nullptr,
-                extension);
+                RemoteQueryExecutor::Extension{.task_iterator = extension.task_iterator, .replica_info = std::move(replica_info)});
 
             QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(
                 remote_query_executor, false, settings[Setting::async_socket_for_remote], settings[Setting::async_query_sending_for_remote]));

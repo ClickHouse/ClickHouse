@@ -112,6 +112,8 @@ struct FormatSettings
 
     size_t max_threads = 1;
 
+    size_t max_block_size_bytes = 0;
+
     enum class ArrowCompression : uint8_t
     {
         NONE,
@@ -325,6 +327,8 @@ struct FormatSettings
 
         UInt64 squash_consecutive_ms = 50;
         UInt64 squash_max_wait_ms = 1000;
+        /// Set to 2 for auto
+        UInt64 glue_chunks = 2;
 
         bool fallback_to_vertical = true;
         UInt64 fallback_to_vertical_max_rows_per_chunk = 100;

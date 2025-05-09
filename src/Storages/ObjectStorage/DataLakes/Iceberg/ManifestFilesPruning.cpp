@@ -23,8 +23,8 @@ using namespace DB;
 
 namespace ProfileEvents
 {
-    extern const Event IcebergPartitionPrunnedFiles;
-    extern const Event IcebergMinMaxIndexPrunnedFiles;
+    extern const Event IcebergPartitionPrunedFiles;
+    extern const Event IcebergMinMaxIndexPrunedFiles;
 }
 
 
@@ -191,7 +191,7 @@ bool ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
 
         if (!can_be_true)
         {
-            ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunnedFiles);
+            ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunedFiles);
             return true;
         }
     }
@@ -207,7 +207,7 @@ bool ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
         auto hyperrectangle = entry.columns_infos.at(column_id).hyperrectangle;
         if (hyperrectangle.has_value() && !key_condition.mayBeTrueInRange(1, &hyperrectangle->left, &hyperrectangle->right, {name_and_type->type}))
         {
-            ProfileEvents::increment(ProfileEvents::IcebergMinMaxIndexPrunnedFiles);
+            ProfileEvents::increment(ProfileEvents::IcebergMinMaxIndexPrunedFiles);
             return true;
         }
     }

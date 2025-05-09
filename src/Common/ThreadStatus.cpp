@@ -28,6 +28,15 @@ namespace ErrorCodes
 namespace
 {
 
+constexpr bool guardPagesEnabled()
+{
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    return true;
+#else
+    return false;
+#endif
+}
+
 /// For aarch64 16K is not enough (likely due to tons of registers)
 constexpr size_t UNWIND_MINSIGSTKSZ = 32 << 10;
 
@@ -47,28 +56,42 @@ struct ThreadStack
 {
     ThreadStack()
     {
-        data = aligned_alloc(getPageSize(), getSize());
+        auto page_size = getPageSize();
+        data = aligned_alloc(page_size, getSize());
         if (!data)
             throw ErrnoException(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate ThreadStack");
 
-        try
+        if constexpr (guardPagesEnabled())
         {
-            /// Since the stack grows downward, we need to protect the first page
-            memoryGuardInstall(data, getPageSize());
-        }
-        catch (...)
-        {
-            free(data);
-            throw;
+            try
+            {
+                /// Since the stack grows downward, we need to protect the first page
+                memoryGuardInstall(data, page_size);
+            }
+            catch (...)
+            {
+                free(data);
+                throw;
+            }
         }
     }
     ~ThreadStack()
     {
-        memoryGuardRemove(data, getPageSize());
+        if constexpr (guardPagesEnabled())
+            memoryGuardRemove(data, getPageSize());
+
         free(data);
     }
 
-    static size_t getSize() { return std::max<size_t>(UNWIND_MINSIGSTKSZ, MINSIGSTKSZ); }
+    static size_t getSize()
+    {
+        auto size = std::max<size_t>(UNWIND_MINSIGSTKSZ, MINSIGSTKSZ);
+
+        if constexpr (guardPagesEnabled())
+            size += getPageSize();
+
+        return size;
+    }
     void * getData() const { return data; }
 
 private:

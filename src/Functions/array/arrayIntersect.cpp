@@ -640,6 +640,13 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
         // We have NULL in output only once if it should be there
         bool null_added = false;
         bool use_null_map;
+        const auto & arg = arrays.args[0];
+        size_t off;
+        // const array has only one row
+        if (arg.is_const)
+            off = (*arg.offsets)[0];
+        else
+            off = (*arg.offsets)[row];
 
         if constexpr (std::is_same_v<Mode, ArrayModeUnion>)
         {
@@ -657,12 +664,6 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
                 null_map.push_back(1);
                 null_added = true;
             }
-            const auto & arg = arrays.args[0];
-            // const array has only one row
-            if (arg.is_const)
-                prev_off[0] = 0;
-            else
-                prev_off[0] = (*arg.offsets)[row];
         }
         else if constexpr (std::is_same_v<Mode, ArrayModeSymmetricDifference>)
         {
@@ -684,13 +685,6 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
         else if constexpr (std::is_same_v<Mode, ArrayModeIntersect>)
         {
             use_null_map = all_nullable;
-            const auto & arg = arrays.args[0];
-            size_t off;
-            // const array has only one row
-            if (arg.is_const)
-                off = (*arg.offsets)[0];
-            else
-                off = (*arg.offsets)[row];
 
             for (auto i : collections::range(prev_off[0], off))
             {
@@ -719,9 +713,6 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
                     const char * data = nullptr;
                     pair = map.find(columns[0]->serializeValueIntoArena(i, arena, data));
                 }
-                prev_off[0] = off;
-                if (arg.is_const)
-                    prev_off[0] = 0;
 
                 if (!current_has_nullable)
                     all_has_nullable = false;
@@ -732,6 +723,10 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
                     insertElement<Map, ColumnType, is_numeric_column>(pair, result_offset, result_data, null_map, use_null_map);
             }
         }
+        // Now we update the offsets for the first array
+        prev_off[0] = off;
+        if (arg.is_const)
+            prev_off[0] = 0;
 
         result_offsets.getElement(row) = result_offset;
     }

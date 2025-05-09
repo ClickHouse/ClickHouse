@@ -33,9 +33,6 @@ if (OS_LINUX)
     target_link_libraries (thread_creation_latency PRIVATE dbms clickhouse_common_io clickhouse_common_config)
 endif()
 
-clickhouse_add_executable (array_cache array_cache.cpp)
-target_link_libraries (array_cache PRIVATE clickhouse_common_io clickhouse_common_config)
-
 clickhouse_add_executable (space_saving space_saving.cpp)
 target_link_libraries (space_saving PRIVATE dbms clickhouse_common_io clickhouse_common_config)
 

@@ -472,7 +472,7 @@ void ReplicatedMergeTreeQueue::removeCoveredPartsFromMutations(const String & pa
 
     LOG_TEST(log, "Removing part {} from mutations (remove_part: {}, remove_covered_parts: {})", part_name, remove_part, remove_covered_parts);
 
-    auto in_partition = mutations_by_partition.find(part_info.partition_id);
+    auto in_partition = mutations_by_partition.find(part_info.getPartitionId());
     if (in_partition == mutations_by_partition.end())
         return;
 
@@ -513,7 +513,7 @@ void ReplicatedMergeTreeQueue::addPartToMutations(const String & part_name, cons
     LOG_TEST(log, "Adding part {} to mutations", part_name);
     assert(!part_info.isFakeDropRangePart());
 
-    auto in_partition = mutations_by_partition.find(part_info.partition_id);
+    auto in_partition = mutations_by_partition.find(part_info.getPartitionId());
     if (in_partition == mutations_by_partition.end())
         return;
 
@@ -902,7 +902,7 @@ ActiveDataPartSet getPartNamesToMutate(
             for (const auto & part_to_drop : entry_representation.dropped_parts)
             {
                 auto part_to_drop_info = MergeTreePartInfo::fromPartName(part_to_drop, format_version);
-                if (part_to_drop_info.partition_id == partition_id)
+                if (part_to_drop_info.getPartitionId() == partition_id)
                     result.removePartAndCoveredParts(part_to_drop);
             }
 
@@ -910,7 +910,7 @@ ActiveDataPartSet getPartNamesToMutate(
             for (const auto & part_to_add : entry_representation.produced_parts)
             {
                 auto part_to_add_info = MergeTreePartInfo::fromPartName(part_to_add, format_version);
-                if (part_to_add_info.partition_id == partition_id && part_to_add_info.getDataVersion() < block_num)
+                if (part_to_add_info.getPartitionId() == partition_id && part_to_add_info.getDataVersion() < block_num)
                     result.add(part_to_add);
             }
         }
@@ -1954,7 +1954,7 @@ std::shared_ptr<ReplicatedMergeTreeZooKeeperMergePredicate> ReplicatedMergeTreeQ
 
 MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
 {
-    auto in_partition = mutations_by_partition.find(part->info.partition_id);
+    auto in_partition = mutations_by_partition.find(part->info.getPartitionId());
     if (in_partition == mutations_by_partition.end())
         return {};
 
@@ -2104,10 +2104,10 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
 
     std::lock_guard lock(state_mutex);
 
-    auto in_partition = mutations_by_partition.find(part->info.partition_id);
+    auto in_partition = mutations_by_partition.find(part->info.getPartitionId());
     if (in_partition == mutations_by_partition.end())
     {
-        LOG_WARNING(log, "There are no mutations for partition ID {} (trying to mutate part {} to {})", part->info.partition_id, part->name, toString(desired_mutation_version));
+        LOG_WARNING(log, "There are no mutations for partition ID {} (trying to mutate part {} to {})", part->info.getPartitionId(), part->name, toString(desired_mutation_version));
         return MutationCommands{};
     }
 
@@ -2118,7 +2118,7 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
         LOG_WARNING(log,
             "Mutation with version {} not found in partition ID {} (trying to mutate part {})",
             desired_mutation_version,
-            part->info.partition_id,
+            part->info.getPartitionId(),
             part->name);
     else
         ++end;
@@ -2344,7 +2344,7 @@ std::optional<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getIncompleteMu
     if (mutation_ids && !status.latest_fail_reason.empty())
     {
         const auto & latest_failed_part_info = status.latest_failed_part_info;
-        auto in_partition = mutations_by_partition.find(latest_failed_part_info.partition_id);
+        auto in_partition = mutations_by_partition.find(latest_failed_part_info.getPartitionId());
         if (in_partition != mutations_by_partition.end())
         {
             const auto & version_to_status = in_partition->second;
