@@ -7,6 +7,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Coordination/KeeperConstants.h>
 
 #include <future>
 #include <memory>
@@ -452,7 +453,7 @@ public:
 
     Coordination::Error trySync(const std::string & path, std::string & returned_path);
 
-    Int64 getClientID();
+    Int64 getClientID() const;
 
     /// Remove the node with the subtree.
     /// If Keeper supports RemoveRecursive operation then it will be performed atomically.
