@@ -4090,8 +4090,6 @@ DDLWorker & Context::getDDLWorker() const
 
 zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
-    auto zookeeper_connection_log = DB::Context::getGlobalContextInstance()->getZooKeeperConnectionLog();
-
     std::lock_guard lock(shared->zookeeper_mutex);
 
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
@@ -4099,22 +4097,24 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     if (!shared->zookeeper)
     {
         shared->zookeeper = zkutil::ZooKeeper::create(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog());
-        if (zookeeper_connection_log)
-            zookeeper_connection_log->addConnected("default", *(shared->zookeeper));
+        if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
+            zookeeper_connection_log->addConnected("default", *shared->zookeeper);
     }
 
     if (shared->zookeeper->expired())
     {
         Stopwatch watch;
         LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper");
-
-        if (zookeeper_connection_log)
-            zookeeper_connection_log->addDisconnected("default", *shared->zookeeper);
+        
+        auto old_zookeeper = shared->zookeeper;
 
         shared->zookeeper = shared->zookeeper->startNewSession();
 
-        if (zookeeper_connection_log)
+        if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
+        {
+            zookeeper_connection_log->addDisconnected("default", *old_zookeeper);
             zookeeper_connection_log->addConnected("default", *shared->zookeeper);
+        }
 
         if (isServerCompletelyStarted())
             shared->zookeeper->setServerCompletelyStarted();
@@ -4300,7 +4300,6 @@ void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::Abstr
 
 zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 {
-    auto zookeeper_connection_log = DB::Context::getGlobalContextInstance()->getZooKeeperConnectionLog();
     std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
 
     auto zookeeper = shared->auxiliary_zookeepers.find(name);
@@ -4319,18 +4318,23 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 
         zookeeper = shared->auxiliary_zookeepers.emplace(name,
                         zkutil::ZooKeeper::create(config, "auxiliary_zookeepers." + name, getZooKeeperLog())).first;
+
+        if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
+            zookeeper_connection_log->addConnected(name, *zookeeper->second);
             
     }
     else if (zookeeper->second->expired())
     {
-        if (zookeeper_connection_log)
-            zookeeper_connection_log->addDisconnected(name, *zookeeper->second);
-
+        auto old_zookeeper = zookeeper->second;
         zookeeper->second = zookeeper->second->startNewSession();
+
+        if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
+        {
+            zookeeper_connection_log->addDisconnected(name, *old_zookeeper);
+            zookeeper_connection_log->addConnected(name, *zookeeper->second);
+        }
     }
 
-    if (zookeeper_connection_log)
-        zookeeper_connection_log->addConnected(name, *(zookeeper->second));    
     return zookeeper->second;
 }
 
@@ -4357,11 +4361,12 @@ void Context::resetZooKeeper() const
     shared->zookeeper.reset();
 }
 
-static bool reloadZooKeeperIfChangedImpl(
+static void reloadZooKeeperIfChangedImpl(
     const ConfigurationPtr & config,
     const std::string & config_name,
     zkutil::ZooKeeperPtr & zk,
     std::shared_ptr<ZooKeeperLog> zk_log,
+    std::shared_ptr<ZooKeeperConnectionLog> zk_conection_log,
     bool server_started)
 {
     if (!zk || zk->configChanged(*config, config_name))
@@ -4369,41 +4374,35 @@ static bool reloadZooKeeperIfChangedImpl(
         if (zk)
             zk->finalize("Config changed");
 
+        auto old_zk = zk;
+
         zk = zkutil::ZooKeeper::create(*config, config_name, std::move(zk_log));
+
+        if (zk_conection_log)
+        {
+            zk_conection_log->addDisconnected(config_name, *old_zk);
+            zk_conection_log->addConnected(config_name, *zk);
+        }
+
         if (server_started)
             zk->setServerCompletelyStarted();
-
-        return true;
     }
-    return false;
 }
 
 void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
 {
     bool server_started = isServerCompletelyStarted();
-    auto zookeeper_connection_log = DB::Context::getGlobalContextInstance()->getZooKeeperConnectionLog();
 
     std::lock_guard lock(shared->zookeeper_mutex);
     shared->zookeeper_config = config;
 
-    std::optional<ZooKeeperConnectionLogElement> disconnected_log_element;
-    if (zookeeper_connection_log != nullptr && shared->zookeeper != nullptr)
-        disconnected_log_element = ZooKeeperConnectionLog::createDisconnected("default", *shared->zookeeper);
-
-    const auto created_new = reloadZooKeeperIfChangedImpl(config, zkutil::getZooKeeperConfigName(*config), shared->zookeeper, getZooKeeperLog(), server_started);
-    if (created_new && zookeeper_connection_log != nullptr)
-    {
-        if (disconnected_log_element)
-            zookeeper_connection_log->add(std::move(*disconnected_log_element));
-        
-        zookeeper_connection_log->addConnected("default", *shared->zookeeper);
-    }
+    reloadZooKeeperIfChangedImpl(config, zkutil::getZooKeeperConfigName(*config), shared->zookeeper, getZooKeeperLog(), getZooKeeperConnectionLog(), server_started);
 }
 
 void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config)
 {
     bool server_started = isServerCompletelyStarted();
-    auto zookeeper_connection_log = DB::Context::getGlobalContextInstance()->getZooKeeperConnectionLog();
+    auto zookeeper_connection_log = getZooKeeperConnectionLog();
 
     std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
 
@@ -4420,14 +4419,7 @@ void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & 
         }
         else
         {
-            std::optional<ZooKeeperConnectionLogElement> disconnected_log_element;
-            if (zookeeper_connection_log != nullptr)
-                disconnected_log_element = ZooKeeperConnectionLog::createDisconnected(it->first, *it->second);
-            
-            const auto created_new = reloadZooKeeperIfChangedImpl(config, "auxiliary_zookeepers." + it->first, it->second, getZooKeeperLog(), server_started);
-
-            if (created_new && zookeeper_connection_log != nullptr)
-                zookeeper_connection_log->addConnected(it->first, *it->second);
+            reloadZooKeeperIfChangedImpl(config, "auxiliary_zookeepers." + it->first, it->second, getZooKeeperLog(), getZooKeeperConnectionLog(), server_started);
             ++it;
         }
     }
