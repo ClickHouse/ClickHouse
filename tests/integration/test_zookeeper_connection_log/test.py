@@ -12,7 +12,10 @@ node = cluster.add_instance(
     "node",
     with_zookeeper=True,
     stay_alive=True,
-    main_configs=["configs/zookeeper_connection_log.xml", "configs/auxiliary_zookeepers.xml"],
+    main_configs=[
+        "configs/zookeeper_connection_log.xml",
+        "configs/auxiliary_zookeepers.xml",
+        "configs/config_reloader.xml",],
     keeper_randomize_feature_flags=False,
 )
 
@@ -29,15 +32,12 @@ def test_zookeeper_connection_log(started_cluster):
     node.query("DROP TABLE IF EXISTS simple SYNC")
     node.query("DROP TABLE IF EXISTS simple2 SYNC")
 
-    # Let's restart ClickHouse 2 times to make sure there won't be any config reloads in case of repeated runs.
-    # The previous run would revert the config and ClickHouse sometimes notices it after `test_start_time`. By
-    # restarting it twice, we can be sure no configs are changed after `test_start_time`.
-
-    node.restart_clickhouse()
-
     test_start_time = node.query("SELECT now64()").strip()
     logging.debug(f"Test start time is {test_start_time}")
 
+    # Let's restart ClickHouse to make sure there are log entries for initialization.
+    # By restarting we can also make sure there won't be any config reloads in case of repeated runs.
+    # The previous run would revert the config, but we need to reset the state of config.
     node.restart_clickhouse()
 
     node.query(
