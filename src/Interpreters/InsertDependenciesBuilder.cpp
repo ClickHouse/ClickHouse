@@ -233,12 +233,16 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
     }
     catch (DB::Exception & exception)
     {
-        exception.addMessage("while pushing to view {}", storage.getNameForLogs());
-        return std::current_exception();
+        // we have to make a copy of exception here,
+        // because the original exception is multiplied by CopyTransform
+        // it should not be modified anywhere to avoid concurrant modification
+        auto patch = DB::Exception(exception);
+        patch.addMessage("while pushing to view {}", storage.getNameForLogs());
+        return std::make_exception_ptr(std::move(patch));
     }
     catch (...)
     {
-        return std::current_exception();
+        return ptr;
     }
 }
 
@@ -488,9 +492,9 @@ private:
         {
             std::rethrow_exception(e);
         }
-        catch (BeginingViewsTransform::ExternalException & e)
+        catch (BeginingViewsTransform::ExternalException & wrapped)
         {
-            return {true, e.origin_exception};
+            return {true, wrapped.origin_exception};
         }
         catch (...)
         {
