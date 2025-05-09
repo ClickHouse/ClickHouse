@@ -304,7 +304,7 @@ namespace
                 collectAllFlags(child.get());
 
             all_flags_grantable_on_table_level = all_flags_for_target[TABLE] | all_flags_for_target[DICTIONARY] | all_flags_for_target[COLUMN];
-            all_flags_grantable_on_global_with_parameter_level = all_flags_for_target[NAMED_COLLECTION] | all_flags_for_target[USER_NAME] | all_flags_for_target[TABLE_ENGINE];
+            all_flags_grantable_on_global_with_parameter_level = all_flags_for_target[NAMED_COLLECTION] | all_flags_for_target[USER_NAME] | all_flags_for_target[TABLE_ENGINE] | all_flags_for_target[DEFINER];
             all_flags_grantable_on_database_level = all_flags_for_target[DATABASE] | all_flags_grantable_on_table_level;
         }
 
@@ -378,6 +378,10 @@ std::unordered_map<AccessFlags::ParameterType, AccessFlags> AccessFlags::splitIn
     auto user_flags = AccessFlags::allUserNameFlags() & *this;
     if (user_flags)
         result.emplace(ParameterType::USER_NAME, user_flags);
+
+    auto definer_flags = AccessFlags::allDefinerFlags() & *this;
+    if (definer_flags)
+        result.emplace(ParameterType::DEFINER, user_flags);
 
     auto table_engine_flags = AccessFlags::allTableEngineFlags() & *this;
     if (table_engine_flags)
