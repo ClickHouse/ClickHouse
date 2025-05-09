@@ -236,16 +236,21 @@ namespace Net
         /// to be able to re-use it again.
 
     private:
+        using MutexT = Poco::FastMutex;
+        using LockT = MutexT::ScopedLock;
+        using UnLockT = Poco::ScopedLockWithUnlock<MutexT>;
+
         SecureSocketImpl(const SecureSocketImpl &);
         SecureSocketImpl & operator=(const SecureSocketImpl &);
 
         mutable std::recursive_mutex _mutex;
-        SSL * _pSSL; // GUARDED_BY _mutex
+        std::atomic<SSL *> _pSSL;
         Poco::AutoPtr<SocketImpl> _pSocket;
         Context::Ptr _pContext;
         bool _needHandshake;
         std::string _peerHostName;
         Session::Ptr _pSession;
+        mutable MutexT _ssl_mutex;
 
         friend class SecureStreamSocketImpl;
 

@@ -144,7 +144,7 @@ std::unordered_map<String, PartsRanges> combineByPartitions(PartsRanges && range
     for (auto && range : ranges)
     {
         chassert(!range.empty());
-        ranges_by_partitions[range.front().info.partition_id].push_back(std::move(range));
+        ranges_by_partitions[range.front().info.getPartitionId()].push_back(std::move(range));
     }
 
     return ranges_by_partitions;
@@ -164,7 +164,7 @@ std::unordered_map<String, PartitionStatistics> calculateStatisticsForPartitions
     for (const auto & range : ranges)
     {
         chassert(!range.empty());
-        PartitionStatistics & partition_stats = stats[range.front().info.partition_id];
+        PartitionStatistics & partition_stats = stats[range.front().info.getPartitionId()];
 
         partition_stats.part_count += range.size();
 
@@ -299,7 +299,7 @@ MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_)
 void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoice & merge_choice, const MergeTreeSettingsPtr & settings, time_t current_time)
 {
     chassert(!merge_choice.range.empty());
-    const String & partition_id = merge_choice.range.front().info.partition_id;
+    const String & partition_id = merge_choice.range.front().info.getPartitionId();
 
     switch (merge_choice.merge_type)
     {
@@ -350,7 +350,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
             ranges_in_partition, metadata_snapshot, settings, next_delete_ttl_merge_times_by_partition, next_recompress_ttl_merge_times_by_partition,
             can_use_ttl_merges, current_time, log);
 
-        const String & partition_id = ranges_in_partition.front().front().info.partition_id;
+        const String & partition_id = ranges_in_partition.front().front().info.getPartitionId();
 
         if (merge_choice.has_value())
             partitions_hint.insert(partition_id);
@@ -516,7 +516,7 @@ std::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutato
 /// parts should be sorted.
 MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     FutureMergedMutatedPartPtr future_part,
-    const StorageMetadataPtr & metadata_snapshot,
+    StorageMetadataPtr metadata_snapshot,
     MergeList::Entry * merge_entry,
     std::unique_ptr<MergeListElement> projection_merge_list_element,
     TableLockHolder & holder,
@@ -526,15 +526,15 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     bool deduplicate,
     const Names & deduplicate_by_columns,
     bool cleanup,
-    const MergeTreeData::MergingParams & merging_params,
-    const MergeTreeTransactionPtr & txn,
+    MergeTreeData::MergingParams merging_params,
+    MergeTreeTransactionPtr txn,
     bool need_prefix,
     IMergeTreeDataPart * parent_part,
     const String & suffix)
 {
     return std::make_shared<MergeTask>(
-        future_part,
-        const_cast<StorageMetadataPtr &>(metadata_snapshot),
+        std::move(future_part),
+        std::move(metadata_snapshot),
         merge_entry,
         std::move(projection_merge_list_element),
         time_of_merge,
@@ -544,11 +544,12 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         deduplicate,
         deduplicate_by_columns,
         cleanup,
-        merging_params,
+        std::move(merging_params),
         need_prefix,
         parent_part,
+        nullptr,
         suffix,
-        txn,
+        std::move(txn),
         &data,
         this,
         &merges_blocker,

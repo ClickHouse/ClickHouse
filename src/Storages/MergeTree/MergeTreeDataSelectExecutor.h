@@ -15,8 +15,6 @@ namespace DB
 class KeyCondition;
 struct QueryIdHolder;
 
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
-
 /** Executes SELECT queries on data from the merge tree.
   */
 class MergeTreeDataSelectExecutor
@@ -35,12 +33,12 @@ public:
         ContextPtr context,
         UInt64 max_block_size,
         size_t num_streams,
-        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
+        PartitionIdToMaxBlockPtr max_block_numbers_to_read = nullptr,
         bool enable_parallel_reading = false) const;
 
     /// The same as read, but with specified set of parts.
     QueryPlanStepPtr readFromParts(
-        MergeTreeData::DataPartsVector parts,
+        RangesInDataParts parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -48,7 +46,7 @@ public:
         ContextPtr context,
         UInt64 max_block_size,
         size_t num_streams,
-        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
+        PartitionIdToMaxBlockPtr max_block_numbers_to_read = nullptr,
         ReadFromMergeTree::AnalysisResultPtr merge_tree_select_result_ptr = nullptr,
         bool enable_parallel_reading = false) const;
 
@@ -56,20 +54,21 @@ public:
     /// Reads nothing. Secondary indexes are not used.
     /// This method is used to select best projection for table.
     ReadFromMergeTree::AnalysisResultPtr estimateNumMarksToRead(
-        MergeTreeData::DataPartsVector parts,
+        RangesInDataParts parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         size_t num_streams,
-        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr) const;
+        PartitionIdToMaxBlockPtr max_block_numbers_to_read = nullptr) const;
 
     static MarkRanges markRangesFromPKRange(
-        const MergeTreeData::DataPartPtr & part,
+        const RangesInDataPart & part_with_ranges,
         const StorageMetadataPtr & metadata_snapshot,
         const KeyCondition & key_condition,
         const std::optional<KeyCondition> & part_offset_condition,
+        const std::optional<KeyCondition> & total_offset_condition,
         MarkRanges * exact_ranges,
         const Settings & settings,
         LoggerPtr log);
@@ -80,7 +79,7 @@ private:
 
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
     static size_t getApproximateTotalRowsToRead(
-        const MergeTreeData::DataPartsVector & parts,
+        const RangesInDataParts & parts,
         const StorageMetadataPtr & metadata_snapshot,
         const KeyCondition & key_condition,
         const Settings & settings,
@@ -123,7 +122,7 @@ private:
     /// Select the parts in which there can be data that satisfy `minmax_idx_condition` and that match the condition on `_part`,
     ///  as well as `max_block_number_to_read`.
     static void selectPartsToRead(
-        MergeTreeData::DataPartsVector & parts,
+        RangesInDataParts & parts,
         const std::optional<std::unordered_set<String>> & part_values,
         const std::optional<KeyCondition> & minmax_idx_condition,
         const DataTypes & minmax_columns_types,
@@ -134,7 +133,7 @@ private:
 
     /// Same as previous but also skip parts uuids if any to the query context, or skip parts which uuids marked as excluded.
     static void selectPartsToReadWithUUIDFilter(
-        MergeTreeData::DataPartsVector & parts,
+        RangesInDataParts & parts,
         const std::optional<std::unordered_set<String>> & part_values,
         MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
         const std::optional<KeyCondition> & minmax_idx_condition,
@@ -158,9 +157,13 @@ public:
     static size_t minMarksForConcurrentRead(
         size_t rows_setting, size_t bytes_setting, size_t rows_granularity, size_t bytes_granularity, size_t min_marks, size_t max_marks);
 
-    /// If possible, construct optional key condition from predicates containing _part_offset column.
+    /// If possible, construct optional key condition from predicates containing _part_offset and _part column.
     static void buildKeyConditionFromPartOffset(
         std::optional<KeyCondition> & part_offset_condition, const ActionsDAG::Node * predicate, ContextPtr context);
+
+    /// If possible, construct optional key condition from predicates containing _part_offset + _part_starting_offset expression.
+    static void buildKeyConditionFromTotalOffset(
+        std::optional<KeyCondition> & total_offset_condition, const ActionsDAG::Node * predicate, ContextPtr context);
 
     /// If possible, filter using expression on virtual columns.
     /// Example: SELECT count() FROM table WHERE _part = 'part_name'
@@ -168,13 +171,13 @@ public:
     static std::optional<std::unordered_set<String>> filterPartsByVirtualColumns(
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & data,
-        const MergeTreeData::DataPartsVector & parts,
+        const RangesInDataParts & parts,
         const ActionsDAG::Node * predicate,
         ContextPtr context);
 
     /// Filter parts using minmax index and partition key.
     static void filterPartsByPartition(
-        MergeTreeData::DataPartsVector & parts,
+        RangesInDataParts & parts,
         const std::optional<PartitionPruner> & partition_pruner,
         const std::optional<KeyCondition> & minmax_idx_condition,
         const std::optional<std::unordered_set<String>> & part_values,
@@ -189,11 +192,12 @@ public:
     /// For every part, select mark ranges to read.
     /// If 'check_limits = true' it will throw exception if the amount of data exceed the limits from settings.
     static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(
-        MergeTreeData::DataPartsVector && parts,
+        RangesInDataParts parts_with_ranges,
         StorageMetadataPtr metadata_snapshot,
         const ContextPtr & context,
         const KeyCondition & key_condition,
         const std::optional<KeyCondition> & part_offset_condition,
+        const std::optional<KeyCondition> & total_offset_condition,
         const UsefulSkipIndexes & skip_indexes,
         const MergeTreeReaderSettings & reader_settings,
         LoggerPtr log,
@@ -216,7 +220,7 @@ public:
     static MergeTreeDataSelectSamplingData getSampling(
         const SelectQueryInfo & select_query_info,
         NamesAndTypesList available_real_columns,
-        const MergeTreeData::DataPartsVector & parts,
+        const RangesInDataParts & parts,
         KeyCondition & key_condition,
         const MergeTreeData & data,
         const StorageMetadataPtr & metadata_snapshot,

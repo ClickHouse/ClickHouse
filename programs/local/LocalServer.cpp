@@ -915,9 +915,13 @@ void LocalServer::processConfig()
 
     if (getClientConfiguration().has("path"))
     {
-        attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
+
+        /// Attaching "automatic" tables in the system database is done after attaching the system database.
+        /// Consequently, it depends on whether we load it from the path.
+        /// If it is loaded from a user-specified path, we load it as usual. If not, we create it as a memory (ephemeral) database.
+        bool attached_system_database = false;
 
         String path = global_context->getPath();
 
@@ -933,6 +937,9 @@ void LocalServer::processConfig()
             {
                 LoadTaskPtrs load_system_metadata_tasks = loadMetadataSystem(global_context);
                 waitLoad(TablesLoaderForegroundPoolId, load_system_metadata_tasks);
+
+                attachSystemTablesServer(global_context, *DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE), false);
+                attached_system_database = true;
             }
 
             if (!getClientConfiguration().has("only-system-tables"))
@@ -947,6 +954,9 @@ void LocalServer::processConfig()
 
             LOG_DEBUG(log, "Loaded metadata.");
         }
+
+        if (!attached_system_database)
+            attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
     }
     else if (!getClientConfiguration().has("no-system-tables"))
     {
