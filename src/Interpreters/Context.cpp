@@ -4362,7 +4362,7 @@ static void reloadZooKeeperIfChangedImpl(
     const std::string & config_name,
     zkutil::ZooKeeperPtr & zk,
     std::shared_ptr<ZooKeeperLog> zk_log,
-    std::shared_ptr<ZooKeeperConnectionLog> zk_conection_log,
+    std::shared_ptr<ZooKeeperConnectionLog> zk_concection_log,
     bool server_started)
 {
     static constexpr auto reason = "Config changed";
@@ -4375,10 +4375,10 @@ static void reloadZooKeeperIfChangedImpl(
 
         zk = zkutil::ZooKeeper::create(*config, config_name, std::move(zk_log));
 
-        if (zk_conection_log)
+        if (zk_concection_log)
         {
-            zk_conection_log->addDisconnected(keeper_name, *old_zk, reason);
-            zk_conection_log->addConnected(keeper_name, *zk, reason);
+            zk_concection_log->addDisconnected(keeper_name, *old_zk, reason);
+            zk_concection_log->addConnected(keeper_name, *zk, reason);
         }
 
         if (server_started)
