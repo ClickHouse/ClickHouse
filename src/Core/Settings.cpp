@@ -431,6 +431,11 @@ Maximum number of files that could be returned in batch by ListObject request
 When set to `true` than for all s3 requests first two attempts are made with low send and receive timeouts.
 When set to `false` than all attempts are made with identical timeouts.
 )", 0) \
+    DECLARE(Bool, s3_slow_down_after_network_error, true, R"(
+When set to `true` than all s3 requests to the same endpoint get slow down for a while
+after one s3 request (even if executed in a parallel thread) fails with a retryable network error.
+When set to `false` than s3 requests executed in parallel threads sleep for independent backoffs on network errors.
+)", 0) \
     DECLARE(UInt64, azure_list_object_keys_size, 1000, R"(
 Maximum number of files that could be returned in batch by ListObject request
 )", 0) \

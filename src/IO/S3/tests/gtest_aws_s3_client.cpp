@@ -134,6 +134,7 @@ void testServerSideEncryption(
         remote_host_filter,
         s3_max_redirects,
         s3_retry_attempts,
+        /* slow_down_after_network_error = */ true,
         enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
         /* get_request_throttler = */ {},
