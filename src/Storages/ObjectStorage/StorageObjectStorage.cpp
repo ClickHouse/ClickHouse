@@ -451,7 +451,6 @@ ReadFromFormatInfo StorageObjectStorage::Configuration::prepareReadingFromFormat
     const NamesAndTypesList & file_columns_,
     const NamesAndTypesList & hive_partition_columns_to_read_from_file_path_)
 {
-    [[maybe_unused]] std::size_t f_size = file_columns_.getNames().size();
     return prepareReadingFromFormatArthur(
         requested_columns,
         storage_snapshot,

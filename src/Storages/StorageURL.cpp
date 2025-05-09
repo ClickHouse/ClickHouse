@@ -198,31 +198,9 @@ IStorageURLBase::IStorageURLBase(
     storage_metadata.setComment(comment);
 
     auto & storage_columns = storage_metadata.columns;
-    const auto & columns_in_table_or_function_definition = columns_;
 
-    std::string partition_strategy_name = "wildcard";
-    bool has_partition_strategy = false;
-
-    if (columns_in_table_or_function_definition.empty())
+    if (columns_.empty())
     {
-        /// What does this mean?
-        /// It means it is not create table and it is not a table function with schema specified
-        /// Therefore, we need to infer the schema from existing files in the storage
-        /// If we are using hive path style, we also need to extract the partition columns from the path
-        ///
-        /// It can be one of the following:
-        ///     1. Table function
-        ///
-        ///     What to do for each?
-        ///
-        ///     1. If `use_hive_partitioning=1`, virtual.
-        ///
-        /// Metadata.columns shall include all columns (file and path ones)
-        /// File_columns shall include:
-        ///     1. All columns in case `partition_columns_in_data_file=1`
-        ///     2. All columns except partition columns otherwise
-        ///
-        ///
         if (context_->getSettingsRef()[Setting::use_hive_partitioning])
         {
             hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(storage_columns, getSampleURI(uri, context_), format_settings, context_);
@@ -238,33 +216,10 @@ IStorageURLBase::IStorageURLBase(
             file_columns = storage_columns;
         }
     }
-    else
+    else if (context_->getSettingsRef()[Setting::use_hive_partitioning])
     {
-        /// Schema is specified, no need to infer it.
-        /// It can be one of the following:
-        ///     1. Table engine with partition by
-        ///     2. Insert table function with partition by
-        ///     3. Table engine without partition by
-        ///     4. Table function
-        ///
-        ///
-        ///     What to do for each?
-        ///
-        ///     1/2. Parse pcolumns  from expression, file_columns depends on partition_columns_in_data_file
-        ///     3/4. If `use_hive_partitioning=1`, parse from the path, file columns will depend on partition_columns_in_data_file?
-
-        // 1/2
-        if (has_partition_strategy && partition_strategy_name == "hive")
-        {
-            // hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
-        }
-        // 3/4
-        else if (context_->getSettingsRef()[Setting::use_hive_partitioning])
-        {
-            hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(storage_columns, getSampleURI(uri, context_), format_settings, context_);
-            // todo arthur perhaps an assertion that `input_columns` contain all columns found in `hive_partition_columns_to_read_from_file_path`?
-        }
-
+        hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(storage_columns, getSampleURI(uri, context_), format_settings, context_);
+        // todo arthur perhaps an assertion that `input_columns` contain all columns found in `hive_partition_columns_to_read_from_file_path`?
 
         file_columns = storage_columns;
         // if (true)

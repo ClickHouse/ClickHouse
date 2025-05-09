@@ -15,7 +15,8 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-namespace HivePartitioningUtils {
+namespace HivePartitioningUtils
+{
 
 static auto makeExtractor()
 {
