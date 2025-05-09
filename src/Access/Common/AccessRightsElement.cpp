@@ -156,7 +156,6 @@ void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool hilite) cons
         /// If `enable_user_name_access_type` is set to false, we will dump `GRANT CREATE USER ON *` as `GRANT CREATE USER ON *.*`.
         /// This will allow us to run old replicas in the same cluster.
         if (access_flags.getParameterType() == AccessFlags::USER_NAME
-            && access_flags != AccessType::SET_DEFINER
             && !is_enabled_user_name_access_type)
         {
             if (!anyParameter())
