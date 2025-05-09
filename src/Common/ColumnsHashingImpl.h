@@ -233,6 +233,36 @@ public:
     }
 
     template <typename Data>
+    ALWAYS_INLINE std::optional<EmplaceResult> emplaceKeyOptimization(Data & data, size_t row, Arena & pool, const std::vector<OptimizationDataOneExpression> & optimization_indexes, size_t limit_plus_offset_length)
+    {
+        if constexpr (nullable)
+        {
+            if (isNullAt(row))
+            {
+                if constexpr (consecutive_keys_optimization)
+                {
+                    if (!cache.is_null)
+                    {
+                        cache.onNewValue(true);
+                        cache.is_null = true;
+                    }
+                }
+
+                bool has_null_key = data.hasNullKeyData();
+                data.hasNullKeyData() = true;
+
+                if constexpr (has_mapped)
+                    return EmplaceResult(data.getNullKeyData(), data.getNullKeyData(), !has_null_key);
+                else
+                    return EmplaceResult(!has_null_key);
+            }
+        }
+
+        auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
+        return emplaceImplOptimization(key_holder, data, limit_plus_offset_length, optimization_indexes);
+    }
+
+    template <typename Data>
     ALWAYS_INLINE FindResult findKey(Data & data, size_t row, Arena & pool)
     {
         if constexpr (nullable)
@@ -301,60 +331,6 @@ public:
         else
         {
             return false;
-        }
-    }
-
-    template <typename Data>
-    ALWAYS_INLINE void reduceHashTable(
-        Data & data,
-        size_t limit_plus_offset_length,
-        const std::vector<OptimizationDataOneExpression> & optimization_indexes)
-    {
-        if constexpr (HasBegin<Data>::value)
-        {
-            if constexpr (!std::is_same_v<decltype(data.begin()->getKey()), const VoidKey>
-            && !std::is_same_v<decltype(data.begin()->getKey()), Int128>
-            && !std::is_same_v<decltype(data.begin()->getKey()), UInt128>
-            && !std::is_same_v<decltype(data.begin()->getKey()), Int256>
-            && !std::is_same_v<decltype(data.begin()->getKey()), UInt256>) { // TODO support all types
-                if constexpr (!std::is_same_v<decltype(data.begin()->getKey()), const VoidKey> && HasErase<Data, decltype(data.begin()->getKey())>::value)
-                {
-                    // TODO Remove after support more types
-                    assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), StringRef>));
-                    assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), Int128>));
-                    assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), UInt128>));
-                    assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), Int256>));
-                    assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), UInt256>));
-
-                    // apply n-th element to data
-                    std::vector<typename Data::iterator> data_iterators;
-                    data_iterators.reserve(data.size());
-                    for (auto iter = data.begin(); iter != data.end(); ++iter)
-                        data_iterators.push_back(iter);
-                    std::nth_element(data_iterators.begin(), data_iterators.begin() + (limit_plus_offset_length - 1), data_iterators.end(), [this, &optimization_indexes](const typename Data::iterator& lhs, const typename Data::iterator& rhs)
-                    {
-                        return compareKeyHolders(lhs->getKey(), rhs->getKey(), optimization_indexes);
-                    });
-
-                    // erase excess elements
-                    /* Here I first copy elements to erase into separate vector, and then erase them by value.
-                    It's slower than to erase then by iterators. Previously I tried applying nth_element
-                    to a vector of iterators and then erase, but it seems that they were invalidating after erase.
-                    TODO Maybe there is a way not to invalidate them?
-                    */
-                    std::vector<std::remove_const_t<std::remove_reference_t<decltype(data.begin()->getKey())>>> elements_to_erase;
-                    elements_to_erase.reserve(data_iterators.size() - limit_plus_offset_length);
-                    for (size_t i = limit_plus_offset_length; i < data_iterators.size(); ++i)
-                        elements_to_erase.push_back(data_iterators[i]->getKey());
-                    for (const auto element : elements_to_erase)
-                        data.erase(element);
-                }
-            }
-        } else if constexpr (HasForEachMapped<Data>::value)
-        {
-            // TODO implement
-            // data.forEachMapped([](auto el) {
-            // });
         }
     }
 
@@ -455,6 +431,125 @@ protected:
         typename Data::LookupResult it;
         bool inserted = false;
         data.emplace(key_holder, it, inserted);
+
+        [[maybe_unused]] Mapped * cached = nullptr;
+        if constexpr (has_mapped)
+            cached = &it->getMapped();
+
+        if constexpr (has_mapped)
+        {
+            if (inserted)
+            {
+                new (&it->getMapped()) Mapped();
+            }
+        }
+
+        if constexpr (consecutive_keys_optimization)
+        {
+            cache.onNewValue(true);
+
+            if constexpr (nullable)
+                cache.is_null = false;
+
+            if constexpr (has_mapped)
+            {
+                cache.value.first = it->getKey();
+                cache.value.second = it->getMapped();
+                cached = &cache.value.second;
+            }
+            else
+            {
+                cache.value = it->getKey();
+            }
+        }
+
+        if constexpr (has_mapped)
+            return EmplaceResult(it->getMapped(), *cached, inserted);
+        else
+            return EmplaceResult(inserted);
+    }
+
+    template <typename Data, typename KeyHolder>
+    ALWAYS_INLINE std::optional<EmplaceResult> emplaceImplOptimization(
+        KeyHolder & key_holder,
+        Data & data,
+        size_t limit_plus_offset_length,
+        const std::vector<OptimizationDataOneExpression> & optimization_indexes)
+    {
+        chassert(limit_plus_offset_length > 0);
+        if constexpr (consecutive_keys_optimization)
+        {
+            if (cache.found && cache.check(keyHolderGetKey(key_holder)))
+            {
+                if constexpr (has_mapped)
+                    return EmplaceResult(cache.value.second, cache.value.second, false);
+                else
+                    return EmplaceResult(false);
+            }
+        }
+
+        typename Data::LookupResult it;
+        bool inserted = false;
+        data.emplace(key_holder, it, inserted);
+
+        if constexpr (!std::is_same_v<decltype(key_holder), const VoidKey>) { // TODO VoidKey doesn't work in compareKeyHolders
+            if constexpr (!std::is_same_v<KeyHolder, DB::SerializedKeyHolder>
+                       && !std::is_same_v<KeyHolder, DB::ArenaKeyHolder>
+                       && !std::is_same_v<KeyHolder, Int128>
+                       && !std::is_same_v<KeyHolder, UInt128>
+                       && !std::is_same_v<KeyHolder, Int256>
+                       && !std::is_same_v<KeyHolder, UInt256>) { // MVP. TODO support all types
+                if (data.size() >= limit_plus_offset_length * 2)
+                {
+                    assert(optimization_indexes.size() == 1 && optimization_indexes[0].index_of_expression_in_group_by == 0); // TODO support arbitrary number of expressions in findOptimizationSublistIndexes
+                    if constexpr (HasBegin<Data>::value)
+                    {
+                        if constexpr (!std::is_same_v<decltype(data.begin()->getKey()), const VoidKey> && HasErase<Data, decltype(keyHolderGetKey(key_holder))>::value)
+                        {
+                            // TODO Remove after support more types
+                            assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), StringRef>));
+                            assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), Int128>));
+                            assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), UInt128>));
+                            assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), Int256>));
+                            assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), UInt256>));
+
+                            // apply n-th element to data
+                            std::vector<typename Data::iterator> data_iterators;
+                            data_iterators.reserve(data.size());
+                            for (auto iter = data.begin(); iter != data.end(); ++iter)
+                                data_iterators.push_back(iter);
+                            std::nth_element(data_iterators.begin(), data_iterators.begin() + (limit_plus_offset_length - 1), data_iterators.end(), [this, &optimization_indexes](const typename Data::iterator& lhs, const typename Data::iterator& rhs)
+                            {
+                                return compareKeyHolders(lhs->getKey(), rhs->getKey(), optimization_indexes);
+                            });
+
+                            // erase excess elements
+                            /* Here I first copy elements to erase into separate vector, and then erase them by value.
+                            It's slower than to erase then by iterators. Previously I tried applying nth_element
+                            to a vector of iterators and then erase, but it seems that they were invalidating after erase.
+                            TODO Maybe there is a way not to invalidate them?
+                            */
+                            std::vector<std::remove_const_t<std::remove_reference_t<decltype(data.begin()->getKey())>>> elements_to_erase;
+                            elements_to_erase.reserve(data_iterators.size() - limit_plus_offset_length);
+                            for (size_t i = limit_plus_offset_length; i < data_iterators.size(); ++i)
+                                elements_to_erase.push_back(data_iterators[i]->getKey());
+                            for (const auto element : elements_to_erase)
+                                data.erase(element);
+
+                            // renew iterator
+                            it = data.find(key_holder);
+                            if (it == data.end())
+                                return std::nullopt;
+                        }
+                    } else if constexpr (HasForEachMapped<Data>::value)
+                    {
+                        // TODO implement
+                        // data.forEachMapped([](auto el) {
+                        // });
+                    }
+                }
+            }
+        }
 
         [[maybe_unused]] Mapped * cached = nullptr;
         if constexpr (has_mapped)
