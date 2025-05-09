@@ -1,7 +1,7 @@
 from helpers.cluster import ClickHouseCluster
 
 
-def test_startup_scripts():
+def test_enable_username_access_type():
     cluster = ClickHouseCluster(__file__)
 
     node = cluster.add_instance(
