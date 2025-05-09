@@ -80,12 +80,8 @@ bool needToFormatWithParentheses(ASTAlterCommand::Type type)
 
 void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    scope_guard closing_bracket_guard;
-    if (format_alter_commands_with_parentheses || needToFormatWithParentheses(type))
-    {
-        ostr << "(";
-        closing_bracket_guard = make_scope_guard(std::function<void(void)>([&ostr]() { ostr << ")"; }));
-    }
+    ostr << "(";
+    auto closing_bracket_guard = make_scope_guard(std::function<void(void)>([&ostr]() { ostr << ")"; }));
 
     if (type == ASTAlterCommand::ADD_COLUMN)
     {
