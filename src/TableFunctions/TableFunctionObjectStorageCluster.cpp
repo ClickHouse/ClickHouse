@@ -21,18 +21,33 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration>::execute
 {
     auto configuration = Base::getConfiguration();
 
+    LOG_DEBUG(&Poco::Logger::get("Column description understanding"), "Was here: -1.0, structure: {}", configuration->structure);
     ColumnsDescription columns;
     if (configuration->structure != "auto")
+    {
         columns = parseColumnsListFromString(configuration->structure, context);
+        LOG_DEBUG(
+            &Poco::Logger::get("Column description understanding"),
+            "Was here: 0.0, Columns: {}, structure: {}",
+            columns.toString(),
+            configuration->structure);
+    }
     else if (!Base::structure_hint.empty())
+    {
         columns = Base::structure_hint;
+        LOG_DEBUG(&Poco::Logger::get("Column description understanding"), "Was here: 0.5, Columns: {}", columns.toString());
+    }
     else if (!cached_columns.empty())
+    {
         columns = cached_columns;
+        LOG_DEBUG(&Poco::Logger::get("Column description understanding"), "Was here: 1.0, Columns: {}", columns.toString());
+    }
 
     auto object_storage = Base::getObjectStorage(context, !is_insert_query);
     StoragePtr storage;
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
+        LOG_DEBUG(&Poco::Logger::get("Column description inside table function object storage"), "Columns: {}", columns.toString());
         /// On worker node this filename won't contains globs
         storage = std::make_shared<StorageObjectStorage>(
             configuration,
@@ -49,6 +64,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration>::execute
     }
     else
     {
+        LOG_DEBUG(&Poco::Logger::get("Column description inside table function object storage cluster"), "Columns: {}", columns.toString());
         storage = std::make_shared<StorageObjectStorageCluster>(
             ITableFunctionCluster<Base>::cluster_name,
             configuration,

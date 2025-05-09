@@ -1,8 +1,9 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
-#include <Storages/StorageSnapshot.h>
-#include <Storages/IStorage.h>
 #include <DataTypes/ObjectUtils.h>
+#include <Storages/IStorage.h>
+#include <Storages/StorageSnapshot.h>
+#include "Common/logger_useful.h"
 #include <Common/quoteString.h>
 
 #include <sparsehash/dense_hash_set>
@@ -80,6 +81,11 @@ ColumnsDescription StorageSnapshot::getAllColumnsDescription() const
 
 NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options) const
 {
+    for (const auto & column : *virtual_columns)
+    {
+        LOG_DEBUG(
+            &Poco::Logger::get("StorageSnapshot::getColumns"), "Virtual column name: {}, type: {}", column.name, column.type->getName());
+    }
     auto all_columns = metadata->getColumns().get(options);
 
     if (options.with_extended_objects)

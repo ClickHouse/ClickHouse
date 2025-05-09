@@ -183,7 +183,12 @@ HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & 
     return key_values;
 }
 
-VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & storage_columns, const ContextPtr & context, const std::string & path, std::optional<FormatSettings> format_settings_)
+VirtualColumnsDescription getVirtualsForFileLikeStorage(
+    ColumnsDescription & storage_columns,
+    const ContextPtr & context,
+    const std::string & path,
+    std::optional<FormatSettings> format_settings_,
+    bool is_data_lake)
 {
     VirtualColumnsDescription desc;
 
@@ -210,7 +215,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
     for (const auto & item : getCommonVirtualsForFileLikeStorage())
         add_virtual(item, false);
 
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
+    if (context->getSettingsRef()[Setting::use_hive_partitioning] && !is_data_lake)
     {
         const auto map = parseHivePartitioningKeysAndValues(path);
         auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
@@ -221,6 +226,13 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
             const std::string value(item.second);
 
             auto type = tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Raw);
+
+            LOG_DEBUG(
+                &Poco::Logger::get("HivePartitioning"),
+                "Hive partitioning key {} with value {} has type {}",
+                key,
+                value,
+                type ? type->getName() : "null");
 
             if (type == nullptr)
                 type = std::make_shared<DataTypeString>();

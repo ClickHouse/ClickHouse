@@ -9,11 +9,12 @@
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 
-#include <Storages/VirtualColumnUtils.h>
-#include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Storages/extractTableFunctionFromSelectQuery.h>
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Storages/VirtualColumnUtils.h>
+#include <Storages/extractTableFunctionFromSelectQuery.h>
+#include <Poco/Logger.h>
 
 
 namespace DB
@@ -73,10 +74,28 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     metadata.setColumns(columns);
     metadata.setConstraints(constraints_);
 
-    if (sample_path.empty() && context_->getSettingsRef()[Setting::use_hive_partitioning])
-        sample_path = getPathSample(metadata, context_);
+    for (const auto & column : metadata.getColumns().getAll())
+    {
+        LOG_DEBUG(&Poco::Logger::get("Cluster storage, getAll"), "Column with name {} and type {}", column.name, column.type);
+    }
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context_, sample_path));
+
+    for (const auto & column : metadata.columns)
+    {
+        LOG_DEBUG(&Poco::Logger::get("Cluster storage, notAll"), "Column with name {} and type {}", column.name, column.type);
+    }
+
+
+    if (sample_path.empty() && context_->getSettingsRef()[Setting::use_hive_partitioning] && !configuration->isDataLakeConfiguration())
+    {
+        LOG_DEBUG(&Poco::Logger::get("Cluster storage, getPathSample"), "Sample path is empty, trying to get it from object storage");
+        sample_path = getPathSample(metadata, context_);
+    }
+
+    LOG_DEBUG(&Poco::Logger::get("Cluster storage, getPathSample"), "Sample path is {}", sample_path);
+
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+        metadata.columns, context_, sample_path, std::nullopt, configuration->isDataLakeConfiguration()));
     setInMemoryMetadata(metadata);
 }
 

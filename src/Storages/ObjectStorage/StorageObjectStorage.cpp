@@ -70,8 +70,8 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
         {} // file_progress_callback
     );
 
-    if (!configuration->isArchive() && !configuration->isPathWithGlobs() && !local_distributed_processing)
-        return configuration->getPath();
+    // if (!configuration->isArchive() && !configuration->isPathWithGlobs() && !local_distributed_processing)
+    //     return configuration->getPath();
 
     if (auto file = file_iterator->next(0))
         return file->getPath();
@@ -131,6 +131,16 @@ StorageObjectStorage::StorageObjectStorage(
     if (!do_lazy_init)
         do_init();
 
+    for (const auto & column : columns_)
+    {
+        LOG_DEBUG(
+            &Poco::Logger::get("Constructor Storage Object Storage columns_"),
+            "Column with name {} and type {}",
+            column.name,
+            column.type->getName());
+    }
+
+
     std::string sample_path;
     ColumnsDescription columns{columns_};
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
@@ -143,26 +153,43 @@ StorageObjectStorage::StorageObjectStorage(
 
     /// FIXME: We need to call getPathSample() lazily on select
     /// in case it failed to be initialized in constructor.
-    if (!failed_init
-        && sample_path.empty()
-        && context->getSettingsRef()[Setting::use_hive_partitioning]
+    if (!failed_init && sample_path.empty() && context->getSettingsRef()[Setting::use_hive_partitioning]
         && !configuration->withPartitionWildcard())
     {
         if (do_lazy_init)
             do_init();
-        try
+        if (!configuration->isDataLakeConfiguration())
         {
-            sample_path = getPathSample(context);
-        }
-        catch (...)
-        {
-            LOG_WARNING(
-                log, "Failed to list object storage, cannot use hive partitioning. "
-                "Error: {}", getCurrentExceptionMessage(true));
+            try
+            {
+                LOG_DEBUG(
+                    &Poco::Logger::get("Object storage, getPathSample"), "Sample path is empty, trying to get it from object storage");
+                sample_path = getPathSample(context);
+            }
+            catch (...)
+            {
+                LOG_WARNING(
+                    log,
+                    "Failed to list object storage, cannot use hive partitioning. "
+                    "Error: {}",
+                    getCurrentExceptionMessage(true));
+            }
         }
     }
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context, sample_path, format_settings));
+    for (const auto & column : metadata.columns)
+    {
+        LOG_DEBUG(
+            &Poco::Logger::get("Constructor Storage Object Storage"),
+            "Column with name {} and type {}",
+            column.name,
+            column.type->getName());
+    }
+
+    LOG_DEBUG(&Poco::Logger::get("Storage Object storage, getPathSample"), "Sample path is {}", sample_path);
+
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+        metadata.columns, context, sample_path, format_settings, configuration->isDataLakeConfiguration()));
     setInMemoryMetadata(metadata);
 }
 

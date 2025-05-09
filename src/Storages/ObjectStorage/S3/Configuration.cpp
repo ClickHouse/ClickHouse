@@ -398,6 +398,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
 void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
     ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
 {
+    LOG_DEBUG(&Poco::Logger::get("addStructureAndFormatToArgsIfNeeded"), "Adding structure: {}", structure_);
     if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
     {
         /// In case of named collection, just add key-value pairs "format='...', structure='...'"

@@ -16,7 +16,6 @@
 
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
-#include <Storages/ObjectStorage/Utils.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
@@ -24,6 +23,8 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include "Common/logger_useful.h"
 
 
 namespace DB
@@ -118,6 +119,8 @@ ColumnsDescription TableFunctionObjectStorage<
         resolveSchemaAndFormat(columns, configuration->format, storage, configuration, std::nullopt, sample_path, context);
         return columns;
     }
+    LOG_DEBUG(
+        &Poco::Logger::get("Column description understanding. GetActualTable"), "Was here: 2.0, Columns: {}", configuration->structure);
     return parseColumnsListFromString(configuration->structure, context);
 }
 

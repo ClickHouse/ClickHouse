@@ -1501,6 +1501,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
         if (unlikely(prefer_column_name_to_alias))
         {
+            LOG_DEBUG(&Poco::Logger::get("QueryAnalyzer"), "Was here 0.1");
             if (identifier_resolve_settings.allow_to_check_join_tree)
             {
                 resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(identifier_lookup, scope);
@@ -1513,6 +1514,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         }
         else
         {
+            LOG_DEBUG(&Poco::Logger::get("QueryAnalyzer"), "Was here 1.1");
             if (identifier_resolve_settings.allow_to_check_aliases && !already_in_resolve_process)
                 resolve_result = tryResolveIdentifierFromAliases(identifier_lookup, scope, identifier_resolve_settings);
 
@@ -4611,11 +4613,20 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
         auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
         if (storage_snapshot->storage.supportsSubcolumns())
         {
-            get_column_options.withSubcolumns();
+            get_column_options.withSubcolumns();    
             table_expression_data.supports_subcolumns = true;
         }
 
         auto column_names_and_types = storage_snapshot->getColumns(get_column_options);
+
+        for (const auto & column_name_and_type : column_names_and_types)
+        {
+            LOG_DEBUG(
+                &Poco::Logger::get("Kek"),
+                "Table expression column name: {}, type: {}",
+                column_name_and_type.name,
+                column_name_and_type.type->getName());
+        }
         table_expression_data.column_names_and_types = NamesAndTypes(column_names_and_types.begin(), column_names_and_types.end());
 
         const auto & columns_description = storage_snapshot->metadata->getColumns();

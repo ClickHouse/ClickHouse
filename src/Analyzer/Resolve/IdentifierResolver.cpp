@@ -470,6 +470,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     size_t identifier_column_qualifier_parts,
     bool can_be_not_found)
 {
+    for (const auto & x : table_expression_data.column_name_to_column_node)
+    {
+        LOG_DEBUG(&Poco::Logger::get("IdentifierResolver"), "column name in storage: {}", x.first);
+    }
     auto identifier_without_column_qualifier = identifier;
     identifier_without_column_qualifier.popFirst(identifier_column_qualifier_parts);
 
@@ -491,18 +495,26 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     bool can_resolve_directly_from_storage = false;
     if (auto it = table_expression_data.column_name_to_column_node.find(identifier_full_name); it != table_expression_data.column_name_to_column_node.end())
     {
+        LOG_DEBUG(&Poco::Logger::get("IdentifierResolver"), "Was here: 0.0");
         can_resolve_directly_from_storage = true;
         result_column_node = it->second;
     }
     /// Check if it's a dynamic subcolumn
     else if (table_expression_data.supports_subcolumns)
     {
+        LOG_DEBUG(&Poco::Logger::get("IdentifierResolver"), "Was here: 0.05");
+
         auto [column_name, dynamic_subcolumn_name] = Nested::splitName(identifier_full_name);
         auto jt = table_expression_data.column_name_to_column_node.find(column_name);
+        LOG_DEBUG(&Poco::Logger::get("IdentifierResolver"), "column name: {}", column_name);
         if (jt != table_expression_data.column_name_to_column_node.end() && jt->second->getColumnType()->hasDynamicSubcolumns())
         {
+            LOG_DEBUG(&Poco::Logger::get("IdentifierResolver"), "Was here: 0.07");
+
             if (auto dynamic_subcolumn_type = jt->second->getColumnType()->tryGetSubcolumnType(dynamic_subcolumn_name))
             {
+                LOG_DEBUG(&Poco::Logger::get("IdentifierResolver"), "Was here: 0.09");
+
                 result_column_node = std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, dynamic_subcolumn_type}, jt->second->getColumnSource());
                 can_resolve_directly_from_storage = true;
             }
@@ -510,16 +522,25 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     }
 
 
+    LOG_DEBUG(&Poco::Logger::get("IdentifierResolver"), "Idenrifier full expression: {}", identifier_full_name);
+    LOG_DEBUG(&Poco::Logger::get("IdentifierResolver"), "Idenrifier prefix: {}", identifier_without_column_qualifier.at(0));
+
+
     if (can_resolve_directly_from_storage)
     {
+        LOG_DEBUG(&Poco::Logger::get("IdentifierResolver"), "Was here: 0.1");
         match_full_identifier = true;
         result_expression = result_column_node;
     }
     else
     {
+        LOG_DEBUG(&Poco::Logger::get("IdentifierResolver"), "Was here: 0.3");
         auto it = table_expression_data.column_name_to_column_node.find(identifier_without_column_qualifier.at(0));
         if (it != table_expression_data.column_name_to_column_node.end())
+        {
+            LOG_DEBUG(&Poco::Logger::get("IdentifierResolver"), "Was here: 0.4");
             result_expression = it->second;
+        }
     }
 
     bool clone_is_needed = true;
@@ -530,6 +551,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
     if (result_expression && !match_full_identifier && identifier_without_column_qualifier.isCompound())
     {
+        LOG_DEBUG(&Poco::Logger::get("IdentifierResolver"), "Was here: 0.5");
+
         size_t identifier_bind_size = identifier_column_qualifier_parts + 1;
         result_expression = tryResolveIdentifierFromCompoundExpression(identifier,
             identifier_bind_size,
@@ -544,6 +567,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
     if (!result_expression)
     {
+        LOG_DEBUG(&Poco::Logger::get("IdentifierResolver"), "Was here: 1.0");
         QueryTreeNodes nested_column_nodes;
         DataTypes nested_types;
         Array nested_names_array;
@@ -574,6 +598,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
         if (!nested_types.empty())
         {
+            LOG_DEBUG(&Poco::Logger::get("IdentifierResolver"), "Was here: 1.5");
             auto nested_function_node = std::make_shared<FunctionNode>("nested");
             auto & nested_function_node_arguments = nested_function_node->getArguments().getNodes();
 
@@ -1386,16 +1411,26 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoinTree(con
 
     /// Try to resolve identifier from table columns
     if (auto resolved_identifier = tryResolveIdentifierFromTableColumns(identifier_lookup, scope))
-        return { .resolved_identifier = resolved_identifier, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+        return {.resolved_identifier = resolved_identifier, .resolve_place = IdentifierResolvePlace::JOIN_TREE};
+
 
     if (scope.expression_join_tree_node)
+    {
+        auto & table_expression_data = scope.getTableExpressionDataOrThrow(scope.expression_join_tree_node);
+        for (const auto & x : table_expression_data.column_name_to_column_node)
+        {
+            LOG_DEBUG(&Poco::Logger::get("tryResolveIdentifierFromJoinTree"), "column name in storage: {}", x.first);
+        }
+        LOG_DEBUG(&Poco::Logger::get("tryResolveIdentifierFromJoinTree"), "Was here: 0.1");
         return tryResolveIdentifierFromJoinTreeNode(identifier_lookup, scope.expression_join_tree_node, scope);
+    }
 
     auto * query_scope_node = scope.scope_node->as<QueryNode>();
     if (!query_scope_node || !query_scope_node->getJoinTree())
         return {};
 
     const auto & join_tree_node = query_scope_node->getJoinTree();
+    LOG_DEBUG(&Poco::Logger::get("tryResolveIdentifierFromJoinTree"), "Was here: 1.1");
     return tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_tree_node, scope);
 }
 

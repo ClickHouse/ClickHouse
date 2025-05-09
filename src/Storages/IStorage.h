@@ -2,6 +2,7 @@
 
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/Context_fwd.h>
@@ -11,13 +12,13 @@
 #include <Storages/ColumnSize.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/VirtualColumnsDescription.h>
-#include <Storages/TableLockHolder.h>
 #include <Storages/StorageSnapshot.h>
+#include <Storages/TableLockHolder.h>
+#include <Storages/VirtualColumnsDescription.h>
+#include "Common/logger_useful.h"
 #include <Common/ActionLock.h>
 #include <Common/RWLock.h>
 #include <Common/TypePromotion.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <optional>
 
@@ -201,10 +202,20 @@ public:
     void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_)
     {
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
+        LOG_DEBUG(&Poco::Logger::get("Setting new metadata"), "Stacktrace: {}", StackTrace().toString());
+        for (const auto & column : metadata_.getColumns().getAll())
+        {
+            LOG_DEBUG(&Poco::Logger::get("Setting new metadata"), "Column with name {} and type {}", column.name, column.type);
+        }
     }
 
     void setVirtuals(VirtualColumnsDescription virtuals_)
     {
+        LOG_DEBUG(&Poco::Logger::get("Setting new virtuals"), "Stacktrace: {}", StackTrace().toString());
+        for (const auto & column : virtuals_)
+        {
+            LOG_DEBUG(&Poco::Logger::get("Setting new virtuals"), "Column with name {} and type {}", column.name, column.type);
+        }
         virtuals.set(std::make_unique<VirtualColumnsDescription>(std::move(virtuals_)));
     }
 

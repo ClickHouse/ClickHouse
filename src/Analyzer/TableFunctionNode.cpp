@@ -1,7 +1,8 @@
 #include <Analyzer/TableFunctionNode.h>
 
-#include <Common/assert_cast.h>
+#include "Common/logger_useful.h"
 #include <Common/SipHash.h>
+#include <Common/assert_cast.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -35,7 +36,26 @@ void TableFunctionNode::resolve(TableFunctionPtr table_function_value, StoragePt
     table_function = std::move(table_function_value);
     storage = std::move(storage_value);
     storage_id = storage->getStorageID();
+
+    auto storage_metadata_ptr = storage->getInMemoryMetadataPtr();
+    for (const auto & column : storage_metadata_ptr->getColumns().getAll())
+    {
+        LOG_DEBUG(&Poco::Logger::get("Kekichi"), "Table expression column name: {}, type: {}", column.name, column.type->getName());
+    }
     storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
+
+    auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
+    auto column_names_and_types = storage_snapshot->getColumns(get_column_options);
+
+    for (const auto & column_name_and_type : column_names_and_types)
+    {
+        LOG_DEBUG(
+            &Poco::Logger::get("Lolichi"),
+            "Table expression column name: {}, type: {}",
+            column_name_and_type.name,
+            column_name_and_type.type->getName());
+    }
+
     unresolved_arguments_indexes = std::move(unresolved_arguments_indexes_);
 }
 
