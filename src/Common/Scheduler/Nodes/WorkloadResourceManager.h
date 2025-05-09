@@ -147,7 +147,7 @@ private:
         String parent; // Name of parent workload
         WorkloadSettings settings; // Settings specific for a given resource
 
-        NodeInfo(WorkloadSettings::Unit unit, const ASTPtr & ast, const String & resource_name);
+        NodeInfo(CostUnit unit, const ASTPtr & ast, const String & resource_name);
     };
 
     /// Ownership control for scheduler nodes, which could be referenced by raw pointers
@@ -165,7 +165,7 @@ private:
         ~Resource();
 
         const String & getName() const { return resource_name; }
-        const WorkloadSettings::Unit & getUnit() const { return unit; }
+        CostUnit getUnit() const { return unit; }
 
         /// Hierarchy management
         void createNode(const NodeInfo & info);
@@ -209,7 +209,7 @@ private:
 
         ASTPtr resource_entity;
         const String resource_name;
-        const WorkloadSettings::Unit unit;
+        const CostUnit unit;
         SchedulerRoot scheduler;
 
         // TODO(serxa): consider using resource_manager->mutex + scheduler thread for updates and mutex only for reading to avoid slow acquire/release of classifier
