@@ -112,8 +112,17 @@ def main():
     results = []
 
     Utils.add_to_PATH(f"{ch_path}:tests")
+    CH = ClickHouseProc()
 
     if res and JobStages.INSTALL_CLICKHOUSE in stages:
+
+        def configure_log_export():
+            if not info.is_local_run:
+                print("prepare log export config")
+                return CH.create_log_export_config()
+            else:
+                print("skip log export config for local run")
+
         commands = [
             f"rm -rf {temp_dir}/var/log/clickhouse-server/clickhouse-server.*",
             f"chmod +x {ch_path}/clickhouse",
@@ -126,6 +135,7 @@ def main():
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-disks",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-obfuscator",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-format",
+            f"ln -sf /usr/bin/clickhouse-odbc-bridge {ch_path}/clickhouse-odbc-bridge",
             f"rm -rf {temp_dir}/etc/ && mkdir -p {temp_dir}/etc/clickhouse-client {temp_dir}/etc/clickhouse-server",
             f"cp programs/server/config.xml programs/server/users.xml {temp_dir}/etc/clickhouse-server/",
             f"./tests/config/install.sh {temp_dir}/etc/clickhouse-server {temp_dir}/etc/clickhouse-client {config_installs_args}",
@@ -138,13 +148,13 @@ def main():
             f"for file in {temp_dir}/etc/clickhouse-server/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|>/var/log|>{temp_dir}/var/log|g; s|>/etc/|>{temp_dir}/etc/|g' $(readlink -f $file); done",
             f"for file in {temp_dir}/etc/clickhouse-server/config.d/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|<path>local_disk|<path>{temp_dir}/local_disk|g' $(readlink -f $file); done",
             f"clickhouse-server --version",
+            configure_log_export,
         ]
         results.append(
             Result.from_commands_run(name="Install ClickHouse", command=commands)
         )
         res = results[-1].is_ok()
 
-    CH = ClickHouseProc()
     if res and JobStages.START in stages:
         stop_watch_ = Utils.Stopwatch()
         step_name = "Start ClickHouse Server"
@@ -162,12 +172,12 @@ def main():
         res = res and Shell.check(
             "aws s3 ls s3://test --endpoint-url http://localhost:11111/", verbose=True
         )
-        # TODO: log export
-        # if not Info().is_local_run:
-        #     res = res and CH.create_log_export_config()
         res = res and CH.start()
-        # if not Info().is_local_run:
-        #     res = res and CH.start_log_exports(stop_watch.start_time)
+        if not Info().is_local_run:
+            if not CH.start_log_exports(stop_watch.start_time):
+                info.add_workflow_report_message("WARNING: Failed to start log export")
+                print("Failed to start log export")
+
         res = res and CH.wait_ready()
         if res:
             print("ch started")
