@@ -78,6 +78,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"page_cache_lookahead_blocks", 16, 16, "Made this setting adjustable on a per-query level."},
             {"output_format_pretty_glue_chunks", "0", "auto", "A new setting to make Pretty formats prettier."},
             {"parallel_hash_join_threshold", 0, 100'000, "New setting"},
+            {"min_os_cpu_wait_time_ratio_to_throw", 0, 0, "Setting values were changed and backported to 25.4"},
+            {"max_os_cpu_wait_time_ratio_to_throw", 0, 0, "Setting values were changed and backported to 25.4"},
             {"make_distributed_plan", 0, 0, "New experimental setting."},
             {"execute_distributed_plan_locally", 0, 0, "New experimental setting."},
             {"default_shuffle_join_bucket_count", 8, 8, "New experimental setting."},
@@ -86,6 +88,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"force_exchange_kind", "", "", "New experimental setting."},
             {"allow_experimental_delta_kernel_rs", true, true, "New setting"},
             {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
+            {"use_legacy_to_time", false, false, "New setting. Allows for user to use the old function logic for toTime, which works as toTimeWithFixedDate."},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
@@ -104,8 +107,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"cast_string_to_variant_use_inference", true, true, "New setting to enable/disable types inference during CAST from String to Variant"},
             {"distributed_cache_read_request_max_tries", 20, 20, "New setting"},
             {"query_condition_cache_store_conditions_as_plaintext", false, false, "New setting"},
-            {"min_os_cpu_wait_time_ratio_to_throw", 0, 2, "New setting"},
-            {"max_os_cpu_wait_time_ratio_to_throw", 0, 6, "New setting"},
+            {"min_os_cpu_wait_time_ratio_to_throw", 0, 0, "New setting"},
+            {"max_os_cpu_wait_time_ratio_to_throw", 0, 0, "New setting"},
             {"query_plan_merge_filter_into_join_condition", false, true, "Added new setting to merge filter into join condition"},
             {"use_local_cache_for_remote_storage", true, false, "Obsolete setting."},
             {"iceberg_timestamp_ms", 0, 0, "New setting."},
@@ -151,7 +154,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"restore_replicated_merge_tree_to_shared_merge_tree", false, false, "New setting."},
             {"parallel_replicas_only_with_analyzer", true, true, "Parallel replicas is supported only with analyzer enabled"},
             {"s3_allow_multipart_copy", true, true, "New setting."},
-            /// Release closed. Please use 25.3
         });
         addSettingsChanges(settings_changes_history, "25.1",
         {
