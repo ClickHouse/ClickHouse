@@ -78,6 +78,7 @@ struct Base32<Traits, Base32NaiveTag>
         return opos;
     }
 
+    /// This function might write into dst even if decoding fails (nullopt returned)
     static std::optional<size_t> decodeBase32(const UInt8 * src, size_t src_length, UInt8 * dst)
     {
         if (src_length % 8 != 0)
@@ -127,33 +128,6 @@ struct Base32<Traits, Base32NaiveTag>
         if (pad_count > 0)
         {
             if (!(pad_count == 1 || pad_count == 3 || pad_count == 4 || pad_count == 6))
-            {
-                return std::nullopt;
-            }
-
-            size_t const data_chars = src_length - pad_count;
-
-            bool valid_padding = false;
-            switch (pad_count)
-            {
-                case 1:
-                    valid_padding = (data_chars % 8) == 7;
-                    break; // 7 data chars → 1 padding
-                case 3:
-                    valid_padding = (data_chars % 8) == 5;
-                    break; // 5 data chars → 3 padding
-                case 4:
-                    valid_padding = (data_chars % 8) == 4;
-                    break; // 4 data chars → 4 padding
-                case 6:
-                    valid_padding = (data_chars % 8) == 2;
-                    break; // 2 data chars → 6 padding
-                default:
-                    valid_padding = false;
-                    break;
-            }
-
-            if (!valid_padding)
             {
                 return std::nullopt;
             }

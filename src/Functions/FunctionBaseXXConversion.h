@@ -48,7 +48,7 @@ struct BaseXXEncode
             size_t encoded_size = Traits::encode(&src[prev_src_offset], src_length, &dst[current_dst_offset]);
             prev_src_offset = current_src_offset;
             current_dst_offset += encoded_size;
-            dst[current_dst_offset] = 0;
+            dst[current_dst_offset] = '\0';
             ++current_dst_offset;
 
             dst_offsets[row] = current_dst_offset;
@@ -129,7 +129,7 @@ struct BaseXXDecode
 
             prev_src_offset = current_src_offset;
             current_dst_offset += *decoded_size;
-            dst[current_dst_offset] = 0;
+            dst[current_dst_offset] = '\0';
             ++current_dst_offset;
 
             dst_offsets[row] = current_dst_offset;
@@ -165,7 +165,7 @@ struct BaseXXDecode
             }
 
             current_dst_offset += *decoded_size;
-            dst[current_dst_offset] = 0;
+            dst[current_dst_offset] = '\0';
             ++current_dst_offset;
 
             dst_offsets[row] = current_dst_offset;
@@ -186,7 +186,6 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

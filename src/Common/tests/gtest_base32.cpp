@@ -103,6 +103,7 @@ struct Base32Rfc4648TestData
         {115, "MZXW6YQ====!=="sv}, // Invalid character in padding
         {116, "MZXW6YQ====A=="sv}, // Extra character in padding
         {117, "MZXW6YQ======"sv}, // Invalid padding with valid length
+        {118, "MZXW6Y=="sv}, // Invalid padding length
     };
     // clang-format on
 };
