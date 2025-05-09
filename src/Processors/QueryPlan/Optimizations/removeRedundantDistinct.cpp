@@ -249,11 +249,16 @@ namespace
 
         /// possible cases (outer distinct -> inner distinct):
         /// final -> preliminary => do nothing
-        /// preliminary -> final => try remove preliminary
+        /// preliminary -> final => try remove final TODO
         /// final -> final => try remove final
         /// preliminary -> preliminary => logical error?
         if (inner_distinct_step->isPreliminary())
             return false;
+
+        /*
+        if (distinct_step->isPreliminary() && !inner_distinct_step->isPreliminary())
+            return false;
+        */
 
         auto inner_distinct_columns = getDistinctColumns(inner_distinct_step);
         if (distinct_columns.size() != inner_distinct_columns.size())

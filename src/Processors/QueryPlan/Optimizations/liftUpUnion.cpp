@@ -1,3 +1,4 @@
+#include <cassert>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -65,6 +66,12 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
     {
         /// Union does not change header. Distinct as well.
 
+        auto union_input_headers = child->getInputHeaders();
+        for (auto & input_header : union_input_headers)
+            input_header = distinct->getOutputHeader();
+
+        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads());
+
         ///                  - Something
         /// Distinct - Union - Something
         ///                  - Something
@@ -89,6 +96,10 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
                 distinct->getLimitHint(),
                 distinct->getColumnNames(),
                 distinct->isPreliminary());
+
+            if (distinct->isPreliminary())
+                distinct_node.step->setStepDescription("Preliminary DISTINCT");
+
         }
 
         ///       - Distinct - Something
