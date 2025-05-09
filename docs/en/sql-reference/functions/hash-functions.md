@@ -1312,7 +1312,7 @@ Result:
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
 
-Can be used with a hamming distance function like (e.g.) [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance) for estimation of duplicate or highly-similar (`0`), partially-similar (`1`), and dissimilar (`2`) content. Other hamming distance functions like (e.g.) [bitHammingDistance](../functions/bit-functions.md/#bithammingdistance) can be used to compare two minimum or two maximum simhashes (optionally adding both hamming distances together) to generate a more accurate estimation between `0..64` (or `0..128` when added together), where `0` equates to highly-similar or duplicate content and `64` (or `128`) equates to dissimilar content.
+Can be used with a hamming distance function like (e.g.) [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance) for estimation of duplicate or highly-similar (`0`), partially-similar (`1`), and dissimilar (`2`) content. Other hamming distance functions like (e.g.) [bitHammingDistance](../functions/bit-functions.md/#bithammingdistance) can be used to compare two minimum or two maximum hashes (optionally adding both hamming distances together) to generate a more accurate estimation between `0..64` (or `0..128` when added together), where `0` equates to highly-similar or duplicate content and `64` (or `128`) equates to dissimilar content.
 
 **Syntax**
 
@@ -1350,7 +1350,7 @@ Result:
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
 
-Can be used with a hamming distance function like (e.g.) [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance) for estimation of duplicate or highly-similar (`0`), partially-similar (`1`), and dissimilar (`2`) content. Other hamming distance functions like (e.g.) [bitHammingDistance](../functions/bit-functions.md/#bithammingdistance) can be used to compare two minimum or two maximum simhashes (optionally adding both hamming distances together) to generate a more accurate estimation between `0..64` (or `0..128` when added together), where `0` equates to highly-similar or duplicate content and `64` (or `128`) equates to dissimilar content.
+Can be used with a hamming distance function like (e.g.) [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance) for estimation of duplicate or highly-similar (`0`), partially-similar (`1`), and dissimilar (`2`) content. Other hamming distance functions like (e.g.) [bitHammingDistance](../functions/bit-functions.md/#bithammingdistance) can be used to compare two minimum or two maximum hashes (optionally adding both hamming distances together) to generate a more accurate estimation between `0..64` (or `0..128` when added together), where `0` equates to highly-similar or duplicate content and `64` (or `128`) equates to dissimilar content.
 
 **Syntax**
 
@@ -1388,7 +1388,7 @@ Result:
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
 
-Can be used with a hamming distance function like (e.g.) [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance) for estimation of duplicate or highly-similar (`0`), partially-similar (`1`), and dissimilar (`2`) content. Other hamming distance functions like (e.g.) [bitHammingDistance](../functions/bit-functions.md/#bithammingdistance) can be used to compare two minimum or two maximum simhashes (optionally adding both hamming distances together) to generate a more accurate estimation between `0..64` (or `0..128` when added together), where `0` equates to highly-similar or duplicate content and `64` (or `128`) equates to dissimilar content.
+Can be used with a hamming distance function like (e.g.) [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance) for estimation of duplicate or highly-similar (`0`), partially-similar (`1`), and dissimilar (`2`) content. Other hamming distance functions like (e.g.) [bitHammingDistance](../functions/bit-functions.md/#bithammingdistance) can be used to compare two minimum or two maximum hashes (optionally adding both hamming distances together) to generate a more accurate estimation between `0..64` (or `0..128` when added together), where `0` equates to highly-similar or duplicate content and `64` (or `128`) equates to dissimilar content.
 
 **Syntax**
 
@@ -1426,7 +1426,7 @@ Result:
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
 
-Can be used with a hamming distance function like (e.g.) [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance) for estimation of duplicate or highly-similar (`0`), partially-similar (`1`), and dissimilar (`2`) content. Other hamming distance functions like (e.g.) [bitHammingDistance](../functions/bit-functions.md/#bithammingdistance) can be used to compare two minimum or two maximum simhashes (optionally adding both hamming distances together) to generate a more accurate estimation between `0..64` (or `0..128` when added together), where `0` equates to highly-similar or duplicate content and `64` (or `128`) equates to dissimilar content.
+Can be used with a hamming distance function like (e.g.) [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance) for estimation of duplicate or highly-similar (`0`), partially-similar (`1`), and dissimilar (`2`) content. Other hamming distance functions like (e.g.) [bitHammingDistance](../functions/bit-functions.md/#bithammingdistance) can be used to compare two minimum or two maximum hashes (optionally adding both hamming distances together) to generate a more accurate estimation between `0..64` (or `0..128` when added together), where `0` equates to highly-similar or duplicate content and `64` (or `128`) equates to dissimilar content.
 
 **Syntax**
 
@@ -1608,7 +1608,7 @@ Result:
 
 Splits a ASCII string into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
 
-Can be used with a hamming distance function like (e.g.) [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance) for estimation of duplicate or highly-similar (`0`), partially-similar (`1`), and dissimilar (`2`) content. Other hamming distance functions like (e.g.) [bitHammingDistance](../functions/bit-functions.md/#bithammingdistance) can be used to compare two minimum or two maximum simhashes (optionally adding both hamming distances together) to generate a more accurate estimation between `0..64` (or `0..128` when added together), where `0` equates to highly-similar or duplicate content and `64` (or `128`) equates to dissimilar content.
+Can be used with a hamming distance function like (e.g.) [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance) for estimation of duplicate or highly-similar (`0`), partially-similar (`1`), and dissimilar (`2`) content. Other hamming distance functions like (e.g.) [bitHammingDistance](../functions/bit-functions.md/#bithammingdistance) can be used to compare two minimum or two maximum hashes (optionally adding both hamming distances together) to generate a more accurate estimation between `0..64` (or `0..128` when added together), where `0` equates to highly-similar or duplicate content and `64` (or `128`) equates to dissimilar content.
 
 **Syntax**
 
@@ -1646,7 +1646,7 @@ Result:
 
 Splits a ASCII string into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
 
-Can be used with a hamming distance function like (e.g.) [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance) for estimation of duplicate or highly-similar (`0`), partially-similar (`1`), and dissimilar (`2`) content. Other hamming distance functions like (e.g.) [bitHammingDistance](../functions/bit-functions.md/#bithammingdistance) can be used to compare two minimum or two maximum simhashes (optionally adding both hamming distances together) to generate a more accurate estimation between `0..64` (or `0..128` when added together), where `0` equates to highly-similar or duplicate content and `64` (or `128`) equates to dissimilar content.
+Can be used with a hamming distance function like (e.g.) [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance) for estimation of duplicate or highly-similar (`0`), partially-similar (`1`), and dissimilar (`2`) content. Other hamming distance functions like (e.g.) [bitHammingDistance](../functions/bit-functions.md/#bithammingdistance) can be used to compare two minimum or two maximum hashes (optionally adding both hamming distances together) to generate a more accurate estimation between `0..64` (or `0..128` when added together), where `0` equates to highly-similar or duplicate content and `64` (or `128`) equates to dissimilar content.
 
 **Syntax**
 
@@ -1684,7 +1684,7 @@ Result:
 
 Splits a UTF-8 string into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
 
-Can be used with a hamming distance function like (e.g.) [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance) for estimation of duplicate or highly-similar (`0`), partially-similar (`1`), and dissimilar (`2`) content. Other hamming distance functions like (e.g.) [bitHammingDistance](../functions/bit-functions.md/#bithammingdistance) can be used to compare two minimum or two maximum simhashes (optionally adding both hamming distances together) to generate a more accurate estimation between `0..64` (or `0..128` when added together), where `0` equates to highly-similar or duplicate content and `64` (or `128`) equates to dissimilar content.
+Can be used with a hamming distance function like (e.g.) [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance) for estimation of duplicate or highly-similar (`0`), partially-similar (`1`), and dissimilar (`2`) content. Other hamming distance functions like (e.g.) [bitHammingDistance](../functions/bit-functions.md/#bithammingdistance) can be used to compare two minimum or two maximum hashes (optionally adding both hamming distances together) to generate a more accurate estimation between `0..64` (or `0..128` when added together), where `0` equates to highly-similar or duplicate content and `64` (or `128`) equates to dissimilar content.
 
 **Syntax**
 
@@ -1722,7 +1722,7 @@ Result:
 
 Splits a UTF-8 string into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
 
-Can be used with a hamming distance function like (e.g.) [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance) for estimation of duplicate or highly-similar (`0`), partially-similar (`1`), and dissimilar (`2`) content. Other hamming distance functions like (e.g.) [bitHammingDistance](../functions/bit-functions.md/#bithammingdistance) can be used to compare two minimum or two maximum simhashes (optionally adding both hamming distances together) to generate a more accurate estimation between `0..64` (or `0..128` when added together), where `0` equates to highly-similar or duplicate content and `64` (or `128`) equates to dissimilar content.
+Can be used with a hamming distance function like (e.g.) [tupleHammingDistance](../functions/tuple-functions.md/#tuplehammingdistance) for estimation of duplicate or highly-similar (`0`), partially-similar (`1`), and dissimilar (`2`) content. Other hamming distance functions like (e.g.) [bitHammingDistance](../functions/bit-functions.md/#bithammingdistance) can be used to compare two minimum or two maximum hashes (optionally adding both hamming distances together) to generate a more accurate estimation between `0..64` (or `0..128` when added together), where `0` equates to highly-similar or duplicate content and `64` (or `128`) equates to dissimilar content.
 
 **Syntax**
 
