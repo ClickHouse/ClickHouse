@@ -11,9 +11,6 @@ set -eo pipefail
 PROTOBUF_FILE_NAME="02266_protobuf_format_google_wrappers"
 PROTOBUF_FILE_PATH="$SCHEMADIR/$PROTOBUF_FILE_NAME"
 
-#TODO: remove
-echo $PROTOBUF_FILE_PATH
-
 BINARY_FILE_PATH=$(mktemp "$CURDIR/${PROTOBUF_FILE_NAME}.XXXXXX.binary")
 MESSAGE_FILE_PATH=$(mktemp "$CURDIR/${PROTOBUF_FILE_NAME}_message.XXXXXX.binary")
 
