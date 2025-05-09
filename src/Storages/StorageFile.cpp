@@ -1150,7 +1150,7 @@ void StorageFile::setStorageMetadata(CommonArguments args)
 
     auto & storage_columns = storage_metadata.columns;
 
-   if (args.columns.empty())
+    if (args.columns.empty())
     {
         if (args.getContext()->getSettingsRef()[Setting::use_hive_partitioning])
         {
