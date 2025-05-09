@@ -2031,8 +2031,6 @@ def check_validity_and_get_prunned_files_general(instance, table_name, settings1
         )
     )
 
-from functools import partial
-
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_partition_pruning(started_cluster, storage_type):
@@ -3044,7 +3042,12 @@ def test_bucket_partition_pruning(started_cluster, storage_type):
             "use_iceberg_partition_pruning": 1
         }
         return check_validity_and_get_prunned_files_general(
-            instance, TABLE_NAME, settings1, settings2, 'IcebergPartitionPrunnedFiles', select_expression
+            instance,
+            TABLE_NAME,
+            settings1,
+            settings2,
+            "IcebergPartitionPrunedFiles",
+            select_expression,
         )
 
     creation_expression = get_creation_expression(
@@ -3053,9 +3056,9 @@ def test_bucket_partition_pruning(started_cluster, storage_type):
 
     queries = [
         f"SELECT * FROM {creation_expression} WHERE id == 1 ORDER BY ALL",
-        # f"SELECT * FROM {creation_expression} WHERE value == 20.00 OR event_time == '2024-01-24 14:00:00' ORDER BY ALL",
-        # f"SELECT * FROM {creation_expression} WHERE id == 3 AND name == 'Charlie' ORDER BY ALL",
-        # f"SELECT * FROM {creation_expression} WHERE (event_time == TIMESTAMP '2024-01-21 11:00:00' AND name == 'Bob') OR (name == 'Eve' AND id == 5) ORDER BY ALL",
+        f"SELECT * FROM {creation_expression} WHERE value == 20.00 OR event_time == '2024-01-24 14:00:00' ORDER BY ALL",
+        f"SELECT * FROM {creation_expression} WHERE id == 3 AND name == 'Charlie' ORDER BY ALL",
+        f"SELECT * FROM {creation_expression} WHERE (event_time == TIMESTAMP '2024-01-21 11:00:00' AND name == 'Bob') OR (name == 'Eve' AND id == 5) ORDER BY ALL",
     ]
 
     for query in queries:
