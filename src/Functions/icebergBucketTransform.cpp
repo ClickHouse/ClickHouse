@@ -76,7 +76,7 @@ public:
 
         WhichDataType which(type);
 
-        if (isBool(type) || which.isInteger())
+        if (isBool(type) || which.isInteger() || which.isDate())
         {
             for (size_t i = 0; i < input_rows_count; ++i)
             {
@@ -117,14 +117,6 @@ public:
             {
                 UInt128 value = uuid_column.getData()[i];
                 result_data[i] = hashUnderlyingIntBigEndian(value, /*reduce_two_complement*/ false);
-            }
-        }
-        else if (which.isDate())
-        {
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                auto value = column->getInt(i);
-                result_data[i] = hashLong(value);
             }
         }
         else if (which.isDateTime64())
@@ -181,14 +173,14 @@ public:
                 }
                 else
                 {
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported data type for icebergHash");
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported data type `{}` for icebergHash", type->getName());
                 }
                 result_data[i] = hashUnderlyingIntBigEndian(value, /*reduce_two_complement*/ true);
             }
         }
         else
         {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported data type for icebergHash");
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported data type `{}` for icebergHash", type->getName());
         }
         return result_column;
     }
@@ -266,9 +258,10 @@ REGISTER_FUNCTION(IcebergHash)
         = {{"value", "Integer, bool, decimal, float, string, fixed_string, uuid, date, time, datetime."}};
     FunctionDocumentation::ReturnedValue returned_value = "Int32";
     FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergHash(1.0 :: Float32)", "-142385009"}};
-    FunctionDocumentation::Category category = {"Other"};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
 
-    factory.registerFunction<FunctionIcebergHash>({description, syntax, arguments, returned_value, examples, category});
+    factory.registerFunction<FunctionIcebergHash>({description, syntax, arguments, returned_value, examples, introduced_in, category});
 }
 
 class FunctionIcebergBucket : public IFunction
@@ -310,8 +303,9 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Incorrect number of arguments for function icebergBucket: expected 2 arguments");
         auto value = (*arguments[0].column)[0].safeGet<Int64>();
-        if (value <= 0 || value > std::numeric_limits<UInt32>::max())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function IcebergBucket accepts only positive width which is suitable to UInt32");
+        if (value <= 0 || value > std::numeric_limits<Int32>::max())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Function IcebergBucket accepts only positive bucket size which is suitable to Int32");
 
         auto context = Context::getGlobalContextInstance();
 
@@ -346,16 +340,18 @@ public:
 REGISTER_FUNCTION(IcebergBucket)
 {
     FunctionDocumentation::Description description
-        = R"(Implements logic of iceberg truncate transform: https://iceberg.apache.org/spec/#truncate-transform-details.)";
+        = R"(Implements logic of iceberg bucket transform: https://iceberg.apache.org/spec/#bucket-transform-details.)";
     FunctionDocumentation::Syntax syntax = "icebergBucket(N, value)";
     FunctionDocumentation::Arguments arguments
         = {{"N", "modulo, positive integer, always constant."},
            {"value", "Integer, bool, decimal, float, string, fixed_string, uuid, date, time or datetime value."}};
-    FunctionDocumentation::ReturnedValue returned_value = "The same type as argument";
+    FunctionDocumentation::ReturnedValue returned_value = "Int32";
     FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergBucket(5, 1.0 :: Float32)", "4"}};
-    FunctionDocumentation::Category category = {"Other"};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
 
-    factory.registerFunction<FunctionIcebergBucket>({description, syntax, arguments, returned_value, examples, category});
+
+    factory.registerFunction<FunctionIcebergBucket>({description, syntax, arguments, returned_value, examples, introduced_in, category});
 }
 
 }

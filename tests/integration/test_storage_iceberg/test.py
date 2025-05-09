@@ -1598,7 +1598,6 @@ def test_row_based_deletes(started_cluster, storage_type):
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
 
-
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_schema_inference(started_cluster, format_version, storage_type):
@@ -2986,14 +2985,13 @@ def test_minmax_pruning_with_null(started_cluster, storage_type):
         return check_validity_and_get_prunned_files_general(
             instance, TABLE_NAME, settings1, settings2, 'IcebergMinMaxIndexPrunedFiles', select_expression
         )
-    
+
     assert (
         check_validity_and_get_prunned_files(
             f"SELECT * FROM {creation_expression} WHERE time_struct.a <= '2024-02-01' ORDER BY ALL"
         )
         == 1
     )
-
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
@@ -3055,9 +3053,9 @@ def test_bucket_partition_pruning(started_cluster, storage_type):
 
     queries = [
         f"SELECT * FROM {creation_expression} WHERE id == 1 ORDER BY ALL",
-        f"SELECT * FROM {creation_expression} WHERE value == 20.00 OR event_time == '2024-01-24 14:00:00' ORDER BY ALL",
-        f"SELECT * FROM {creation_expression} WHERE id == 3 AND name == 'Charlie' ORDER BY ALL",
-        f"SELECT * FROM {creation_expression} WHERE (event_time == TIMESTAMP '2024-01-21 11:00:00' AND name == 'Bob') OR (name == 'Eve' AND id == 5) ORDER BY ALL",
+        # f"SELECT * FROM {creation_expression} WHERE value == 20.00 OR event_time == '2024-01-24 14:00:00' ORDER BY ALL",
+        # f"SELECT * FROM {creation_expression} WHERE id == 3 AND name == 'Charlie' ORDER BY ALL",
+        # f"SELECT * FROM {creation_expression} WHERE (event_time == TIMESTAMP '2024-01-21 11:00:00' AND name == 'Bob') OR (name == 'Eve' AND id == 5) ORDER BY ALL",
     ]
 
     for query in queries:

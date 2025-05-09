@@ -57,13 +57,22 @@ DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String &
     {
         /// should look like transform[N] or bucket[N]
 
+        auto log_warning = [&transform_name]()
+        { LOG_WARNING(&Poco::Logger::get("Iceberg Partition Pruning"), "Cannot parse iceberg transform name: {}.", transform_name); };
+
         if (transform_name.back() != ']')
+        {
+            log_warning();
             return nullptr;
+        }
 
         auto argument_start = transform_name.find('[');
 
         if (argument_start == std::string::npos)
+        {
+            log_warning();
             return nullptr;
+        }
 
         auto argument_width = transform_name.length() - 2 - argument_start;
         std::string argument_string_representation = transform_name.substr(argument_start + 1, argument_width);
@@ -71,7 +80,10 @@ DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String &
         bool parsed = DB::tryParse<size_t>(argument, argument_string_representation);
 
         if (!parsed)
+        {
+            log_warning();
             return nullptr;
+        }
 
         if (transform_name.starts_with("truncate"))
         {

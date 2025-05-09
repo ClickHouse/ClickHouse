@@ -132,19 +132,12 @@ std::pair<String, StoragePtr> createTableFromAST(
         }
     }
 
-    LOG_DEBUG(&Poco::Logger::get("DatabaseOnDisk"), "Ast query begin: {}", ast_create_query.formatForLogging());
-
-
     /// Before 24.10 it was possible for query settings to be stored with the .sql definition with some engines, which would ignore them
     /// Later (breaking) changes to table storages made the engines throw, which now prevents attaching old definitions which include
     /// those query settings
     /// In order to ignore them now we call `applySettingsFromQuery` which will move the settings from engine to query level
     auto ast = std::make_shared<ASTCreateQuery>(std::move(ast_create_query));
     InterpreterSetQuery::applySettingsFromQuery(ast, context);
-
-
-    LOG_DEBUG(&Poco::Logger::get("DatabaseOnDisk"), "Ast query end: {}", ast->formatForLogging());
-
 
     return {
         ast->getTable(),
