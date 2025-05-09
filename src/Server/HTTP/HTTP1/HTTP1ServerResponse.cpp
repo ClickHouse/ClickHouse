@@ -1,5 +1,4 @@
 #include <Common/logger_useful.h>
-#include "base/defines.h"
 
 #include <Server/HTTP/exceptionCodeToHTTPStatus.h>
 #include <Server/HTTP/HTTPServerResponse.h>
@@ -9,6 +8,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Poco/Net/HTTPHeaderStream.h>
+#include <Poco/NumberFormatter.h>
 
 #include <memory>
 #include <sstream>
@@ -141,7 +141,7 @@ bool WriteBufferFromHTTP1ServerResponse::cancelWithException(int exception_code_
             finalize();
 
             LOG_DEBUG(
-                getLogger("WriteBufferFromHTTPServerResponse"),
+                getLogger("WriteBufferFromHTTP1ServerResponse"),
                 "Write buffer has been canceled with an error."
                 " Proper HTTP error code and headers have been send to the client."
                 " HTTP code: {}, message: <{}>, error code: {}, message: <{}>,"
@@ -183,7 +183,7 @@ bool WriteBufferFromHTTP1ServerResponse::cancelWithException(int exception_code_
             next();
 
             LOG_DEBUG(
-                getLogger("WriteBufferFromHTTPServerResponse"),
+                getLogger("WriteBufferFromHTTP1ServerResponse"),
                 "Write buffer has been canceled with an error."
                 "Error has been sent at the end of the response. HTTP protocol has been broken by server."
                 " HTTP code: {}, message: <{}>, error code: {}, message: <{}>."

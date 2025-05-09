@@ -6,7 +6,6 @@
 #include <Core/Names.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <IO/CascadeWriteBuffer.h>
@@ -30,7 +29,6 @@ namespace DB
 class Session;
 class IServer;
 struct Settings;
-class WriteBufferFromHTTPServerResponse;
 
 using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;
 

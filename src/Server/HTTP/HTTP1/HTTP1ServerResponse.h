@@ -4,7 +4,8 @@
 #include <Server/HTTP/HTTPServerResponse.h>
 
 #include <IO/WriteBufferFromPocoSocket.h>
-#include "Core/Defines.h"
+
+#include <Poco/Net/HTTPServerSession.h>
 
 #include <memory>
 
@@ -85,7 +86,7 @@ public:
         const ProfileEvents::Event & write_event = ProfileEvents::end(),
         size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
-    void send100Continue() override;
+    void send100Continue();
 
     void setResponseDefaultHeaders() override;
     void drainRequestIfNeeded() override;

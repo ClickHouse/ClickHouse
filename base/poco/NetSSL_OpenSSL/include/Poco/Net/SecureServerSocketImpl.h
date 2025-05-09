@@ -120,10 +120,6 @@ namespace Net
         Context::Ptr context() const;
         /// Returns the SSL context used by this socket.
 
-        std::string getAlpnSelected() const;
-        /// Returns the name of the protocol that was negotiated via ALPN
-        /// If no protocol was negotiated then an empty string is returned
-
     protected:
         ~SecureServerSocketImpl();
         /// Destroys the SecureServerSocketImpl.
@@ -143,11 +139,6 @@ namespace Net
     inline Context::Ptr SecureServerSocketImpl::context() const
     {
         return _impl.context();
-    }
-
-    inline std::string SecureServerSocketImpl::getAlpnSelected() const
-    {
-        return _impl.getAlpnSelected();
     }
 
 }

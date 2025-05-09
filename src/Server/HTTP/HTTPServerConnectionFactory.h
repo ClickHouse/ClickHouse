@@ -7,6 +7,7 @@
 #include <Server/HTTP/HTTP2/HTTP2ServerParams.h>
 
 #include <Poco/Net/HTTPServerParams.h>
+#include <Poco/ThreadPool.h>
 
 namespace DB
 {
@@ -19,6 +20,7 @@ public:
         Poco::Net::HTTPServerParams::Ptr http1_params,
         HTTP2ServerParams::Ptr http2_params,
         HTTPRequestHandlerFactoryPtr factory,
+        Poco::ThreadPool & thread_pool,
         const ProfileEvents::Event & read_event = ProfileEvents::end(),
         const ProfileEvents::Event & write_event = ProfileEvents::end());
 
@@ -30,6 +32,7 @@ private:
     Poco::Net::HTTPServerParams::Ptr http1_params;
     HTTP2ServerParams::Ptr http2_params;
     HTTPRequestHandlerFactoryPtr factory;
+    Poco::ThreadPool & thread_pool;
     ProfileEvents::Event read_event;
     ProfileEvents::Event write_event;
 };

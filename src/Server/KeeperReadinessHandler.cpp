@@ -9,7 +9,6 @@
 #include <Coordination/KeeperDispatcher.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>

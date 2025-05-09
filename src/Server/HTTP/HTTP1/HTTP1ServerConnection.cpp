@@ -160,9 +160,11 @@ HTTP1ServerConnection::HTTP1ServerConnection(
 
 void HTTP1ServerConnection::run()
 {
+    /// FIXME: server seems to be always empty
     std::string server = params->getSoftwareVersion();
     Poco::Net::HTTPServerSession session(socket(), params);
 
+    /// FIXME: stopped seems to be useless
     while (!stopped && tcp_server.isOpen() && session.hasMoreRequests() && session.connected())
     {
         try
@@ -188,6 +190,7 @@ void HTTP1ServerConnection::run()
 
                 }
 
+                /// FIXME: move all these to some function to reuse in HTTP2ServerConnection
                 response.setDate(now);
                 response.setVersion(request.getVersion());
                 response.setKeepAlive(params->getKeepAlive() && request.getKeepAlive() && session.canKeepAlive());
@@ -235,7 +238,7 @@ void HTTP1ServerConnection::run()
         }
         catch (const Poco::Net::MessageException & e)
         {
-            LOG_DEBUG(LogFrequencyLimiter(getLogger("HTTPServerConnection"), 10), "HTTP request failed: {}: {}", HTTPResponse::HTTP_REASON_BAD_REQUEST, e.displayText());
+            LOG_DEBUG(LogFrequencyLimiter(getLogger("HTTP1ServerConnection"), 10), "HTTP request failed: {}: {}", HTTPResponse::HTTP_REASON_BAD_REQUEST, e.displayText());
             // MessageException should be thrown only on request parsing error so it is safe to create a new response object here
             HTTP1ServerResponse response(session, write_event);
             sendErrorResponse(response, Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
@@ -245,7 +248,7 @@ void HTTP1ServerConnection::run()
             /// Do not spam logs with messages related to connection reset by peer.
             if (e.code() == POCO_ENOTCONN)
             {
-                LOG_DEBUG(LogFrequencyLimiter(getLogger("HTTPServerConnection"), 10), "Connection reset by peer while processing HTTP request: {}", e.message());
+                LOG_DEBUG(LogFrequencyLimiter(getLogger("HTTP1ServerConnection"), 10), "Connection reset by peer while processing HTTP request: {}", e.message());
                 break;
             }
 

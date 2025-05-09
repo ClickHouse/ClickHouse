@@ -8,6 +8,7 @@
 #include <Server/TCPProtocolStackFactory.h>
 #include <Server/ServerType.h>
 #include <Poco/Net/HTTPServerParams.h>
+#include <Poco/ThreadPool.h>
 
 /** Server provides three interfaces:
   * 1. HTTP - simple interface for any applications.
@@ -89,6 +90,7 @@ private:
         const std::string & protocol,
         Poco::Net::HTTPServerParams::Ptr http1_params,
         HTTP2ServerParams::Ptr http2_params,
+        Poco::ThreadPool & thread_pool,
         AsynchronousMetrics & async_metrics,
         bool & is_secure);
 

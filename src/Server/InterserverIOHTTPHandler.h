@@ -19,8 +19,6 @@ namespace DB
 {
 
 class IServer;
-class WriteBufferFromHTTPServerResponse;
-
 class InterserverIOHTTPHandler : public HTTPRequestHandler
 {
 public:
