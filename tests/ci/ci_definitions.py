@@ -155,7 +155,7 @@ class JobNames(metaclass=WithIter):
         "Stateless tests (release, ParallelReplicas, s3 storage)"
     )
     STATELESS_TEST_ASYNC_INSERT_DEBUG = (
-        "Stateless tests (debug, AsyncInsert, s3 storage)"
+        "Stateless tests (amd_debug, AsyncInsert, s3 storage)"
     )
     STATELESS_TEST_S3_DEBUG_DISTRIBUTED_PLAN = (
         "Stateless tests (debug, distributed plan, s3 storage)"

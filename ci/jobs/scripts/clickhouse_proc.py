@@ -94,6 +94,33 @@ class ClickHouseProc:
             verbose=True,
         )
 
+    @staticmethod
+    def enable_thread_fuzzer_config():
+        # For flaky check we also enable thread fuzzer
+        os.environ["IS_FLAKY_CHECK"] = 1
+        os.environ["THREAD_FUZZER_CPU_TIME_PERIOD_US"] = 1000
+        os.environ["THREAD_FUZZER_SLEEP_PROBABILITY"] = 0.1
+        os.environ["THREAD_FUZZER_SLEEP_TIME_US_MAX"] = 100000
+
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY"] = 1
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY"] = 1
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY"] = 1
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY"] = 1
+
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY"] = 0.001
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY"] = 0.001
+
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY"] = (
+            0.001
+        )
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY"] = 0.001
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX"] = 10000
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX"] = 10000
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX"] = (
+            10000
+        )
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX"] = 10000
+
     def create_log_export_config(self):
         print("Create log export config")
         config_file = Path(self.ch_config_dir) / "config.d" / "system_logs_export.yaml"
@@ -131,10 +158,9 @@ class ClickHouseProc:
             f"CAST({info.pr_number} AS UInt32) AS pull_request_number, '{info.sha}' AS commit_sha, toDateTime('{Utils.timestamp_to_str(check_start_time)}', 'UTC') AS check_start_time, toLowCardinality('{info.job_name}') AS check_name, toLowCardinality('{info.instance_type}') AS instance_type, '{info.instance_id}' AS instance_id"
         )
 
-        Shell.check(
+        return Shell.check(
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --setup-logs-replication",
             verbose=True,
-            strict=True,
         )
 
     @staticmethod

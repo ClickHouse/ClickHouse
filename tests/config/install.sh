@@ -15,6 +15,7 @@ fi
 FAST_TEST=0
 EXPORT_S3_STORAGE_POLICIES=1
 USE_AZURE_STORAGE_FOR_MERGE_TREE=0
+USE_ASYNC_INSERT=0
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -29,6 +30,8 @@ while [[ "$#" -gt 0 ]]; do
         --db-ordinary) USE_DATABASE_ORDINARY=1 ;;
 
         --azure) USE_AZURE_STORAGE_FOR_MERGE_TREE=1 ;;
+
+        --async-insert) USE_ASYNC_INSERT=1 ;;
         *) echo "Unknown option: $1" ; exit 1 ;;
     esac
     shift
@@ -281,8 +284,8 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     ln -sf $SRC_PATH/users.d/database_replicated.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/config.d/database_replicated.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/remote_database_disk.xml $DEST_SERVER_PATH/config.d/
-    rm /etc/clickhouse-server/config.d/zookeeper.xml
-    rm /etc/clickhouse-server/config.d/keeper_port.xml
+    rm $DEST_SERVER_PATH/config.d/zookeeper.xml
+    rm $DEST_SERVER_PATH/config.d/keeper_port.xml
 
     # There is a bug in config reloading, so we cannot override macros using --macros.replica r2
     # And we have to copy configs...
