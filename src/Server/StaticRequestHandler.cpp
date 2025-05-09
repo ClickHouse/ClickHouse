@@ -155,13 +155,16 @@ StaticRequestHandler::StaticRequestHandler(
 
 HTTPRequestHandlerFactoryPtr createStaticHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix)
+    const std::string & config_prefix,
+    std::unordered_map<String, String> & common_headers)
 {
     int status = config.getInt(config_prefix + ".handler.status", 200);
     std::string response_content = config.getRawString(config_prefix + ".handler.response_content", "Ok.\n");
 
     std::unordered_map<String, String> http_response_headers_override
         = parseHTTPResponseHeaders(config, config_prefix, "text/plain; charset=UTF-8");
+
+    http_response_headers_override.insert(common_headers.begin(), common_headers.end());
 
     auto creator = [&server, http_response_headers_override, response_content, status]() -> std::unique_ptr<StaticRequestHandler>
     { return std::make_unique<StaticRequestHandler>(server, response_content, http_response_headers_override, status); };
