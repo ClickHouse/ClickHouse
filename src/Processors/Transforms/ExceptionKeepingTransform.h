@@ -1,13 +1,12 @@
 #pragma once
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
-#include <memory>
 
 namespace DB
 {
 
-class ThreadGroup;
-using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
+
+class ThreadStatus;
 
 /// Has one input and one output.
 /// Works similarly to ISimpleTransform, but with much care about exceptions.
@@ -65,10 +64,11 @@ public:
     InputPort & getInputPort() { return input; }
     OutputPort & getOutputPort() { return output; }
 
-    void setRuntimeData(ThreadGroupPtr thread_group_);
+    void setRuntimeData(ThreadStatus * thread_status_, std::atomic_uint64_t * elapsed_counter_ms_);
 
 private:
-    ThreadGroupPtr thread_group = nullptr;
+    ThreadStatus * thread_status = nullptr;
+    std::atomic_uint64_t * elapsed_counter_ms = nullptr;
 };
 
 }

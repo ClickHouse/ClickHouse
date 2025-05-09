@@ -10,6 +10,7 @@ namespace DB
 {
 template <class> struct Decimal;
 class DateTime64;
+class Time64;
 
 #define FOR_EACH_UNDERLYING_DECIMAL_TYPE(M) \
     M(Int32) \
@@ -142,6 +143,16 @@ public:
 
     constexpr DateTime64(const Base & v): Base(v) {} // NOLINT(google-explicit-constructor)
 };
+
+class Time64 : public Decimal64
+{
+public:
+    using Base = Decimal64;
+    using Base::Base;
+    using NativeType = Base::NativeType;
+
+    constexpr Time64(const Base & v): Base(v) {} // NOLINT(google-explicit-constructor)
+};
 }
 
 constexpr UInt64 max_uint_mask = std::numeric_limits<UInt64>::max();
@@ -170,6 +181,15 @@ namespace std
         size_t operator()(const DB::DateTime64 & x) const
         {
             return std::hash<DB::DateTime64::NativeType>()(x);
+        }
+    };
+
+    template <>
+    struct hash<DB::Time64>
+    {
+        size_t operator()(const DB::Time64 & x) const
+        {
+            return std::hash<DB::Time64::NativeType>()(x);
         }
     };
 

@@ -777,7 +777,7 @@ void TCPHandler::runImpl()
         }
         catch (...)
         {
-            exception = std::make_unique<DB::Exception>(getCurrentExceptionMessageAndPattern(false), ErrorCodes::UNKNOWN_EXCEPTION);
+            exception = std::make_unique<DB::Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
         }
 
         if (exception)
@@ -851,7 +851,7 @@ void TCPHandler::runImpl()
                 if (!query_state->read_all_data)
                     skipData(query_state.value());
 
-                LOG_TRACE(log, "Logs and exception has been sent. The connection is preserved.");
+                LOG_TEST(log, "Logs and exception has been sent. The connection is preserved.");
             }
             catch (...)
             {
@@ -968,7 +968,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
 
     while (!server.isCancelled() && tcp_server.isOpen())
     {
-        while (!in->poll(timeout_us))
+        if (!in->poll(timeout_us))
         {
             size_t elapsed = size_t(watch.elapsedSeconds());
             if (elapsed > size_t(receive_timeout.totalSeconds()))
