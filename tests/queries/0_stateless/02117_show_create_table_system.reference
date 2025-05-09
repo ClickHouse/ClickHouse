@@ -412,6 +412,7 @@ CREATE TABLE system.mutations
     `mutation_id` String,
     `command` String,
     `create_time` DateTime,
+    `finish_time` DateTime,
     `block_numbers.partition_id` Array(String),
     `block_numbers.number` Array(Int64),
     `parts_to_do_names` Array(String),
