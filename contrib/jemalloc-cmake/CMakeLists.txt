@@ -36,9 +36,9 @@ if (OS_LINUX)
     # https://github.com/ClickHouse/ClickHouse/issues/11121 for motivation.
     # set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:false,background_thread:true")
 
-    set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:false,background_thread:true,tcache:true,junk:true")
+    set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:false,background_thread:true,tcache:false,junk:true")
     set (JEMALLOC_DEBUG 1)
-    add_compile_definitions(JEMALLOC_CONFIG_MALLOC_CONF="percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:false,background_thread:true,tcache:true,junk:true")
+    add_compile_definitions(JEMALLOC_CONFIG_MALLOC_CONF="percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:false,background_thread:true,tcache:false,junk:true")
     add_compile_definitions(JEMALLOC_DEBUG=1)
 else()
     set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000")
