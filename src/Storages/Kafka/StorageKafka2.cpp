@@ -1245,6 +1245,7 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
     {
         LOG_TRACE(log, "Didn't get any messages");
         needs_offset_reset = false;
+        block_io.onCancelOrConnectionLoss();
         return std::nullopt;
     }
 
