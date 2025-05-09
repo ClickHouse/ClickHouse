@@ -1,9 +1,6 @@
-import time
-
 import pytest
 import logging
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
@@ -91,7 +88,7 @@ def test_zookeeper_connection_log(started_cluster):
 
             node.query("SYSTEM RELOAD CONFIG")
 
-            time.sleep(5)
+            node.query_with_retry(f"SELECT count() FROM system.zookeeper_connection_log WHERE event_time_microseconds >= '{test_start_time}'", check_callback=lambda res: res == "8\n",)
 
             node.query(
                 "ALTER TABLE simple2 FETCH PARTITION '2020-08-29' FROM 'zk_conn_log_test_4:/clickhouse/tables/0/simple';"
