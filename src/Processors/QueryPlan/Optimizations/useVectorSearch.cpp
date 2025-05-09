@@ -129,7 +129,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
         }
         else if (child->type == ActionsDAG::ActionType::COLUMN)
         {
-            /// Is it an Array(Float32) or Array(Float64) column?
+            /// Is it an Array(Float32), Array(Float64) or Array(BFloat16) column?
             const DataTypePtr & data_type = child->result_type;
             const auto * data_type_array = typeid_cast<const DataTypeArray *>(data_type.get());
             if (data_type_array == nullptr)
@@ -137,7 +137,8 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
             DataTypePtr data_type_array_nested = data_type_array->getNestedType();
             const auto * data_type_nested_float64 = typeid_cast<const DataTypeFloat64 *>(data_type_array_nested.get());
             const auto * data_type_nested_float32 = typeid_cast<const DataTypeFloat32 *>(data_type_array_nested.get());
-            if (data_type_nested_float64 == nullptr && data_type_nested_float32 == nullptr)
+            const auto * data_type_nested_bfloat16 = typeid_cast<const DataTypeBFloat16 *>(data_type_array_nested.get());
+            if (data_type_nested_float64 == nullptr && data_type_nested_float32 == nullptr && data_type_nested_bfloat16 == nullptr)
                 continue;
 
             /// Read value from column

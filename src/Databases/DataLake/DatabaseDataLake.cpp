@@ -1,4 +1,6 @@
 #include <Databases/DataLake/DatabaseDataLake.h>
+#include "Core/SettingsEnums.h"
+#include "Databases/DataLake/HiveCatalog.h"
 #include "Storages/ObjectStorage/StorageObjectStorageSettings.h"
 
 #if USE_AVRO && USE_PARQUET
@@ -52,6 +54,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_database_iceberg;
     extern const SettingsBool allow_experimental_database_unity_catalog;
     extern const SettingsBool allow_experimental_database_glue_catalog;
+    extern const SettingsBool allow_experimental_database_hms_catalog;
     extern const SettingsBool use_hive_partitioning;
 }
 namespace StorageObjectStorageSetting
@@ -157,6 +160,18 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
                 Context::getGlobalContextInstance());
             break;
         }
+        case DB::DatabaseDataLakeCatalogType::ICEBERG_HIVE:
+        {
+#if USE_HIVE
+            catalog_impl = std::make_shared<DataLake::HiveCatalog>(
+                settings[DatabaseDataLakeSetting::warehouse].value,
+                url,
+                Context::getGlobalContextInstance());
+            break;
+#else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot use 'hive' database engine: ClickHouse was compiled without USE_HIVE built option");
+#endif
+        }
     }
     return catalog_impl;
 }
@@ -168,6 +183,7 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseDataLake::getConfig
     auto catalog = getCatalog();
     switch (catalog->getCatalogType())
     {
+        case DB::DatabaseDataLakeCatalogType::ICEBERG_HIVE:
         case DatabaseDataLakeCatalogType::ICEBERG_REST:
         {
             switch (type)
@@ -380,6 +396,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     const auto configuration = getConfiguration(storage_type);
 
     auto storage_settings = std::make_shared<StorageObjectStorageSettings>();
+    storage_settings->loadFromSettingsChanges(settings.allChanged());
+
     if (auto table_specific_properties = table_metadata.getDataLakeSpecificProperties();
         table_specific_properties.has_value())
     {
@@ -625,6 +643,19 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                 }
 
                 engine_func->name = "DeltaLake";
+                break;
+            }
+            case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
+            {
+                if (!args.create_query.attach
+                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_hms_catalog])
+                {
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                                    "DatabaseDataLake with Icerberg Hive catalog is experimental. "
+                                    "To allow its usage, enable setting allow_experimental_database_hms_catalog");
+                }
+
+                engine_func->name = "Iceberg";
                 break;
             }
         }

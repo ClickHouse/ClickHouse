@@ -326,7 +326,9 @@ class CI:
             required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=1
         ),
         JobNames.STATELESS_TEST_AZURE_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_AARCH64_ASAN], num_batches=3, release_only=True
+            required_builds=[BuildNames.PACKAGE_AARCH64_ASAN],
+            num_batches=3,
+            release_only=True,
         ),
         JobNames.STATELESS_TEST_S3_TSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN],
@@ -616,7 +618,9 @@ class CI:
     @classmethod
     def get_job_config(cls, check_name: str) -> JobConfig:
         # remove job batch if it exists in check name (hack for migration to praktika)
-        check_name = check_name.replace("arm_", "").replace("amd_", "")  # hack for new names in praktika
+        check_name = check_name.replace("arm_", "").replace(
+            "amd_", ""
+        )  # hack for new names in praktika
         check_name = re.sub(r",\s*\d+/\d+\)", ")", check_name)
         return cls.JOB_CONFIGS[check_name]
 

@@ -373,7 +373,7 @@ void StorageBuffer::read(
                     }
                 }
 
-                src_table_query_info.merge_storage_snapshot = storage_snapshot;
+                src_table_query_info.initial_storage_snapshot = storage_snapshot;
                 destination->read(
                         query_plan, columns_intersection, destination_snapshot, src_table_query_info,
                         local_context, processed_stage, max_block_size, num_streams);

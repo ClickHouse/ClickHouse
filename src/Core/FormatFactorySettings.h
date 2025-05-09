@@ -4,6 +4,7 @@
 
 #include <Core/SettingsObsoleteMacros.h>
 #include <Core/SettingsFields.h>
+#include <Core/Defines.h>
 
 // clang-format off
 #if defined(__CLION_IDE__)
@@ -919,6 +920,11 @@ Output the pending block in pretty formats if more than the specified number of 
     DECLARE(UInt64Auto, output_format_pretty_color, "auto", R"(
 Use ANSI escape sequences in Pretty formats. 0 - disabled, 1 - enabled, 'auto' - enabled if a terminal.
 )", 0) \
+    DECLARE(UInt64Auto, output_format_pretty_glue_chunks, "auto", R"(
+If the data rendered in Pretty formats arrived in multiple chunks, even after a delay, but the next chunk has the same column widths as the previous, use ANSI escape sequences to move back to the previous line and overwrite the footer of the previous chunk to continue it with the data of the new chunk. This makes the result more visually pleasant.
+
+0 - disabled, 1 - enabled, 'auto' - enabled if a terminal.
+)", 0) \
     DECLARE(String, output_format_pretty_grid_charset, "UTF-8", R"(
 Charset for printing grid borders. Available charsets: ASCII, UTF-8 (default one).
 )", 0) \
@@ -1305,6 +1311,10 @@ Set the quoting rule for identifiers in SHOW CREATE query
 )", 0) \
     DECLARE(IdentifierQuotingStyle, show_create_query_identifier_quoting_style, IdentifierQuotingStyle::Backticks, R"(
 Set the quoting style for identifiers in SHOW CREATE query
+)", 0) \
+    DECLARE(UInt64, input_format_max_block_size_bytes, 0, R"(
+Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.
+0 means no limit in bytes.
 )", 0) \
 
 // End of FORMAT_FACTORY_SETTINGS
