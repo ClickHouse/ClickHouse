@@ -58,6 +58,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_delta_kernel_rs", 1);
     context->setSetting("allow_experimental_ytsaurus_table_function", 1);
     context->setSetting("allow_experimental_ytsaurus_table_engine", 1);
+    context->setSetting("allow_experimental_ytsaurus_dictionary_source", 1);
 
     /// clickhouse-private settings
     context->setSetting("allow_experimental_shared_set_join", 1);
