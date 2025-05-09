@@ -881,6 +881,26 @@ namespace
 
 #endif
 
+namespace
+{
+
+MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+MULTITARGET_FUNCTION_HEADER(template <typename ValueType> void),
+replicateImpl,
+MULTITARGET_FUNCTION_BODY((const ValueType * __restrict data, size_t size, const IColumn::Offsets & offsets, ValueType * __restrict result) /// NOLINT
+{
+    auto *it = result;
+    for (size_t i = 0; i < size; ++i)
+    {
+        auto * span_end = result + offsets[i];
+        std::fill(it, span_end, data[i]);
+        it = span_end;
+    }
+})
+)
+
+}
+
 template <typename T>
 ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 {
@@ -901,12 +921,19 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
     }
 #endif
 
-    auto it = res->getData().begin(); // NOLINT
-    for (size_t i = 0; i < size; ++i)
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::AVX512BW))
+        replicateImplAVX512BW(data.data(), size, offsets, res->getData().data());
+    else if (isArchSupported(TargetArch::AVX512F))
+        replicateImplAVX512F(data.data(), size, offsets, res->getData().data());
+    else if (isArchSupported(TargetArch::AVX2))
+        replicateImplAVX2(data.data(), size, offsets, res->getData().data());
+    else if (isArchSupported(TargetArch::SSE42))
+        replicateImplSSE42(data.data(), size, offsets, res->getData().data());
+    else
+#endif
     {
-        const auto span_end = res->getData().begin() + offsets[i]; // NOLINT
-        for (; it != span_end; ++it)
-            *it = data[i];
+        replicateImpl(data.data(), size, offsets, res->getData().data());
     }
 
     return res;
