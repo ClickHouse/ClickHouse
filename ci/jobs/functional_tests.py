@@ -1,5 +1,6 @@
 import argparse
 import os
+import re
 import time
 from pathlib import Path
 
@@ -31,6 +32,32 @@ def parse_args():
     return parser.parse_args()
 
 
+def get_changed_tests(info: Info):
+    result = set()
+    changed_files = info.get_changed_files()
+    assert changed_files, "No changed files"
+
+    for fpath in changed_files:
+        if re.match(r"tests/queries/0_stateless/\d{5}", fpath):
+            if not Path(fpath).exists():
+                print(f"File '{fpath}' was removed — skipping")
+                continue
+
+            print(f"Detected changed test file: '{fpath}'")
+
+            fname = os.path.basename(fpath)
+            fname_without_ext = os.path.splitext(fname)[0]
+
+            # Add '.' suffix to precisely match this test only
+            result.add(f"{fname_without_ext}.")
+
+        elif fpath.startswith("tests/queries/"):
+            # Log any other suspicious file in tests/queries for future debugging
+            print(f"File '{fpath}' changed, but doesn't match expected test pattern")
+
+    return sorted(result)
+
+
 def run_tests(
     no_parallel: bool, no_sequiential: bool, batch_num: int, batch_total: int, test=""
 ):
@@ -51,6 +78,17 @@ def run_tests(
     Shell.run(command, verbose=True)
 
 
+def run_tests_flaky_check(tests):
+    test_output_file = f"{temp_dir}/test_result.txt"
+    nproc = int(Utils.cpu_count() / 2)
+    command = f"clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check \
+        --capture-client-stacktrace --queries /repo/tests/queries --report-logs-stats --test-runs 50 \
+        --jobs {nproc} --order=random -- {' '.join(tests)} | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{test_output_file}\""
+    if Path(test_output_file).exists():
+        Path(test_output_file).unlink()
+    Shell.run(command, verbose=True)
+
+
 OPTIONS_TO_INSTALL_ARGUMENTS = {
     "old analyzer": "--analyzer",
     "s3 storage": "--s3-storage",
@@ -60,22 +98,31 @@ OPTIONS_TO_INSTALL_ARGUMENTS = {
     "ParallelReplicas": "--parallel-rep",
     "distributed plan": "--distributed-plan",
     "azure": "--azure",
+    "AsyncInsert": " --async-insert",
 }
 
 
 def main():
     args = parse_args()
-    test_options = args.options.split(",")
+    test_options = [to.strip() for to in args.options.split(",")]
     no_parallel = "non-parallel" in test_options
     no_sequential = "parallel" in test_options
     batch_num, total_batches = 0, 0
     config_installs_args = ""
+    is_flaky_check = False
     for to in test_options:
         if "/" in to:
             batch_num, total_batches = map(int, to.split("/"))
-        if to in OPTIONS_TO_INSTALL_ARGUMENTS:
+        elif to in OPTIONS_TO_INSTALL_ARGUMENTS:
             print(f"NOTE: Enabled config option [{OPTIONS_TO_INSTALL_ARGUMENTS[to]}]")
             config_installs_args += f" {OPTIONS_TO_INSTALL_ARGUMENTS[to]}"
+        elif "flaky" in to:
+            is_flaky_check = True
+        else:
+            if to.startswith("amd_") or to.startswith("arm_"):
+                # this is a binary type
+                continue
+            assert False, f"Unknown option [{to}]"
 
     # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
     info = Info()
@@ -84,9 +131,6 @@ def main():
             f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
             verbose=True,
         )
-
-    if "azure" in test_options:
-        config_installs_args += "--azure"
 
     ch_path = args.ch_path
     assert (
@@ -112,8 +156,17 @@ def main():
     results = []
 
     Utils.add_to_PATH(f"{ch_path}:tests")
+    CH = ClickHouseProc()
 
     if res and JobStages.INSTALL_CLICKHOUSE in stages:
+
+        def configure_log_export():
+            if not info.is_local_run:
+                print("prepare log export config")
+                return CH.create_log_export_config()
+            else:
+                print("skip log export config for local run")
+
         commands = [
             f"rm -rf {temp_dir}/var/log/clickhouse-server/clickhouse-server.*",
             f"chmod +x {ch_path}/clickhouse",
@@ -126,6 +179,7 @@ def main():
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-disks",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-obfuscator",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-format",
+            f"ln -sf /usr/bin/clickhouse-odbc-bridge {ch_path}/clickhouse-odbc-bridge",
             f"rm -rf {temp_dir}/etc/ && mkdir -p {temp_dir}/etc/clickhouse-client {temp_dir}/etc/clickhouse-server",
             f"cp programs/server/config.xml programs/server/users.xml {temp_dir}/etc/clickhouse-server/",
             f"./tests/config/install.sh {temp_dir}/etc/clickhouse-server {temp_dir}/etc/clickhouse-client {config_installs_args}",
@@ -138,13 +192,23 @@ def main():
             f"for file in {temp_dir}/etc/clickhouse-server/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|>/var/log|>{temp_dir}/var/log|g; s|>/etc/|>{temp_dir}/etc/|g' $(readlink -f $file); done",
             f"for file in {temp_dir}/etc/clickhouse-server/config.d/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|<path>local_disk|<path>{temp_dir}/local_disk|g' $(readlink -f $file); done",
             f"clickhouse-server --version",
+            configure_log_export,
         ]
+        if is_flaky_check:
+            commands.append(CH.enable_thread_fuzzer_config)
+            # FIXME:
+            # if [ "$NUM_TRIES" -gt "1" ]; then
+            #     # We don't run tests with Ordinary database in PRs, only in master.
+            #     # So run new/changed tests with Ordinary at least once in flaky check.
+            #     NUM_TRIES=1 USE_DATABASE_ORDINARY=1 run_tests \
+            #                                         | sed 's/All tests have finished/Redacted: a message about tests finish is deleted/' | sed 's/No tests were run/Redacted: a message about no tests run is deleted/' ||:
+            # fi
+
         results.append(
             Result.from_commands_run(name="Install ClickHouse", command=commands)
         )
         res = results[-1].is_ok()
 
-    CH = ClickHouseProc()
     if res and JobStages.START in stages:
         stop_watch_ = Utils.Stopwatch()
         step_name = "Start ClickHouse Server"
@@ -162,13 +226,12 @@ def main():
         res = res and Shell.check(
             "aws s3 ls s3://test --endpoint-url http://localhost:11111/", verbose=True
         )
-        # TODO: log export
-        # if not Info().is_local_run:
-        #     res = res and CH.create_log_export_config()
         res = res and CH.start()
-        # if not Info().is_local_run:
-        #     res = res and CH.start_log_exports(stop_watch.start_time)
         res = res and CH.wait_ready()
+        if not Info().is_local_run:
+            if not CH.start_log_exports(stop_watch.start_time):
+                info.add_workflow_report_message("WARNING: Failed to start log export")
+                print("Failed to start log export")
         if res:
             print("ch started")
         logs_to_attach += [
@@ -195,13 +258,26 @@ def main():
             "clickhouse-client -q \"insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')\"",
             verbose=True,
         )
-        run_tests(
-            no_parallel=no_parallel,
-            no_sequiential=no_sequential,
-            batch_num=batch_num,
-            batch_total=total_batches,
-            test=args.test,
-        )
+        if not is_flaky_check:
+            run_tests(
+                no_parallel=no_parallel,
+                no_sequiential=no_sequential,
+                batch_num=batch_num,
+                batch_total=total_batches,
+                test=args.test,
+            )
+        else:
+            if info.is_local_run:
+                assert (
+                    args.test
+                ), "For runnin flaky check localy test case name must be provided via --test"
+                tests = [args.test]
+            else:
+                tests = get_changed_tests(info)
+            if tests:
+                run_tests_flaky_check(tests=tests)
+            else:
+                print("WARNING: No tests to run")
         CH.stop_log_exports()
         results.append(FTResultsProcessor(wd=temp_dir).run())
         results[-1].set_timing(stopwatch=stop_watch_)
