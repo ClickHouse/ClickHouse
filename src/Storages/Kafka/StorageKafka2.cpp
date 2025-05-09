@@ -417,8 +417,6 @@ void StorageKafka2::startup()
             consumers.push_back(ConsumerAndAssignmentInfo{.consumer = createConsumer(i), .keeper = getZooKeeper()});
             LOG_DEBUG(log, "Created #{} consumer", num_created_consumers);
             ++num_created_consumers;
-
-            consumers.back().consumer->subscribeIfNotSubscribedYet();
         }
         catch (const cppkafka::Exception &)
         {

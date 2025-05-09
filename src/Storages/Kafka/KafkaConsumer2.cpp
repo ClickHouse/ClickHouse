@@ -234,16 +234,6 @@ void KafkaConsumer2::commit(const TopicPartition & topic_partition)
     }
 }
 
-void KafkaConsumer2::subscribeIfNotSubscribedYet()
-{
-    if (likely(is_subscribed))
-        return;
-
-    consumer->subscribe(topics);
-    is_subscribed = true;
-    LOG_DEBUG(log, "Subscribed.");
-}
-
 KafkaConsumer2::TopicPartitions KafkaConsumer2::getAllTopicPartitions() const
 {
     std::unordered_set<String> topics_set;

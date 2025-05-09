@@ -102,8 +102,6 @@ public:
     const auto & currentHeaderList() const { return current[-1].get_header_list(); }
     String currentPayload() const { return current[-1].get_payload(); }
 
-    void subscribeIfNotSubscribedYet();
-
     // Build the full list of partitions for our subscribed topics.
     TopicPartitions getAllTopicPartitions() const;
 
