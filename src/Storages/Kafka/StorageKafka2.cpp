@@ -1235,13 +1235,8 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
     auto & consumer_info = consumers[idx];
     consumer_info.watch.restart();
     auto & consumer = consumer_info.consumer;
-
-    auto all_topic_partitions = consumer->getAllTopicPartitions();
-    if (all_topic_partitions.empty())
-    {
-        LOG_DEBUG(log, "Couldn't get list of all topic partitions");
-        return StallReason::NoMetadata;
-    }
+    LOG_TRACE(log, "Polling consumer {} for events", idx);
+    consumer->pollEvents();
 
     try
     {
@@ -1258,17 +1253,24 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
                 LOG_TEST(log, "Got new zookeeper");
             }
 
-            updatePermanentLocks(*consumer_info.keeper, consumer->getAllTopicPartitions(), consumer_info.permanent_locks, consumer_info.permanent_locks_changed);
+            auto all_topic_partitions = consumer->getAllTopicPartitions();
+            if (all_topic_partitions.empty())
+            {
+                LOG_DEBUG(log, "Couldn't get list of all topic partitions");
+                return StallReason::NoMetadata;
+            }
+
+            updatePermanentLocks(*consumer_info.keeper, all_topic_partitions, consumer_info.permanent_locks, consumer_info.permanent_locks_changed);
             if (consumer_info.poll_count >= TMP_LOCKS_REFRESH_POLLS)
             {
-                updateTemporaryLocks(*consumer_info.keeper, consumer->getAllTopicPartitions(), consumer_info.tmp_locks, consumer_info.tmp_locks_quota);
+                updateTemporaryLocks(*consumer_info.keeper, all_topic_partitions, consumer_info.tmp_locks, consumer_info.tmp_locks_quota);
                 consumer_info.poll_count = 0;
             }
             else if (consumer_info.permanent_locks_changed)
             {
                 // If our permanent locks just changed, we clear and re-acquire temporary locks immediately
                 // so we never mix old temporary work with the new permanent locks set.
-                updateTemporaryLocks(*consumer_info.keeper, consumer->getAllTopicPartitions(), consumer_info.tmp_locks, consumer_info.tmp_locks_quota);
+                updateTemporaryLocks(*consumer_info.keeper, all_topic_partitions, consumer_info.tmp_locks, consumer_info.tmp_locks_quota);
                 consumer_info.permanent_locks_changed = false;
             }
 
