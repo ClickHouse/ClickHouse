@@ -130,7 +130,6 @@ private:
         return hasany_function_resolver;
     }
 
-private:
     using FunctionNodes = std::vector<std::shared_ptr<FunctionNode>>;
     const FunctionOverloadResolverPtr or_function_resolver;
     mutable FunctionOverloadResolverPtr hasany_function_resolver;
