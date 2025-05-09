@@ -935,6 +935,8 @@
                     <!-- <priority>1</priority> -->
                     <!-- Use SSL? Default: no -->
                     <!-- <secure>0</secure> -->
+                    <!-- Optional. Bind to specific host before connecting to use a specific network. -->
+                    <!-- <bind_host>10.0.0.1</bind_host> -->
                 </replica>
             </shard>
         </default>

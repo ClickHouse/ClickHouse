@@ -1,6 +1,5 @@
 ---
-description: 'Creates a temporary Merge table. The table structure is taken from the
-  first table encountered that matches the regular expression.'
+description: 'Creates a temporary Merge table. The structure will be derived from underlying tables by using a union of their columns and by deriving common types.'
 sidebar_label: 'merge'
 sidebar_position: 130
 slug: /sql-reference/table-functions/merge
@@ -9,7 +8,7 @@ title: 'merge'
 
 # merge Table Function
 
-Creates a temporary [Merge](../../engines/table-engines/special/merge.md) table. The table structure is taken from the first table encountered that matches the regular expression.
+Creates a temporary [Merge](../../engines/table-engines/special/merge.md) table. The structure will be derived from underlying tables by using a union of their columns and by deriving common types.
 
 **Syntax**
 

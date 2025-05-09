@@ -15,7 +15,6 @@
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/typeid_cast.h>
-#include <Columns/IColumn_fwd.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
@@ -34,7 +33,6 @@
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string.hpp>
 #include <algorithm>
-#include <vector>
 
 
 namespace DB
@@ -129,26 +127,18 @@ class ZooKeeperSink : public SinkToStorage
     ZkNodeCache cache;
 
 public:
-    ZooKeeperSink(const Block & header, ContextPtr context)
-        : SinkToStorage(header), zookeeper(context->getZooKeeper())
-    {}
-
+    ZooKeeperSink(const Block & header, ContextPtr context) : SinkToStorage(header), zookeeper(context->getZooKeeper()) { }
     String getName() const override { return "ZooKeeperSink"; }
 
     void consume(Chunk & chunk) override
     {
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
-
-        ColumnPtr name_column = block.getByName("name").column;
-        ColumnPtr value_column = block.getByName("value").column;
-        ColumnPtr path_column = block.getByName("path").column;
-
         size_t rows = block.rows();
         for (size_t i = 0; i < rows; i++)
         {
-            String name = name_column->getDataAt(i).toString();
-            String value = value_column->getDataAt(i).toString();
-            String path = path_column->getDataAt(i).toString();
+            String name = block.getByPosition(0).column->getDataAt(i).toString();
+            String value = block.getByPosition(1).column->getDataAt(i).toString();
+            String path = block.getByPosition(2).column->getDataAt(i).toString();
 
             /// We don't expect a "name" contains a path.
             if (name.contains('/'))
@@ -280,12 +270,15 @@ void StorageSystemZooKeeper::read(
     query_plan.addStep(std::move(read_step));
 }
 
-SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMetadataPtr & metadata, ContextPtr context, bool /*async_insert*/)
+SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, bool /*async_insert*/)
 {
     if (!context->getConfigRef().getBool("allow_zookeeper_write", false))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prohibit writing to system.zookeeper, unless config `allow_zookeeper_write` as true");
-
-    return std::make_shared<ZooKeeperSink>(metadata->getSampleBlock(), context);
+    Block write_header;
+    write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "name"));
+    write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "value"));
+    write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "path"));
+    return std::make_shared<ZooKeeperSink>(write_header, context);
 }
 
 ColumnsDescription StorageSystemZooKeeper::getColumnsDescription()
@@ -725,7 +718,6 @@ ReadFromSystemZooKeeper::ReadFromSystemZooKeeper(
 void ReadFromSystemZooKeeper::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     const auto & header = getOutputHeader();
-
     auto source = std::make_shared<SystemZooKeeperSource>(std::move(paths), header, max_block_size, context);
     source->setStorageLimits(storage_limits);
     processors.emplace_back(source);

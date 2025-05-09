@@ -1960,9 +1960,7 @@ public:
 
     void onFinish() override
     {
-        if (isCancelled())
-            return;
-
+        chassert(!isCancelled());
         finalizeBuffers();
     }
 
