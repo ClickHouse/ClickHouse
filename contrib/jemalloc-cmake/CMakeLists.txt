@@ -34,23 +34,13 @@ if (OS_LINUX)
     # avoid spurious latencies and additional work associated with
     # MADV_DONTNEED. See
     # https://github.com/ClickHouse/ClickHouse/issues/11121 for motivation.
-    if (NDEBUG)
-        set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:false,background_thread:true")
-    else ()
-        set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:false,background_thread:true,tcache:false")
-    endif ()
+    set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:false,background_thread:true,tcache:false")
 else ()
-    if (NDEBUG)
-        set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000")
-    else ()
-        set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,tcache:false")
-    endif ()
+    set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,tcache:false")
 endif ()
 
-if (NOT NDEBUG)
-    message(STATUS "USE JEMALLOC_DEBUG")
-    add_compile_definitions(JEMALLOC_DEBUG=1)
-endif ()
+message(STATUS "USE JEMALLOC_DEBUG")
+add_compile_definitions(JEMALLOC_DEBUG=1)
 
 
 # CACHE variable is empty to allow changing defaults without the necessity
