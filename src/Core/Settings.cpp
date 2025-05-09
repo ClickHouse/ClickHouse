@@ -6747,7 +6747,7 @@ Experimental table engine for integration with YTsaurus.
 Experimental table engine for integration with YTsaurus.
 )", EXPERIMENTAL) \
 DECLARE(Bool, allow_experimental_ytsaurus_dictionary_source, false, R"(
-    Experimental dictinary source for integration with YTsaurus.
+    Experimental dictionary source for integration with YTsaurus.
     )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
