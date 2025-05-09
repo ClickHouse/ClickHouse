@@ -941,7 +941,7 @@ class ClickHouseCluster:
             try:
                 return self.docker_client.containers.get(docker_id)
             except Exception as ex:
-                print("Got exception getting docker handle", str(ex))
+                logging.debug("Got exception getting docker handle", str(ex))
                 time.sleep(0.5)
                 exception = ex
         raise exception
@@ -2943,7 +2943,7 @@ class ClickHouseCluster:
                 self.wait_mysql8_to_start()
 
             if self.with_mysql_cluster and self.base_mysql_cluster_cmd:
-                print("Setup MySQL")
+                logging.debug("Setup MySQL")
                 if os.path.exists(self.mysql_cluster_dir):
                     shutil.rmtree(self.mysql_cluster_dir)
                 os.makedirs(self.mysql_cluster_logs_dir, exist_ok=True)
@@ -4673,7 +4673,7 @@ class ClickHouseInstance:
         instance_config_dir = p.abspath(p.join(self.path, "configs"))
         os.makedirs(instance_config_dir)
 
-        print(
+        logging.debug(
             f"Copy common default production configuration from {self.base_config_dir}. Files: {self.main_config_name}, {self.users_config_name}"
         )
 
