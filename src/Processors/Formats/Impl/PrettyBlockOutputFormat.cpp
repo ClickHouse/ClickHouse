@@ -461,7 +461,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     if (glue_chunks
         && port_kind == PortKind::Main
         && (!format_settings.pretty.row_numbers || row_number_width == prev_row_number_width)
-        && name_widths == prev_chunk_name_widths)
+        && max_widths == prev_chunk_max_widths)
     {
         /// Move cursor up to overwrite the footer of the previous chunk:
         if (!rows_end.empty())
@@ -591,7 +591,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         had_footer = false;
     }
     total_rows += num_rows;
-    prev_chunk_name_widths = std::move(name_widths);
+    prev_chunk_max_widths = std::move(max_widths);
 }
 
 
