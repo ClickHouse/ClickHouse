@@ -115,6 +115,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
         S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
             auth_settings[S3AuthSetting::region],
             RemoteHostFilter(), s3_max_redirects, s3_retry_attempts,
+            /* slow_down_after_network_error = */ true,
             enable_s3_requests_logging,
             /* for_disk_s3 = */ false, /* get_request_throttler = */ {}, /* put_request_throttler = */ {},
             new_uri.uri.getScheme());
