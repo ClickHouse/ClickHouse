@@ -137,7 +137,6 @@ public:
     /// By release 25.3.
     /// (Because it does not make sense to support it in a nice way
     /// because the code will be removed ASAP anyway)
-#if USE_PARQUET && USE_AWS_S3
     DeltaLakePartitionColumns getDeltaLakePartitionColumns() const
     {
         const auto * delta_lake_metadata = dynamic_cast<const DeltaLakeMetadata *>(current_metadata.get());
@@ -145,7 +144,6 @@ public:
             return delta_lake_metadata->getPartitionColumns();
         return {};
     }
-#endif
 
     void modifyFormatSettings(FormatSettings & settings) const override { current_metadata->modifyFormatSettings(settings); }
 

@@ -290,7 +290,6 @@ Chunk StorageObjectStorageSource::generate()
                 }
                 else
                 {
-#if USE_PARQUET && USE_AWS_S3
                     /// This is an awful temporary crutch,
                     /// which will be removed once DeltaKernel is used by default for DeltaLake.
                     /// By release 25.3.
@@ -300,11 +299,19 @@ Chunk StorageObjectStorageSource::generate()
                     {
                         /// A terrible crutch, but it this code will be removed next month.
                         DeltaLakePartitionColumns partition_columns;
+#if USE_PARQUET && USE_AWS_S3
                         if (auto * delta_conf_s3 = dynamic_cast<StorageS3DeltaLakeConfiguration *>(configuration.get()))
                         {
                             partition_columns = delta_conf_s3->getDeltaLakePartitionColumns();
                         }
-                        else if (auto * delta_conf_local = dynamic_cast<StorageLocalDeltaLakeConfiguration *>(configuration.get()))
+#endif
+#if USE_AZURE_BLOB_STORAGE
+                        if (auto * delta_conf_azure = dynamic_cast<StorageAzureDeltaLakeConfiguration *>(configuration.get()))
+                        {
+                            partition_columns = delta_conf_azure->getDeltaLakePartitionColumns();
+                        }
+#endif
+                        if (auto * delta_conf_local = dynamic_cast<StorageLocalDeltaLakeConfiguration *>(configuration.get()))
                         {
                             partition_columns = delta_conf_local->getDeltaLakePartitionColumns();
                         }
@@ -332,7 +339,6 @@ Chunk StorageObjectStorageSource::generate()
                         }
 
                     }
-#endif
                 }
             }
 
