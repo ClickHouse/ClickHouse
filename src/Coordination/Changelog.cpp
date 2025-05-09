@@ -145,19 +145,31 @@ public:
         std::map<uint64_t, ChangelogFileDescriptionPtr> & existing_changelogs_,
         LogEntryStorage & entry_storage_,
         KeeperContextPtr keeper_context_,
-        LogFileSettings log_file_settings_)
-        : existing_changelogs(existing_changelogs_)
+        LogFileSettings log_file_settings_,
+        std::mutex & writer_mutex_)
+        : s3_compaction_shutdown(false)
+        , s3_compaction_queue(std::numeric_limits<size_t>::max())
+        , existing_changelogs(existing_changelogs_)
         , entry_storage(entry_storage_)
         , log_file_settings(log_file_settings_)
         , keeper_context(std::move(keeper_context_))
         , log(getLogger("Changelog"))
+        , writer_mutex(writer_mutex_)
     {
         s3_disk = keeper_context->getDisk("some_s3_plain");
+        s3_compaction_thread = std::make_unique<ThreadFromGlobalPool>([this] { s3CompactionThread(); });
     }
 
     ~ChangelogWriter()
     {
-        // Print contents of s3_changelogs map in destructor
+        if (s3_compaction_thread && s3_compaction_thread->joinable())
+        {
+            s3_compaction_shutdown = true;
+            if (!s3_compaction_queue.push(true))
+                LOG_WARNING(log, "Failed to push shutdown signal to S3 compaction queue");
+            s3_compaction_thread->join();
+        }
+
         LOG_INFO(log, "S3 changelogs map contents:");
         for (const auto & [index, description] : s3_changelogs)
         {
@@ -385,7 +397,7 @@ public:
                 s3_current_file_description->extension);
 
             LOG_TRACE(log, "Writing s3 buffer old path: {} new path: {}", s3_cur_path, new_path);
-    
+
             if (s3_cur_path != new_path)
             {
                 try
@@ -423,7 +435,7 @@ public:
             new_s3_description->to_log_index = new_s3_description->from_log_index + log_file_settings.rotate_interval - 1;
             new_s3_description->extension = s3_current_file_description->extension;
             new_s3_description->disk = s3_disk;
-            
+
             s3_cur_path = formatChangelogPath(
                 new_s3_description->prefix,
                 new_s3_description->from_log_index,
@@ -432,10 +444,12 @@ public:
 
             new_s3_description->path = s3_cur_path;
             s3_current_file_description = new_s3_description;
-
+            
             LOG_TRACE(log, "Open new s3 buffer with path {}", s3_cur_path);
-
             s3_write_buffer = s3_disk->writeFile(s3_cur_path);
+
+            // Trigger S3 compaction after creating a new file
+            triggerS3Compaction();
         }
 
         auto * file_buffer = tryGetFileBaseBuffer();
@@ -496,6 +510,10 @@ private:
     std::unique_ptr<WriteBufferFromFileBase> s3_write_buffer;
     std::string s3_cur_path;
     ChangelogFileDescriptionPtr s3_current_file_description;
+
+    std::unique_ptr<ThreadFromGlobalPool> s3_compaction_thread;
+    std::atomic<bool> s3_compaction_shutdown;
+    ConcurrentBoundedQueue<bool> s3_compaction_queue;
 
     void finalizeCurrentFile()
     {
@@ -665,6 +683,132 @@ private:
     KeeperContextPtr keeper_context;
 
     LoggerPtr const log;
+
+    std::mutex & writer_mutex; // Reference to the writer_mutex from Changelog
+
+    void s3CompactionThread()
+    {
+        LOG_INFO(log, "S3 compaction thread started");
+
+        bool dummy;
+        while (!s3_compaction_shutdown && s3_compaction_queue.pop(dummy))
+        {
+            std::vector<ChangelogFileDescriptionPtr> to_merge;
+            std::vector<ChangelogFileDescriptionPtr> to_remove;
+            ChangelogFileDescriptionPtr merged_changelog;
+
+            std::lock_guard<std::mutex> lock(writer_mutex);
+            {
+
+                if (s3_changelogs.empty())
+                    continue;
+
+                auto it = s3_changelogs.begin();
+                uint64_t current_from_index = it->second->from_log_index;
+                uint64_t current_to_index = it->second->to_log_index;
+                to_merge.push_back(it->second);
+
+                ++it;
+                while (it != s3_changelogs.end())
+                {
+                    auto next_changelog = it->second;
+                    
+                    if (next_changelog->from_log_index == current_to_index + 1)
+                    {
+                        // Sequential, can merge
+                        to_merge.push_back(next_changelog);
+                        current_to_index = next_changelog->to_log_index;
+                        
+                        // If we have enough entries, stop
+                        if (current_to_index - current_from_index >= log_file_settings.rotate_interval)
+                            break;
+                    }
+                    else
+                    {
+                        // Not sequential, stop merging
+                        break;
+                    }
+                    
+                    ++it;
+                }
+
+                // Only proceed if we found multiple changelogs to merge
+                if (to_merge.size() <= 1)
+                    continue;
+
+                // Create a new changelog description for the merged file
+                merged_changelog = std::make_shared<ChangelogFileDescription>();
+                merged_changelog->prefix = to_merge.front()->prefix;
+                merged_changelog->from_log_index = to_merge.front()->from_log_index;
+                merged_changelog->to_log_index = to_merge.back()->to_log_index;
+                merged_changelog->extension = to_merge.front()->extension;
+                merged_changelog->disk = s3_disk;
+
+                merged_changelog->path = formatChangelogPath(
+                    merged_changelog->prefix,
+                    merged_changelog->from_log_index,
+                    merged_changelog->to_log_index,
+                    merged_changelog->extension);
+
+                LOG_INFO(log, "Merging {} S3 changelogs into range [{}, {}]", 
+                    to_merge.size(), merged_changelog->from_log_index, merged_changelog->to_log_index);
+
+                to_remove = to_merge;
+            }
+
+            if (!merged_changelog)
+                continue;
+
+            try 
+            {
+                // Create the merged file
+                auto new_file = s3_disk->writeFile(merged_changelog->path);
+
+                // Copy all data from the source files to the new file
+                for (const auto & changelog : to_merge)
+                {
+                    auto reader = changelog->disk->readFile(changelog->path, getReadSettings());
+                    copyData(*reader, *new_file);
+                }
+
+                new_file->sync();
+                new_file->finalize();
+
+                // Add the new merged changelog
+                s3_changelogs[merged_changelog->from_log_index] = merged_changelog;
+
+                // Remove the old changelogs
+                for (const auto & changelog : to_remove)
+                {
+                    LOG_INFO(log, "Removing merged S3 changelog: {}", changelog->path);
+                    s3_changelogs.erase(changelog->from_log_index);
+                    
+                    try
+                    {
+                        changelog->disk->removeFile(changelog->path);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, fmt::format("Failed to remove merged S3 changelog: {}", changelog->path));
+                    }
+                }
+
+                LOG_INFO(log, "Successfully merged {} S3 changelogs", to_merge.size());
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Error while merging S3 changelogs");
+            }
+        }
+
+        LOG_INFO(log, "S3 compaction thread stopped");
+    }
+    
+    void triggerS3Compaction()
+    {
+        if (!s3_compaction_queue.push(true))
+            LOG_WARNING(log, "Failed to push to S3 compaction queue, queue might be full or shutdown");
+    }
 };
 
 namespace
@@ -1849,7 +1993,7 @@ Changelog::Changelog(
 
         append_completion_thread = std::make_unique<ThreadFromGlobalPool>([this] { appendCompletionThread(); });
 
-        current_writer = std::make_unique<ChangelogWriter>(existing_changelogs, entry_storage, keeper_context, log_file_settings);
+        current_writer = std::make_unique<ChangelogWriter>(existing_changelogs, entry_storage, keeper_context, log_file_settings, writer_mutex);
     }
     catch (...)
     {
