@@ -118,6 +118,9 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
             configuration->getEngineName());
     }
 
+    ASTPtr object_storage_type_arg;
+    configuration->extractDynamicStorageType(args, context, &object_storage_type_arg);
+
     ASTPtr settings_temporary_storage = nullptr;
     for (auto * it = args.begin(); it != args.end(); ++it)
     {
@@ -139,6 +142,8 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
         configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
         args.insert(args.begin(), cluster_name_arg);
     }
+    if (object_storage_type_arg)
+        args.insert(args.end(), object_storage_type_arg);
     if (settings_temporary_storage)
     {
         args.insert(args.end(), std::move(settings_temporary_storage));
