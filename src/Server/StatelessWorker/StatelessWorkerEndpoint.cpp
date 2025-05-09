@@ -48,12 +48,20 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, Wri
     }
 
     writeVarUInt(task.input_exchange_streams.size(), out);
-    for (const auto & file : task.input_exchange_streams)
-        writeStringBinary(file, out);
+    for (const auto & stream_id : task.input_exchange_streams)
+    {
+        writeStringBinary(stream_id.exchange_id, out);
+        writeStringBinary(stream_id.source_bucket, out);
+        writeStringBinary(stream_id.destination_bucket, out);
+    }
 
     writeVarUInt(task.output_exchange_streams.size(), out);
-    for (const auto & file : task.output_exchange_streams)
-        writeStringBinary(file, out);
+    for (const auto & stream_id : task.output_exchange_streams)
+    {
+        writeStringBinary(stream_id.exchange_id, out);
+        writeStringBinary(stream_id.source_bucket, out);
+        writeStringBinary(stream_id.destination_bucket, out);
+    }
 
     writeVarUInt(task_description.exchanges.size(), out);
     for (const auto & [name, exchange] : task_description.exchanges)
@@ -96,13 +104,21 @@ void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuf
     readVarUInt(input_files_size, in);
     task.input_exchange_streams.resize(input_files_size);
     for (size_t i = 0; i < input_files_size; ++i)
-        readStringBinary(task.input_exchange_streams[i], in);
+    {
+        readStringBinary(task.input_exchange_streams[i].exchange_id, in);
+        readStringBinary(task.input_exchange_streams[i].source_bucket, in);
+        readStringBinary(task.input_exchange_streams[i].destination_bucket, in);
+    }
 
     size_t output_files_size;
     readVarUInt(output_files_size, in);
     task.output_exchange_streams.resize(output_files_size);
     for (size_t i = 0; i < output_files_size; ++i)
-        readStringBinary(task.output_exchange_streams[i], in);
+    {
+        readStringBinary(task.output_exchange_streams[i].exchange_id, in);
+        readStringBinary(task.output_exchange_streams[i].source_bucket, in);
+        readStringBinary(task.output_exchange_streams[i].destination_bucket, in);
+    }
 
     size_t exchanges_size;
     readVarUInt(exchanges_size, in);

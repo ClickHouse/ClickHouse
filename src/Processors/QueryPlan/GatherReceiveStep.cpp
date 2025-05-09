@@ -21,17 +21,15 @@ namespace DB
 
 void GatherReceiveStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines;
+    Pipes pipes;
 
     /// Read from all buckets
     for (size_t i = 0; i < num_buckets; ++i)
     {
-        std::unique_ptr<QueryPipelineBuilder> pipeline_ptr = std::make_unique<QueryPipelineBuilder>();
-        pipeline_ptr->init(Pipe(settings.exchange_lookup->createSource(output_header.value(), exchange_id, toString(i), "0")));
-        pipelines.emplace_back(std::move(pipeline_ptr));
+        pipes.push_back(Pipe(settings.exchange_lookup->createSource(output_header.value(), ExchangeStreamId(exchange_id, i, 0))));
     }
 
-    pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines));
+    pipeline.init(Pipe::unitePipes(std::move(pipes)));
 }
 
 void GatherReceiveStep::serialize(Serialization & ctx) const

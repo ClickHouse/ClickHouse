@@ -42,21 +42,4 @@ protected:
     std::optional<SortDescription> maintain_sort_description;
 };
 
-/// TODO: move to proper place
-template <typename SourceBucketId, typename DestinationBucketId>
-String streamNameForExchange(const String & exchange_id, const SourceBucketId & source_bucket, const DestinationBucketId & destination_bucket)
-{
-    return exchange_id + "__" + toString(source_bucket) + "_" + toString(destination_bucket);
-}
-
-/// TODO: move to proper place
-/// Enumerates shard (bucket) names for the specified number of buckets.
-inline Strings shardsForShuffleBuckets(size_t bucket_count)
-{
-    Strings shards;
-    for (size_t bucket = 0; bucket < bucket_count; ++bucket)
-        shards.push_back(toString(bucket));
-    return shards;
-}
-
 }

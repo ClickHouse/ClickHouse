@@ -128,15 +128,15 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(const Header & input_header, const String & exchange_id, const String & source_bucket_id, const String & destination_bucket_id) override
+    std::shared_ptr<ISink> createSink(const Header & input_header, const ExchangeStreamId & exchange_stream_id) override
     {
-        auto file_name = streamNameForExchange(exchange_id, source_bucket_id, destination_bucket_id);
-        return std::make_shared<NativeCompressedSink>(input_header, temporary_files->getTemporaryFileForWriting(file_name));
+        auto file_name = exchange_stream_id.toString();
+        return std::make_shared<NativeCompressedSink>(input_header, temporary_files->getTemporaryFileForWriting(file_name), file_name);
     }
 
-    std::shared_ptr<ISource> createSource(const Header & output_header, const String & exchange_id, const String & source_bucket_id, const String & destination_bucket_id) override
+    std::shared_ptr<ISource> createSource(const Header & output_header, const ExchangeStreamId & exchange_stream_id) override
     {
-        auto file_name = streamNameForExchange(exchange_id, source_bucket_id, destination_bucket_id);
+        auto file_name = exchange_stream_id.toString();
         std::unique_ptr<QueryPipelineBuilder> pipeline_ptr = std::make_unique<QueryPipelineBuilder>();
         return std::make_shared<NativeCompressedSource>(output_header, temporary_files->getTemporaryFileForReading(file_name));
     }
@@ -224,16 +224,16 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(const Header & input_header, const String & exchange_id, const String & source_bucket_id, const String & destination_bucket_id) override
+    std::shared_ptr<ISink> createSink(const Header & input_header, const ExchangeStreamId & exchange_stream_id) override
     {
-        auto file_name = streamNameForExchange(exchange_id, source_bucket_id, destination_bucket_id);
+        auto file_name = exchange_stream_id.toString();
         auto exchange = InMemoryExchanges::instance()->getExchange(query_id, file_name);
         return std::make_shared<SinkFromInMemoryExchange>(input_header, exchange);
     }
 
-    std::shared_ptr<ISource> createSource(const Header & output_header, const String & exchange_id, const String & source_bucket_id, const String & destination_bucket_id) override
+    std::shared_ptr<ISource> createSource(const Header & output_header, const ExchangeStreamId & exchange_stream_id) override
     {
-        auto file_name = streamNameForExchange(exchange_id, source_bucket_id, destination_bucket_id);
+        auto file_name = exchange_stream_id.toString();
         auto exchange = InMemoryExchanges::instance()->getExchange(query_id, file_name);
         return std::make_shared<SourceFromInMemoryExchange>(output_header, exchange);
     }
@@ -301,30 +301,30 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(const Header & input_header, const String & exchange_id, const String & source_bucket_id, const String & destination_bucket_id) override
+    std::shared_ptr<ISink> createSink(const Header & input_header, const ExchangeStreamId & exchange_stream_id) override
     {
-        auto it = exchanges.find(exchange_id);
+        auto it = exchanges.find(exchange_stream_id.exchange_id);
         if (it == exchanges.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange '{}'", exchange_id);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange '{}'", exchange_stream_id.exchange_id);
 
         if (it->second.kind == ExchangeDescription::Kind::Persisted)
-            return persistent_exchange_lookup->createSink(input_header, exchange_id, source_bucket_id, destination_bucket_id);
+            return persistent_exchange_lookup->createSink(input_header, exchange_stream_id);
         else if (it->second.kind == ExchangeDescription::Kind::Streaming)
-            return streaming_exchange_lookup->createSink(input_header, exchange_id, source_bucket_id, destination_bucket_id);
+            return streaming_exchange_lookup->createSink(input_header, exchange_stream_id);
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange kind '{}'", static_cast<int>(it->second.kind));
     }
 
-    std::shared_ptr<ISource> createSource(const Header & output_header, const String & exchange_id, const String & source_bucket_id, const String & destination_bucket_id) override
+    std::shared_ptr<ISource> createSource(const Header & output_header, const ExchangeStreamId & exchange_stream_id) override
     {
-        auto it = exchanges.find(exchange_id);
+        auto it = exchanges.find(exchange_stream_id.exchange_id);
         if (it == exchanges.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange '{}'", exchange_id);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange '{}'", exchange_stream_id.exchange_id);
 
         if (it->second.kind == ExchangeDescription::Kind::Persisted)
-            return persistent_exchange_lookup->createSource(output_header, exchange_id, source_bucket_id, destination_bucket_id);
+            return persistent_exchange_lookup->createSource(output_header, exchange_stream_id);
         else if (it->second.kind == ExchangeDescription::Kind::Streaming)
-            return streaming_exchange_lookup->createSource(output_header, exchange_id, source_bucket_id, destination_bucket_id);
+            return streaming_exchange_lookup->createSource(output_header, exchange_stream_id);
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange kind '{}'", static_cast<int>(it->second.kind));
     }
@@ -484,11 +484,19 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
 
     QueryPlan query_plan = deserializeQueryPlan(task_description.serialized_query_plan, context);
 
+    Strings input_exchange_streams;
+    for (const auto & stream_id : task.input_exchange_streams)
+        input_exchange_streams.push_back(stream_id.toString());
+
+    Strings output_exchange_streams;
+    for (const auto & stream_id : task.output_exchange_streams)
+        output_exchange_streams.push_back(stream_id.toString());
+
     LOG_TRACE(logger, "Task '{}' input exchange streams: [{}], output exchange streams: [{}]",
-        task.task_id, fmt::join(task.input_exchange_streams, ", "), fmt::join(task.output_exchange_streams, ", "));
+        task.task_id, fmt::join(input_exchange_streams, ", "), fmt::join(output_exchange_streams, ", "));
 
     auto temporary_files = createTemporaryFilesLookup(
-        object_storage, object_storage_path, task.input_exchange_streams, task.output_exchange_streams);
+        object_storage, object_storage_path, input_exchange_streams, output_exchange_streams);
 
     auto pipeline_settings = BuildQueryPipelineSettings(context);
     pipeline_settings.temporary_file_lookup = temporary_files;
@@ -745,7 +753,7 @@ protected:
                 current_host = (current_host + 1) % hostnames.size();
                 task_hosts[task.task_id] = assigned_host;
                 for (const auto & input_stream : task.input_exchange_streams)
-                    exchange_stream_destination_hosts[input_stream] = assigned_host;
+                    exchange_stream_destination_hosts[input_stream.toString()] = assigned_host;
             }
         }
 
@@ -804,7 +812,10 @@ protected:
             /// Add exchange destinations for output streams
             task_description.exchange_stream_destinations = {};
             for (const auto & output_stream : task.output_exchange_streams)
-                task_description.exchange_stream_destinations.stream_hosts[output_stream] = exchange_stream_destination_hosts.at(output_stream);
+            {
+                String output_stream_name = output_stream.toString();
+                task_description.exchange_stream_destinations.stream_hosts[output_stream_name] = exchange_stream_destination_hosts.at(output_stream_name);
+            }
 
             started_tasks.emplace_back(startTask(task_description));
         }

@@ -45,7 +45,7 @@ QueryPipelineBuilderPtr ShuffleSendStep::updatePipeline(QueryPipelineBuilders pi
         chassert(stream_type == Pipe::StreamType::Main);
         String destination_bucket_id = toString(bucket);
         ++bucket;   /// TODO: this is a hack. Find a better way to assigning bucket id to each sink.
-        return settings.exchange_lookup->createSink(header, exchange_id, shard_id, destination_bucket_id);
+        return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, shard_id, destination_bucket_id));
     });
 
     if (bucket != num_buckets)

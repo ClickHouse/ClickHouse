@@ -534,7 +534,10 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                     send_and_receive_steps.first->setStepDescription(exchange_description.name);
                     send_and_receive_steps.second->setStepDescription(exchange_description.name);
 
-                    Strings list_of_exchange_shards = shardsForShuffleBuckets(exchange_step->getResultBucketCount());
+                    Strings list_of_exchange_shards;
+                    list_of_exchange_shards.reserve(exchange_description.destination_bucket_count);
+                    for (size_t bucket = 0; bucket < exchange_description.destination_bucket_count; ++bucket)
+                        list_of_exchange_shards.push_back(toString(bucket));
 
                     /// Finish current plan fragment with exchange sink
                     current_plan->addStep(std::move(send_and_receive_steps.first));
@@ -549,7 +552,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
 
                             /// List of output streams for the exchange sink
                             for (const auto & destination_shard : list_of_exchange_shards)
-                                source_task.output_exchange_streams.emplace_back(streamNameForExchange(exchange_description.name, source_shard, destination_shard));
+                                source_task.output_exchange_streams.emplace_back(ExchangeStreamId(exchange_description.name, source_shard, destination_shard));
 
                             /// Move source tasks to the source stage
                             stage.tasks.emplace_back(std::move(source_task));
@@ -571,7 +574,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
 
                         /// List of input streams for the exchange source
                         for (auto & [source_shard, source_task] : frame.list_of_shards)
-                            destination_task.input_exchange_streams.emplace_back(streamNameForExchange(exchange_description.name, source_shard, destination_shard));
+                            destination_task.input_exchange_streams.emplace_back(ExchangeStreamId(exchange_description.name, source_shard, destination_shard));
 
                         destination_stage_tasks[destination_shard] = std::move(destination_task);
                     }

@@ -507,7 +507,13 @@ try
     for (const auto & stage : distributed_query_plan.stages)
     {
         for (const auto & task : stage.second.tasks)
-            all_temporary_files_for_cleanup.insert(all_temporary_files_for_cleanup.end(), task.output_exchange_streams.begin(), task.output_exchange_streams.end());
+        {
+            for (const auto & stream_id : task.output_exchange_streams)
+            {
+                if (distributed_query_plan.exchange_descriptions.at(stream_id.exchange_id).kind == ExchangeDescription::Kind::Persisted)
+                    all_temporary_files_for_cleanup.push_back(stream_id.toString());
+            }
+        }
     }
 
     const UUID query_uuid = UUIDHelpers::generateV4();

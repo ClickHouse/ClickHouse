@@ -24,7 +24,7 @@ void ShuffleReceiveStep::initializePipeline(QueryPipelineBuilder & pipeline, con
     for (const String & shard_id : source_shards)
     {
         std::unique_ptr<QueryPipelineBuilder> pipeline_ptr = std::make_unique<QueryPipelineBuilder>();
-        pipeline_ptr->init(Pipe(settings.exchange_lookup->createSource(output_header.value(), exchange_id, shard_id, bucket_id)));
+        pipeline_ptr->init(Pipe(settings.exchange_lookup->createSource(output_header.value(), ExchangeStreamId(exchange_id, shard_id, bucket_id))));
         pipelines.emplace_back(std::move(pipeline_ptr));
     }
 
