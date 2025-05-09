@@ -80,11 +80,11 @@ void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, H
 {
     if (request.getURI() == "/js/uplot.js")
     {
-        handle(request, response, {reinterpret_cast<const char *>(gresource_uplot_jsData), gresource_uplot_jsSize});
+        handle(request, response, {reinterpret_cast<const char *>(gresource_uplot_jsData), gresource_uplot_jsSize}, http_response_headers_override);
     }
     else if (request.getURI() == "/js/lz-string.js")
     {
-        handle(request, response, {reinterpret_cast<const char *>(gresource_lz_string_jsData), gresource_lz_string_jsSize});
+        handle(request, response, {reinterpret_cast<const char *>(gresource_lz_string_jsData), gresource_lz_string_jsSize}, http_response_headers_override);
     }
     else
     {
