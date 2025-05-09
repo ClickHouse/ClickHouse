@@ -72,6 +72,7 @@ def query_common(
     session_id="",
     stream_output=False,
     channel=None,
+    query_params={},
 ):
     if type(input_data) is not list:
         input_data = [input_data]
@@ -110,15 +111,24 @@ def query_common(
                 input_data=input_data_part, next_query_info=bool(input_data)
             )
 
+    def metadata():
+        return [("param_" + param, value) for param, value in query_params.items()]
+
     stream_input = len(input_data) > 1
     if stream_input and stream_output:
-        return list(stub.ExecuteQueryWithStreamIO(send_query_info()))
+        return list(
+            stub.ExecuteQueryWithStreamIO(send_query_info(), metadata=metadata())
+        )
     elif stream_input:
-        return [stub.ExecuteQueryWithStreamInput(send_query_info())]
+        return [
+            stub.ExecuteQueryWithStreamInput(send_query_info(), metadata=metadata())
+        ]
     elif stream_output:
-        return list(stub.ExecuteQueryWithStreamOutput(query_info()))
+        return list(
+            stub.ExecuteQueryWithStreamOutput(query_info(), metadata=metadata())
+        )
     else:
-        return [stub.ExecuteQuery(query_info())]
+        return [stub.ExecuteQuery(query_info(), metadata=metadata())]
 
 
 def query_no_errors(*args, **kwargs):
@@ -271,6 +281,24 @@ def test_insert_split_row():
     query("CREATE TABLE t (a UInt8) ENGINE = Memory")
     query("INSERT INTO t VALUES", input_data=["(1),(2),(", "3),(5),(4),(6)"])
     assert query("SELECT a FROM t ORDER BY a") == "1\n2\n3\n4\n5\n6\n"
+
+
+def test_query_params():
+    query(
+        r"CREATE TABLE {table:Identifier} (a UInt8) ENGINE = Memory",
+        query_params={"table": "t"},
+    )
+    query(
+        r"INSERT INTO {table:Identifier} VALUES (1),(2),(3)",
+        query_params={"table": "t"},
+    )
+    assert (
+        query(
+            r"SELECT {column:Identifier} FROM {table:Identifier} ORDER BY {column:Identifier}",
+            query_params={"table": "t", "column": "a"},
+        )
+        == "1\n2\n3\n"
+    )
 
 
 def test_output_format():
