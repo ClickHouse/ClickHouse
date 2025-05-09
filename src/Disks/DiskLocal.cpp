@@ -544,7 +544,7 @@ DiskLocal::DiskLocal(
     const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
     : DiskLocal(name_, path_, keep_free_space_bytes_, config, config_prefix)
 {
-    auto local_disk_check_period_ms = config.getUInt("local_disk_check_period_ms", 0);
+    auto local_disk_check_period_ms = config.getUInt("local_disk_check_period_ms", 60000);
     if (local_disk_check_period_ms > 0)
         disk_checker = std::make_unique<DiskLocalCheckThread>(this, context, local_disk_check_period_ms);
 }
