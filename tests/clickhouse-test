@@ -1179,7 +1179,10 @@ class MergeTreeSettingsRandomizer:
 
 
 def replace_in_file(filename, what, with_what):
-    os.system(f"LC_ALL=C sed -i -e 's|{what}|{with_what}|g' {filename}")
+    with open(filename, "rb") as f:
+        data = f.read()
+    with open(filename, "wb") as f:
+        f.write(data.replace(what.encode(), with_what.encode()))
 
 
 class TestResult:
