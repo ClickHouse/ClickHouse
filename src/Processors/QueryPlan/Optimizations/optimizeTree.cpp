@@ -160,8 +160,8 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
         if (frame.next_child == 0)
         {
-            optimizeJoinLogical(*frame.node, nodes, optimization_settings);
-            bool has_join_logical = convertLogicalJoinToPhysical(*frame.node, nodes, optimization_settings);
+            const auto rhs_estimation = optimizeJoinLogical(*frame.node, nodes, optimization_settings);
+            bool has_join_logical = convertLogicalJoinToPhysical(*frame.node, nodes, optimization_settings, rhs_estimation);
             if (!has_join_logical)
                 optimizeJoinLegacy(*frame.node, nodes, optimization_settings);
 
@@ -243,7 +243,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
         if (optimization_settings.optimize_lazy_materialization)
         {
-            optimizeLazyMaterialization(stack, nodes, optimization_settings.max_limit_for_lazy_materialization);
+            optimizeLazyMaterialization(root, stack, nodes, optimization_settings.max_limit_for_lazy_materialization);
         }
 
         stack.pop_back();

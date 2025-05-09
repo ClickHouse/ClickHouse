@@ -137,12 +137,14 @@ ManifestFileContent::ManifestFileContent(
     Int32 format_version_,
     const String & common_path,
     Int32 schema_id_,
+    Poco::JSON::Object::Ptr schema_object_,
     const IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number,
     const String & table_location,
     DB::ContextPtr context)
 {
     this->schema_id = schema_id_;
+    this->schema_object = schema_object_;
 
     for (const auto & column_name : {COLUMN_STATUS_NAME, COLUMN_TUPLE_DATA_FILE_NAME})
     {
@@ -338,6 +340,16 @@ const std::set<Int32> & ManifestFileContent::getColumnsIDsWithBounds() const
     return column_ids_which_have_bounds;
 }
 
+size_t ManifestFileContent::getSizeInMemory() const
+{
+    size_t total_size = sizeof(ManifestFileContent);
+    if (partition_key_description)
+        total_size += sizeof(DB::KeyDescription);
+    total_size += column_ids_which_have_bounds.size() * sizeof(Int32);
+    total_size += files.capacity() * sizeof(ManifestFileEntry);
+    return total_size;
+}
+
 std::optional<Int64> ManifestFileContent::getRowsCountInAllDataFilesExcludingDeleted() const
 {
     Int64 result = 0;
@@ -383,7 +395,6 @@ std::optional<Int64> ManifestFileContent::getBytesCountInAllDataFiles() const
             return std::nullopt;
     }
     return result;
-
 }
 
 }

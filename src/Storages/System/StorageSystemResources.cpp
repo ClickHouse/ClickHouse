@@ -25,40 +25,38 @@ ColumnsDescription StorageSystemResources::getColumnsDescription()
 void StorageSystemResources::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto & storage = context->getWorkloadEntityStorage();
-    const auto & resource_names = storage.getAllEntityNames(WorkloadEntityType::Resource);
-    for (const auto & resource_name : resource_names)
+    const auto & entities = storage.getAllEntities();
+    for (const auto & [name, ast] : entities)
     {
-        auto ast = storage.tryGet(resource_name);
-        if (!ast)
-            /// It might be modified in the meantime, but it's ok to not show those removed resources
-            continue;
-        auto & resource = typeid_cast<ASTCreateResourceQuery &>(*ast);
-        res_columns[0]->insert(resource_name);
+        if (auto * resource = typeid_cast<ASTCreateResourceQuery *>(ast.get()))
         {
-            Array read_disks;
-            Array write_disks;
-            for (const auto & [mode, disk] : resource.operations)
+            res_columns[0]->insert(name);
             {
-                switch (mode)
+                Array read_disks;
+                Array write_disks;
+                for (const auto & [mode, disk] : resource->operations)
                 {
-                    case DB::ASTCreateResourceQuery::AccessMode::DiskRead:
+                    switch (mode)
                     {
-                        read_disks.emplace_back(disk ? *disk : "ANY");
-                        break;
+                        case DB::ASTCreateResourceQuery::AccessMode::DiskRead:
+                        {
+                            read_disks.emplace_back(disk ? *disk : "ANY");
+                            break;
+                        }
+                        case DB::ASTCreateResourceQuery::AccessMode::DiskWrite:
+                        {
+                            write_disks.emplace_back(disk ? *disk : "ANY");
+                            break;
+                        }
+                        default: // Ignore
                     }
-                    case DB::ASTCreateResourceQuery::AccessMode::DiskWrite:
-                    {
-                        write_disks.emplace_back(disk ? *disk : "ANY");
-                        break;
-                    }
-                    default: // Ignore
                 }
+                res_columns[1]->insert(read_disks);
+                res_columns[2]->insert(write_disks);
             }
-            res_columns[1]->insert(read_disks);
-            res_columns[2]->insert(write_disks);
+            res_columns[3]->insert(DB::ASTCreateResourceQuery::unitToString(resource->unit));
+            res_columns[4]->insert(ast->formatForLogging());
         }
-        res_columns[3]->insert(DB::ASTCreateResourceQuery::unitToString(resource.unit));
-        res_columns[4]->insert(ast->formatForLogging());
     }
 }
 

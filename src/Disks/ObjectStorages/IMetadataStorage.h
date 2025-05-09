@@ -256,10 +256,11 @@ public:
         /// This method is overridden for specific metadata implementations in ClickHouse Cloud.
     }
 
-    /// If the state can be changed under the hood and become outdated in memory, perform a reload if necessary.
+    /// If the state can be changed under the hood and become outdated in memory, perform a reload if necessary,
+    /// but don't do it more frequently than the specified parameter.
     /// Note: for performance reasons, it's allowed to assume that only some subset of changes are possible
     /// (those that MergeTree tables can make).
-    virtual void refresh()
+    virtual void refresh(UInt64 /* not_sooner_than_milliseconds */)
     {
         /// The default no-op implementation when the state in memory cannot be out of sync of the actual state.
     }
