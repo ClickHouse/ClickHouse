@@ -26,12 +26,18 @@ def started_cluster():
 
 
 def test_zookeeper_connection_log(started_cluster):
-    # First flush logs to write the first connection log item, then truncate the table, drop the tables and restart ClickHouse.
-    # In this way after ClickHouse restarts, the connection log will be empty.
-    node.query("SYSTEM FLUSH LOGS")
-    node.query("TRUNCATE TABLE IF EXISTS system.zookeeper_connection_log")
     node.query("DROP TABLE IF EXISTS simple SYNC")
     node.query("DROP TABLE IF EXISTS simple2 SYNC")
+
+    # Let's restart ClickHouse 2 times to make sure there won't be any config reloads in case of repeated runs.
+    # The previous run would revert the config and ClickHouse sometimes notices it after `test_start_time`. By
+    # restarting it twice, we can be sure no configs are changed after `test_start_time`.
+
+    node.restart_clickhouse()
+
+    test_start_time = node.query("SELECT now64()").strip()
+    logging.debug(f"Test start time is {test_start_time}")
+
     node.restart_clickhouse()
 
     node.query(
@@ -93,15 +99,22 @@ def test_zookeeper_connection_log(started_cluster):
 
             node.query("SYSTEM FLUSH LOGS")
 
-            expexted = TSV("""node	Connected	default	zoo1	2181	0	5	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Initialization
-node	Connected	zk_conn_log_test_2	zoo2	2181	0	6	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Initialization
-node	Connected	zk_conn_log_test_3	zoo3	2181	0	7	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Initialization
-node	Disconnected	default	zoo1	2181	0	5	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Config changed
-node	Connected	default	zoo2	2181	0	8	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Config changed
-node	Disconnected	zk_conn_log_test_2	zoo2	2181	0	6	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Config changed
-node	Connected	zk_conn_log_test_2	zoo3	2181	0	9	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Config changed
-node	Disconnected	zk_conn_log_test_3	zoo3	2181	0	7	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Removed from config
-node	Connected	zk_conn_log_test_4	zoo2	2181	0	10	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Initialization""")
+            logging.debug(node.query("""SELECT event_time_microseconds, hostname, type, name, host, port, index, keeper_api_version, enabled_feature_flags, reason
+                               FROM system.zookeeper_connection_log  ORDER BY event_time_microseconds"""))
+            expected = TSV("""node	Connected	default	zoo1	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Initialization
+node	Connected	zk_conn_log_test_2	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Initialization
+node	Connected	zk_conn_log_test_3	zoo3	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Initialization
+node	Disconnected	default	zoo1	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Config changed
+node	Connected	default	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Config changed
+node	Disconnected	zk_conn_log_test_2	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Config changed
+node	Connected	zk_conn_log_test_2	zoo3	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Config changed
+node	Disconnected	zk_conn_log_test_3	zoo3	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Removed from config
+node	Connected	zk_conn_log_test_4	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE']	Initialization""")
 
-            # The trick with client id is necessary for repeated tests, because Keeper's don't restart.
-            assert TSV(node.query("SELECT hostname, type, name, host, port, index, modulo(client_id-5, 6) + 5 AS client_id, keeper_api_version, enabled_feature_flags, reason FROM system.zookeeper_connection_log ORDER BY event_time_microseconds")) == expexted
+            assert TSV(
+                node.query(f"""SELECT hostname, type, name, host, port, index, keeper_api_version, enabled_feature_flags, reason
+                               FROM system.zookeeper_connection_log
+                               WHERE event_time_microseconds >= '{test_start_time}'
+                               ORDER BY event_time_microseconds""")
+                ) == expected
+            assert int(node.query("SELECT max(event_per_client_id) FROM (SELECT client_id, count() AS event_per_client_id FROM system.zookeeper_connection_log GROUP BY client_id)")) == 2
