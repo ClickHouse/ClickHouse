@@ -501,7 +501,7 @@ public:
         }
     }
 
-    static UInt64 float64ToUInt64(Float64 d)
+    static inline UInt64 float64ToUInt64(Float64 d)
     {
         if (d >= static_cast<Float64>(std::numeric_limits<UInt64>::max()))
             return std::numeric_limits<UInt64>::max();
@@ -851,12 +851,16 @@ public:
             auto bit_cnt = lhs_bm->containerAndToUInt32Array(mask.get(), container_id, 0, &bit_buffer);
             for (size_t j = 0; j < bit_cnt; ++j)
             {
+                if (bit_buffer[j] >= 65536)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "bit_buffer index out of bounds. bit_buffer[j]: {}", bit_buffer[j]);
                 buffer[bit_buffer[j]] |= (1ULL << i);
             }
         }
         auto result_cnt = mask->containerToUInt32Array(container_id, 0, bit_buffer);
         for (size_t i = 0; i < result_cnt; ++i)
         {
+            if (bit_buffer[i] >= 65536)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "bit_buffer index out of bounds. bit_buffer[i]: {}", bit_buffer[i]);
             output[i] = static_cast<Float64>(buffer[bit_buffer[i]]) / (1ULL << vector.fraction_bit_num);
         }
         return result_cnt;

@@ -790,6 +790,8 @@ public:
         const UInt32 & base,
         PaddedPODArray<UInt32> * output) const
     {
+        if (sizeof(T) >= 8)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported Roaring64Map");
         if (!this->isSmall() || !rhs->isSmall())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "this and mask must be small set.");
         std::set<T> lhs_values;
@@ -811,6 +813,8 @@ public:
         const UInt32 & base,
         PaddedPODArray<UInt32> * output) const
     {
+        if (sizeof(T) >= 8)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported Roaring64Map");
         if (!(this->isSmall() ^ rhs->isSmall()))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "this and rhs must has one and only one small set");
         if (!this->isSmall())
@@ -850,6 +854,8 @@ public:
     inline UInt16 containerAndToUInt32Array(
         const RoaringBitmapWithSmallSet * rhs, const UInt16 & container_id, const UInt32 & base, PaddedPODArray<UInt32> * output) const
     {
+        if (sizeof(T) >= 8)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported Roaring64Map");
         if (output->size() < 65536)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "PaddedPODArray<UInt32> * output size must >= 65536");
         if (this->isSmall() && rhs->isSmall())

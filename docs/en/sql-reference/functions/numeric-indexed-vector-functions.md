@@ -10,7 +10,7 @@ title: 'NumericIndexedVector Functions'
 
 NumericIndexedVector is an abstract data structure that encapsulates a vector and implements vector aggregating and point-wise operations. There are two underlying storage methods: BSI and RawSum (not yet implemented). For theoretical basis and usage scenarios, refer to the paper [Large-Scale Metric Computation in Online Controlled Experiment Platform](https://arxiv.org/pdf/2405.08411).
 
-## BSI
+## BSI {#bsi}
 
 In the BSI(Bit-Sliced Index) storage mode, NumericIndexedVector compresses and stores vectors based on Roaring Bitmap and Bit-Sliced ​​Index. Aggregating operations and point-wise operations are directly on the compressed data, which can significantly improve the efficiency of storage and query.
 
@@ -22,7 +22,7 @@ A vector contains indices and their corresponding element values. The following 
 - The Bit-Sliced Index mechanism converts Value into binary. For floating-point types, the conversion uses fixed-point representation, which may lead to precision loss. The precision can be adjusted by customizing the number of bits allocated for the fractional part; the default is 24 bits, which is sufficient for most scenarios. You can customize the number of integer bits and fractional bits when constructing NumericIndexedVector using aggregate function groupNumericIndexedVector with `-State`.
 - In point-wise operations between two NumericIndexedVectors, any index that is missing in one of the vectors is treated as 0 (resulting in outcomes such as preserving the value from the vector that has the index when adding, or producing 0 when multiplying). It’s important to mention that results with value 0 are omitted—they aren’t stored in the resulting NumericIndexedVector and are ignored in subsequent chained operations.
 
-## RawSum
+## RawSum {#raw-sum}
 
 
 Use two sorted arrays to store Index and Value respectively; the sorting logic is to sort the Index from small to large, and the user must ensure that there is no duplicate Index. This storage structure is used to support the scenario where the Index type is UInt64/Int64. The aggregating operations and point-wise operations defined on it are accelerated by vectorized instructions, which have not yet been implemented.
@@ -31,7 +31,7 @@ Use two sorted arrays to store Index and Value respectively; the sorting logic i
 
 There are two ways to create this structure: one is to use the aggregate function groupNumericIndexedVector with `-State`, and the other is to build it from a map using `numericIndexedVectorBuild`. The `groupNumericIndexedVectorState` function allows customization of the number of integer and fractional bits through parameters, while `numericIndexedVectorBuild` does not currently support such customization.
 
-## groupNumericIndexedVector
+## groupNumericIndexedVector {#group-numeric-indexed-vector}
 
 Constructs a NumericIndexedVector from two data columns and returns the sum of all values as a Float64 type. If the suffix `State` is added, it returns a NumericIndexedVector object.
 
@@ -84,7 +84,7 @@ SELECT groupNumericIndexedVectorStateIf(UserID, PlayTime, day = '2025-04-22') as
 └─────┴────────────────────────────────────────────────────────────┴───────────────────────────────────────┘
 ```
 
-## numericIndexedVectorBuild
+## numericIndexedVectorBuild {#numeric-indexed-vector-build}
 
 Creates a NumericIndexedVector from a map. The map’s keys represent the Index and the map’s value represents the element value.
 
