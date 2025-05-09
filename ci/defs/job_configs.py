@@ -313,6 +313,34 @@ class JobConfigs:
             ["Build (amd_asan)"],
         ],
     )
+
+    functional_tests_for_sema = Job.Config(
+        name=JobNames.STATELESS,
+        runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./tests/ci/functional_test_check.py",
+                "./tests/queries/0_stateless/",
+                "./tests/clickhouse-test",
+                "./tests/config",
+                "./tests/*.txt",
+                "./tests/docker_scripts/",
+                "./docker",
+            ],
+        ),
+    ).parametrize(
+        parameter=[
+            f"release, old analyzer, s3, DatabaseReplicated, 2/2, {i}" for i in range(20)
+        ],
+        runs_on=[
+            RunnerLabels.FUNC_TESTER_AMD for _i in range(20)
+        ],
+        requires=[
+            ["Build (amd_release)"] for _i in range(20)
+        ],
+    )
+
     functional_tests_jobs_required = Job.Config(
         name=JobNames.STATELESS,
         runs_on=RunnerLabels.FUNC_TESTER_AMD,
