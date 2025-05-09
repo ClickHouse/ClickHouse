@@ -1817,6 +1817,17 @@ See also:
 - [insert_quorum_timeout](#insert_quorum_timeout)
 - [insert_quorum_parallel](#insert_quorum_parallel)
 )", 0) \
+    DECLARE(Bool, update_sequential_consistency, true, R"(
+If true set of parts is updated to the latest version before execution of update.
+)", 0) \
+    DECLARE(UpdateParallelMode, update_parallel_mode, UpdateParallelMode::AUTO, R"(
+Determines the behavior of concurrent update queries.
+
+Possible values:
+- `sync` - run sequentially all `UPDATE` queries.
+- `auto` - run sequentially only `UPDATE` queries with dependencies between columns updated in one query and columns used in expressions of another query.
+- `async` - do not synchronize update queries.
+)", 0) \
     DECLARE(UInt64, table_function_remote_max_addresses, 1000, R"(
 Sets the maximum number of addresses generated from patterns for the [remote](../../sql-reference/table-functions/remote.md) function.
 
@@ -3941,6 +3952,14 @@ Possible values:
     DECLARE_WITH_ALIAS(Bool, enable_lightweight_delete, true, R"(
 Enable lightweight DELETE mutations for mergetree tables.
 )", 0, allow_experimental_lightweight_delete) \
+    DECLARE(LightweightDeleteMode, lightweight_delete_mode, LightweightDeleteMode::ALTER_UPDATE, R"(
+A mode of internal update query that is executed as a part of lightweight delete.
+
+Possible values:
+- `alter_update` - run `ALTER UPDATE` query that creates a heavyweight mutation.
+- `lightweight_update` - run lightweight update if possible, run `ALTER UPDATE` otherwise.
+- `lightweight_update_force` - run lightweight update if possible, throw otherwise.
+)", 0) \
     DECLARE(UInt64, lightweight_deletes_sync, 2, R"(
 The same as [`mutations_sync`](#mutations_sync), but controls only execution of lightweight deletes.
 
@@ -4711,6 +4730,17 @@ If true, include only column names and types into result of DESCRIBE query
 )", 0) \
     DECLARE(Bool, apply_mutations_on_fly, false, R"(
 If true, mutations (UPDATEs and DELETEs) which are not materialized in data part will be applied on SELECTs.
+)", 0) \
+    DECLARE(Bool, apply_patch_parts, true, R"(
+If true, patch parts (that represent lightweight updates) are applied on SELECTs.
+)", 0) \
+    DECLARE(AlterUpdateMode, alter_update_mode, AlterUpdateMode::HEAVY, R"(
+A mode for `ALTER` queries that have the `UPDATE` commands.
+
+Possible values:
+- `heavy` - run regular mutation.
+- `lightweight` - run lightweight update if possible, run regular mutation otherwise.
+- `lightweight_force` - run lightweight update if possible, throw otherwise.
 )", 0) \
     DECLARE(Bool, mutations_execute_nondeterministic_on_initiator, false, R"(
 If true constant nondeterministic functions (e.g. function `now()`) are executed on initiator and replaced to literals in `UPDATE` and `DELETE` queries. It helps to keep data in sync on replicas while executing mutations with constant nondeterministic functions. Default value: `false`.
@@ -5838,6 +5868,9 @@ Only has an effect in ClickHouse Cloud. Discard connection if some data is unrea
     DECLARE(UInt64, distributed_cache_min_bytes_for_seek, 0, R"(
 Only has an effect in ClickHouse Cloud. Minimum number of bytes to do seek in distributed cache.
 )", 0) \
+    DECLARE(Bool, distributed_cache_read_only_from_current_az, true, R"(
+Only has an effect in ClickHouse Cloud. Allow to read only from current availability zone. If disabled, will read from all cache servers in all availability zones.
+)", 0) \
     DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
 Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
 )", 0) \
@@ -6590,6 +6623,9 @@ If it is set to true, allow to use experimental inverted index.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_full_text_index, false, R"(
 If it is set to true, allow to use experimental full-text index.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_lightweight_update, false, R"(
+Allow to use lightweight updates.
 )", EXPERIMENTAL) \
     \
     DECLARE(Bool, allow_experimental_join_condition, false, R"(

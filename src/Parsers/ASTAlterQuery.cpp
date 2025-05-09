@@ -517,6 +517,16 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
             partition->format(ostr, settings, state, frame);
         }
     }
+    else if (type == ASTAlterCommand::APPLY_PATCHES)
+    {
+        ostr << (settings.hilite ? hilite_keyword : "") << "APPLY PATCHES" << (settings.hilite ? hilite_none : "");
+
+        if (partition)
+        {
+            ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            partition->format(ostr, settings, state, frame);
+        }
+    }
     else
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected type of ALTER");
 }
