@@ -319,6 +319,16 @@ enum class DeduplicateMergeProjectionMode : uint8_t
 
 DECLARE_SETTING_ENUM(DeduplicateMergeProjectionMode)
 
+enum class SecondaryIndicesOnColumnsAlterModify : uint8_t
+{
+    IGNORE,
+    THROW,
+    DROP,
+    REBUILD,
+};
+
+DECLARE_SETTING_ENUM(SecondaryIndicesOnColumnsAlterModify)
+
 DECLARE_SETTING_ENUM(ParallelReplicasMode)
 
 DECLARE_SETTING_ENUM(LocalFSReadMethod)

@@ -1779,6 +1779,21 @@ namespace ErrorCodes
     Calculate columns and secondary indices sizes lazily on first request instead
     of on table initialization.
     )", 0) \
+    /** Secondary Index settings. */ \
+    DECLARE(SecondaryIndicesOnColumnsAlterModify, secondary_indices_on_columns_alter_modify, SecondaryIndicesOnColumnsAlterModify::THROW, R"(
+    The setting will be only applicable to ALTER modify column.
+    The value throw will prevent doing ALTERs of columns covered by secondary indices.
+    The value drop will drop the dependent secondary indices.
+    The value rebuild acts like dropping and then doing MATERIALIZE INDEX.
+    The value ignore is intended for professional usage. It will leave the indices in an inconsistent state, allowing incorrect query results.
+
+    Possible values:
+    - `ignore`
+    - `throw`
+    - `drop`
+    - `rebuild`
+    )", 0) \
+    /** Default compression codec settings. */ \
     DECLARE(String, default_compression_codec, "", R"(
     Specifies the default compression codec to be used if none is defined for a particular column in the table declaration.
     Compression codec selecting order for a column:
