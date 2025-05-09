@@ -64,7 +64,7 @@ public:
         ObjectStoragePtr object_storage_,
         ContextPtr context_,
         const StorageID & table_id_,
-        const ColumnsDescription & columns_,
+        const ColumnsDescription & columns_in_table_or_function_definition,
         const ConstraintsDescription & constraints_,
         const String & comment,
         std::optional<FormatSettings> format_settings_,
@@ -161,6 +161,7 @@ protected:
     const bool distributed_processing;
     bool update_configuration_on_read;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+    ColumnsDescription file_columns;
 
     LoggerPtr log;
 };
@@ -253,6 +254,7 @@ public:
         const StorageSnapshotPtr & storage_snapshot,
         bool supports_subset_of_columns,
         ContextPtr local_context,
+        const NamesAndTypesList & file_columns_,
         const NamesAndTypesList & hive_partition_columns_to_read_from_file_path_);
 
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;

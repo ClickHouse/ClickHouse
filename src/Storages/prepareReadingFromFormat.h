@@ -26,10 +26,20 @@ namespace DB
         SerializationInfoByName serialization_hints;
         /// Read partition columns from path instead of file itself.
         NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+
+        NamesAndTypesList requested_hive_partition_columns;
     };
 
     /// Get all needed information for reading from data in some input format.
-    ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context, bool supports_subset_of_columns, const NamesAndTypesList & columns_to_read_from_file_path = {});
+    ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context, bool supports_subset_of_columns, const NamesAndTypesList & columns_to_read_from_file_path = {}, bool hive_partition_columns_to_read_from_file_path = false);
+
+    ReadFromFormatInfo prepareReadingFromFormatArthur(
+        const Strings & requested_columns,
+        const StorageSnapshotPtr & storage_snapshot,
+        const ContextPtr & context,
+        bool supports_subset_of_columns,
+        const NamesAndTypesList & file_columns,
+        const NamesAndTypesList & columns_to_read_from_file_path);
 
     /// Returns the serialization hints from the insertion table (if it's set in the Context).
     SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context);

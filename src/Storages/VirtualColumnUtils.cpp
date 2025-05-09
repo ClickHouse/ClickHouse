@@ -51,12 +51,11 @@
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
-#include <Functions/keyvaluepair/impl/KeyValuePairExtractorBuilder.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Functions/keyvaluepair/impl/DuplicateKeyFoundException.h>
+#include <Storages/HivePartitioningUtils.h>
 
 
 namespace DB
@@ -148,41 +147,6 @@ NameSet getVirtualNamesForFileLikeStorage()
     return getCommonVirtualsForFileLikeStorage().getNameSet();
 }
 
-static auto makeExtractor()
-{
-    return KeyValuePairExtractorBuilder().withItemDelimiters({'/'}).withKeyValueDelimiter('=').buildWithReferenceMap();
-}
-
-HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & path)
-{
-    static auto extractor = makeExtractor();
-
-    HivePartitioningKeysAndValues key_values;
-
-    // cutting the filename to prevent malformed filenames that contain key-value-pairs from being extracted
-    // not sure if we actually need to do that, but just in case. Plus, the previous regex impl took care of it
-    const auto last_slash_pos = path.find_last_of('/');
-
-    if (last_slash_pos == std::string::npos)
-    {
-        // nothing to extract, there is no path, just a filename
-        return key_values;
-    }
-
-    std::string_view path_without_filename(path.data(), last_slash_pos);
-
-    try
-    {
-        extractor.extract(path_without_filename, key_values);
-    }
-    catch (const extractKV::DuplicateKeyFoundException & ex)
-    {
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Path '{}' to file with enabled hive-style partitioning contains duplicated partition key {} with different values, only unique keys are allowed", path, ex.key);
-    }
-
-    return key_values;
-}
-
 VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & storage_columns)
 {
     VirtualColumnsDescription desc;
@@ -222,9 +186,10 @@ static void addPathAndFileToVirtualColumns(Block & block, const String & path, s
         block.getByName("_file").column->assumeMutableRef().insert(file);
     }
 
+    // todo arthur: this might be needed after all
     if (use_hive_partitioning)
     {
-        const auto keys_and_values = parseHivePartitioningKeysAndValues(path);
+        const auto keys_and_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
         for (const auto & [key, value] : keys_and_values)
         {
             if (const auto * column = block.findByName(key))

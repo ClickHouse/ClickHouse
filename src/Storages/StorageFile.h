@@ -201,6 +201,7 @@ private:
     FileRenamer file_renamer;
     bool was_renamed = false;
     bool distributed_processing = false;
+    ColumnsDescription file_columns;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 };
 

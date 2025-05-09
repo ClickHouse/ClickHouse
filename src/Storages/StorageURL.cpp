@@ -3,6 +3,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/HivePartitioningUtils.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -196,26 +197,97 @@ IStorageURLBase::IStorageURLBase(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
 
-    if (context_->getSettingsRef()[Setting::use_hive_partitioning])
+    auto & storage_columns = storage_metadata.columns;
+    const auto & columns_in_table_or_function_definition = columns_;
+
+    std::string partition_strategy_name = "wildcard";
+    bool has_partition_strategy = false;
+
+    if (columns_in_table_or_function_definition.empty())
     {
-        // todo arthur this needs to live!!
-        const auto path = getSampleURI(uri, context_);
-        const auto hive_map = VirtualColumnUtils::parseHivePartitioningKeysAndValues(path);
-
-        for (const auto & item : hive_map)
+        /// What does this mean?
+        /// It means it is not create table and it is not a table function with schema specified
+        /// Therefore, we need to infer the schema from existing files in the storage
+        /// If we are using hive path style, we also need to extract the partition columns from the path
+        ///
+        /// It can be one of the following:
+        ///     1. Table function
+        ///
+        ///     What to do for each?
+        ///
+        ///     1. If `use_hive_partitioning=1`, virtual.
+        ///
+        /// Metadata.columns shall include all columns (file and path ones)
+        /// File_columns shall include:
+        ///     1. All columns in case `partition_columns_in_data_file=1`
+        ///     2. All columns except partition columns otherwise
+        ///
+        ///
+        if (context_->getSettingsRef()[Setting::use_hive_partitioning])
         {
-            const std::string key(item.first);
-            const std::string value(item.second);
+            hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(storage_columns, getSampleURI(uri, context_), format_settings, context_);
+            for (const auto & [name, type]: hive_partition_columns_to_read_from_file_path)
+            {
+                if (!storage_columns.has(name))
+                {
+                    storage_columns.add({name, type});
+                }
+            }
 
-            auto type = tryInferDataTypeByEscapingRule(value, format_settings ? *format_settings : getFormatSettings(context_), FormatSettings::EscapingRule::Raw);
-
-            if (type == nullptr)
-                type = std::make_shared<DataTypeString>();
-            if (type->canBeInsideLowCardinality())
-                hive_partition_columns_to_read_from_file_path.emplace_back(key, std::make_shared<DataTypeLowCardinality>(type));
-            else
-                hive_partition_columns_to_read_from_file_path.emplace_back(key, type);
+            // todo arthur what about file_columns? Should we respect the setting or infer from the file? For now, let's assume it is in the file
+            file_columns = storage_columns;
         }
+    }
+    else
+    {
+        /// Schema is specified, no need to infer it.
+        /// It can be one of the following:
+        ///     1. Table engine with partition by
+        ///     2. Insert table function with partition by
+        ///     3. Table engine without partition by
+        ///     4. Table function
+        ///
+        ///
+        ///     What to do for each?
+        ///
+        ///     1/2. Parse pcolumns  from expression, file_columns depends on partition_columns_in_data_file
+        ///     3/4. If `use_hive_partitioning=1`, parse from the path, file columns will depend on partition_columns_in_data_file?
+
+        // 1/2
+        if (has_partition_strategy && partition_strategy_name == "hive")
+        {
+            // hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
+        }
+        // 3/4
+        else if (context_->getSettingsRef()[Setting::use_hive_partitioning])
+        {
+            hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(storage_columns, getSampleURI(uri, context_), format_settings, context_);
+            // todo arthur perhaps an assertion that `input_columns` contain all columns found in `hive_partition_columns_to_read_from_file_path`?
+        }
+
+
+        file_columns = storage_columns;
+        // if (true)
+        // {
+        //     file_columns = storage_columns;
+        // }
+        // else
+        // {
+        //     std::unordered_set<String> hive_partition_columns_to_read_from_file_path_set;
+        //
+        //     for (const auto & [name, type] : hive_partition_columns_to_read_from_file_path)
+        //     {
+        //         hive_partition_columns_to_read_from_file_path_set.insert(name);
+        //     }
+        //
+        //     for (const auto & [name, type] : storage_columns.getAllPhysical())
+        //     {
+        //         if (!hive_partition_columns_to_read_from_file_path_set.contains(name))
+        //         {
+        //             file_columns.add({name, type});
+        //         }
+        //     }
+        // }
     }
 
     // todo arthur it is needed
@@ -505,7 +577,7 @@ Chunk StorageURLSource::generate()
             if (!hive_partition_columns_to_read_from_file_path.empty())
             {
                 auto path = curr_uri.getPath();
-                auto hive_map = VirtualColumnUtils::parseHivePartitioningKeysAndValues(path);
+                auto hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
                 for (const auto & column : hive_partition_columns_to_read_from_file_path)
                 {
                     if (auto it = hive_map.find(column.getNameInStorage()); it != hive_map.end())
@@ -1192,7 +1264,7 @@ void IStorageURLBase::read(
     size_t num_streams)
 {
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context), hive_partition_columns_to_read_from_file_path);
+    auto read_from_format_info = prepareReadingFromFormatArthur(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context), file_columns.getAll(), hive_partition_columns_to_read_from_file_path);
 
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];

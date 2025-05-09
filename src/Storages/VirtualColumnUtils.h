@@ -6,8 +6,6 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Formats/FormatSettings.h>
-#include <absl/container/flat_hash_map.h>
-
 
 namespace DB
 {
@@ -105,10 +103,6 @@ struct VirtualsForFileLikeStorage
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
     VirtualsForFileLikeStorage virtual_values, ContextPtr context);
-
-using HivePartitioningKeysAndValues = absl::flat_hash_map<std::string_view, std::string_view>;
-
-HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & path);
 
 }
 

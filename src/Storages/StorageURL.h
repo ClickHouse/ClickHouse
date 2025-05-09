@@ -104,6 +104,7 @@ protected:
     ASTPtr partition_by;
     bool distributed_processing;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+    ColumnsDescription file_columns;
 
     virtual std::string getReadMethod() const;
 

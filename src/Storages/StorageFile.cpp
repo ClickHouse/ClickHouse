@@ -6,6 +6,7 @@
 #include <Storages/Distributed/DistributedAsyncInsertSource.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/HivePartitioningUtils.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
@@ -1147,36 +1148,97 @@ void StorageFile::setStorageMetadata(CommonArguments args)
 
     auto sample_path = paths.empty() ? "" : paths[0];
 
-    // /// todo this is weird, perhaps the strategy should be initialized here after all
-    // if (configuration->partition_strategy)
-    // {
-    //     if (!configuration->partition_columns_in_data_file)
-    //     {
-    //         hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
-    //     }
-    // }
-    /// if partition strrategy hasn't been initialized is because `partition by` is not present in the query
-    /// but maybe the query is: `select * from s3('table_root/**.parquet')` (no schema) and data is hive partitioned
-    /// therefore, we still need to build `hive_partition_columns_to_read_from_file_path` using the sample_path
-    /// todo broken for empty table, but this is an existing problem
-    if (args.getContext()->getSettingsRef()[Setting::use_hive_partitioning])
+    auto & storage_columns = storage_metadata.columns;
+    const auto & columns_in_table_or_function_definition = args.columns;
+
+    std::string partition_strategy_name = "wildcard";
+    bool has_partition_strategy = false;
+
+   if (columns_in_table_or_function_definition.empty())
     {
-        const auto hive_map = VirtualColumnUtils::parseHivePartitioningKeysAndValues(sample_path);
-
-        for (const auto & item : hive_map)
+        /// What does this mean?
+        /// It means it is not create table and it is not a table function with schema specified
+        /// Therefore, we need to infer the schema from existing files in the storage
+        /// If we are using hive path style, we also need to extract the partition columns from the path
+        ///
+        /// It can be one of the following:
+        ///     1. Table function
+        ///
+        ///     What to do for each?
+        ///
+        ///     1. If `use_hive_partitioning=1`, virtual.
+        ///
+        /// Metadata.columns shall include all columns (file and path ones)
+        /// File_columns shall include:
+        ///     1. All columns in case `partition_columns_in_data_file=1`
+        ///     2. All columns except partition columns otherwise
+        ///
+        ///
+        if (args.getContext()->getSettingsRef()[Setting::use_hive_partitioning])
         {
-            const std::string key(item.first);
-            const std::string value(item.second);
+            hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(storage_columns, sample_path, format_settings, args.getContext());
+            for (const auto & [name, type]: hive_partition_columns_to_read_from_file_path)
+            {
+                if (!storage_columns.has(name))
+                {
+                    storage_columns.add({name, type});
+                }
+            }
 
-            auto type = tryInferDataTypeByEscapingRule(value, format_settings ? *format_settings : getFormatSettings(args.getContext()), FormatSettings::EscapingRule::Raw);
-
-            if (type == nullptr)
-                type = std::make_shared<DataTypeString>();
-            if (type->canBeInsideLowCardinality())
-                hive_partition_columns_to_read_from_file_path.emplace_back(key, std::make_shared<DataTypeLowCardinality>(type));
-            else
-                hive_partition_columns_to_read_from_file_path.emplace_back(key, type);
+            // todo arthur what about file_columns? Should we respect the setting or infer from the file? For now, let's assume it is in the file
+            file_columns = storage_columns;
         }
+    }
+    else
+    {
+        /// Schema is specified, no need to infer it.
+        /// It can be one of the following:
+        ///     1. Table engine with partition by
+        ///     2. Insert table function with partition by
+        ///     3. Table engine without partition by
+        ///     4. Table function
+        ///
+        ///
+        ///     What to do for each?
+        ///
+        ///     1/2. Parse pcolumns  from expression, file_columns depends on partition_columns_in_data_file
+        ///     3/4. If `use_hive_partitioning=1`, parse from the path, file columns will depend on partition_columns_in_data_file?
+
+        // 1/2
+        if (has_partition_strategy && partition_strategy_name == "hive")
+        {
+            // hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
+        }
+        // 3/4
+        else if (args.getContext()->getSettingsRef()[Setting::use_hive_partitioning])
+        {
+            hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(storage_columns, sample_path, format_settings, args.getContext());
+            // todo arthur perhaps an assertion that `input_columns` contain all columns found in `hive_partition_columns_to_read_from_file_path`?
+        }
+
+
+        file_columns = storage_columns;
+        // if (true)
+        // {
+        //     file_columns = storage_columns;
+        // }
+        // else
+        // {
+        //     std::unordered_set<String> hive_partition_columns_to_read_from_file_path_set;
+        //
+        //     for (const auto & [name, type] : hive_partition_columns_to_read_from_file_path)
+        //     {
+        //         hive_partition_columns_to_read_from_file_path_set.insert(name);
+        //     }
+        //
+        //     for (const auto & [name, type] : storage_columns.getAllPhysical())
+        //     {
+        //         if (!hive_partition_columns_to_read_from_file_path_set.contains(name))
+        //         {
+        //             file_columns.add({name, type});
+        //         }
+        //     }
+        // }
     }
 
     // todo arthur it is needed
@@ -1541,7 +1603,7 @@ Chunk StorageFileSource::generate()
             // the order is important, it must be added after virtual columns..
             if (!hive_partition_columns_to_read_from_file_path.empty())
             {
-                auto hive_map = VirtualColumnUtils::parseHivePartitioningKeysAndValues(current_path);
+                auto hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(current_path);
                 for (const auto & column : hive_partition_columns_to_read_from_file_path)
                 {
                     if (auto it = hive_map.find(column.getNameInStorage()); it != hive_map.end())
@@ -1693,7 +1755,7 @@ void StorageFile::read(
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, context, supportsSubsetOfColumns(context), hive_partition_columns_to_read_from_file_path);
+    auto read_from_format_info = prepareReadingFromFormatArthur(column_names, storage_snapshot, context, supportsSubsetOfColumns(context), file_columns.getAll(), hive_partition_columns_to_read_from_file_path);
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && context->getSettingsRef()[Setting::optimize_count_from_files];
 

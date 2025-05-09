@@ -22,6 +22,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ObjectInfoWithPartitionColumns.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/HivePartitioningUtils.h>
 #include <Common/parseGlobs.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
@@ -265,10 +266,14 @@ Chunk StorageObjectStorageSource::generate()
                  .etag = &(object_info->metadata->etag)},
                 read_context);
 
+            // todo arthur: I need to ALWAYS read hive columns in case some hive_column = 1, even if it is not in the list of requested columns
+            // this needs to be passed down to the filters, which lives somewhere else
+            // I should add it to the chunk ONLY if it is in requested columns.
+
             // the order is important, it must be added after virtual columns..
             if (!read_from_format_info.hive_partition_columns_to_read_from_file_path.empty())
             {
-                auto hive_map = VirtualColumnUtils::parseHivePartitioningKeysAndValues(path);
+                auto hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
                 for (const auto & column : read_from_format_info.hive_partition_columns_to_read_from_file_path)
                 {
                     if (auto it = hive_map.find(column.getNameInStorage()); it != hive_map.end())
