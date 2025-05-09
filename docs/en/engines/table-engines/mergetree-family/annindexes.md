@@ -268,7 +268,7 @@ In case additional filter conditions on columns can make use of skip indexes (mi
 Clickhouse provides 2 settings for finer control on post-filtering and pre-filtering -
 
 - vector_search_filtering
-When the additional filter conditions are extremely selective, it is possible that brute force search on a small filtered set of rows gives better results then post-filtering using the vector search. Users can request explicit pre-filtering by setting ```vector_search_filtering``` to "prefilter" (default is "Auto" which equates to "Postfilter"). An example query where pre-filtering could be a good choice is -
+When the additional filter conditions are extremely selective, it is possible that brute force search on a small filtered set of rows gives better results then post-filtering using the vector search. Users can request explicit pre-filtering by setting ```vector_search_filtering``` to "prefilter" (default is "auto" which equates to "postfilter"). An example query where pre-filtering could be a good choice is -
 
 ```sql
 SELECT bookid, author, title
