@@ -1461,6 +1461,9 @@
      If not specified they will be stored locally. -->
     <!-- <workload_zookeeper_path>/clickhouse/workload/definitions.sql</workload_zookeeper_path> -->
 
+    <!-- Configuration of user defined drivers -->
+    <user_defined_drivers_config>*_driver.*ml</user_defined_drivers_config>
+
     <!-- Uncomment if you want data to be compressed 30-100% better.
          Don't do that if you just started using ClickHouse.
          Note: ClickHouse Cloud https://clickhouse.com/cloud has a stronger compression by default.

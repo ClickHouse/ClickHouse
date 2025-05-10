@@ -7,6 +7,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <Functions/UserDefined/UserDefinedDriverFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Storages/System/StorageSystemFunctions.h>
@@ -36,7 +37,9 @@ namespace
         res_columns[0]->insert(name);
         res_columns[1]->insert(is_aggregate);
 
-        if constexpr (std::is_same_v<Factory, UserDefinedSQLFunctionFactory> || std::is_same_v<Factory, UserDefinedExecutableFunctionFactory>)
+        if constexpr (std::is_same_v<Factory, UserDefinedSQLFunctionFactory>
+            || std::is_same_v<Factory, UserDefinedExecutableFunctionFactory>
+            || std::is_same_v<Factory, UserDefinedDriverFunctionFactory>)
         {
             res_columns[2]->insert(false);
             res_columns[3]->insertDefault();
@@ -149,6 +152,13 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
     for (const auto & function_name : user_defined_executable_functions_names)
     {
         fillRow(res_columns, function_name, 0, "", FunctionOrigin::EXECUTABLE_USER_DEFINED, user_defined_executable_functions_factory);
+    }
+
+    const auto & user_defined_driver_functions_factory = UserDefinedDriverFunctionFactory::instance();
+    const auto & user_defined_driver_functions_names = user_defined_driver_functions_factory.getAllRegisteredNames();
+    for (const auto & function_name : user_defined_driver_functions_names)
+    {
+        fillRow(res_columns, function_name, 0, "", FunctionOrigin::EXECUTABLE_USER_DEFINED, user_defined_driver_functions_factory);
     }
 }
 

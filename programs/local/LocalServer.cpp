@@ -629,6 +629,17 @@ try
         throw;
     }
 
+    /// try to load user defined drivers, throw on error and die
+    try
+    {
+        global_context->loadOrReloadUserDefinedDrivers(getClientConfiguration());
+    }
+    catch (...)
+    {
+        tryLogCurrentException(&logger(), "Caught exception while loading user defined drivers.");
+        throw;
+    }
+
     /// Must be called after we stopped initializing the global context and changing its settings.
     /// After this point the global context must be stayed almost unchanged till shutdown,
     /// and all necessary changes must be made to the client context instead.

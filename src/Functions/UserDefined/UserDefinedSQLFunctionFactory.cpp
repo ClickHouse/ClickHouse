@@ -5,6 +5,7 @@
 #include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/UserDefinedDriverFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectsBackup.h>
@@ -114,6 +115,9 @@ void UserDefinedSQLFunctionFactory::checkCanBeRegistered(const ContextPtr & cont
     if (AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The aggregate function '{}' already exists", function_name);
 
+    if (UserDefinedDriverFunctionFactory::instance().has(function_name))
+        throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined driver function '{}' already exists", function_name);
+
     if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context)) /// NOLINT(readability-static-accessed-through-instance)
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined executable function '{}' already exists", function_name);
 
@@ -125,6 +129,9 @@ void UserDefinedSQLFunctionFactory::checkCanBeUnregistered(const ContextPtr & co
     if (FunctionFactory::instance().hasNameOrAlias(function_name) ||
         AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
         throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop system function '{}'", function_name);
+
+    if (UserDefinedDriverFunctionFactory::instance().has(function_name))
+        throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop user defined driver function '{}'", function_name);
 
     if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context)) /// NOLINT(readability-static-accessed-through-instance)
         throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop user defined executable function '{}'", function_name);
@@ -140,7 +147,7 @@ bool UserDefinedSQLFunctionFactory::registerFunction(const ContextMutablePtr & c
         auto & loader = context->getUserDefinedSQLObjectsStorage();
         bool stored = loader.storeObject(
             context,
-            UserDefinedSQLObjectType::Function,
+            UserDefinedSQLObjectType::SQLFunction,
             function_name,
             create_function_query,
             throw_if_exists,
@@ -167,7 +174,7 @@ bool UserDefinedSQLFunctionFactory::unregisterFunction(const ContextMutablePtr &
         auto & storage = context->getUserDefinedSQLObjectsStorage();
         bool removed = storage.removeObject(
             context,
-            UserDefinedSQLObjectType::Function,
+            UserDefinedSQLObjectType::SQLFunction,
             function_name,
             throw_if_not_exists);
         if (!removed)
@@ -184,27 +191,27 @@ bool UserDefinedSQLFunctionFactory::unregisterFunction(const ContextMutablePtr &
 
 ASTPtr UserDefinedSQLFunctionFactory::get(const String & function_name) const
 {
-    return global_context->getUserDefinedSQLObjectsStorage().get(function_name);
+    return global_context->getUserDefinedSQLObjectsStorage().get(function_name, UserDefinedSQLObjectType::SQLFunction);
 }
 
 ASTPtr UserDefinedSQLFunctionFactory::tryGet(const std::string & function_name) const
 {
-    return global_context->getUserDefinedSQLObjectsStorage().tryGet(function_name);
+    return global_context->getUserDefinedSQLObjectsStorage().tryGet(function_name, UserDefinedSQLObjectType::SQLFunction);
 }
 
 bool UserDefinedSQLFunctionFactory::has(const String & function_name) const
 {
-    return global_context->getUserDefinedSQLObjectsStorage().has(function_name);
+    return global_context->getUserDefinedSQLObjectsStorage().has(function_name, UserDefinedSQLObjectType::SQLFunction);
 }
 
 std::vector<std::string> UserDefinedSQLFunctionFactory::getAllRegisteredNames() const
 {
-    return global_context->getUserDefinedSQLObjectsStorage().getAllObjectNames();
+    return global_context->getUserDefinedSQLObjectsStorage().getAllObjectNames(UserDefinedSQLObjectType::SQLFunction);
 }
 
 bool UserDefinedSQLFunctionFactory::empty() const
 {
-    return global_context->getUserDefinedSQLObjectsStorage().empty();
+    return global_context->getUserDefinedSQLObjectsStorage().empty(UserDefinedSQLObjectType::SQLFunction);
 }
 
 void UserDefinedSQLFunctionFactory::backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup) const
@@ -212,13 +219,13 @@ void UserDefinedSQLFunctionFactory::backup(BackupEntriesCollector & backup_entri
     backupUserDefinedSQLObjects(
         backup_entries_collector,
         data_path_in_backup,
-        UserDefinedSQLObjectType::Function,
-        global_context->getUserDefinedSQLObjectsStorage().getAllObjects());
+        UserDefinedSQLObjectType::SQLFunction,
+        global_context->getUserDefinedSQLObjectsStorage().getAllObjects(UserDefinedSQLObjectType::SQLFunction));
 }
 
 void UserDefinedSQLFunctionFactory::restore(RestorerFromBackup & restorer, const String & data_path_in_backup)
 {
-    auto restored_functions = restoreUserDefinedSQLObjects(restorer, data_path_in_backup, UserDefinedSQLObjectType::Function);
+    auto restored_functions = restoreUserDefinedSQLObjects(restorer, data_path_in_backup, UserDefinedSQLObjectType::SQLFunction);
     const auto & restore_settings = restorer.getRestoreSettings();
     bool throw_if_exists = (restore_settings.create_function == RestoreUDFCreationMode::kCreate);
     bool replace_if_exists = (restore_settings.create_function == RestoreUDFCreationMode::kReplace);

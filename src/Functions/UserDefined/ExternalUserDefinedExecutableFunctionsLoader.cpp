@@ -6,7 +6,7 @@
 
 #include <DataTypes/DataTypeFactory.h>
 
-#include <Functions/UserDefined/UserDefinedExecutableFunction.h>
+#include <Functions/UserDefined/UserDefinedLoadableFunction.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -110,14 +110,14 @@ ExternalUserDefinedExecutableFunctionsLoader::ExternalUserDefinedExecutableFunct
     enableAlwaysLoadEverything(true);
 }
 
-ExternalUserDefinedExecutableFunctionsLoader::UserDefinedExecutableFunctionPtr ExternalUserDefinedExecutableFunctionsLoader::getUserDefinedFunction(const std::string & user_defined_function_name) const
+UserDefinedExecutableFunctionPtr ExternalUserDefinedExecutableFunctionsLoader::getUserDefinedFunction(const std::string & user_defined_function_name) const
 {
-    return std::static_pointer_cast<const UserDefinedExecutableFunction>(load(user_defined_function_name));
+    return std::static_pointer_cast<const UserDefinedLoadableFunction>(load(user_defined_function_name));
 }
 
-ExternalUserDefinedExecutableFunctionsLoader::UserDefinedExecutableFunctionPtr ExternalUserDefinedExecutableFunctionsLoader::tryGetUserDefinedFunction(const std::string & user_defined_function_name) const
+UserDefinedExecutableFunctionPtr ExternalUserDefinedExecutableFunctionsLoader::tryGetUserDefinedFunction(const std::string & user_defined_function_name) const
 {
-    return std::static_pointer_cast<const UserDefinedExecutableFunction>(tryLoad(user_defined_function_name));
+    return std::static_pointer_cast<const UserDefinedLoadableFunction>(tryLoad(user_defined_function_name));
 }
 
 void ExternalUserDefinedExecutableFunctionsLoader::reloadFunction(const std::string & user_defined_function_name) const
@@ -260,7 +260,7 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
     };
 
     auto coordinator = std::make_shared<ShellCommandSourceCoordinator>(shell_command_coordinator_configration);
-    return std::make_shared<UserDefinedExecutableFunction>(function_configuration, std::move(coordinator), lifetime);
+    return std::make_shared<UserDefinedLoadableFunction>(function_configuration, std::move(coordinator), lifetime);
 }
 
 }

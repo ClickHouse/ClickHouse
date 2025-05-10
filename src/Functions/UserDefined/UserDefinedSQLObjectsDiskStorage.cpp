@@ -20,6 +20,7 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ParserCreateDriverFunctionQuery.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
 
 #include <Poco/DirectoryIterator.h>
@@ -90,9 +91,22 @@ ASTPtr UserDefinedSQLObjectsDiskStorage::tryLoadObject(UserDefinedSQLObjectType 
 
         switch (object_type)
         {
-            case UserDefinedSQLObjectType::Function:
+            case UserDefinedSQLObjectType::SQLFunction:
             {
                 ParserCreateFunctionQuery parser;
+                ASTPtr ast = parseQuery(
+                    parser,
+                    object_create_query.data(),
+                    object_create_query.data() + object_create_query.size(),
+                    "",
+                    0,
+                    global_context->getSettingsRef()[Setting::max_parser_depth],
+                    global_context->getSettingsRef()[Setting::max_parser_backtracks]);
+                return ast;
+            }
+            case UserDefinedSQLObjectType::DriverFunction:
+            {
+                ParserCreateDriverFunctionQuery parser;
                 ASTPtr ast = parseQuery(
                     parser,
                     object_create_query.data(),
@@ -116,17 +130,23 @@ ASTPtr UserDefinedSQLObjectsDiskStorage::tryLoadObject(UserDefinedSQLObjectType 
 void UserDefinedSQLObjectsDiskStorage::loadObjects()
 {
     if (!objects_loaded)
-        loadObjectsImpl();
+    {
+        loadObjectsImpl(UserDefinedSQLObjectType::SQLFunction);
+        loadObjectsImpl(UserDefinedSQLObjectType::DriverFunction);
+        LOG_DEBUG(log, "User defined objects loaded");
+    }
 }
 
 
 void UserDefinedSQLObjectsDiskStorage::reloadObjects()
 {
-    loadObjectsImpl();
+    loadObjectsImpl(UserDefinedSQLObjectType::SQLFunction);
+    loadObjectsImpl(UserDefinedSQLObjectType::DriverFunction);
+    LOG_DEBUG(log, "User defined objects reloaded");
 }
 
 
-void UserDefinedSQLObjectsDiskStorage::loadObjectsImpl()
+void UserDefinedSQLObjectsDiskStorage::loadObjectsImpl(UserDefinedSQLObjectType object_type)
 {
     LOG_INFO(log, "Loading user defined objects from {}", dir_path);
 
@@ -136,7 +156,22 @@ void UserDefinedSQLObjectsDiskStorage::loadObjectsImpl()
         return;
     }
 
-    std::vector<std::pair<String, ASTPtr>> function_names_and_queries;
+    String file_prefix;
+    switch (object_type)
+    {
+        case UserDefinedSQLObjectType::SQLFunction:
+        {
+            file_prefix = "function_";
+            break;
+        }
+        case UserDefinedSQLObjectType::DriverFunction:
+        {
+            file_prefix = "driver_function_";
+            break;
+        }
+    }
+
+    std::vector<std::pair<String, UserDefinedSQLTypedObject>> function_names_and_queries;
 
     Poco::DirectoryIterator dir_end;
     for (Poco::DirectoryIterator it(dir_path); it != dir_end; ++it)
@@ -145,25 +180,26 @@ void UserDefinedSQLObjectsDiskStorage::loadObjectsImpl()
             continue;
 
         const String & file_name = it.name();
-        if (!startsWith(file_name, "function_") || !endsWith(file_name, ".sql"))
+        if (!startsWith(file_name, file_prefix) || !endsWith(file_name, ".sql"))
             continue;
 
-        size_t prefix_length = strlen("function_");
+        size_t prefix_length = strlen(file_prefix.data());
         size_t suffix_length = strlen(".sql");
         String function_name = unescapeForFileName(file_name.substr(prefix_length, file_name.length() - prefix_length - suffix_length));
 
         if (function_name.empty())
             continue;
 
-        ASTPtr ast = tryLoadObject(UserDefinedSQLObjectType::Function, function_name, dir_path + it.name(), /* check_file_exists= */ false);
+        ASTPtr ast = tryLoadObject(object_type, function_name, dir_path + it.name(), /* check_file_exists= */ false);
         if (ast)
-            function_names_and_queries.emplace_back(function_name, ast);
+        {
+            UserDefinedSQLTypedObject typed_object{ast, object_type};
+            function_names_and_queries.emplace_back(function_name, std::move(typed_object));
+        }
     }
 
     setAllObjects(function_names_and_queries);
     objects_loaded = true;
-
-    LOG_DEBUG(log, "User defined objects loaded");
 }
 
 
@@ -171,7 +207,7 @@ void UserDefinedSQLObjectsDiskStorage::reloadObject(UserDefinedSQLObjectType obj
 {
     auto ast = tryLoadObject(object_type, object_name);
     if (ast)
-        setObject(object_name, *ast);
+        setObject(object_name, *ast, object_type);
     else
         removeObject(object_name);
 }
@@ -269,9 +305,14 @@ String UserDefinedSQLObjectsDiskStorage::getFilePath(UserDefinedSQLObjectType ob
     String file_path;
     switch (object_type)
     {
-        case UserDefinedSQLObjectType::Function:
+        case UserDefinedSQLObjectType::SQLFunction:
         {
             file_path = dir_path + "function_" + escapeForFileName(object_name) + ".sql";
+            break;
+        }
+        case UserDefinedSQLObjectType::DriverFunction:
+        {
+            file_path = dir_path + "driver_function_" + escapeForFileName(object_name) + ".sql";
             break;
         }
     }
