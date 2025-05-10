@@ -3,6 +3,7 @@
 #include <Columns/ColumnArray.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/quoteString.h>
+#include "Interpreters/ITokenExtractor.h"
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -746,6 +747,20 @@ MergeTreeIndexPtr bloomFilterIndexTextCreator(
 
         return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
     }
+    if (index.type == SparceGramTokenExtractor::getName())
+    {
+        size_t min_ngram_length = index.arguments[0].safeGet<size_t>();
+        size_t max_ngram_length = index.arguments[1].safeGet<size_t>();
+
+        BloomFilterParameters params(
+            index.arguments[2].safeGet<size_t>(),
+            index.arguments[3].safeGet<size_t>(),
+            index.arguments[4].safeGet<size_t>());
+
+        auto tokenizer = std::make_unique<SparceGramTokenExtractor>(min_ngram_length, max_ngram_length);
+
+        return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
+    }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index type: {}", backQuote(index.name));
 }
@@ -781,6 +796,11 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach
     {
         if (index.arguments.size() != 3)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "`tokenbf` index must have exactly 3 arguments.");
+    }
+    else if (index.type == SparceGramTokenExtractor::getName())
+    {
+        if (index.arguments.size() != 5)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "`sparce_gram` index must have exactly 5 arguments.");
     }
     else
     {

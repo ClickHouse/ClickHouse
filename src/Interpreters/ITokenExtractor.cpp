@@ -270,4 +270,87 @@ void SplitTokenExtractor::substringToGinFilter(const char * data, size_t length,
             gin_filter.addTerm(data + token_start, token_len);
 }
 
+SparceGramTokenExtractor::SparceGramTokenExtractor(size_t min_length, size_t max_length)
+    : sparse_grams_iterator(min_length, max_length)
+{
+}
+
+bool SparceGramTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
+{
+    if (std::tie(data, length) != std::tie(previous_data, previous_len))
+    {
+        previous_data = data;
+        previous_len = length;
+        sparse_grams_iterator.set(data, data + length);
+    }
+
+    Pos next_begin;
+    Pos next_end;
+    if (!sparse_grams_iterator.get(next_begin, next_end))
+    {
+        previous_data = nullptr;
+        previous_len = 0;
+        return false;
+    }
+    *token_start = next_begin - data;
+    *token_length = next_end - next_begin;
+    *pos = *token_start;
+
+    return true;
+}
+
+bool SparceGramTokenExtractor::nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const
+{
+    if (std::tie(data, length) != std::tie(previous_data, previous_len))
+    {
+        previous_data = data;
+        previous_len = length;
+        sparse_grams_iterator.set(data, data + length);
+    }
+
+    token.clear();
+
+    while (true)
+    {
+        Pos next_begin;
+        Pos next_end;
+        if (!sparse_grams_iterator.get(next_begin, next_end))
+        {
+            previous_data = nullptr;
+            previous_len = 0;    
+            return false;
+        }
+        bool escaped = false;
+        bool match_substring = true;
+        for (size_t i = next_begin - data; i < static_cast<size_t>(next_end - data);)
+        {
+            if (escaped && (data[i] == '%' || data[i] == '_' || data[i] == '\\'))
+            {
+                token.push_back(data[i]);
+                escaped = false;
+                ++i;
+            }
+            else if (!escaped && (data[i] == '%' || data[i] == '_' || data[i] == '\\'))
+            {
+                token.clear();
+                match_substring = false;
+                break;
+            }
+            else
+            {
+                const size_t sz = UTF8::seqLength(static_cast<UInt8>(data[i]));
+                for (size_t j = 0; j < sz; ++j)
+                    token.push_back(data[i + j]);
+                i += sz;
+                escaped = false;
+            }
+        }
+        if (match_substring)
+        {
+            *pos = next_begin - data;
+            return true;
+        }
+    }
+}
+
 }

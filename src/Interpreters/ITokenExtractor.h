@@ -5,6 +5,8 @@
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/GinFilter.h>
 
+#include <Functions/sparseGrams.h>
+
 namespace DB
 {
 
@@ -181,6 +183,22 @@ struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtrac
     void substringToGinFilter(const char * data, size_t length, GinFilter & gin_filter, bool is_prefix, bool is_suffix) const override;
 
 
+};
+
+struct SparceGramTokenExtractor final : public ITokenExtractorHelper<SparceGramTokenExtractor>
+{
+    explicit SparceGramTokenExtractor(size_t min_length = 3, size_t max_length = 100);
+
+    static const char * getName() { return "sparse_gram"; }
+
+    bool nextInString(const char * data, size_t length, size_t *  __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
+
+    bool nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const override;
+
+private:
+    mutable SparseGramsImpl<true> sparse_grams_iterator;
+    mutable const char * previous_data;
+    mutable size_t previous_len;
 };
 
 }
