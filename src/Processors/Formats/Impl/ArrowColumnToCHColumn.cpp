@@ -830,12 +830,12 @@ static ColumnWithTypeAndName readIPv4ColumnWithInt32Data(const std::shared_ptr<a
 
 static bool isColumnJSON(const std::shared_ptr<arrow::Field> & field)
 {
-    if (not field or not field->HasMetadata())
+    if (!field || !field->HasMetadata())
         return false;
 
     const auto & md = field->metadata();
     auto logical_type = md->Get("PARQUET:logical_type");
-    return logical_type.ok() and *logical_type == "JSON";
+    return logical_type.ok() && *logical_type == "JSON";
 }
 
 struct ReadColumnFromArrowColumnSettings
@@ -911,7 +911,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 }
             }
 
-            if (settings.enable_json_parsing and isColumnJSON(arrow_field))
+            if (settings.enable_json_parsing && isColumnJSON(arrow_field))
             {
                 return readColumnWithJSONData<arrow::BinaryArray>(arrow_column, column_name);
             }
@@ -947,7 +947,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
         case arrow::Type::LARGE_BINARY:
         {
             bool parse_json = settings.enable_json_parsing
-                and ((type_hint and type_hint->getTypeId() == TypeIndex::Object) or isColumnJSON(arrow_field));
+                && ((type_hint && type_hint->getTypeId() == TypeIndex::Object) || isColumnJSON(arrow_field));
 
             return parse_json ? readColumnWithJSONData<arrow::LargeBinaryArray>(arrow_column, column_name)
                               : readColumnWithStringData<arrow::LargeBinaryArray>(arrow_column, column_name);
