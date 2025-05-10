@@ -1,4 +1,5 @@
 import logging
+import pytest
 import string
 import time
 from contextlib import contextmanager
@@ -155,3 +156,12 @@ def generate_new_create_table_query(
 SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1"""
     logging.debug(f"Generated new create query: {query}")
     return query
+
+def wait_for_zk_children(zk, base_path, expected, timeout=30.0, interval=1.0):
+    start = time.time()
+    while time.time() - start < timeout:
+        children = set(zk.ls(base_path))
+        if children == expected:
+            return children
+        time.sleep(interval)
+    pytest.fail(f"Timed out waiting for locks in ZK: got {children!r}, expected {expected!r}")

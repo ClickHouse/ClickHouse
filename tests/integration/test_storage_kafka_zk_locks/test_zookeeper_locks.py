@@ -92,15 +92,7 @@ def test_zookeeper_partition_locks(kafka_cluster):
         base = "/clickhouse/test/zk_locks/topic_partition_locks"
         expected_locks = {f"zk_locks_topic_{pid}.lock" for pid in range(3)}
         with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
-            timeout, interval = 30.0, 1.0
-            start = time.time()
-            while time.time() - start < timeout:
-                children = set(zk.ls(base))
-                if children == expected_locks:
-                    break
-                time.sleep(interval)
-            else:
-                pytest.fail(f"Timed out waiting for locks in ZK: got {children}, expected {expected_locks}")
+            k.wait_for_zk_children(zk, base, expected_locks)
 
             for lock in expected_locks:
                 owner = zk.get(f"{base}/{lock}")
@@ -154,15 +146,7 @@ def test_two_replicas_balance(kafka_cluster):
         base = "/clickhouse/test/zk_dist/topic_partition_locks"
         expected_locks = {f"{topic}_{pid}.lock" for pid in range(4)}
         with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
-            timeout, interval = 30.0, 1.0
-            start = time.time()
-            while time.time() - start < timeout:
-                children = set(zk.ls(base))
-                if children == expected_locks:
-                    break
-                time.sleep(interval)
-            else:
-                pytest.fail(f"Timed out waiting for locks: got {children!r}, expected {expected_locks!r}")
+            k.wait_for_zk_children(zk, base, expected_locks)
             
             counts = {"r1": 0, "r2": 0}
             for lock in expected_locks:
