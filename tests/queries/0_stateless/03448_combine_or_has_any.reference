@@ -1,0 +1,203 @@
+SELECT materialize([\'a\', \'b\', \'c\', \'d\', \'e\', \'f\', \'g\', \'h\', \'i\', \'j\']) AS arr
+WHERE hasAny(arr, [\'o\']) OR hasAny(arr, [\'u\']) OR hasAny(arr, [\'ą\']) OR hasAny(arr, [\'ę\'])
+SETTINGS optimize_or_has_any_chain = 0
+QUERY id: 0
+  PROJECTION COLUMNS
+    arr Array(String)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: materialize, function_type: ordinary, result_type: Array(String)
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            CONSTANT id: 4, constant_value: Array_[\'a\', \'b\', \'c\', \'d\', \'e\', \'f\', \'g\', \'h\', \'i\', \'j\'], constant_value_type: Array(String)
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: system.one
+  WHERE
+    FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 7, nodes: 4
+          FUNCTION id: 8, function_name: hasAny, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 9, nodes: 2
+                FUNCTION id: 10, function_name: materialize, function_type: ordinary, result_type: Array(String)
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      CONSTANT id: 12, constant_value: Array_[\'a\', \'b\', \'c\', \'d\', \'e\', \'f\', \'g\', \'h\', \'i\', \'j\'], constant_value_type: Array(String)
+                CONSTANT id: 13, constant_value: Array_[\'o\'], constant_value_type: Array(String)
+          FUNCTION id: 14, function_name: hasAny, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 15, nodes: 2
+                FUNCTION id: 16, function_name: materialize, function_type: ordinary, result_type: Array(String)
+                  ARGUMENTS
+                    LIST id: 17, nodes: 1
+                      CONSTANT id: 18, constant_value: Array_[\'a\', \'b\', \'c\', \'d\', \'e\', \'f\', \'g\', \'h\', \'i\', \'j\'], constant_value_type: Array(String)
+                CONSTANT id: 19, constant_value: Array_[\'u\'], constant_value_type: Array(String)
+          FUNCTION id: 20, function_name: hasAny, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 21, nodes: 2
+                FUNCTION id: 22, function_name: materialize, function_type: ordinary, result_type: Array(String)
+                  ARGUMENTS
+                    LIST id: 23, nodes: 1
+                      CONSTANT id: 24, constant_value: Array_[\'a\', \'b\', \'c\', \'d\', \'e\', \'f\', \'g\', \'h\', \'i\', \'j\'], constant_value_type: Array(String)
+                CONSTANT id: 25, constant_value: Array_[\'ą\'], constant_value_type: Array(String)
+          FUNCTION id: 26, function_name: hasAny, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 27, nodes: 2
+                FUNCTION id: 28, function_name: materialize, function_type: ordinary, result_type: Array(String)
+                  ARGUMENTS
+                    LIST id: 29, nodes: 1
+                      CONSTANT id: 30, constant_value: Array_[\'a\', \'b\', \'c\', \'d\', \'e\', \'f\', \'g\', \'h\', \'i\', \'j\'], constant_value_type: Array(String)
+                CONSTANT id: 31, constant_value: Array_[\'ę\'], constant_value_type: Array(String)
+  SETTINGS optimize_or_has_any_chain=0 enable_analyzer=1
+SELECT materialize([\'a\', \'b\', \'c\', \'d\', \'e\', \'f\', \'g\', \'h\', \'i\', \'j\']) AS arr
+WHERE hasAny(arr, [\'o\', \'u\', \'ą\', \'ę\']) OR false
+SETTINGS optimize_or_has_any_chain = 1
+QUERY id: 0
+  PROJECTION COLUMNS
+    arr Array(String)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: materialize, function_type: ordinary, result_type: Array(String)
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            CONSTANT id: 4, constant_value: Array_[\'a\', \'b\', \'c\', \'d\', \'e\', \'f\', \'g\', \'h\', \'i\', \'j\'], constant_value_type: Array(String)
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: system.one
+  WHERE
+    FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 7, nodes: 2
+          FUNCTION id: 8, function_name: hasAny, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 9, nodes: 2
+                FUNCTION id: 10, function_name: materialize, function_type: ordinary, result_type: Array(String)
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      CONSTANT id: 12, constant_value: Array_[\'a\', \'b\', \'c\', \'d\', \'e\', \'f\', \'g\', \'h\', \'i\', \'j\'], constant_value_type: Array(String)
+                CONSTANT id: 13, constant_value: Array_[\'o\', \'u\', \'ą\', \'ę\'], constant_value_type: Array(String)
+          CONSTANT id: 14, constant_value: UInt64_0, constant_value_type: UInt8
+  SETTINGS optimize_or_has_any_chain=1 enable_analyzer=1
+With optimize_or_has_any_chain=0, enable_analyzer=0
+1
+2
+6
+7
+9
+10
+1
+2
+6
+7
+9
+10
+1
+2
+3
+4
+5
+6
+7
+9
+10
+1
+2
+3
+4
+5
+6
+7
+9
+10
+With optimize_or_has_any_chain=0, enable_analyzer=1
+1
+2
+6
+7
+9
+10
+1
+2
+6
+7
+9
+10
+1
+2
+3
+4
+5
+6
+7
+9
+10
+1
+2
+3
+4
+5
+6
+7
+9
+10
+With optimize_or_has_any_chain=1, enable_analyzer=0
+1
+2
+6
+7
+9
+10
+1
+2
+6
+7
+9
+10
+1
+2
+3
+4
+5
+6
+7
+9
+10
+1
+2
+3
+4
+5
+6
+7
+9
+10
+With optimize_or_has_any_chain=1, enable_analyzer=1
+1
+2
+6
+7
+9
+10
+1
+2
+6
+7
+9
+10
+1
+2
+3
+4
+5
+6
+7
+9
+10
+1
+2
+3
+4
+5
+6
+7
+9
+10

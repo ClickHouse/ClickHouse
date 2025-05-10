@@ -4056,6 +4056,9 @@ Notice the `WHERE` clause is rewritten in CNF, but the result set is the identic
 
 Possible values: true, false
 )", 0) \
+    DECLARE(Bool, optimize_or_has_any_chain, true, R"(
+Optimize multiple OR hasAny(arr, arr1), ..., hasAny(arr, arrN) into a single hasAny(arr, arr1 + ... + arrN).
+)", 0) \
     DECLARE(Bool, optimize_or_like_chain, false, R"(
 Optimize multiple OR LIKE into multiMatchAny. This optimization should not be enabled by default, because it defies index analysis in some cases.
 )", 0) \
