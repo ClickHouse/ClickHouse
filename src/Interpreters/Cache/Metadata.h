@@ -9,7 +9,7 @@
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <Common/ThreadPool.h>
-
+#include <Common/filesystemHelpers.h>
 #include <memory>
 #include <shared_mutex>
 
@@ -135,6 +135,9 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
     auto emplaceUnlocked(Args &&... args) { return emplace(std::forward<Args>(args)...); }
     size_t sizeUnlocked() const { return size(); }
 
+    size_t alignFileSize(size_t file_size) const;
+    bool useRealDiskSize() const;
+
 private:
     const CacheMetadata * cache_metadata;
 
@@ -165,7 +168,8 @@ public:
         const std::string & path_,
         size_t background_download_queue_size_limit_,
         size_t background_download_threads_,
-        bool write_cache_per_user_directory_);
+        bool write_cache_per_user_directory_,
+        bool use_real_disk_size_);
 
     void startup();
 
@@ -215,6 +219,10 @@ public:
 
     bool isBackgroundDownloadEnabled();
 
+    size_t alignFileSize(size_t file_size) const;
+
+    bool useRealDiskSize() const;
+
 private:
     static constexpr size_t buckets_num = 1024;
 
@@ -222,6 +230,8 @@ private:
     const CleanupQueuePtr cleanup_queue;
     const DownloadQueuePtr download_queue;
     const bool write_cache_per_user_directory;
+    struct statvfs path_stat;
+    bool use_real_disk_size;
 
     LoggerPtr log;
     mutable std::shared_mutex key_prefix_directory_mutex;
