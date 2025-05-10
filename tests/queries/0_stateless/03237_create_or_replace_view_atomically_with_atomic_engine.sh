@@ -16,10 +16,13 @@ function create_or_replace_view_thread
 }
 export -f create_or_replace_view_thread;
 
+# Old analyzer doesn't retry in case of resolving table identifier errors
+# (like UUID mismatch or non-existing tables), so this test is forced to
+# run with enabled analyzer
 function select_view_thread
 {
     for _ in {1..20}; do
-        $CLICKHOUSE_CLIENT --query "SELECT * FROM ${CLICKHOUSE_DATABASE}_db.test_view FORMAT NULL"  | grep -v -P 'Code: (60|741)'
+        $CLICKHOUSE_CLIENT --query "SELECT * FROM ${CLICKHOUSE_DATABASE}_db.test_view FORMAT NULL SETTINGS allow_experimental_analyzer = 1"
     done
 }
 export -f select_view_thread;
