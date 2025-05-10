@@ -27,6 +27,8 @@
 #include <pcg_random.hpp>
 #include <Common/logger_useful.h>
 
+#include <base/memory_access_tracing.h>
+
 
 namespace CurrentMetrics
 {
@@ -371,21 +373,26 @@ void DiskLocal::writeFileUsingBlobWritingFunction(const String & path, WriteMode
     std::move(write_blob_function)({fs_path}, mode, {});
 }
 
+__attribute__((no_sanitize("all")))
 void DiskLocal::removeFile(const String & path)
 {
+    // TODO: maybe here too
     auto fs_path = fs::path(disk_path) / path;
     if (0 != unlink(fs_path.c_str()))
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, fs_path, "Cannot unlink file {}", fs_path);
 }
 
+__attribute__((no_sanitize("all")))
 void DiskLocal::removeFileIfExists(const String & path)
 {
+    auto current_enable_trace = ENABLE_TRACE; // TODO: explore this problem
     auto fs_path = fs::path(disk_path) / path;
     if (0 != unlink(fs_path.c_str()))
     {
         if (errno != ENOENT)
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, fs_path, "Cannot unlink file {}", fs_path);
     }
+    ENABLE_TRACE = current_enable_trace;
 }
 
 void DiskLocal::removeDirectory(const String & path)
