@@ -175,6 +175,7 @@ void ORCSchemaReader::initializeIfNeeded()
 NamesAndTypesList ORCSchemaReader::readSchema()
 {
     initializeIfNeeded();
+
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         *schema,
         metadata,
