@@ -239,7 +239,7 @@ These two strategies determine the order in which the filters are evaluated:
 
 Both strategies have different trade-offs:
 - Post-filtering has the general problem that it may return less than the number of rows requested in the `LIMIT <N>` clause. This situation happens when at least one of the result rows returned by the vector similarity index fails to satisfy the additional filters.
-- Pre-filtering is generally unsolved problem. Some specialized vector databases implement it but most databases including ClickHouse will fall back to exact neighbor search, i.e., a brute-force scan without index.
+- Pre-filtering is generally an unsolved problem. Some specialized vector databases implement it but most databases including ClickHouse will fall back to exact neighbor search, i.e., a brute-force scan without index.
 
 What strategy is used comes down to whether ClickHouse can use indexes for the additional filter conditions.
 If no index can be used, post-filtering will be applied.
