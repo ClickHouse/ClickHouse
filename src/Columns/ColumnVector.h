@@ -1,8 +1,15 @@
 #pragma once
 
+#include <memory>
 #include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
+#include <Columns/IBuffer.h>
+#include <Columns/PODArrayOwning.h>
+#include <Columns/PODArrayView.h>
+#include <Columns/PODArrayLimitView.h>
+#include "Common/PODArray_fwd.h"
+#include "Common/typeid_cast.h"
 #include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
 #include <Core/CompareHelper.h>
@@ -11,6 +18,8 @@
 #include <base/TypeName.h>
 #include <base/unaligned.h>
 
+#include "Columns/BufferFWD.h"
+#include "IO/BufferWithOwnMemory.h"
 #include "config.h"
 
 class SipHash;
@@ -31,6 +40,7 @@ class ColumnVector final : public COWHelper<IColumnHelper<ColumnVector<T>, Colum
     static_assert(!is_decimal<T>);
 
 private:
+    using Buffer = PaddedBuffer<T>;
     using Self = ColumnVector;
     friend class COWHelper<IColumnHelper<Self, ColumnFixedSizeHelper>, Self>;
 
@@ -45,21 +55,21 @@ public:
     using Container = PaddedPODArray<ValueType>;
 
 private:
-    ColumnVector() = default;
-    explicit ColumnVector(const size_t n) : data(n) {}
-    ColumnVector(const size_t n, const ValueType x) : data(n, x) {}
-    ColumnVector(const ColumnVector & src) : data(src.data.begin(), src.data.end()) {}
-    ColumnVector(Container::const_iterator begin, Container::const_iterator end) : data(begin, end) { }
+    ColumnVector() : data(std::make_shared<OwningBuffer<T>>()) {}
+    explicit ColumnVector(const size_t n) : data(std::make_shared<OwningBuffer<T>>(n)) {}
+    ColumnVector(const size_t n, const ValueType x) : data(std::make_shared<OwningBuffer<T>>(n, x)) {}
+    ColumnVector(const ColumnVector & src) : data(std::make_shared<OwningBuffer<T>>(src.data->begin(), src.data->end())) {}
+    ColumnVector(Container::const_iterator begin, Container::const_iterator end) : data(std::make_shared<OwningBuffer<T>>(begin, end)) { }
 
     /// Sugar constructor.
-    ColumnVector(std::initializer_list<T> il) : data{il} {}
+    ColumnVector(std::initializer_list<T> il) : data{std::make_shared<OwningBuffer<T>>(std::move(il))} {}
 
 public:
     bool isNumeric() const override { return is_arithmetic_v<T>; }
 
     size_t size() const override
     {
-        return data.size();
+        return data->size();
     }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -68,7 +78,8 @@ public:
     void doInsertFrom(const IColumn & src, size_t n) override
 #endif
     {
-        data.push_back(assert_cast<const Self &>(src).getData()[n]);
+        data = data->getOwningBuffer();
+        data->push_back(assert_cast<const Self &>(src).getData()[n]);
     }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -77,33 +88,53 @@ public:
     void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override
 #endif
     {
+        data = data->getOwningBuffer();
         ValueType v = assert_cast<const Self &>(src).getData()[position];
-        data.resize_fill(data.size() + length, v);
+        data->resize_fill(data->size() + length, v);
     }
 
     void insertMany(const Field & field, size_t length) override
     {
-        data.resize_fill(data.size() + length, static_cast<T>(field.safeGet<T>()));
+        data = data->getOwningBuffer();
+        data->resize_fill(data->size() + length, static_cast<T>(field.safeGet<T>()));
     }
 
     void insertData(const char * pos, size_t) override
     {
-        data.emplace_back(unalignedLoad<T>(pos));
+        data = data->getOwningBuffer();
+        data->emplace_back(unalignedLoad<T>(pos));
     }
 
     void insertDefault() override
     {
-        data.push_back(T());
+        data = data->getOwningBuffer();
+        data->push_back(T());
     }
 
     void insertManyDefaults(size_t length) override
     {
-        data.resize_fill(data.size() + length, T());
+        data = data->getOwningBuffer();
+        data->resize_fill(data->size() + length, T());
     }
 
     void popBack(size_t n) override
     {
-        data.resize_assume_reserved(data.size() - n);
+        data = data->getOwningBuffer();
+        data->resize_assume_reserved(data->size() - n);
+    }
+
+    // [[nodiscard]] ColumnFixedSizeHelper::Ptr cut(size_t start, size_t length) const override
+    // {
+    //     ColumnFixedSizeHelper::MutablePtr res = this->cloneEmpty();
+    //     auto * col = typeid_cast<ColumnVector<T> *>(&*res);
+    //     col->data = std::make_shared<LimitViewBuffer<T>>(col->data, start, length);
+    //     return res;
+    // }
+
+    auto getBufferViewCreator() {
+        return [this] (std::shared_ptr<Memory<>> memory_ptr, char * pos, size_t n) mutable {
+            this->data = std::make_shared<ViewBuffer<T>>(std::move(memory_ptr), pos, n);
+        };
     }
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
@@ -118,33 +149,34 @@ public:
 
     size_t byteSize() const override
     {
-        return data.size() * sizeof(data[0]);
+        return data->size() * sizeof((*data)[0]);
     }
 
     size_t byteSizeAt(size_t) const override
     {
-        return sizeof(data[0]);
+        return sizeof((*data)[0]);
     }
 
     size_t allocatedBytes() const override
     {
-        return data.allocated_bytes();
+        return data->allocated_bytes();
     }
 
     void protect() override
     {
-        data.protect();
+        data->protect();
     }
 
     void insertValue(const T value)
     {
-        data.push_back(value);
+        data = data->getOwningBuffer();
+        data->push_back(value);
     }
 
     template <class U>
     constexpr int compareAtOther(size_t n, size_t m, const ColumnVector<U> & rhs, int nan_direction_hint) const
     {
-        return CompareHelper<T, U>::compare(data[n], rhs.data[m], nan_direction_hint);
+        return CompareHelper<T, U>::compare((*data)[n], (*rhs.data)[m], nan_direction_hint);
     }
 
     /// This method implemented in header because it could be possibly devirtualized.
@@ -154,7 +186,7 @@ public:
     int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 #endif
     {
-        return CompareHelper<T>::compare(data[n], assert_cast<const Self &>(rhs_).data[m], nan_direction_hint);
+        return CompareHelper<T>::compare((*data)[n], (*assert_cast<const Self &>(rhs_).data)[m], nan_direction_hint);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -175,17 +207,19 @@ public:
 
     void reserve(size_t n) override
     {
-        data.reserve_exact(n);
+        data = data->getOwningBuffer();
+        data->reserve_exact(n);
     }
 
     size_t capacity() const override
     {
-        return data.capacity();
+        return data->capacity();
     }
 
     void shrinkToFit() override
     {
-        data.shrink_to_fit();
+        data = data->getOwningBuffer();
+        data->shrink_to_fit();
     }
 
     const char * getFamilyName() const override { return TypeName<T>.data(); }
@@ -195,8 +229,8 @@ public:
 
     Field operator[](size_t n) const override
     {
-        assert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
-        return data[n];
+        assert(n < data->size()); /// This assert is more strict than the corresponding assert inside PODArray.
+        return (*data)[n];
     }
 
 
@@ -216,7 +250,7 @@ public:
     UInt64 NO_SANITIZE_UNDEFINED getUInt(size_t n) const override
     {
         if constexpr (is_arithmetic_v<T>)
-            return UInt64(data[n]);
+            return UInt64((*data)[n]);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as UInt", TypeName<T>);
     }
@@ -225,7 +259,7 @@ public:
     Int64 NO_SANITIZE_UNDEFINED getInt(size_t n) const override
     {
         if constexpr (is_arithmetic_v<T>)
-            return Int64(data[n]);
+            return Int64((*data)[n]);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Int", TypeName<T>);
     }
@@ -233,14 +267,14 @@ public:
     bool getBool(size_t n) const override
     {
         if constexpr (is_arithmetic_v<T>)
-            return bool(data[n]);
+            return bool((*data)[n]);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as bool", TypeName<T>);
     }
 
     void insert(const Field & x) override
     {
-        data.push_back(static_cast<T>(x.safeGet<T>()));
+        data->push_back(static_cast<T>(x.safeGet<T>()));
     }
 
     bool tryInsert(const DB::Field & x) override;
@@ -272,15 +306,15 @@ public:
 
     std::string_view getRawData() const override
     {
-        return {reinterpret_cast<const char*>(data.data()), byteSize()};
+        return {reinterpret_cast<const char*>(data->data()), byteSize()};
     }
 
     StringRef getDataAt(size_t n) const override
     {
-        return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
+        return StringRef(reinterpret_cast<const char *>(&(*data)[n]), sizeof((*data)[n]));
     }
 
-    bool isDefaultAt(size_t n) const override { return data[n] == T{}; }
+    bool isDefaultAt(size_t n) const override { return (*data)[n] == T{}; }
 
     bool structureEquals(const IColumn & rhs) const override
     {
@@ -297,26 +331,39 @@ public:
     /** More efficient methods of manipulation - to manipulate with data directly. */
     Container & getData()
     {
-        return data;
+        data = data->getOwningBuffer();
+        return *std::static_pointer_cast<Container>(data);
     }
 
     const Container & getData() const
     {
-        return data;
+        return *std::static_pointer_cast<Container>(data);
     }
 
     const T & getElement(size_t n) const
     {
-        return data[n];
+        return (*data)[n];
     }
 
     T & getElement(size_t n)
     {
-        return data[n];
+        return (*data)[n];
+    }
+
+    void * doGetContainer() override
+    {
+        assert(data != nullptr);
+        data = data->getOwningBuffer();
+        return static_cast<void*>(&(*std::static_pointer_cast<Container>(data)));
+    }
+
+    const void * doGetContainer() const override
+    {
+        return static_cast<const void*>(&(*std::static_pointer_cast<Container>(data)));
     }
 
 protected:
-    Container data;
+    std::shared_ptr<Buffer> data;
 };
 
 template <class TCol>

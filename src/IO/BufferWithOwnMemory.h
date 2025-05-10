@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <boost/noncopyable.hpp>
 
 #include <Common/Allocator.h>
@@ -35,6 +36,7 @@ template <typename Allocator = Allocator<false>>
 struct Memory : boost::noncopyable, Allocator
 {
     static constexpr size_t pad_right = PADDING_FOR_SIMD - 1;
+    static constexpr size_t pad_left = PADDING_FOR_SIMD;
 
     size_t m_capacity = 0;  /// With padding.
     size_t m_size = 0;
@@ -84,7 +86,7 @@ struct Memory : boost::noncopyable, Allocator
             return;
         }
 
-        if (new_size <= m_capacity - pad_right)
+        if (new_size <= m_capacity - pad_right /*- pad_left*/)
         {
             m_size = new_size;
             return;
@@ -95,7 +97,8 @@ struct Memory : boost::noncopyable, Allocator
         size_t diff = new_capacity - m_capacity;
         ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, diff);
 
-        m_data = static_cast<char *>(Allocator::realloc(m_data, m_capacity, new_capacity, alignment));
+        m_data = static_cast<char *>(Allocator::realloc(m_data /*- pad_left*/, m_capacity, new_capacity, alignment));
+        // m_data += pad_left;
         m_capacity = new_capacity;
         m_size = new_size;
     }
@@ -105,7 +108,7 @@ private:
     {
         size_t res = 0;
 
-        if (common::addOverflow<size_t>(value, pad_right, res))
+        if (common::addOverflow<size_t>(value, pad_right /* + pad_left*/, res))
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "value is too big to apply padding");
 
         return res;
@@ -125,6 +128,7 @@ private:
         ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, new_capacity);
 
         m_data = static_cast<char *>(Allocator::alloc(new_capacity, alignment));
+        // m_data += pad_left;
         m_capacity = new_capacity;
         m_size = new_size;
     }
@@ -134,7 +138,7 @@ private:
         if (!m_data)
             return;
 
-        Allocator::free(m_data, m_capacity);
+        Allocator::free(m_data /* - pad_left*/, m_capacity);
         m_data = nullptr;    /// To avoid double free if next alloc will throw an exception.
     }
 };
@@ -146,12 +150,13 @@ private:
 template <typename Base>
 class BufferWithOwnMemory : public Base
 {
-protected:
-    Memory<> memory;
 public:
+    std::shared_ptr<Memory<>> memory_ptr;
+    Memory<> & memory;
+
     /// If non-nullptr 'existing_memory' is passed, then buffer will not create its own memory and will use existing_memory without ownership.
     explicit BufferWithOwnMemory(size_t size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0)
-        : Base(nullptr, 0), memory(existing_memory ? 0 : size, alignment)
+        : Base(nullptr, 0), memory_ptr(std::make_shared<Memory<>>(existing_memory ? 0 : size, alignment)), memory(*memory_ptr)
     {
         Base::set(existing_memory ? existing_memory : memory.data(), size);
         Base::padded = !existing_memory;

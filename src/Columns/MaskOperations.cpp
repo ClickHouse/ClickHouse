@@ -190,7 +190,8 @@ static MaskInfo extractMaskImpl(
 
     if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&*column))
     {
-        const PaddedPODArray<UInt8> & null_map = nullable_column->getNullMapData();
+        const auto & null_map = nullable_column->getNullMapData();
+        // const PaddedPODArray<UInt8> & null_map = nullable_column->getNullMapData();
         return extractMaskImpl<inverted>(mask, nullable_column->getNestedColumnPtr(), null_value, &null_map, nulls);
     }
 

@@ -25,20 +25,16 @@ namespace DB
 class ColumnFixedSizeHelper : public IColumn
 {
 public:
-    template <size_t ELEMENT_SIZE>
+    template <size_t ELEMENT_SIZE> // NOLINT
     const char * getRawDataBegin() const
     {
-        return reinterpret_cast<const PODArrayBase<ELEMENT_SIZE, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD> *>(
-                   reinterpret_cast<const char *>(this) + sizeof(*this))
-            ->raw_data();
+        return IColumn::getContainer<ELEMENT_SIZE>()->raw_data();
     }
 
-    template <size_t ELEMENT_SIZE>
+    template <size_t ELEMENT_SIZE> // NOLINT
     void insertRawData(const char * ptr)
     {
-        return reinterpret_cast<PODArrayBase<ELEMENT_SIZE, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD> *>(
-                   reinterpret_cast<char *>(this) + sizeof(*this))
-            ->push_back_raw(ptr);
+        return IColumn::getContainer<ELEMENT_SIZE>()->push_back_raw(ptr);
     }
 };
 

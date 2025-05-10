@@ -161,6 +161,16 @@ public:
 
     UInt32 getScale() const { return scale; }
 
+    void * doGetContainer() override
+    {
+        return static_cast<void*>(&data);
+    }
+
+    const void * doGetContainer() const override
+    {
+        return static_cast<const void*>(&data);
+    }
+
 protected:
     Container data;
     UInt32 scale;

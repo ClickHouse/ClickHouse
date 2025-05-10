@@ -1,10 +1,14 @@
 #pragma once
 
+#include <cstddef>
 #include <Columns/IColumn_fwd.h>
 #include <Core/TypeId.h>
 #include <base/StringRef.h>
+#include <Common/PODArray.h>
 #include <Common/COW.h>
+#include <Common/Exception.h>
 #include <Common/PODArray_fwd.h>
+#include <Columns/BufferFWD.h>
 #include <Common/typeid_cast.h>
 
 #include "config.h"
@@ -250,6 +254,18 @@ public:
     {
         for (size_t i = 0; i < length; ++i)
             insertDefault();
+    }
+
+    template <size_t ELEMENT_SIZE> // NOLINT
+    PODArrayBase<ELEMENT_SIZE, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD> * getContainer()
+    {
+        return reinterpret_cast<PODArrayBase<ELEMENT_SIZE, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>*>(doGetContainer());
+    }
+
+    template <size_t ELEMENT_SIZE> // NOLINT
+    const PODArrayBase<ELEMENT_SIZE, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD> * getContainer() const
+    {
+        return reinterpret_cast<const PODArrayBase<ELEMENT_SIZE, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>*>(doGetContainer());
     }
 
     /** Removes last n elements.
@@ -688,6 +704,9 @@ protected:
         Equals equals,
         Sort full_sort,
         PartialSort partial_sort) const;
+
+    virtual void * doGetContainer() { return nullptr;}
+    virtual const void * doGetContainer() const { return nullptr;}
 
 #if defined(DEBUG_OR_SANITIZER_BUILD)
     virtual void doInsertFrom(const IColumn & src, size_t n);
