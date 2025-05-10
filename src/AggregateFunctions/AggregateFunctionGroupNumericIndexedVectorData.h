@@ -6,7 +6,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/IColumn.h>
-#include <Common/Exception.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -15,6 +14,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
+#include <Common/Exception.h>
 
 /// Include this last — see the reason inside
 #include <AggregateFunctions/AggregateFunctionGroupNumericIndexedVectorDataBSI.h>

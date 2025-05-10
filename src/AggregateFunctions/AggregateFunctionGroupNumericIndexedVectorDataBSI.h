@@ -7,7 +7,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/IColumn.h>
-#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
@@ -17,7 +16,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
-#include <Common/logger_useful.h>
 
 /// Include this last — see the reason inside
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
@@ -865,14 +863,21 @@ public:
                 Poco::Logger * log = &Poco::Logger::get("DEBUGTMP-valueToColumn");
                 LOG_DEBUG(log, "container_id: {}, result_cnt: {}, i: {}", container_id, result_cnt, i);
                 LOG_DEBUG(log, "mask isSmall: {}, isLarge: {}", mask->isSmall(), mask->isLarge());
-                for (size_t j = 0; j < result_cnt; ++j) {
+                for (size_t j = 0; j < result_cnt; ++j)
+                {
                     LOG_DEBUG(log, "bit_buffer[{}]: {}", j, bit_buffer[i]);
                 }
                 PaddedPODArray<UInt32> all_values;
                 mask->rb_to_array(all_values);
                 for (size_t j = 0; j < all_values.size(); ++j)
                 {
-                    LOG_DEBUG(log, "all_values[{}]: {}, container_id: {}, bit_buffer: {}", j, all_values[j], all_values[j] >> 16, all_values[j] & 0xFFFF);
+                    LOG_DEBUG(
+                        log,
+                        "all_values[{}]: {}, container_id: {}, bit_buffer: {}",
+                        j,
+                        all_values[j],
+                        all_values[j] >> 16,
+                        all_values[j] & 0xFFFF);
                 }
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "bit_buffer index out of bounds. bit_buffer[i]: {}", bit_buffer[i]);
             }

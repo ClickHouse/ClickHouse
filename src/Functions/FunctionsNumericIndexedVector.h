@@ -68,11 +68,7 @@ public:
         AggregateFunctionPtr numeric_indexed_vector_function;
         auto action = NullsAction::EMPTY;
         numeric_indexed_vector_function = AggregateFunctionFactory::instance().get(
-            NameAggregateFunctionGroupNumericIndexedVector::name,
-            action,
-            argument_types,
-            params_row,
-            properties);
+            NameAggregateFunctionGroupNumericIndexedVector::name, action, argument_types, params_row, properties);
         return std::make_shared<DataTypeAggregateFunction>(numeric_indexed_vector_function, argument_types, params_row);
     }
 
