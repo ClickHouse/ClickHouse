@@ -200,7 +200,7 @@ size_t ColumnUniqueFCBlockDF::getPosToInsert(StringRef value) const
     /// it's guranteed that this takes no more than block_size iterations
     while (pos < data_column->size())
     {
-        const StringRef data = getDecompressedAt(pos);
+        const String data = getDecompressedAt(pos);
         if (data < value)
         {
             ++pos;
