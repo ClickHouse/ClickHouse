@@ -2207,9 +2207,13 @@ mapAll
 mapApply
 mapConcat
 mapContains
+mapContainsKey
 mapContainsKeyLike
+mapContainsValue
+mapContainsValueLike
 mapExists
 mapExtractKeyLike
+mapExtractValueLike
 mapFilter
 mapFromArrays
 mapKeys
