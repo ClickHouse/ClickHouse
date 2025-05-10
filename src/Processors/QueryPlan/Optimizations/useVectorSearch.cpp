@@ -98,7 +98,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     size_t n = limit_step->getLimitForSorting();
 
     /// Check that the LIMIT specified by the user isn't too big - otherwise the cost of vector search outweighs the benefit.
-    if (n > settings.max_limit_for_ann_queries)
+    if (n > settings.max_limit_for_vector_search_queries)
         return updated_layers;
 
     /// Not 100% sure but other sort types are likely not what we want

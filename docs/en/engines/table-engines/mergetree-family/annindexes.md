@@ -179,7 +179,7 @@ The default value of the setting 256 works well in the majority of use cases.
 Higher setting values mean better accuracy at the cost of slower performance.
 
 If the query can use a vector similarity index, ClickHouse checks that the LIMIT `<N>` provided in SELECT queries is within reasonable bounds.
-More specifically, an error is returned if `<N>` is bigger than the value of setting [max_limit_for_ann_queries](../../../operations/settings/settings.md#max_limit_for_ann_queries) with default value 100.
+More specifically, an error is returned if `<N>` is bigger than the value of setting [max_limit_for_vector_search_queries](../../../operations/settings/settings.md#max_limit_for_vector_search_queries) with default value 100.
 Too large LIMITs can slow down searches and usually indicate a usage error.
 
 To check if a SELECT query uses a vector similarity index, you can prefix the query with `EXPLAIN indexes = 1`.
