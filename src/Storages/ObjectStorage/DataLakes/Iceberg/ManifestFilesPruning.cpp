@@ -53,32 +53,50 @@ DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String &
     if (transform_name == "void")
         return makeASTFunction("tuple");
 
-    if (transform_name.starts_with("truncate"))
+    if (transform_name.starts_with("truncate") || transform_name.starts_with("bucket"))
     {
-        /// should look like transform[N]
+        /// should look like transform[N] or bucket[N]
+
+        auto log_warning = [&transform_name]()
+        { LOG_WARNING(&Poco::Logger::get("Iceberg Partition Pruning"), "Cannot parse iceberg transform name: {}.", transform_name); };
 
         if (transform_name.back() != ']')
+        {
+            log_warning();
             return nullptr;
+        }
 
         auto argument_start = transform_name.find('[');
 
         if (argument_start == std::string::npos)
+        {
+            log_warning();
             return nullptr;
+        }
 
         auto argument_width = transform_name.length() - 2 - argument_start;
-        std::string width = transform_name.substr(argument_start + 1, argument_width);
-        size_t truncate_width;
-        bool parsed = DB::tryParse<size_t>(truncate_width, width);
+        std::string argument_string_representation = transform_name.substr(argument_start + 1, argument_width);
+        size_t argument;
+        bool parsed = DB::tryParse<size_t>(argument, argument_string_representation);
 
         if (!parsed)
+        {
+            log_warning();
             return nullptr;
+        }
 
-        return makeASTFunction("icebergTruncate", std::make_shared<DB::ASTLiteral>(truncate_width), std::make_shared<DB::ASTIdentifier>(column_name));
+        if (transform_name.starts_with("truncate"))
+        {
+            return makeASTFunction(
+                "icebergTruncate", std::make_shared<DB::ASTLiteral>(argument), std::make_shared<DB::ASTIdentifier>(column_name));
+        }
+        else if (transform_name.starts_with("bucket"))
+        {
+            return makeASTFunction(
+                "icebergBucket", std::make_shared<DB::ASTLiteral>(argument), std::make_shared<DB::ASTIdentifier>(column_name));
+        }
     }
-    else
-    {
-        return nullptr;
-    }
+    return nullptr;
 }
 
 std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManifest(const DB::ActionsDAG * source_dag, std::vector<Int32> & used_columns_in_filter) const
