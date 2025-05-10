@@ -56,6 +56,8 @@ public:
     virtual std::optional<size_t> totalRows() const { return {}; }
     virtual std::optional<size_t> totalBytes() const { return {}; }
 
+    virtual std::unique_ptr<IDataLakeMetadata> clone() = 0;
+
 protected:
     ObjectIterator createKeysIterator(
         Strings && data_files_,

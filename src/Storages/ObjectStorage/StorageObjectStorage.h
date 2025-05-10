@@ -14,12 +14,12 @@
 #include <memory>
 namespace DB
 {
-
 class ReadBufferIterator;
 class SchemaCache;
 class NamedCollection;
 struct StorageObjectStorageSettings;
 using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
+struct PartitionStrategy;
 
 namespace ErrorCodes
 {
@@ -64,13 +64,12 @@ public:
         ObjectStoragePtr object_storage_,
         ContextPtr context_,
         const StorageID & table_id_,
-        const ColumnsDescription & columns_,
+        const ColumnsDescription & columns_in_table_or_function_definition,
         const ConstraintsDescription & constraints_,
         const String & comment,
         std::optional<FormatSettings> format_settings_,
         LoadingStrictnessLevel mode,
         bool distributed_processing_ = false,
-        ASTPtr partition_by_ = nullptr,
         bool is_table_function_ = false,
         bool lazy_init = false);
 
@@ -145,6 +144,7 @@ public:
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
+
 protected:
     String getPathSample(ContextPtr context);
 
@@ -158,9 +158,10 @@ protected:
     ConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
-    const ASTPtr partition_by;
     const bool distributed_processing;
     bool update_configuration_on_read;
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+    ColumnsDescription file_columns;
 
     LoggerPtr log;
 };
@@ -180,7 +181,9 @@ public:
         ASTs & engine_args,
         ContextPtr local_context,
         bool with_table_structure,
-        StorageObjectStorageSettingsPtr settings);
+        StorageObjectStorageSettingsPtr settings,
+        const ColumnsDescription & columns = {},
+        const ASTPtr & partition_by = nullptr);
 
     /// Storage type: s3, hdfs, azure, local.
     virtual ObjectStorageType getType() const = 0;
@@ -250,7 +253,9 @@ public:
         const Strings & requested_columns,
         const StorageSnapshotPtr & storage_snapshot,
         bool supports_subset_of_columns,
-        ContextPtr local_context);
+        ContextPtr local_context,
+        const NamesAndTypesList & file_columns_,
+        const NamesAndTypesList & hive_partition_columns_to_read_from_file_path_);
 
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
 
@@ -268,8 +273,16 @@ public:
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
+    std::string partition_strategy_name = "wildcard";
+    /*
+     * Only supported by hive partitioning style for now
+     */
+    bool partition_columns_in_data_file = false;
+    std::shared_ptr<PartitionStrategy> partition_strategy;
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
+
+    void updatePartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context);
 
     const StorageObjectStorageSettings & getSettingsRef() const;
 

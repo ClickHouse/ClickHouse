@@ -39,7 +39,11 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     if (args.storage_def->settings)
         storage_settings->loadFromQuery(*args.storage_def->settings);
 
-    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, context, false, storage_settings);
+    ASTPtr partition_by;
+    if (args.storage_def->partition_by)
+        partition_by = args.storage_def->partition_by->clone();
+
+    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, context, false, storage_settings, args.columns, partition_by);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
@@ -59,10 +63,6 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         format_settings = getFormatSettings(context);
     }
 
-    ASTPtr partition_by;
-    if (args.storage_def->partition_by)
-        partition_by = args.storage_def->partition_by->clone();
-
     return std::make_shared<StorageObjectStorage>(
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
@@ -75,8 +75,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         args.comment,
         format_settings,
         args.mode,
-        /* distributed_processing */ false,
-        partition_by);
+        /* distributed_processing */ false);
 }
 
 #endif

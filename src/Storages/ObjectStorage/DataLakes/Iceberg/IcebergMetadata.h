@@ -42,6 +42,26 @@ public:
         const Poco::JSON::Object::Ptr & metadata_object,
         IcebergMetadataFilesCachePtr cache_ptr);
 
+    IcebergMetadata(const IcebergMetadata & other)
+        : WithContext(other.getContext())
+        , object_storage(other.object_storage)
+        , configuration(other.configuration)
+        , log(other.log)
+        , manifest_cache(other.manifest_cache)
+        , last_metadata_version(other.last_metadata_version)
+        , last_metadata_object(other.last_metadata_object)
+        , format_version(other.format_version)
+        , relevant_snapshot_schema_id(other.relevant_snapshot_schema_id)
+    {
+        // todo is it needed?
+         updateState(getContext(), true);
+    }
+
+    std::unique_ptr<IDataLakeMetadata> clone() override
+    {
+        return std::make_unique<IcebergMetadata>(*this);
+    }
+
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override
     {
