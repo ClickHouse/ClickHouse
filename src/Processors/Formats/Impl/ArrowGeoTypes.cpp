@@ -321,6 +321,12 @@ void PointColumnBuilder::appendObject(const ArrowGeometricObject & object)
     point_column_data_y.push_back(point.y);
 }
 
+void PointColumnBuilder::appendDefault()
+{
+    point_column_data_x.push_back(0);
+    point_column_data_y.push_back(0);
+}
+
 ColumnWithTypeAndName PointColumnBuilder::getResultColumn()
 {
     ColumnPtr result_x = point_column_x->getPtr();
@@ -356,6 +362,11 @@ void LineColumnBuilder::appendObject(const ArrowGeometricObject & object)
     offsets.push_back(offset);
 }
 
+void LineColumnBuilder::appendDefault()
+{
+    offsets.push_back(offset);
+}
+
 ColumnWithTypeAndName LineColumnBuilder::getResultColumn()
 {
     auto all_points_column = point_column_builder.getResultColumn();
@@ -382,6 +393,11 @@ void PolygonColumnBuilder::appendObject(const ArrowGeometricObject & object)
     for (const auto & inner_circle : polygon)
         line_column_builder.appendObject(inner_circle);
     offset += polygon.size();
+    offsets.push_back(offset);
+}
+
+void PolygonColumnBuilder::appendDefault()
+{
     offsets.push_back(offset);
 }
 
@@ -415,6 +431,11 @@ void MultiLineStringColumnBuilder::appendObject(const ArrowGeometricObject & obj
     offsets.push_back(offset);
 }
 
+void MultiLineStringColumnBuilder::appendDefault()
+{
+    offsets.push_back(offset);
+}
+
 ColumnWithTypeAndName MultiLineStringColumnBuilder::getResultColumn()
 {
     auto all_points_column = line_column_builder.getResultColumn();
@@ -442,6 +463,11 @@ void MultiPolygonColumnBuilder::appendObject(const ArrowGeometricObject & object
         polygon_column_builder.appendObject(polygon);
 
     offset += multipolygon.size();
+    offsets.push_back(offset);
+}
+
+void MultiPolygonColumnBuilder::appendDefault()
+{
     offsets.push_back(offset);
 }
 
@@ -481,6 +507,12 @@ void GeoColumnBuilder::appendObject(const ArrowGeometricObject & object)
 {
     geomery_column_builder->appendObject(object);
 }
+
+void GeoColumnBuilder::appendDefault()
+{
+    geomery_column_builder->appendDefault();
+}
+
 
 ColumnWithTypeAndName GeoColumnBuilder::getResultColumn()
 {

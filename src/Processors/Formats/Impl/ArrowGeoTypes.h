@@ -62,6 +62,7 @@ using ArrowGeometricObject = std::variant<ArrowPoint, ArrowLineString, ArrowPoly
 struct IGeometryColumnBuilder
 {
     virtual void appendObject(const ArrowGeometricObject & object) = 0;
+    virtual void appendDefault() = 0;
     virtual ColumnWithTypeAndName getResultColumn() = 0;
 
     virtual ~IGeometryColumnBuilder() = default;
@@ -73,6 +74,7 @@ public:
     explicit PointColumnBuilder(const String & name_);
 
     void appendObject(const ArrowGeometricObject & object) override;
+    void appendDefault() override;
 
     ColumnWithTypeAndName getResultColumn() override;
 
@@ -93,6 +95,7 @@ public:
     explicit LineColumnBuilder(const String & name_);
 
     void appendObject(const ArrowGeometricObject & object) override;
+    void appendDefault() override;
 
     ColumnWithTypeAndName getResultColumn() override;
 
@@ -114,6 +117,7 @@ public:
     explicit PolygonColumnBuilder(const String & name_);
 
     void appendObject(const ArrowGeometricObject & object) override;
+    void appendDefault() override;
 
     ColumnWithTypeAndName getResultColumn() override;
 
@@ -135,6 +139,7 @@ public:
     explicit MultiLineStringColumnBuilder(const String & name_);
 
     void appendObject(const ArrowGeometricObject & object) override;
+    void appendDefault() override;
 
     ColumnWithTypeAndName getResultColumn() override;
 
@@ -156,6 +161,7 @@ public:
     explicit MultiPolygonColumnBuilder(const String & name_);
 
     void appendObject(const ArrowGeometricObject & object) override;
+    void appendDefault() override;
 
     ColumnWithTypeAndName getResultColumn() override;
 
@@ -178,6 +184,7 @@ public:
     explicit GeoColumnBuilder(const String & name_, GeoType type_);
 
     void appendObject(const ArrowGeometricObject & object) override;
+    void appendDefault() override;
 
     ColumnWithTypeAndName getResultColumn() override;
 

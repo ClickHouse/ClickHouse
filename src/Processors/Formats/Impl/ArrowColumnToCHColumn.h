@@ -27,6 +27,7 @@ public:
         bool allow_missing_columns_,
         bool null_as_default_,
         FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
+        bool allow_geoparquet_parser_,
         bool case_insensitive_matching_ = false,
         bool is_stream_ = false);
 
@@ -43,7 +44,8 @@ public:
         const std::string & format_name,
         bool skip_columns_with_unsupported_types = false,
         bool allow_inferring_nullable_columns = true,
-        bool case_insensitive_matching = false);
+        bool case_insensitive_matching = false,
+        bool allow_geoparquet_parser = true);
 
     struct DictionaryInfo
     {
@@ -73,6 +75,7 @@ private:
     bool allow_missing_columns;
     bool null_as_default;
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior;
+    bool allow_geoparquet_parser;
     bool case_insensitive_matching;
     bool is_stream;
 
