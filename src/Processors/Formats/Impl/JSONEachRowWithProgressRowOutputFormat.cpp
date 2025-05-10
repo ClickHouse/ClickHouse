@@ -4,6 +4,7 @@
 #include <Processors/Formats/Impl/JSONEachRowWithProgressRowOutputFormat.h>
 #include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
+#include "Common/logger_useful.h"
 
 
 namespace DB
@@ -11,6 +12,8 @@ namespace DB
 
 void JSONEachRowWithProgressRowOutputFormat::writePrefix()
 {
+
+    LOG_DEBUG(getLogger("JSONEachRowWithProgressRowOutputFormat"), "writePrefix starts");
     writeCString("{\"meta\":[", *ostr);
     bool first = true;
     for (const auto & elem : getInputs().front().getHeader())
