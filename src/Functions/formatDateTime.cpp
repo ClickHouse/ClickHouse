@@ -297,12 +297,25 @@ private:
             return writeNumber2(dest, ToDayOfMonthImpl::execute(source, timezone));
         }
 
-        size_t mysqlAmericanDate(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlAmericanDate(char * dest, Time source, const DateLUTImpl & timezone)
         {
             writeNumber2(dest, ToMonthImpl::execute(source, timezone));
             writeNumber2(dest + 3, ToDayOfMonthImpl::execute(source, timezone));
             writeNumber2(dest + 6, ToYearImpl::execute(source, timezone) % 100);
             return 8;
+        }
+
+        size_t mysqlAmericanDateWithoutSeparators(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            return mysqlAmericanDate(dest, source, timezone);
+        }
+
+        size_t mysqlAmericanDateWithSeparators(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            size_t total_bytes = mysqlAmericanDate(dest, source, timezone);
+            dest[2] = '/';
+            dest[5] = '/';
+            return total_bytes;
         }
 
         size_t mysqlDayOfMonthSpacePadded(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -315,12 +328,25 @@ private:
             return 2;
         }
 
-        size_t mysqlISO8601Date(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlISO8601Date(char * dest, Time source, const DateLUTImpl & timezone)
         {
             writeNumber4(dest, ToYearImpl::execute(source, timezone));
             writeNumber2(dest + 5, ToMonthImpl::execute(source, timezone));
             writeNumber2(dest + 8, ToDayOfMonthImpl::execute(source, timezone));
             return 10;
+        }
+
+        size_t mysqlISO8601DateWithoutSeparators(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            return mysqlISO8601Date(dest, source, timezone);
+        }
+
+        size_t mysqlISO8601DateWithSeparators(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            size_t total_bytes = mysqlISO8601Date(dest, source, timezone);
+            dest[4] = '-';
+            dest[7] = '-';
+            return total_bytes;
         }
 
         size_t mysqlDayOfYear(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -474,14 +500,26 @@ private:
             return AMPM(dest, source, fractional_second, scale, timezone);
         }
 
-        size_t mysqlHHMM24(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlHHMM24(char * dest, Time source, const DateLUTImpl & timezone)
         {
             writeNumber2(dest, ToHourImpl::execute(source, timezone));
             writeNumber2(dest + 3, ToMinuteImpl::execute(source, timezone));
             return 5;
         }
 
-        size_t mysqlHHMM12(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlHHMM24WithoutSeparator(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            return mysqlHHMM24(dest, source, timezone);
+        }
+
+        size_t mysqlHHMM24WithSeparator(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            size_t total_bytes = mysqlHHMM24(dest, source, timezone);
+            dest[2] = ':';
+            return total_bytes;
+        }
+
+        size_t mysqlHHMM12(char * dest, Time source, const DateLUTImpl & timezone)
         {
             auto hour = ToHourImpl::execute(source, timezone);
             writeNumber2(dest, hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour));
@@ -489,6 +527,20 @@ private:
 
             dest[6] = hour >= 12 ? 'P' : 'A';
             return 8;
+        }
+
+        size_t mysqlHHMM12WithoutSeparator(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            return mysqlHHMM12(dest, source, timezone);
+        }
+
+        size_t mysqlHHMM12WithSeparator(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            size_t total_bytes = mysqlHHMM12(dest, source, timezone);
+            dest[2] = ':';
+            dest[5] = ' ';
+            dest[7] = 'M';
+            return total_bytes;
         }
 
         size_t mysqlSecond(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -542,12 +594,25 @@ private:
             return scale;
         }
 
-        size_t mysqlISO8601Time(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone) // NOLINT
+        size_t mysqlISO8601Time(char * dest, Time source, const DateLUTImpl & timezone) // NOLINT
         {
             writeNumber2(dest, ToHourImpl::execute(source, timezone));
             writeNumber2(dest + 3, ToMinuteImpl::execute(source, timezone));
             writeNumber2(dest + 6, ToSecondImpl::execute(source, timezone));
             return 8;
+        }
+
+        size_t mysqlISO8601TimeWithoutSeparators(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone) // NOLINT
+        {
+            return mysqlISO8601Time(dest, source, timezone);
+        }
+
+        size_t mysqlISO8601TimeWithSeparators(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone) // NOLINT
+        {
+            size_t total_bytes = mysqlISO8601Time(dest, source, timezone);
+            dest[2] = ':';
+            dest[5] = ':';
+            return total_bytes;
         }
 
         size_t mysqlTimezoneOffset(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -1202,7 +1267,9 @@ public:
                     case 'D':
                     {
                         Instruction<T> instruction;
-                        instruction.setMysqlFunc(&Instruction<T>::mysqlAmericanDate);
+                        instruction.setMysqlFunc(mysql_with_only_fixed_length_formatters
+                                                    ? &Instruction<T>::mysqlAmericanDateWithoutSeparators /// assumes that `/` is already there
+                                                    : &Instruction<T>::mysqlAmericanDateWithSeparators);
                         instructions.push_back(std::move(instruction));
                         out_template += "00/00/00";
                         break;
@@ -1276,7 +1343,9 @@ public:
                     case 'F':
                     {
                         Instruction<T> instruction;
-                        instruction.setMysqlFunc(&Instruction<T>::mysqlISO8601Date);
+                        instruction.setMysqlFunc(mysql_with_only_fixed_length_formatters
+                                                    ? &Instruction<T>::mysqlISO8601DateWithoutSeparators /// assumes that `-` is already there
+                                                    : &Instruction<T>::mysqlISO8601DateWithSeparators);
                         instructions.push_back(std::move(instruction));
                         out_template += "0000-00-00";
                         break;
@@ -1417,7 +1486,10 @@ public:
                     case 'r':
                     {
                         static constexpr std::string_view val = "12:00 AM";
-                        add_time_instruction(&Instruction<T>::mysqlHHMM12, val);
+                        add_time_instruction(mysql_with_only_fixed_length_formatters
+                                                    ? &Instruction<T>::mysqlHHMM12WithoutSeparator /// assumes that `:`, ` ` and `M` are already there
+                                                    : &Instruction<T>::mysqlHHMM12WithSeparator,
+                                             val);
                         out_template += val;
                         break;
                     }
@@ -1426,7 +1498,10 @@ public:
                     case 'R':
                     {
                         static constexpr std::string_view val = "00:00";
-                        add_time_instruction(&Instruction<T>::mysqlHHMM24, val);
+                        add_time_instruction(mysql_with_only_fixed_length_formatters
+                                                    ? &Instruction<T>::mysqlHHMM24WithoutSeparator /// assumes that ':' is already there
+                                                    : &Instruction<T>::mysqlHHMM24WithSeparator,
+                                                    val);
                         out_template += val;
                         break;
                     }
@@ -1453,7 +1528,10 @@ public:
                     case 'T':
                     {
                         static constexpr std::string_view val = "00:00:00";
-                        add_time_instruction(&Instruction<T>::mysqlISO8601Time, val);
+                        add_time_instruction(mysql_with_only_fixed_length_formatters
+                                                    ? &Instruction<T>::mysqlISO8601TimeWithoutSeparators /// assumes that `:` is already there
+                                                    : &Instruction<T>::mysqlISO8601TimeWithSeparators,
+                                                    val);
                         out_template += val;
                         break;
                     }
