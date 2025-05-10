@@ -108,6 +108,9 @@ PoolWithFailover::PoolWithFailover(
                 replica_configuration.port,
                 replica_configuration.username,
                 replica_configuration.password,
+                "",
+                "",
+                "",
                 connection_attempt_timeout_);
             replicas_with_priority[priority].emplace_back(std::make_shared<PoolHolder>(connection_info, pool_size));
             if (bg_reconnect)
