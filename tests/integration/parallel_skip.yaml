@@ -39,6 +39,7 @@
 - test_server_overload/
 - test_server_reload/
 - test_storage_kafka/
+- test_storage_kafka_zk_locks/
 - test_storage_kerberized_kafka/
 - test_storage_rabbitmq/
 - test_storage_s3/
