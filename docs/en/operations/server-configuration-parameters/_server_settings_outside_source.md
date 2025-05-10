@@ -244,6 +244,7 @@ To manually turn on error history collection [`system.error_log`](../../operatio
         <reserved_size_rows>8192</reserved_size_rows>
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <flush_on_crash>false</flush_on_crash>
+        <symbolize>true</symbolize>
     </error_log>
 </clickhouse>
 ```
