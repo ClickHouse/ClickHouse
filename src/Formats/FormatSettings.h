@@ -485,6 +485,24 @@ struct FormatSettings
         bool map_column_names = true;
     } mysql_dump{};
 
+    enum class PngPixelFormat : uint8_t
+    {
+        BINARY,     
+        GRAYSCALE,  
+        RGB,        
+        RGBA
+    };
+
+    struct
+    {
+        UInt64 max_height;
+        UInt64 max_width;
+        Int32 bit_depth;
+        String pixel_output_format;
+        Int64 compression_level;
+        /// String image_name = "placeholder";
+    } png_image{};
+
     struct
     {
         UInt64 max_batch_size = DEFAULT_BLOCK_SIZE;

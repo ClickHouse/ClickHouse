@@ -1312,6 +1312,27 @@ Set the quoting rule for identifiers in SHOW CREATE query
     DECLARE(IdentifierQuotingStyle, show_create_query_identifier_quoting_style, IdentifierQuotingStyle::Backticks, R"(
 Set the quoting style for identifiers in SHOW CREATE query
 )", 0) \
+    DECLARE(String, output_png_image_pixel_format, "RGB", R"(
+Set pixel format for output png image
+)", 0) \
+    DECLARE(UInt64, output_png_image_max_height, 4096, R"(
+Set png image max height
+)", 0) \
+    DECLARE(UInt64, output_png_image_max_width, 4096, R"(
+Set png image max width
+)", 0) \
+    DECLARE(UInt64, output_png_image_bit_depth, 8, R"(
+Set png image color depth
+)", 0) \
+    DECLARE(Int64, output_png_image_compression_level, -1, R"(
+values: {
+    -1: default (usually level 6),
+    0: no compression,
+    1: fastest/least compression,
+    9: slowest/best compression
+  },
+valid_range: [-1, 9]
+)", 0) \
     DECLARE(UInt64, input_format_max_block_size_bytes, 0, R"(
 Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.
 0 means no limit in bytes.
