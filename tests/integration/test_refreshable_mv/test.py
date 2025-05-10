@@ -445,12 +445,7 @@ def test_adding_replica(started_cluster, cleanup):
     assert node2.query("select * from re.a order by all") == "0\n10\n"
 
     node1.query("system stop view re.a")
-    r = node2.query(
-        "system wait view re.a;"
-        "system refresh view re.a;"
-        "system wait view re.a;"
-        "select last_refresh_replica from system.view_refreshes")
-    assert r == "2\n"
+    node2.query_with_retry("select last_refresh_replica from system.view_refreshes", check_callback=lambda x: x == "2\n", sleep_time=1, retry_count=20)
 
 def test_replicated_db_startup_race(started_cluster, cleanup):
     for node in nodes:

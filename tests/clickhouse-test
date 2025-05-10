@@ -875,6 +875,7 @@ class TestStatus(enum.Enum):
     UNKNOWN = "UNKNOWN"
     OK = "OK"
     SKIPPED = "SKIPPED"
+    NOT_FAILED = "NOT_FAILED"
 
 
 class FailureReason(enum.Enum):
@@ -917,6 +918,10 @@ class FailureReason(enum.Enum):
     # UNKNOWN reasons
     NO_REFERENCE = "no reference file"
     INTERNAL_ERROR = "Test internal error: "
+    NOT_FAILED = (
+        "The test succeeded, but it is listed in parallel_replicas_blacklist.txt or async_insert_blacklist.txt. "
+        "Please remove it from the list"
+    )
 
 
 def threshold_generator(always_on_prob, always_off_prob, min_val, max_val):
@@ -1030,7 +1035,7 @@ class SettingsRandomizer:
         "filesystem_prefetch_step_bytes": lambda: random.choice(
             [0, "100Mi"]
         ),  # 0 means 'auto'
-        # "compile_expressions": lambda: random.randint(0, 1), - this setting has a bug: https://github.com/ClickHouse/ClickHouse/issues/51264
+        "compile_expressions": lambda: random.randint(0, 1),
         "compile_aggregate_expressions": lambda: random.randint(0, 1),
         "compile_sort_description": lambda: random.randint(0, 1),
         "merge_tree_coarse_index_granularity": lambda: random.randint(2, 32),
@@ -1174,7 +1179,10 @@ class MergeTreeSettingsRandomizer:
 
 
 def replace_in_file(filename, what, with_what):
-    os.system(f"LC_ALL=C sed -i -e 's|{what}|{with_what}|g' {filename}")
+    with open(filename, "rb") as f:
+        data = f.read()
+    with open(filename, "wb") as f:
+        f.write(data.replace(what.encode(), with_what.encode()))
 
 
 class TestResult:
@@ -1543,7 +1551,7 @@ class TestCase:
 
         return None
 
-    def process_result_impl(self, proc, total_time: float):
+    def process_result_impl(self, proc, total_time: float) -> TestResult:
         kill_output = ""
         if proc:
             if proc.returncode is None:
@@ -2050,6 +2058,13 @@ class TestCase:
             if result.status == TestStatus.FAIL:
                 result.description = self.add_info_about_settings(result.description)
 
+            if self.name in suite.blacklist_check:
+                if result.status == TestStatus.OK:
+                    result.status = TestStatus.NOT_FAILED
+                    result.reason = FailureReason.NOT_FAILED
+                if result.status == TestStatus.FAIL:
+                    result.status = TestStatus.SKIPPED
+
             self._cleanup(result.status == TestStatus.OK)
 
             return result
@@ -2328,6 +2343,10 @@ class TestSuite:
         self.skip_list: List[str] = []
         self.cloud_skip_list: List[str] = []
         self.private_skip_list: List[str] = []
+        # List of tests included in a blacklist.
+        # They will be run, and if they succeed, the status will be changed to FAIL to notify
+        # that the changes in PR fixes this test.
+        self.blacklist_check: List[str] = []
 
         if args.run_by_hash_num is not None and args.run_by_hash_total is not None:
             if args.run_by_hash_num > args.run_by_hash_total:
@@ -2523,12 +2542,18 @@ def run_tests_array(
         + colored(" SKIPPED ", args, "cyan", attrs=["bold"])
         + CL_SQUARE_BRACKET
     )
+    MSG_NOT_FAILED = (
+        OP_SQUARE_BRACKET
+        + colored(" NOT_FAILED ", args, "red", attrs=["bold"])
+        + CL_SQUARE_BRACKET
+    )
 
     MESSAGES = {
         TestStatus.FAIL: MSG_FAIL,
         TestStatus.UNKNOWN: MSG_UNKNOWN,
         TestStatus.OK: MSG_OK,
         TestStatus.SKIPPED: MSG_SKIPPED,
+        TestStatus.NOT_FAILED: MSG_NOT_FAILED,
     }
 
     passed_total = 0
@@ -3294,12 +3319,13 @@ def main(args):
     cloud_skip_list = try_get_skip_list(base_dir, "../queries-no-cloud-tests.txt")
     private_skip_list = try_get_skip_list(base_dir, "../queries-no-private-tests.txt")
     skip_list = []
+    blacklist_check = []
+
+    blacklist_check.extend(try_get_skip_list(base_dir, "../analyzer_tech_debt.txt"))
 
     if args.no_parallel_replicas is True:
-        skip_list_parallel_replicas = try_get_skip_list(
-            base_dir, "../parallel_replicas_blacklist.txt"
-        )
-        skip_list.extend(skip_list_parallel_replicas)
+        blacklist = try_get_skip_list(base_dir, "../parallel_replicas_blacklist.txt")
+        blacklist_check.extend(blacklist)
 
     for suite in sorted(os.listdir(base_dir), key=suite_key_func):
         if server_died.is_set():
@@ -3312,6 +3338,7 @@ def main(args):
         test_suite.skip_list = skip_list
         test_suite.cloud_skip_list = cloud_skip_list
         test_suite.private_skip_list = private_skip_list
+        test_suite.blacklist_check = blacklist_check
         total_tests_run += do_run_tests(
             args.jobs, test_suite, args, exit_code, restarted_tests, server_died
         )
