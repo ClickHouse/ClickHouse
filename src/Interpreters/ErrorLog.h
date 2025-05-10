@@ -18,11 +18,13 @@ struct ErrorLogElement
 {
     time_t event_time{};
     ErrorCodes::ErrorCode code{};
+    UInt64 error_time_ms = 0;
     std::string error_message{};
     ErrorCodes::Value value{};
     bool remote{};
-    Array error_trace{};
     std::string_view query_id;
+    ErrorCodes::FramePointers error_trace{};
+    bool symbolize = false;
 
     static std::string name() { return "ErrorLog"; }
     static ColumnsDescription getColumnsDescription();
@@ -35,11 +37,20 @@ class ErrorLog : public PeriodicLog<ErrorLogElement>
 {
     using PeriodicLog<ErrorLogElement>::PeriodicLog;
 
+public:
+    ErrorLog(ContextPtr context_,
+             const SystemLogSettings & settings_,
+             std::shared_ptr<SystemLogQueue<ErrorLogElement>> queue_ = nullptr)
+        : PeriodicLog<ErrorLogElement>(context_, settings_, queue_),
+        symbolize(settings_.symbolize_traces)
+    {
+    }
+
 protected:
     void stepFunction(TimePoint current_time) override;
 
 private:
-    Array buildTraceArray(const ErrorCodes::FramePointers & trace);
+    bool symbolize;
 };
 
 }

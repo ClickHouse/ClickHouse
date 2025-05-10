@@ -10,6 +10,7 @@
 #include <Interpreters/ErrorLog.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Common/SymbolsHelper.h>
 
 #include <vector>
 
@@ -19,6 +20,7 @@ namespace DB
 ColumnsDescription ErrorLogElement::getColumnsDescription()
 {
     ParserCodec codec_parser;
+    DataTypePtr symbolized_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
     return ColumnsDescription {
         {
                 "hostname",
@@ -51,6 +53,12 @@ ColumnsDescription ErrorLogElement::getColumnsDescription()
                 "Error name."
             },
         {
+                "last_error_time",
+                std::make_shared<DataTypeDateTime>(),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "The time when the last error happened."
+            },
+        {
                 "last_error_message",
                 std::make_shared<DataTypeString>(),
                 parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
@@ -69,16 +77,28 @@ ColumnsDescription ErrorLogElement::getColumnsDescription()
                 "Remote exception (i.e. received during one of the distributed queries)."
             },
         {
+                "query_id",
+                std::make_shared<DataTypeString>(),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Id of a query that caused an error (if available)."
+            },
+        {
                 "last_error_trace",
                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()),
                 parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "A stack trace that represents a list of physical addresses where the called methods are stored."
             },
         {
-                "query_id",
-                std::make_shared<DataTypeString>(),
+                "symbols",
+                symbolized_type,
                 parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-                "Id of a query that caused an error (if available)."
+                "If the symbolization is enabled, contains demangled symbol names, corresponding to the `trace`."
+            },
+        {
+                "lines",
+                symbolized_type,
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "If the symbolization is enabled, contains strings with file names with line numbers, corresponding to the `trace`."
             }
     };
 }
@@ -92,11 +112,33 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(code);
     columns[column_idx++]->insert(ErrorCodes::getName(code));
+    columns[column_idx++]->insert(error_time_ms / 1000);
     columns[column_idx++]->insert(error_message);
     columns[column_idx++]->insert(value);
     columns[column_idx++]->insert(remote);
-    columns[column_idx++]->insert(error_trace);
     columns[column_idx++]->insert(query_id);
+
+    std::vector<UInt64> error_trace_array;
+    error_trace_array.reserve(error_trace.size());
+    for (size_t i = 0; i < error_trace.size(); ++i)
+        error_trace_array.emplace_back(reinterpret_cast<UInt64>(error_trace[i]));
+
+    columns[column_idx++]->insert(Array(error_trace_array.begin(), error_trace_array.end()));
+
+    #if defined(__ELF__) && !defined(OS_FREEBSD)
+    if (symbolize)
+    {
+        auto [symbols, lines] = generateArraysSymbolsLines(error_trace_array);
+
+        columns[column_idx++]->insert(symbols);
+        columns[column_idx++]->insert(lines);
+    }
+    else
+    #endif
+    {
+        columns[column_idx++]->insertDefault();
+        columns[column_idx++]->insertDefault();
+    }
 }
 
 struct ValuePair
@@ -104,15 +146,6 @@ struct ValuePair
     UInt64 local = 0;
     UInt64 remote = 0;
 };
-
-
-Array ErrorLog::buildTraceArray(const ErrorCodes::FramePointers & trace)
-{
-    Array result(trace.size());
-    for (size_t i = 0; i < trace.size(); ++i)
-        result[i] = reinterpret_cast<intptr_t>(trace[i]);
-    return result;
-}
 
 void ErrorLog::stepFunction(TimePoint current_time)
 {
@@ -129,11 +162,13 @@ void ErrorLog::stepFunction(TimePoint current_time)
             ErrorLogElement local_elem {
                 .event_time=event_time,
                 .code=code,
+                .error_time_ms=error.local.error_time_ms,
                 .error_message=error.local.message,
                 .value=error.local.count - previous_values.at(code).local,
                 .remote=false,
-                .error_trace=buildTraceArray(error.local.trace),
-                .query_id=error.local.query_id
+                .query_id=error.local.query_id,
+                .error_trace=error.local.trace,
+                .symbolize=symbolize
             };
             this->add(std::move(local_elem));
             previous_values[code].local = error.local.count;
@@ -143,11 +178,13 @@ void ErrorLog::stepFunction(TimePoint current_time)
             ErrorLogElement remote_elem {
                 .event_time=event_time,
                 .code=code,
+                .error_time_ms=error.remote.error_time_ms,
                 .error_message=error.remote.message,
                 .value=error.remote.count - previous_values.at(code).remote,
                 .remote=true,
-                .error_trace=buildTraceArray(error.remote.trace),
-                .query_id=error.remote.query_id
+                .query_id=error.remote.query_id,
+                .error_trace=error.remote.trace,
+                .symbolize=symbolize
             };
             add(std::move(remote_elem));
             previous_values[code].remote = error.remote.count;

@@ -34,6 +34,7 @@
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
+#include <Interpreters/ErrorLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <IO/WriteHelpers.h>
@@ -279,7 +280,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
     log_settings.queue_settings.notify_flush_on_crash = config.getBool(config_prefix + ".flush_on_crash",
                                                                        TSystemLog::shouldNotifyFlushOnCrash());
 
-    if constexpr (std::is_same_v<TSystemLog, TraceLog>)
+    if constexpr (std::is_same_v<TSystemLog, TraceLog> || std::is_same_v<TSystemLog, ErrorLog>)
         log_settings.symbolize_traces = config.getBool(config_prefix + ".symbolize", false);
 
     log_settings.queue_settings.turn_off_logger = TSystemLog::shouldTurnOffLogger();
