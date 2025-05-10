@@ -100,6 +100,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
             {"compile_expressions", false, true, "We believe that the LLVM infrastructure behind the JIT compiler is stable enough to enable this setting by default."},
             {"use_legacy_to_time", false, false, "New setting. Allows for user to use the old function logic for toTime, which works as toTimeWithFixedDate."},
+            {"input_format_parquet_bloom_filter_push_down", false, true, "When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and bloom filter in the Parquet metadata."},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
@@ -307,7 +308,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_parts_to_move", 0, 1000, "New setting"},
             {"hnsw_candidate_list_size_for_search", 64, 256, "New setting. Previously, the value was optionally specified in CREATE INDEX and 64 by default."},
             {"allow_reorder_prewhere_conditions", true, true, "New setting"},
-            {"input_format_parquet_bloom_filter_push_down", false, true, "When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and bloom filter in the Parquet metadata."},
+            {"input_format_parquet_bloom_filter_push_down", false, false, "When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and bloom filter in the Parquet metadata."},
             {"date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands", false, false, "Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to (0, 3, 6), corresponding to 'seconds', 'milliseconds', and 'microseconds'."},
             {"parallel_replicas_index_analysis_only_on_coordinator", false, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"},
             {"distributed_cache_discard_connection_if_unread_data", true, true, "New setting"},
