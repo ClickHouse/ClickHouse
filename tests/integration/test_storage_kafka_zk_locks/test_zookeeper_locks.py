@@ -64,21 +64,23 @@ def test_zookeeper_partition_locks(kafka_cluster):
     topic_name = "zk_locks_topic"
     k.kafka_create_topic(admin, "zk_locks_topic", num_partitions=3)
     with k.existing_kafka_topic(admin, topic_name):
+        create_kafka = k.generate_new_create_table_query(
+            table_name="kafka",
+            columns_def="key UInt64, value UInt64",
+            database="test",
+            topic_list=topic_name,
+            consumer_group=topic_name,
+            keeper_path="/clickhouse/test/zk_locks",
+            replica_name="r1",
+            brokers="kafka1:19092"
+        )
         instance.query(
             f"""
             DROP TABLE IF EXISTS test.kafka;
             DROP TABLE IF EXISTS test.view;
             DROP TABLE IF EXISTS test.consumer;
 
-            CREATE TABLE test.kafka (key UInt64, value UInt64)
-                ENGINE = Kafka
-                SETTINGS kafka_broker_list = 'kafka1:19092',
-                        kafka_topic_list = '{topic_name}',
-                        kafka_group_name = '{topic_name}',
-                        kafka_format = 'JSONEachRow',
-                        kafka_keeper_path = '/clickhouse/test/zk_locks',
-                        kafka_replica_name = 'r1',
-                        allow_experimental_kafka_offsets_storage_in_keeper=1;
+            {create_kafka};
             CREATE TABLE test.view (key UInt64, value UInt64) ENGINE = MergeTree() ORDER BY key;
             CREATE MATERIALIZED VIEW test.consumer TO test.view AS SELECT * FROM test.kafka;
             """
@@ -106,3 +108,75 @@ def test_zookeeper_partition_locks(kafka_cluster):
             for name in expected:
                 data = zk.get(f"{base}/{name}")
                 assert data == "r1", f"Expected 'r1' in {name}, got {data}"
+
+def test_two_replicas_balance(kafka_cluster):
+    admin = k.get_admin_client(kafka_cluster)
+    topic = "zk_dist_topic"
+    k.kafka_create_topic(admin, topic, num_partitions=4)
+    with k.existing_kafka_topic(admin, topic):
+        create_kafka1 = k.generate_new_create_table_query(
+            table_name="kafka1",
+            columns_def="key UInt64, value UInt64",
+            database="test",
+            topic_list=topic,
+            consumer_group=topic,
+            keeper_path="/clickhouse/test/zk_dist",
+            replica_name="r1",
+            brokers="kafka1:19092"
+        )
+        create_kafka2 = k.generate_new_create_table_query(
+            table_name="kafka2",
+            columns_def="key UInt64, value UInt64",
+            database="test",
+            topic_list=topic,
+            consumer_group=topic,
+            keeper_path="/clickhouse/test/zk_dist",
+            replica_name="r2",
+            brokers="kafka1:19092"
+        )
+        instance.query(f"""
+            DROP TABLE IF EXISTS test.kafka1;
+            DROP TABLE IF EXISTS test.kafka2;
+            DROP TABLE IF EXISTS test.view1;
+            DROP TABLE IF EXISTS test.view2;
+            DROP TABLE IF EXISTS test.cons1;
+            DROP TABLE IF EXISTS test.cons2;
+
+            {create_kafka1};
+            {create_kafka2};
+            CREATE TABLE test.view1  (key UInt64, value UInt64) ENGINE = MergeTree() ORDER BY key;
+            CREATE TABLE test.view2  (key UInt64, value UInt64) ENGINE = MergeTree() ORDER BY key;
+
+            CREATE MATERIALIZED VIEW test.cons1 TO test.view1 AS SELECT * FROM test.kafka1;
+            CREATE MATERIALIZED VIEW test.cons2 TO test.view2 AS SELECT * FROM test.kafka2;
+        """)
+
+        for _ in range(4):
+            k.kafka_produce(kafka_cluster, topic, ["x"], retries=3)
+
+        base = "/clickhouse/test/zk_dist/topic_partition_locks"
+        expected_locks = {f"{topic}_{pid}.lock" for pid in range(4)}
+
+        with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
+            timeout, interval = 30.0, 1.0
+            start = time.time()
+            while time.time() - start < timeout:
+                children = set(zk.ls(base))
+                if children == expected_locks:
+                    break
+                time.sleep(interval)
+            else:
+                pytest.fail(f"Timed out waiting for locks: got {children!r}, expected {expected_locks!r}")
+            
+            counts = {"r1": 0, "r2": 0}
+            for lock in expected_locks:
+                owner = zk.get(f"{base}/{lock}")
+                counts[owner] += 1
+            
+
+            valid_counts = [
+                {"r1": 2, "r2": 2},
+                {"r1": 3, "r2": 1},
+                {"r1": 1, "r2": 3},
+            ]
+            assert counts in valid_counts, f"Unexpected distribution: {counts}"

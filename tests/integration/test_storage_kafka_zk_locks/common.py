@@ -106,3 +106,52 @@ def kafka_produce(kafka_cluster, topic, messages, timestamp=None, retries=15):
     for message in messages:
         producer.send(topic=topic, value=message, timestamp_ms=timestamp)
         producer.flush()
+
+def create_settings_string(settings):
+    if settings is None:
+        return ""
+
+    def format_value(value):
+        if isinstance(value, str):
+            return f"'{value}'"
+        elif isinstance(value, bool):
+            return str(int(value))
+        return str(value)
+
+    settings_string = "SETTINGS "
+    keys = settings.keys()
+    first_key = next(iter(settings))
+    settings_string += str(first_key) + " = " + format_value(settings[first_key])
+    for key in keys:
+        if key == first_key:
+            continue
+        settings_string += ", " + str(key) + " = " + format_value(settings[key])
+    return settings_string
+
+def generate_new_create_table_query(
+    table_name,
+    columns_def,
+    database="test",
+    brokers="{kafka_broker}:19092",
+    topic_list="{kafka_topic_new}",
+    consumer_group="{kafka_group_name_new}",
+    format="{kafka_format_json_each_row}",
+    row_delimiter="\\n",
+    keeper_path=None,
+    replica_name=None,
+    settings=None,
+):
+    if settings is None:
+        settings = {}
+    if keeper_path is None:
+        keeper_path = f"/clickhouse/{{database}}/{table_name}"
+    if replica_name is None:
+        replica_name = "r1"
+    settings["kafka_keeper_path"] = keeper_path
+    settings["kafka_replica_name"] = replica_name
+    settings_string = create_settings_string(settings)
+    query = f"""CREATE TABLE {database}.{table_name} ({columns_def}) ENGINE = Kafka('{brokers}', '{topic_list}', '{consumer_group}', '{format}', '{row_delimiter}')
+{settings_string}
+SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1"""
+    logging.debug(f"Generated new create query: {query}")
+    return query
