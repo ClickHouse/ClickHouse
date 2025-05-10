@@ -12,7 +12,6 @@
 #include <Parsers/parseQuery.h>
 #include <Common/SymbolsHelper.h>
 
-#include <vector>
 
 namespace DB
 {

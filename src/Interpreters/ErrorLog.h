@@ -7,6 +7,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Storages/ColumnsDescription.h>
 
+#include <vector>
+
 
 namespace DB
 {
@@ -23,7 +25,7 @@ struct ErrorLogElement
     ErrorCodes::Value value{};
     bool remote{};
     std::string_view query_id;
-    ErrorCodes::FramePointers error_trace{};
+    std::vector<void *> error_trace{};
     bool symbolize = false;
 
     static std::string name() { return "ErrorLog"; }

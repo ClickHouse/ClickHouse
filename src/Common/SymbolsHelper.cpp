@@ -8,7 +8,8 @@
 namespace DB
 {
 
-std::pair<Array, Array> generateArraysSymbolsLines(const std::vector<UInt64> trace) {
+std::pair<Array, Array> generateArraysSymbolsLines(const std::vector<UInt64> & trace)
+{
     Array symbols;
     Array lines;
     size_t num_frames = trace.size();

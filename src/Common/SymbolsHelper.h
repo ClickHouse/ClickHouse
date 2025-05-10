@@ -9,7 +9,7 @@
 namespace DB
 {
 
-std::pair<Array, Array> generateArraysSymbolsLines(const std::vector<UInt64> trace);
+std::pair<Array, Array> generateArraysSymbolsLines(const std::vector<UInt64> & trace);
 
 }
 #endif
