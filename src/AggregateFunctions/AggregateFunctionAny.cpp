@@ -118,12 +118,12 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        this->data(place).write(buf, *serialization);
+        this->data(place).write(buf, *serialization, this->result_type);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        this->data(place).read(buf, *serialization, arena);
+        this->data(place).read(buf, *serialization, this->result_type, arena);
     }
 
     bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
@@ -288,12 +288,12 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        this->data(place).write(buf, *serialization);
+        this->data(place).write(buf, *serialization, this->result_type);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        this->data(place).read(buf, *serialization, arena);
+        this->data(place).read(buf, *serialization, this->result_type, arena);
     }
 
     bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
