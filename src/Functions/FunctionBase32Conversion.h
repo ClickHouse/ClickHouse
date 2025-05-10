@@ -6,10 +6,10 @@
 
 namespace DB
 {
-struct Base32Traits
+struct Base32EncodeTraits
 {
     template <typename Col>
-    static size_t getMaxEncodedSize(Col const & src_column)
+    static size_t getBufferSize(Col const & src_column)
     {
         auto const src_length = src_column.getChars().size();
         auto const string_count = src_column.size();
@@ -19,7 +19,27 @@ struct Base32Traits
         return ((src_length + 4) / 5 * 8 + 1) * string_count;
     }
 
-    static size_t encode(const UInt8 * src, size_t src_length, UInt8 * dst) { return encodeBase32(src, src_length, dst); }
-    static std::optional<size_t> decode(const UInt8 * src, size_t src_length, UInt8 * dst) { return decodeBase32(src, src_length, dst); }
+    static size_t perform(std::string_view src, UInt8 * dst)
+    {
+        return encodeBase32(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
+    }
+};
+
+struct Base32DecodeTraits
+{
+    template <typename Col>
+    static size_t getBufferSize(Col const & src_column)
+    {
+        auto const string_length = src_column.byteSize();
+        auto const string_count = src_column.size();
+        /// decoded size is at most length of encoded (every 8 bytes becomes at most 5 bytes)
+        /// plus one byte for null terminator for each string
+        return (string_length * 5 / 8 + 1) * string_count;
+    }
+
+    static std::optional<size_t> perform(std::string_view src, UInt8 * dst)
+    {
+        return decodeBase32(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
+    }
 };
 }

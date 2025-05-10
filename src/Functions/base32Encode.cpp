@@ -10,7 +10,7 @@ struct NameBase32Encode
     static constexpr auto name = "base32Encode";
 };
 
-using Base32EncodeImpl = BaseXXEncode<Base32Traits, NameBase32Encode>;
+using Base32EncodeImpl = BaseXXEncode<Base32EncodeTraits, NameBase32Encode>;
 using FunctionBase32Encode = FunctionBaseXXConversion<Base32EncodeImpl>;
 }
 

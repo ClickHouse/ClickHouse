@@ -28,7 +28,7 @@ struct BaseXXEncode
     {
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
-        size_t const max_result_size = Traits::getMaxEncodedSize(src_column);
+        size_t const max_result_size = Traits::getBufferSize(src_column);
 
         dst_data.resize(max_result_size);
         dst_offsets.resize(input_rows_count);
@@ -45,7 +45,8 @@ struct BaseXXEncode
         {
             size_t current_src_offset = src_offsets[row];
             size_t src_length = current_src_offset - prev_src_offset - 1;
-            size_t encoded_size = Traits::encode(&src[prev_src_offset], src_length, &dst[current_dst_offset]);
+            size_t encoded_size
+                = Traits::perform({reinterpret_cast<const char *>(&src[prev_src_offset]), src_length}, &dst[current_dst_offset]);
             prev_src_offset = current_src_offset;
             current_dst_offset += encoded_size;
             dst[current_dst_offset] = '\0';
@@ -61,7 +62,7 @@ struct BaseXXEncode
     {
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
-        size_t const max_result_size = Traits::getMaxEncodedSize(src_column);
+        size_t const max_result_size = Traits::getBufferSize(src_column);
 
         dst_data.resize(max_result_size);
         dst_offsets.resize(input_rows_count);
@@ -74,7 +75,7 @@ struct BaseXXEncode
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            size_t encoded_size = Traits::encode(&src[row * N], N, &dst[current_dst_offset]);
+            size_t encoded_size = Traits::perform({reinterpret_cast<const char *>(&src[row * N]), N}, &dst[current_dst_offset]);
             current_dst_offset += encoded_size;
             dst[current_dst_offset] = 0;
             ++current_dst_offset;
@@ -101,7 +102,7 @@ struct BaseXXDecode
     {
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
-        size_t max_result_size = src_column.getChars().size() + 1;
+        size_t max_result_size = Traits::getBufferSize(src_column);
 
         dst_data.resize(max_result_size);
         dst_offsets.resize(input_rows_count);
@@ -118,7 +119,8 @@ struct BaseXXDecode
         {
             size_t current_src_offset = src_offsets[row];
             size_t src_length = current_src_offset - prev_src_offset - 1;
-            std::optional<size_t> decoded_size = Traits::decode(&src[prev_src_offset], src_length, &dst[current_dst_offset]);
+            std::optional<size_t> decoded_size
+                = Traits::perform({reinterpret_cast<const char *>(&src[prev_src_offset]), src_length}, &dst[current_dst_offset]);
             if (!decoded_size)
             {
                 if constexpr (ErrorHandling == BaseXXDecodeErrorHandling::ThrowException)
@@ -146,7 +148,7 @@ struct BaseXXDecode
     {
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
-        size_t max_result_size = src_column.getChars().size() + 1;
+        size_t max_result_size = Traits::getBufferSize(src_column);
 
         dst_data.resize(max_result_size);
         dst_offsets.resize(input_rows_count);
@@ -159,7 +161,8 @@ struct BaseXXDecode
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            std::optional<size_t> decoded_size = Traits::decode(&src[row * N], N, &dst[current_dst_offset]);
+            std::optional<size_t> decoded_size
+                = Traits::perform({reinterpret_cast<const char *>(&src[row * N]), N}, &dst[current_dst_offset]);
             if (!decoded_size)
             {
                 if constexpr (ErrorHandling == BaseXXDecodeErrorHandling::ThrowException)
