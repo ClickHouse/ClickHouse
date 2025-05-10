@@ -944,13 +944,10 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             return readColumnWithFixedStringData(arrow_column, column_name);
         }
         case arrow::Type::LARGE_STRING:
-        case arrow::Type::LARGE_BINARY:
-        {
-            bool parse_json = settings.enable_json_parsing
-                && ((type_hint && type_hint->getTypeId() == TypeIndex::Object) || isColumnJSON(arrow_field));
-
-            return parse_json ? readColumnWithJSONData<arrow::LargeBinaryArray>(arrow_column, column_name)
-                              : readColumnWithStringData<arrow::LargeBinaryArray>(arrow_column, column_name);
+        case arrow::Type::LARGE_BINARY: {
+            if (settings.enable_json_parsing && ((type_hint && type_hint->getTypeId() == TypeIndex::Object) || isColumnJSON(arrow_field)))
+                return readColumnWithJSONData<arrow::LargeBinaryArray>(arrow_column, column_name);
+            return readColumnWithStringData<arrow::LargeBinaryArray>(arrow_column, column_name);
         }
         case arrow::Type::BOOL:
             return readColumnWithBooleanData(arrow_column, column_name);
