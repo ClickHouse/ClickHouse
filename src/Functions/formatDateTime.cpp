@@ -319,7 +319,29 @@ private:
             return total_bytes;
         }
 
-        size_t mysqlDayOfMonthNoSpacePadding(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlDayOfMonthSpacePadded(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            auto day = ToDayOfMonthImpl::execute(source, timezone);
+            if (day < 10)
+                dest[1] = '0' + day;
+            else
+                writeNumber2(dest, day);
+            return 2;
+        }
+
+        size_t mysqlISO8601Date(char * dest, Time source, const DateLUTImpl & timezone)
+        {
+            writeNumber4(dest, ToYearImpl::execute(source, timezone));
+            writeNumber2(dest + 5, ToMonthImpl::execute(source, timezone));
+            writeNumber2(dest + 8, ToDayOfMonthImpl::execute(source, timezone));
+            return 10;
+        }
+
+        size_t mysqlISO8601DateWithoutSeparators(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            return mysqlISO8601Date(dest, source, timezone);
+        }
+
         size_t mysqlDayOfMonthWithSpacePadding(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             auto day = ToDayOfMonthImpl::execute(source, timezone);
@@ -340,30 +362,6 @@ private:
             }
             writeNumber2(dest, day);
             return 2;
-        }
-
-        size_t mysqlDayOfMonthSpacePadded(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
-        {
-            auto day = ToDayOfMonthImpl::execute(source, timezone);
-            if (day < 10)
-                dest[1] = '0' + day;
-            else
-                writeNumber2(dest, day);
-            return 2;
-        }
-
-        size_t mysqlISO8601Date(char * dest, Time source, const DateLUTImpl & timezone)
-        size_t mysqlISO8601Date(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
-        {
-            writeNumber4(dest, ToYearImpl::execute(source, timezone));
-            writeNumber2(dest + 5, ToMonthImpl::execute(source, timezone));
-            writeNumber2(dest + 8, ToDayOfMonthImpl::execute(source, timezone));
-            return 10;
-        }
-
-        size_t mysqlISO8601DateWithoutSeparators(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
-        {
-            return mysqlISO8601Date(dest, source, timezone);
         }
 
         size_t mysqlISO8601DateWithSeparators(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -844,8 +842,7 @@ private:
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'%' must not be the last character in the format string, use '%%' instead");
     }
 
-    static bool containsOnlyFixedWidthMySQLFormatters(
-        std::string_view format, bool mysql_M_is_month_name, bool mysql_format_ckl_without_leading_zeros, bool mysql_e_with_space_padding)
+    static bool containsOnlyFixedWidthMySQLFormatters(std::string_view format, bool mysql_M_is_month_name, bool mysql_format_ckl_without_leading_zeros, bool mysql_e_with_space_padding)
     {
         static constexpr std::array variable_width_formatter = {'W'};
         static constexpr std::array variable_width_formatter_M_is_month_name = {'W', 'M'};
@@ -1313,13 +1310,13 @@ public:
                         break;
                     }
 
-                    /// Day of month
+                    // Day of month
                     case 'e':
                     {
-                        Instruction<T> instruction;
                         if (mysql_e_with_space_padding)
                         {
                             /// Space-padded ( 1-31)
+                            Instruction<T> instruction;
                             instruction.setMysqlFunc(&Instruction<T>::mysqlDayOfMonthWithSpacePadding);
                             instructions.push_back(std::move(std::move(instruction)));
                             out_template += " 0";
@@ -1327,6 +1324,7 @@ public:
                         else
                         {
                             /// Not space-padded (1-31)
+                            Instruction<T> instruction;
                             instruction.setMysqlFunc(&Instruction<T>::mysqlDayOfMonthWithoutSpacePadding);
                             instructions.push_back(std::move(std::move(instruction)));
                             out_template += "00";

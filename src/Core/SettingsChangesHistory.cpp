@@ -100,8 +100,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
             {"compile_expressions", false, true, "We believe that the LLVM infrastructure behind the JIT compiler is stable enough to enable this setting by default."},
             {"use_legacy_to_time", false, false, "New setting. Allows for user to use the old function logic for toTime, which works as toTimeWithFixedDate."},
-            {"parsedatetime_e_requires_space_padding", true, false, "Improved compatibility with MySQL DATE_FORMAT/STR_TO_DATE"},
-            {"formatdatetime_e_format_with_space_padding", true, false, "Improved compatibility with MySQL DATE_FORMAT/STR_TO_DATE"},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
@@ -131,7 +129,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_replicas_insert_select_local_pipeline", false, false, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"},
             {"parallel_hash_join_threshold", 0, 0, "New setting"},
             /// Release closed. Please use 25.5
-            {"parsedatetime_parse_without_leading_space", true, false, "Improved compatibility with MySQL DATE_FORMAT/STR_TO_DATE"},
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {
