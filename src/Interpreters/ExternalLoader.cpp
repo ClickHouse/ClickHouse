@@ -755,6 +755,7 @@ private:
                 result.exception = exception;
                 result.loading_start_time = loading_start_time;
                 result.last_successful_update_time = last_successful_update_time;
+                result.error_count = error_count;
                 result.loading_duration = loadingDuration();
                 result.config = config;
                 return result;
