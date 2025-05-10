@@ -198,7 +198,8 @@ Aggregator::Params::Params(
     bool only_merge_, // true for projections
     bool optimize_group_by_constant_keys_,
     float min_hit_rate_to_use_consecutive_keys_optimization_,
-    const StatsCollectingParams & stats_collecting_params_)
+    const StatsCollectingParams & stats_collecting_params_,
+    bool allow_aggregation_to_produce_buckets_out_of_order_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -221,6 +222,7 @@ Aggregator::Params::Params(
     , optimize_group_by_constant_keys(optimize_group_by_constant_keys_)
     , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
     , stats_collecting_params(stats_collecting_params_)
+    , allow_aggregation_to_produce_buckets_out_of_order(allow_aggregation_to_produce_buckets_out_of_order_)
 {
 }
 

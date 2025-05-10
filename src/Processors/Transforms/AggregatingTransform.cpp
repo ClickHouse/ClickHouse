@@ -439,11 +439,14 @@ private:
                 {
                     ++current_bucket_num;
                 }
-                else if (auto empty_it = std::ranges::find(out_of_order_buckets, -1); empty_it != out_of_order_buckets.end())
+                else if (params->params.allow_aggregation_to_produce_buckets_out_of_order)
                 {
-                    *empty_it = current_bucket_num;
-                    ++current_bucket_num;
-                    continue;
+                    if (auto empty_it = std::ranges::find(out_of_order_buckets, -1); empty_it != out_of_order_buckets.end())
+                    {
+                        *empty_it = current_bucket_num;
+                        ++current_bucket_num;
+                        continue;
+                    }
                 }
             }
 
