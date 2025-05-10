@@ -41,7 +41,7 @@ namespace Setting
 {
     extern const SettingsUInt64 hnsw_candidate_list_size_for_search;
     extern const SettingsUInt64 vector_search_postfilter_multiplier;
-    extern const SettingsUInt64 max_limit_for_ann_queries;
+    extern const SettingsUInt64 max_limit_for_vector_search_queries;
 }
 
 namespace ServerSetting
@@ -417,11 +417,13 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
     , index_column(index_column_)
     , metric_kind(metric_kind_)
     , expansion_search(context->getSettingsRef()[Setting::hnsw_candidate_list_size_for_search])
-    , vector_search_postfilter_multiplier(context->getSettingsRef()[Setting::vector_search_postfilter_multiplier])
-    , max_limit_for_ann_queries(context->getSettingsRef()[Setting::max_limit_for_ann_queries])
+    , postfilter_multiplier(context->getSettingsRef()[Setting::vector_search_postfilter_multiplier])
+    , max_limit(context->getSettingsRef()[Setting::max_limit_for_vector_search_queries])
 {
     if (expansion_search == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'hnsw_candidate_list_size_for_search' must not be 0");
+    if (!std::isfinite(postfilter_multiplier) || postfilter_multiplier < 0.0)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_postfilter_multiplier' must be bigger than 0.0");
 }
 
 bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexGranulePtr) const
@@ -463,14 +465,16 @@ std::vector<UInt64> MergeTreeIndexConditionVectorSimilarity::calculateApproximat
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The dimension of the reference vector in the query ({}) does not match the dimension in the index ({})",
             parameters->reference_vector.size(), index->dimensions());
 
+    size_t limit = parameters->limit;
+    if (parameters->additional_filters_present)
+        /// Post-filters may remove matches. Allow to fetch more rows by a factor to compensate.
+        limit = std::min(static_cast<size_t>(limit * postfilter_multiplier), max_limit);
+
     /// We want to run the search with the user-provided value for setting hnsw_candidate_list_size_for_search (aka. expansion_search).
     /// The way to do this in USearch is to call index_dense_gt::change_expansion_search. Unfortunately, this introduces a need to
     /// synchronize index access, see https://github.com/unum-cloud/usearch/issues/500. As a workaround, we extended USearch' search method
     /// to accept a custom expansion_add setting. The config value is only used on the fly, i.e. not persisted in the index.
-    size_t k = parameters->limit;
-    if (parameters->additional_filters_present)
-        k = std::min(k * vector_search_postfilter_multiplier, max_limit_for_ann_queries); /// help post-filtering by fetching "more" neighbours
-    auto search_result = index->search(parameters->reference_vector.data(), k, USearchIndex::any_thread(), false, expansion_search);
+    auto search_result = index->search(parameters->reference_vector.data(), limit, USearchIndex::any_thread(), false, expansion_search);
     if (!search_result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not search in vector similarity index. Error: {}", search_result.error.release());
 

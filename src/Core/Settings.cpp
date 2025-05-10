@@ -6586,17 +6586,17 @@ SELECT queries with LIMIT bigger than this setting cannot use vector similarity 
     DECLARE(UInt64, hnsw_candidate_list_size_for_search, 256, R"(
 The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'.
 )", EXPERIMENTAL) \
-    DECLARE(VectorSearchFilteringType, vector_search_filtering, VectorSearchFilteringType::AUTO, R"(
-If a vector search query has a WHERE clause, this parameter determines if the predicates are evaluated first (pre-filtering) OR if the vector similarity index is looked up first (post-filtering). Please check documentation for additional specifics.
+    DECLARE(VectorSearchFilterStrategy, vector_search_filter_strategy, VectorSearchFilterStrategy::AUTO, R"(
+If a vector search query has a WHERE clause, this setting determines if it is evaluated first (pre-filtering) OR if the vector similarity index is checked first (post-filtering).
 
 Possible values:
 
-AUTO - Currently maps to POSTFILTER semantics.
-PREFILTER - Evaluate other column predicates first and then perform brute-force search to identify neighbours.
-POSTFILTER - Use vector similarity index to identify neighbours and then apply other column predicates.
+'auto' - Postfiltering (the exact semantics may change in future).
+'postfilter' - Use vector similarity index to identify the nearest neighbours, then apply other filters
+'prefilter' - Evaluate other filters first, then perform brute-force search to identify neighbours.
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, vector_search_postfilter_multiplier, 1, R"(
-Determines the number of neighbours to fetch from the vector similarity index before performing post-filtering on other predicates. The number of neighbours fetched is (LIMIT n X ann_post_filter_multiplier).
+    DECLARE(Float, vector_search_postfilter_multiplier, 1.0, R"(
+Multiply the fetched nearest neighbors from the vector similarity index by this number before performing post-filtering on other predicates.
 )", EXPERIMENTAL) \
     DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction

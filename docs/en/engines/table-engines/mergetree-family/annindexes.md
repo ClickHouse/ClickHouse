@@ -238,16 +238,14 @@ These two strategies determine the order in which the filters are evaluated:
 - With pre-filtering, the filter evaluation order is the other way round.
 
 Both strategies have different trade-offs:
-- Post-filtering has the general problem that it may return less than the number of rows requested in the `LIMIT <N>` clause. This happens when at least one of the result rows returned by the vector similarity index fails to satisfy the additional filters.
-- Pre-filtering is an unsolved problem. Some specialized vector databases implement it but most databases including ClickHouse will fall back to exact neighbor search, i.e., a brute-force scan without index.
+- Post-filtering has the general problem that it may return less than the number of rows requested in the `LIMIT <N>` clause. This situation happens when at least one of the result rows returned by the vector similarity index fails to satisfy the additional filters.
+- Pre-filtering is generally unsolved problem. Some specialized vector databases implement it but most databases including ClickHouse will fall back to exact neighbor search, i.e., a brute-force scan without index.
 
 What strategy is used comes down to whether ClickHouse can use indexes for the additional filter conditions.
-
 If no index can be used, post-filtering will be applied.
 
 If the additional filter condition is part of the partition key, then ClickHouse will apply partition pruning.
-
-Example, assuming that the table is range-partitioned by `year`:
+For example, assuming that the table is range-partitioned by `year`:
 
 ```sql
 WITH [0., 2.] AS reference_vec
@@ -261,14 +259,17 @@ LIMIT 3;
 ClickHouse will ignore all partitions but the one for year 2025.
 Within this partition, a post-filtering strategy will be applied.
 
-If the additional filter condition is on the primary key and the filter selects some but not all ranges of a part, then Clickhouse will fall back to exact neighbour search i.e brute force scan without index, on the selected ranges of the part. If the primary key filter selects entire parts, Clickhouse will use the vector similarity index on those parts to retrieve results.
+If the additional filter condition is on the primary key columns and the filter selects some but not all ranges of a part, then Clickhouse will fall back to exact neighbour search (brute-force scan without index) on the selected ranges of the part.
+If the primary key filter selects entire parts, Clickhouse will use the vector similarity index on those parts to retrieve results.
 
-In case additional filter conditions on columns can make use of skip indexes (minmax, set etc), Clickhouse by default chooses a post-filtering strategy. Clickhouse gives higher priority to the vector similarity index because the vector index is expected to deliver business value by accelerating semantic search response times.
+In case additional filter conditions on columns can make use of skip indexes (minmax, set etc), Clickhouse by default chooses a post-filtering strategy.
+Clickhouse gives higher priority to the vector similarity index because the vector index is expected to deliver business value by accelerating semantic search response times.
 
-Clickhouse provides 2 settings for finer control on post-filtering and pre-filtering -
+Clickhouse provides 2 settings for finer control on post-filtering and pre-filtering:
 
-- vector_search_filtering
-When the additional filter conditions are extremely selective, it is possible that brute force search on a small filtered set of rows gives better results then post-filtering using the vector search. Users can request explicit pre-filtering by setting ```vector_search_filtering``` to "prefilter" (default is "auto" which equates to "postfilter"). An example query where pre-filtering could be a good choice is -
+When the additional filter conditions are extremely selective, it is possible that brute force search on a small filtered set of rows gives better results then post-filtering using the vector search.
+Users can force pre-filtering by setting [vector_search_filter_strategy](../../../operations/settings/settings#vector_search_filter_strategy) to `prefilter` (default is `auto` which is equivalent to `postfilter`).
+An example query where pre-filtering could be a good choice is
 
 ```sql
 SELECT bookid, author, title
@@ -278,10 +279,11 @@ ORDER BY cosineDistance(book_vector, getEmbedding('Books on ancient Asian empire
 LIMIT 10
 ```
 
-Assuming books priced less that $2 are a tiny portion, post-filtering approach may return 0 rows because the top `LIMIT <N>` matches returned by the vector index could all be priced above $2. By opting for explicit pre-filtering, the subset of all books priced less than $2 are shortlisted and then brute-force vector search executed on the subset to return the closest matches.
+Assuming that only very few books cost less than $2, post-filtering may return zero rows because the top 10 matches returned by the vector index could all be priced above $2.
+By forcing pre-filtering (add `SETTINGS vector_search_filter_strategy = 'prefilter'` to the query), ClickHouse first finds all books with a price of less than $2 and then executes a brute-force vector search on the matches.
 
-- vector_search_postfilter_multiplier
-As explained above in the trade-offs, post-filtering could return lesser number of rows then specified in the `LIMIT <N>` clause. Consider this query -
+As mentioned above, post-filtering may return less matches then specified in the `LIMIT <N>` clause.
+Consider query
 
 ```sql
 SELECT bookid, author, title
@@ -290,7 +292,11 @@ WHERE published_year <= 2000
 ORDER BY cosineDistance(book_vector, getEmbedding('Books on ancient Asian empires'))
 LIMIT 10
 ```
-One or more of the 10 nearest matching books returned by the vector index could be published after year 2000. Hence the query will end up returning less than 10 rows, contrary to user expectations. For such cases, the parameter ```vector_search_postfilter_multiplier``` can be set to a value like 2 or 10 to indicate that 20 or 100 nearest matching books should be returned by the vector index and then the additional filter to be applied on those rows to return the result of 10 rows.
+
+With post-filtering, some of the 10 nearest matching books returned by the vector index may be pruned from the result because they were published later than in the year 2000.
+As a result, the query may return less rows than the user requested.
+For such cases, you can set parameter [vector_search_postfilter_multiplier](../../../operations/settings/settings#vector_search_postfilter_multiplier) to a value > 1.0 (for example, 2.0) to indicate that N times this factor many matches should be returned by the vector index and then the additional filter to be applied on those rows to return the result of 10 rows.
+We note that this method can mitigate the problem with post-filtering but in extreme cases (extremely selective WHERE condition), there may still less than N requested rows returned.
 
 ### Performance Tuning {#performance-tuning}
 
