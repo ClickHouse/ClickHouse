@@ -87,27 +87,24 @@ def test_zookeeper_partition_locks(kafka_cluster):
         )
 
         for pid in range(3):
-            k.kafka_produce(kafka_cluster, "zk_locks_topic", [f"msg_{pid}"], retries=5)
-
+            k.kafka_produce(kafka_cluster, topic_name, [f"msg_{pid}"], retries=5)
+        
+        base = "/clickhouse/test/zk_locks/topic_partition_locks"
+        expected_locks = {f"zk_locks_topic_{pid}.lock" for pid in range(3)}
         with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
-            base = "/clickhouse/test/zk_locks/topic_partition_locks"
-            children = set(zk.ls(base))
-            expected = {f"zk_locks_topic_{pid}.lock" for pid in range(3)}
-
-            timeout = 30.0
-            interval = 1.0
+            timeout, interval = 30.0, 1.0
             start = time.time()
             while time.time() - start < timeout:
                 children = set(zk.ls(base))
-                if children == expected:
+                if children == expected_locks:
                     break
                 time.sleep(interval)
             else:
-                pytest.fail(f"Timed out waiting for locks in ZK: got {children}, expected {expected}")
+                pytest.fail(f"Timed out waiting for locks in ZK: got {children}, expected {expected_locks}")
 
-            for name in expected:
-                data = zk.get(f"{base}/{name}")
-                assert data == "r1", f"Expected 'r1' in {name}, got {data}"
+            for lock in expected_locks:
+                owner = zk.get(f"{base}/{lock}")
+                assert owner == "r1", f"Expected 'r1' in {lock}, got {owner}"
 
 def test_two_replicas_balance(kafka_cluster):
     admin = k.get_admin_client(kafka_cluster)
@@ -151,12 +148,11 @@ def test_two_replicas_balance(kafka_cluster):
             CREATE MATERIALIZED VIEW test.cons2 TO test.view2 AS SELECT * FROM test.kafka2;
         """)
 
-        for _ in range(4):
-            k.kafka_produce(kafka_cluster, topic, ["x"], retries=3)
+        for pid in range(4):
+            k.kafka_produce(kafka_cluster, topic, [f"msg_{pid}"], retries=5)
 
         base = "/clickhouse/test/zk_dist/topic_partition_locks"
         expected_locks = {f"{topic}_{pid}.lock" for pid in range(4)}
-
         with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
             timeout, interval = 30.0, 1.0
             start = time.time()
@@ -172,8 +168,6 @@ def test_two_replicas_balance(kafka_cluster):
             for lock in expected_locks:
                 owner = zk.get(f"{base}/{lock}")
                 counts[owner] += 1
-            
-
             valid_counts = [
                 {"r1": 2, "r2": 2},
                 {"r1": 3, "r2": 1},
