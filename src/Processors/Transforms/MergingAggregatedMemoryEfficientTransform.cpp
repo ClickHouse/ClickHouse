@@ -139,12 +139,7 @@ IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & upda
             index_to_input[i] = in;
     }
 
-    auto need_input = [this](size_t input_num)
-    {
-        if (last_bucket_number[input_num] <= current_bucket)
-            return true;
-        return false;
-    };
+    auto need_input = [this](size_t input_num) { return last_bucket_number[input_num] <= current_bucket; };
 
     if (!wait_input_ports_numbers.empty())
     {

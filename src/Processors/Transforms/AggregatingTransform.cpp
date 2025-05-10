@@ -425,22 +425,25 @@ private:
         while (current_bucket_num < NUM_BUCKETS)
         {
             Chunk chunk;
-            for (auto & delayed_bucket : out_of_order_buckets)
+            /// Try push an out of order bucket first, if it is ready.
+            for (auto & ooo_bucket : out_of_order_buckets)
             {
-                if (delayed_bucket != -1 && (chunk = get_bucket_if_ready(delayed_bucket)))
+                if (ooo_bucket != -1 && (chunk = get_bucket_if_ready(ooo_bucket)))
                 {
-                    delayed_bucket = -1;
+                    ooo_bucket = -1;
                     break;
                 }
             }
             if (!chunk)
             {
+                /// Try push the current bucket.
                 if ((chunk = get_bucket_if_ready(current_bucket_num)))
                 {
                     ++current_bucket_num;
                 }
                 else if (params->params.allow_aggregation_to_produce_buckets_out_of_order)
                 {
+                    /// Otherwise, if there is an empty slot, postpone the current bucket until better times.
                     if (auto empty_it = std::ranges::find(out_of_order_buckets, -1); empty_it != out_of_order_buckets.end())
                     {
                         *empty_it = current_bucket_num;
@@ -462,13 +465,13 @@ private:
             }
         }
 
-        auto try_push_delayed_bucket = [&](Int32 & delayed_bucket)
+        auto try_push_out_of_order_bucket = [&](Int32 & ooo_bucket)
         {
-            if (delayed_bucket != -1)
+            if (ooo_bucket != -1)
             {
-                if (auto chunk = get_bucket_if_ready(delayed_bucket))
+                if (auto chunk = get_bucket_if_ready(ooo_bucket))
                 {
-                    delayed_bucket = -1;
+                    ooo_bucket = -1;
                     chunk.getChunkInfos().get<AggregatedChunkInfo>()->out_of_order_buckets = out_of_order_buckets;
                     output.push(std::move(chunk));
                     return true;
@@ -477,11 +480,11 @@ private:
             return false;
         };
 
-        for (auto & delayed_bucket : out_of_order_buckets)
-            if (try_push_delayed_bucket(delayed_bucket))
+        for (auto & ooo_bucket : out_of_order_buckets)
+            if (try_push_out_of_order_bucket(ooo_bucket))
                 return Status::PortFull;
 
-        if (std::ranges::any_of(out_of_order_buckets, [](auto delayed_bucket) { return delayed_bucket != -1; }))
+        if (std::ranges::any_of(out_of_order_buckets, [](auto ooo_bucket) { return ooo_bucket != -1; }))
             return Status::NeedData;
 
         output.finish();
@@ -504,6 +507,12 @@ private:
     static constexpr Int32 NUM_BUCKETS = 256;
     std::array<Chunk, NUM_BUCKETS> two_level_chunks;
 
+    /// In principle we should produce buckets in order of their id-s for memory efficient merging.
+    /// The problem is that on the initiator we cannot start merging buckets #(N+1) until we received all buckets #(<=N).
+    /// Sometimes this dependency introduces a noticeable slowdown and in order to eliminate it we allow a few buckets
+    /// to be delayed for a while and at that time merging still can be performed for some buckets with bigger id-s.
+    /// It works because we don't actually require any specific order of buckets anywhere, we only need to make sure that
+    /// `GroupingAggregatedTransform` will output all buckets (from all the nodes) with the same id together.
     static constexpr UInt32 NUM_OOO_BUCKETS = 4;
     std::vector<Int32> out_of_order_buckets;
 
