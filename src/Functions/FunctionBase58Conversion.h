@@ -10,8 +10,10 @@ struct Base58Traits
 {
     static constexpr auto encodeName = "base58Encode";
 
-    static size_t getMaxEncodedSize(size_t src_length)
+    template<typename Col>
+    static size_t getMaxEncodedSize(Col const& src_column)
     {
+        auto const src_length = src_column.getChars().size();
         /// Base58 has efficiency of 73% (8/11) [https://monerodocs.org/cryptography/base58/],
         /// and we take double scale to avoid any reallocation.
         constexpr auto oversize = 2;

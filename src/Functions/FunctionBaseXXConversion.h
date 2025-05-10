@@ -28,7 +28,7 @@ struct BaseXXEncode
     {
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
-        size_t const max_result_size = Traits::getMaxEncodedSize(src_column.getChars().size());
+        size_t const max_result_size = Traits::getMaxEncodedSize(src_column);
 
         dst_data.resize(max_result_size);
         dst_offsets.resize(input_rows_count);
@@ -61,7 +61,7 @@ struct BaseXXEncode
     {
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
-        size_t const max_result_size = Traits::getMaxEncodedSize(src_column.getChars().size());
+        size_t const max_result_size = Traits::getMaxEncodedSize(src_column);
 
         dst_data.resize(max_result_size);
         dst_offsets.resize(input_rows_count);

@@ -10,13 +10,15 @@ struct Base32Traits
 {
     static constexpr auto encodeName = "base32Encode";
 
-    static size_t getMaxEncodedSize(size_t src_length)
+    template<typename Col>
+    static size_t getMaxEncodedSize(Col const& src_column)
     {
-        /// Base32 has efficiency of 62.5% (5/8)
-        /// and we take double scale to avoid any reallocation.
-        /// Also, at least 8 bytes are needed for the result.
-        constexpr auto oversize = 2;
-        return std::max<size_t>(static_cast<size_t>(ceil(oversize * src_length + 1)), 8);
+        auto const src_length = src_column.getChars().size();
+        auto const string_count = src_column.size();
+        /// Every 5 bytes becomes 8 bytes in base32
+        /// Add padding for incomplete blocks and round up
+        /// Plus one byte for null terminator for each string
+        return ((src_length + 4) / 5 * 8 + 1) * string_count;
     }
 
     static size_t encode(const UInt8 * src, size_t src_length, UInt8 * dst) { return encodeBase32(src, src_length, dst); }
