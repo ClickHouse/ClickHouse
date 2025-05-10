@@ -122,7 +122,11 @@ struct BaseXXDecode
             if (!decoded_size)
             {
                 if constexpr (ErrorHandling == BaseXXDecodeErrorHandling::ThrowException)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Base32 value, cannot be decoded");
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Invalid {} value ({}), cannot be decoded",
+                        name,
+                        String(reinterpret_cast<const char *>(&src[prev_src_offset]), src_length));
                 else
                     decoded_size = 0;
             }
@@ -159,7 +163,11 @@ struct BaseXXDecode
             if (!decoded_size)
             {
                 if constexpr (ErrorHandling == BaseXXDecodeErrorHandling::ThrowException)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Base32 value, cannot be decoded");
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Invalid {} value ({}), cannot be decoded",
+                        name,
+                        String(reinterpret_cast<const char *>(&src[row * N]), N));
                 else
                     decoded_size = 0;
             }
