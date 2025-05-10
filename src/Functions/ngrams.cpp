@@ -1,5 +1,4 @@
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -122,10 +121,8 @@ private:
 REGISTER_FUNCTION(Ngrams)
 {
     factory.registerFunction<FunctionNgrams>(FunctionDocumentation{
-        .description = "Splits a UTF-8 string into n-grams of `ngramsize` symbols.",
+        .description = "Splits a UTF-8 string into n-grams symbols.",
         .category = FunctionDocumentation::Category::StringSplitting});
 }
 
 }
-
-

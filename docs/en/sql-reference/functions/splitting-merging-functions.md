@@ -349,13 +349,11 @@ Result:
 
 <DeprecatedBadge/>
 
-:::warning
-This function is deprecated and prefer to use [tokens](#tokens) with the `ngram` tokenizer. The function will be removed at some point in future.
-:::
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols.
+This function is deprecated. Prefer to use [tokens](#tokens) with the `ngram` tokenizer. The function will be removed at some point in future.
 
-**Syntax** 
+**Syntax**
 
 ```sql
 ngrams(string, ngramsize)
@@ -386,20 +384,23 @@ Result:
 
 ## tokens {#tokens}
 
-Splits a string into tokens by the given tokenizer (by default using non-alphanumeric ASCII characters as separators).
+Splits a string into tokens using the given tokenizer.
+The default tokenizer uses non-alphanumeric ASCII characters as separators.
 
 **Arguments**
 
-- `input_string` — Any set of bytes represented as the [String](../data-types/string.md) data type object.
-- `tokenizer_string` — The tokenizer to use. Valid arguments are 'default', 'noop', 'ngram', and 'chinese'.
-- `ngram_size` - A mandatory `UInt8` that defines size of ngram when `tokenizer` is set to `ngram`.
-- `mode_string` - An optional parameter to control granularity of the Chinese tokenizer. Supports only `fine-grained` and `coarse-grained` values, by default it is set to `fine-grained`.
+- `value` — The input string. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `tokenizer` — The tokenizer to use. Valid arguments are `default`, `noop`, `ngram`, and `chinese`.
+- `ngrams` — Only relevant if argument `tokenizer` is `ngram`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`. [UInt8](../data-types/int-uint.md).
+- `chinese_granularity` — Only relevant if argument `tokenizer` is `chinese`: An optional parameter defines the granularity of the Chinese tokenizer. Valid values: `fine-grained` and `coarse-grained` values. If not set explicitly, defaults to `fine-grained`. [String](../data-types/string.md).
 
 **Returned value**
 
 - The resulting array of tokens from input string. [Array](../data-types/array.md).
 
 **Example**
+
+Using the default settings:
 
 ```sql
 SELECT tokens('test1,;\\ test2,;\\ test3,;\\   test4') AS tokens;
@@ -413,30 +414,7 @@ Result:
 └───────────────────────────────────┘
 ```
 
-
-```sql
-SELECT tokens('foo bar', 'default') AS tokens;
-```
-
-Result:
-
-```text
-┌─tokens────────┐
-│ ['foo','bar'] │
-└───────────────┘
-```
-
-```sql
-SELECT tokens('foo bar', 'noop') AS tokens;
-```
-
-Result:
-
-```text
-┌─token───────┐
-│ ['foo bar'] │
-└─────────────┘
-```
+Using the ngram tokenizer with ngram length 3:
 
 ```sql
 SELECT tokens('abc def', 'ngram', 3) AS tokens;
@@ -450,17 +428,7 @@ Result:
 └─────────────────────────────────┘
 ```
 
-```sql
-SELECT tokens('你好世界！', 'chinese') AS tokens;
-```
-
-Result:
-
-```text
-┌─tokens───────────────┐
-│ ['你好','世界','！'] │
-└──────────────────────┘
-```
+Using the fine-grained Chinese tokenizer:
 
 ```sql
 SELECT tokens('南京市长江大桥', 'chinese', 'fine-grained') AS tokens;
@@ -473,16 +441,3 @@ Result:
 │ ['南京','京市','南京市','长江','大桥','长江大桥'] │
 └───────────────────────────────────────────────────┘
 ```
-
-```sql
-SELECT tokens('南京市长江大桥', 'chinese', 'coarse-grained') AS tokens;
-```
-
-Result:
-
-```text
-┌─tokens───────────────────────────────────────────────────┐
-│ ['南京','南京市','京市','市长','长江','长江大桥','大桥'] │
-└──────────────────────────────────────────────────────────┘
-```
-

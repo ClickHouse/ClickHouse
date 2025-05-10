@@ -5,33 +5,19 @@
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/GinFilter.h>
 
+#include "config.h"
+
 #if USE_CPPJIEBA
-#include <Common/Tokenizer/ChineseTokenizer.h>
+#  include <Interpreters/ChineseTokenizer.h>
 #endif
 
 namespace DB
 {
 
-namespace details
-{
-static constexpr std::string_view TOKENIZER_DEFAULT = "default";
-static constexpr std::string_view TOKENIZER_NGRAM = "ngram";
-static constexpr std::string_view TOKENIZER_NOOP = "noop";
-
-#if USE_CPPJIEBA
-static constexpr std::string_view TOKENIZER_CHINESE = "chinese";
-static constexpr std::string_view TOKENIZER_CHINESE_MODE_FINE_GRAINED = "fine-grained";
-static constexpr std::string_view TOKENIZER_CHINESE_MODE_COARSE_GRAINED = "coarse-grained";
-#endif
-}
-
-
 /// Interface for string parsers.
 struct ITokenExtractor
 {
     virtual ~ITokenExtractor() = default;
-
-    virtual std::vector<String> getTokens(const char* data, size_t length) const = 0;
 
     /// Fast inplace implementation for regular use.
     /// Gets string (data ptr and len) and start position for extracting next token (state of extractor).
@@ -43,6 +29,9 @@ struct ITokenExtractor
     {
         return nextInString(data, length, pos, token_start, token_length);
     }
+
+    /// Slow implementation for tokenizers which don't support inplace tokenization.
+    virtual std::vector<String> getTokens(const char * data, size_t length) const;
 
     /// Special implementation for creating bloom filter for LIKE function.
     /// It skips unescaped `%` and `_` and supports escaping symbols, but it is less lightweight.
@@ -58,8 +47,8 @@ struct ITokenExtractor
         const char * data,
         size_t length,
         BloomFilter & bloom_filter,
-        bool is_prefix [[maybe_unused]],
-        bool is_suffix [[maybe_unused]]) const
+        bool /*is_prefix*/,
+        bool /*is_suffix*/) const
     {
         stringToBloomFilter(data, length, bloom_filter);
     }
@@ -81,8 +70,8 @@ struct ITokenExtractor
         const char * data,
         size_t length,
         GinFilter & gin_filter,
-        bool is_prefix [[maybe_unused]],
-        bool is_suffix [[maybe_unused]]) const
+        bool /*is_prefix*/,
+        bool /*is_suffix*/) const
     {
         stringToGinFilter(data, length, gin_filter);
     }
@@ -173,8 +162,9 @@ struct NgramTokenExtractor final : public ITokenExtractorHelper<NgramTokenExtrac
     explicit NgramTokenExtractor(size_t n_) : n(n_) {}
 
     static const char * getName() { return "ngrambf_v1"; }
+    static const char * getExternalName() { return "ngram"; }
 
-    std::vector<String> getTokens(const char* data, size_t length) const override;
+    std::vector<String> getTokens(const char * data, size_t length) const override;
 
     bool nextInString(const char * data, size_t length, size_t *  __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
 
@@ -191,8 +181,9 @@ private:
 struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtractor>
 {
     static const char * getName() { return "tokenbf_v1"; }
+    static const char * getExternalName() { return "default"; }
 
-    std::vector<String> getTokens(const char* data, size_t length) const override;
+    std::vector<String> getTokens(const char * data, size_t length) const override;
 
     bool nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
 
@@ -205,60 +196,41 @@ struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtrac
     void substringToGinFilter(const char * data, size_t length, GinFilter & gin_filter, bool is_prefix, bool is_suffix) const override;
 };
 
+/// Parser doing "no operation". Returns the entire input as a single token.
 struct NoOpTokenExtractor final : public ITokenExtractorHelper<NoOpTokenExtractor>
 {
-    static const char * getName() { return "noop_v1"; }
+    static const char * getName() { return "noop"; }
+    static const char * getExternalName() { return getName(); }
 
-    std::vector<String> getTokens(const char* data, size_t length) const override
-    {
-        return {{data, length}};
-    }
+    std::vector<String> getTokens(const char * data, size_t length) const override;
 
-    bool nextInString(
-        [[maybe_unused]] const char * data,
-        size_t length,
-        size_t * __restrict pos,
-        size_t * __restrict token_start,
-        size_t * __restrict token_length) const override
-    {
-        if (*pos == 0)
-        {
-            *token_start = 0;
-            *token_length = length;
-            return true;
-        }
-        return false;
-    }
+    bool nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
 
-    bool nextInStringLike(
-        [[maybe_unused]] const char * data,
-        [[maybe_unused]] size_t length,
-        [[maybe_unused]] size_t * __restrict pos,
-        [[maybe_unused]] String & token) const override
-    {
-        return false;
-    }
+    bool nextInStringLike( const char * data, size_t length, size_t * __restrict pos, String & token) const override;
 };
 
 
 #if USE_CPPJIEBA
-
 /// Parser extracting tokens for Chinese.
 struct ChineseTokenExtractor final : public ITokenExtractorHelper<ChineseTokenExtractor>
 {
-    explicit ChineseTokenExtractor(ChineseGranularMode granular_mode_): granular_mode(granular_mode_) {}
+    explicit ChineseTokenExtractor(ChineseTokenizationGranularity granularity_);
 
-    static const char * getName() { return "chinese_v1"; }
+    static const char * getName() { return "chinese"; }
+    static const char * getExternalName() { return getName(); }
 
-    std::vector<String> getTokens(const char* data, size_t length) const override;
+    static constexpr std::string_view FINE_GRAINED = "fine-grained";
+    static constexpr std::string_view COARSE_GRAINED = "coarse-grained";
+
+    std::vector<String> getTokens(const char * data, size_t length) const override;
 
     bool nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
 
     bool nextInStringLike(const char * data, size_t length, size_t * __restrict pos, String & token) const override;
-private:
-    ChineseGranularMode granular_mode;
-};
 
+private:
+    ChineseTokenizationGranularity granularity;
+};
 #endif
 
 }

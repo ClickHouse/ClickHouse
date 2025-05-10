@@ -1,17 +1,4 @@
-option(ENABLE_CPPJIEBA "Enable cppjieba support" ${ENABLE_LIBRARIES})
-if ((NOT ENABLE_CPPJIEBA))
-    message (STATUS "Not using cppjieba")
-    return()
-endif()
-
-# limonp is dependency of cppjieba.
-# We don't need to make a separate limonp-cmake directory, instead we can add it directly.
-set(LIMONP_LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/limonp)
-
-add_library(_limonp INTERFACE)
-target_include_directories(_limonp SYSTEM INTERFACE ${LIMONP_LIBRARY_DIR}/include)
-
-set(CPPJIEBA_LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/cppjieba)
+set(CPPJIEBA_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/cppjieba")
 
 add_library(_cppjieba INTERFACE)
 include_directories(${LIMONP_LIBRARY_DIR}/include)

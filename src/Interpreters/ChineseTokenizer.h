@@ -4,6 +4,10 @@
 #include <string>
 #include <vector>
 
+#include "config.h"
+
+#if USE_CPPJIEBA
+
 namespace cppjieba
 {
 class Jieba;
@@ -12,7 +16,7 @@ class Jieba;
 namespace DB
 {
 
-enum class ChineseGranularMode
+enum class ChineseTokenizationGranularity
 {
     Fine,
     Coarse
@@ -24,11 +28,14 @@ class ChineseTokenizer
 public:
     static ChineseTokenizer & instance();
 
-    std::vector<std::string> tokenize(const std::string & str, ChineseGranularMode mode);
+    std::vector<std::string> tokenize(const std::string & str, ChineseTokenizationGranularity granularity);
 
 private:
     ChineseTokenizer();
 
     std::unique_ptr<cppjieba::Jieba> jieba_instance;
 };
+
 }
+
+#endif
