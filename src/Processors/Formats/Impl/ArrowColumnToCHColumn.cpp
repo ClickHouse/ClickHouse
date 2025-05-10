@@ -828,6 +828,16 @@ static ColumnWithTypeAndName readIPv4ColumnWithInt32Data(const std::shared_ptr<a
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
+static bool isColumnJSON(const std::shared_ptr<arrow::Field> & field)
+{
+    if (not field or not field->HasMetadata())
+        return false;
+
+    const auto & md = field->metadata();
+    auto logical_type = md->Get("PARQUET:logical_type");
+    return logical_type.ok() and *logical_type == "JSON";
+}
+
 struct ReadColumnFromArrowColumnSettings
 {
     std::string format_name;
@@ -860,16 +870,6 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
     const ReadColumnFromArrowColumnSettings & settings,
     const std::shared_ptr<arrow::Field> & arrow_field)
 {
-    auto isColumnJSON = [](auto field) -> bool
-    {
-        if (not field or not field->HasMetadata())
-            return false;
-
-        auto md = field->metadata();
-        auto value = md->Get("PARQUET:logical_type");
-        return value.ok() and *value == "JSON";
-    };
-
     switch (arrow_column->type()->id())
     {
         case arrow::Type::STRING:
