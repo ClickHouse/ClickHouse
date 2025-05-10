@@ -17,6 +17,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
+#include <Common/logger_useful.h>
 
 /// Include this last — see the reason inside
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
@@ -497,7 +498,7 @@ public:
         const UInt32 total_bit_num = vector.getTotalBitNum();
         for (size_t i = 0; i < total_bit_num; ++i)
         {
-            vector.getDataArrayAt(i)->raSetContainer(ctns[i], container_id, types[i]);
+            vector.getDataArrayAt(i)->ra_set_container(ctns[i], container_id, types[i]);
         }
     }
 
@@ -839,7 +840,7 @@ public:
     {
         PaddedPODArray<UInt64> buffer(65536);
         PaddedPODArray<UInt32> bit_buffer(65536);
-        UInt16 mask_container_cardinality = mask->raGetContainerCardinality(container_id);
+        UInt16 mask_container_cardinality = mask->ra_get_container_cardinality(container_id);
         if (mask_container_cardinality == 0)
             return 0;
         memset(buffer.data(), 0, buffer.size() * sizeof(UInt64));
@@ -848,7 +849,7 @@ public:
         for (size_t i = 0; i < total_bit_num; ++i)
         {
             auto & lhs_bm = vector.getDataArrayAt(i);
-            auto bit_cnt = lhs_bm->containerAndToUInt32Array(mask.get(), container_id, 0, &bit_buffer);
+            auto bit_cnt = lhs_bm->container_and_to_uint32_array(mask.get(), container_id, 0, &bit_buffer);
             for (size_t j = 0; j < bit_cnt; ++j)
             {
                 if (bit_buffer[j] >= 65536)
@@ -856,11 +857,25 @@ public:
                 buffer[bit_buffer[j]] |= (1ULL << i);
             }
         }
-        auto result_cnt = mask->containerToUInt32Array(container_id, 0, bit_buffer);
+        auto result_cnt = mask->container_to_uint32_array(container_id, 0, bit_buffer);
         for (size_t i = 0; i < result_cnt; ++i)
         {
             if (bit_buffer[i] >= 65536)
+            {
+                Poco::Logger * log = &Poco::Logger::get("DEBUGTMP-valueToColumn");
+                LOG_DEBUG(log, "container_id: {}, result_cnt: {}, i: {}", container_id, result_cnt, i);
+                LOG_DEBUG(log, "mask isSmall: {}, isLarge: {}", mask->isSmall(), mask->isLarge());
+                for (size_t j = 0; j < result_cnt; ++j) {
+                    LOG_DEBUG(log, "bit_buffer[{}]: {}", j, bit_buffer[i]);
+                }
+                PaddedPODArray<UInt32> all_values;
+                mask->rb_to_array(all_values);
+                for (size_t j = 0; j < all_values.size(); ++j)
+                {
+                    LOG_DEBUG(log, "all_values[{}]: {}, container_id: {}, bit_buffer: {}", j, all_values[j], all_values[j] >> 16, all_values[j] & 0xFFFF);
+                }
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "bit_buffer index out of bounds. bit_buffer[i]: {}", bit_buffer[i]);
+            }
             output[i] = static_cast<Float64>(buffer[bit_buffer[i]]) / (1ULL << vector.fraction_bit_num);
         }
         return result_cnt;
@@ -882,10 +897,10 @@ public:
         PaddedPODArray<Float64> rhs_values(65536);
         PaddedPODArray<Float64> res_values(65536);
 
-        std::set<UInt16> container_ids = and_all_indexes->raGetAllContainerIDs();
+        std::set<UInt16> container_ids = and_all_indexes->ra_get_all_container_ids();
         for (const auto & container_id : container_ids)
         {
-            UInt32 indexes_size = and_all_indexes->containerToUInt32Array(container_id, container_id << 16, indexes);
+            UInt32 indexes_size = and_all_indexes->container_to_uint32_array(container_id, container_id << 16, indexes);
             if (indexes_size == 0)
                 continue;
             UInt32 lhs_size = valueToColumn(lhs, and_all_indexes, container_id, lhs_values.data());
@@ -931,10 +946,10 @@ public:
         PaddedPODArray<Float64> lhs_values(65536);
         PaddedPODArray<Float64> res_values(65536);
 
-        std::set<UInt16> container_ids = and_all_indexes->raGetAllContainerIDs();
+        std::set<UInt16> container_ids = and_all_indexes->ra_get_all_container_ids();
         for (const auto & container_id : container_ids)
         {
-            UInt32 indexes_size = and_all_indexes->containerToUInt32Array(container_id, container_id << 16, indexes);
+            UInt32 indexes_size = and_all_indexes->container_to_uint32_array(container_id, container_id << 16, indexes);
             if (indexes_size == 0)
                 continue;
             UInt32 lhs_size = valueToColumn(lhs, and_all_indexes, container_id, lhs_values.data());

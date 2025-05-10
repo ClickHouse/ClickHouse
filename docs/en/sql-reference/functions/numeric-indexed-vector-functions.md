@@ -12,24 +12,24 @@ NumericIndexedVector is an abstract data structure that encapsulates a vector an
 
 ## BSI {#bsi}
 
-In the BSI(Bit-Sliced Index) storage mode, NumericIndexedVector compresses and stores vectors based on Roaring Bitmap and Bit-Sliced ​​Index. Aggregating operations and point-wise operations are directly on the compressed data, which can significantly improve the efficiency of storage and query.
+In the BSI(Bit-Sliced Index) storage mode, NumericIndexedVector compresses and stores vectors based on Roaring Bitmap and Bit-Sliced Index. Aggregating operations and point-wise operations are directly on the compressed data, which can significantly improve the efficiency of storage and query.
 
 A vector contains indices and their corresponding element values. The following are some characteristics and constraints of this data structure in BSI storage mode:
 
-- The Index type can be one of UInt8, UInt16, or UInt32. **Note:** The index only supports sizes up to UInt32; UInt64 and Int64 are supported in RawSum type.
-- The Value type can be one of Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32, or Float64. **Note:** The Value type does not automatically expand. For example, if you use UInt8 as the Value type, any sum that exceeds the capacity of UInt8 will result in an overflow rather than being promoted to a higher type; similarly, operations on integers will yield integer results (e.g., division will not automatically convert to a floating-point result). Therefore, it is important to plan and design the Value type ahead of time. In real-world scenarios, floating-point types (Float32/Float64) are commonly used.
-- The underlying storage uses Bit-Sliced ​​Index. with bitmap storing the Indexes. RoaringBitmap is used as the specific implementation of bitmap. A best practice is to concentrate the index in several Roaring Bitmap containers as much as possible to maximize compression and query performance.
+- The Index type can be one of `UInt8`, `UInt16`, or `UInt32`. **Note:** The index only supports sizes up to `UInt32`; `UInt64` and `Int64` are supported in RawSum type.
+- The Value type can be one of `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Float32`, or `Float64`. **Note:** The Value type does not automatically expand. For example, if you use `UInt8` as the Value type, any sum that exceeds the capacity of `UInt8` will result in an overflow rather than being promoted to a higher type; similarly, operations on integers will yield integer results (e.g., division will not automatically convert to a floating-point result). Therefore, it is important to plan and design the Value type ahead of time. In real-world scenarios, floating-point types (`Float32`/`Float64`) are commonly used.
+- The underlying storage uses Bit-Sliced Index. with bitmap storing the Indexes. RoaringBitmap is used as the specific implementation of bitmap. A best practice is to concentrate the index in several Roaring Bitmap containers as much as possible to maximize compression and query performance.
 - The Bit-Sliced Index mechanism converts Value into binary. For floating-point types, the conversion uses fixed-point representation, which may lead to precision loss. The precision can be adjusted by customizing the number of bits allocated for the fractional part; the default is 24 bits, which is sufficient for most scenarios. You can customize the number of integer bits and fractional bits when constructing NumericIndexedVector using aggregate function groupNumericIndexedVector with `-State`.
 - In point-wise operations between two NumericIndexedVectors, any index that is missing in one of the vectors is treated as 0 (resulting in outcomes such as preserving the value from the vector that has the index when adding, or producing 0 when multiplying). It’s important to mention that results with value 0 are omitted—they aren’t stored in the resulting NumericIndexedVector and are ignored in subsequent chained operations.
 
 ## RawSum {#raw-sum}
 
 
-Use two sorted arrays to store Index and Value respectively; the sorting logic is to sort the Index from small to large, and the user must ensure that there is no duplicate Index. This storage structure is used to support the scenario where the Index type is UInt64/Int64. The aggregating operations and point-wise operations defined on it are accelerated by vectorized instructions, which have not yet been implemented.
+Use two sorted arrays to store Index and Value respectively; the sorting logic is to sort the Index from small to large, and the user must ensure that there is no duplicate Index. This storage structure is used to support the scenario where the Index type is `UInt64`/`Int64`. The aggregating operations and point-wise operations defined on it are accelerated by vectorized instructions, which have not yet been implemented.
 
 # Create a numericIndexedVector object
 
-There are two ways to create this structure: one is to use the aggregate function groupNumericIndexedVector with `-State`, and the other is to build it from a map using `numericIndexedVectorBuild`. The `groupNumericIndexedVectorState` function allows customization of the number of integer and fractional bits through parameters, while `numericIndexedVectorBuild` does not currently support such customization.
+There are two ways to create this structure: one is to use the aggregate function `groupNumericIndexedVector` with `-State`, and the other is to build it from a map using `numericIndexedVectorBuild`. The `groupNumericIndexedVectorState` function allows customization of the number of integer and fractional bits through parameters, while `numericIndexedVectorBuild` does not currently support such customization.
 
 ## groupNumericIndexedVector {#group-numeric-indexed-vector}
 
@@ -45,14 +45,14 @@ groupNumericIndexedVector(type, integer_bit_num, fraction_bit_num)(col1, col2)
 **Parameters**
 
 - `type`: String, optional. Specifies the storage format. Currently, only `'BSI'` is supported.
-- `integer_bit_num`: UInt32, optional. Effective under the `'BSI'` storage format, this parameter indicates the number of bits allocated for the integer part. The valid range is `[0, 64]`. When the Index type is an integer type, the default value corresponds to the number of bits used to store the Index. For example, if the Index type is UInt16, the default `integer_bit_num` is 16.
-- `fraction_bit_num`: UInt32, optional. Effective under the `'BSI'` storage format, this parameter indicates the number of bits allocated for the fractional part. The valid range is `[0, 24]`. When the Value type is an integer, the default value is 0; when the Value type is a floating-point type, the default value is 24.
-- `col1`: The Index column. Supported types: UInt8/UInt16/UInt32.
-- `col2`: The Value column. Supported types: Int8/Int16/Int32/Int64/UInt8/UInt16/UInt32/UInt64/Float32/Float64.
+- `integer_bit_num`: `UInt32`, optional. Effective under the `'BSI'` storage format, this parameter indicates the number of bits allocated for the integer part. The valid range is `[0, 64]`. When the Index type is an integer type, the default value corresponds to the number of bits used to store the Index. For example, if the Index type is UInt16, the default `integer_bit_num` is 16.
+- `fraction_bit_num`: `UInt32`, optional. Effective under the `'BSI'` storage format, this parameter indicates the number of bits allocated for the fractional part. The valid range is `[0, 24]`. When the Value type is an integer, the default value is 0; when the Value type is a floating-point type, the default value is 24.
+- `col1`: The Index column. Supported types: `UInt8`/`UInt16`/`UInt32`.
+- `col2`: The Value column. Supported types: `Int8`/`Int16`/`Int32`/`Int64`/`UInt8`/`UInt16`/`UInt32`/`UInt64`/`Float32`/`Float64`.
 
 **Return Value**
 
-A Float64 value representing the sum of all values.
+A `Float64` value representing the sum of all values.
 
 **Example**
 

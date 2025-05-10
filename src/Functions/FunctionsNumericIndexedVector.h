@@ -630,11 +630,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const auto * bitmap_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
-        if (!(bitmap_type && bitmap_type->getFunctionName() == NameAggregateFunctionGroupNumericIndexedVector::name))
+        const auto * agg_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
+        if (!(agg_type && agg_type->getFunctionName() == NameAggregateFunctionGroupNumericIndexedVector::name))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} must be a vectorBitmap but it has type {}",
+                "First argument for function {} must be a NumericIndexedVector but it has type {}",
                 getName(),
                 arguments[0]->getName());
         return std::make_shared<DataTypeNumber<ToType>>();
@@ -767,7 +767,7 @@ public:
         if (!(type0 && type0->getFunctionName() == NameAggregateFunctionGroupNumericIndexedVector::name))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} must be a vectorBitmap but it has type {}",
+                "First argument for function {} must be a NumericIndexedVector but it has type {}",
                 getName(),
                 arguments[0]->getName());
         WhichDataType which(type0->getArgumentsDataTypes()[1]->getTypeId());
@@ -894,11 +894,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const auto * bitmap_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
-        if (!(bitmap_type && bitmap_type->getFunctionName() == NameAggregateFunctionGroupNumericIndexedVector::name))
+        const auto * agg_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
+        if (!(agg_type && agg_type->getFunctionName() == NameAggregateFunctionGroupNumericIndexedVector::name))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} must be a vectorBitmap but it has type {}",
+                "First argument for function {} must be a NumericIndexedVector but it has type {}",
                 getName(),
                 arguments[0]->getName());
         return std::make_shared<DataTypeString>();
@@ -1016,7 +1016,7 @@ public:
         if (!(type && type->getFunctionName() == NameAggregateFunctionGroupNumericIndexedVector::name))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} must be a vectorBitmap but it has type {}.",
+                "First argument for function {} must be a NumericIndexedVector but it has type {}.",
                 getName(),
                 arguments[0]->getName());
 

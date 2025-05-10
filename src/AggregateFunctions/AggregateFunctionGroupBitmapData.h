@@ -219,7 +219,7 @@ public:
     /**
      * Computes the union between two bitmaps.
      */
-    void rb_or(const RoaringBitmapWithSmallSet & r1)
+    void rb_or(const RoaringBitmapWithSmallSet & r1)  /// NOLINT
     {
         merge(r1); /// NOLINT
     }
@@ -659,7 +659,7 @@ public:
         }
     }
 
-    inline UInt16 containerToUInt32Array(const UInt16 & container_id, const UInt32 & base, PaddedPODArray<UInt32> & res) const
+    inline UInt16 container_to_uint32_array(const UInt16 & container_id, const UInt32 & base, PaddedPODArray<UInt32> & res) const /// NOLINT
     {
         if (sizeof(T) >= 8)
         {
@@ -689,7 +689,7 @@ public:
         }
     }
 
-    inline UInt16 raGetContainerCardinality(const UInt16 & container_id) const
+    inline UInt16 ra_get_container_cardinality(const UInt16 & container_id) const /// NOLINT
     {
         if (sizeof(T) >= 8)
         {
@@ -716,7 +716,7 @@ public:
         }
     }
 
-    inline std::set<UInt16> raGetAllContainerIDs()
+    inline std::set<UInt16> ra_get_all_container_ids() /// NOLINT
     {
         if (sizeof(T) >= 8)
         {
@@ -740,7 +740,7 @@ public:
         return container_ids;
     }
 
-    inline roaring::internal::container_t * raGetContainer(const UInt16 & container_id, uint8_t * typecode) const
+    inline roaring::internal::container_t * ra_get_container(const UInt16 & container_id, uint8_t * typecode) const /// NOLINT
     {
         if (sizeof(T) >= 8)
         {
@@ -748,7 +748,7 @@ public:
         }
         if (isSmall())
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported SmallSet in raGetContainer");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported SmallSet in ra_get_container");
         }
         else
         {
@@ -762,14 +762,14 @@ public:
     }
 
     inline roaring::internal::container_t *
-    containerAnd(const RoaringBitmapWithSmallSet<T, small_set_size> * rhs, const UInt16 & container_id, uint8_t * result_type) const
+    container_and(const RoaringBitmapWithSmallSet<T, small_set_size> * rhs, const UInt16 & container_id, uint8_t * result_type) const /// NOLINT
     {
         if (isSmall() || rhs->isSmall())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported SmallSet");
         uint8_t type1;
         uint8_t type2;
-        roaring::internal::container_t * c1 = this->raGetContainer(container_id, &type1);
-        roaring::internal::container_t * c2 = rhs->raGetContainer(container_id, &type2);
+        roaring::internal::container_t * c1 = this->ra_get_container(container_id, &type1);
+        roaring::internal::container_t * c2 = rhs->ra_get_container(container_id, &type2);
         if (!c1 || !c2)
         {
             return nullptr;
@@ -784,7 +784,7 @@ public:
     }
 
     // low significant
-    inline UInt16 twoSmallSetContainerAndToUInt32Array(
+    inline UInt16 two_small_set_container_and_to_uint32_array( /// NOLINT
         const RoaringBitmapWithSmallSet<T, small_set_size> * rhs,
         const UInt16 & container_id,
         const UInt32 & base,
@@ -807,7 +807,7 @@ public:
     }
 
     // low significant
-    inline UInt16 smallSetAndRbContainerToUInt32Array(
+    inline UInt16 small_set_and_rb_container_to_uint32_array( /// NOLINT
         const RoaringBitmapWithSmallSet<T, small_set_size> * rhs,
         const UInt16 & container_id,
         const UInt32 & base,
@@ -818,10 +818,10 @@ public:
         if (!(this->isSmall() ^ rhs->isSmall()))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "this and rhs must has one and only one small set");
         if (!this->isSmall())
-            return rhs->smallSetAndRbContainerToUInt32Array(this, container_id, base, output);
+            return rhs->small_set_and_rb_container_to_uint32_array(this, container_id, base, output);
 
         uint8_t rhs_c_typecode;
-        roaring::internal::container_t * rhs_c = rhs->raGetContainer(container_id, &rhs_c_typecode);
+        roaring::internal::container_t * rhs_c = rhs->ra_get_container(container_id, &rhs_c_typecode);
         if (!rhs_c)
             return 0;
         int num_added = 0;
@@ -835,14 +835,14 @@ public:
     }
 
     // low significant
-    inline UInt16 towRbContainerAndToUInt32Array(
+    inline UInt16 two_rb_container_and_to_uint32_array( /// NOLINT
         const RoaringBitmapWithSmallSet<T, small_set_size> * rhs,
         const UInt16 & container_id,
         const UInt32 & base,
         PaddedPODArray<UInt32> * output) const
     {
         uint8_t result_type;
-        roaring::internal::container_t * c = this->containerAnd(rhs, container_id, &result_type);
+        roaring::internal::container_t * c = this->container_and(rhs, container_id, &result_type);
         if (!c)
             return 0;
         UInt16 result_size = roaring::internal::container_to_uint32_array(output->data(), c, result_type, base);
@@ -851,7 +851,7 @@ public:
     }
 
     // low significant
-    inline UInt16 containerAndToUInt32Array(
+    inline UInt16 container_and_to_uint32_array( /// NOLINT
         const RoaringBitmapWithSmallSet * rhs, const UInt16 & container_id, const UInt32 & base, PaddedPODArray<UInt32> * output) const
     {
         if (sizeof(T) >= 8)
@@ -859,14 +859,14 @@ public:
         if (output->size() < 65536)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "PaddedPODArray<UInt32> * output size must >= 65536");
         if (this->isSmall() && rhs->isSmall())
-            return twoSmallSetContainerAndToUInt32Array(rhs, container_id, base, output);
+            return two_small_set_container_and_to_uint32_array(rhs, container_id, base, output);
         else if (this->isSmall() || rhs->isSmall())
-            return smallSetAndRbContainerToUInt32Array(rhs, container_id, base, output);
+            return small_set_and_rb_container_to_uint32_array(rhs, container_id, base, output);
         else
-            return towRbContainerAndToUInt32Array(rhs, container_id, base, output);
+            return two_rb_container_and_to_uint32_array(rhs, container_id, base, output);
     }
 
-    inline void raSetContainer(roaring::internal::container_t * ctn, const UInt16 & container_id, const uint8_t & type)
+    inline void ra_set_container(roaring::internal::container_t * ctn, const UInt16 & container_id, const uint8_t & type) // NOLINT
     {
         if (sizeof(T) >= 8)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported Roaring64Map");
