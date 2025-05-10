@@ -306,6 +306,87 @@ def test_table_function(started_cluster):
     conn.close()
 
 
+def test_table_function_query(started_cluster):
+    table_name = "table_function_query"
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+
+    table_function = (
+        f"mysql('mysql80:3306', 'clickhouse', '{{}}', 'root', '{mysql_pass}')".format(
+            table_name
+        )
+    )
+    table_function_select_all = (
+        f"mysql('mysql80:3306', 'clickhouse', {{}}, 'root', '{mysql_pass}')".format(
+            f"query('SELECT * FROM {table_name}')"
+        )
+    )
+    table_function_select_all_subq = (
+        f"mysql('mysql80:3306', 'clickhouse', {{}}, 'root', '{mysql_pass}')".format(
+            f"(SELECT * FROM {table_name})"
+        )
+    )
+
+    assert node1.query("SELECT count() FROM {}".format(table_function_select_all)).rstrip() == "0"
+    assert node1.query("SELECT count() FROM {}".format(table_function_select_all_subq)).rstrip() == "0"
+    node1.query(
+        "INSERT INTO {} (id, name, money) select number, concat('name_', toString(number)), 3 from numbers(10000)".format(
+            "TABLE FUNCTION " + table_function
+        )
+    )
+    assert node1.query("SELECT count() FROM {}".format(table_function_select_all)).rstrip() == "10000"
+    assert node1.query("SELECT count() FROM {}".format(table_function_select_all_subq)).rstrip() == "10000"
+
+
+    table_function_select_mod6 = (
+        f"mysql('mysql80:3306', 'clickhouse', {{}}, 'root', '{mysql_pass}')".format(
+            f"query('SELECT * FROM {table_name} WHERE id%6=0')"
+        )
+    )
+    table_function_select_mod4_subq = (
+        f"mysql('mysql80:3306', 'clickhouse', {{}}, 'root', '{mysql_pass}')".format(
+            f"(SELECT * FROM {table_name} WHERE id%4=0)"
+        )
+    )
+
+    assert node1.query("SELECT count() FROM {}".format(table_function_select_mod6)).rstrip() == "1667"
+    assert node1.query("SELECT count() FROM {}".format(table_function_select_mod4_subq)).rstrip() == "2500"
+    assert node1.query(f"SELECT sum(money) FROM {table_function_select_mod6} AS a JOIN {table_function_select_mod4_subq} AS b ON a.id=b.id").rstrip() == str((9999//12+1)*3)
+    assert node1.query("SELECT count() FROM {}".format(
+        f"mysql('mysql80:3306', 'clickhouse', {{}}, 'root', '{mysql_pass}')".format(
+            f"(SELECT * FROM {table_name} WHERE name LIKE '%name_3%' OR id<10)"
+        )
+    )).rstrip() == str(10+10+100+1000)
+
+    # Create other table and try complex queries
+    table_name_2 = "table_function_query_2"
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"CREATE TABLE clickhouse.{table_name_2} (id INT PRIMARY KEY, name varchar(50) NOT NULL, hobby TEXT) ENGINE=InnoDB;"
+        )
+        cursor.execute(
+            f"INSERT INTO clickhouse.{table_name_2} VALUES (1, 'name_2', 'hobby_3'), (2, 'name_3', 'hobby_4'), (3, 'name_4', 'hobby_5')"
+        )
+        conn.commit()
+
+    assert node1.query("SELECT count() FROM {}".format(
+        f"mysql('mysql80:3306', 'clickhouse', {{}}, 'root', '{mysql_pass}')".format(
+            f"query('SELECT * FROM {table_name_2}')"
+        )
+    )).rstrip() == "3"
+    assert node1.query("SELECT sum(mulid) FROM {}".format(
+        f"mysql('mysql80:3306', 'clickhouse', {{}}, 'root', '{mysql_pass}')".format(
+            f"query('SELECT a.id*b.id AS mulid, b.hobby AS junky FROM {table_name} AS a JOIN {table_name_2} AS b ON a.name=b.name WHERE b.hobby NOT LIKE \\'%pal%\\' ORDER BY b.hobby LIMIT 100')"
+        )
+    )).rstrip() == str(1*2+2*3+3*4)
+
+    drop_mysql_table(conn, table_name)
+    drop_mysql_table(conn, table_name_2)
+
+    conn.close()
+
+
 def test_schema_inference(started_cluster):
     conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
     drop_mysql_table(conn, "inference_table")
