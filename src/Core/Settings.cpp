@@ -6586,6 +6586,9 @@ SELECT queries with LIMIT bigger than this setting cannot use vector similarity 
     DECLARE(UInt64, hnsw_candidate_list_size_for_search, 256, R"(
 The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, vector_search_with_rescoring, false, R"(
+If vector similarity indexes return row-level (false, faster) or granule-level (true, slower) results. In the latter case, ClickHouse performs rescoring using all other vectors in the returned granules.
+)", 0) \
     DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction
 )", EXPERIMENTAL) \

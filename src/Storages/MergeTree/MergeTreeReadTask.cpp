@@ -76,6 +76,8 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 
     new_readers.main = create_reader(read_info->task_columns.columns, false);
 
+    new_readers.main->data_part_info_for_read->setReadHints(read_info->read_hints);
+
     for (const auto & pre_columns_per_step : read_info->task_columns.pre_columns)
         new_readers.prewhere.push_back(create_reader(pre_columns_per_step, true));
 

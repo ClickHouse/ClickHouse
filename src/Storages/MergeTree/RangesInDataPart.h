@@ -40,6 +40,15 @@ struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescripti
     void merge(const RangesInDataPartsDescription & other);
 };
 
+
+/// A vehicle which transports additional information to optimize searches
+struct RangesInDataPartReadHints
+{
+    /// 1) Exact part offsets positions 2) a pre-computed "_distance" virtual column
+    using VectorIndexSearchResults = std::pair<std::vector<UInt64>, std::vector<float>>;
+    std::optional<VectorIndexSearchResults> ann_search_results;
+};
+
 struct RangesInDataPart
 {
     DataPartPtr data_part;
@@ -47,6 +56,7 @@ struct RangesInDataPart
     size_t part_starting_offset_in_query;
     MarkRanges ranges;
     MarkRanges exact_ranges;
+    RangesInDataPartReadHints read_hints;
 
     RangesInDataPart(
         const DataPartPtr & data_part_,

@@ -32,6 +32,7 @@ struct Optimization
     struct ExtraSettings
     {
         size_t max_limit_for_ann_queries;
+        bool vector_search_with_rescoring;
         size_t use_index_for_in_with_subqueries_max_values;
         SizeLimits network_transfer_limits;
     };

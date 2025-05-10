@@ -12,6 +12,7 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
+
 namespace DB::QueryPlanOptimizations
 {
 
@@ -35,8 +36,8 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
 {
     QueryPlan::Node * node = parent_node;
 
-    /// This optimization pass doesn't change the structure of the query plan.
-    constexpr size_t updated_layers = 0;
+    /// This optimization pass can change the ReadFromMergeTree & Expression steps of the query plan.
+    constexpr size_t NO_LAYERS_UPDATED = 0;
 
     /// Expect this query plan:
     /// LimitStep
@@ -52,53 +53,53 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
 
     auto * limit_step = typeid_cast<LimitStep *>(node->step.get());
     if (!limit_step)
-        return updated_layers;
+        return NO_LAYERS_UPDATED;
 
     if (node->children.size() != 1)
-        return updated_layers;
+        return NO_LAYERS_UPDATED;
     node = node->children.front();
     auto * sorting_step = typeid_cast<SortingStep *>(node->step.get());
     if (!sorting_step)
-        return updated_layers;
+        return NO_LAYERS_UPDATED;
 
     if (node->children.size() != 1)
-        return updated_layers;
+        return NO_LAYERS_UPDATED;
     node = node->children.front();
     auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
     if (!expression_step)
-        return updated_layers;
+        return NO_LAYERS_UPDATED;
 
     if (node->children.size() != 1)
-        return updated_layers;
+        return NO_LAYERS_UPDATED;
     node = node->children.front();
     auto * read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
     if (!read_from_mergetree_step)
-        return updated_layers;
+        return NO_LAYERS_UPDATED;
 
     /// Extract N
     size_t n = limit_step->getLimitForSorting();
 
     /// Check that the LIMIT specified by the user isn't too big - otherwise the cost of vector search outweighs the benefit.
     if (n > settings.max_limit_for_ann_queries)
-        return updated_layers;
+        return NO_LAYERS_UPDATED;
 
     /// Not 100% sure but other sort types are likely not what we want
     SortingStep::Type sorting_step_type = sorting_step->getType();
     if (sorting_step_type != SortingStep::Type::Full)
-        return updated_layers;
+        return NO_LAYERS_UPDATED;
 
     /// Read ORDER BY clause
     const auto & sort_description = sorting_step->getSortDescription();
     if (sort_description.size() > 1)
-        return updated_layers;
+        return NO_LAYERS_UPDATED;
     const String & sort_column = sort_description.front().column_name;
 
     /// The ActionDAG of the ExpressionStep underneath SortingStep may have arbitrary output nodes (e.g. stuff
     /// in the SELECT clause). Find the output node which corresponds to the first ORDER BY clause.
-    const ActionsDAG & expression = expression_step->getExpression();
+    ActionsDAG & expression = expression_step->getExpression();
     const ActionsDAG::Node * sort_column_node = expression.tryFindInOutputs(sort_column);
     if (sort_column_node == nullptr || sort_column_node->type != ActionsDAG::ActionType::FUNCTION)
-        return updated_layers;
+        return NO_LAYERS_UPDATED;
 
     /// Extract distance_function
     const String & function_name = sort_column_node->function_base->getName();
@@ -106,7 +107,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     if (function_name == "L2Distance" || function_name == "cosineDistance")
         distance_function = function_name;
     else
-        return updated_layers;
+        return NO_LAYERS_UPDATED;
 
     /// Extract stuff from the ORDER BY clause. It is expected to look like this: ORDER BY cosineDistance(vec1, [1.0, 2.0 ...])
     /// - The search column is 'vec1'.
@@ -156,7 +157,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
             {
                 Field::Types::Which field_array_value_type = field_array_value.getType();
                 if (field_array_value_type != Field::Types::Float64)
-                    return updated_layers;
+                    return NO_LAYERS_UPDATED;
                 Float64 float64 = field_array_value.safeGet<Float64>();
                 reference_vector.push_back(float64);
             }
@@ -164,9 +165,42 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     }
 
     if (search_column.empty() || reference_vector.empty())
-        return updated_layers;
+        return NO_LAYERS_UPDATED;
 
-    auto vector_search_parameters = std::make_optional<VectorSearchParameters>(search_column, distance_function, n, reference_vector);
+    size_t updated_layers = NO_LAYERS_UPDATED;
+    bool optimize_plan = !settings.vector_search_with_rescoring;
+    if (optimize_plan)
+    {
+        for (const auto & output : expression.getOutputs())
+        {
+            /// If the SELECT clause contains the vector column (rare situation), skip the optimization.
+            if (output->result_name == search_column ||
+                (output->type == ActionsDAG::ActionType::ALIAS && output->children.at(0)->result_name == search_column))
+            {
+                optimize_plan = false;
+            }
+        }
+
+        if (optimize_plan)
+        {
+            /// Rewrite the plan:
+            /// 1. Remove the physical vector column from ReadFromMergeTreeStep, add virtual "_distance" column
+            /// 2. Replace the "cosineDistance(vec, [1.0, 2.0...])" node in the DAG by the "_distance" node
+
+            read_from_mergetree_step->replaceVectorColumnWithDistanceColumn(search_column);
+
+            expression.removeUnusedResult(sort_column); /// Removes the OUTPUT cosineDistance(...) FUNCTION Node
+            expression.removeUnusedActions(); /// Removes the vector column INPUT node (it is no longer needed)
+
+            const auto * distance_node = &expression.addInput("_distance",std::make_shared<DataTypeFloat32>());
+            const auto * new_output = &expression.addAlias(*distance_node, sort_column);
+            expression.getOutputs().push_back(new_output);
+
+            updated_layers = 2;
+        }
+    }
+
+    auto vector_search_parameters = std::make_optional<VectorSearchParameters>(search_column, distance_function, n, reference_vector, optimize_plan);
     read_from_mergetree_step->setVectorSearchParameters(std::move(vector_search_parameters));
 
     return updated_layers;
