@@ -140,7 +140,7 @@ private:
         // so that no stale partitions linger when the “stable” assignment changes under us.
         bool permanent_locks_changed = false;
 
-        /// Quota, how many temporary locks can be taken in current round
+        // Quota, how many temporary locks can be taken in current round
         size_t tmp_locks_quota = 1;
 
         // Searches first in permanent_locks, then in tmp_locks.

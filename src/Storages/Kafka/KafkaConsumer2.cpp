@@ -28,7 +28,7 @@ namespace DB
 using namespace std::chrono_literals;
 static constexpr auto EVENT_POLL_TIMEOUT = 50ms;
 static constexpr auto DRAIN_TIMEOUT_MS = 5000ms;
-
+static constexpr auto GET_KAFKA_METADATA_TIMEOUT_MS = 1000ms;
 
 bool KafkaConsumer2::TopicPartition::operator<(const TopicPartition & other) const
 {
@@ -242,7 +242,7 @@ KafkaConsumer2::TopicPartitions KafkaConsumer2::getAllTopicPartitions() const
 
     try
     {
-        auto metadata = consumer->get_metadata(true, std::chrono::milliseconds(1000));
+        auto metadata = consumer->get_metadata(true, GET_KAFKA_METADATA_TIMEOUT_MS);
         for (const auto & topic_metadata : metadata.get_topics())
         {
             if (!topics_set.contains(topic_metadata.get_name()))

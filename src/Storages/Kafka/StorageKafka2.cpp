@@ -583,6 +583,7 @@ bool StorageKafka2::createTableIfNotExists()
             ops.emplace_back(zkutil::makeCreateRequest(partitions_path, "", zkutil::CreateMode::Persistent));
         }
 
+        // Save all locked partitions
         const auto topic_partition_locks_path = fs_keeper_path / "topic_partition_locks";
         ops.emplace_back(zkutil::makeCreateRequest(topic_partition_locks_path, "", zkutil::CreateMode::Persistent));
 
@@ -753,8 +754,8 @@ void StorageKafka2::dropReplica()
 }
 
 
-/// We go through all the replicas, count the number of live replicas,
-/// and see which partitions are already locked by other replicas
+// We go through all the replicas, count the number of live replicas,
+// and see which partitions are already locked by other replicas
 std::pair<StorageKafka2::TopicPartitionSet, UInt32> StorageKafka2::getLockedTopicPartitions(zkutil::ZooKeeper & keeper_to_use)
 {
     LOG_TRACE(log, "Starting to lookup replica's state");
@@ -828,7 +829,7 @@ std::optional<StorageKafka2::LockedTopicPartitionInfo> StorageKafka2::createLock
     {
         LOG_TRACE(
             log,
-            "Skipping lock for {}:{} because it already exists",
+            "Skipping lock for topic partition {}:{} because it already exists",
             partition_to_lock.topic, partition_to_lock.partition_id);
         return std::nullopt;
     }
@@ -851,8 +852,8 @@ std::optional<StorageKafka2::LockedTopicPartitionInfo> StorageKafka2::createLock
     return lock_info;
 }
 
-/// First we delete all current temporary locks,
-/// then we create new locks from free partitions
+// First we delete all current temporary locks,
+// then we create new locks from free partitions
 void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & tmp_locks, size_t & tmp_locks_quota)
 {
     LOG_TRACE(log, "Starting to update temporary locks");
@@ -874,7 +875,7 @@ void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, cons
     {
         tmp_locks_quota = std::min(tmp_locks_quota + TMP_LOCKS_QUOTA_STEP, tmp_locks_quota_max);
     }
-    LOG_INFO(log, "The replica has access to {} temporary locks in current round", tmp_locks_quota);
+    LOG_INFO(log, "The replica can take {} in the current round", tmp_locks_quota);
 
     tmp_locks.clear(); // to maintain order: looked at the old state, updated the state, committed the new state
     for (const auto & tp : available_topic_partitions)
@@ -888,8 +889,8 @@ void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, cons
     }
 }
 
-/// If the number of locks on a replica is greater than it can hold, then we first release the partitions that we can no longer hold.
-/// Otherwise, we try to lock free partitions one by one.
+// If the number of locks on a replica is greater than it can hold, then we first release the partitions that we can no longer hold.
+// Otherwise, we try to lock free partitions one by one.
 void StorageKafka2::updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & permanent_locks, bool & permanent_locks_changed)
 {
     LOG_TRACE(log, "Starting to update permanent locks");
@@ -902,7 +903,7 @@ void StorageKafka2::updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, cons
 
     if (can_lock_partitions < permanent_locks.size())
     {
-        size_t need_to_unlock =  permanent_locks.size() - can_lock_partitions;
+        size_t need_to_unlock = permanent_locks.size() - can_lock_partitions;
         auto permanent_locks_it = permanent_locks.begin();
         for (size_t i = 0; i < need_to_unlock && permanent_locks_it != permanent_locks.end(); ++i)
         {
@@ -913,18 +914,22 @@ void StorageKafka2::updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, cons
     }
     else
     {
-        for (const auto & tp : available_topic_partitions)
+        size_t need_to_lock = can_lock_partitions - permanent_locks.size();
+        auto tp_it = available_topic_partitions.begin();
+        for (size_t i = 0; i < need_to_lock && tp_it != available_topic_partitions.end();)
         {
-            if (permanent_locks.size() >= can_lock_partitions)
-                break;
+            const auto &tp = *tp_it;
+            ++tp_it;
             auto maybe_lock = createLocksInfo(keeper_to_use, tp);
             if (!maybe_lock.has_value())
                 continue;
             if (!permanent_locks_changed)
                 permanent_locks_changed = true;
             permanent_locks.emplace(TopicPartition(tp), std::move(*maybe_lock));
+            ++i;
         }
     }
+
 }
 
 void StorageKafka2::saveTopicPartitionInfo(zkutil::ZooKeeper & keeper_to_use, const std::filesystem::path & keeper_path_to_data, const String & data)
@@ -939,9 +944,7 @@ void StorageKafka2::saveTopicPartitionInfo(zkutil::ZooKeeper & keeper_to_use, co
     Coordination::Responses responses;
     const auto code = keeper_to_use.tryMulti(ops, responses);
     if (code != Coordination::Error::ZOK)
-    {
         zkutil::KeeperMultiException::check(code, ops, responses);
-    }
 }
 
 void StorageKafka2::saveCommittedOffset(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition)
@@ -1242,7 +1245,6 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
     {
         if (consumer_info.permanent_locks.empty() || consumer_info.poll_count >= TMP_LOCKS_REFRESH_POLLS)
         {
-            // First release the locks so let other consumers acquire them ASAP
             consumer_info.topic_partitions.clear();
 
             consumer_info.consume_from_topic_partition_index = 0;
