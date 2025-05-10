@@ -3,6 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <QueryPipeline/SizeLimits.h>
+#include <Core/Settings.h>
 
 #include <cstddef>
 
@@ -88,6 +89,7 @@ struct QueryPlanOptimizationSettings
     size_t max_limit_for_lazy_materialization = 0;
 
     size_t max_limit_for_ann_queries;
+    VectorSearchFilteringType vector_search_filtering;
 
     /// Setting needed for Sets (JOIN -> IN optimization)
 

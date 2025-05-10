@@ -1609,6 +1609,12 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 
     size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
     size_t index_marks_count = (marks_count + index_granularity - 1) / index_granularity;
+    const bool is_entire_part  = (marks_count == ranges.getNumberOfMarks());
+
+    /// If some ranges in the part were "pruned out" by PK filtering, then the
+    /// vector index cannot be used (a vector index is built on the entire part).
+    if (index_helper->isVectorSimilarityIndex() && !is_entire_part)
+        return ranges;
 
     MarkRanges index_ranges;
     for (const auto & range : ranges)

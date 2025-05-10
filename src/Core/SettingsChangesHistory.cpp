@@ -96,6 +96,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_lightweight_update", false, false, "A new setting"},
             {"allow_experimental_delta_kernel_rs", true, true, "New setting"},
             {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
+            {"vector_search_filtering", "auto", "auto", "Vector search related "},
+            {"vector_search_postfilter_multiplier", 1, 1, "Vector search related "},
             {"use_legacy_to_time", false, false, "New setting. Allows for user to use the old function logic for toTime, which works as toTimeWithFixedDate."},
         });
         addSettingsChanges(settings_changes_history, "25.4",
