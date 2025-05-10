@@ -182,10 +182,6 @@ if (ENABLE_BUZZHOUSE)
     add_headers_and_sources(dbms Client/BuzzHouse/Utils)
 endif()
 
-# if (ENABLE_CPPJIEBA)
-#     add_headers_and_sources(dbms Common/Tokenizer)
-# endif()
-
 if (OS_LINUX)
     add_headers_and_sources(dbms Storages/FileLog)
 else()
