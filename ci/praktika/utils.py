@@ -323,6 +323,7 @@ class Shell:
                         start_new_session=True,  # Start a new process group for signal handling
                         bufsize=1,  # Line-buffered
                         errors="backslashreplace",
+                        executable="/bin/bash",
                         **kwargs,
                     )
 
