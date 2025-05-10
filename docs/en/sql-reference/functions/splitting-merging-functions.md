@@ -6,6 +6,8 @@ slug: /sql-reference/functions/splitting-merging-functions
 title: 'Functions for Splitting Strings'
 ---
 
+import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
+
 # Functions for Splitting Strings
 
 ## splitByChar {#splitbychar}
