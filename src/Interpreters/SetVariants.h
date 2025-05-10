@@ -7,7 +7,10 @@
 #include <Common/HashTable/ClearableHashSet.h>
 #include <Common/HashTable/FixedClearableHashSet.h>
 #include <Common/HashTable/FixedHashSet.h>
+#include <Common/HashTable/ProbHashSet.h>
+#include <Common/SetType.h>
 
+#include <utility>
 
 namespace DB
 {
@@ -32,6 +35,22 @@ struct SetMethodOneNumber
 
     using State = ColumnsHashing::HashMethodOneNumber<typename Data::value_type,
         void, FieldType, use_cache>;
+};
+
+template <typename FieldType, typename TData, bool use_cache = true>    /// UInt8/16/32/64 for any types with corresponding bit width.
+struct SetMethodOneNumberProb
+{
+    using Data = TData;
+    using Key = typename Data::key_type;
+
+    Data data;
+
+    using State = ColumnsHashing::HashMethodOneNumber<typename Data::value_type,
+        void, FieldType, use_cache>;
+
+    explicit SetMethodOneNumberProb(double targetFPR) : data(targetFPR)
+    {
+    }
 };
 
 /// For the case where there is one string key.
@@ -207,6 +226,12 @@ struct NonClearableSet
       * This is done because `hashed` method, although slower, but in this case, uses less RAM.
       *  since when you use it, the key values themselves are not stored.
       */
+
+    std::unique_ptr<SetMethodOneNumberProb<UInt32, ProbHashSetBloomFilter<UInt32, HashCRC32<UInt32>>, false /* use_cache */>> key32_bloom;
+    std::unique_ptr<SetMethodOneNumberProb<UInt64, ProbHashSetBloomFilter<UInt64, HashCRC32<UInt64>>, false /* use_cache */>> key64_bloom;
+
+    std::unique_ptr<SetMethodOneNumberProb<UInt32, ProbHashSetCuckooFilter<UInt32, HashCRC32<UInt32>>, false /* use_cache */>> key32_cuckoo;
+    std::unique_ptr<SetMethodOneNumberProb<UInt64, ProbHashSetCuckooFilter<UInt64, HashCRC32<UInt64>>, false /* use_cache */>> key64_cuckoo;
 };
 
 struct ClearableSet
@@ -229,6 +254,12 @@ struct ClearableSet
       * This is done because `hashed` method, although slower, but in this case, uses less RAM.
       *  since when you use it, the key values themselves are not stored.
       */
+
+    std::unique_ptr<SetMethodOneNumberProb<UInt32, ProbHashSetBloomFilter<UInt32, HashCRC32<UInt32>>, false /* use_cache */>> key32_bloom;
+    std::unique_ptr<SetMethodOneNumberProb<UInt64, ProbHashSetBloomFilter<UInt64, HashCRC32<UInt64>>, false /* use_cache */>> key64_bloom;
+
+    std::unique_ptr<SetMethodOneNumberProb<UInt32, ProbHashSetCuckooFilter<UInt32, HashCRC32<UInt32>>, false /* use_cache */>> key32_cuckoo;
+    std::unique_ptr<SetMethodOneNumberProb<UInt64, ProbHashSetCuckooFilter<UInt64, HashCRC32<UInt64>>, false /* use_cache */>> key64_cuckoo;
 };
 
 template <typename Variant>
@@ -247,7 +278,30 @@ struct SetVariantsTemplate: public Variant
         M(keys256)              \
         M(nullable_keys128)     \
         M(nullable_keys256)     \
+        M(hashed)               \
+        M(key32_bloom)          \
+        M(key64_bloom)          \
+        M(key32_cuckoo)         \
+        M(key64_cuckoo)
+
+    #define APPLY_FOR_NOT_PROB_SET_VARIANTS(M) \
+        M(key8)                 \
+        M(key16)                \
+        M(key32)                \
+        M(key64)                \
+        M(key_string)           \
+        M(key_fixed_string)     \
+        M(keys128)              \
+        M(keys256)              \
+        M(nullable_keys128)     \
+        M(nullable_keys256)     \
         M(hashed)
+
+    #define APPLY_FOR_PROB_SET_VARIANTS(M) \
+        M(key32_bloom)          \
+        M(key64_bloom)          \
+        M(key32_cuckoo)         \
+        M(key64_cuckoo)
 
     #define M(NAME) using Variant::NAME;
         APPLY_FOR_SET_VARIANTS(M)
@@ -266,9 +320,13 @@ struct SetVariantsTemplate: public Variant
 
     bool empty() const { return type == Type::EMPTY; }
 
-    static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
+    static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes, SetType set_type = SetType::SET);
+    static Type chooseMethodSet(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
+    static Type chooseMethodProb(const ColumnRawPtrs & key_columns, Sizes & key_sizes, SetType set_type);
 
     void init(Type type_);
+
+    void initProb(Type type_, double targetFPR);
 
     size_t getTotalRowCount() const;
     /// Counts the size in bytes of the Set buffer and the size of the `string_pool`

@@ -267,7 +267,7 @@ public:
         SizeLimits size_limits_for_set = {settings[Setting::max_rows_in_set], settings[Setting::max_bytes_in_set], settings[Setting::set_overflow_mode]};
 
         auto in_function = FunctionFactory::instance().get("in", context->getQueryContext());
-        auto future_set = std::make_shared<FutureSetFromTuple>(CityHash_v1_0_2::uint128{}, nullptr, set_columns, false, size_limits_for_set);
+        auto future_set = std::make_shared<FutureSetFromTuple>(CityHash_v1_0_2::uint128{}, nullptr, set_columns, SetType::SET, false, size_limits_for_set);
         auto column_set = ColumnSet::create(1, std::move(future_set));
         ColumnWithTypeAndName set_for_dag(std::move(column_set), std::make_shared<DataTypeSet>(), "_filter");
 

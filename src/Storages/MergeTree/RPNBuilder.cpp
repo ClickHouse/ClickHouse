@@ -323,13 +323,12 @@ FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet() const
 
     if (ast_node && prepared_sets)
     {
-        auto key = ast_node->getTreeHash(/*ignore_aliases=*/ true);
-        const auto & sets = prepared_sets->getSetsFromTuple();
-        auto it = sets.find(key);
-        if (it != sets.end() && !it->second.empty())
-            return it->second.at(0);
-
-        return prepared_sets->findSubquery(key);
+        auto key = PreparedSets::createSetKey(ast_node->getTreeHash(/*ignore_aliases=*/ true));
+        const auto & result = prepared_sets->findAnyTupleForKey(key);
+        if (result)
+            return result;
+        else
+            return prepared_sets->findSubquery(key);
     }
     if (dag_node)
     {
@@ -346,10 +345,11 @@ FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet(const DataTypes & data_types)
 
     if (prepared_sets && ast_node)
     {
+        auto set_key = PreparedSets::createSetKey(ast_node->getTreeHash(/*ignore_aliases=*/ true));
         if (ast_node->as<ASTSubquery>() || ast_node->as<ASTTableIdentifier>())
-            return prepared_sets->findSubquery(ast_node->getTreeHash(/*ignore_aliases=*/ true));
+            return prepared_sets->findSubquery(set_key);
 
-        return prepared_sets->findTuple(ast_node->getTreeHash(/*ignore_aliases=*/ true), data_types);
+        return prepared_sets->findTuple(set_key, data_types);
     }
     if (dag_node)
     {
