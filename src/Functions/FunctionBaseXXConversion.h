@@ -16,7 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ILLEGAL_COLUMN;
-extern const int BAD_ARGUMENTS;
+extern const int INCORRECT_DATA;
 }
 
 template <typename Traits, typename Name>
@@ -125,7 +125,7 @@ struct BaseXXDecode
             {
                 if constexpr (ErrorHandling == BaseXXDecodeErrorHandling::ThrowException)
                     throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
+                        ErrorCodes::INCORRECT_DATA,
                         "Invalid {} value ({}), cannot be decoded",
                         name,
                         String(reinterpret_cast<const char *>(&src[prev_src_offset]), src_length));
@@ -167,7 +167,7 @@ struct BaseXXDecode
             {
                 if constexpr (ErrorHandling == BaseXXDecodeErrorHandling::ThrowException)
                     throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
+                        ErrorCodes::INCORRECT_DATA,
                         "Invalid {} value ({}), cannot be decoded",
                         name,
                         String(reinterpret_cast<const char *>(&src[row * N]), N));

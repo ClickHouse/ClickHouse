@@ -12,25 +12,25 @@ INSERT INTO t3447 VALUES
     (104, 'foob', 'MZXW6YQ='),
     (105, 'fooba', 'MZXW6YTB'),
     (106, 'foobar', 'MZXW6YTBOI======'),
-    
+
     (200, '\x00', 'AA======'),
     (201, '\x00\x00', 'AAAA===='),
     (202, '\x00\x00\x00', 'AAAAA==='),
     (203, '\x00\x00\x00\x00', 'AAAAAAA='),
     (204, '\x00\x00\x00\x00\x00', 'AAAAAAAA'),
-    
+
     (300, '\xFF', '74======'),
     (301, '\xFF\xFF', '777Q===='),
     (302, '\xFF\xFF\xFF', '77776==='),
     (303, '\xFF\xFF\xFF\xFF', '777777Y='),
     (304, '\xFF\xFF\xFF\xFF\xFF', '77777777'),
-    
+
     (400, '\x01\x23\x45\x67\x89', 'AERUKZ4J'),
     (401, '\xAB\xCD\xEF\x01\x23', 'VPG66AJD'),
-    
+
     (402, '1234567890', 'GEZDGNBVGY3TQOJQ'),
     (403, 'The quick brown fox jumps over the lazy dog', 'KRUGKIDROVUWG2ZAMJZG653OEBTG66BANJ2W24DTEBXXMZLSEB2GQZJANRQXU6JAMRXWO==='),
-    
+
     (500, 'a', 'ME======'),
     (501, 'ab', 'MFRA===='),
     (502, 'abc', 'MFRGG==='),
@@ -47,7 +47,7 @@ INSERT INTO t3447 VALUES
     (513, 'And a lemonade', 'IFXGIIDBEBWGK3LPNZQWIZI='),
     (514, 't1Zv2yaZ', 'OQYVU5RSPFQVU==='),
     (515, 'And another wine', 'IFXGIIDBNZXXI2DFOIQHO2LOMU======');
-    
+
 
 SELECT 'Part 1 - Encoding';
 SELECT id, str AS input, hex(str) AS input_hex, base32Encode(str) AS result, b32, result == b32 FROM t3447;
@@ -62,24 +62,24 @@ SELECT 'Part 3 - Roundtrip';
 SELECT id, str AS input, hex(str) AS input_hex, base32Decode(base32Encode(str)) AS result, result == str FROM t3447;
 
 SELECT 'Part 4 - Invalid input';
-SELECT base32Decode('========'); -- { serverError BAD_ARGUMENTS }
-SELECT base32Decode('MZXW6YT!'); -- { serverError BAD_ARGUMENTS }
-SELECT base32Decode('MZXW6Y=B'); -- { serverError BAD_ARGUMENTS }
-SELECT base32Decode('MZXW6Y=!'); -- { serverError BAD_ARGUMENTS }
-SELECT base32Decode('MZXW6Y==='); -- { serverError BAD_ARGUMENTS }
-SELECT base32Decode('MZXW6YQ=Q'); -- { serverError BAD_ARGUMENTS }
-SELECT base32Decode('MZXW6YQ======'); -- { serverError BAD_ARGUMENTS }
-SELECT base32Decode('12345678'); -- { serverError BAD_ARGUMENTS }
-SELECT base32Decode('MZXW6YQ'); -- { serverError BAD_ARGUMENTS }
-SELECT base32Decode('MZXW6YQ=='); -- { serverError BAD_ARGUMENTS }
-SELECT base32Decode('MZXW6YQ==='); -- { serverError BAD_ARGUMENTS }
-SELECT base32Decode('MZXW6YQ===='); -- { serverError BAD_ARGUMENTS }
-SELECT base32Decode('MZXW6YQ====='); -- { serverError BAD_ARGUMENTS }
-SELECT base32Decode('MZXW6YQ======'); -- { serverError BAD_ARGUMENTS }
-SELECT base32Decode('MZXW6YQ======='); -- { serverError BAD_ARGUMENTS }
-SELECT base32Decode('MZXW6YQ====!=='); -- { serverError BAD_ARGUMENTS }
-SELECT base32Decode('MZXW6YQ====A=='); -- { serverError BAD_ARGUMENTS }
-SELECT base32Decode('MZXW6YQ======'); -- { serverError BAD_ARGUMENTS }
+SELECT base32Decode('========'); -- { serverError INCORRECT_DATA }
+SELECT base32Decode('MZXW6YT!'); -- { serverError INCORRECT_DATA }
+SELECT base32Decode('MZXW6Y=B'); -- { serverError INCORRECT_DATA }
+SELECT base32Decode('MZXW6Y=!'); -- { serverError INCORRECT_DATA }
+SELECT base32Decode('MZXW6Y==='); -- { serverError INCORRECT_DATA }
+SELECT base32Decode('MZXW6YQ=Q'); -- { serverError INCORRECT_DATA }
+SELECT base32Decode('MZXW6YQ======'); -- { serverError INCORRECT_DATA }
+SELECT base32Decode('12345678'); -- { serverError INCORRECT_DATA }
+SELECT base32Decode('MZXW6YQ'); -- { serverError INCORRECT_DATA }
+SELECT base32Decode('MZXW6YQ=='); -- { serverError INCORRECT_DATA }
+SELECT base32Decode('MZXW6YQ==='); -- { serverError INCORRECT_DATA }
+SELECT base32Decode('MZXW6YQ===='); -- { serverError INCORRECT_DATA }
+SELECT base32Decode('MZXW6YQ====='); -- { serverError INCORRECT_DATA }
+SELECT base32Decode('MZXW6YQ======'); -- { serverError INCORRECT_DATA }
+SELECT base32Decode('MZXW6YQ======='); -- { serverError INCORRECT_DATA }
+SELECT base32Decode('MZXW6YQ====!=='); -- { serverError INCORRECT_DATA }
+SELECT base32Decode('MZXW6YQ====A=='); -- { serverError INCORRECT_DATA }
+SELECT base32Decode('MZXW6YQ======'); -- { serverError INCORRECT_DATA }
 
 SELECT 'Part 5 - tryBase32Decode';
 SELECT tryBase32Decode('========');
@@ -104,8 +104,8 @@ SELECT tryBase32Decode('MZXW6YQ======');
 SELECT 'Part 6 - FixedString encoding + decoding';
 SELECT val, hex(val), base32Encode(val) as enc_res, hex(base32Decode(enc_res)) as dec_res, dec_res == hex(val) FROM (SELECT arrayJoin([
     toFixedString('', 1),
-    toFixedString('f', 1), 
-    toFixedString('fo', 2), 
+    toFixedString('f', 1),
+    toFixedString('fo', 2),
     toFixedString('foo', 3),
     toFixedString('foob', 4),
     toFixedString('fooba', 5),
@@ -196,7 +196,7 @@ SELECT base32Encode(base32Decode('KRUGKIDROVUWG2ZAMJZG653OEBTG66BANJ2W24DTEBXXMZ
 SELECT base32Encode('\xAB\xCD\xEF\x01\x23') == 'VPG66AJD';
 
 SELECT base32Encode(toFixedString('Hold my beer...', 15));
-SELECT base32Decode(toFixedString('t1Zv2yaZ', 8)); -- { serverError BAD_ARGUMENTS }
+SELECT base32Decode(toFixedString('t1Zv2yaZ', 8)); -- { serverError INCORRECT_DATA }
 SELECT tryBase32Decode(toFixedString('t1Zv2yaZ', 8));
 
 SELECT base32Encode(val) FROM (SELECT arrayJoin([toFixedString('', 3), toFixedString('f', 3), toFixedString('fo', 3), toFixedString('foo', 3)]) val);
