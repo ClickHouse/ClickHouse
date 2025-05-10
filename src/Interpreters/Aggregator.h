@@ -117,7 +117,7 @@ public:
         const float min_hit_rate_to_use_consecutive_keys_optimization = 0.;
         StatsCollectingParams stats_collecting_params;
 
-        bool allow_aggregation_to_produce_buckets_out_of_order = false;
+        bool allow_aggregation_to_produce_buckets_out_of_order = true;
 
         static size_t getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by);
 

@@ -72,6 +72,5 @@ def test_distributed_aggregation(start_cluster):
             "max_parallel_replicas": 3,
             "parallel_replicas_for_non_replicated_merge_tree": 1,
             "use_hedged_requests": 0,
-        }
+        },
     )
-

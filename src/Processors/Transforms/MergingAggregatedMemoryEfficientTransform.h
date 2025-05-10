@@ -9,8 +9,6 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Common/HashTable/HashSet.h>
 
-#include <Common/OpenTelemetryTraceContext.h>
-
 #include <unordered_set>
 
 namespace DB
@@ -78,8 +76,9 @@ private:
     AggregatingTransformParamsPtr params;
 
     std::vector<Int32> last_bucket_number; /// Last bucket read from each input.
-    std::vector<std::vector<Int32>> input_out_of_order_buckets; /// Out of order bucket ids for each input.
 
+    /// See `ConvertingAggregatedToChunksTransform` to learn about sending buckets out of order.
+    std::vector<std::vector<Int32>> input_out_of_order_buckets; /// Out of order bucket ids for each input.
     std::unordered_set<Int32> out_of_order_buckets;
 
     std::map<Int32, Chunks> chunks_map; /// bucket -> chunks

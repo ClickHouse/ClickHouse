@@ -683,14 +683,7 @@ void TCPHandler::runImpl()
             });
 
             if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION)
-            {
-                LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
                 query_state->query_context->setSetting("allow_aggregation_to_produce_buckets_out_of_order", false);
-            }
-            else
-            {
-                LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
-            }
 
             /// Processing Query
             std::tie(query_state->parsed_query, query_state->io) = executeQuery(query_state->query, query_state->query_context, QueryFlags{}, query_state->stage);
