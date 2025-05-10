@@ -1,0 +1,1 @@
+CREATE TABLE t0 (c0 Int ALIAS if(NULL, 1, *)) ENGINE = Memory; -- { serverError UNKNOWN_IDENTIFIER }
