@@ -1504,6 +1504,7 @@ checksummed
 checksumming
 checksums
 childern
+chinese
 chproxy
 chunksize
 cickhouse
