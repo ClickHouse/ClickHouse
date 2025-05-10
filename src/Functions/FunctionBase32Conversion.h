@@ -8,10 +8,8 @@ namespace DB
 {
 struct Base32Traits
 {
-    static constexpr auto encodeName = "base32Encode";
-
-    template<typename Col>
-    static size_t getMaxEncodedSize(Col const& src_column)
+    template <typename Col>
+    static size_t getMaxEncodedSize(Col const & src_column)
     {
         auto const src_length = src_column.getChars().size();
         auto const string_count = src_column.size();

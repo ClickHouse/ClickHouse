@@ -8,10 +8,8 @@ namespace DB
 {
 struct Base58Traits
 {
-    static constexpr auto encodeName = "base58Encode";
-
-    template<typename Col>
-    static size_t getMaxEncodedSize(Col const& src_column)
+    template <typename Col>
+    static size_t getMaxEncodedSize(Col const & src_column)
     {
         auto const src_length = src_column.getChars().size();
         /// Base58 has efficiency of 73% (8/11) [https://monerodocs.org/cryptography/base58/],

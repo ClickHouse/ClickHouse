@@ -19,10 +19,10 @@ extern const int ILLEGAL_COLUMN;
 extern const int BAD_ARGUMENTS;
 }
 
-template <typename Traits>
+template <typename Traits, typename Name>
 struct BaseXXEncode
 {
-    static constexpr auto name = Traits::encodeName;
+    static constexpr auto name = Name::name;
 
     static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count)
     {

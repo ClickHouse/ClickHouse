@@ -3,10 +3,19 @@
 
 namespace DB
 {
+namespace
+{
+struct NameBase58Encode
+{
+    static constexpr auto name = "base58Encode";
+};
 
+using Base58EncodeImpl = BaseXXEncode<Base58Traits, NameBase58Encode>;
+using FunctionBase58Encode = FunctionBaseXXConversion<Base58EncodeImpl>;
+}
 REGISTER_FUNCTION(Base58Encode)
 {
-    factory.registerFunction<FunctionBaseXXConversion<BaseXXEncode<Base58Traits>>>();
+    factory.registerFunction<FunctionBase58Encode>();
 }
 
 }
