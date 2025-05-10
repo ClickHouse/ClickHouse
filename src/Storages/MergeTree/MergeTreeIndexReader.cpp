@@ -55,7 +55,7 @@ MergeTreeIndexReader::MergeTreeIndexReader(
     MarkCache * mark_cache_,
     UncompressedCache * uncompressed_cache_,
     VectorSimilarityIndexCache * vector_similarity_index_cache_,
-    MergeTreeReaderSettings settings_)
+    MergeTreeReaderSettings reader_settings_)
     : index(index_)
     , part(std::move(part_))
     , marks_count(marks_count_)
@@ -63,7 +63,7 @@ MergeTreeIndexReader::MergeTreeIndexReader(
     , mark_cache(mark_cache_)
     , uncompressed_cache(uncompressed_cache_)
     , vector_similarity_index_cache(vector_similarity_index_cache_)
-    , settings(std::move(settings_))
+    , reader_settings(std::move(reader_settings_))
 {
 }
 
@@ -82,12 +82,18 @@ void MergeTreeIndexReader::initStreamIfNeeded()
         all_mark_ranges,
         mark_cache,
         uncompressed_cache,
-        std::move(settings));
+        std::move(reader_settings));
 
     version = index_format.version;
 
     stream->adjustRightMark(getLastMark(all_mark_ranges));
     stream->seekToStart();
+
+    if (index->haveCommonState())
+    {
+        aggregator = index->createIndexAggregator({});
+        should_deserialize_aggregator = aggregator != nullptr;
+    }
 }
 
 void MergeTreeIndexReader::read(size_t mark, MergeTreeIndexGranulePtr & granule)
@@ -98,9 +104,16 @@ void MergeTreeIndexReader::read(size_t mark, MergeTreeIndexGranulePtr & granule)
         if (stream_mark != mark)
             stream->seekToMark(mark);
 
+        if (index->haveCommonState() && should_deserialize_aggregator)
+            aggregator->deserializeCommonState(*stream->getDataBuffer());
+
+        should_deserialize_aggregator = false;
+
         if (!res)
-            res = index->createIndexGranule();
+            res = aggregator ? aggregator->getGranuleAndReset() : index->createIndexGranule();
+
         res->deserializeBinary(*stream->getDataBuffer(), version);
+
         stream_mark = mark + 1;
     };
 
