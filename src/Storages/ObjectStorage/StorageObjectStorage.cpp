@@ -71,6 +71,7 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
         {}, // predicate
         {},
         {}, // virtual_columns
+        {}, /* hive_columns */
         nullptr, // read_keys
         {} // file_progress_callback
     );
@@ -437,7 +438,7 @@ private:
         auto context = getContext();
         iterator_wrapper = StorageObjectStorageSource::createFileIterator(
             configuration, configuration->getQuerySettings(context), object_storage, distributed_processing,
-            context, predicate, filter_actions_dag, virtual_columns, nullptr, context->getFileProgressCallback());
+            context, predicate, filter_actions_dag, virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback());
     }
 };
 }
@@ -620,6 +621,7 @@ std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterat
         {}/* predicate */,
         {},
         {}/* virtual_columns */,
+        {}, /* hive_columns */ // todo arthur why empty
         &read_keys);
 
     return std::make_unique<ReadBufferIterator>(

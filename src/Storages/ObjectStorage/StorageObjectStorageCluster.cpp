@@ -43,6 +43,7 @@ String StorageObjectStorageCluster::getPathSample(StorageInMemoryMetadata metada
         {}, // predicate
         {},
         metadata.getColumns().getAll(), // virtual_columns
+        {}, /* hive_columns */ //todo arthur
         nullptr, // read_keys
         {} // file_progress_callback
     );
@@ -152,7 +153,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(local_context), object_storage, /* distributed_processing */false,
-        local_context, predicate, {}, virtual_columns, nullptr, local_context->getFileProgressCallback(), /*ignore_archive_globs=*/true, /*skip_object_metadata=*/true);
+        local_context, predicate, {}, virtual_columns, {} /* todo arthur*/, nullptr, local_context->getFileProgressCallback(), /*ignore_archive_globs=*/true, /*skip_object_metadata=*/true);
 
     auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(iterator, number_of_replicas);
 

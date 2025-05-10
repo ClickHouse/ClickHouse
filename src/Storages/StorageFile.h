@@ -216,6 +216,7 @@ public:
             std::optional<StorageFile::ArchiveInfo> archive_info_,
             const ActionsDAG::Node * predicate,
             const NamesAndTypesList & virtual_columns,
+            const NamesAndTypesList & hive_columns,
             const ContextPtr & context_,
             bool distributed_processing_ = false);
 
