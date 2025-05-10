@@ -305,6 +305,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     , highlighter(std::move(options.highlighter))
     , word_break_characters(options.word_break_characters.data())
     , editor(getEditor())
+    , on_complete_modify_callback(options.on_complete_modify_callback)
 {
     using Replxx = replxx::Replxx;
 
@@ -348,6 +349,15 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     };
 
     rx.set_completion_callback(callback);
+    if (on_complete_modify_callback)
+    {
+        rx.bind_key(Replxx::KEY::TAB, [this](char32_t code)
+        {
+            on_complete_modify_callback(rx);
+            return rx.invoke(Replxx::ACTION::COMPLETE_LINE, code);
+        });
+    }
+
     rx.set_complete_on_empty(false);
     rx.set_word_break_characters(word_break_characters);
     rx.set_ignore_case(true);
