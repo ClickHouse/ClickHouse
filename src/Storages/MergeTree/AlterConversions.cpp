@@ -1,11 +1,13 @@
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MutationCommands.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTLiteral.h>
 #include <Common/ProfileEvents.h>
 #include <ranges>
 
@@ -62,6 +64,41 @@ static MutationCommand createCommandWithUpdatedColumns(
 
     alter_ast.update_assignments = alter_ast.children.emplace_back(std::move(new_assignments)).get();
     return res;
+}
+
+static bool isLightweightDeleteCommand(const String & column_name, const ASTPtr & ast)
+{
+    if (column_name != RowExistsColumn::name)
+        return false;
+
+    const auto * literal = ast->as<ASTLiteral>();
+    if (!literal)
+        return false;
+
+    if (literal->value.getType() != Field::Types::UInt64)
+        return false;
+
+    return literal->value.safeGet<UInt64>() == 0;
+}
+
+static MutationCommand createLightweightDeleteCommand(const MutationCommand & command)
+{
+    chassert(command.type == MutationCommand::Type::UPDATE);
+    chassert(command.predicate != nullptr);
+
+    auto alter_command = std::make_shared<ASTAlterCommand>();
+    alter_command->type = ASTAlterCommand::DELETE;
+
+    if (command.partition)
+        alter_command->partition = alter_command->children.emplace_back(command.partition->clone()).get();
+
+    alter_command->predicate = alter_command->children.emplace_back(command.predicate->clone()).get();
+    auto mutation_command = MutationCommand::parse(alter_command.get());
+
+    if (!mutation_command)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse command {}", alter_command->formatForErrorMessage());
+
+    return *mutation_command;
 }
 
 AlterConversions::AlterConversions(
@@ -308,14 +345,27 @@ MutationCommands AlterConversions::filterMutationCommands(Names & read_columns, 
         }
         else if (command.type == MutationCommand::Type::UPDATE)
         {
+            bool has_lightweight_delete = false;
             std::unordered_map<String, ASTPtr> new_updated_columns;
+
             for (const auto & [column, ast] : command.column_to_update_expression)
             {
-                if (read_columns_set.contains(column))
+                if (isLightweightDeleteCommand(column, ast))
+                {
+                    has_lightweight_delete = true;
+                }
+                else if (read_columns_set.contains(column))
                 {
                     ast->collectIdentifierNames(source_columns);
                     new_updated_columns.emplace(column, ast->clone());
                 }
+            }
+
+            if (has_lightweight_delete)
+            {
+                auto new_command = createLightweightDeleteCommand(command);
+                new_command.predicate->collectIdentifierNames(source_columns);
+                filtered_commands.push_back(std::move(new_command));
             }
 
             if (!new_updated_columns.empty())
