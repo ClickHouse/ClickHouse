@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
+#include <Core/Names.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -52,6 +53,8 @@
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
 
+#include <AggregateFunctions/IAggregateFunction.h>
+
 #include <Analyzer/Utils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -70,20 +73,22 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 
-#include <Planner/findQueryForParallelReplicas.h>
-#include <Planner/Utils.h>
-#include <Planner/PlannerContext.h>
-#include <Planner/PlannerActionsVisitor.h>
-#include <Planner/PlannerJoins.h>
-#include <Planner/PlannerAggregation.h>
-#include <Planner/PlannerSorting.h>
-#include <Planner/PlannerWindowFunctions.h>
+#include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
-#include <Planner/PlannerJoinTree.h>
+#include <Planner/findQueryForParallelReplicas.h>
+#include <Planner/PlannerActionsVisitor.h>
+#include <Planner/PlannerAggregation.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/PlannerCorrelatedSubqueries.h>
 #include <Planner/PlannerExpressionAnalysis.h>
-#include <Planner/CollectColumnIdentifiers.h>
+#include <Planner/PlannerJoins.h>
+#include <Planner/PlannerJoinTree.h>
 #include <Planner/PlannerQueryProcessingInfo.h>
+#include <Planner/PlannerSorting.h>
+#include <Planner/PlannerWindowFunctions.h>
+#include <Planner/Utils.h>
+
 
 namespace ProfileEvents
 {
@@ -385,11 +390,32 @@ public:
     UInt64 partial_sorting_limit = 0;
 };
 
-void addExpressionStep(QueryPlan & query_plan,
+void addExpressionStep(
+    const PlannerContextPtr & planner_context,
+    QueryPlan & query_plan,
     ActionsAndProjectInputsFlagPtr & expression_actions,
+    const CorrelatedSubtrees & correlated_subtrees,
+    const SelectQueryOptions & select_query_options,
     const std::string & step_description,
     UsefulSets & useful_sets)
 {
+    NameSet input_columns_set;
+    for (const auto & column : query_plan.getCurrentHeader().getColumnsWithTypeAndName())
+        input_columns_set.insert(column.name);
+    for (const auto & correlated_subquery : correlated_subtrees.subqueries)
+    {
+        for (const auto & identifier : correlated_subquery.correlated_column_identifiers)
+        {
+            if (!input_columns_set.contains(identifier))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Current query is not supported yet, because can't find correlated column '{}' in current header: {}",
+                    identifier,
+                    query_plan.getCurrentHeader().dumpNames());
+        }
+        buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options);
+    }
+
     auto actions = std::move(expression_actions->dag);
     if (expression_actions->project_input)
         actions.appendInputsForUnusedColumns(query_plan.getCurrentHeader());
@@ -400,11 +426,19 @@ void addExpressionStep(QueryPlan & query_plan,
     query_plan.addStep(std::move(expression_step));
 }
 
-void addFilterStep(QueryPlan & query_plan,
+void addFilterStep(
+    const PlannerContextPtr & planner_context,
+    QueryPlan & query_plan,
     FilterAnalysisResult & filter_analysis_result,
+    const SelectQueryOptions & select_query_options,
     const std::string & step_description,
     UsefulSets & useful_sets)
 {
+    for (const auto & correlated_subquery : filter_analysis_result.correlated_subtrees.subqueries)
+    {
+        buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options);
+    }
+
     auto actions = std::move(filter_analysis_result.filter_actions->dag);
     if (filter_analysis_result.filter_actions->project_input)
         actions.appendInputsForUnusedColumns(query_plan.getCurrentHeader());
@@ -556,13 +590,21 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
       * but it can work more slowly.
       */
 
-    auto keys = aggregation_analysis_result.aggregation_keys;
+    const auto & keys = aggregation_analysis_result.aggregation_keys;
+
+    /// For count() without parameters try to use just one thread
+    /// Typically this will either be a trivial count or a really small number of states
+    size_t max_threads = settings[Setting::max_threads];
+    if (keys.empty() && aggregation_analysis_result.aggregate_descriptions.size() == 1
+        && aggregation_analysis_result.aggregate_descriptions[0].function->getName() == String{"count"}
+        && aggregation_analysis_result.grouping_sets_parameters_list.empty())
+        max_threads = 1;
 
     Aggregator::Params params(
         keys,
         aggregation_analysis_result.aggregate_descriptions,
         query_analysis_result.aggregate_overflow_row,
-        settings[Setting::max_threads],
+        max_threads,
         settings[Setting::max_block_size],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization]);
 
@@ -799,14 +841,17 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
             {
                 auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
 
-                PlannerActionsVisitor planner_actions_visitor(planner_context);
-                auto expression_to_interpolate_expression_nodes = planner_actions_visitor.visit(interpolate_actions_dag,
+                ColumnNodePtrWithHashSet empty_correlated_columns_set;
+                PlannerActionsVisitor planner_actions_visitor(planner_context, empty_correlated_columns_set);
+                auto [expression_to_interpolate_expression_nodes, expression_to_interpolate_correlated_subtrees] = planner_actions_visitor.visit(interpolate_actions_dag,
                     interpolate_node_typed.getExpression());
+                expression_to_interpolate_correlated_subtrees.assertEmpty("in expression to interpolate");
                 if (expression_to_interpolate_expression_nodes.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression to interpolate expected to have single action node");
 
-                auto interpolate_expression_nodes = planner_actions_visitor.visit(interpolate_actions_dag,
+                auto [interpolate_expression_nodes, interpolate_correlated_subtrees] = planner_actions_visitor.visit(interpolate_actions_dag,
                     interpolate_node_typed.getInterpolateExpression());
+                interpolate_correlated_subtrees.assertEmpty("in interpolate expression");
                 if (interpolate_expression_nodes.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate expression expected to have single action node");
 
@@ -965,12 +1010,14 @@ bool addPreliminaryLimitOptimizationStepIfNeeded(QueryPlan & query_plan,
   * for first stage of query processing on shard, if there is no GROUP BY, HAVING,
   * WINDOW functions.
   */
-void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(QueryPlan & query_plan,
+void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
+    QueryPlan & query_plan,
     PlannerExpressionsAnalysisResult & expressions_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
     const PlannerQueryProcessingInfo & query_processing_info,
     const QueryTreeNodePtr & query_tree,
+    const SelectQueryOptions & select_query_options,
     UsefulSets & useful_sets)
 {
     const auto & query_node = query_tree->as<QueryNode &>();
@@ -1003,7 +1050,14 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(QueryPlan & query_plan,
     if (expressions_analysis_result.hasLimitBy())
     {
         auto & limit_by_analysis_result = expressions_analysis_result.getLimitBy();
-        addExpressionStep(query_plan, limit_by_analysis_result.before_limit_by_actions, "Before LIMIT BY", useful_sets);
+        addExpressionStep(
+            planner_context,
+            query_plan,
+            limit_by_analysis_result.before_limit_by_actions,
+            {},
+            select_query_options,
+            "Before LIMIT BY",
+            useful_sets);
         /// We don't apply LIMIT BY on remote nodes at all in the old infrastructure.
         /// https://github.com/ClickHouse/ClickHouse/blob/67c1e89d90ef576e62f8b1c68269742a3c6f9b1e/src/Interpreters/InterpreterSelectQuery.cpp#L1697-L1705
         /// Let's be optimistic and only don't skip offset (it will be skipped on the initiator).
@@ -1306,7 +1360,7 @@ void Planner::buildQueryPlanIfNeeded()
         return;
 
     LOG_TRACE(
-        getLogger("Planner"),
+        log,
         "Query to stage {}{}",
         QueryProcessingStage::toString(select_query_options.to_stage),
         select_query_options.only_analyze ? " only analyze" : "");
@@ -1365,23 +1419,7 @@ void Planner::buildPlanForUnionNode()
     }
 
     Block union_common_header = buildCommonHeaderForUnion(query_plans_headers, union_mode);
-
-    for (size_t i = 0; i < queries_size; ++i)
-    {
-        auto & query_node_plan = query_plans[i];
-        if (blocksHaveEqualStructure(query_node_plan->getCurrentHeader(), union_common_header))
-            continue;
-
-        auto actions_dag = ActionsDAG::makeConvertingActions(
-            query_node_plan->getCurrentHeader().getColumnsWithTypeAndName(),
-            union_common_header.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position);
-        auto converting_step = std::make_unique<ExpressionStep>(query_node_plan->getCurrentHeader(), std::move(actions_dag));
-        converting_step->setStepDescription("Conversion before UNION");
-        query_node_plan->addStep(std::move(converting_step));
-
-        query_plans_headers[i] = query_node_plan->getCurrentHeader();
-    }
+    addConvertingToCommonHeaderActionsIfNeeded(query_plans, union_common_header, query_plans_headers);
 
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -1488,7 +1526,7 @@ void Planner::buildPlanForQueryNode()
 
             auto & mutable_context = planner_context->getMutableQueryContext();
             mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-            LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas to execute a query with IN with subquery");
+            LOG_DEBUG(log, "Disabling parallel replicas to execute a query with IN with subquery");
         }
     }
 
@@ -1525,9 +1563,7 @@ void Planner::buildPlanForQueryNode()
                 if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FINAL modifier is not supported with parallel replicas");
 
-                LOG_DEBUG(
-                    getLogger("Planner"),
-                    "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
+                LOG_DEBUG(log, "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
                 auto & mutable_context = planner_context->getMutableQueryContext();
                 mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
             }
@@ -1542,7 +1578,7 @@ void Planner::buildPlanForQueryNode()
             if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOINs are not supported with parallel replicas");
 
-            LOG_DEBUG(getLogger("Planner"), "JOINs are not supported with parallel replicas. Query will be executed without using them.");
+            LOG_DEBUG(log, "JOINs are not supported with parallel replicas. Query will be executed without using them.");
 
             auto & mutable_context = planner_context->getMutableQueryContext();
             mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
@@ -1573,7 +1609,7 @@ void Planner::buildPlanForQueryNode()
     query_node_to_plan_step_mapping.insert(mapping.begin(), mapping.end());
 
     LOG_TRACE(
-        getLogger("Planner"),
+        log,
         "Query from stage {} to stage {}{}",
         QueryProcessingStage::toString(from_stage),
         QueryProcessingStage::toString(select_query_options.to_stage),
@@ -1602,12 +1638,14 @@ void Planner::buildPlanForQueryNode()
 
     if (query_processing_info.isIntermediateStage())
     {
-        addPreliminarySortOrDistinctOrLimitStepsIfNeeded(query_plan,
+        addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
+            query_plan,
             expression_analysis_result,
             query_analysis_result,
             planner_context,
             query_processing_info,
             query_tree,
+            select_query_options,
             useful_sets);
 
         if (expression_analysis_result.hasAggregation())
@@ -1620,13 +1658,20 @@ void Planner::buildPlanForQueryNode()
     if (query_processing_info.isFirstStage())
     {
         if (expression_analysis_result.hasWhere())
-            addFilterStep(query_plan, expression_analysis_result.getWhere(), "WHERE", useful_sets);
+            addFilterStep(planner_context, query_plan, expression_analysis_result.getWhere(), select_query_options, "WHERE", useful_sets);
 
         if (expression_analysis_result.hasAggregation())
         {
             auto & aggregation_analysis_result = expression_analysis_result.getAggregation();
             if (aggregation_analysis_result.before_aggregation_actions)
-                addExpressionStep(query_plan, aggregation_analysis_result.before_aggregation_actions, "Before GROUP BY", useful_sets);
+                addExpressionStep(
+                    planner_context,
+                    query_plan,
+                    aggregation_analysis_result.before_aggregation_actions,
+                    /*correlated_subtrees=*/{},
+                    select_query_options,
+                    "Before GROUP BY",
+                    useful_sets);
 
             addAggregationStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info);
         }
@@ -1645,7 +1690,14 @@ void Planner::buildPlanForQueryNode()
                   */
                 auto & window_analysis_result = expression_analysis_result.getWindow();
                 if (window_analysis_result.before_window_actions)
-                    addExpressionStep(query_plan, window_analysis_result.before_window_actions, "Before WINDOW", useful_sets);
+                    addExpressionStep(
+                        planner_context,
+                        query_plan,
+                        window_analysis_result.before_window_actions,
+                        /*correlated_subtrees=*/{},
+                        select_query_options,
+                        "Before WINDOW",
+                        useful_sets);
             }
             else
             {
@@ -1654,7 +1706,14 @@ void Planner::buildPlanForQueryNode()
                   * now, on shards (first_stage).
                   */
                 auto & projection_analysis_result = expression_analysis_result.getProjection();
-                addExpressionStep(query_plan, projection_analysis_result.projection_actions, "Projection", useful_sets);
+                addExpressionStep(
+                    planner_context,
+                    query_plan,
+                    projection_analysis_result.projection_actions,
+                    projection_analysis_result.correlated_subtrees,
+                    select_query_options,
+                    "Projection",
+                    useful_sets);
 
                 if (query_node.isDistinct())
                 {
@@ -1670,17 +1729,26 @@ void Planner::buildPlanForQueryNode()
                 if (expression_analysis_result.hasSort())
                 {
                     auto & sort_analysis_result = expression_analysis_result.getSort();
-                    addExpressionStep(query_plan, sort_analysis_result.before_order_by_actions, "Before ORDER BY", useful_sets);
+                    addExpressionStep(
+                        planner_context,
+                        query_plan,
+                        sort_analysis_result.before_order_by_actions,
+                        /*correlated_subtrees=*/{},
+                        select_query_options,
+                        "Before ORDER BY",
+                        useful_sets);
                 }
             }
         }
 
-        addPreliminarySortOrDistinctOrLimitStepsIfNeeded(query_plan,
+        addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
+            query_plan,
             expression_analysis_result,
             query_analysis_result,
             planner_context,
             query_processing_info,
             query_tree,
+            select_query_options,
             useful_sets);
     }
 
@@ -1710,7 +1778,7 @@ void Planner::buildPlanForQueryNode()
             addCubeOrRollupStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info, query_node);
 
             if (!having_executed && expression_analysis_result.hasHaving())
-                addFilterStep(query_plan, expression_analysis_result.getHaving(), "HAVING", useful_sets);
+                addFilterStep(planner_context, query_plan, expression_analysis_result.getHaving(), select_query_options, "HAVING", useful_sets);
         }
 
         if (query_processing_info.isFromAggregationState())
@@ -1725,16 +1793,30 @@ void Planner::buildPlanForQueryNode()
             {
                 auto & window_analysis_result = expression_analysis_result.getWindow();
                 if (expression_analysis_result.hasAggregation())
-                    addExpressionStep(query_plan, window_analysis_result.before_window_actions, "Before window functions", useful_sets);
+                    addExpressionStep(
+                        planner_context,
+                        query_plan,
+                        window_analysis_result.before_window_actions,
+                        /*correlated_subtrees=*/{},
+                        select_query_options,
+                        "Before window functions",
+                        useful_sets);
 
                 addWindowSteps(query_plan, planner_context, window_analysis_result);
             }
 
             if (expression_analysis_result.hasQualify())
-                addFilterStep(query_plan, expression_analysis_result.getQualify(), "QUALIFY", useful_sets);
+                addFilterStep(planner_context, query_plan, expression_analysis_result.getQualify(), select_query_options, "QUALIFY", useful_sets);
 
             auto & projection_analysis_result = expression_analysis_result.getProjection();
-            addExpressionStep(query_plan, projection_analysis_result.projection_actions, "Projection", useful_sets);
+            addExpressionStep(
+                planner_context,
+                query_plan,
+                projection_analysis_result.projection_actions,
+                projection_analysis_result.correlated_subtrees,
+                select_query_options,
+                "Projection",
+                useful_sets);
 
             if (query_node.isDistinct())
             {
@@ -1750,7 +1832,14 @@ void Planner::buildPlanForQueryNode()
             if (expression_analysis_result.hasSort())
             {
                 auto & sort_analysis_result = expression_analysis_result.getSort();
-                addExpressionStep(query_plan, sort_analysis_result.before_order_by_actions, "Before ORDER BY", useful_sets);
+                addExpressionStep(
+                    planner_context,
+                    query_plan,
+                    sort_analysis_result.before_order_by_actions,
+                    /*correlated_subtrees=*/{},
+                    select_query_options,
+                    "Before ORDER BY",
+                    useful_sets);
             }
         }
         else
@@ -1803,7 +1892,14 @@ void Planner::buildPlanForQueryNode()
         if (!query_processing_info.isFromAggregationState() && expression_analysis_result.hasLimitBy())
         {
             auto & limit_by_analysis_result = expression_analysis_result.getLimitBy();
-            addExpressionStep(query_plan, limit_by_analysis_result.before_limit_by_actions, "Before LIMIT BY", useful_sets);
+            addExpressionStep(
+                planner_context,
+                query_plan,
+                limit_by_analysis_result.before_limit_by_actions,
+                /*correlated_subtrees=*/{},
+                select_query_options,
+                "Before LIMIT BY",
+                useful_sets);
             addLimitByStep(query_plan, limit_by_analysis_result, query_node, false /*do_not_skip_offset*/);
         }
 
@@ -1834,7 +1930,14 @@ void Planner::buildPlanForQueryNode()
         if (!query_processing_info.isToAggregationState())
         {
             auto & projection_analysis_result = expression_analysis_result.getProjection();
-            addExpressionStep(query_plan, projection_analysis_result.project_names_actions, "Project names", useful_sets);
+            addExpressionStep(
+                planner_context,
+                query_plan,
+                projection_analysis_result.project_names_actions,
+                /*correlated_subtrees=*/{},
+                select_query_options,
+                "Project names",
+                useful_sets);
         }
 
         // For additional_result_filter setting

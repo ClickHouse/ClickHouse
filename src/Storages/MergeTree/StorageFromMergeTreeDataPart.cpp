@@ -13,14 +13,14 @@ namespace MergeTreeSetting
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 bool StorageFromMergeTreeDataPart::materializeTTLRecalculateOnly() const
 {
     if (parts.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "parts must not be empty for materializeTTLRecalculateOnly");
-    return (*parts.front()->storage.getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only];
+    return (*parts.front().data_part->storage.getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only];
 }
 
 void StorageFromMergeTreeDataPart::read(

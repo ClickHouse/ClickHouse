@@ -50,6 +50,13 @@ NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema() const
     return table_snapshot->getTableSchema();
 }
 
+void DeltaLakeMetadataDeltaKernel::modifyFormatSettings(FormatSettings & format_settings) const
+{
+    /// There can be missing columns because of ALTER ADD/DROP COLUMN.
+    /// So to support reading from such tables it is enough to turn on this setting.
+    format_settings.parquet.allow_missing_columns = true;
+}
+
 DB::ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     const Strings & requested_columns,
     const DB::StorageSnapshotPtr & storage_snapshot,

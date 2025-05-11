@@ -43,6 +43,20 @@ using FunctionModuloOrZero = BinaryArithmeticOverloadResolver<ModuloOrZeroImpl, 
 
 REGISTER_FUNCTION(ModuloOrZero)
 {
+    FunctionDocumentation::Description description = R"(
+Like modulo but returns zero when the divisor is zero, as opposed to an
+exception with the modulo function.
+    )";
+    FunctionDocumentation::Syntax syntax = "moduloOrZero(a, b)";
+    FunctionDocumentation::Argument argument1 = {"a", "The dividend"};
+    FunctionDocumentation::Argument argument2 = {"b", "The divisor (modulus)"};
+    FunctionDocumentation::Arguments arguments = {argument1, argument2};
+    FunctionDocumentation::ReturnedValue returned_value = "The remainder of a % b, or `0` when the divisor is `0`.";
+    FunctionDocumentation::Examples examples = {{"", "SELECT moduloOrZero(5, 0)", "0"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+
     factory.registerFunction<FunctionModuloOrZero>();
 }
 

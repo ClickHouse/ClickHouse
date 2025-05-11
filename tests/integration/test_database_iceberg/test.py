@@ -138,6 +138,9 @@ CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_s
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
     )
+    show_result = node.query(f"SHOW DATABASE {name}")
+    assert minio_secret_key not in show_result
+    assert "HIDDEN" in show_result
 
 
 def print_objects():

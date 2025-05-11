@@ -670,7 +670,7 @@ This function accepts both IPv4 and IPv6 addresses (and networks) represented as
 
 **Arguments**
 
-- `address` — An IPv4 or IPv6 address. [String](../data-types/string.md).
+- `address` — An IPv4 or IPv6 address. [String](../data-types/string.md), [IPv4](../data-types/ipv4.md), [IPv6](../data-types/ipv6.md), `Nullable(String)`, `Nullable(IPv4)` and `Nullable(IPv6)`.
 - `prefix` — An IPv4 or IPv6 network prefix in CIDR. [String](../data-types/string.md).
 
 **Returned value**

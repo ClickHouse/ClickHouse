@@ -177,7 +177,17 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
 
 bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
 {
-    return condition.alwaysUnknownOrTrue();
+    return rpnEvaluatesAlwaysUnknownOrTrue(
+        condition.getRPN(),
+        {KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE,
+         KeyCondition::RPNElement::FUNCTION_IN_RANGE,
+         KeyCondition::RPNElement::FUNCTION_IN_SET,
+         KeyCondition::RPNElement::FUNCTION_NOT_IN_SET,
+         KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE,
+         KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON,
+         KeyCondition::RPNElement::FUNCTION_IS_NULL,
+         KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL,
+         KeyCondition::RPNElement::ALWAYS_FALSE});
 }
 
 bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
