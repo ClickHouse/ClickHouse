@@ -180,6 +180,7 @@ TEST(ColumnUniqueCompressed, RangeInsertWithOverflowFCBlockDF)
         const auto index = unique_compressed_column->getOrFindValueIndex(res_with_overflow.overflowed_keys->getDataAt(i));
         EXPECT_FALSE(index.has_value());
         EXPECT_EQ(res_with_overflow.overflowed_keys->getDataAt(i), data[i + to_add]); /// as data is sorted
+        EXPECT_EQ(res_with_overflow.indexes->get64(i + to_add), unique_compressed_column->size() + i);
     }
 }
 

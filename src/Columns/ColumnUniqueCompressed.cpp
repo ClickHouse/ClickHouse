@@ -435,30 +435,62 @@ ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t
     old_indexes_mapping = prepareForInsert(values, to_add, sorted_column);
     calculateCompression(sorted_column);
 
-    MutableColumnPtr indexes = ColumnVector<UInt64>::create();
+    HashMap<StringRef, size_t> overflow_map;
+    MutableColumnPtr indexes = ColumnVector<UInt64>::create(length);
+    MutableColumnPtr overflow = src.cloneEmpty();
+    auto & indexes_data = static_cast<ColumnVector<UInt64> *>(indexes.get())->getData();
     if (is_nullable) /// keeping it outside of loop for performance
     {
-        for (size_t i = 0; i < first_overflowed; ++i)
+        for (size_t i = start; i < start + length; ++i)
         {
             if (src.isNullAt(i))
             {
-                indexes->insert(getNullValueIndex());
+                indexes_data[i] = getNullValueIndex();
             }
             else 
             {
-                indexes->insert(getPosToInsert(src.getDataAt(i)));
+                const StringRef data = src.getDataAt(i);
+                const auto pos = getOrFindValueIndex(data);
+                if (pos.has_value())
+                {
+                    indexes_data[i] = pos.value();
+                }
+                else
+                {
+                    overflow_map.insert({data, overflow_map.size()});
+                    const auto overflow_pos = overflow_map.at(data);
+                    indexes_data[i] = overflow_pos + size();
+                    if (overflow->size() == overflow_pos)
+                    {
+                        overflow->insertFrom(src, i);
+                    }
+                }
             }
         }
     }
     else
     {
-        for (size_t i = start; i < first_overflowed; ++i)
+        for (size_t i = start; i < start + length; ++i)
         {
-            indexes->insert(getPosToInsert(src.getDataAt(i)));
+            const StringRef data = src.getDataAt(i);
+            const auto pos = getOrFindValueIndex(data);
+            if (pos.has_value())
+            {
+                indexes_data[i] = pos.value();
+            }
+            else
+            {
+                overflow_map.insert({data, overflow_map.size()});
+                const auto overflow_pos = overflow_map.at(data);
+                indexes_data[i] = overflow_pos + size();
+                if (overflow->size() == overflow_pos)
+                {
+                    overflow->insertFrom(src, i);
+                }
+            }
         }
     }
 
-    auto overflow = src.cut(first_overflowed, start + length - first_overflowed);
     return {std::move(indexes), IColumn::mutate(std::move(overflow))};
 }
 
