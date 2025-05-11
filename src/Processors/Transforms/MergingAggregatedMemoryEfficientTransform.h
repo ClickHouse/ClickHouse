@@ -157,7 +157,7 @@ class Pipe;
 void addMergingAggregatedMemoryEfficientTransform(
     Pipe & pipe,
     AggregatingTransformParamsPtr params,
-    size_t num_merging_processors);
-
+    size_t num_merging_processors,
+    bool should_produce_results_in_order_of_bucket_number);
 }
 

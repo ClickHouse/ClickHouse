@@ -904,7 +904,8 @@ void AggregatingTransform::initGenerate()
             ReadableSize(uncompressed_size));
 
         auto pipe = Pipe::unitePipes(std::move(pipes));
-        addMergingAggregatedMemoryEfficientTransform(pipe, params, temporary_data_merge_threads);
+        addMergingAggregatedMemoryEfficientTransform(
+            pipe, params, temporary_data_merge_threads, /*should_produce_results_in_order_of_bucket_number=*/true);
 
         processors = Pipe::detachProcessors(std::move(pipe));
     }

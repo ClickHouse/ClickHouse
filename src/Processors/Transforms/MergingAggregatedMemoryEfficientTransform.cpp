@@ -547,9 +547,7 @@ IProcessor::Status SortingAggregatedTransform::prepare()
 
 
 void addMergingAggregatedMemoryEfficientTransform(
-    Pipe & pipe,
-    AggregatingTransformParamsPtr params,
-    size_t num_merging_processors)
+    Pipe & pipe, AggregatingTransformParamsPtr params, size_t num_merging_processors, bool should_produce_results_in_order_of_bucket_number)
 {
     pipe.addTransform(std::make_shared<GroupingAggregatedTransform>(pipe.getHeader(), pipe.numOutputPorts(), params));
 
@@ -571,7 +569,8 @@ void addMergingAggregatedMemoryEfficientTransform(
         return std::make_shared<MergingAggregatedBucketTransform>(params);
     });
 
-    pipe.addTransform(std::make_shared<SortingAggregatedTransform>(num_merging_processors, params));
+    if (should_produce_results_in_order_of_bucket_number)
+        pipe.addTransform(std::make_shared<SortingAggregatedTransform>(num_merging_processors, params));
 }
 
 }
