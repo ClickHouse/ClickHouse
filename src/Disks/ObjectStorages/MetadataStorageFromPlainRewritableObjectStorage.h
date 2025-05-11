@@ -51,13 +51,15 @@ public:
 
     std::optional<Poco::Timestamp> getLastModifiedIfExists(const String & path) const override;
 
-    void refresh() override;
+    void refresh(UInt64 not_sooner_than_milliseconds) override;
 
 private:
     const std::string metadata_key_prefix;
     std::shared_ptr<InMemoryDirectoryPathMap> path_map;
+    AtomicStopwatch previous_refresh;
 
     void load(bool is_initial_load);
+    std::mutex load_mutex;
 
     std::string getMetadataKeyPrefix() const override { return metadata_key_prefix; }
     std::shared_ptr<InMemoryDirectoryPathMap> getPathMap() const override { return path_map; }

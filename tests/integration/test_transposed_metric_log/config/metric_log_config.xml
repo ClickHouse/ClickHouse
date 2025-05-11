@@ -8,5 +8,11 @@
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
         <schema_type>wide</schema_type>
+    <engine>
+    ENGINE MergeTree
+    PARTITION BY toYYYYMM(event_date)
+    ORDER BY (event_date, event_time)
+    SETTINGS ttl_only_drop_parts=1, merge_selecting_sleep_ms='50000'
+    </engine>
     </metric_log>
 </clickhouse>

@@ -13,6 +13,7 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/extractTableFunctionFromSelectQuery.h>
+#include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 
 
 namespace DB
@@ -145,24 +146,19 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
 }
 
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
-    const ActionsDAG::Node * predicate, const ContextPtr & local_context) const
+    const ActionsDAG::Node * predicate, const ContextPtr & local_context, const size_t number_of_replicas) const
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(local_context), object_storage, /* distributed_processing */false,
         local_context, predicate, {}, virtual_columns, nullptr, local_context->getFileProgressCallback(), /*ignore_archive_globs=*/true, /*skip_object_metadata=*/true);
 
-    auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String
-    {
-        auto object_info = iterator->next(0);
-        if (!object_info)
-            return "";
+    auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(iterator, number_of_replicas);
 
-        auto archive_object_info = std::dynamic_pointer_cast<StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive>(object_info);
-        if (archive_object_info)
-            return archive_object_info->getPathToArchive();
+    auto callback = std::make_shared<TaskIterator>(
+        [task_distributor](size_t number_of_current_replica) mutable -> String {
+            return task_distributor->getNextTask(number_of_current_replica).value_or("");
+        });
 
-        return object_info->getPath();
-    });
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
 

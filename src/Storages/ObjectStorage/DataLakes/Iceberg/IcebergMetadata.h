@@ -29,7 +29,7 @@ class IcebergMetadata : public IDataLakeMetadata, private WithContext
 public:
     using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
-
+    using IcebergHistory = std::vector<Iceberg::IcebergHistoryRecord>;
 
     static constexpr auto name = "Iceberg";
 
@@ -73,7 +73,7 @@ public:
             : nullptr;
     }
 
-    bool supportsExternalMetadataChange() const override { return true; }
+    bool supportsSchemaEvolution() const override { return true; }
 
     static Int32
     parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger);
@@ -81,6 +81,8 @@ public:
     bool supportsUpdate() const override { return true; }
 
     bool update(const ContextPtr & local_context) override;
+
+    IcebergHistory getHistory() const;
 
     std::optional<size_t> totalRows() const override;
     std::optional<size_t> totalBytes() const override;
@@ -135,7 +137,9 @@ private:
 
     std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
 
-    Poco::JSON::Object::Ptr readJSON(const String & metadata_file_path, const ContextPtr & local_context) const;
+    Strings getDataFilesImpl(const ActionsDAG * filter_dag) const;
+
+    Iceberg::ManifestFilePtr tryGetManifestFile(const String & filename) const;
 };
 }
 

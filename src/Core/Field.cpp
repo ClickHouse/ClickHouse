@@ -751,18 +751,21 @@ template bool decimalEqual<Decimal64>(Decimal64 x, Decimal64 y, UInt32 x_scale, 
 template bool decimalEqual<Decimal128>(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalEqual<Decimal256>(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalEqual<DateTime64>(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale);
+template bool decimalEqual<Time64>(Time64 x, Time64 y, UInt32 x_scale, UInt32 y_scale);
 
 template bool decimalLess<Decimal32>(Decimal32 x, Decimal32 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLess<Decimal64>(Decimal64 x, Decimal64 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLess<Decimal128>(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLess<Decimal256>(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLess<DateTime64>(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale);
+template bool decimalLess<Time64>(Time64 x, Time64 y, UInt32 x_scale, UInt32 y_scale);
 
 template bool decimalLessOrEqual<Decimal32>(Decimal32 x, Decimal32 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLessOrEqual<Decimal64>(Decimal64 x, Decimal64 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLessOrEqual<Decimal128>(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLessOrEqual<Decimal256>(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLessOrEqual<DateTime64>(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale);
+template bool decimalLessOrEqual<Time64>(Time64 x, Time64 y, UInt32 x_scale, UInt32 y_scale);
 
 
 void writeText(const Null & x, WriteBuffer & buf)
@@ -828,6 +831,7 @@ template class DecimalField<Decimal64>;
 template class DecimalField<Decimal128>;
 template class DecimalField<Decimal256>;
 template class DecimalField<DateTime64>;
+template class DecimalField<Time64>;
 
 template <typename T>
 NearestFieldType<std::decay_t<T>> & Field::safeGet() &
@@ -869,11 +873,13 @@ template NearestFieldType<std::decay_t<Decimal64>> & Field::safeGet<Decimal64>()
 template NearestFieldType<std::decay_t<Decimal128>> & Field::safeGet<Decimal128>() &;
 template NearestFieldType<std::decay_t<Decimal256>> & Field::safeGet<Decimal256>() &;
 template NearestFieldType<std::decay_t<DateTime64>> & Field::safeGet<DateTime64>() &;
+template NearestFieldType<std::decay_t<Time64>> & Field::safeGet<Time64>() &;
 template NearestFieldType<std::decay_t<DecimalField<Decimal32>>> & Field::safeGet<DecimalField<Decimal32>>() &;
 template NearestFieldType<std::decay_t<DecimalField<Decimal64>>> & Field::safeGet<DecimalField<Decimal64>>() &;
 template NearestFieldType<std::decay_t<DecimalField<Decimal128>>> & Field::safeGet<DecimalField<Decimal128>>() &;
 template NearestFieldType<std::decay_t<DecimalField<Decimal256>>> & Field::safeGet<DecimalField<Decimal256>>() &;
 template NearestFieldType<std::decay_t<DecimalField<DateTime64>>> & Field::safeGet<DecimalField<DateTime64>>() &;
+template NearestFieldType<std::decay_t<DecimalField<Time64>>> & Field::safeGet<DecimalField<Time64>>() &;
 template NearestFieldType<std::decay_t<AggregateFunctionStateData>> & Field::safeGet<AggregateFunctionStateData>() &;
 template NearestFieldType<std::decay_t<Array>> & Field::safeGet<Array>() &;
 template NearestFieldType<std::decay_t<Map>> & Field::safeGet<Map>() &;

@@ -43,7 +43,7 @@ void ClientEmbedded::printHelpMessage(const OptionsDescription & options_descrip
 }
 
 
-void ClientEmbedded::processError(const String &) const
+void ClientEmbedded::processError(std::string_view) const
 {
     if (ignore_error)
         return;
