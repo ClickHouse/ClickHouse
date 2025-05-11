@@ -186,6 +186,7 @@ def test_restore_replica_alive_replicas(start_cluster):
 def test_fix_metadata_version_on_attach_part_after_restore(start_cluster):
     zk = cluster.get_kazoo_client("zoo1")
 
+    node_1.query("DROP TABLE IF EXISTS test_ttl ON CLUSTER 'test_cluster' SYNC")
     for node in [node_1, node_2]:
         node.query(
             """
