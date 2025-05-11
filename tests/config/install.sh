@@ -248,8 +248,14 @@ if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
     if [[ "$NO_AZURE" != "1" ]]; then
       ln -sf $SRC_PATH/config.d/azure_storage_conf.xml $DEST_SERVER_PATH/config.d/
     fi
-    ln -sf $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/
-    ln -sf $SRC_PATH/config.d/storage_conf_02944.xml $DEST_SERVER_PATH/config.d/
+
+    if check_clickhouse_version 25.5; then
+      ln -sf $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/
+      ln -sf $SRC_PATH/config.d/storage_conf_02944.xml $DEST_SERVER_PATH/config.d/
+    else
+      cat $SRC_PATH/config.d/storage_conf.xml | sed "s|<allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>||" > $DEST_SERVER_PATH/config.d/storage_conf.xml
+      cat $SRC_PATH/config.d/storage_conf_02944.xml | sed "s|<allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>||" > $DEST_SERVER_PATH/config.d/storage_conf_02944.xml
+    fi
     ln -sf $SRC_PATH/config.d/storage_conf_02963.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_02961.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/users.d/s3_cache.xml $DEST_SERVER_PATH/users.d/
@@ -259,6 +265,10 @@ fi
 if [[ "$USE_PARALLEL_REPLICAS" == "1" ]]; then
     ln -sf $SRC_PATH/users.d/enable_parallel_replicas.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/config.d/enable_parallel_replicas.xml $DEST_SERVER_PATH/config.d/
+fi
+
+if [[ "$USE_ASYNC_INSERT" == "1" ]]; then
+    ln -sf $SRC_PATH/users.d/enable_async_inserts.xml $DEST_SERVER_PATH/users.d/
 fi
 
 if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
