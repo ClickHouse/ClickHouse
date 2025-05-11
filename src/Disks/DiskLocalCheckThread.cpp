@@ -41,6 +41,7 @@ void DiskLocalCheckThread::run()
     bool can_write = disk->canWrite();
     if (can_read)
     {
+        LOG_INFO(log, "Disk {} seems to be unreadable.", disk->getName());
         if (disk->broken)
             LOG_INFO(log, "Disk {0} seems to be fine. It can be recovered using `SYSTEM RESTART DISK {0}`", disk->getName());
         retry = 0;
