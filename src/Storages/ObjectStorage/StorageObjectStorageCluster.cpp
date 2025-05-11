@@ -11,6 +11,7 @@
 #include <Storages/PartitionStrategy.h>
 
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/extractTableFunctionFromSelectQuery.h>
@@ -29,7 +30,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-String StorageObjectStorageCluster::getPathSample(StorageInMemoryMetadata metadata, ContextPtr context)
+String StorageObjectStorageCluster::getPathSample(ContextPtr context)
 {
     auto query_settings = configuration->getQuerySettings(context);
     /// We don't want to throw an exception if there are no files with specified path.
@@ -42,7 +43,7 @@ String StorageObjectStorageCluster::getPathSample(StorageInMemoryMetadata metada
         context,
         {}, // predicate
         {},
-        metadata.getColumns().getAll(), // virtual_columns
+        {}, // virtual_columns
         {}, /* hive_columns */ //todo arthur
         nullptr, // read_keys
         {} // file_progress_callback
@@ -58,7 +59,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     ConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
     const StorageID & table_id_,
-    const ColumnsDescription & columns_,
+    const ColumnsDescription & columns_in_table_or_function_definition,
     const ConstraintsDescription & constraints_,
     ContextPtr context_)
     : IStorageCluster(
@@ -66,17 +67,44 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     , configuration{configuration_}
     , object_storage(object_storage_)
 {
-    ColumnsDescription columns{columns_};
+    ColumnsDescription columns{columns_in_table_or_function_definition};
     std::string sample_path;
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);
     configuration->check(context_);
 
+    if (sample_path.empty() && context_->getSettingsRef()[Setting::use_hive_partitioning])
+        sample_path = getPathSample(context_);
+
+    if (columns_in_table_or_function_definition.empty())
+    {
+        if (context_->getSettingsRef()[Setting::use_hive_partitioning])
+        {
+            hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(columns, sample_path, {}, context_);
+            for (const auto & [name, type]: hive_partition_columns_to_read_from_file_path)
+            {
+                if (!columns.has(name))
+                {
+                    columns.add({name, type});
+                }
+            }
+        }
+    }
+    else
+    {
+        if (configuration->partition_strategy && configuration->partition_strategy_name == "hive")
+        {
+            hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
+        }
+        else if (context_->getSettingsRef()[Setting::use_hive_partitioning])
+        {
+            hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(columns, sample_path, {}, context_);
+            // todo arthur perhaps an assertion that `input_columns` contain all columns found in `hive_partition_columns_to_read_from_file_path`?
+        }
+    }
+
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
     metadata.setConstraints(constraints_);
-
-    if (sample_path.empty() && context_->getSettingsRef()[Setting::use_hive_partitioning])
-        sample_path = getPathSample(metadata, context_);
 
     // todo arthur do we need to do anything at all? I mean..
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
@@ -153,7 +181,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(local_context), object_storage, /* distributed_processing */false,
-        local_context, predicate, {}, virtual_columns, {} /* todo arthur*/, nullptr, local_context->getFileProgressCallback(), /*ignore_archive_globs=*/true, /*skip_object_metadata=*/true);
+        local_context, predicate, {}, virtual_columns, hive_partition_columns_to_read_from_file_path, nullptr, local_context->getFileProgressCallback(), /*ignore_archive_globs=*/true, /*skip_object_metadata=*/true);
 
     auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(iterator, number_of_replicas);
 
