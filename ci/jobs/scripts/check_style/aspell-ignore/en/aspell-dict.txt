@@ -167,6 +167,7 @@ CityHash
 Clangd
 ClickBench
 ClickCat
+ClickHaskell
 ClickHouse
 ClickHouse's
 ClickHouseClient
