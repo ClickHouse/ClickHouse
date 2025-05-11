@@ -1595,7 +1595,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     {
         LOG_DEBUG(log, "File for index {} does not exist ({}.*). Skipping it.", backQuote(index_helper->index.name),
             (fs::path(part->getDataPartStorage().getFullPath()) / index_helper->getFileName()).string());
-        return std::make_pair(ranges, RangesInDataPartReadHints{});
+        return {ranges, {}};
     }
 
     /// Whether we should use a more optimal filtering.
@@ -1652,7 +1652,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
         IMergeTreeIndexCondition::FilteredGranules filtered_granules = condition->getPossibleGranules(granules);
         if (filtered_granules.empty())
-            return std::make_pair(res, RangesInDataPartReadHints{});
+            return {res, {}};
 
         auto it = filtered_granules.begin();
         current_granule_num = 0;
@@ -1710,7 +1710,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     read_hints.ann_search_results = condition->calculateApproximateNearestNeighbors(granule);
 
                     /// corresponding ranges have to be returned in ascending order
-                    auto rows = read_hints.ann_search_results.value().first;
+                    auto rows = read_hints.ann_search_results.value().rows;
                     std::sort(rows.begin(), rows.end());
 #ifndef NDEBUG
                     /// Duplicates should in theory not be possible but who knows ...
@@ -1720,7 +1720,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 #endif
 
                     if (settings[Setting::vector_search_with_rescoring] ||
-                        (read_hints.ann_search_results.value().second.empty()) ||
+                        !(read_hints.ann_search_results.value().distances.has_value()) ||
                         index_granularity < part->index_granularity->getMarksCountWithoutFinal())
                     {
                         read_hints = {};
@@ -1770,7 +1770,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         }
     }
 
-    return std::make_pair(res, read_hints);
+    return {res, read_hints};
 }
 
 MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(

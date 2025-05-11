@@ -1322,7 +1322,7 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     return mut_first;
 }
 
-void MergeTreeRangeReader::executeActionsForReadHints(ReadResult & result) const
+void MergeTreeRangeReader::executeActionsForVectorSearchReadHints(ReadResult & result) const
 {
     auto before_rows = result.num_rows;
 
@@ -1337,8 +1337,9 @@ void MergeTreeRangeReader::executeActionsForReadHints(ReadResult & result) const
 
     const auto & read_hints = merge_tree_reader->data_part_info_for_read->getReadHints();
     const auto & offsets_and_distances = read_hints.ann_search_results.value();
-    auto exact_part_offsets = offsets_and_distances.first;
-    const auto exact_distances = offsets_and_distances.second;
+    auto exact_part_offsets = offsets_and_distances.rows;
+    chassert (offsets_and_distances.distances.has_value());
+    const auto exact_distances = offsets_and_distances.distances.value();
     chassert (exact_part_offsets.size() == exact_distances.size());
 
     /// stash the distance for an offset before sorting the offsets
@@ -1416,7 +1417,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     result.checkInternalConsistency();
 
     if (merge_tree_reader->data_part_info_for_read->getReadHints().ann_search_results.has_value())
-        executeActionsForReadHints(result);
+        executeActionsForVectorSearchReadHints(result);
 
     if (!prewhere_info)
         return;

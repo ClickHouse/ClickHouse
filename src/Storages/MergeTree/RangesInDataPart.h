@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 
 
 namespace DB
@@ -45,8 +46,7 @@ struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescripti
 struct RangesInDataPartReadHints
 {
     /// 1) Exact part offsets positions 2) a pre-computed "_distance" virtual column
-    using VectorIndexSearchResults = std::pair<std::vector<UInt64>, std::vector<float>>;
-    std::optional<VectorIndexSearchResults> ann_search_results;
+    std::optional<NearestNeighbours> ann_search_results;
 };
 
 struct RangesInDataPart

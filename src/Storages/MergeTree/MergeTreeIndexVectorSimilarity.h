@@ -152,7 +152,7 @@ public:
 
     bool alwaysUnknownOrTrue() const override;
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const override;
-    std::pair<std::vector<UInt64>, std::vector<float>> calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule) const override;
+    NearestNeighbours calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule) const override;
 
 private:
     std::optional<VectorSearchParameters> parameters;

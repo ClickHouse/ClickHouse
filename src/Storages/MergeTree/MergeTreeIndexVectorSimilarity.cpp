@@ -444,7 +444,7 @@ bool MergeTreeIndexConditionVectorSimilarity::alwaysUnknownOrTrue() const
     return false;
 }
 
-std::pair<std::vector<UInt64>, std::vector<float>> MergeTreeIndexConditionVectorSimilarity::calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule_) const
+NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule_) const
 {
     if (!parameters)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected vector_search_parameters to be set");
@@ -468,23 +468,23 @@ std::pair<std::vector<UInt64>, std::vector<float>> MergeTreeIndexConditionVector
     if (!search_result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not search in vector similarity index. Error: {}", search_result.error.release());
 
-    std::vector<USearchIndex::vector_key_t> neighbors(search_result.size()); /// indexes of vectors which were closest to the reference vector
-    std::vector<USearchIndex::distance_t> distances; /// distances of vectors which were closest to the reference vector
+    NearestNeighbours result;
+    result.rows.resize(search_result.size());
     if (parameters->return_distances)
     {
-        distances.resize(search_result.size());
-        search_result.dump_to(neighbors.data(), distances.data());
+        result.distances = std::vector<float>(search_result.size());
+        search_result.dump_to(result.rows.data(), result.distances.value().data());
     }
     else
     {
-        search_result.dump_to(neighbors.data());
+        search_result.dump_to(result.rows.data());
     }
 
     ProfileEvents::increment(ProfileEvents::USearchSearchCount);
     ProfileEvents::increment(ProfileEvents::USearchSearchVisitedMembers, search_result.visited_members);
     ProfileEvents::increment(ProfileEvents::USearchSearchComputedDistances, search_result.computed_distances);
 
-    return std::make_pair(neighbors, distances);
+    return result;
 }
 
 MergeTreeIndexVectorSimilarity::MergeTreeIndexVectorSimilarity(
