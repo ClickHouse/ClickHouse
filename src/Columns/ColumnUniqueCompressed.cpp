@@ -829,6 +829,7 @@ void ColumnUniqueFCBlockDF::nestedToNullable()
     {
         mapping->getData()[i] = i + 1;
     }
+    mapping->getData()[0] = 0; /// default value becomes NULL
     old_indexes_mapping = std::move(mapping);
 }
 

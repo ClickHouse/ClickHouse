@@ -1005,6 +1005,18 @@ void ColumnLowCardinality::reindexIfNeeded()
     }
 }
 
+void ColumnLowCardinality::nestedToNullable()
+{
+    getDictionary().nestedToNullable();
+    reindexIfNeeded();
+}
+
+void ColumnLowCardinality::nestedRemoveNullable()
+{
+    getDictionary().nestedRemoveNullable();
+    reindexIfNeeded();
+}
+
 bool isColumnLowCardinalityNullable(const IColumn & column)
 {
     if (const auto * lc_column = checkAndGetColumn<ColumnLowCardinality>(&column))

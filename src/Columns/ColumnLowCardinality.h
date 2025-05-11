@@ -271,8 +271,8 @@ public:
      */
     bool nestedIsNullable() const { return dictionary.getColumnUnique().nestedColumnIsNullable(); }
     bool nestedCanBeInsideNullable() const { return dictionary.getColumnUnique().nestedCanBeInsideNullable(); }
-    void nestedToNullable() { dictionary.getColumnUnique().nestedToNullable(); }
-    void nestedRemoveNullable() { dictionary.getColumnUnique().nestedRemoveNullable(); }
+    void nestedToNullable();
+    void nestedRemoveNullable();
     MutableColumnPtr cloneNullable() const;
 
     ColumnPtr cloneWithDefaultOnNull() const;
