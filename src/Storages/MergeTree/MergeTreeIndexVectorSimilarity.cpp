@@ -467,7 +467,7 @@ std::vector<UInt64> MergeTreeIndexConditionVectorSimilarity::calculateApproximat
 
     size_t limit = parameters->limit;
     if (parameters->additional_filters_present)
-        /// Post-filters may remove matches. Allow to fetch more rows by a factor to compensate.
+        /// Additional filters mean post-filtering which means that matches may be removed. To compensate, allow to fetch more rows by a factor.
         limit = std::min(static_cast<size_t>(limit * postfilter_multiplier), max_limit);
 
     /// We want to run the search with the user-provided value for setting hnsw_candidate_list_size_for_search (aka. expansion_search).

@@ -1,6 +1,6 @@
 -- Tags: no-fasttest, no-ordinary-database
 
--- Tests for vector search and pre-filtering/post-filtering.
+-- Tests pre vs. post-filtering for vector search.
 
 SET allow_experimental_vector_similarity_index = 1;
 SET enable_analyzer = 1;
@@ -11,15 +11,15 @@ DROP TABLE IF EXISTS tab;
 CREATE TABLE tab
 (
     id Int32,
-    dt Date,
+    date Date,
     attr1 Int32,
     attr2 Int32,
-    vector Array(Float32),
-    INDEX attr1_index attr1 TYPE minmax,
-    INDEX vector_index vector TYPE vector_similarity('hnsw', 'L2Distance', 2) GRANULARITY 10000
+    vec Array(Float32),
+    INDEX idx_attr1 attr1 TYPE minmax,
+    INDEX idx_vec vec TYPE vector_similarity('hnsw', 'L2Distance', 2) GRANULARITY 10000
 )
 ENGINE = MergeTree
-PARTITION BY dt
+PARTITION BY date
 ORDER BY id
 SETTINGS index_granularity = 3;
 
@@ -44,7 +44,7 @@ SELECT trimLeft(explain) FROM (
     EXPLAIN indexes = 1
     SELECT id
     FROM tab
-    ORDER BY L2Distance(vector, [1.0, 1.0])
+    ORDER BY L2Distance(vec, [1.0, 1.0])
     LIMIT 2
     SETTINGS vector_search_filter_strategy = 'prefilter'
 )
@@ -56,7 +56,7 @@ SELECT trimLeft(explain) FROM (
     SELECT id
     FROM tab
     WHERE attr2 >= 1006
-    ORDER BY L2Distance(vector, [1.0, 1.0])
+    ORDER BY L2Distance(vec, [1.0, 1.0])
     LIMIT 2
     SETTINGS vector_search_filter_strategy = 'prefilter'
 )
@@ -68,7 +68,7 @@ SELECT trimLeft(explain) FROM (
     SELECT id
     FROM tab
     WHERE attr1 <= 105
-    ORDER BY L2Distance(vector, [1.0, 1.0])
+    ORDER BY L2Distance(vec, [1.0, 1.0])
     LIMIT 2
     SETTINGS vector_search_filter_strategy = 'prefilter'
 )
@@ -80,7 +80,7 @@ SELECT trimLeft(explain) FROM (
     SELECT id
     FROM tab
     WHERE id <= 6
-    ORDER BY L2Distance(vector, [1.0, 1.0])
+    ORDER BY L2Distance(vec, [1.0, 1.0])
     LIMIT 2
     SETTINGS vector_search_filter_strategy = 'prefilter'
 )
@@ -93,7 +93,7 @@ SELECT trimLeft(explain) FROM (
     EXPLAIN indexes = 1
     SELECT id
     FROM tab
-    ORDER BY L2Distance(vector, [1.0, 1.0])
+    ORDER BY L2Distance(vec, [1.0, 1.0])
     LIMIT 2
     SETTINGS vector_search_filter_strategy = 'postfilter'
 )
@@ -104,8 +104,8 @@ SELECT trimLeft(explain) FROM (
     EXPLAIN indexes = 1
     SELECT id
     FROM tab
-    WHERE dt <= '2025-01-02'
-    ORDER BY L2Distance(vector, [1.0, 1.0])
+    WHERE date <= '2025-01-02'
+    ORDER BY L2Distance(vec, [1.0, 1.0])
     LIMIT 2
     SETTINGS vector_search_filter_strategy = 'postfilter'
 )
@@ -116,9 +116,9 @@ SELECT trimLeft(explain) FROM (
     EXPLAIN indexes = 1
     SELECT id
     FROM tab
-    WHERE dt = '2025-01-03'
+    WHERE date = '2025-01-03'
     AND attr1 = 110
-    ORDER BY L2Distance(vector, [1.0, 1.0])
+    ORDER BY L2Distance(vec, [1.0, 1.0])
     LIMIT 2
     SETTINGS vector_search_filter_strategy = 'postfilter'
 )
@@ -127,8 +127,8 @@ WHERE explain LIKE '%vector_similarity%';
 SELECT '-- Additional WHERE clauses present, 2 full parts selected by partition key / 1 part partially selected by PK, index usage not expected';
 SELECT id
 FROM tab
-WHERE dt = '2025-01-03' AND id <= 9
-ORDER BY L2Distance(vector, [1.0, 1.0])
+WHERE date = '2025-01-03' AND id <= 9
+ORDER BY L2Distance(vec, [1.0, 1.0])
 LIMIT 2
 SETTINGS log_comment = '02354_vector_search_post_filter_strategy_query1';
 
@@ -143,16 +143,24 @@ AND type = 'QueryFinish';
 SELECT 'The first 3 neighbours returned by vector index dont pass the attr2 >= 1008 filter. Hence no rows returned by the query...';
 SELECT id
 FROM tab
-WHERE dt = '2025-01-03' AND attr2 >= 1008
-ORDER BY L2Distance(vector, [1.0, 1.0])
+WHERE date = '2025-01-03' AND attr2 >= 1008
+ORDER BY L2Distance(vec, [1.0, 1.0])
 LIMIT 3;
 
 SELECT '... but there are results for the same query with postfilter multiplier = 2.0';
 SELECT id
 FROM tab
-WHERE dt = '2025-01-03' AND attr2 >= 1008
-ORDER BY L2Distance(vector, [1.0, 1.0])
+WHERE date = '2025-01-03' AND attr2 >= 1008
+ORDER BY L2Distance(vec, [1.0, 1.0])
 LIMIT 3
 SETTINGS vector_search_postfilter_multiplier = 2.0;
+
+SELECT '-- Negative parameter values throw an exception';
+SELECT id
+FROM tab
+WHERE date = '2025-01-03' AND attr2 >= 1008
+ORDER BY L2Distance(vec, [1.0, 1.0])
+LIMIT 3
+SETTINGS vector_search_postfilter_multiplier = -1.0; -- { serverError INVALID_SETTING_VALUE }
 
 DROP TABLE tab;

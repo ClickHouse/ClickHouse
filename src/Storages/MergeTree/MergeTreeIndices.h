@@ -105,7 +105,7 @@ struct VectorSearchParameters
     std::vector<Float64> reference_vector;
 
     /// Other metadata
-    bool additional_filters_present;
+    bool additional_filters_present; /// SELECT contains a WHERE or PREWHERE clause
 };
 
 /// Stores some info about a single block of data.

@@ -6567,10 +6567,7 @@ Enable experimental hash functions
 Allow the obsolete Object data type
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_time_series_table, false, R"(
-Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine.
-
-Possible values:
-
+Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine. Possible values:
 - 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
 - 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
 )", EXPERIMENTAL) \
@@ -6587,13 +6584,10 @@ SELECT queries with LIMIT bigger than this setting cannot use vector similarity 
 The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'.
 )", EXPERIMENTAL) \
     DECLARE(VectorSearchFilterStrategy, vector_search_filter_strategy, VectorSearchFilterStrategy::AUTO, R"(
-If a vector search query has a WHERE clause, this setting determines if it is evaluated first (pre-filtering) OR if the vector similarity index is checked first (post-filtering).
-
-Possible values:
-
-'auto' - Postfiltering (the exact semantics may change in future).
-'postfilter' - Use vector similarity index to identify the nearest neighbours, then apply other filters
-'prefilter' - Evaluate other filters first, then perform brute-force search to identify neighbours.
+If a vector search query has a WHERE clause, this setting determines if it is evaluated first (pre-filtering) OR if the vector similarity index is checked first (post-filtering). Possible values:
+- 'auto' - Postfiltering (the exact semantics may change in future).
+- 'postfilter' - Use vector similarity index to identify the nearest neighbours, then apply other filters
+- 'prefilter' - Evaluate other filters first, then perform brute-force search to identify neighbours.
 )", EXPERIMENTAL) \
     DECLARE(Float, vector_search_postfilter_multiplier, 1.0, R"(
 Multiply the fetched nearest neighbors from the vector similarity index by this number before performing post-filtering on other predicates.
