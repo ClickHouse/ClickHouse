@@ -100,6 +100,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
             {"compile_expressions", false, true, "We believe that the LLVM infrastructure behind the JIT compiler is stable enough to enable this setting by default."},
             {"use_legacy_to_time", false, false, "New setting. Allows for user to use the old function logic for toTime, which works as toTimeWithFixedDate."},
+            {"input_format_parquet_allow_geoparquet_parser", false, true, "A new setting to use geo columns in parquet file"},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {

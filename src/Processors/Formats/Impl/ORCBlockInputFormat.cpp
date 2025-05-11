@@ -140,6 +140,7 @@ void ORCBlockInputFormat::prepareReader()
         format_settings.orc.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.date_time_overflow_behavior,
+        format_settings.parquet.allow_geoparquet_parser,
         format_settings.orc.case_insensitive_column_matching);
 
     const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
@@ -174,12 +175,15 @@ void ORCSchemaReader::initializeIfNeeded()
 NamesAndTypesList ORCSchemaReader::readSchema()
 {
     initializeIfNeeded();
+
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         *schema,
         metadata,
         "ORC",
         format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference,
-        format_settings.schema_inference_make_columns_nullable != 0);
+        format_settings.schema_inference_make_columns_nullable != 0,
+        false,
+        format_settings.parquet.allow_geoparquet_parser);
     if (format_settings.schema_inference_make_columns_nullable == 1)
         return getNamesAndRecursivelyNullableTypes(header, format_settings);
     return header.getNamesAndTypesList();
