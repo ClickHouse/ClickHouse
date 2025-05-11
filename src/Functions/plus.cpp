@@ -65,7 +65,8 @@ increments the number of seconds in the date with time.
     FunctionDocumentation::Example example2 = {"Adding an integer and a date", "SELECT plus(toDate('2025-01-01'),5)", "2025-01-06"};
     FunctionDocumentation::Examples examples = {example1, example2};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
 
     factory.registerFunction<FunctionPlus>(documentation);
 }

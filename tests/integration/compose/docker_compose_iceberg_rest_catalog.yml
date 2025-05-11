@@ -1,7 +1,6 @@
 services:
   spark-iceberg:
     image: tabulario/spark-iceberg
-    container_name: spark-iceberg
     build: spark/
     depends_on:
       rest:
@@ -51,7 +50,6 @@ services:
     depends_on:
       - minio
     image: minio/mc
-    container_name: mc
     environment:
       - AWS_ACCESS_KEY_ID=minio
       - AWS_SECRET_ACCESS_KEY=ClickHouse_Minio_P@ssw0rd
