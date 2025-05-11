@@ -440,7 +440,7 @@ private:
                 {
                     ++current_bucket_num;
                 }
-                else if (params->params.allow_aggregation_to_produce_buckets_out_of_order)
+                else if (params->params.enable_producing_buckets_out_of_order_in_aggregation)
                 {
                     /// Otherwise, if there is an empty slot, postpone the current bucket until better times.
                     if (out_of_order_buckets.size() < NUM_OOO_BUCKETS)

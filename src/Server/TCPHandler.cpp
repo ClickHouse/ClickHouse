@@ -710,7 +710,7 @@ void TCPHandler::runImpl()
                 });
 
             if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION)
-                query_state->query_context->setSetting("allow_aggregation_to_produce_buckets_out_of_order", false);
+                query_state->query_context->setSetting("enable_producing_buckets_out_of_order_in_aggregation", false);
 
             /// Processing Query
             std::tie(query_state->parsed_query, query_state->io) = executeQuery(query_state->query, query_state->query_context, QueryFlags{}, query_state->stage);

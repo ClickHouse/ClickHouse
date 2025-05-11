@@ -194,7 +194,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsString implicit_table_at_top_level;
-    extern const SettingsBool allow_aggregation_to_produce_buckets_out_of_order;
+    extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
 }
 
 namespace ServerSetting
@@ -2802,7 +2802,7 @@ static Aggregator::Params getAggregatorParams(
         settings[Setting::optimize_group_by_constant_keys],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
         stats_collecting_params,
-        settings[Setting::allow_aggregation_to_produce_buckets_out_of_order]};
+        settings[Setting::enable_producing_buckets_out_of_order_in_aggregation]};
 }
 
 void InterpreterSelectQuery::executeAggregation(
