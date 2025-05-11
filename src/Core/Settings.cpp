@@ -917,8 +917,8 @@ Allows or restricts using not comparable types (like JSON/Object/AggregateFuncti
     DECLARE(Bool, allow_not_comparable_types_in_comparison_functions, false, R"(
 Allows or restricts using not comparable types (like JSON/Object/AggregateFunction) in comparison functions `equal/less/greater/etc`.
 )", 0) \
-    DECLARE(Bool, compile_expressions, false, R"(
-Compile some scalar functions and operators to native code. Due to a bug in the LLVM compiler infrastructure, on AArch64 machines, it is known to lead to a nullptr dereference and, consequently, server crash. Do not enable this setting.
+    DECLARE(Bool, compile_expressions, true, R"(
+Compile some scalar functions and operators to native code.
 )", 0) \
     DECLARE(UInt64, min_count_to_compile_expression, 3, R"(
 Minimum count of executing same expression before it is get compiled.
@@ -1816,6 +1816,17 @@ See also:
 - [insert_quorum](#insert_quorum)
 - [insert_quorum_timeout](#insert_quorum_timeout)
 - [insert_quorum_parallel](#insert_quorum_parallel)
+)", 0) \
+    DECLARE(Bool, update_sequential_consistency, true, R"(
+If true set of parts is updated to the latest version before execution of update.
+)", 0) \
+    DECLARE(UpdateParallelMode, update_parallel_mode, UpdateParallelMode::AUTO, R"(
+Determines the behavior of concurrent update queries.
+
+Possible values:
+- `sync` - run sequentially all `UPDATE` queries.
+- `auto` - run sequentially only `UPDATE` queries with dependencies between columns updated in one query and columns used in expressions of another query.
+- `async` - do not synchronize update queries.
 )", 0) \
     DECLARE(UInt64, table_function_remote_max_addresses, 1000, R"(
 Sets the maximum number of addresses generated from patterns for the [remote](../../sql-reference/table-functions/remote.md) function.
@@ -3941,6 +3952,14 @@ Possible values:
     DECLARE_WITH_ALIAS(Bool, enable_lightweight_delete, true, R"(
 Enable lightweight DELETE mutations for mergetree tables.
 )", 0, allow_experimental_lightweight_delete) \
+    DECLARE(LightweightDeleteMode, lightweight_delete_mode, LightweightDeleteMode::ALTER_UPDATE, R"(
+A mode of internal update query that is executed as a part of lightweight delete.
+
+Possible values:
+- `alter_update` - run `ALTER UPDATE` query that creates a heavyweight mutation.
+- `lightweight_update` - run lightweight update if possible, run `ALTER UPDATE` otherwise.
+- `lightweight_update_force` - run lightweight update if possible, throw otherwise.
+)", 0) \
     DECLARE(UInt64, lightweight_deletes_sync, 2, R"(
 The same as [`mutations_sync`](#mutations_sync), but controls only execution of lightweight deletes.
 
@@ -4711,6 +4730,17 @@ If true, include only column names and types into result of DESCRIBE query
 )", 0) \
     DECLARE(Bool, apply_mutations_on_fly, false, R"(
 If true, mutations (UPDATEs and DELETEs) which are not materialized in data part will be applied on SELECTs.
+)", 0) \
+    DECLARE(Bool, apply_patch_parts, true, R"(
+If true, patch parts (that represent lightweight updates) are applied on SELECTs.
+)", 0) \
+    DECLARE(AlterUpdateMode, alter_update_mode, AlterUpdateMode::HEAVY, R"(
+A mode for `ALTER` queries that have the `UPDATE` commands.
+
+Possible values:
+- `heavy` - run regular mutation.
+- `lightweight` - run lightweight update if possible, run regular mutation otherwise.
+- `lightweight_force` - run lightweight update if possible, throw otherwise.
 )", 0) \
     DECLARE(Bool, mutations_execute_nondeterministic_on_initiator, false, R"(
 If true constant nondeterministic functions (e.g. function `now()`) are executed on initiator and replaced to literals in `UPDATE` and `DELETE` queries. It helps to keep data in sync on replicas while executing mutations with constant nondeterministic functions. Default value: `false`.
@@ -5838,6 +5868,9 @@ Only has an effect in ClickHouse Cloud. Discard connection if some data is unrea
     DECLARE(UInt64, distributed_cache_min_bytes_for_seek, 0, R"(
 Only has an effect in ClickHouse Cloud. Minimum number of bytes to do seek in distributed cache.
 )", 0) \
+    DECLARE(Bool, distributed_cache_read_only_from_current_az, true, R"(
+Only has an effect in ClickHouse Cloud. Allow to read only from current availability zone. If disabled, will read from all cache servers in all availability zones.
+)", 0) \
     DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
 Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
 )", 0) \
@@ -6547,7 +6580,7 @@ Allow experimental vector similarity index
     DECLARE(Bool, allow_experimental_codecs, false, R"(
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, max_limit_for_ann_queries, 1'000'000, R"(
+    DECLARE(UInt64, max_limit_for_vector_search_queries, 1'000, R"(
 SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, hnsw_candidate_list_size_for_search, 256, R"(
@@ -6590,6 +6623,9 @@ If it is set to true, allow to use experimental inverted index.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_full_text_index, false, R"(
 If it is set to true, allow to use experimental full-text index.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_lightweight_update, false, R"(
+Allow to use lightweight updates.
 )", EXPERIMENTAL) \
     \
     DECLARE(Bool, allow_experimental_join_condition, false, R"(
@@ -6762,6 +6798,7 @@ Experimental tsToGrid aggregate function for Prometheus-like timeseries resampli
     MAKE_OBSOLETE(M, Bool, allow_experimental_annoy_index, false) \
     MAKE_OBSOLETE(M, UInt64, max_threads_for_annoy_index_creation, 4) \
     MAKE_OBSOLETE(M, Int64, annoy_index_search_k_nodes, -1) \
+    MAKE_OBSOLETE(M, Int64, max_limit_for_ann_queries, -1) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_usearch_index, false) \
     MAKE_OBSOLETE(M, Bool, optimize_move_functions_out_of_any, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_undrop_table_query, true) \
