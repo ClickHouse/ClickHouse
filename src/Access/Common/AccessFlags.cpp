@@ -381,13 +381,13 @@ std::unordered_map<AccessFlags::ParameterType, AccessFlags> AccessFlags::splitIn
 
     auto definer_flags = AccessFlags::allDefinerFlags() & *this;
     if (definer_flags)
-        result.emplace(ParameterType::DEFINER, user_flags);
+        result.emplace(ParameterType::DEFINER, definer_flags);
 
     auto table_engine_flags = AccessFlags::allTableEngineFlags() & *this;
     if (table_engine_flags)
         result.emplace(ParameterType::TABLE_ENGINE, table_engine_flags);
 
-    auto other_flags = (~named_collection_flags & ~user_flags & ~table_engine_flags) & *this;
+    auto other_flags = (~named_collection_flags & ~user_flags & ~definer_flags & ~table_engine_flags) & *this;
     if (other_flags)
         result.emplace(ParameterType::NONE, other_flags);
 
