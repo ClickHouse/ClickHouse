@@ -35,7 +35,7 @@ struct BaseXXEncode
 
         const ColumnString::Offsets & src_offsets = src_column.getOffsets();
 
-        const auto * src = src_column.getChars().data();
+        const auto * src = reinterpret_cast<const char *>(src_column.getChars().data());
         auto * dst = dst_data.data();
 
         size_t prev_src_offset = 0;
@@ -45,8 +45,7 @@ struct BaseXXEncode
         {
             size_t current_src_offset = src_offsets[row];
             size_t src_length = current_src_offset - prev_src_offset - 1;
-            size_t encoded_size
-                = Traits::perform({reinterpret_cast<const char *>(&src[prev_src_offset]), src_length}, &dst[current_dst_offset]);
+            size_t encoded_size = Traits::perform({&src[prev_src_offset], src_length}, &dst[current_dst_offset]);
             prev_src_offset = current_src_offset;
             current_dst_offset += encoded_size;
             dst[current_dst_offset] = '\0';
@@ -67,7 +66,7 @@ struct BaseXXEncode
         dst_data.resize(max_result_size);
         dst_offsets.resize(input_rows_count);
 
-        const auto * src = src_column.getChars().data();
+        const auto * src = reinterpret_cast<const char *>(src_column.getChars().data());
         auto * dst = dst_data.data();
 
         size_t const N = src_column.getN();
@@ -75,7 +74,7 @@ struct BaseXXEncode
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            size_t encoded_size = Traits::perform({reinterpret_cast<const char *>(&src[row * N]), N}, &dst[current_dst_offset]);
+            size_t encoded_size = Traits::perform({&src[row * N], N}, &dst[current_dst_offset]);
             current_dst_offset += encoded_size;
             dst[current_dst_offset] = 0;
             ++current_dst_offset;
@@ -109,7 +108,7 @@ struct BaseXXDecode
 
         const ColumnString::Offsets & src_offsets = src_column.getOffsets();
 
-        const auto * src = src_column.getChars().data();
+        const auto * src = reinterpret_cast<const char *>(src_column.getChars().data());
         auto * dst = dst_data.data();
 
         size_t prev_src_offset = 0;
@@ -119,8 +118,7 @@ struct BaseXXDecode
         {
             size_t current_src_offset = src_offsets[row];
             size_t src_length = current_src_offset - prev_src_offset - 1;
-            std::optional<size_t> decoded_size
-                = Traits::perform({reinterpret_cast<const char *>(&src[prev_src_offset]), src_length}, &dst[current_dst_offset]);
+            std::optional<size_t> decoded_size = Traits::perform({&src[prev_src_offset], src_length}, &dst[current_dst_offset]);
             if (!decoded_size)
             {
                 if constexpr (ErrorHandling == BaseXXDecodeErrorHandling::ThrowException)
@@ -128,7 +126,7 @@ struct BaseXXDecode
                         ErrorCodes::INCORRECT_DATA,
                         "Invalid {} value ({}), cannot be decoded",
                         name,
-                        String(reinterpret_cast<const char *>(&src[prev_src_offset]), src_length));
+                        String(&src[prev_src_offset], src_length));
                 else
                     decoded_size = 0;
             }
@@ -153,7 +151,7 @@ struct BaseXXDecode
         dst_data.resize(max_result_size);
         dst_offsets.resize(input_rows_count);
 
-        const auto * src = src_column.getChars().data();
+        const auto * src = reinterpret_cast<const char *>(src_column.getChars().data());
         auto * dst = dst_data.data();
 
         size_t N = src_column.getN();
@@ -161,16 +159,11 @@ struct BaseXXDecode
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            std::optional<size_t> decoded_size
-                = Traits::perform({reinterpret_cast<const char *>(&src[row * N]), N}, &dst[current_dst_offset]);
+            std::optional<size_t> decoded_size = Traits::perform({&src[row * N], N}, &dst[current_dst_offset]);
             if (!decoded_size)
             {
                 if constexpr (ErrorHandling == BaseXXDecodeErrorHandling::ThrowException)
-                    throw Exception(
-                        ErrorCodes::INCORRECT_DATA,
-                        "Invalid {} value ({}), cannot be decoded",
-                        name,
-                        String(reinterpret_cast<const char *>(&src[row * N]), N));
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid {} value ({}), cannot be decoded", name, String(&src[row * N], N));
                 else
                     decoded_size = 0;
             }
