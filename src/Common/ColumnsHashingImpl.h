@@ -226,8 +226,8 @@ struct MakeSignedType
     >::type::type;
 };
 
-template <typename KeyHolder>
-bool compareKeyHolders(const KeyHolder & lhs, const KeyHolder & rhs, const std::vector<OptimizationDataOneExpression> & optimization_indexes)
+template <typename KeyHolder1, typename KeyHolder2>
+bool compareKeyHolders(const KeyHolder1 & lhs, const KeyHolder2 & rhs, const std::vector<OptimizationDataOneExpression> & optimization_indexes)
 {
     const auto & lhs_key = keyHolderGetKey(lhs);
     const auto & rhs_key = keyHolderGetKey(rhs);
@@ -236,8 +236,8 @@ bool compareKeyHolders(const KeyHolder & lhs, const KeyHolder & rhs, const std::
 
     if (optimization_indexes[0].is_type_signed_integer)
     {
-        auto lhs_key_signed = static_cast<typename MakeSignedType<KeyHolder>::type>(lhs_key);
-        auto rhs_key_signed = static_cast<typename MakeSignedType<KeyHolder>::type>(rhs_key);
+        auto lhs_key_signed = static_cast<typename MakeSignedType<KeyHolder1>::type>(lhs_key);
+        auto rhs_key_signed = static_cast<typename MakeSignedType<KeyHolder2>::type>(rhs_key);
         if (optimization_indexes[0].sort_direction == SortDirection::ASCENDING)
             return lhs_key_signed < rhs_key_signed;
         return rhs_key_signed < lhs_key_signed;
@@ -325,15 +325,15 @@ public:
         return emplaceImplOptimization(key_holder, data, limit_plus_offset_length, optimization_indexes, max_allowable_fill);
     }
 
-    template <typename Data, typename PriorityQueueCompare>
-    ALWAYS_INLINE std::optional<EmplaceResult> emplaceKeyOptimizationWithPriorityQueue(
+    template <typename Data>
+    ALWAYS_INLINE std::optional<EmplaceResult> emplaceKeyOptimizationWithHeap(
         Data & data,
         size_t row,
         Arena & pool,
         const std::vector<OptimizationDataOneExpression> & optimization_indexes,
         size_t limit_plus_offset_length,
         size_t max_allowable_fill,
-        std::priority_queue<typename Data::iterator, std::vector<typename Data::iterator>, PriorityQueueCompare>& top_keys)
+        std::vector<typename Data::iterator>& top_keys_heap)
     {
         if constexpr (nullable)
         {
@@ -359,7 +359,7 @@ public:
         }
 
         auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
-        return emplaceImplOptimizationWithPriorityQueue(key_holder, data, limit_plus_offset_length, optimization_indexes, max_allowable_fill, top_keys);
+        return emplaceImplOptimizationWithHeap(key_holder, data, limit_plus_offset_length, optimization_indexes, max_allowable_fill, top_keys_heap);
     }
 
     template <typename Data>
@@ -513,16 +513,15 @@ protected:
             return EmplaceResult(inserted);
     }
 
-    template <typename Data, typename KeyHolder, typename PriorityQueueCompare>
-    ALWAYS_INLINE std::optional<EmplaceResult> emplaceImplOptimizationWithPriorityQueue(
+    template <typename Data, typename KeyHolder>
+    ALWAYS_INLINE std::optional<EmplaceResult> emplaceImplOptimizationWithHeap(
         KeyHolder & key_holder,
         Data & data,
         size_t limit_plus_offset_length,
         const std::vector<OptimizationDataOneExpression> & optimization_indexes,
         size_t max_allowable_fill,
-        std::priority_queue<typename Data::iterator, std::vector<typename Data::iterator>, PriorityQueueCompare>& top_keys)
+        std::vector<typename Data::iterator>& top_keys_heap)
     {
-        static_cast<void>(top_keys);
         chassert(limit_plus_offset_length > 0);
         if constexpr (consecutive_keys_optimization)
         {
@@ -535,9 +534,34 @@ protected:
             }
         }
 
-        // First check if key_holder more than top of top_keys. If more, it could be skipped.
-        if (!top_keys.empty() && compareKeyHolders(top_keys.top()->getKey(), key_holder, optimization_indexes))
-            return std::nullopt;
+        if constexpr (!std::is_same_v<decltype(key_holder), const VoidKey>) { // TODO VoidKey doesn't work in compareKeyHolders
+            if constexpr (!std::is_same_v<KeyHolder, DB::SerializedKeyHolder>
+                       && !std::is_same_v<KeyHolder, DB::ArenaKeyHolder>
+                       && !std::is_same_v<KeyHolder, Int128>
+                       && !std::is_same_v<KeyHolder, UInt128>
+                       && !std::is_same_v<KeyHolder, Int256>
+                       && !std::is_same_v<KeyHolder, UInt256>) { // TODO support all types
+                if constexpr (HasBegin<Data>::value)
+                {
+                    if constexpr (!std::is_same_v<decltype(data.begin()->getKey()), const VoidKey>)
+                    {
+                        // First check if key_holder more than top of top_keys_heap. If more, it could be skipped.
+                        if (top_keys_heap.size() >= limit_plus_offset_length && // TODO ==
+                            compareKeyHolders(top_keys_heap.front()->getKey(), key_holder, optimization_indexes))
+                            return std::nullopt;
+                    }
+                } else
+                {
+                    // TODO
+                }
+            }
+        }
+
+        using DataIterator = typename Data::iterator;
+        auto heap_cmp = [&](DataIterator& lhs, DataIterator& rhs)
+        {
+            return compareKeyHolders(lhs->getKey(), rhs->getKey(), optimization_indexes);
+        };
 
         typename Data::LookupResult it;
         bool inserted = false;
@@ -554,7 +578,7 @@ protected:
                     assert(optimization_indexes.size() == 1 && optimization_indexes[0].index_of_expression_in_group_by == 0); // TODO support arbitrary number of expressions in findOptimizationSublistIndexes
                     if constexpr (HasBegin<Data>::value)
                     {
-                        if constexpr (!std::is_same_v<decltype(data.begin()->getKey()), const VoidKey> && HasErase<Data, decltype(keyHolderGetKey(key_holder))>::value)
+                        if constexpr (!std::is_same_v<decltype(data.begin()->getKey()), const VoidKey>)
                         {
                             // TODO Remove after support more types
                             assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), StringRef>));
@@ -563,16 +587,24 @@ protected:
                             assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), Int256>));
                             assert(static_cast<bool>(!std::is_same_v<decltype(data.begin()->getKey()), UInt256>));
 
-                            Data new_data;
-                            new_data.reserve(max_allowable_fill);
-
-                            for (const auto& old_it : top_keys)
+                            // Create new HT with only top elements and replace data with it
+                            Data new_data(max_allowable_fill);
+                            for (auto& old_it : top_keys_heap)
                             {
                                 new_data.emplace(old_it->getKey(), it, inserted);
-                                it->setMapped(old_it->getMapped());
+                                it->getMapped() = std::move(old_it->getMapped());
                             }
-
                             data = std::move(new_data);
+
+                            // Renew top_keys_heap from data iterators
+                            size_t i = 0;
+                            top_keys_heap.resize(data.size()); // TODO remove after check
+                            for (auto iterator = data.begin(); iterator != data.end(); ++iterator)
+                            {
+                                top_keys_heap[i] = iterator;
+                                ++i;
+                            }
+                            std::make_heap(top_keys_heap.begin(), top_keys_heap.end(), heap_cmp);
                         }
                     } else if constexpr (HasForEachMapped<Data>::value)
                     {
@@ -587,12 +619,35 @@ protected:
         inserted = false;
         data.emplace(key_holder, it, inserted);
 
-        // If inserted, we have to update top_keys. If is filled, pop the largest element.
-        if (inserted)
-        {
-            if (top_keys.size() == limit_plus_offset_length)
-                top_keys.pop();
-            top_keys.push(it);
+        // If inserted, we have to update top_keys_heap. If is filled, pop the largest element.
+        if constexpr (!std::is_same_v<decltype(key_holder), const VoidKey>) { // TODO VoidKey doesn't work in compareKeyHolders
+            if constexpr (!std::is_same_v<KeyHolder, DB::SerializedKeyHolder>
+                       && !std::is_same_v<KeyHolder, DB::ArenaKeyHolder>
+                       && !std::is_same_v<KeyHolder, Int128>
+                       && !std::is_same_v<KeyHolder, UInt128>
+                       && !std::is_same_v<KeyHolder, Int256>
+                       && !std::is_same_v<KeyHolder, UInt256>) { // TODO support all types
+                if constexpr (HasBegin<Data>::value)
+                {
+                    if constexpr (!std::is_same_v<decltype(data.begin()->getKey()), const VoidKey>)
+                    {
+                        if (inserted)
+                        {
+                            if (top_keys_heap.size() == limit_plus_offset_length)
+                            {
+                                std::pop_heap(top_keys_heap.begin(), top_keys_heap.end(), heap_cmp);
+                                top_keys_heap.pop_back();
+                            }
+                            using Iterator = typename Data::iterator;
+                            top_keys_heap.push_back(Iterator(&data, it));
+                            std::push_heap(top_keys_heap.begin(), top_keys_heap.end(), heap_cmp);
+                        }
+                    }
+                } else
+                {
+                    // TODO
+                }
+            }
         }
 
         [[maybe_unused]] Mapped * cached = nullptr;

@@ -1058,6 +1058,20 @@ struct HasConstIterator : std::false_type {};
 template <typename T>
 struct HasConstIterator<T, std::void_t<typename T::const_iterator>> : std::true_type {};
 
+template <typename T, typename = void>
+struct HasImpls : std::false_type {};
+
+template <typename T>
+struct HasImpls<T, std::void_t<decltype(std::declval<const T&>().impls)>> : std::true_type {};
+
+static size_t roundUpToPow2(size_t a)
+{
+    size_t pow2 = 1;
+    while (pow2 < a)
+        pow2 *= 2;
+    return pow2;
+}
+
 template <bool prefetch, typename Method, typename State>
 void NO_INLINE Aggregator::executeImplBatch(
     Method & method,
@@ -1255,25 +1269,17 @@ void NO_INLINE Aggregator::executeImplBatch(
             size_t max_allowable_fill = std::numeric_limits<uint64_t>::max();
             const size_t allowed_times_more = 4; // constant could be changed;
             if (std::numeric_limits<uint64_t>::max() / allowed_times_more >= params.limit_plus_offset_length)
-            {
-                max_allowable_fill = params.limit_plus_offset_length * allowed_times_more;
-                // round up max_allowable_fill to the nearest power of 2 from above
-                size_t pow2 = 1;
-                while (pow2 < max_allowable_fill)
-                    pow2 *= 2;
-                max_allowable_fill = pow2;
-            }
+                max_allowable_fill = roundUpToPow2(params.limit_plus_offset_length * allowed_times_more);
             const auto& optimization_indexes = params.optimization_indexes.value();
-            if constexpr (HasConstIterator<decltype(method.data)>::value)
+            using DataType = decltype(method.data);
+            if constexpr (
+                !HasImpls<DataType>::value &&
+                HasConstIterator<DataType>::value)
             {
                 using Data = decltype(method.data);
-                using ConstIterator = typename Data::iterator;
-                auto cmp = [&](ConstIterator& lhs, ConstIterator& rhs)
-                {
-                    return ColumnsHashing::columns_hashing_impl::compareKeyHolders(lhs->getKey(), rhs->getKey(), optimization_indexes);
-                };
-                typename std::priority_queue<ConstIterator, std::vector<ConstIterator>, decltype(cmp)> top_keys(cmp);
-                static_cast<void>(top_keys);
+                using DataIterator = typename Data::iterator;
+                std::vector<DataIterator> top_keys_heap;
+                top_keys_heap.reserve(roundUpToPow2(params.limit_plus_offset_length));
                 for (size_t i = key_start; i < key_end; ++i)
                 {
                     AggregateDataPtr aggregate_data = nullptr;
@@ -1290,8 +1296,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                         }
                     }
 
-                    // TODO pass priority_queue to emplaceKeyOptimization
-                    auto emplace_result = state.emplaceKeyOptimizationWithPriorityQueue(method.data, i, *aggregates_pool, optimization_indexes, params.limit_plus_offset_length, max_allowable_fill, top_keys);
+                    auto emplace_result = state.emplaceKeyOptimizationWithHeap(method.data, i, *aggregates_pool, optimization_indexes, params.limit_plus_offset_length, max_allowable_fill, top_keys_heap);
 
                     if (!emplace_result.has_value())
                     {
