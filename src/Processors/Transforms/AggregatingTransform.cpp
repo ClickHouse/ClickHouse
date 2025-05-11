@@ -285,7 +285,6 @@ public:
         , data(std::move(data_))
         , shared_data(std::make_shared<ConvertingAggregatedToChunksWithMergingSource::SharedData>())
         , num_threads(num_threads_)
-        , out_of_order_buckets(NUM_OOO_BUCKETS, -1)
     {
     }
 
@@ -426,11 +425,11 @@ private:
         {
             Chunk chunk;
             /// Try push an out of order bucket first, if it is ready.
-            for (auto & ooo_bucket : out_of_order_buckets)
+            for (auto it = out_of_order_buckets.begin(); it != out_of_order_buckets.end(); ++it)
             {
-                if (ooo_bucket != -1 && (chunk = get_bucket_if_ready(ooo_bucket)))
+                if ((chunk = get_bucket_if_ready(*it)))
                 {
-                    ooo_bucket = -1;
+                    out_of_order_buckets.erase(it);
                     break;
                 }
             }
@@ -444,9 +443,9 @@ private:
                 else if (params->params.allow_aggregation_to_produce_buckets_out_of_order)
                 {
                     /// Otherwise, if there is an empty slot, postpone the current bucket until better times.
-                    if (auto empty_it = std::ranges::find(out_of_order_buckets, -1); empty_it != out_of_order_buckets.end())
+                    if (out_of_order_buckets.size() < NUM_OOO_BUCKETS)
                     {
-                        *empty_it = current_bucket_num;
+                        out_of_order_buckets.push_back(current_bucket_num);
                         ++current_bucket_num;
                         continue;
                     }
@@ -465,26 +464,23 @@ private:
             }
         }
 
-        auto try_push_out_of_order_bucket = [&](Int32 & ooo_bucket)
+        auto try_push_out_of_order_bucket = [&](auto & it)
         {
-            if (ooo_bucket != -1)
+            if (auto chunk = get_bucket_if_ready(*it))
             {
-                if (auto chunk = get_bucket_if_ready(ooo_bucket))
-                {
-                    ooo_bucket = -1;
-                    chunk.getChunkInfos().get<AggregatedChunkInfo>()->out_of_order_buckets = out_of_order_buckets;
-                    output.push(std::move(chunk));
-                    return true;
-                }
+                out_of_order_buckets.erase(it);
+                chunk.getChunkInfos().template get<AggregatedChunkInfo>()->out_of_order_buckets = out_of_order_buckets;
+                output.push(std::move(chunk));
+                return true;
             }
             return false;
         };
 
-        for (auto & ooo_bucket : out_of_order_buckets)
-            if (try_push_out_of_order_bucket(ooo_bucket))
+        for (auto it = out_of_order_buckets.begin(); it != out_of_order_buckets.end(); ++it)
+            if (try_push_out_of_order_bucket(it))
                 return Status::PortFull;
 
-        if (std::ranges::any_of(out_of_order_buckets, [](auto ooo_bucket) { return ooo_bucket != -1; }))
+        if (!out_of_order_buckets.empty())
             return Status::NeedData;
 
         output.finish();
