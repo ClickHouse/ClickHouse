@@ -408,9 +408,6 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index);
 void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach);
 #endif
 
-MergeTreeIndexPtr legacyVectorSimilarityIndexCreator(const IndexDescription & index);
-void legacyVectorSimilarityIndexValidator(const IndexDescription & index, bool attach);
-
 MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index);
 void ginIndexValidator(const IndexDescription & index, bool attach);
 

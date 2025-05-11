@@ -87,8 +87,8 @@ struct QueryPlanOptimizationSettings
     bool optimize_lazy_materialization = false;
     size_t max_limit_for_lazy_materialization = 0;
 
-    size_t max_limit_for_ann_queries;
     bool vector_search_with_rescoring;
+    size_t max_limit_for_vector_search_queries;
 
     /// Setting needed for Sets (JOIN -> IN optimization)
 
