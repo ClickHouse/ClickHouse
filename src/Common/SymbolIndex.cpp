@@ -1,5 +1,5 @@
 #include <base/defines.h>
-//#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
 
 #include <base/MemorySanitizer.h>
 #include <base/hex.h>
@@ -534,4 +534,4 @@ const SymbolIndex & SymbolIndex::instance()
 
 }
 
-//#endif
+#endif
