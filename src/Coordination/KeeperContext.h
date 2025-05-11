@@ -111,6 +111,8 @@ public:
     }
 
     bool isOperationSupported(Coordination::OpNum operation) const;
+    bool isS3ExperimentalChangelog() const;
+
 private:
     /// local disk defined using path or disk name
     using Storage = std::variant<DiskPtr, std::string>;
@@ -140,6 +142,7 @@ private:
     bool ignore_system_path_on_startup{false};
     bool digest_enabled{true};
     bool digest_enabled_on_commit{false};
+    bool s3_experimental_changelog{false};
 
     std::shared_ptr<DiskSelector> disk_selector;
 
