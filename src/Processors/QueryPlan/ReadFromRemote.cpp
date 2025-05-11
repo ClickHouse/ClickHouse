@@ -50,6 +50,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsString cluster_for_parallel_replicas;
@@ -604,6 +605,7 @@ void ReadFromRemote::addPipe(
     bool add_extremes = false;
     bool async_read = context->getSettingsRef()[Setting::async_socket_for_remote];
     bool async_query_sending = context->getSettingsRef()[Setting::async_query_sending_for_remote];
+    bool parallel_replicas_disabled = context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] == 0;
     if (stage == QueryProcessingStage::Complete)
     {
         if (const auto * ast_select = shard.query->as<ASTSelectQuery>())
@@ -694,7 +696,7 @@ void ReadFromRemote::addPipe(
             shard.shard_info.pool, query_string, shard.header, context, throttler, scalars, external_tables, stage_to_use, shard.query_plan);
         remote_query_executor->setLogger(log);
 
-        if (context->canUseTaskBasedParallelReplicas())
+        if (context->canUseTaskBasedParallelReplicas() || parallel_replicas_disabled)
         {
             // when doing parallel reading from replicas (ParallelReplicasMode::READ_TASKS) on a shard:
             // establish a connection to a replica on the shard, the replica will instantiate coordinator to manage parallel reading from replicas on the shard.
@@ -702,6 +704,8 @@ void ReadFromRemote::addPipe(
             // Only one coordinator per shard is necessary. Therefore using PoolMode::GET_ONE to establish only one connection per shard.
             // Using PoolMode::GET_MANY for this mode will(can) lead to instantiation of several coordinators (depends on max_parallel_replicas setting)
             // each will execute parallel reading from replicas, so the query result will be multiplied by the number of created coordinators
+            //
+            // In case parallel replicas are disabled, there also should be a single connection to each shard to prevent result duplication
             remote_query_executor->setPoolMode(PoolMode::GET_ONE);
         }
         else

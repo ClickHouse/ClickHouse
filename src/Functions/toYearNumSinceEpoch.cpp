@@ -16,7 +16,7 @@ REGISTER_FUNCTION(ToYearNumSinceEpoch)
     FunctionDocumentation::Arguments arguments = {{"date", "Date, DateTime or DateTime64"}};
     FunctionDocumentation::ReturnedValue returned_value = "Positive integer";
     FunctionDocumentation::Examples examples = {{"Example", "SELECT toYearNumSinceEpoch(toDate('2024-10-01'))", "54"}};
-    FunctionDocumentation::Category category = {"DateTime"};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
 
     factory.registerFunction<FunctionToYearNumSinceEpoch>({description, syntax, arguments, returned_value, examples, category});
 }

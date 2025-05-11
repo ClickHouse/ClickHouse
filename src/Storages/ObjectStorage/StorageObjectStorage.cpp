@@ -375,8 +375,15 @@ void StorageObjectStorage::read(
 
     const auto read_from_format_info = configuration->prepareReadingFromFormat(
         object_storage, column_names, storage_snapshot, supportsSubsetOfColumns(local_context), local_context);
+
     const bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];
+
+    auto modified_format_settings{format_settings};
+    if (!modified_format_settings.has_value())
+        modified_format_settings.emplace(getFormatSettings(local_context));
+
+    configuration->modifyFormatSettings(modified_format_settings.value());
 
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,
@@ -386,7 +393,7 @@ void StorageObjectStorage::read(
         getVirtualsList(),
         query_info,
         storage_snapshot,
-        format_settings,
+        modified_format_settings,
         distributed_processing,
         read_from_format_info,
         need_only_count,
@@ -426,13 +433,11 @@ SinkToStoragePtr StorageObjectStorage::write(
 
     if (configuration->withPartitionWildcard())
     {
-        ASTPtr partition_by_ast = nullptr;
+        ASTPtr partition_by_ast = partition_by;
         if (auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query))
         {
             if (insert_query->partition_by)
                 partition_by_ast = insert_query->partition_by;
-            else
-                partition_by_ast = partition_by;
         }
 
         if (partition_by_ast)

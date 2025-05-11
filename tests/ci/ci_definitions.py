@@ -154,7 +154,9 @@ class JobNames(metaclass=WithIter):
     STATELESS_TEST_PARALLEL_REPLICAS_REPLICATED_RELEASE = (
         "Stateless tests (release, ParallelReplicas, s3 storage)"
     )
-    STATELESS_TEST_S3_DEBUG_DISTRIBUTED_PLAN = "Stateless tests (debug, distributed plan, s3 storage)"
+    STATELESS_TEST_S3_DEBUG_DISTRIBUTED_PLAN = (
+        "Stateless tests (debug, distributed plan, s3 storage)"
+    )
     STATELESS_TEST_S3_TSAN = "Stateless tests (tsan, s3 storage)"
     STATELESS_TEST_AZURE_ASAN = "Stateless tests (azure, asan)"
     STATELESS_TEST_FLAKY_ASAN = "Stateless tests (asan, flaky check)"
@@ -171,7 +173,9 @@ class JobNames(metaclass=WithIter):
     INTEGRATION_TEST_ASAN = "Integration tests (asan)"
     INTEGRATION_TEST_ASAN_OLD_ANALYZER = "Integration tests (asan, old analyzer)"
     INTEGRATION_TEST_TSAN = "Integration tests (tsan)"
-    INTEGRATION_TEST_AARCH64_DISTRIBUTED_PLAN = "Integration tests (aarch64, distributed plan)"
+    INTEGRATION_TEST_AARCH64_DISTRIBUTED_PLAN = (
+        "Integration tests (aarch64, distributed plan)"
+    )
     INTEGRATION_TEST_FLAKY = "Integration tests (asan, flaky check)"
 
     UPGRADE_TEST_DEBUG = "Upgrade check (debug)"
