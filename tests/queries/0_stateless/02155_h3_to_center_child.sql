@@ -1,10 +1,10 @@
 -- Tags: no-fasttest
 
-DROP TABLE IF EXISTS h3_indexes,
+DROP TABLE IF EXISTS h3_indexes;
 
 --Note: id column just exists to keep the test results sorted.
 -- Order is not guaranteed with h3_index or res columns as we test the same h3_index at various resolutions.
-CREATE TABLE h3_indexes (id UInt8, h3_index UInt64, res UInt8) ENGINE = Memory,
+CREATE TABLE h3_indexes (id UInt8, h3_index UInt64, res UInt8) ENGINE = Memory;
 -- Test cases taken from fixture: https://github.com/uber/h3/blob/master/src/apps/testapps/testCellToCenterChild.c
 
 INSERT INTO h3_indexes VALUES
@@ -129,6 +129,6 @@ INSERT INTO h3_indexes VALUES
 (119,635158337624735807,15),
 (120,639661937252106247,15);
 
-SELECT h3ToCenterChild(h3_index,res) FROM h3_indexes ORDER BY id,
+SELECT h3ToCenterChild(h3_index,res) FROM h3_indexes ORDER BY id;
 
-DROP TABLE h3_indexes,
+DROP TABLE h3_indexes;
