@@ -28,6 +28,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
+#include <IO/copyData.h>
 #include <libnuraft/log_val_type.hxx>
 #include <libnuraft/log_entry.hxx>
 #include <libnuraft/raft_server.hxx>
@@ -244,7 +245,9 @@ public:
             LogLocation{
                 .file_description = current_file_description,
                 .position = current_position,
-                .size = record.header.blob_size});
+                .entry_size = record.header.blob_size,
+                .size_in_file = write_buffer->count() - current_position
+        });
 
         LOG_TRACE(log, "Writing to s3 buffer after {}", write_buffer->count());
 

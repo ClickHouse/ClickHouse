@@ -93,7 +93,6 @@ bool KeeperLogStore::compact(uint64_t last_log_index)
 
 bool KeeperLogStore::flush()
 {
-    std::cerr << "Flushing";
     std::lock_guard lock(changelog_lock);
     return changelog.flush();
 }
