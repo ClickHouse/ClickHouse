@@ -87,7 +87,7 @@ struct QueryPlanOptimizationSettings
     bool optimize_lazy_materialization = false;
     size_t max_limit_for_lazy_materialization = 0;
 
-    size_t max_limit_for_ann_queries;
+    size_t max_limit_for_vector_search_queries;
 
     /// Setting needed for Sets (JOIN -> IN optimization)
 
@@ -98,6 +98,8 @@ struct QueryPlanOptimizationSettings
     /// This is needed for conversion JoinLogical -> Join
 
     UInt64 max_entries_for_hash_table_stats;
+    UInt64 max_size_to_preallocate_for_joins;
+    bool collect_hash_table_stats_during_joins;
     String initial_query_id;
     std::chrono::milliseconds lock_acquire_timeout;
     ExpressionActionsSettings actions_settings;
