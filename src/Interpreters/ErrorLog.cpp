@@ -119,8 +119,8 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
 
     std::vector<UInt64> error_trace_array;
     error_trace_array.reserve(error_trace.size());
-    for (size_t i = 0; i < error_trace.size(); ++i)
-        error_trace_array.emplace_back(reinterpret_cast<UInt64>(error_trace[i]));
+    for (auto * ptr : error_trace)
+        error_trace_array.emplace_back(reinterpret_cast<UInt64>(ptr));
 
     columns[column_idx++]->insert(Array(error_trace_array.begin(), error_trace_array.end()));
 
