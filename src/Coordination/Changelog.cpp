@@ -2188,16 +2188,15 @@ try
         }
     }
 
-    // CHANGELATER
-    // const auto move_from_latest_logs_disks = [&](auto & description)
-    // {
-    //     /// check if we need to move completed log to another disk
-    //     auto latest_log_disk = getLatestLogDisk();
-    //     auto disk = getDisk();
+    const auto move_from_latest_logs_disks = [&](auto & description)
+    {
+        /// check if we need to move completed log to another disk
+        auto latest_log_disk = getLatestLogDisk();
+        auto disk = getDisk();
 
-    //     if (latest_log_disk != disk && latest_log_disk == description->disk)
-    //         moveChangelogBetweenDisks(latest_log_disk, description, disk, description->path, keeper_context);
-    // };
+        if (latest_log_disk != disk && latest_log_disk == description->disk && !keeper_context->isS3ExperimentalChangelog())
+            moveChangelogBetweenDisks(latest_log_disk, description, disk, description->path, keeper_context);
+    };
 
     /// we can have empty log (with zero entries) and last_log_read_result will be initialized
     if (!last_log_read_result || entry_storage.empty()) /// We just may have no logs (only snapshot or nothing)
@@ -2249,9 +2248,7 @@ try
             remove_invalid_logs();
             entry_storage.cleanAfter(last_log_read_result->last_read_index);
             description->broken_at_end = true;
-            // move_from_latest_logs_disks(description);
-            // CHANGELATER
-            // move_from_latest_logs_disks(existing_changelogs.at(last_log_read_result->log_start_index));
+            move_from_latest_logs_disks(description);
         }
         /// don't mix compressed and uncompressed writes
         else if (compress_logs == last_log_read_result->compressed_log)
@@ -2261,31 +2258,29 @@ try
     }
     else if (last_log_read_result.has_value())
     {
-        // CHANGELATER
-        // move_from_latest_logs_disks(existing_changelogs.at(last_log_read_result->log_start_index));
+        move_from_latest_logs_disks(existing_changelogs.at(last_log_read_result->log_start_index));
     }
 
     /// Start new log if we don't initialize writer from previous log. All logs can be "complete".
     if (!current_writer->isFileSet())
         current_writer->rotate(max_log_id + 1);
 
-    /// CHANGELATER
     /// Move files to correct disks
-    // auto latest_start_index = current_writer->getStartIndex();
-    // auto latest_log_disk = getLatestLogDisk();
-    // auto disk = getDisk();
-    // for (const auto & [start_index, description] : existing_changelogs)
-    // {
-    //     /// latest log should already be on latest_log_disk
-    //     if (start_index == latest_start_index)
-    //     {
-    //         chassert(description->disk == latest_log_disk);
-    //         continue;
-    //     }
+    auto latest_start_index = current_writer->getStartIndex();
+    auto latest_log_disk = getLatestLogDisk();
+    auto disk = getDisk();
+    for (const auto & [start_index, description] : existing_changelogs)
+    {
+        /// latest log should already be on latest_log_disk
+        if (start_index == latest_start_index)
+        {
+            chassert(description->disk == latest_log_disk);
+            continue;
+        }
 
-    //     if (description->disk != disk)
-    //         moveChangelogBetweenDisks(description->disk, description, disk, description->path, keeper_context);
-    // }
+        if (description->disk != disk)
+            moveChangelogBetweenDisks(description->disk, description, disk, description->path, keeper_context);
+    }
 
     initialized = true;
 }
@@ -2306,11 +2301,10 @@ void Changelog::initWriter(ChangelogFileDescriptionPtr description)
 
     LOG_TRACE(log, "Continue to write into {}", description->path);
 
-    // CHANGELATER
-    // auto log_disk = description->disk;
-    // auto latest_log_disk = getLatestLogDisk();
-    // if (log_disk != latest_log_disk)
-    //     moveChangelogBetweenDisks(log_disk, description, latest_log_disk, description->path, keeper_context);
+    auto log_disk = description->disk;
+    auto latest_log_disk = getLatestLogDisk();
+    if (log_disk != latest_log_disk)
+        moveChangelogBetweenDisks(log_disk, description, latest_log_disk, description->path, keeper_context);
 
     current_writer->setFile(std::move(description), WriteMode::Append);
 }
