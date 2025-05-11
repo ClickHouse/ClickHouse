@@ -6586,7 +6586,7 @@ Allow experimental vector similarity index
     DECLARE(Bool, allow_experimental_codecs, false, R"(
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, max_limit_for_ann_queries, 1'000'000, R"(
+    DECLARE(UInt64, max_limit_for_vector_search_queries, 1'000, R"(
 SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, hnsw_candidate_list_size_for_search, 256, R"(
@@ -6804,6 +6804,7 @@ Experimental tsToGrid aggregate function for Prometheus-like timeseries resampli
     MAKE_OBSOLETE(M, Bool, allow_experimental_annoy_index, false) \
     MAKE_OBSOLETE(M, UInt64, max_threads_for_annoy_index_creation, 4) \
     MAKE_OBSOLETE(M, Int64, annoy_index_search_k_nodes, -1) \
+    MAKE_OBSOLETE(M, Int64, max_limit_for_ann_queries, -1) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_usearch_index, false) \
     MAKE_OBSOLETE(M, Bool, optimize_move_functions_out_of_any, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_undrop_table_query, true) \

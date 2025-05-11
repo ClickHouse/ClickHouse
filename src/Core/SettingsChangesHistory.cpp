@@ -82,6 +82,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_pretty_glue_chunks", "0", "auto", "A new setting to make Pretty formats prettier."},
             {"distributed_cache_read_only_from_current_az", true, true, "New setting"},
             {"parallel_hash_join_threshold", 0, 100'000, "New setting"},
+            {"max_limit_for_ann_queries", 1'000, 0, "Obsolete setting"},
+            {"max_limit_for_vector_search_queries", 1'000, 1'000, "New setting"},
             {"min_os_cpu_wait_time_ratio_to_throw", 0, 0, "Setting values were changed and backported to 25.4"},
             {"max_os_cpu_wait_time_ratio_to_throw", 0, 0, "Setting values were changed and backported to 25.4"},
             {"make_distributed_plan", 0, 0, "New experimental setting."},
