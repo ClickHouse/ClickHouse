@@ -40,7 +40,7 @@ INSERT INTO tab VALUES
 SELECT 'Test vector_search_filter_strategy = prefilter';
 
 SELECT '-- No additional WHERE clauses present, expect index usage';
-SELECT explain FROM (
+SELECT trimLeft(explain) FROM (
     EXPLAIN indexes = 1
     SELECT id
     FROM tab
@@ -51,7 +51,7 @@ SELECT explain FROM (
 WHERE explain LIKE '%vector_similarity%' OR explain LIKE '%Granules: 3/4%';
 
 SELECT '-- Additional WHERE clauses present, index usage not expected';
-SELECT explain FROM (
+SELECT trimLeft(explain) FROM (
     EXPLAIN indexes = 1
     SELECT id
     FROM tab
@@ -63,7 +63,7 @@ SELECT explain FROM (
 WHERE explain LIKE '%vector_similarity%';
 
 SELECT '-- Additional WHERE clauses present, index usage not expected';
-SELECT explain FROM (
+SELECT trimLeft(explain) FROM (
     EXPLAIN indexes = 1
     SELECT id
     FROM tab
@@ -75,7 +75,7 @@ SELECT explain FROM (
 WHERE explain LIKE '%vector_similarity%';
 
 SELECT '-- Additional WHERE clauses present, index usage not expected';
-SELECT explain FROM (
+SELECT trimLeft(explain) FROM (
     EXPLAIN indexes = 1
     SELECT id
     FROM tab
@@ -89,7 +89,7 @@ WHERE explain LIKE '%vector_similarity%';
 SELECT 'Test vector_search_filter_strategy = postfilter';
 
 SELECT '-- No additional WHERE clauses present, expect index usage';
-SELECT explain FROM (
+SELECT trimLeft(explain) FROM (
     EXPLAIN indexes = 1
     SELECT id
     FROM tab
@@ -100,7 +100,7 @@ SELECT explain FROM (
 WHERE explain LIKE '%vector_similarity%' OR explain LIKE '%Granules: 3/4%';
 
 SELECT '-- Additional WHERE clauses on partition key present (2 full parts selected), expect index usage';
-SELECT explain FROM (
+SELECT trimLeft(explain) FROM (
     EXPLAIN indexes = 1
     SELECT id
     FROM tab
@@ -112,7 +112,7 @@ SELECT explain FROM (
 WHERE explain LIKE '%vector_similarity%';
 
 SELECT '-- Additional WHERE clauses on partition key present (2 full parts selected), expect index usage';
-SELECT explain FROM (
+SELECT trimLeft(explain) FROM (
     EXPLAIN indexes = 1
     SELECT id
     FROM tab

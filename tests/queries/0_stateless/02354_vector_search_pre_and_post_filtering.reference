@@ -1,18 +1,18 @@
 Test vector_search_filter_strategy = prefilter
 -- No additional WHERE clauses present, expect index usage
-              Description: vector_similarity GRANULARITY 10000
-              Granules: 3/4
+Description: vector_similarity GRANULARITY 10000
+Granules: 3/4
 -- Additional WHERE clauses present, index usage not expected
 -- Additional WHERE clauses present, index usage not expected
 -- Additional WHERE clauses present, index usage not expected
 Test vector_search_filter_strategy = postfilter
 -- No additional WHERE clauses present, expect index usage
-              Description: vector_similarity GRANULARITY 10000
-              Granules: 3/4
+Description: vector_similarity GRANULARITY 10000
+Granules: 3/4
 -- Additional WHERE clauses on partition key present (2 full parts selected), expect index usage
-                Description: vector_similarity GRANULARITY 10000
+Description: vector_similarity GRANULARITY 10000
 -- Additional WHERE clauses on partition key present (2 full parts selected), expect index usage
-                Description: vector_similarity GRANULARITY 10000
+Description: vector_similarity GRANULARITY 10000
 -- Additional WHERE clauses present, 2 full parts selected by partition key / 1 part partially selected by PK, index usage not expected
 7
 8
