@@ -1,14 +1,15 @@
 #pragma once
 
 #include <Core/SortDescription.h>
-#include <Common/HashTable/HashSet.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Common/HashTable/HashSet.h>
 
+#include <unordered_set>
 
 namespace DB
 {
@@ -66,9 +67,6 @@ public:
     GroupingAggregatedTransform(const Block & header_, size_t num_inputs_, AggregatingTransformParamsPtr params_);
     String getName() const override { return "GroupingAggregatedTransform"; }
 
-    /// Special setting: in case if single source can return several chunks with same bucket.
-    void allowSeveralChunksForSingleBucketPerSource() { expect_several_chunks_for_single_bucket_per_source = true; }
-
 protected:
     Status prepare(const PortNumbers & updated_input_ports, const PortNumbers &) override;
     void work() override;
@@ -78,6 +76,11 @@ private:
     AggregatingTransformParamsPtr params;
 
     std::vector<Int32> last_bucket_number; /// Last bucket read from each input.
+
+    /// See `ConvertingAggregatedToChunksTransform` to learn about sending buckets out of order.
+    std::vector<std::vector<Int32>> input_out_of_order_buckets; /// Out of order bucket ids for each input.
+    std::unordered_map<Int32, size_t> out_of_order_buckets;
+
     std::map<Int32, Chunks> chunks_map; /// bucket -> chunks
     Chunks overflow_chunks;
     Chunks single_level_chunks;
@@ -89,9 +92,6 @@ private:
     bool initialized_index_to_input = false;
     std::vector<InputPorts::iterator> index_to_input;
     HashSet<uint64_t> wait_input_ports_numbers;
-
-    /// If we aggregate partitioned data several chunks might be produced for the same bucket: one for each partition.
-    bool expect_several_chunks_for_single_bucket_per_source = true;
 
     /// Add chunk read from input to chunks_map, overflow_chunks or single_level_chunks according to it's chunk info.
     void addChunk(Chunk chunk, size_t input);
@@ -157,7 +157,7 @@ class Pipe;
 void addMergingAggregatedMemoryEfficientTransform(
     Pipe & pipe,
     AggregatingTransformParamsPtr params,
-    size_t num_merging_processors);
-
+    size_t num_merging_processors,
+    bool should_produce_results_in_order_of_bucket_number);
 }
 

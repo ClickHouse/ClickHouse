@@ -8,10 +8,13 @@
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Columns/ColumnBLOB.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/VersionNumber.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/ExternalTable.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -42,15 +45,10 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include "Common/OpenTelemetryTraceContext.h"
 #include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
-#include <Common/Stopwatch.h>
-#include <Common/VersionNumber.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
@@ -710,6 +708,9 @@ void TCPHandler::runImpl()
                         client_tcp_protocol_version,
                         getFormatSettings(query_state->query_context));
                 });
+
+            if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION)
+                query_state->query_context->setSetting("allow_aggregation_to_produce_buckets_out_of_order", false);
 
             /// Processing Query
             std::tie(query_state->parsed_query, query_state->io) = executeQuery(query_state->query, query_state->query_context, QueryFlags{}, query_state->stage);
