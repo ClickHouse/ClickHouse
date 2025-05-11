@@ -1,6 +1,7 @@
 #pragma once
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include "base/types.h"
 #include <IO/WriteBufferFromString.h>
 #include <base/defines.h>
 
@@ -112,6 +113,7 @@ public:
 
     bool isOperationSupported(Coordination::OpNum operation) const;
     bool isS3ExperimentalChangelog() const;
+    Int64 getS3FlushInterval() const;
 
 private:
     /// local disk defined using path or disk name
@@ -143,6 +145,7 @@ private:
     bool digest_enabled{true};
     bool digest_enabled_on_commit{false};
     bool s3_experimental_changelog{false};
+    Int64 s3_flush_interval;
 
     std::shared_ptr<DiskSelector> disk_selector;
 

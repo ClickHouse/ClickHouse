@@ -2516,7 +2516,7 @@ void Changelog::writeThread()
                 chassert(std::holds_alternative<Flush>(write_operation));
                 if (!write_operations.tryPop(write_operation))
                 {
-                    if (timer.elapsedMs() < 1000) {
+                    if (timer.elapsedMs() < keeper_context->getS3FlushInterval()) {
                         continue;
                     }
                     chassert(batch_append_ok);
