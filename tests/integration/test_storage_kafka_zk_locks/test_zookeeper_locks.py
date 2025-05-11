@@ -1,3 +1,5 @@
+from collections import Counter
+import json
 import time
 import pytest
 import logging
@@ -61,8 +63,10 @@ def kafka_setup_teardown():
 
 def test_zookeeper_partition_locks(kafka_cluster):
     admin = k.get_admin_client(kafka_cluster)
+    num_partitions = 3
     topic_name = "zk_locks_topic"
-    k.kafka_create_topic(admin, "zk_locks_topic", num_partitions=3)
+
+    k.kafka_create_topic(admin, "zk_locks_topic", num_partitions=num_partitions)
     with k.existing_kafka_topic(admin, topic_name):
         create_kafka = k.generate_new_create_table_query(
             table_name="kafka",
@@ -86,11 +90,13 @@ def test_zookeeper_partition_locks(kafka_cluster):
             """
         )
 
-        for pid in range(3):
-            k.kafka_produce(kafka_cluster, topic_name, [f"msg_{pid}"], retries=5)
+        messages = []
+        for i in range(num_partitions):
+            messages.append(json.dumps({"key": i, "value": i}))
+        k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
         
         base = "/clickhouse/test/zk_locks/topic_partition_locks"
-        expected_locks = {f"zk_locks_topic_{pid}.lock" for pid in range(3)}
+        expected_locks = {f"zk_locks_topic_{pid}.lock" for pid in range(num_partitions)}
         with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
             k.wait_for_zk_children(zk, base, expected_locks)
 
@@ -98,63 +104,72 @@ def test_zookeeper_partition_locks(kafka_cluster):
                 owner = zk.get(f"{base}/{lock}")
                 assert owner == "r1", f"Expected 'r1' in {lock}, got {owner}"
 
-def test_two_replicas_balance(kafka_cluster):
+def test_three_replicas_balance_ten_partitions(kafka_cluster):
     admin = k.get_admin_client(kafka_cluster)
-    topic = "zk_dist_topic"
-    k.kafka_create_topic(admin, topic, num_partitions=4)
-    with k.existing_kafka_topic(admin, topic):
-        create_kafka1 = k.generate_new_create_table_query(
-            table_name="kafka1",
-            columns_def="key UInt64, value UInt64",
-            database="test",
-            topic_list=topic,
-            consumer_group=topic,
-            keeper_path="/clickhouse/test/zk_dist",
-            replica_name="r1",
-            brokers="kafka1:19092"
+    topic_name= "zk_dist_topic_10p"
+    num_partitions = 10
+    replica_names = ["r1", "r2", "r3"]
+
+    k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
+    with k.existing_kafka_topic(admin, topic_name):
+        create_kafka_queries = [
+            k.generate_new_create_table_query(
+                table_name=f"kafka_{replica}",
+                columns_def="key UInt64, value UInt64",
+                database="test",
+                topic_list=topic_name,
+                consumer_group=topic_name,
+                keeper_path="/clickhouse/test/zk_dist3",
+                replica_name=replica,
+                brokers="kafka1:19092"
+            ) + ";"
+            for replica in replica_names
+        ]
+        view_queries = [
+            f"CREATE TABLE test.view_{replica} (key UInt64, value UInt64) ENGINE = MergeTree() ORDER BY key;"
+            for replica in replica_names
+        ]
+        mv_queries = [
+            f"CREATE MATERIALIZED VIEW test.cons_{replica} TO test.view_{replica} AS SELECT * FROM test.kafka_{replica};"
+            for replica in replica_names
+        ]
+        drop_queries = [
+            f"DROP TABLE IF EXISTS test.kafka_{replica};"
+            f"DROP TABLE IF EXISTS test.view_{replica};"
+            f"DROP TABLE IF EXISTS test.cons_{replica};"
+            for replica in replica_names
+        ]
+        instance.query(
+            "\n".join(drop_queries) + "\n" +
+            "\n".join(create_kafka_queries) + "\n" +
+            "\n".join(view_queries) + "\n" +
+            "\n".join(mv_queries)
         )
-        create_kafka2 = k.generate_new_create_table_query(
-            table_name="kafka2",
-            columns_def="key UInt64, value UInt64",
-            database="test",
-            topic_list=topic,
-            consumer_group=topic,
-            keeper_path="/clickhouse/test/zk_dist",
-            replica_name="r2",
-            brokers="kafka1:19092"
-        )
-        instance.query(f"""
-            DROP TABLE IF EXISTS test.kafka1;
-            DROP TABLE IF EXISTS test.kafka2;
-            DROP TABLE IF EXISTS test.view1;
-            DROP TABLE IF EXISTS test.view2;
-            DROP TABLE IF EXISTS test.cons1;
-            DROP TABLE IF EXISTS test.cons2;
 
-            {create_kafka1};
-            {create_kafka2};
-            CREATE TABLE test.view1  (key UInt64, value UInt64) ENGINE = MergeTree() ORDER BY key;
-            CREATE TABLE test.view2  (key UInt64, value UInt64) ENGINE = MergeTree() ORDER BY key;
+        messages = []
+        for i in range(num_partitions):
+            messages.append(json.dumps({"key": i, "value": i}))
+        k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
 
-            CREATE MATERIALIZED VIEW test.cons1 TO test.view1 AS SELECT * FROM test.kafka1;
-            CREATE MATERIALIZED VIEW test.cons2 TO test.view2 AS SELECT * FROM test.kafka2;
-        """)
-
-        for pid in range(4):
-            k.kafka_produce(kafka_cluster, topic, [f"msg_{pid}"], retries=5)
-
-        base = "/clickhouse/test/zk_dist/topic_partition_locks"
-        expected_locks = {f"{topic}_{pid}.lock" for pid in range(4)}
+        base = "/clickhouse/test/zk_dist3/topic_partition_locks"
+        expected_locks = {f"{topic_name}_{pid}.lock" for pid in range(num_partitions)}
         with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
             k.wait_for_zk_children(zk, base, expected_locks)
             
-            counts = {"r1": 0, "r2": 0}
+            counts = {replica: 0 for replica in replica_names}
             for lock in expected_locks:
                 owner = zk.get(f"{base}/{lock}")
+                if owner not in counts:
+                    pytest.fail(f"Unknown owner {owner!r} for lock {lock}")
                 counts[owner] += 1
-            valid_counts = [
-                {"r1": 2, "r2": 2},
-                {"r1": 3, "r2": 1},
-                {"r1": 1, "r2": 3},
-            ]
-            assert counts in valid_counts, f"Unexpected distribution: {counts}"
+
+            base_count = num_partitions // len(replica_names)
+            values = sorted(counts.values())
+            assert sum(values) == num_partitions
+            assert all(v in (base_count-1, base_count, base_count+1) for v in values)
+            assert values[-1] - values[0] <= 2
+
+if __name__ == "__main__":
+    cluster.start()
+    input("Cluster created, press any key to destroy...")
+    cluster.shutdown()

@@ -835,21 +835,36 @@ std::optional<StorageKafka2::LockedTopicPartitionInfo> StorageKafka2::createLock
     }
 
     keeper_to_use.createAncestors(lock_file_path);
-    using zkutil::EphemeralNodeHolder;
-    LockedTopicPartitionInfo lock_info{
-        EphemeralNodeHolder::create(lock_file_path, keeper_to_use, (*kafka_settings)[KafkaSetting::kafka_replica_name].value),
-        getNumber(keeper_to_use, topic_partition_path / commit_file_name),
-        getNumber(keeper_to_use, topic_partition_path / intent_file_name)};
-
-    LOG_TRACE(
-        log,
-        "Locked topic partition: {}:{} at offset {} with intent size {}",
-        partition_to_lock.topic,
-        partition_to_lock.partition_id,
-        lock_info.committed_offset.value_or(0),
-        lock_info.intent_size.value_or(0));
-
-    return lock_info;
+    try
+    {
+        using zkutil::EphemeralNodeHolder;
+        LockedTopicPartitionInfo lock_info{
+            EphemeralNodeHolder::create(lock_file_path, keeper_to_use, (*kafka_settings)[KafkaSetting::kafka_replica_name].value),
+            getNumber(keeper_to_use, topic_partition_path / commit_file_name),
+            getNumber(keeper_to_use, topic_partition_path / intent_file_name)};
+        
+        LOG_TRACE(
+            log,
+            "Locked topic partition: {}:{} at offset {} with intent size {}",
+            partition_to_lock.topic,
+            partition_to_lock.partition_id,
+            lock_info.committed_offset.value_or(0),
+            lock_info.intent_size.value_or(0));
+    
+        return lock_info;
+    }
+    catch (const Coordination::Exception & e)
+    {
+        if (e.code == Coordination::Error::ZNODEEXISTS)
+        {
+            LOG_TRACE(
+                log,
+                "Skipping lock for topic partition {}:{} because it already exists",
+                partition_to_lock.topic, partition_to_lock.partition_id);
+            return std::nullopt;
+        }
+        throw;
+    }
 }
 
 // First we delete all current temporary locks,
@@ -859,6 +874,17 @@ void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, cons
     LOG_TRACE(log, "Starting to update temporary locks");
     const auto available_topic_partitions_res = getAvailableTopicPartitions(keeper_to_use, topic_partitions);
     const auto available_topic_partitions = available_topic_partitions_res.first;
+
+    tmp_locks.clear(); // to maintain order: looked at the old state, updated the state, committed the new state
+    for (const auto & tp : available_topic_partitions)
+    {
+        if (tmp_locks.size() >= tmp_locks_quota)
+            break;
+        auto maybe_lock = createLocksInfo(keeper_to_use, tp);
+        if (!maybe_lock.has_value())
+            continue;
+        tmp_locks.emplace(TopicPartition(tp), std::move(*maybe_lock));
+    }
 
     /// Adjust tmp_locks_quota based on quota boundaries:
     /// - Increase by TMP_LOCKS_QUOTA_STEP if under the maximum allowed value (tmp_locks_quota_max);
@@ -875,18 +901,7 @@ void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, cons
     {
         tmp_locks_quota = std::min(tmp_locks_quota + TMP_LOCKS_QUOTA_STEP, tmp_locks_quota_max);
     }
-    LOG_INFO(log, "The replica can take {} in the current round", tmp_locks_quota);
-
-    tmp_locks.clear(); // to maintain order: looked at the old state, updated the state, committed the new state
-    for (const auto & tp : available_topic_partitions)
-    {
-        if (tmp_locks.size() >= tmp_locks_quota)
-            break;
-        auto maybe_lock = createLocksInfo(keeper_to_use, tp);
-        if (!maybe_lock.has_value())
-            continue;
-        tmp_locks.emplace(TopicPartition(tp), std::move(*maybe_lock));
-    }
+    LOG_INFO(log, "The replica can take {} in the next round", tmp_locks_quota);
 }
 
 // If the number of locks on a replica is greater than it can hold, then we first release the partitions that we can no longer hold.
@@ -929,7 +944,6 @@ void StorageKafka2::updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, cons
             ++i;
         }
     }
-
 }
 
 void StorageKafka2::saveTopicPartitionInfo(zkutil::ZooKeeper & keeper_to_use, const std::filesystem::path & keeper_path_to_data, const String & data)
