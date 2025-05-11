@@ -40,7 +40,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 hnsw_candidate_list_size_for_search;
-    extern const SettingsUInt64 vector_search_postfilter_multiplier;
+    extern const SettingsFloat vector_search_postfilter_multiplier;
     extern const SettingsUInt64 max_limit_for_vector_search_queries;
 }
 
