@@ -215,6 +215,8 @@ def test_fix_metadata_version_on_attach_part_after_restore(start_cluster):
     # Restore replicas
     node_1.query("SYSTEM RESTART REPLICA test_ttl")
     node_1.query("SYSTEM RESTORE REPLICA test_ttl")
+    # Disable TTL merges on node_1. We expect it to be done on node_2
+    node_1.query("SYSTEM STOP TTL MERGES test_ttl")
 
     node_2.query("SYSTEM RESTART REPLICA test_ttl")
     node_2.query("SYSTEM RESTORE REPLICA test_ttl")
