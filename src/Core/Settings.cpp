@@ -6507,7 +6507,7 @@ When the query prioritization mechanism is employed (see setting `priority`), lo
 )", BETA) \
     DECLARE(Float, min_os_cpu_wait_time_ratio_to_throw, 2.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
     DECLARE(Float, max_os_cpu_wait_time_ratio_to_throw, 6.0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
-    DECLARE(Bool, allow_aggregation_to_produce_buckets_out_of_order, true, "Allow aggregation to produce buckets out of order.", 0) \
+    DECLARE(Bool, enable_producing_buckets_out_of_order_in_aggregation, true, "Allow aggregation to produce buckets out of order.", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
