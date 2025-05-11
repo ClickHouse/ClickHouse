@@ -824,16 +824,6 @@ std::optional<StorageKafka2::LockedTopicPartitionInfo> StorageKafka2::createLock
 {
     const auto topic_partition_path = getTopicPartitionPath(partition_to_lock);
     const auto lock_file_path = getTopicPartitionLockPath(partition_to_lock);
-
-    if (keeper_to_use.exists(lock_file_path))
-    {
-        LOG_TRACE(
-            log,
-            "Skipping lock for topic partition {}:{} because it already exists",
-            partition_to_lock.topic, partition_to_lock.partition_id);
-        return std::nullopt;
-    }
-
     keeper_to_use.createAncestors(lock_file_path);
     try
     {
@@ -842,7 +832,7 @@ std::optional<StorageKafka2::LockedTopicPartitionInfo> StorageKafka2::createLock
             EphemeralNodeHolder::create(lock_file_path, keeper_to_use, (*kafka_settings)[KafkaSetting::kafka_replica_name].value),
             getNumber(keeper_to_use, topic_partition_path / commit_file_name),
             getNumber(keeper_to_use, topic_partition_path / intent_file_name)};
-        
+
         LOG_TRACE(
             log,
             "Locked topic partition: {}:{} at offset {} with intent size {}",
@@ -850,7 +840,7 @@ std::optional<StorageKafka2::LockedTopicPartitionInfo> StorageKafka2::createLock
             partition_to_lock.partition_id,
             lock_info.committed_offset.value_or(0),
             lock_info.intent_size.value_or(0));
-    
+
         return lock_info;
     }
     catch (const Coordination::Exception & e)
