@@ -305,7 +305,8 @@ String transformQueryForExternalDatabaseImpl(
     const auto query_children_expr_count = clone_query->children.size();
 
     select->replaceDatabaseAndTable(database, table);
-    ++whole_copied_expr_count;
+    if (!clone_query->as<ASTSelectQuery &>().hasJoin())
+        ++whole_copied_expr_count;
 
     auto select_expr_list = std::make_shared<ASTExpressionList>();
     for (const auto & name : used_columns)
