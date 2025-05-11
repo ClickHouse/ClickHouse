@@ -79,7 +79,7 @@ private:
 
     /// See `ConvertingAggregatedToChunksTransform` to learn about sending buckets out of order.
     std::vector<std::vector<Int32>> input_out_of_order_buckets; /// Out of order bucket ids for each input.
-    std::unordered_set<Int32> out_of_order_buckets;
+    std::unordered_map<Int32, size_t> out_of_order_buckets;
 
     std::map<Int32, Chunks> chunks_map; /// bucket -> chunks
     Chunks overflow_chunks;

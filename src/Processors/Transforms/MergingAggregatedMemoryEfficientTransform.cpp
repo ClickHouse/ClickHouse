@@ -66,18 +66,15 @@ bool GroupingAggregatedTransform::tryPushTwoLevelData()
     }
     else
     {
-        for (const auto ooo_bucket : out_of_order_buckets)
+        for (const auto & [bucket, inputs_delayed_that_bucket] : out_of_order_buckets)
         {
             /// The bucket is no longer delayed for all inputs. Either we received it from all sources (where it was not empty),
             /// or we received buckets with higher id-s and no delayed bucket information.
-            bool is_not_delayed_by_any_input = true;
-            for (size_t input = 0; is_not_delayed_by_any_input && input < num_inputs; ++input)
-                is_not_delayed_by_any_input &= !std::ranges::contains(input_out_of_order_buckets[input], ooo_bucket);
-            if (is_not_delayed_by_any_input && std::ranges::all_of(last_bucket_number, [&](auto last) { return last >= ooo_bucket; }))
+            if (inputs_delayed_that_bucket == 0 && std::ranges::min(last_bucket_number) >= bucket)
             {
-                if (try_push_by_iter(chunks_map.find(ooo_bucket)))
+                if (try_push_by_iter(chunks_map.find(bucket)))
                 {
-                    out_of_order_buckets.erase(ooo_bucket);
+                    out_of_order_buckets.erase(bucket);
                     return true;
                 }
             }
@@ -292,8 +289,11 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
             chunks_map[bucket].emplace_back(std::move(chunk));
             has_two_level = true;
             last_bucket_number[input] = bucket;
+            for (const auto ooo_bucket : input_out_of_order_buckets[input])
+                out_of_order_buckets[ooo_bucket]--;
             input_out_of_order_buckets[input] = agg_info->out_of_order_buckets;
-            out_of_order_buckets.insert(agg_info->out_of_order_buckets.begin(), agg_info->out_of_order_buckets.end());
+            for (const auto ooo_bucket : input_out_of_order_buckets[input])
+                out_of_order_buckets[ooo_bucket]++;
         }
     }
     else if (chunk.getChunkInfos().get<ChunkInfoWithAllocatedBytes>())
