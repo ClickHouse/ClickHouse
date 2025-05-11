@@ -216,9 +216,8 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
             // Notify all delayed tasks that the owning BackgroundSchedulePool is being destroyed.
             // This prevents any further use of the pool (e.g., cancelDelayedTask) from within
             // BackgroundSchedulePoolTaskInfo::deactivate(), avoiding use-after-free errors.
-            for (auto & task : delayed_tasks) {
+            for (auto & task : delayed_tasks)
                 task.second->pool_shutdown = true;
-            }
             shutdown = true;
         }
 
