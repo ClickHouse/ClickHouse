@@ -268,6 +268,10 @@ Block convertColumnsToBLOBs(const Block & block, CompressionCodecPtr codec, UInt
     if (!block || !codec || client_revision < DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING)
         return block;
 
+    /// Until parallel marshalling is supported for aggregation w/o key states, this safeguard should be there.
+    if (block.rows() <= 1)
+        return block;
+
     Block res;
     res.info = block.info;
     for (const auto & elem : block)
