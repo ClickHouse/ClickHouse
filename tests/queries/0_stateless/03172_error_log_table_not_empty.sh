@@ -51,3 +51,10 @@ FROM system.error_log
 LIMIT 1
 "
 
+$CLICKHOUSE_CLIENT -m -q "
+SELECT not empty(last_error_trace) FROM system.error_log WHERE code = 333 LIMIT 1;
+SELECT last_error_query_id != '' FROM system.error_log WHERE code = 333 LIMIT 1;
+SELECT last_error_message != '' FROM system.error_log WHERE code = 333 LIMIT 1;
+"
+
+
