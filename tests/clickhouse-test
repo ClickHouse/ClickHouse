@@ -302,6 +302,10 @@ class SharedEngineReplacer:
                     self.replace_replicated = True
                     self.replace_non_replicated = True
 
+                # raw replace for initial evaluation
+                if self.args.no_parallel_replicas:
+                    line = self._replace_data_engines(line, replace_engine="MergeTree")
+
                 if (
                     self._is_select_line(line)
                     or (reference_file and not self._is_create_query(line))
@@ -326,10 +330,6 @@ class SharedEngineReplacer:
                     line = self._replace_non_replicated(
                         line, reference_file, use_random_path
                     )
-
-                # raw replace for initial evaluation
-                if self.args.no_parallel_replicas:
-                    line = self._replace_data_engines(line, replace_engine="MergeTree")
 
                 # Remove parameters (zk path and replica name) from SMT tables
                 # because they are not supported in cloud
