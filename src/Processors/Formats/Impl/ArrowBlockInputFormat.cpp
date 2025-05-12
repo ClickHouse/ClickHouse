@@ -167,6 +167,7 @@ void ArrowBlockInputFormat::prepareReader()
         format_settings.arrow.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.date_time_overflow_behavior,
+        format_settings.parquet.allow_geoparquet_parser,
         format_settings.arrow.case_insensitive_column_matching,
         stream);
 
@@ -214,7 +215,9 @@ NamesAndTypesList ArrowSchemaReader::readSchema()
         stream ? "ArrowStream" : "Arrow",
         format_settings,
         format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference,
-        format_settings.schema_inference_make_columns_nullable != 0);
+        format_settings.schema_inference_make_columns_nullable != 0,
+        false,
+        format_settings.parquet.allow_geoparquet_parser);
     if (format_settings.schema_inference_make_columns_nullable == 1)
         return getNamesAndRecursivelyNullableTypes(header, format_settings);
     return header.getNamesAndTypesList();

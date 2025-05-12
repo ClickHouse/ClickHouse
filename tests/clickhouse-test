@@ -910,6 +910,7 @@ class FailureReason(enum.Enum):
     AZURE_BLOB_STORAGE = "azure-blob-storage"
     BUILD = "not running for current build"
     NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
+    NO_ASYNC_INSERT = "test is not supported with async inserts enabled"
     SHARED_MERGE_TREE = "no-shared-merge-tree"
     DISTRIBUTED_CACHE = "distributed-cache"
     NO_STATELESS = "no-stateless"
@@ -1035,7 +1036,7 @@ class SettingsRandomizer:
         "filesystem_prefetch_step_bytes": lambda: random.choice(
             [0, "100Mi"]
         ),  # 0 means 'auto'
-        # "compile_expressions": lambda: random.randint(0, 1), - this setting has a bug: https://github.com/ClickHouse/ClickHouse/issues/51264
+        "compile_expressions": lambda: random.randint(0, 1),
         "compile_aggregate_expressions": lambda: random.randint(0, 1),
         "compile_sort_description": lambda: random.randint(0, 1),
         "merge_tree_coarse_index_granularity": lambda: random.randint(2, 32),
@@ -1452,6 +1453,9 @@ class TestCase:
 
         if "no-parallel-replicas" in tags and args.no_parallel_replicas:
             return FailureReason.NO_PARALLEL_REPLICAS
+
+        if "no-async-insert" in tags and args.no_async_insert:
+            return FailureReason.NO_ASYNC_INSERT
 
         if args.skip and any(s in self.name for s in args.skip):
             return FailureReason.SKIP
@@ -1873,7 +1877,10 @@ class TestCase:
                 + database
                 + "_1"
             )
-            for env_to_param in ["CLICKHOUSE_USER_FILES", "CLICKHOUSE_USER_FILES_UNIQUE"]:
+            for env_to_param in [
+                "CLICKHOUSE_USER_FILES",
+                "CLICKHOUSE_USER_FILES_UNIQUE",
+            ]:
                 value = os.environ.get(env_to_param, None)
                 if value:
                     query_params += f" --param_{env_to_param}={value}"
@@ -3327,6 +3334,12 @@ def main(args):
         blacklist = try_get_skip_list(base_dir, "../parallel_replicas_blacklist.txt")
         blacklist_check.extend(blacklist)
 
+    if args.no_async_insert is True:
+        skip_list_async_inserts = try_get_skip_list(
+            base_dir, "../async_insert_blacklist.txt"
+        )
+        skip_list.extend(skip_list_async_inserts)
+
     for suite in sorted(os.listdir(base_dir), key=suite_key_func):
         if server_died.is_set():
             break
@@ -3803,6 +3816,12 @@ def parse_args():
         action="store_true",
         default=False,
         help="Do not include tests that are not supported with parallel replicas feature",
+    )
+    parser.add_argument(
+        "--no-async-insert",
+        action="store_true",
+        default=False,
+        help="Do not include tests that are not supported with async insert feature",
     )
     parser.add_argument(
         "--replace-replicated-with-shared",
