@@ -51,7 +51,7 @@ private:
 class AzureCredentials final : public IStorageCredentials
 {
 public:
-    AzureCredentials(
+    explicit AzureCredentials(
         const std::string & sas_token_)
         : sas_token(sas_token_)
     {}

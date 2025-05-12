@@ -132,6 +132,7 @@ public:
         return current_metadata->iterate(filter_dag, callback, list_batch_size);
     }
 
+#if USE_PARQUET
     /// This is an awful temporary crutch,
     /// which will be removed once DeltaKernel is used by default for DeltaLake.
     /// By release 25.3.
@@ -139,13 +140,12 @@ public:
     /// because the code will be removed ASAP anyway)
     DeltaLakePartitionColumns getDeltaLakePartitionColumns() const
     {
-#if USE_PARQUET
         const auto * delta_lake_metadata = dynamic_cast<const DeltaLakeMetadata *>(current_metadata.get());
         if (delta_lake_metadata)
             return delta_lake_metadata->getPartitionColumns();
-#endif
         return {};
     }
+#endif
 
     void modifyFormatSettings(FormatSettings & settings) const override { current_metadata->modifyFormatSettings(settings); }
 
