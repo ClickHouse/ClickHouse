@@ -5,8 +5,10 @@ import re
 import subprocess
 import time
 import traceback
+from datetime import datetime
 from pathlib import Path
 
+from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
@@ -18,6 +20,65 @@ perf_right = f"{perf_wd}/right"
 perf_left = f"{perf_wd}/left"
 perf_right_config = f"{perf_right}/config"
 perf_left_config = f"{perf_left}/config"
+
+GET_HISTORICAL_TRESHOLDS_QUERY = """
+select test, query_index,
+    quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,
+    quantileExactIf(0.99)(stat_threshold, abs(diff) < stat_threshold) * 1.5 AS max_stat_threshold,
+    query_display_name
+from query_metrics_v2
+-- We use results at least one week in the past, so that the current
+-- changes do not immediately influence the statistics, and we have
+-- some time to notice that something is wrong.
+where event_date between now() - interval 10 month - interval 1 week
+    and now() - interval 1 week
+    and metric = 'client_time'
+    and pr_number = 0
+group by test, query_index, query_display_name
+having count(*) > 100
+"""
+
+INSERT_HISTORICAL_DATA = """
+insert into query_metrics_v2
+select
+    '{EVENT_DATE}' event_date,
+    '{EVENT_DATE_TIME}' event_time,
+    {PR_NUMBER} pr_number,
+    '{REF_SHA}' old_sha,
+    '{CUR_SHA}' new_sha,
+    test,
+    query_index,
+    query_display_name,
+    metric_name as metric,
+    old_value,
+    new_value,
+    diff,
+    stat_threshold
+from input('metric_name text, old_value float, new_value float, diff float,
+ratio_display_text text, stat_threshold float,
+test text, query_index int, query_display_name text')
+    format TSV
+"""
+
+# Precision is going to be 1.5 times worse for PRs, because we run the queries
+# less times. How do I know it? I ran this:
+# SELECT quantilesExact(0., 0.1, 0.5, 0.75, 0.95, 1.)(p / m)
+# FROM
+# (
+#     SELECT
+#         quantileIf(0.95)(stat_threshold, pr_number = 0) AS m,
+#         quantileIf(0.95)(stat_threshold, (pr_number != 0) AND (abs(diff) < stat_threshold)) AS p
+#     FROM query_metrics_v2
+#     WHERE (event_date > (today() - toIntervalMonth(1))) AND (metric = 'client_time')
+#     GROUP BY
+#         test,
+#         query_index,
+#         query_display_name
+#     HAVING count(*) > 100
+# )
+#
+# The file can be empty if the server is inaccessible, so we can't use
+# TSVWithNamesAndTypes.
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -334,6 +395,7 @@ def main():
         )
         res = results[-1].is_ok()
 
+    reference_sha = ""
     if res and JobStages.INSTALL_CLICKHOUSE_REFERENCE in stages:
         print("Install Reference")
         if not Path(f"{perf_left}/.done").is_file():
@@ -352,8 +414,31 @@ def main():
                     name="Install Reference ClickHouse", command=commands
                 )
             )
+            reference_sha = Shell.get_output(
+                f"{perf_left}/clickhouse -q \"SELECT value FROM system.build_options WHERE name='GIT_HASH'\""
+            )
             res = results[-1].is_ok()
             Shell.check(f"touch {perf_left}/.done")
+
+    if res:
+
+        def prepare_historical_data():
+            cidb = CIDBCluster()
+            assert cidb.is_ready()
+            result = cidb.do_select_query(
+                query=GET_HISTORICAL_TRESHOLDS_QUERY, timeout=10, retries=3
+            )
+            with open(
+                f"{perf_wd}/historical-thresholds.tsv", "w", encoding="utf-8"
+            ) as f:
+                f.write(result)
+
+        results.append(
+            Result.from_commands_run(
+                name="Select historical data", command=prepare_historical_data
+            )
+        )
+        res = results[-1].is_ok()
 
     if res and JobStages.DOWNLOAD_DATASETS in stages:
         print("Download datasets")
@@ -547,6 +632,46 @@ def main():
 
         res = results[-1].is_ok()
 
+    if res and not info.is_local_run:
+
+        def insert_historical_data():
+            cidb = CIDBCluster()
+            assert cidb.is_ready()
+
+            now = datetime.now()
+            date = now.date().isoformat()
+            date_time = now.isoformat(sep=" ")
+
+            report_path = f"{perf_wd}/report/all-query-metrics.tsv"
+            with open(report_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+                data = "".join(lines[1:])  # Skip header
+
+            query = INSERT_HISTORICAL_DATA.format(
+                EVENT_DATE=date,
+                EVENT_DATE_TIME=date_time,
+                PR_NUMBER=info.pr_number,
+                REF_SHA=reference_sha,
+                CUR_SHA=info.sha,
+            )
+
+            print(f"Do insert historical data query: >>>\n{query}\n<<<")
+            print(f"Insert data: >>>\n{data}\n<<<")
+            cidb.do_insert_query(
+                query=query,
+                data=data,
+                timeout=10,
+                retries=3,
+            )
+            print(f"Inserted [{len(lines)}] lines")
+
+        results.append(
+            Result.from_commands_run(
+                name="Insert historical data", command=insert_historical_data, with_info=True
+            )
+        )
+        results[-1].set_ignorable_flag()
+
     # TODO: code to fetch status was taken from old script as is - status is to be correctly set in Test stage and this stage is to be removed!
     message = ""
     if res and JobStages.CHECK_RESULTS in stages:
@@ -622,7 +747,10 @@ def main():
         files_to_attach.append(f"{perf_wd}/logs.tar.zst")
 
     Result.create_from(
-        results=results, stopwatch=stop_watch, files=files_to_attach, info=message
+        results=results,
+        stopwatch=stop_watch,
+        files=files_to_attach + [f"{perf_wd}/report/all-query-metrics.tsv"],
+        info=message,
     ).complete_job()
 
 
