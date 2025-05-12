@@ -161,15 +161,14 @@ private:
     DataLakeMetadataPtr current_metadata;
     LoggerPtr log = getLogger("DataLakeConfiguration");
 
-    // todo arthur
     ReadFromFormatInfo prepareReadingFromFormat(
         ObjectStoragePtr object_storage,
         const Strings & requested_columns,
         const StorageSnapshotPtr & storage_snapshot,
         bool supports_subset_of_columns,
         ContextPtr local_context,
-        const NamesAndTypesList &,
-        const NamesAndTypesList &) override
+        const NamesAndTypesList & file_columns,
+        const NamesAndTypesList & columns_to_read_from_file_path) override
     {
         if (!current_metadata)
         {
@@ -178,7 +177,7 @@ private:
                 weak_from_this(),
                 local_context);
         }
-        return current_metadata->prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns);
+        return current_metadata->prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns, file_columns, columns_to_read_from_file_path);
     }
 
     bool updateMetadataObjectIfNeeded(
