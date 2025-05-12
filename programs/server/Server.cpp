@@ -978,6 +978,7 @@ try
 
     Poco::Logger * log = &logger();
 
+    /// NOLINTNEXTLINE
     int * leak = new int[100];
     (void)leak;
 
