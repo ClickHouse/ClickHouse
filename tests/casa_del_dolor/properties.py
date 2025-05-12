@@ -33,11 +33,11 @@ possible_properties = {
     "background_merges_mutations_scheduling_policy": lambda: random.choice(["round_robin", "shortest_task_first"]),
     "background_message_broker_schedule_pool_size": lambda: random.randint(0, multiprocessing.cpu_count()),
     "background_move_pool_size": lambda: random.randint(0, multiprocessing.cpu_count()),
-    "background_pool_size": lambda: random.randint(0, multiprocessing.cpu_count()),
+    #"background_pool_size": lambda: random.randint(0, multiprocessing.cpu_count()), has to be in a certain range
     "background_schedule_pool_size": lambda: random.randint(0, multiprocessing.cpu_count()),
     "backup_threads": lambda: random.randint(0, multiprocessing.cpu_count()),
     "cache_size_to_ram_max_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-    "cannot_allocate_thread_fault_injection_probability": threshold_generator(0.2, 0.2, 0.0, 1.0),
+    #"cannot_allocate_thread_fault_injection_probability": threshold_generator(0.2, 0.2, 0.0, 1.0), the server may not start
     "cgroup_memory_watcher_hard_limit_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "cgroup_memory_watcher_soft_limit_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "compiled_expression_cache_elements_size": threshold_generator(0.2, 0.2, 0, 10000),

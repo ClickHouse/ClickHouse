@@ -1,6 +1,7 @@
 import argparse
 import atexit
 import logging
+import os
 import pathlib
 import random
 import tempfile
@@ -21,10 +22,14 @@ def ordered_pair(value):
     except ValueError:
         raise argparse.ArgumentTypeError("Must be two comma-separated integers (e.g., '1,10')")
 
+def list_of_paths(arg):
+    return arg.split(',')
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--server-settings-prob", type = int, default = 80, choices=range(0, 100), help = 'Probability to set server properties')
-parser.add_argument("--client-binary", type = pathlib.Path, help = 'Path to client binary')
+parser.add_argument("--change-server-version-prob", type = int, default = 80, choices=range(0, 100), help = 'Probability to change server version after restart')
+parser.add_argument("--client-binary", type = pathlib.Path, required = True, help = 'Path to client binary')
+parser.add_argument("--server-binaries", type = list_of_paths, required = True, help = 'Path of server binaries to test')
 parser.add_argument("-c", "--client-config", type = pathlib.Path, help = 'Path to client configuration file')
 parser.add_argument("-g", "--generator", choices =['buzzhouse'], type = str.lower, required = True, help = 'What generator to use')
 #parser.add_argument("--number-instances", type = int, default = 2, help = 'Number of default instances')
@@ -55,15 +60,26 @@ if args.generator == 'buzzhouse':
 
 # Use random server settings sometimes
 server_settings = args.server_config
+modified_server_settings = False
 if server_settings is not None and random.randint(1, 100) <= args.server_settings_prob:
+    modified_server_settings = True
     server_settings = modify_server_settings_with_random_properties(server_settings)
 
-# Start the cluster
+# Start the cluster, by using one the server binaries
+server_path = os.path.join(tempfile.gettempdir(), "clickhouse")
+try:
+    os.unlink(server_path)
+except FileNotFoundError:
+    pass
+os.symlink(args.server_binaries[0], server_path)
+os.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = server_path
+
 cluster = ClickHouseCluster(__file__)
 server = cluster.add_instance("server",
                               with_zookeeper = True,
                               with_minio = True,
                               stay_alive = True,
+                              with_dolor = True,
                               main_configs = [server_settings] if server_settings is not None else [],
                               user_configs = [args.user_config] if args.user_config is not None else[],
                               macros = {"shard" : 1, "replica" : 1 })
@@ -74,10 +90,19 @@ server.wait_start(8)
 # Start the load generator
 logger.info("Start load generator")
 client = generator.run_generator(server)
-def client_cleanup():
+def dolor_cleanup():
     if client.process.poll() is None:
         client.process.kill()
-atexit.register(client_cleanup)
+    if modified_server_settings:
+        try:
+            os.unlink(server_settings)
+        except FileNotFoundError:
+            pass
+    try:
+        os.unlink(server_path)
+    except FileNotFoundError:
+        pass
+atexit.register(dolor_cleanup)
 time.sleep(3)
 
 # This is the main loop, run while client and server are running
@@ -95,6 +120,19 @@ while True:
     time.sleep(int(random.uniform(lower_bound, upper_bound)))
     kill_server = random.randint(1, 100) <= args.kill_server_prob
     logger.info(f"Restart the server with {"kill" if kill_server else "manual shutdown"}")
-    server.restart_clickhouse(stop_start_wait_sec = 10, kill = kill_server)
+
+    server.stop_clickhouse(stop_wait_sec = 10, kill = kill_server)
+    # Replace server binary, using a new temporary symlink, then replace the old one
+    if len(args.server_binaries) > 1 and random.randint(1, 100) <= args.change_server_version_prob:
+        new_server_binary = random.choice(args.server_binaries)
+        logger.info(f"Using the server binary {new_server_binary} after restart")
+        new_temp_server_path = os.path.join(tempfile.gettempdir(), "clickhousetemp")
+        try:
+            os.unlink(new_temp_server_path)
+        except FileNotFoundError:
+            pass
+        os.symlink(new_server_binary, new_temp_server_path)
+        os.rename(new_temp_server_path, server_path)
+    server.start_clickhouse(start_wait_sec = 10, retry_start = False)
 
 cluster.shutdown()
