@@ -52,6 +52,7 @@ Upcoming meetups
 * [Istanbul Meetup](https://www.meetup.com/clickhouse-turkiye-meetup-group/events/306978337/) - May 15, 2025
 * [Shenzhen Meetup](https://www.huodongxing.com/event/7803892350511) - May 17, 2025
 * [Seattle Meetup](https://www.meetup.com/clickhouse-seattle-user-group/events/307622716/) - May 20, 2025
+* [Tokyo Meetup](https://www.meetup.com/clickhouse-tokyo-user-group/events/307689645/) - June 5, 2025
 * [Washington DC Meetup](https://www.meetup.com/clickhouse-dc-user-group/events/307622954/) - June 12, 2025
 * [Atlanta Meetup](https://www.meetup.com/clickhouse-atlanta-meetup-group/events/307627590/) - July 8, 2025
 * [New York Meetup](https://www.meetup.com/clickhouse-new-york-user-group/events/307627675/) - July 15, 2025
