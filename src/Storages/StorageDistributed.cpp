@@ -558,19 +558,18 @@ bool StorageDistributed::isShardingKeySuitsExpressionKey(
     for (const auto & col : sharding_key_dag.getRequiredColumnsNames())
         if (std::ranges::find(expr_key_required_columns, col) == expr_key_required_columns.end())
             return false;
-    
     auto irreducibe_nodes = removeInjectiveFunctionsFromResultsRecursively(expression_dag);
     for (const auto & node : irreducibe_nodes)
     {
-        if(node->type == ActionsDAG::ActionType::FUNCTION && !isInjectiveFunction(node))
+        if (node->type == ActionsDAG::ActionType::FUNCTION && !isInjectiveFunction(node))
         {
             LOG_DEBUG(log, "Expression key contains non-injective function: {}", node->result_name);
             return false;
         }
     }
     const auto matches = matchTrees(expression_dag.getOutputs(), sharding_key_dag);
-    LOG_DEBUG(log, "is sharding key suits expression key: {}",
-            allOutputsDependsOnlyOnAllowedNodes(sharding_key_dag, irreducibe_nodes, matches));
+    LOG_DEBUG(
+        log, "is sharding key suits expression key: {}", allOutputsDependsOnlyOnAllowedNodes(sharding_key_dag, irreducibe_nodes, matches));
     return allOutputsDependsOnlyOnAllowedNodes(sharding_key_dag, irreducibe_nodes, matches);
 }
 
