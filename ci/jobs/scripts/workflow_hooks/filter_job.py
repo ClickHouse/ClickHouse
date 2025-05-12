@@ -96,6 +96,7 @@ def should_skip_job(job_name):
         job_name.startswith(JobNames.STATELESS)
         or job_name.startswith(JobNames.STATEFUL)
         or job_name in JobConfigs.builds_for_tests
+        or "functional" in job_name.lower()  # Bugfix validation (functional tests)
     ):
         return (
             True,

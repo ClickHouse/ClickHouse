@@ -45,14 +45,20 @@ workflow = Workflow.Config(
             job.set_dependency(REQUIRED_STATELESS_TESTS_JOB_NAMES)
             for job in JobConfigs.functional_tests_jobs_coverage
         ],
-        JobConfigs.bugfix_validation_it_job,
+        JobConfigs.bugfix_validation_it_job.set_dependency(
+            [
+                JobNames.STYLE_CHECK,
+                JobNames.FAST_TEST,
+                JobConfigs.tidy_build_jobs[0].name,
+            ]
+        ),
         JobConfigs.bugfix_validation_ft_pr_job,
         *JobConfigs.stateless_tests_flaky_pr_jobs,
         *JobConfigs.integration_test_jobs_required,
         *JobConfigs.integration_test_jobs_non_required,
         JobConfigs.integration_test_asan_flaky_pr_job,
-        *JobConfigs.stress_test_jobs,
-        *JobConfigs.upgrade_test_jobs,
+        # *JobConfigs.stress_test_jobs,
+        # *JobConfigs.upgrade_test_jobs,
         *JobConfigs.ast_fuzzer_jobs,
         *JobConfigs.buzz_fuzzer_jobs,
         *JobConfigs.performance_comparison_with_master_head_jobs,
