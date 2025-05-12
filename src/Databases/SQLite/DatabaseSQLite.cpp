@@ -158,7 +158,7 @@ StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr loca
         StorageID(database_name, table_name),
         sqlite_db,
         database_path,
-        table_name,
+        TableNameOrQuery(TableNameOrQuery::Type::TABLE, table_name),
         ColumnsDescription{*columns},
         ConstraintsDescription{},
         /* comment = */ "",
