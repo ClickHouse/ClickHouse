@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-
+# Tags: no-fasttest
 
 # Tests for parsing JSON from Parquet files into CH JSON columns
 # and writing CH JSON columns back to Parquet.
