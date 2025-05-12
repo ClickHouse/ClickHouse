@@ -2223,7 +2223,7 @@ Operator `[n]` provides the same functionality.
     FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT arrayElement(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Negative indexing", "SELECT arrayElement(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
-        {"Using [n] notation", "SELECT arr[2] FROM (SELECT [1, 2, 3] AS arr)", "2"}
+        {"Using [n] notation", "SELECT arr[2] FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Index out of array bounds", "SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "0"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
@@ -2250,11 +2250,11 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
     examples = {
         {"Usage example", "SELECT arrayElementOrNull(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Negative indexing", "SELECT arrayElementOrNull(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
-        {"Index out of array bounds", "SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "\N"}
+        {"Index out of array bounds", "SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "NULL"}
     };
     introduced_in = {1, 1};
     category = FunctionDocumentation::Category::Array;
-    documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+    documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Null>>(documentation);
 }

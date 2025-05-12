@@ -97,14 +97,10 @@ addSeconds
 addTupleOfIntervals
 addWeeks
 addYears
-addressToLine
-addressToLineWithInlines
-addressToSymbol
 age
 alphaTokens
 and
 appendTrailingCharIfAbsent
-array
 arrayAUCPR
 arrayAll
 arrayAvg
@@ -116,8 +112,6 @@ arrayCumSumNonNegative
 arrayDifference
 arrayDistinct
 arrayDotProduct
-arrayElement
-arrayElementOrNull
 arrayEnumerate
 arrayEnumerateDense
 arrayEnumerateDenseRanked
@@ -174,7 +168,6 @@ arraySum
 arraySymmetricDifference
 arrayUnion
 arrayUniq
-arrayWithConstant
 arrayZip
 arrayZipUnaligned
 ascii
@@ -228,7 +221,6 @@ bitmaskToList
 blockNumber
 blockSerializedSize
 blockSize
-buildId
 byteHammingDistance
 byteSize
 caseWithExpression
@@ -351,21 +343,6 @@ dynamicType
 e
 editDistance
 editDistanceUTF8
-empty
-emptyArrayDate
-emptyArrayDateTime
-emptyArrayFloat32
-emptyArrayFloat64
-emptyArrayInt16
-emptyArrayInt32
-emptyArrayInt64
-emptyArrayInt8
-emptyArrayString
-emptyArrayToSingle
-emptyArrayUInt16
-emptyArrayUInt32
-emptyArrayUInt64
-emptyArrayUInt8
 enabledProfiles
 enabledRoles
 encodeURLComponent
@@ -537,7 +514,6 @@ left
 leftPad
 leftPadUTF8
 leftUTF8
-length
 lengthUTF8
 less
 lessOrEquals
@@ -643,7 +619,6 @@ normalizeQueryKeepNames
 normalizedQueryHash
 normalizedQueryHashKeepNames
 not
-notEmpty
 notEquals
 notILike
 notIn
@@ -747,7 +722,6 @@ randomFixedString
 randomPrintableASCII
 randomString
 randomStringUTF8
-range
 readWKTLineString
 readWKTMultiLineString
 readWKTMultiPolygon

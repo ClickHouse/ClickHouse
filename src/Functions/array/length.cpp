@@ -19,8 +19,7 @@ Unicode "code points" and it is not the same as the number of Unicode "grapheme 
 It is ok to have ASCII NUL bytes in strings, and they will be counted as well.
     )";
     FunctionDocumentation::Syntax syntax = "length(x)";
-    FunctionDocumentation::Argument argument1 = {"x", "String, FixedString or Array for which to calculate the number of bytes (for String/FixedString) or elements (for Array)."};
-    FunctionDocumentation::Arguments arguments = {argument1};
+    FunctionDocumentation::Arguments arguments = {{"x", "String, FixedString or Array for which to calculate the number of bytes (for String/FixedString) or elements (for Array)."}};
     FunctionDocumentation::ReturnedValue returned_value = "Returns the number of number of bytes in the String/FixedString `x` / the number of elements in array `x`";
     FunctionDocumentation::Examples examples {
         {"string1", "SELECT length('Hello, world!')", "13"},
@@ -38,19 +37,17 @@ FROM numbers(3)
 │ hello2 │                      0 │                            1 │
 └────────┴────────────────────────┴──────────────────────────────┘
         )"},
-        {"unicode", "SELECT 'ёлка' AS str1, length(str1), lengthUTF8(str1), normalizeUTF8NFKD(str1) AS str2, length(str2), lengthUTF8(str2)",
-         R"(
+        {"unicode", "SELECT 'ёлка' AS str1, length(str1), lengthUTF8(str1), normalizeUTF8NFKD(str1) AS str2, length(str2), lengthUTF8(str2)", R"(
 ┌─str1─┬─length(str1)─┬─lengthUTF8(str1)─┬─str2─┬─length(str2)─┬─lengthUTF8(str2)─┐
 │ ёлка │            8 │                4 │ ёлка │           10 │                5 │
 └──────┴──────────────┴──────────────────┴──────┴──────────────┴──────────────────┘
         )"},
-        {"null", "SELECT 'abc\0\0\0' AS str, length(str)",
-         R"(
+        {"null", "SELECT 'abc\0\0\0' AS str, length(str)", R"(
 ┌─str─┬─length(str)─┐
 │ abc │           6 │
 └─────┴─────────────┘
-        )"},
-        },
+        )"}
+    };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
