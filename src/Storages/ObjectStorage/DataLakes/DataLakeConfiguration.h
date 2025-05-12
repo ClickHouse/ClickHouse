@@ -139,9 +139,11 @@ public:
     /// because the code will be removed ASAP anyway)
     DeltaLakePartitionColumns getDeltaLakePartitionColumns() const
     {
+#if USE_PARQUET
         const auto * delta_lake_metadata = dynamic_cast<const DeltaLakeMetadata *>(current_metadata.get());
         if (delta_lake_metadata)
             return delta_lake_metadata->getPartitionColumns();
+#endif
         return {};
     }
 

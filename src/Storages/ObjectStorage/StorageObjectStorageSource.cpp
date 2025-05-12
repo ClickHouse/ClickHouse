@@ -299,7 +299,8 @@ Chunk StorageObjectStorageSource::generate()
                     {
                         /// A terrible crutch, but it this code will be removed next month.
                         DeltaLakePartitionColumns partition_columns;
-#if USE_PARQUET && USE_AWS_S3
+#if USE_PARQUET
+#if USE_AWS_S3
                         if (auto * delta_conf_s3 = dynamic_cast<StorageS3DeltaLakeConfiguration *>(configuration.get()))
                         {
                             partition_columns = delta_conf_s3->getDeltaLakePartitionColumns();
@@ -315,6 +316,7 @@ Chunk StorageObjectStorageSource::generate()
                         {
                             partition_columns = delta_conf_local->getDeltaLakePartitionColumns();
                         }
+#endif
                         if (!partition_columns.empty())
                         {
                             auto partition_values = partition_columns.find(full_path);
