@@ -1,8 +1,9 @@
 ---
-slug: /operations/named-collections
+description: 'Documentation for Named collections'
+sidebar_label: 'Named collections'
 sidebar_position: 69
-sidebar_label: "Named collections"
-title: "Named collections"
+slug: /operations/named-collections
+title: 'Named collections'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -51,7 +52,7 @@ In the above example:
 
 ### Permissions to create named collections with DDL {#permissions-to-create-named-collections-with-ddl}
 
-To manage named collections with DDL a user must have the `named_control_collection` privilege.  This can be assigned by adding a file to `/etc/clickhouse-server/users.d/`.  The example gives the user `default` both the `access_management` and `named_collection_control` privileges:
+To manage named collections with DDL a user must have the `named_collection_control` privilege.  This can be assigned by adding a file to `/etc/clickhouse-server/users.d/`.  The example gives the user `default` both the `access_management` and `named_collection_control` privileges:
 
 ```xml title='/etc/clickhouse-server/users.d/user_default.xml'
 <clickhouse>

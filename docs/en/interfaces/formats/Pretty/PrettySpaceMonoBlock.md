@@ -1,10 +1,11 @@
 ---
-title: PrettySpaceMonoBlock
-slug: /interfaces/formats/PrettySpaceMonoBlock
-keywords: [PrettySpaceMonoBlock]
-input_format: false
-output_format: true
 alias: []
+description: 'Documentation for the PrettySpaceMonoBlock format'
+input_format: false
+keywords: ['PrettySpaceMonoBlock']
+output_format: true
+slug: /interfaces/formats/PrettySpaceMonoBlock
+title: 'PrettySpaceMonoBlock'
 ---
 
 import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';

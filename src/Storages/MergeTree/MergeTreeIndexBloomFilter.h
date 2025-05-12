@@ -74,7 +74,7 @@ public:
         std::vector<std::pair<size_t, ColumnPtr>> predicate;
     };
 
-    MergeTreeIndexConditionBloomFilter(const ActionsDAG * filter_actions_dag, ContextPtr context_, const Block & header_, size_t hash_functions_);
+    MergeTreeIndexConditionBloomFilter(const ActionsDAG::Node * predicate, ContextPtr context_, const Block & header_, size_t hash_functions_);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -147,7 +147,7 @@ public:
 
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
 
-    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG * filter_actions_dag, ContextPtr context) const override;
+    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
 private:
     size_t bits_per_row;

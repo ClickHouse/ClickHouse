@@ -1,10 +1,11 @@
 ---
-title: JSONObjectEachRow
-slug: /interfaces/formats/JSONObjectEachRow
-keywords: [JSONObjectEachRow]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the JSONObjectEachRow format'
+input_format: true
+keywords: ['JSONObjectEachRow']
+output_format: true
+slug: /interfaces/formats/JSONObjectEachRow
+title: 'JSONObjectEachRow'
 ---
 
 | Input | Output | Alias |
@@ -52,9 +53,9 @@ SELECT * FROM test SETTINGS format_json_object_each_row_column_for_object_name='
 
 ```json title="Response"
 {
-	"first_obj": {"number": 1},
-	"second_obj": {"number": 2},
-	"third_obj": {"number": 3}
+    "first_obj": {"number": 1},
+    "second_obj": {"number": 2},
+    "third_obj": {"number": 3}
 }
 ```
 

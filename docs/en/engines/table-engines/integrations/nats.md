@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/integrations/nats
+description: 'This engine allows integrating ClickHouse with NATS to publish or subscribe
+  to message subjects, and process new messages as they become available.'
+sidebar_label: 'NATS'
 sidebar_position: 140
-sidebar_label: NATS
-title: "NATS Engine"
-description: "his engine allows integrating ClickHouse with NATS to publish or subscribe to message subjects, and process new messages as they become available."
+slug: /engines/table-engines/integrations/nats
+title: 'NATS Engine'
 ---
 
 # NATS Engine {#redisstreams-engine}
@@ -17,7 +18,7 @@ This engine allows integrating ClickHouse with [NATS](https://nats.io/).
 
 ## Creating a Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -83,7 +84,7 @@ However, if table reads from multiple subjects, we need to specify which subject
 That is why whenever inserting into table with multiple subjects, setting `stream_like_engine_insert_queue` is needed.
 You can select one of the subjects the table reads from and publish your data there. For example:
 
-``` sql
+```sql
   CREATE TABLE queue (
     key UInt64,
     value UInt64
@@ -101,7 +102,7 @@ Also format settings can be added along with nats-related settings.
 
 Example:
 
-``` sql
+```sql
   CREATE TABLE queue (
     key UInt64,
     value UInt64,
@@ -116,7 +117,7 @@ Example:
 The NATS server configuration can be added using the ClickHouse config file.
 More specifically you can add Redis password for NATS engine:
 
-``` xml
+```xml
 <nats>
     <user>click</user>
     <password>house</password>
@@ -137,7 +138,7 @@ One NATS table can have as many materialized views as you like, they do not read
 
 Example:
 
-``` sql
+```sql
   CREATE TABLE queue (
     key UInt64,
     value UInt64
@@ -158,7 +159,7 @@ Example:
 
 To stop receiving streams data or to change the conversion logic, detach the materialized view:
 
-``` sql
+```sql
   DETACH TABLE consumer;
   ATTACH TABLE consumer;
 ```

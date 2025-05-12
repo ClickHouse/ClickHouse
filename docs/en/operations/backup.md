@@ -1,6 +1,9 @@
 ---
+description: 'Guide to backing up and restoring ClickHouse databases and tables'
+sidebar_label: 'Backup and Restore'
+sidebar_position: 10
 slug: /operations/backup
-description: In order to effectively mitigate possible human errors, you should carefully prepare a strategy for backing up and restoring your data.
+title: 'Backup and Restore'
 ---
 
 # Backup and Restore

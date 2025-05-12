@@ -1,10 +1,11 @@
 ---
-title: CustomSeparatedWithNames
-slug: /interfaces/formats/CustomSeparatedWithNames
-keywords: [CustomSeparatedWithNames]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the CustomSeparatedWithNames format'
+input_format: true
+keywords: ['CustomSeparatedWithNames']
+output_format: true
+slug: /interfaces/formats/CustomSeparatedWithNames
+title: 'CustomSeparatedWithNames'
 ---
 
 | Input | Output | Alias |

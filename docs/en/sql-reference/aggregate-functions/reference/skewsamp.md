@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/skewsamp
+description: 'Computes the sample skewness of a sequence.'
 sidebar_position: 186
-title: "skewSamp"
-description: "Computes the sample skewness of a sequence."
+slug: /sql-reference/aggregate-functions/reference/skewsamp
+title: 'skewSamp'
 ---
 
 # skewSamp
@@ -11,7 +11,7 @@ Computes the [sample skewness](https://en.wikipedia.org/wiki/Skewness) of a sequ
 
 It represents an unbiased estimate of the skewness of a random variable if passed values form its sample.
 
-``` sql
+```sql
 skewSamp(expr)
 ```
 
@@ -25,6 +25,6 @@ The skewness of the given distribution. Type — [Float64](../../../sql-referenc
 
 **Example**
 
-``` sql
+```sql
 SELECT skewSamp(value) FROM series_with_value_column;
 ```

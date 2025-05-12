@@ -1,10 +1,11 @@
 ---
-title: One
-slug: /interfaces/formats/One
-keywords: [One]
-input_format: true
-output_format: false
 alias: []
+description: 'Documentation for the One format'
+input_format: true
+keywords: ['One']
+output_format: false
+slug: /interfaces/formats/One
+title: 'One'
 ---
 
 

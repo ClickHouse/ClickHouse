@@ -1,7 +1,8 @@
 ---
-title: MySQLWire
+description: 'Documentation for the MySQLWire format'
+keywords: ['MySQLWire']
 slug: /interfaces/formats/MySQLWire
-keywords: [MySQLWire]
+title: 'MySQLWire'
 ---
 
 ## Description {#description}

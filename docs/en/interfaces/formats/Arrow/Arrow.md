@@ -1,10 +1,11 @@
 ---
-title: Arrow
-slug: /interfaces/formats/Arrow
-keywords: [Arrow]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the Arrow format'
+input_format: true
+keywords: ['Arrow']
+output_format: true
+slug: /interfaces/formats/Arrow
+title: 'Arrow'
 ---
 
 | Input | Output | Alias |

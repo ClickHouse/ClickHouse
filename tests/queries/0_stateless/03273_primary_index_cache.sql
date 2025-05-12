@@ -32,7 +32,7 @@ SYSTEM RELOAD ASYNCHRONOUS METRICS;
 SELECT sum(primary_key_bytes_in_memory) FROM system.parts WHERE table = 't_primary_index_cache' AND active;
 SELECT metric, value FROM system.asynchronous_metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'PrimaryIndexCacheBytes') ORDER BY metric;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT
     ProfileEvents['LoadedPrimaryIndexFiles'],

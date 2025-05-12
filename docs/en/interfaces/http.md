@@ -1,10 +1,14 @@
 ---
+description: 'Documentation for the HTTP interface in ClickHouse, which provides REST
+  API access to ClickHouse from any platform and programming language'
+sidebar_label: 'HTTP Interface'
+sidebar_position: 15
 slug: /interfaces/http
-sidebar_position: 19
-sidebar_label: HTTP Interface
+title: 'HTTP Interface'
 ---
 
 import PlayUI from '@site/static/images/play.png';
+import Image from '@theme/IdealImage';
 
 # HTTP Interface
 
@@ -15,7 +19,7 @@ HTTPS can be enabled as well with port 8443 by default.
 
 If you make a `GET /` request without parameters, it returns 200 response code and the string which defined in [http_server_default_response](../operations/server-configuration-parameters/settings.md#http_server_default_response) default value "Ok." (with a line feed at the end)
 
-``` bash
+```bash
 $ curl 'http://localhost:8123/'
 Ok.
 ```
@@ -31,11 +35,11 @@ It has a secret feature for displaying charts and graphs for query pipelines.
 
 Web UI is designed for professionals like you.
 
-<img src={PlayUI} alt="ClickHouse Web UI screenshot" />
+<Image img={PlayUI} size="md" alt="ClickHouse Web UI screenshot" />
 
 In health-check scripts use `GET /ping` request. This handler always returns "Ok." (with a line feed at the end). Available from version 18.12.13. See also `/replicas_status` to check replica's delay.
 
-``` bash
+```bash
 $ curl 'http://localhost:8123/ping'
 Ok.
 $ curl 'http://localhost:8123/replicas_status'
@@ -51,7 +55,7 @@ When using the GET method, 'readonly' is set. In other words, for queries that m
 
 Examples:
 
-``` bash
+```bash
 $ curl 'http://localhost:8123/?query=SELECT%201'
 1
 
@@ -73,7 +77,7 @@ X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","writ
 As you can see, `curl` is somewhat inconvenient in that spaces must be URL escaped.
 Although `wget` escapes everything itself, we do not recommend using it because it does not work well over HTTP 1.1 when using keep-alive and Transfer-Encoding: chunked.
 
-``` bash
+```bash
 $ echo 'SELECT 1' | curl 'http://localhost:8123/' --data-binary @-
 1
 
@@ -87,7 +91,7 @@ $ echo '1' | curl 'http://localhost:8123/?query=SELECT' --data-binary @-
 If part of the query is sent in the parameter, and part in the POST, a line feed is inserted between these two data parts.
 Example (this won't work):
 
-``` bash
+```bash
 $ echo 'ECT 1' | curl 'http://localhost:8123/?query=SEL' --data-binary @-
 Code: 59, e.displayText() = DB::Exception: Syntax error: failed at position 0: SEL
 ECT 1
@@ -100,7 +104,7 @@ You use the FORMAT clause of the query to request any other format.
 
 Also, you can use the 'default_format' URL parameter or the 'X-ClickHouse-Format' header to specify a default format other than TabSeparated.
 
-``` bash
+```bash
 $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @-
 ┏━━━┓
 ┃ 1 ┃
@@ -115,37 +119,37 @@ The POST method of transmitting data is necessary for `INSERT` queries. In this 
 
 Creating a table:
 
-``` bash
+```bash
 $ echo 'CREATE TABLE t (a UInt8) ENGINE = Memory' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
 Using the familiar INSERT query for data insertion:
 
-``` bash
+```bash
 $ echo 'INSERT INTO t VALUES (1),(2),(3)' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
 Data can be sent separately from the query:
 
-``` bash
+```bash
 $ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALUES' --data-binary @-
 ```
 
 You can specify any data format. The 'Values' format is the same as what is used when writing INSERT INTO t VALUES:
 
-``` bash
+```bash
 $ echo '(7),(8),(9)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20Values' --data-binary @-
 ```
 
 To insert data from a tab-separated dump, specify the corresponding format:
 
-``` bash
+```bash
 $ echo -ne '10\n11\n12\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20TabSeparated' --data-binary @-
 ```
 
 Reading the table contents. Data is output in random order due to parallel query processing:
 
-``` bash
+```bash
 $ curl 'http://localhost:8123/?query=SELECT%20a%20FROM%20t'
 7
 8
@@ -163,7 +167,7 @@ $ curl 'http://localhost:8123/?query=SELECT%20a%20FROM%20t'
 
 Deleting the table.
 
-``` bash
+```bash
 $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
@@ -198,13 +202,13 @@ Some HTTP clients might decompress data from the server by default (with `gzip` 
 
 **Examples**
 
-``` bash
+```bash
 # Sending compressed data to the server
 $ echo "SELECT 1" | gzip -c | \
   curl -sS --data-binary @- -H 'Content-Encoding: gzip' 'http://localhost:8123/'
 ```
 
-``` bash
+```bash
 # Receiving compressed data archive from the server
 $ curl -vsS "http://localhost:8123/?enable_http_compression=1" \
     -H 'Accept-Encoding: gzip' --output result.gz -d 'SELECT number FROM system.numbers LIMIT 3'
@@ -227,7 +231,7 @@ $ curl -sS "http://localhost:8123/?enable_http_compression=1" \
 
 You can use the 'database' URL parameter or the 'X-ClickHouse-Database' header to specify the default database.
 
-``` bash
+```bash
 $ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?database=system' --data-binary @-
 0
 1
@@ -249,7 +253,7 @@ The username and password can be indicated in one of three ways:
 
 <!-- -->
 
-``` bash
+```bash
 $ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 ```
 
@@ -257,7 +261,7 @@ $ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 
 <!-- -->
 
-``` bash
+```bash
 $ echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @-
 ```
 
@@ -265,7 +269,7 @@ $ echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d
 
 <!-- -->
 
-``` bash
+```bash
 $ echo 'SELECT 1' | curl -H 'X-ClickHouse-User: user' -H 'X-ClickHouse-Key: password' 'http://localhost:8123/' -d @-
 ```
 
@@ -274,7 +278,7 @@ You can also use the URL parameters to specify any settings for processing a sin
 
 For more information, see the [Settings](/operations/settings/settings) section.
 
-``` bash
+```bash
 $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:8123/?' --data-binary @-
 0
 1
@@ -296,7 +300,7 @@ You can also use ClickHouse sessions in the HTTP protocol. To do this, you need 
 
 You can receive information about the progress of a query in `X-ClickHouse-Progress` response headers. To do this, enable [send_progress_in_http_headers](../operations/settings/settings.md#send_progress_in_http_headers). Example of the header sequence:
 
-``` text
+```text
 X-ClickHouse-Progress: {"read_rows":"2752512","read_bytes":"240570816","total_rows_to_read":"8880128","elapsed_ns":"662334"}
 X-ClickHouse-Progress: {"read_rows":"5439488","read_bytes":"482285394","total_rows_to_read":"8880128","elapsed_ns":"992334"}
 X-ClickHouse-Progress: {"read_rows":"8783786","read_bytes":"819092887","total_rows_to_read":"8880128","elapsed_ns":"1232334"}
@@ -328,7 +332,7 @@ To ensure that the entire response is buffered, set `wait_end_of_query=1`. In th
 
 Example:
 
-``` bash
+```bash
 $ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wait_end_of_query=1' -d 'SELECT toUInt8(number) FROM system.numbers LIMIT 9000000 FORMAT RowBinary'
 ```
 
@@ -394,7 +398,7 @@ You can create a query with parameters and pass values for them from the corresp
 
 ### Example {#example}
 
-``` bash
+```bash
 $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
 ```
 
@@ -414,7 +418,7 @@ However, if you try to encode an actual tab using `%09` in a URL parameter, it w
 
 ```bash
 curl -sS "http://localhost:8123?param_arg1=abc%09123" -d "SELECT splitByChar('\t', {arg1:String})"
-Code: 457. DB::Exception: Value abc	123 cannot be parsed as String for query parameter 'arg1' because it isn't parsed completely: only 3 of 7 bytes was parsed: abc. (BAD_QUERY_PARAMETER) (version 23.4.1.869 (official build))
+Code: 457. DB::Exception: Value abc    123 cannot be parsed as String for query parameter 'arg1' because it isn't parsed completely: only 3 of 7 bytes was parsed: abc. (BAD_QUERY_PARAMETER) (version 23.4.1.869 (official build))
 ```
 
 If you are using URL parameters, you will need to encode the `\t` as `%5C%09`. For example:
@@ -431,7 +435,7 @@ curl -sS "http://localhost:8123?param_arg1=abc%5C%09123" -d "SELECT splitByChar(
 
 ClickHouse supports specific queries through the HTTP interface. For example, you can write data to a table as follows:
 
-``` bash
+```bash
 $ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALUES' --data-binary @-
 ```
 
@@ -443,7 +447,7 @@ Example:
 
 <!-- -->
 
-``` xml
+```xml
 <http_handlers>
     <rule>
         <url>/predefined_query</url>
@@ -462,7 +466,7 @@ Example:
 
 <!-- -->
 
-``` bash
+```bash
 $ curl -v 'http://localhost:8123/predefined_query'
 *   Trying ::1...
 * Connected to localhost (::1) port 8123 (#0)
@@ -548,7 +552,7 @@ To keep the default `handlers` such as` query`, `play`,` ping`, add the `<defaul
 
 Example:
 
-``` xml
+```xml
 <http_handlers>
     <rule>
         <url><![CDATA[regex:/query_param_with_url/(?P<name_1>[^/]+)]]></url>
@@ -569,10 +573,10 @@ Example:
 </http_handlers>
 ```
 
-``` bash
+```bash
 $ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_final_threads' 'http://localhost:8123/query_param_with_url/max_threads?max_threads=1&max_final_threads=2'
-max_final_threads	2
-max_threads	1
+max_final_threads    2
+max_threads    1
 ```
 
 :::note
@@ -589,7 +593,7 @@ To experiment with this functionality, the example defines the values of [max_th
 
 Example:
 
-``` xml
+```xml
 <http_handlers>
     <rule>
     <headers>
@@ -603,7 +607,7 @@ Example:
 </http_handlers>
 ```
 
-``` bash
+```bash
 $ curl  -H 'XXX:TEST_HEADER_VALUE_DYNAMIC'  'http://localhost:8123/own?max_threads=1&max_final_threads=2&param_name_1=max_threads&param_name_2=max_final_threads&query_param=SELECT%20name,value%20FROM%20system.settings%20where%20name%20=%20%7Bname_1:String%7D%20OR%20name%20=%20%7Bname_2:String%7D'
 max_threads 1
 max_final_threads   2
@@ -617,7 +621,7 @@ Example:
 
 Return a message.
 
-``` xml
+```xml
 <http_handlers>
         <rule>
             <methods>GET</methods>
@@ -640,7 +644,7 @@ Return a message.
 
 `http_response_headers` could be used to set content type instead of `content_type`.
 
-``` xml
+```xml
 <http_handlers>
         <rule>
             <methods>GET</methods>
@@ -661,7 +665,7 @@ Return a message.
 </http_handlers>
 ```
 
-``` bash
+```bash
 $ curl -vv  -H 'XXX:xxx' 'http://localhost:8123/hi'
 *   Trying ::1...
 * Connected to localhost (::1) port 8123 (#0)
@@ -685,7 +689,7 @@ Say Hi!%
 
 Find the content from the configuration send to client.
 
-``` xml
+```xml
 <get_config_static_handler><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></get_config_static_handler>
 
 <http_handlers>
@@ -701,7 +705,7 @@ Find the content from the configuration send to client.
 </http_handlers>
 ```
 
-``` bash
+```bash
 $ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
 *   Trying ::1...
 * Connected to localhost (::1) port 8123 (#0)
@@ -725,7 +729,7 @@ $ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
 
 Find the content from the file send to client.
 
-``` xml
+```xml
 <http_handlers>
         <rule>
             <methods>GET</methods>
@@ -756,7 +760,7 @@ Find the content from the file send to client.
 </http_handlers>
 ```
 
-``` bash
+```bash
 $ user_files_path='/var/lib/clickhouse/user_files'
 $ sudo echo "<html><body>Relative Path File</body></html>" > $user_files_path/relative_path_file.html
 $ sudo echo "<html><body>Absolute Path File</body></html>" > $user_files_path/absolute_path_file.html
@@ -811,37 +815,37 @@ Examples:
 ```bash
 $ curl 'http://localhost:8123/?query=SELECT+number,+throwIf(number>3)+from+system.numbers+format+JSON+settings+max_block_size=1&http_write_exception_in_output_format=1'
 {
-	"meta":
-	[
-		{
-			"name": "number",
-			"type": "UInt64"
-		},
-		{
-			"name": "throwIf(greater(number, 2))",
-			"type": "UInt8"
-		}
-	],
+    "meta":
+    [
+        {
+            "name": "number",
+            "type": "UInt64"
+        },
+        {
+            "name": "throwIf(greater(number, 2))",
+            "type": "UInt8"
+        }
+    ],
 
-	"data":
-	[
-		{
-			"number": "0",
-			"throwIf(greater(number, 2))": 0
-		},
-		{
-			"number": "1",
-			"throwIf(greater(number, 2))": 0
-		},
-		{
-			"number": "2",
-			"throwIf(greater(number, 2))": 0
-		}
-	],
+    "data":
+    [
+        {
+            "number": "0",
+            "throwIf(greater(number, 2))": 0
+        },
+        {
+            "number": "1",
+            "throwIf(greater(number, 2))": 0
+        },
+        {
+            "number": "2",
+            "throwIf(greater(number, 2))": 0
+        }
+    ],
 
-	"rows": 3,
+    "rows": 3,
 
-	"exception": "Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 2) :: 2) -> throwIf(greater(number, 2)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version 23.8.1.1)"
+    "exception": "Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 2) :: 2) -> throwIf(greater(number, 2)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version 23.8.1.1)"
 }
 ```
 
@@ -849,33 +853,33 @@ $ curl 'http://localhost:8123/?query=SELECT+number,+throwIf(number>3)+from+syste
 $ curl 'http://localhost:8123/?query=SELECT+number,+throwIf(number>2)+from+system.numbers+format+XML+settings+max_block_size=1&http_write_exception_in_output_format=1'
 <?xml version='1.0' encoding='UTF-8' ?>
 <result>
-	<meta>
-		<columns>
-			<column>
-				<name>number</name>
-				<type>UInt64</type>
-			</column>
-			<column>
-				<name>throwIf(greater(number, 2))</name>
-				<type>UInt8</type>
-			</column>
-		</columns>
-	</meta>
-	<data>
-		<row>
-			<number>0</number>
-			<field>0</field>
-		</row>
-		<row>
-			<number>1</number>
-			<field>0</field>
-		</row>
-		<row>
-			<number>2</number>
-			<field>0</field>
-		</row>
-	</data>
-	<rows>3</rows>
-	<exception>Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 2) :: 2) -> throwIf(greater(number, 2)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version 23.8.1.1)</exception>
+    <meta>
+        <columns>
+            <column>
+                <name>number</name>
+                <type>UInt64</type>
+            </column>
+            <column>
+                <name>throwIf(greater(number, 2))</name>
+                <type>UInt8</type>
+            </column>
+        </columns>
+    </meta>
+    <data>
+        <row>
+            <number>0</number>
+            <field>0</field>
+        </row>
+        <row>
+            <number>1</number>
+            <field>0</field>
+        </row>
+        <row>
+            <number>2</number>
+            <field>0</field>
+        </row>
+    </data>
+    <rows>3</rows>
+    <exception>Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 2) :: 2) -> throwIf(greater(number, 2)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version 23.8.1.1)</exception>
 </result>
 ```

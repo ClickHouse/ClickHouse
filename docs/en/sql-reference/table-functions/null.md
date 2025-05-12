@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/table-functions/null
+description: 'Creates a temporary table of the specified structure with the Null table
+  engine. The function is used for the convenience of test writing and demonstrations.'
+sidebar_label: 'null function'
 sidebar_position: 140
-sidebar_label: null function
+slug: /sql-reference/table-functions/null
 title: 'null'
-description: "Creates a temporary table of the specified structure with the Null table engine. The function is used for the convenience of test writing and demonstrations."
 ---
 
 # null Table Function
@@ -12,7 +13,7 @@ Creates a temporary table of the specified structure with the [Null](../../engin
 
 **Syntax**
 
-``` sql
+```sql
 null('structure')
 ```
 
@@ -28,7 +29,7 @@ A temporary `Null`-engine table with the specified structure.
 
 Query with the `null` function:
 
-``` sql
+```sql
 INSERT INTO function null('x UInt64') SELECT * FROM numbers_mt(1000000000);
 ```
 can replace three queries:

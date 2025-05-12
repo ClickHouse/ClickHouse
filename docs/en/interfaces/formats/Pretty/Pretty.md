@@ -1,10 +1,11 @@
 ---
-title: Pretty
-slug: /interfaces/formats/Pretty
-keywords: [Pretty]
-input_format: false
-output_format: true
 alias: []
+description: 'Documentation for the Pretty format'
+input_format: false
+keywords: ['Pretty']
+output_format: true
+slug: /interfaces/formats/Pretty
+title: 'Pretty'
 ---
 
 import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';

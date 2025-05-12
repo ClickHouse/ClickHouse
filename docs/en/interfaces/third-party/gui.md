@@ -1,12 +1,23 @@
 ---
-slug: /interfaces/third-party/gui
+description: 'List of third-party GUI tools and applications for working with ClickHouse'
+sidebar_label: 'Visual Interfaces'
 sidebar_position: 28
-sidebar_label: Visual Interfaces
+slug: /interfaces/third-party/gui
+title: 'Visual Interfaces from Third-party Developers'
 ---
 
 # Visual Interfaces from Third-party Developers
 
 ## Open-Source {#open-source}
+
+### agx {#agx}
+
+[agx](https://github.com/agnosticeng/agx) is a desktop application built with Tauri and SvelteKit that provides a modern interface for exploring and querying data using ClickHouse's embedded database engine (chdb).
+
+- Leverage ch-db when running the native application.
+- Can connect to a Clickhouse instance when running the web instance.
+- Monaco editor so you'll feel at home.
+- Multiple and evolving data visualizations.
 
 ### ch-ui {#ch-ui}
 
@@ -141,6 +152,10 @@ Features:
 ### clickhouse-plantuml {#clickhouse-plantuml}
 
 [cickhouse-plantuml](https://pypi.org/project/clickhouse-plantuml/) is a script to generate [PlantUML](https://plantuml.com/) diagram of tables' schemes.
+
+### ClickHouse table graph {#clickhouse-table-graph}
+
+[ClickHouse table graph](https://github.com/mbaksheev/clickhouse-table-graph) is a simple CLI tool for visualizing dependencies between ClickHouse tables. This tool retrieves connections between tables from `system.tables` table and builds dependencies flowchart in [mermaid](https://mermaid.js.org/syntax/flowchart.html) format.  With this tool you can easily visualize table dependencies and understand the data flow in your ClickHouse database. Thanks to mermaid, the resulting flowchart looks attractive and can be easily added to your markdown documentation.
 
 ### xeus-clickhouse {#xeus-clickhouse}
 

@@ -1,10 +1,11 @@
 ---
-slug: /engines/database-engines/materialized-postgresql
-sidebar_label: MaterializedPostgreSQL
+description: 'Creates a ClickHouse database with tables from PostgreSQL database.'
+sidebar_label: 'MaterializedPostgreSQL'
 sidebar_position: 60
-title: "MaterializedPostgreSQL"
-description: "Creates a ClickHouse database with tables from PostgreSQL database."
+slug: /engines/database-engines/materialized-postgresql
+title: 'MaterializedPostgreSQL'
 ---
+
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
@@ -30,7 +31,7 @@ SET allow_experimental_database_materialized_postgresql=1
 
 ## Creating a Database {#creating-a-database}
 
-``` sql
+```sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
 ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password') [SETTINGS ...]
 ```
@@ -44,7 +45,7 @@ ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password') [SE
 
 ## Example of Use {#example-of-use}
 
-``` sql
+```sql
 CREATE DATABASE postgres_db
 ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password');
 
@@ -61,7 +62,7 @@ SELECT * FROM postgresql_db.postgres_table;
 
 After `MaterializedPostgreSQL` database is created, it does not automatically detect new tables in according PostgreSQL database. Such tables can be added manually:
 
-``` sql
+```sql
 ATTACH TABLE postgres_database.new_table;
 ```
 
@@ -73,7 +74,7 @@ Before version 22.1, adding a table to replication left a non-removed temporary 
 
 It is possible to remove specific tables from replication:
 
-``` sql
+```sql
 DETACH TABLE postgres_database.table_to_remove PERMANENTLY;
 ```
 
@@ -84,7 +85,7 @@ PostgreSQL [schema](https://www.postgresql.org/docs/9.1/ddl-schemas.html) can be
 1. One schema for one `MaterializedPostgreSQL` database engine. Requires to use setting `materialized_postgresql_schema`.
 Tables are accessed via table name only:
 
-``` sql
+```sql
 CREATE DATABASE postgres_database
 ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
 SETTINGS materialized_postgresql_schema = 'postgres_schema';
@@ -95,7 +96,7 @@ SELECT * FROM postgres_database.table1;
 2. Any number of schemas with specified set of tables for one `MaterializedPostgreSQL` database engine. Requires to use setting `materialized_postgresql_tables_list`. Each table is written along with its schema.
 Tables are accessed via schema name and table name at the same time:
 
-``` sql
+```sql
 CREATE DATABASE database1
 ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
 SETTINGS materialized_postgresql_tables_list = 'schema1.table1,schema2.table2,schema1.table3',
@@ -112,7 +113,7 @@ Warning: for this case dots in table name are not allowed.
 
 3. Any number of schemas with full set of tables for one `MaterializedPostgreSQL` database engine. Requires to use setting `materialized_postgresql_schema_list`.
 
-``` sql
+```sql
 CREATE DATABASE database1
 ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
 SETTINGS materialized_postgresql_schema_list = 'schema1,schema2,schema3';
@@ -135,7 +136,7 @@ Warning: for this case dots in table name are not allowed.
 
 - index
 
-``` bash
+```bash
 postgres# CREATE TABLE postgres_table (a Integer NOT NULL, b Integer, c Integer NOT NULL, d Integer, e Integer NOT NULL);
 postgres# CREATE unique INDEX postgres_table_index on postgres_table(a, c, e);
 postgres# ALTER TABLE postgres_table REPLICA IDENTITY USING INDEX postgres_table_index;
@@ -145,7 +146,7 @@ The primary key is always checked first. If it is absent, then the index, define
 If the index is used as a replica identity, there has to be only one such index in a table.
 You can check what type is used for a specific table with the following command:
 
-``` bash
+```bash
 postgres# SELECT CASE relreplident
           WHEN 'd' THEN 'default'
           WHEN 'n' THEN 'nothing'
@@ -168,7 +169,7 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 
     Each table can have subset of replicated columns in brackets. If subset of columns is omitted, then all columns for table will be replicated.
 
-    ``` sql
+    ```sql
     materialized_postgresql_tables_list = 'table1(co1, col2),table2,table3(co3, col5, col7)
     ```
 
@@ -200,7 +201,7 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 
     A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](../../engines/database-engines/materialized-postgresql.md) will be performed. Must be used together with `materialized_postgresql_replication_slot`.
 
-    ``` sql
+    ```sql
     CREATE DATABASE database1
     ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
     SETTINGS materialized_postgresql_tables_list = 'table1,table2,table3';
@@ -210,7 +211,7 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 
     The settings can be changed, if necessary, using a DDL query. But it is impossible to change the setting `materialized_postgresql_tables_list`. To update the list of tables in this setting use the `ATTACH TABLE` query.
 
-    ``` sql
+    ```sql
     ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
     ```
 

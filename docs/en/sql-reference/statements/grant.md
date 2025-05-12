@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/statements/grant
+description: 'Documentation for GRANT Statement'
+sidebar_label: 'GRANT'
 sidebar_position: 38
-sidebar_label: GRANT
+slug: /sql-reference/statements/grant
+title: 'GRANT Statement'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -15,7 +17,7 @@ To revoke privileges, use the [REVOKE](../../sql-reference/statements/revoke.md)
 
 ## Granting Privilege Syntax {#granting-privilege-syntax}
 
-``` sql
+```sql
 GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table[*]|db[*].*|*.*|table[*]|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
 ```
 
@@ -28,7 +30,7 @@ The `WITH REPLACE OPTION` clause replace old privileges by new privileges for th
 
 ## Assigning Role Syntax {#assigning-role-syntax}
 
-``` sql
+```sql
 GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION] [WITH REPLACE OPTION]
 ```
 
@@ -39,7 +41,7 @@ The `WITH ADMIN OPTION` clause grants [ADMIN OPTION](#admin-option) privilege to
 The `WITH REPLACE OPTION` clause replace old roles by new role for the `user` or `role`, if is not specified it appends roles.
 
 ## Grant Current Grants Syntax {#grant-current-grants-syntax}
-``` sql
+```sql
 GRANT CURRENT GRANTS{(privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*}) | ON {db.table|db.*|*.*|table|*}} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
 ```
 
@@ -56,7 +58,7 @@ To use `GRANT`, your account must have the `GRANT OPTION` privilege. You can gra
 
 For example, administrator has granted privileges to the `john` account by the query:
 
-``` sql
+```sql
 GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
 ```
 
@@ -375,7 +377,7 @@ User granted with this privilege can execute `SELECT` queries over a specified l
 
 Consider the following privilege:
 
-``` sql
+```sql
 GRANT SELECT(x,y) ON db.table TO john
 ```
 
@@ -393,7 +395,7 @@ User granted with this privilege can execute `INSERT` queries over a specified l
 
 **Example**
 
-``` sql
+```sql
 GRANT INSERT(x,y) ON db.table TO john
 ```
 

@@ -26,6 +26,7 @@ public:
     StreamSet getStreamsForClient() override { return StreamSet{.in = input_stream, .out = output_stream, .err = output_stream}; }
     void changeWindowSize(int width, int height, int width_pixels, int height_pixels) const;
     void closeServerDescriptors() override { pty_master.close(); }
+    void closeStdIn() override {}
     bool isPty() const override { return true; }
 
 private:
