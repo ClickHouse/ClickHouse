@@ -1,5 +1,9 @@
 from ci.defs.defs import JobNames
 from ci.defs.job_configs import JobConfigs
+from ci.jobs.scripts.workflow_hooks.new_tests_check import (
+    has_new_functional_tests,
+    has_new_integration_tests,
+)
 from ci.jobs.scripts.workflow_hooks.pr_description import Labels
 from ci.praktika.info import Info
 
@@ -113,8 +117,23 @@ def should_skip_job(job_name):
             "Skipped, labeled with 'ci-performance' - run performance jobs only",
         )
 
-    if "- Bug Fix" not in _info_cache.pr_body and JobNames.BUGFIX_VALIDATE in job_name:
+    if " Bug Fix" not in _info_cache.pr_body and "Bugfix" in job_name:
         return True, "Skipped, not a bug-fix PR"
+
+    # Skip bug fix validation jobs even for bufgfix prs if no corresponding updates are found.
+    #  ci/jobs/scripts/workflow_hooks/new_tests_check.py hook validates whether at list one type of tests has updates
+    if (
+        " Bug Fix" in _info_cache.pr_body
+        and job_name == JobNames.BUGFIX_VALIDATE_FT
+        and not has_new_functional_tests(_info_cache.get_changed_files())
+    ):
+        return True, "Skipped, no functional tests updates"
+    if (
+        " Bug Fix" in _info_cache.pr_body
+        and job_name == JobNames.BUGFIX_VALIDATE_IT
+        and not has_new_integration_tests(_info_cache.get_changed_files())
+    ):
+        return True, "Skipped, no integration tests updates"
 
     # skip ARM perf tests for non-performance update
     if (
