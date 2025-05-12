@@ -2202,23 +2202,60 @@ ColumnPtr FunctionArrayElement<mode>::perform(
 
 REGISTER_FUNCTION(ArrayElement)
 {
-    factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Zero>>(FunctionDocumentation{
-        .description = R"(
-Get the element with the index `n` from the array `arr`. `n` must be any integer type. Indexes in an array begin from one.
+    FunctionDocumentation::Description description = R"(
+Gets the element of the provided array with index `n` where `n` can be any integer type.
+If the index falls outside of the bounds of an array, it returns a default value (0 for numbers, an empty string for strings, etc.),
+except for arguments of a non-constant array and a constant index 0. In this case there will be an error `Array indices are 1-based`.
+
+:::note
+Arrays in ClickHouse are one-indexed.
+:::
+
+Negative indexes are supported. In this case, the corresponding element is selected, numbered from the end. For example, `arr[-1]` is the last item in the array.
+
+Operator `[n]` provides the same functionality.
+    )";
+    FunctionDocumentation::Syntax syntax = "arrayElement(arr, n)";
+    FunctionDocumentation::Arguments arguments = {
+        {"arrays", "Arbitrary number of arguments of [`Array`](/sql-reference/data-types/array) type."},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = "Returns a single combined array from the provided array arguments.";
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT arrayElement(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
+        {"Negative indexing", "SELECT arrayElement(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
+        {"Using [n] notation", "SELECT arr[2] FROM (SELECT [1, 2, 3] AS arr)", "2"}
+        {"Index out of array bounds", "SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "0"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Zero>>(documentation);
+
+    description = R"(
+Gets the element of the provided array with index `n` where `n` can be any integer type.
+If the index falls outside of the bounds of an array, `NULL` is returned instead of a default value.
+
+:::note
+Arrays in ClickHouse are one-indexed.
+:::
 
 Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, `arr[-1]` is the last item in the array.
+)";
+    syntax = "arrayElementOrNull(arrays)";
+    arguments = {
+        {"arrays", "Arbitrary number of arguments of [`Array`](/sql-reference/data-types/array) type."},
+    };
+    returned_value = "Returns a single combined array from the provided array arguments.";
+    examples = {
+        {"Usage example", "SELECT arrayElementOrNull(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
+        {"Negative indexing", "SELECT arrayElementOrNull(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
+        {"Index out of array bounds", "SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "\N"}
+    };
+    introduced_in = {1, 1};
+    category = FunctionDocumentation::Category::Array;
+    documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
 
-If the index falls outside of the bounds of an array, it returns some default value (0 for numbers, an empty string for strings, etc.), except for the case with a non-constant array and a constant index 0 (in this case there will be an error `Array indices are 1-based`).
-        )",
-        .category = FunctionDocumentation::Category::Array});
-    factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Null>>(FunctionDocumentation{
-        .description = R"(
-Get the element with the index `n`from the array `arr`. `n` must be any integer type. Indexes in an array begin from one.
-
-Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, `arr[-1]` is the last item in the array.
-
-If the index falls outside of the bounds of an array, it returns `NULL` instead of a default value.
-        )",
-        .category = FunctionDocumentation::Category::Array});
+    factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Null>>(documentation);
 }
 }

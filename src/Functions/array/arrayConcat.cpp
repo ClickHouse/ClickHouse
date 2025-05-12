@@ -80,6 +80,17 @@ ColumnPtr FunctionArrayConcat::executeImpl(const ColumnsWithTypeAndName & argume
 
 REGISTER_FUNCTION(ArrayConcat)
 {
+    FunctionDocumentation::Description description = "Combines arrays passed as arguments.";
+    FunctionDocumentation::Syntax syntax = "arrayConcat(arrays)";
+    FunctionDocumentation::Arguments arguments = {
+        {"arrays", "Arbitrary number of arguments of [`Array`](/sql-reference/data-types/array) type."},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = "Returns a single combined array from the provided array arguments.";
+    FunctionDocumentation::Examples example = {{"Usage example", "SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res", "[1,2,3,4,5,6]"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+
     factory.registerFunction<FunctionArrayConcat>();
 }
 
