@@ -167,6 +167,7 @@ CityHash
 Clangd
 ClickBench
 ClickCat
+ClickHaskell
 ClickHouse
 ClickHouse's
 ClickHouseClient
@@ -1251,6 +1252,7 @@ aggthrow
 aiochclient
 alloc
 allocator
+allowlist
 alphaTokens
 amplab
 analysisOfVariance
@@ -1687,6 +1689,7 @@ denormalize
 denormalized
 denormalizing
 denormals
+denylist
 dequeued
 dequeues
 dereference
@@ -2836,6 +2839,8 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
+stringBytesEntropy
+stringBytesUniq
 stringCompare
 stringJaccardIndex
 stringJaccardIndexUTF
@@ -3041,6 +3046,7 @@ toStartOfYear
 toString
 toStringCutToZero
 toTime
+toTimeWithFixedDate
 toTimeZone
 toType
 toTypeName
