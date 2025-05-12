@@ -39,16 +39,24 @@ template <bool is_utf8>
 class SparseGramsImpl
 {
 private:
+    struct SubString
+    {
+        size_t left_index;
+        size_t right_index;
+        size_t symbols_between;
+    };
+
     CRC32CHasher hasher;
 
     Pos pos;
     Pos end;
     UInt64 min_ngram_length = 3;
     UInt64 max_ngram_length = 100;
+    std::optional<UInt64> min_cutoff_length;
 
     /// Current batch of answers. The size of result can not be greater than `convex_hull`.
     /// The size of `convex_hull` should not be large, see comment to `convex_hull` for more details.
-    std::vector<std::pair<size_t, size_t>> result;
+    std::vector<SubString> result;
     size_t iter_result = 0;
 
     struct PositionAndHash
@@ -146,7 +154,11 @@ private:
                 convex_hull.clear();
                 break;
             }
-            result.push_back({possible_left_position, next_right_position});
+            result.push_back({
+                .left_index = possible_left_position,
+                .right_index = next_right_position,
+                .symbols_between = length
+            });
             convex_hull.pop_back();
         }
 
@@ -156,7 +168,11 @@ private:
             size_t possible_left_symbol_index = convex_hull.back().symbol_index;
             size_t length = right_symbol_index - possible_left_symbol_index + 2;
             if (length <= max_ngram_length)
-                result.push_back({possible_left_position, next_right_position});
+                result.push_back({
+                    .left_index = possible_left_position,
+                    .right_index = next_right_position,
+                    .symbols_between = length
+                });
         }
 
         /// there should not be identical hashes in the convex hull. If there are, then we leave only the last one
@@ -173,7 +189,7 @@ private:
         return true;
     }
 
-    std::optional<std::pair<size_t, size_t>> getNextIndices()
+    std::optional<SubString> getNextIndices()
     {
         if (result.size() <= iter_result)
         {
@@ -197,9 +213,10 @@ public:
     static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {1}; }
 
     SparseGramsImpl() = default;
-    explicit SparseGramsImpl(UInt64 min_ngram_length_, UInt64 max_ngram_length_)
+    explicit SparseGramsImpl(UInt64 min_ngram_length_, UInt64 max_ngram_length_, std::optional<UInt64> min_cutoff_length_)
         : min_ngram_length(min_ngram_length_)
         , max_ngram_length(max_ngram_length_)
+        , min_cutoff_length(min_cutoff_length_)
     {
     }
 
@@ -258,15 +275,23 @@ public:
     /// Get the next token, if any, or return false.
     bool get(Pos & token_begin, Pos & token_end)
     {
-        auto cur_result = getNextIndices();
-        if (!cur_result)
-            return false;
+        while (true)
+        {
+            auto cur_result = getNextIndices();
+            if (!cur_result)
+                return false;
 
-        auto [iter_left, iter_right] = *cur_result;
-
-        token_begin = pos + iter_left;
-        token_end = pos + iter_right;
-        return true;
+            auto iter_left = cur_result->left_index;
+            auto iter_right = cur_result->right_index;
+            auto length = cur_result->symbols_between;
+            if (min_cutoff_length && *min_cutoff_length > length)
+            {
+                continue;
+            }
+            token_begin = pos + iter_left;
+            token_end = pos + iter_right;
+            return true;
+        }
     }
 };
 

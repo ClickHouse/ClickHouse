@@ -377,12 +377,12 @@ bool NoOpTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*length
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "NoOpTokenExtractor::nextInStringLike is not implemented");
 }
 
-SparceGramTokenExtractor::SparceGramTokenExtractor(size_t min_length, size_t max_length)
-    : sparse_grams_iterator(min_length, max_length)
+SparseGramTokenExtractor::SparseGramTokenExtractor(size_t min_length, size_t max_length, std::optional<size_t> min_cutoff_length_)
+    : sparse_grams_iterator(min_length, max_length, min_cutoff_length_)
 {
 }
 
-bool SparceGramTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
+bool SparseGramTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
 {
     if (std::tie(data, length) != std::tie(previous_data, previous_len))
     {
@@ -406,7 +406,7 @@ bool SparceGramTokenExtractor::nextInString(const char * data, size_t length, si
     return true;
 }
 
-bool SparceGramTokenExtractor::nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const
+bool SparseGramTokenExtractor::nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const
 {
     if (std::tie(data, length) != std::tie(previous_data, previous_len))
     {

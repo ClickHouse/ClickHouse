@@ -11,7 +11,6 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS bloom_filter_idx2;"
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS bloom_filter_idx3;"
 
 
-# NGRAM BF
 $CLICKHOUSE_CLIENT --query="
 CREATE TABLE bloom_filter_idx
 (
@@ -27,11 +26,10 @@ CREATE TABLE bloom_filter_idx2
 (
     k UInt64,
     s FixedString(15),
-    INDEX bf (s, lower(s)) TYPE sparse_gram(3, 100, 512, 2, 0) GRANULARITY 1
+    INDEX bf (s, lower(s)) TYPE sparse_gram(3, 100, 5, 512, 2, 0) GRANULARITY 1
 ) ENGINE = MergeTree()
 ORDER BY k
 SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';"
-
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO bloom_filter_idx VALUES
 (0, 'ClickHouse - столбцовая система управления базами данных (СУБД) для онлайн обработки аналитических запросов (OLAP).'),
@@ -68,6 +66,12 @@ $CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filte
 $CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx WHERE lower(s) = 'abc' ORDER BY k FORMAT JSON" | grep "rows_read"
 
 # LIKE
+$CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx2 WHERE s LIKE '%ClickHouse%' ORDER BY k"
+$CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx2 WHERE s LIKE '%ClickHouse%' ORDER BY k FORMAT JSON" | grep "rows_read"
+
+$CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx2 WHERE lower(s) LIKE '%clickhouse%' ORDER BY k"
+$CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx2 WHERE lower(s) LIKE '%clickhouse%' ORDER BY k FORMAT JSON" | grep "rows_read"
+
 $CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx WHERE s LIKE '%database%' AND s LIKE '%ClickHouse%' ORDER BY k"
 $CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx WHERE s LIKE '%database%' AND s LIKE '%ClickHouse%' ORDER BY k FORMAT JSON" | grep "rows_read"
 
