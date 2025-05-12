@@ -253,7 +253,7 @@ bool FuzzConfig::processServerQuery(const bool outlog, const String & query)
     {
         if (outlog)
         {
-            outf << query << std::endl;
+            outf << query << std::endl << std::flush;
         }
         if (this->cb->processTextAsSingleQuery(query))
         {
