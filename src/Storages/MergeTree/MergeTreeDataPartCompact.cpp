@@ -283,14 +283,7 @@ bool MergeTreeDataPartCompact::isStoredOnRemoteDiskWithZeroCopySupport() const
 
 MergeTreeDataPartCompact::~MergeTreeDataPartCompact()
 {
-    try
-    {
-        removeIfNeeded();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    removeIfNeeded();
 }
 
 }
