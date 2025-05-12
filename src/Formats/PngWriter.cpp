@@ -204,9 +204,6 @@ void PngWriter::startImage(size_t width_, size_t height_)
         png_set_compression_level(handle_->getPngPtr(), compression_level);
     }, "image inizialization");
     
-    if (png_ptr)
-            png_destroy_write_struct(&png_ptr, &info_ptr);
-
     LOG_INFO(log, "Image header set successfully: {}x{} with bit_depth {} and color_type RGBA", width, height, bit_depth);
 }
 
@@ -273,18 +270,12 @@ void PngWriter::finalize()
     
     try
     {
-        cleanup();
+        handle_.reset();
+        out.next();
     }
     catch (...) 
     {
         throw;
     }
 }
-
-void PngWriter::cleanup()
-{
-    handle_.reset();
-    out.next();
-}
-
 }
