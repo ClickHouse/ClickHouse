@@ -31,6 +31,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/ThreadPool.h>
 #include <Common/thread_local_rng.h>
+#include <Common/formatReadable.h>
 #include <Core/Settings.h>
 
 #include <boost/range/adaptor/map.hpp>
@@ -404,13 +405,14 @@ struct BackupsWorker::BackupStarter
             && query_context->getBackupsThrottler())
         {
             UInt64 queryMaxSpeed = query_context->getBackupsThrottler()->getMaxSpeed();
-            LOG_WARNING(
+            // Note: With S3 checksum enabled, each file is read twice — once for checksum, once for upload.
+            // This effectively halves the usable bandwidth relative to max_backup_bandwidth.
+            LOG_INFO(
                 log,
-                "When s3 checksum is enabled (s3_disable_checksum = 0) during backup from local to S3, each local file "
-                "will be read twice: once for checksum calculation and once for data transfer.  As a result, the effective "
-                "bandwidth will be roughly half of the configured max_backup_bandwidth. To align the effective bandwidth "
-                "with max_backup_bandwidth, you could either disable checksum (SET s3_disable_checksum = 1) or "
-                "adjust max_backup_bandwidth accordingly. Current bandwidth max_backup_bandwidth is {}", queryMaxSpeed);
+                "S3 checksum is enabled (s3_disable_checksum = 0): each file will be read twice — once for checksum and once for upload. "
+                "This effectively reduces the usable bandwidth to about half of max_backup_bandwidth (currently: {}). "
+                "To mitigate this, either disable checksum (SET s3_disable_checksum = 1) or increase max_backup_bandwidth.",
+                formatReadableSizeWithBinarySuffix(static_cast<double>(queryMaxSpeed), 0));
         }
 
         backups_worker.addInfo(backup_id,
