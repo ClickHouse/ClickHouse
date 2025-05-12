@@ -54,11 +54,7 @@ HTTPRequestHandlerFactoryPtr createRedirectHandlerFactory(
 {
     std::string url = config.getString(config_prefix + ".handler.location");
 
-    std::unordered_map<String, String> headers;
-    auto headers_optional = parseHTTPResponseHeaders(config, config_prefix);
-    if (headers_optional.has_value())
-        headers = headers_optional.value();
-    headers.insert(common_headers.begin(), common_headers.end());
+    auto headers = parseHTTPResponseHeadersWithCommons(config, config_prefix, common_headers);
 
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<RedirectRequestHandler>>(
         [my_url = std::move(url), headers_override = std::move(headers)]()
@@ -86,7 +82,7 @@ static auto createPingHandlerFactory(IServer & server)
     {
         constexpr auto ping_response_expression = "Ok.\n";
         return std::make_unique<StaticRequestHandler>(
-            server, ping_response_expression, parseHTTPResponseHeaders("text/plain; charset=UTF-8"));
+            server, ping_response_expression, parseHTTPResponseHeaders("text/html; charset=UTF-8"));
     };
     return std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(std::move(creator));
 }
@@ -98,8 +94,7 @@ static auto createPingHandlerFactory(IServer & server, const Poco::Util::Abstrac
     {
         constexpr auto ping_response_expression = "Ok.\n";
 
-        auto headers = parseHTTPResponseHeaders(config, config_prefix, "text/plain; charset=UTF-8");
-        headers.insert(common_headers.begin(), common_headers.end());
+        auto headers = parseHTTPResponseHeadersWithCommons(config, config_prefix, "text/html; charset=UTF-8", common_headers);
 
         return std::make_unique<StaticRequestHandler>(
             server, ping_response_expression, headers);
@@ -113,8 +108,7 @@ static auto createWebUIHandlerFactory(IServer & server, const Poco::Util::Abstra
 {
     auto creator = [&server,&config,config_prefix,common_headers]() -> std::unique_ptr<UIRequestHandler>
     {
-        auto headers = parseHTTPResponseHeaders(config, config_prefix, "text/html; charset=UTF-8");
-        headers.insert(common_headers.begin(), common_headers.end());
+        auto headers = parseHTTPResponseHeadersWithCommons(config, config_prefix, "text/html; charset=UTF-8", common_headers);
         return std::make_unique<UIRequestHandler>(server, headers);
     };
     return std::make_shared<HandlingRuleHTTPHandlerFactory<UIRequestHandler>>(std::move(creator));

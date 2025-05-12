@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-fasttest, no-parallel
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -10,7 +10,6 @@ config_path_tmp=$config_path.tmp
 
 # Create temporary config
 cat > "$config_path" <<EOF
-<?xml version="1.0"?>
 <clickhouse>
     <http_handlers>
         <common_http_response_headers>
@@ -159,7 +158,9 @@ cat > "$config_path" <<EOF
 </clickhouse>
 EOF
 
-$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG" 2>&1
+$CLICKHOUSE_CLIENT -m --query "
+set send_logs_level='fatal';
+SYSTEM RELOAD CONFIG"
 
 for endpoint in static ping replicas_status play dashboard binary merges metrics "js/lz-string.js" "js/uplot.js" "?query=SELECT%201"; do
   ${CLICKHOUSE_CURL} -I "http://localhost:8123/$endpoint" 2>&1 | grep -i 'X-My-Answer';

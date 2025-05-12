@@ -210,13 +210,10 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRule(
     const AsynchronousMetrics & asynchronous_metrics,
     std::unordered_map<String, String> & common_headers)
 {
-    std::unordered_map<String, String> headers_override = common_headers;
-    auto headers_optional = parseHTTPResponseHeaders(config, config_prefix);
-    if (headers_optional.has_value())
-        headers_override.insert(headers_optional.value().begin(), headers_optional.value().end());
+    auto headers = parseHTTPResponseHeadersWithCommons(config, config_prefix, common_headers);
 
     auto parsed_config = parseExposeMetricsConfig(config, config_prefix + ".handler");
-    auto handler = createPrometheusHandlerFactoryFromConfig(server, asynchronous_metrics, parsed_config, /* for_keeper= */ false, headers_override);
+    auto handler = createPrometheusHandlerFactoryFromConfig(server, asynchronous_metrics, parsed_config, /* for_keeper= */ false, headers);
     chassert(handler);  /// `handler` can't be nullptr here because `for_keeper` is false.
     handler->addFiltersFromConfig(config, config_prefix);
     return handler;
