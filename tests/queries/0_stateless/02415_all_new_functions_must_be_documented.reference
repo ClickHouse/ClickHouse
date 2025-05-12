@@ -94,10 +94,12 @@ arrayAll
 arrayAvg
 arrayCompact
 arrayConcat
+arrayCount
 arrayCumSum
 arrayCumSumNonNegative
 arrayDifference
 arrayDistinct
+arrayDotProduct
 arrayEnumerateDense
 arrayEnumerateDenseRanked
 arrayEnumerateUniq
