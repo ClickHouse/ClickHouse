@@ -424,7 +424,7 @@ bool SparseGramTokenExtractor::nextInStringLike(const char * data, size_t length
         if (!sparse_grams_iterator.get(next_begin, next_end))
         {
             previous_data = nullptr;
-            previous_len = 0;    
+            previous_len = 0;
             return false;
         }
         bool escaped = false;

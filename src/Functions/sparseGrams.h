@@ -1,3 +1,5 @@
+#pragma once
+
 #include <optional>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
