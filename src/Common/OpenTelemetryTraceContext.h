@@ -153,7 +153,7 @@ private:
 using TracingContextHolderPtr = std::unique_ptr<TracingContextHolder>;
 
 /// A span holder that creates span automatically in a (function) scope if tracing is enabled.
-/// Once it's created or destructed, it automatically maitains the tracing context on the thread that it lives.
+/// Once it's created or destructed, it automatically maintains the tracing context on the thread that it lives.
 struct SpanHolder : public Span
 {
     explicit SpanHolder(std::string_view, SpanKind _kind = SpanKind::INTERNAL);
