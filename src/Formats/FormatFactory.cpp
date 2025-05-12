@@ -214,6 +214,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.bloom_filter_flush_threshold_bytes = settings[Setting::output_format_parquet_bloom_filter_flush_threshold_bytes];
     format_settings.parquet.local_read_min_bytes_for_seek = settings[Setting::input_format_parquet_local_file_min_bytes_for_seek];
     format_settings.parquet.enable_row_group_prefetch = settings[Setting::input_format_parquet_enable_row_group_prefetch];
+    format_settings.parquet.allow_geoparquet_parser = settings[Setting::input_format_parquet_allow_geoparquet_parser];
     format_settings.pretty.charset = settings[Setting::output_format_pretty_grid_charset].toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings[Setting::output_format_pretty_color].valueOr(2);
     format_settings.pretty.glue_chunks = settings[Setting::output_format_pretty_glue_chunks].valueOr(2);
@@ -337,6 +338,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.try_infer_variant = settings[Setting::input_format_try_infer_variants];
     format_settings.client_protocol_version = context->getClientProtocolVersion();
     format_settings.allow_special_bool_values_inside_variant = settings[Setting::allow_special_bool_values_inside_variant];
+    format_settings.max_block_size_bytes = settings[Setting::input_format_max_block_size_bytes];
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
@@ -381,6 +383,7 @@ InputFormatPtr FormatFactory::getInput(
 
     RowInputFormatParams row_input_format_params;
     row_input_format_params.max_block_size = max_block_size;
+    row_input_format_params.max_block_size_bytes = format_settings.max_block_size_bytes;
     row_input_format_params.allow_errors_num = format_settings.input_allow_errors_num;
     row_input_format_params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
     row_input_format_params.max_execution_time = settings[Setting::max_execution_time];

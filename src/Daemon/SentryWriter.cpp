@@ -79,17 +79,9 @@ void SentryWriter::resetInstance()
 
 SentryWriter::SentryWriter(Poco::Util::LayeredConfiguration & config)
 {
-    bool enabled = false;
-    bool debug = config.getBool("send_crash_reports.debug", false);
     auto logger = getLogger("SentryWriter");
 
     if (config.getBool("send_crash_reports.enabled", false))
-    {
-        if (debug || (strlen(VERSION_OFFICIAL) > 0))
-            enabled = true;
-    }
-
-    if (enabled)
     {
         server_data_path = config.getString("path", DB::DBMS_DEFAULT_PATH);
         const std::filesystem::path & default_tmp_path = fs::path(config.getString("tmp_path", fs::temp_directory_path())) / "sentry";
@@ -101,10 +93,6 @@ SentryWriter::SentryWriter(Poco::Util::LayeredConfiguration & config)
 
         sentry_options_t * options = sentry_options_new();  /// will be freed by sentry_init or sentry_shutdown
         sentry_options_set_release(options, VERSION_STRING_SHORT);
-        if (debug)
-        {
-            sentry_options_set_debug(options, 1);
-        }
         sentry_options_set_dsn(options, endpoint.c_str());
         sentry_options_set_database_path(options, temp_folder_path.c_str());
 

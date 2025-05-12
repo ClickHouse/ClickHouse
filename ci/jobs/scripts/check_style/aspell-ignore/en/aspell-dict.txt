@@ -167,6 +167,7 @@ CityHash
 Clangd
 ClickBench
 ClickCat
+ClickHaskell
 ClickHouse
 ClickHouse's
 ClickHouseClient
@@ -1251,6 +1252,7 @@ aggthrow
 aiochclient
 alloc
 allocator
+allowlist
 alphaTokens
 amplab
 analysisOfVariance
@@ -1687,6 +1689,7 @@ denormalize
 denormalized
 denormalizing
 denormals
+denylist
 dequeued
 dequeues
 dereference
@@ -2481,6 +2484,7 @@ positionCaseInsensitiveUTF
 positionUTF
 positiveModulo
 positiveModuloOrNull
+postfilter
 postfix
 postfixes
 postgres
@@ -2498,6 +2502,7 @@ prefetched
 prefetches
 prefetching
 prefetchsize
+prefilter
 preflight
 preimage
 preloaded
@@ -3043,6 +3048,7 @@ toStartOfYear
 toString
 toStringCutToZero
 toTime
+toTimeWithFixedDate
 toTimeZone
 toType
 toTypeName

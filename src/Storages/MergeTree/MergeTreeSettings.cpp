@@ -600,6 +600,9 @@ namespace ErrorCodes
     (expert level setting, don't change if you don't understand what it is doing).
     0 - disabled. Works for Simple and StochasticSimple merge selectors.
     )", 0) \
+    DECLARE(Bool, apply_patches_on_merge, true, R"(
+    If true patch parts are applied on merges
+    )", 0) \
     \
     /** Inserts settings. */ \
     DECLARE(UInt64, parts_to_delay_insert, 1000, R"(
@@ -1447,6 +1450,9 @@ namespace ErrorCodes
     DECLARE(Bool, remove_empty_parts, true, R"(
     Remove empty parts after they were pruned by TTL, mutation, or collapsing
     merge algorithm.
+    )", 0) \
+    DECLARE(Bool, remove_unused_patch_parts, true, R"(
+    Remove in background patch parts which are applied for all active parts.
     )", 0) \
     DECLARE(Bool, assign_part_uuids, false, R"(
     When enabled, a unique part identifier will be assigned for every new part.
