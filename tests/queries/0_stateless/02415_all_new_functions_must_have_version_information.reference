@@ -97,6 +97,9 @@ addSeconds
 addTupleOfIntervals
 addWeeks
 addYears
+addressToLine
+addressToLineWithInlines
+addressToSymbol
 age
 alphaTokens
 and
@@ -221,6 +224,7 @@ bitmaskToList
 blockNumber
 blockSerializedSize
 blockSize
+buildId
 byteHammingDistance
 byteSize
 caseWithExpression
