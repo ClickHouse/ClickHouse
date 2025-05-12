@@ -828,8 +828,11 @@ static ColumnWithTypeAndName readIPv4ColumnWithInt32Data(const std::shared_ptr<a
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
-static bool isColumnJSON(const std::shared_ptr<arrow::Field> & field)
+static bool isColumnJSON(const std::shared_ptr<arrow::Field> & field, DataTypePtr type_hint)
 {
+    if (type_hint && type_hint->getTypeId() == TypeIndex::Object)
+        return true;
+
     if (!field || !field->HasMetadata())
         return false;
 
