@@ -65,6 +65,7 @@ void registerTableFunctions()
     registerTableFunctionObjectStorageCluster(factory);
     registerDataLakeTableFunctions(factory);
     registerDataLakeClusterTableFunctions(factory);
+    registerTableFunctionPredict(factory);
 }
 
 }
