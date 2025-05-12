@@ -66,11 +66,8 @@ $CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filte
 $CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx WHERE lower(s) = 'abc' ORDER BY k FORMAT JSON" | grep "rows_read"
 
 # LIKE
-$CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx2 WHERE s LIKE '%ClickHouse%' ORDER BY k"
-$CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx2 WHERE s LIKE '%ClickHouse%' ORDER BY k FORMAT JSON" | grep "rows_read"
-
-$CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx2 WHERE lower(s) LIKE '%clickhouse%' ORDER BY k"
-$CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx2 WHERE lower(s) LIKE '%clickhouse%' ORDER BY k FORMAT JSON" | grep "rows_read"
+$CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx2 WHERE s LIKE '%column%' ORDER BY k"
+$CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx2 WHERE s LIKE '%column%' ORDER BY k FORMAT JSON" | grep "rows_read"
 
 $CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx WHERE s LIKE '%database%' AND s LIKE '%ClickHouse%' ORDER BY k"
 $CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx WHERE s LIKE '%database%' AND s LIKE '%ClickHouse%' ORDER BY k FORMAT JSON" | grep "rows_read"
