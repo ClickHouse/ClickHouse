@@ -1,4 +1,4 @@
--- Tags: no-fasttest, long, no-asan, no-ubsan, no-debug
+-- Tags: no-fasttest, long, no-asan, no-ubsan, no-msan, no-tsan, no-debug
 -- Test for Bug 78161
 
 SET allow_experimental_vector_similarity_index = 1;
