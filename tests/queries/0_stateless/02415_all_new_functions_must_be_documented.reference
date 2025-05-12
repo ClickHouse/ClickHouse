@@ -117,11 +117,7 @@ arrayLastOrNull
 arrayMap
 arrayMax
 arrayMin
-arrayPopBack
-arrayPopFront
 arrayProduct
-arrayPushBack
-arrayPushFront
 arrayROCAUC
 arrayRandomSample
 arrayReduce

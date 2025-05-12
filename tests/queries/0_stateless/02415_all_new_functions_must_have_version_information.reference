@@ -146,8 +146,6 @@ arrayPartialSort
 arrayPopBack
 arrayPopFront
 arrayProduct
-arrayPushBack
-arrayPushFront
 arrayROCAUC
 arrayRandomSample
 arrayReduce

@@ -94,7 +94,7 @@ You can pass a lambda function to it as the first argument.
     FunctionDocumentation::Syntax syntax = "arrayCount([func,] arr1, ...)";
     FunctionDocumentation::Arguments arguments = {
         {"func", "Function to apply to each element of the array(s). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)"},
-        {"arr1 ... arrN", "N arrays"},
+        {"arr1 ... arrN", "N arrays. [Array](/sql-reference/data-types/array)."},
     };
     FunctionDocumentation::ReturnedValue returned_value = "Returns the number of elements for which `func` returns something other than `0`. Otherwise, returns the number of non-zero elements in the array.";
     FunctionDocumentation::Examples example = {{"Usage example", "SELECT arrayCount(x -> (x % 2), groupArray(number) FROM numbers(10)", "5"}};

@@ -15,7 +15,16 @@ public:
 
 REGISTER_FUNCTION(ArrayPopFront)
 {
-    factory.registerFunction<FunctionArrayPopFront>();
+    FunctionDocumentation::Description description = "Removes the first item from the array."
+    FunctionDocumentation::Syntax syntax = "arrayPopFront(x)";
+    FunctionDocumentation::Arguments arguments = {{"x", "The array for which to remove the first element from. [`Array`](/sql-reference/data-types/array)."}};
+    FunctionDocumentation::ReturnedValue returned_value = "Returns an array identical to `x` but without the first element of `x`. [`Array`](/sql-reference/data-types/array).";
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayPopFront([1, 2, 3]) AS res;", "[2,3]"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayPopFront>(documentation);
 }
 
 }
