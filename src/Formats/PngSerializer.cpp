@@ -132,8 +132,8 @@ public:
         {
             const size_t final_byte_size = channels * bytes_per_component * width * height;
             writer.startImage(width, height);
-            writer.writeEntireImage(reinterpret_cast<const unsigned char *>(pixels.data()), final_byte_size);
-            writer.finishImage();
+            writer.writeRows(reinterpret_cast<const unsigned char *>(pixels.data()), final_byte_size);
+            writer.finalize();
         }
         catch (...)
         {
