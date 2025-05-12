@@ -74,14 +74,14 @@ NamesAndTypesList extractHivePartitionColumnsFromPath(
         }
         else
         {
-            auto type = tryInferDataTypeByEscapingRule(value, format_settings ? *format_settings : getFormatSettings(context), FormatSettings::EscapingRule::Raw);
-
-            if (type == nullptr)
-                type = std::make_shared<DataTypeString>();
-            if (type->canBeInsideLowCardinality())
-                hive_partition_columns_to_read_from_file_path.emplace_back(key, std::make_shared<DataTypeLowCardinality>(type));
-            else
+            if (const auto type = tryInferDataTypeByEscapingRule(value, format_settings ? *format_settings : getFormatSettings(context), FormatSettings::EscapingRule::Raw))
+            {
                 hive_partition_columns_to_read_from_file_path.emplace_back(key, type);
+            }
+            else
+            {
+                hive_partition_columns_to_read_from_file_path.emplace_back(key, std::make_shared<DataTypeString>());
+            }
         }
     }
 
