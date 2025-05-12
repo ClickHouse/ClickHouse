@@ -538,26 +538,39 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 /// Will skip merging step in the initial server when the following conditions are met:
 /// 1. Sharding key columns should be a subset of expression columns.
 /// 2. Sharding key expression is a deterministic function of col1, ..., coln and expression key is injective functions of these col1, ..., coln.
+/// 3. The expression should not only contain non-injective functions even.
 bool StorageDistributed::isShardingKeySuitsExpressionKey(
-    const QueryTreeNodePtr & node, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const
+    const QueryTreeNodePtr & expr, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const
 {
-    ASTPtr node_ast
-        = node->toAST({.add_cast_for_constants = false, .fully_qualified_identifiers = false, .qualify_indentifiers_with_database = false})
+    ASTPtr expr_ast
+        = expr->toAST({.add_cast_for_constants = false, .fully_qualified_identifiers = false, .qualify_indentifiers_with_database = false})
               ->clone();
     const auto & context = query_info.planner_context->getQueryContext();
-    const auto & syntax_result = TreeRewriter(context).analyze(node_ast, storage_snapshot->getAllColumnsDescription().getAllPhysical());
-    const auto & expression_action = ExpressionAnalyzer(node_ast, syntax_result, context).getActions(false);
-    const auto & expression_dag = expression_action->getActionsDAG();
+    const auto & syntax_result = TreeRewriter(context).analyze(expr_ast, storage_snapshot->getAllColumnsDescription().getAllPhysical());
+    auto expr_analyzer = ExpressionAnalyzer(expr_ast, syntax_result, context);
+    const auto & expression_dag = expr_analyzer.getActionsDAG(false);
     if (expression_dag.hasArrayJoin() || expression_dag.hasStatefulFunctions() || expression_dag.hasNonDeterministic())
         return false;
-    const auto & expression_required_columns = expression_dag.getRequiredColumnsNames();
-    const auto & sharding_key_dag = sharding_key_expr->getActionsDAG();
-    for (const auto & col : sharding_key_expr->getRequiredColumns())
-        if (std::ranges::find(expression_required_columns, col) == expression_required_columns.end())
-            return false;
-    const auto irreducibe_nodes = removeInjectiveFunctionsFromResultsRecursively(expression_dag);
-    const auto matches = matchTrees(expression_dag.getOutputs(), sharding_key_dag);
 
+    const auto & expr_key_required_columns = expression_dag.getRequiredColumnsNames();
+
+    const auto & sharding_key_dag = sharding_key_expr->getActionsDAG();
+    for (const auto & col : sharding_key_dag.getRequiredColumnsNames())
+        if (std::ranges::find(expr_key_required_columns, col) == expr_key_required_columns.end())
+            return false;
+    
+    auto irreducibe_nodes = removeInjectiveFunctionsFromResultsRecursively(expression_dag);
+    for (const auto & node : irreducibe_nodes)
+    {
+        if(node->type == ActionsDAG::ActionType::FUNCTION && !isInjectiveFunction(node))
+        {
+            LOG_DEBUG(log, "Expression key contains non-injective function: {}", node->result_name);
+            return false;
+        }
+    }
+    const auto matches = matchTrees(expression_dag.getOutputs(), sharding_key_dag);
+    LOG_DEBUG(log, "is sharding key suits expression key: {}",
+            allOutputsDependsOnlyOnAllowedNodes(sharding_key_dag, irreducibe_nodes, matches));
     return allOutputsDependsOnlyOnAllowedNodes(sharding_key_dag, irreducibe_nodes, matches);
 }
 
