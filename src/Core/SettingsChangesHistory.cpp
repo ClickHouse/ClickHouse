@@ -103,6 +103,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"compile_expressions", false, true, "We believe that the LLVM infrastructure behind the JIT compiler is stable enough to enable this setting by default."},
             {"use_legacy_to_time", false, false, "New setting. Allows for user to use the old function logic for toTime, which works as toTimeWithFixedDate."},
             {"input_format_parquet_allow_geoparquet_parser", false, true, "A new setting to use geo columns in parquet file"},
+            {"s3_slow_down_after_network_error", false, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
@@ -153,7 +154,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.2",
         {
             /// Release closed. Please use 25.3
-            {"s3_slow_down_after_network_error", false, true, "New setting"},
             {"schema_inference_make_json_columns_nullable", false, false, "Allow to infer Nullable(JSON) during schema inference"},
             {"query_plan_use_new_logical_join_step", false, true, "Enable new step"},
             {"postgresql_fault_injection_probability", 0., 0., "New setting"},
