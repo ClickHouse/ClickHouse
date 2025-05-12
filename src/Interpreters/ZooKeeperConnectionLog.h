@@ -23,7 +23,7 @@ struct ZooKeeperConnectionLogElement
     String cluster_name;
     String host;
     UInt16 port;
-    std::optional<UInt8> index;
+    UInt8 index;
     Int64 client_id;
     UInt8 keeper_api_version;
     Array enabled_feature_flags;

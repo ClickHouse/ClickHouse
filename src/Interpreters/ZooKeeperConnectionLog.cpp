@@ -47,7 +47,7 @@ ColumnsDescription ZooKeeperConnectionLogElement::getColumnsDescription()
         {"name", std::make_shared<DataTypeString>(), "ZooKeeper cluster's name."},
         {"host", std::make_shared<DataTypeString>(), "The hostname/IP of the ZooKeeper node that ClickHouse connected to or disconnected from."},
         {"port", std::make_shared<DataTypeUInt16>(), "The port of the ZooKeeper node that ClickHouse connected to or disconnected from."},
-        {"index", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "The index of the ZooKeeper node that ClickHouse connected to or disconnected from. The index is from ZooKeeper config."},
+        {"index", std::make_shared<DataTypeUInt8>(), "The index of the ZooKeeper node that ClickHouse connected to or disconnected from. The index is from ZooKeeper config."},
         {"client_id", std::make_shared<DataTypeInt64>(), "Session id of the connection."},
         {"keeper_api_version", std::make_shared<DataTypeUInt8>(), "Keeper API version."},
         {"enabled_feature_flags", std::make_shared<DataTypeArray>(std::move(feature_flags_enum)), "Feature flags which are enabled. Only applicable to ClickHouse Keeper."},
@@ -99,7 +99,7 @@ void ZooKeeperConnectionLogElement::appendToBlock(MutableColumns & columns) cons
     columns[i++]->insert(port);
 
     if (index)
-        columns[i++]->insert(*index);
+        columns[i++]->insert(index);
     else
         columns[i++]->insertDefault();
 
@@ -132,7 +132,9 @@ void ZooKeeperConnectionLog::addWithEventType(
         element.host = host_port.substr(0, offset);
         element.port = static_cast<UInt16>(Poco::NumberParser::parseUnsigned(host_port.substr(offset + 1)));
     }
-    element.index = zookeeper.getConnectedHostIdx();
+    const auto maybe_index = zookeeper.getConnectedHostIdx();
+    chassert(maybe_index.has_value(), "Already connected ZooKeeper host index is not set");
+    element.index = *maybe_index;
     element.keeper_api_version = 0;
     element.client_id = zookeeper.getClientID();
     element.enabled_feature_flags = getEnabledFeatureFlags(zookeeper);
