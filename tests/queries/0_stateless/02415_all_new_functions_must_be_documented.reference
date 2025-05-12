@@ -98,11 +98,9 @@ arrayCumSum
 arrayCumSumNonNegative
 arrayDifference
 arrayDistinct
-arrayEnumerate
 arrayEnumerateDense
 arrayEnumerateDenseRanked
 arrayEnumerateUniq
-arrayEnumerateUniqRanked
 arrayExists
 arrayFill
 arrayFilter
