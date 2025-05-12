@@ -92,4 +92,4 @@ $CLICKHOUSE_CLIENT -q "select entry_version, initiator_host, initiator_port, clu
     from system.distributed_ddl_queue
     where arrayExists((key, val) -> key='log_comment' and val like '%$RAND_COMMENT%', mapKeys(settings), mapValues(settings))
     and arrayExists((key, val) -> key='distributed_ddl_task_timeout' and val in ('$TIMEOUT', '$MIN_TIMEOUT'), mapKeys(settings), mapValues(settings))
-    order by entry, host, port, exception_code" | sed 's/.ec2.internal//g'
+    order by entry, host, port, exception_code" | sed 's/.ec2.internal//g'  # running job in docker with --network=host in CI leads to hostname=localhost.ec2.internal - sed is to align it with reference output

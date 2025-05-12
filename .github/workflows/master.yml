@@ -1611,11 +1611,11 @@ jobs:
             python3 -m praktika run 'Stateless tests (amd_binary, ParallelReplicas, s3 storage)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_debug_asyncinsert_s3_storage:
+  stateless_tests_amd_debug_asyncinsert_s3_storage:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd_and_merge, build_amd_debug]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChkZWJ1ZywgQXN5bmNJbnNlcnQsIHMzIHN0b3JhZ2Up') }}
-    name: "Stateless tests (debug, AsyncInsert, s3 storage)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcsIEFzeW5jSW5zZXJ0LCBzMyBzdG9yYWdlKQ==') }}
+    name: "Stateless tests (amd_debug, AsyncInsert, s3 storage)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -1644,9 +1644,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (debug, AsyncInsert, s3 storage)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_debug, AsyncInsert, s3 storage)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (debug, AsyncInsert, s3 storage)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_debug, AsyncInsert, s3 storage)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_debug:

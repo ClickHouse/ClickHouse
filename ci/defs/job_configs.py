@@ -23,7 +23,6 @@ common_ft_job_config = Job.Config(
     runs_on=["..params.."],
     command='python3 ./ci/jobs/functional_tests.py --options "{PARAMETER}"',
     # some tests can be flaky due to very slow disks - use tmpfs for temporary ClickHouse files
-    # TODO: switch to refactored stateless-test image and remove +root
     run_in_docker="clickhouse/stateless-test+--network=host+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse",
     digest_config=Job.CacheDigestConfig(
         include_paths=[
@@ -325,7 +324,7 @@ class JobConfigs:
             "amd_binary, old analyzer, s3 storage, DatabaseReplicated, 1/2",
             "amd_binary, old analyzer, s3 storage, DatabaseReplicated, 2/2",
             "amd_binary, ParallelReplicas, s3 storage",
-            "debug, AsyncInsert, s3 storage",
+            "amd_debug, AsyncInsert, s3 storage",
         ],
         runs_on=[
             RunnerLabels.FUNC_TESTER_AMD,
