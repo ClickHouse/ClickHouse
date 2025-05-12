@@ -67,7 +67,7 @@ struct Base32<Traits, Base32NaiveTag>
 
         if (bits_left > 0)
         {
-            dst[opos++] = Traits::encodeChar(buffer << (5 - bits_left)) & 0x1F);
+            dst[opos++] = Traits::encodeChar((buffer << (5 - bits_left)) & 0x1F);
         }
 
         while (opos % 8 != 0)
