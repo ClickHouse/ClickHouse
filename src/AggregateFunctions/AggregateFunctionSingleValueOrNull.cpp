@@ -78,7 +78,7 @@ public:
 
     /// TODO: Methods write and read lose data (first_value and is_null)
     /// Fixing it requires a breaking change (but it's probably necessary)
-    void write(WriteBuffer & buf, const ISerialization & serialization, const DataTypePtr & data_type) const { data().write(buf, serialization, data_type); }
+    void write(WriteBuffer & buf, const ISerialization & serialization) const { data().write(buf, serialization); }
 
     void read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr & data_type, Arena * arena) { data().read(buf, serialization, data_type, arena); }
 
@@ -164,7 +164,7 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        data(place).write(buf, *serialization, result_type);
+        data(place).write(buf, *serialization);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override

@@ -227,8 +227,8 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        this->data(place).result().write(buf, *serialization_res, data_type_res);
-        this->data(place).value().write(buf, *serialization_val, data_type_val);
+        this->data(place).result().write(buf, *serialization_res);
+        this->data(place).value().write(buf, *serialization_val);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override

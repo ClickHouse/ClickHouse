@@ -171,7 +171,7 @@ void SingleValueDataFixed<T>::insertResultInto(IColumn & to, const DataTypePtr &
 }
 
 template <typename T>
-void SingleValueDataFixed<T>::write(WriteBuffer & buf, const ISerialization &, const DataTypePtr &) const
+void SingleValueDataFixed<T>::write(WriteBuffer & buf, const ISerialization &) const
 {
     writeBinary(has(), buf);
     if (has())
@@ -941,9 +941,9 @@ void SingleValueDataNumeric<T>::insertResultInto(IColumn & to, const DataTypePtr
 }
 
 template <typename T>
-void SingleValueDataNumeric<T>::write(DB::WriteBuffer & buf, const DB::ISerialization & serialization, const DataTypePtr & type) const
+void SingleValueDataNumeric<T>::write(DB::WriteBuffer & buf, const DB::ISerialization & serialization) const
 {
-    return memory.get().write(buf, serialization, type);
+    return memory.get().write(buf, serialization);
 }
 
 template <typename T>
@@ -1176,7 +1176,7 @@ void SingleValueDataString::insertResultInto(DB::IColumn & to, const DataTypePtr
         assert_cast<ColumnString &>(to).insertDefault();
 }
 
-void SingleValueDataString::write(WriteBuffer & buf, const ISerialization & /*serialization*/, const DataTypePtr & /*type*/) const
+void SingleValueDataString::write(WriteBuffer & buf, const ISerialization & /*serialization*/) const
 {
     if (unlikely(MAX_STRING_SIZE < size))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "String size is too big ({}), it's a bug", size);
@@ -1320,7 +1320,7 @@ void SingleValueDataGeneric::insertResultInto(IColumn & to, const DataTypePtr & 
         type->insertDefaultInto(to);
 }
 
-void SingleValueDataGeneric::write(WriteBuffer & buf, const ISerialization & serialization, const DataTypePtr &) const
+void SingleValueDataGeneric::write(WriteBuffer & buf, const ISerialization & serialization) const
 {
     if (!value.isNull())
     {
@@ -1429,7 +1429,7 @@ void SingleValueDataGenericWithColumn::insertResultInto(IColumn & to, const Data
         type->insertDefaultInto(to);
 }
 
-void SingleValueDataGenericWithColumn::write(WriteBuffer & buf, const ISerialization & serialization, const DataTypePtr &) const
+void SingleValueDataGenericWithColumn::write(WriteBuffer & buf, const ISerialization & serialization) const
 {
     if (value)
     {

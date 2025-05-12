@@ -156,7 +156,7 @@ public:
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         nested_function->serialize(place, buf, version);
-        data(place).data().write(buf, *serialization, data_type);
+        data(place).data().write(buf, *serialization);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override

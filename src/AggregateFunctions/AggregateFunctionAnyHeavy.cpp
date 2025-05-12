@@ -82,9 +82,9 @@ public:
             add(column, 0, arena);
     }
 
-    void write(WriteBuffer & buf, const ISerialization & serialization, const DataTypePtr & type) const
+    void write(WriteBuffer & buf, const ISerialization & serialization) const
     {
-        data().write(buf, serialization, type);
+        data().write(buf, serialization);
         writeBinaryLittleEndian(counter, buf);
     }
 
@@ -131,7 +131,7 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        data(place).write(buf, *serialization, result_type);
+        data(place).write(buf, *serialization);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override

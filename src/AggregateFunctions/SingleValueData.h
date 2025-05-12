@@ -27,7 +27,7 @@ struct SingleValueDataBase
     virtual ~SingleValueDataBase() = default;
     virtual bool has() const = 0;
     virtual void insertResultInto(IColumn &, const DataTypePtr & type) const = 0;
-    virtual void write(WriteBuffer &, const ISerialization &, const DataTypePtr & type) const = 0;
+    virtual void write(WriteBuffer &, const ISerialization &) const = 0;
     virtual void read(ReadBuffer &, const ISerialization &, const DataTypePtr & type, Arena *) = 0;
 
     virtual bool isEqualTo(const IColumn & column, size_t row_num) const = 0;
@@ -94,7 +94,7 @@ struct SingleValueDataFixed
 
     bool has() const { return has_value; }
     void insertResultInto(IColumn & to, const DataTypePtr & type) const;
-    void write(WriteBuffer & buf, const ISerialization &, const DataTypePtr &) const;
+    void write(WriteBuffer & buf, const ISerialization &) const;
     void read(ReadBuffer & buf, const ISerialization &, const DataTypePtr &, Arena *);
     bool isEqualTo(const IColumn & column, size_t index) const;
     bool isEqualTo(const Self & to) const;
@@ -207,7 +207,7 @@ public:
 
     bool has() const override;
     void insertResultInto(IColumn & to, const DataTypePtr & type) const override;
-    void write(WriteBuffer & buf, const ISerialization & serialization, const DataTypePtr & type) const override;
+    void write(WriteBuffer & buf, const ISerialization & serialization) const override;
     void read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr &, Arena * arena) override;
     bool isEqualTo(const IColumn & column, size_t index) const override;
     bool isEqualTo(const SingleValueDataBase & to) const override;
@@ -293,7 +293,7 @@ private:
 public:
     bool has() const override { return size != 0; }
     void insertResultInto(IColumn & to, const DataTypePtr & type) const override;
-    void write(WriteBuffer & buf, const ISerialization & /*serialization*/, const DataTypePtr & /*type*/) const override;
+    void write(WriteBuffer & buf, const ISerialization & /*serialization*/) const override;
     void read(ReadBuffer & buf, const ISerialization & /*serialization*/, const DataTypePtr & /*type*/, Arena * arena) override;
 
     bool isEqualTo(const IColumn & column, size_t row_num) const override;
@@ -325,7 +325,7 @@ private:
 public:
     bool has() const override { return !value.isNull(); }
     void insertResultInto(IColumn & to, const DataTypePtr & type) const override;
-    void write(WriteBuffer & buf, const ISerialization & serialization, const DataTypePtr & /*type*/) const override;
+    void write(WriteBuffer & buf, const ISerialization & serialization) const override;
     void read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr & type, Arena *) override;
 
     bool isEqualTo(const IColumn & column, size_t row_num) const override;
@@ -358,7 +358,7 @@ private:
 public:
     bool has() const override { return value.operator bool(); }
     void insertResultInto(IColumn & to, const DataTypePtr & type) const override;
-    void write(WriteBuffer & buf, const ISerialization & serialization, const DataTypePtr & type) const override;
+    void write(WriteBuffer & buf, const ISerialization & serialization) const override;
     void read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr & type, Arena *) override;
 
     bool isEqualTo(const IColumn & column, size_t row_num) const override;
