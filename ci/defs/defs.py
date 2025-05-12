@@ -210,6 +210,12 @@ DOCKERS = [
         depends_on=[],
     ),
     Docker.Config(
+        name="clickhouse/arrowflight",
+        path="./docker/test/integration/arrowflight",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
         name="clickhouse/dotnet-client",
         path="./docker/test/integration/dotnet_client",
         platforms=Docker.Platforms.arm_amd,
