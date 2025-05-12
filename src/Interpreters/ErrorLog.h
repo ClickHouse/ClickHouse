@@ -24,7 +24,7 @@ struct ErrorLogElement
     std::string error_message{};
     ErrorCodes::Value value{};
     bool remote{};
-    std::string_view query_id;
+    std::string query_id;
     std::vector<void *> error_trace{};
     bool symbolize = false;
 
