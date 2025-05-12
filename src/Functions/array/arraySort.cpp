@@ -293,7 +293,7 @@ To improve sorting efficiency, the [Schwartzian transform](https://en.wikipedia.
     FunctionDocumentation::ReturnedValue returned_value = R"(
 Returns the array `x` sorted in ascending order if no lambda function is provided, otherwise
 it returns an array sorted according to the logic of the provided lambda function. [Array](/sql-reference/data-types/array).
-    )"
+    )";
     FunctionDocumentation::Examples examples = {
         {"Example 1", "SELECT arraySort([1, 3, 3, 0]);", "[0,1,3,3]"},
         {"Example 2", "SELECT arraySort(['hello', 'world', '!']);", "['!','hello','world']"},
@@ -371,7 +371,7 @@ This function is the same as `arraySort` but with an additional `limit` argument
 :::tip
 To retain only the sorted elements use `arrayResize`.
 :::
-    )",
+    )";
     syntax = "arrayPartialSort([f,] x, ...yN, limit)";
     arguments = {
         {"f(y1[, y2 ... yN])", "The lambda function to apply to elements of array `x`."},
@@ -382,14 +382,14 @@ To retain only the sorted elements use `arrayResize`.
     returned_value = R"(
 Returns an array of the same size as the original array where elements in the range `[1..limit]` are sorted
 in ascending order. The remaining elements `(limit..N]` are in an unspecified order.
-    )"
+    )";
     examples = {
-        {"simple_int", "SELECT arrayPartialSort(2, [5, 9, 1, 3])", ""},
-        {"simple_string", "SELECT arrayPartialSort(2, ['expenses','lasso','embolism','gladly'])", ""},
-        {"retain_sorted", "SELECT arrayResize(arrayPartialSort(2, [5, 9, 1, 3]), 2)", ""},
-        {"lambda_simple", "SELECT arrayPartialSort((x) -> -x, 2, [5, 9, 1, 3])", ""},
-        {"lambda_complex", "SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res", ""}
-    },
+        {"simple_int", "SELECT arrayPartialSort(2, [5, 9, 1, 3])", "[1,3,5,9]"},
+        {"simple_string", "SELECT arrayPartialSort(2, ['expenses','lasso','embolism','gladly'])", "['embolism','expenses','gladly','lasso']"},
+        {"retain_sorted", "SELECT arrayResize(arrayPartialSort(2, [5, 9, 1, 3]), 2)", "[1,3]"},
+        {"lambda_simple", "SELECT arrayPartialSort((x) -> -x, 2, [5, 9, 1, 3])", "[9,5,1,3]"},
+        {"lambda_complex", "SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res", "[2,1,0]"}
+    };
     introduced_in = {23, 2};
     documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 

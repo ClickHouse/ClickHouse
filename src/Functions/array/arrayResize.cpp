@@ -131,7 +131,7 @@ If `size` is larger than the initial size of the array, the array is extended to
     FunctionDocumentation::ReturnedValue returned_value = "An array of length `size`. [Array](/sql-reference/data-types/array).";
     FunctionDocumentation::Examples examples = {
         {"Example 1", "SELECT arrayResize([1], 3);", "[1,0,0]"},
-{       {"Example 2", "SELECT arrayResize([1], 3, NULL);", "[1,NULL,NULL]"},
+        {"Example 2", "SELECT arrayResize([1], 3, NULL);", "[1,NULL,NULL]"},
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;

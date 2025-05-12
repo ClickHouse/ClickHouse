@@ -160,7 +160,7 @@ REGISTER_FUNCTION(ArraySlice)
         {"offset", "Indent from the edge of the array. A positive value indicates an offset on the left, and a negative value is an indent on the right. Numbering of the array items begins with `1`. `(U)Int8/16/32/64/128/256`"},
         {"length", "The length of the required slice. If you specify a negative value, the function returns an open slice `[offset, array_length - length]`. If you omit the value, the function returns the slice `[offset, the_end_of_array]`. `(U)Int8/16/32/64/128/256`"},
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns a slice of the array with `length` elements from the specified `offset`. [Array](/sql-reference/data-types/array)."
+    FunctionDocumentation::ReturnedValue returned_value = "Returns a slice of the array with `length` elements from the specified `offset`. [Array](/sql-reference/data-types/array).";
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;", "[2,NULL,4]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
