@@ -978,6 +978,9 @@ try
 
     Poco::Logger * log = &logger();
 
+    int * leak = new int[100];
+    (void)leak;
+
     MainThreadStatus::getInstance();
 
     ServerSettings server_settings;
