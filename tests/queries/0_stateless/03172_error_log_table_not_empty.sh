@@ -46,7 +46,7 @@ SELECT sum(value) > $(($errors_333+1)) FROM system.error_log WHERE code = 333;
 "
 
 $CLICKHOUSE_CLIENT -m -q "
-SELECT (not empty(last_error_trace)) + (query_id != '') + (last_error_message != '')
+SELECT (not empty(last_error_trace)) + (last_error_query_id != '') + (last_error_message != '')
 FROM system.error_log
 LIMIT 1
 "
