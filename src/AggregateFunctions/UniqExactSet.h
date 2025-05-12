@@ -7,6 +7,9 @@
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
+
 namespace DB
 {
 
@@ -117,7 +120,18 @@ public:
 
     auto merge(const UniqExactSet & other, ThreadPool * thread_pool = nullptr, std::atomic<bool> * is_cancelled = nullptr)
     {
-        const bool worth_converting_to_two_level = other.isTwoLevel() || (worthConvertingToTwoLevel(std::max(size(), other.size())));
+        if (size() == 0)
+        {
+            if (other.isTwoLevel())
+            {
+                two_level_set = other.getTwoLevelSet();
+                return;
+            }
+            if (worthConvertingToTwoLevel(other.size()))
+                convertToTwoLevel();
+        }
+
+        const bool worth_converting_to_two_level = other.isTwoLevel(); // || (worthConvertingToTwoLevel(std::max(size(), other.size())));
         if (isSingleLevel() && worth_converting_to_two_level)
             convertToTwoLevel();
 
