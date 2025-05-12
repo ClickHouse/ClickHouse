@@ -36,6 +36,18 @@ const ColumnString * getAndCheckColumnString(const IColumn * column)
     return ptr;
 }
 
+template <typename T>
+MutableColumnPtr getLengthColumn(const PaddedPODArray<UInt64> & lengths)
+{
+    MutableColumnPtr column = ColumnVector<T>::create(lengths.size());
+    auto & data = static_cast<ColumnVector<T> *>(column.get())->getData();
+    for (size_t i = 0; i < lengths.size(); ++i)
+    {
+        data[i] = lengths[i];
+    }
+    return column;
+}
+
 }
 
 String ColumnUniqueFCBlockDF::getDecompressedAt(size_t pos) const
@@ -57,7 +69,7 @@ String ColumnUniqueFCBlockDF::getDecompressedAt(size_t pos) const
     const size_t header_pos = pos - pos_in_block;
     const StringRef header = data_column->getDataAt(header_pos);
     const StringRef suffix = data_column->getDataAt(pos);
-    const size_t prefix_length = common_prefix_lengths[pos];
+    const size_t prefix_length = common_prefix_lengths->get64(pos);
     String output;
     output.resize(prefix_length + suffix.size);
     memcpy(output.data(), header.data, prefix_length);
@@ -84,14 +96,14 @@ ColumnUniqueFCBlockDF::DecompressedValue ColumnUniqueFCBlockDF::getDecompressedR
     }
 
     const size_t header_pos = pos - pos_in_block;
-    const StringRef prefix = {data_column->getDataAt(header_pos).data, common_prefix_lengths[pos]};
+    const StringRef prefix = {data_column->getDataAt(header_pos).data, common_prefix_lengths->get64(pos)};
     const StringRef suffix = data_column->getDataAt(pos);
     return {prefix, suffix};
 }
 
 size_t ColumnUniqueFCBlockDF::getSizeAt(size_t pos) const
 {
-    return data_column->getDataAt(pos).size + common_prefix_lengths[pos];
+    return data_column->getDataAt(pos).size + common_prefix_lengths->get64(pos);
 }
 
 MutableColumnPtr ColumnUniqueFCBlockDF::getDecompressedValues(size_t start, size_t length) const
@@ -155,7 +167,7 @@ ColumnUniqueFCBlockDF::ColumnUniqueFCBlockDF(const ColumnPtr & string_column, si
 
 ColumnUniqueFCBlockDF::ColumnUniqueFCBlockDF(const ColumnUniqueFCBlockDF & other)
     : data_column(other.data_column)
-    , common_prefix_lengths(other.common_prefix_lengths.begin(), other.common_prefix_lengths.end()),
+    , common_prefix_lengths(other.common_prefix_lengths),
       block_size(other.block_size),
       old_indexes_mapping(other.old_indexes_mapping),
       is_nullable(other.is_nullable)
@@ -216,13 +228,21 @@ size_t ColumnUniqueFCBlockDF::getPosToInsert(StringRef value) const
 void ColumnUniqueFCBlockDF::calculateCompression(const ColumnPtr & string_column)
 {
     data_column = data_column->cloneEmpty();
-    common_prefix_lengths.clear();
+
+    PaddedPODArray<UInt64> lengths;
+    size_t max_length = 0;
+
+    const auto insert_length = [&](size_t length)
+    {
+        lengths.push_back(length);
+        max_length = std::max(max_length, length);
+    };
 
     /// Default and Null value
     for (size_t i = 0; i < specialValuesCount(); ++i)
     {
         data_column->insertDefault();
-        common_prefix_lengths.push_back(0);
+        insert_length(0);
     }
 
     StringRef current_header = "";
@@ -239,7 +259,7 @@ void ColumnUniqueFCBlockDF::calculateCompression(const ColumnPtr & string_column
         {
             current_header = data;
             data_column->insertData(current_header.data, current_header.size);
-            common_prefix_lengths.push_back(current_header.size);
+            insert_length(current_header.size);
         }
         else
         {
@@ -250,7 +270,7 @@ void ColumnUniqueFCBlockDF::calculateCompression(const ColumnPtr & string_column
                 ++same_prefix_length;
             }
             data_column->insertData(data.data + same_prefix_length, data.size - same_prefix_length);
-            common_prefix_lengths.push_back(same_prefix_length);
+            insert_length(same_prefix_length);
         }
         prev_data = data;
         ++pos_in_block;
@@ -258,6 +278,23 @@ void ColumnUniqueFCBlockDF::calculateCompression(const ColumnPtr & string_column
         {
             pos_in_block = 0;
         }
+    }
+
+    if (max_length <= std::numeric_limits<UInt8>::max())
+    {
+        common_prefix_lengths = getLengthColumn<UInt8>(lengths);
+    }
+    else if (max_length <= std::numeric_limits<UInt16>::max())
+    {
+        common_prefix_lengths = getLengthColumn<UInt16>(lengths);
+    }
+    else if (max_length <= std::numeric_limits<UInt32>::max())
+    {
+        common_prefix_lengths = getLengthColumn<UInt32>(lengths);
+    }
+    else
+    {
+        common_prefix_lengths = getLengthColumn<UInt64>(lengths);
     }
 }
 
@@ -711,23 +748,23 @@ void ColumnUniqueFCBlockDF::getExtremes(Field & min, Field & max) const
 
 size_t ColumnUniqueFCBlockDF::byteSize() const
 {
-    return data_column->byteSize() + common_prefix_lengths.size() * sizeof(common_prefix_lengths[0]);
+    return data_column->byteSize() + common_prefix_lengths->byteSize();
 }
 
 size_t ColumnUniqueFCBlockDF::byteSizeAt(size_t n) const
 {
-    return data_column->byteSizeAt(n) + sizeof(common_prefix_lengths[n]);
+    return data_column->byteSizeAt(n) + common_prefix_lengths->sizeOfValueIfFixed();
 }
 
 void ColumnUniqueFCBlockDF::protect()
 {
     data_column->protect();
-    common_prefix_lengths.protect();
+    common_prefix_lengths->protect();
 }
 
 size_t ColumnUniqueFCBlockDF::allocatedBytes() const
 {
-    return data_column->allocatedBytes() + common_prefix_lengths.allocated_bytes();
+    return data_column->allocatedBytes() + common_prefix_lengths->allocatedBytes();
 }
 
 UInt128 ColumnUniqueFCBlockDF::getHash() const
@@ -818,10 +855,10 @@ void ColumnUniqueFCBlockDF::nestedToNullable()
     temp->insertRangeFrom(*data_column, 0, size());
     data_column = std::move(temp);
 
-    Lengths temp_lengths;
-    temp_lengths.reserve(common_prefix_lengths.size() + 1);
-    temp_lengths.push_back(0);
-    temp_lengths.insert_assume_reserved(common_prefix_lengths.begin(), common_prefix_lengths.end());
+    auto temp_lengths = common_prefix_lengths->cloneEmpty();
+    temp_lengths->reserve(size() + 1);
+    temp_lengths->insertDefault();
+    temp_lengths->insertRangeFrom(*common_prefix_lengths, 0, common_prefix_lengths->size());
     common_prefix_lengths = std::move(temp_lengths);
 
     auto mapping = ColumnUInt64::create(size() - 1);
@@ -841,7 +878,8 @@ void ColumnUniqueFCBlockDF::nestedRemoveNullable()
 
     data_column = data_column->cut(1, size() - 1);
 
-    Lengths temp_lengths{common_prefix_lengths.begin() + 1, common_prefix_lengths.end()};
+    auto temp_lengths = common_prefix_lengths->cloneEmpty();
+    temp_lengths->insertRangeFrom(*common_prefix_lengths, 1, common_prefix_lengths->size() - 1);
     common_prefix_lengths = std::move(temp_lengths);
 
     auto mapping = ColumnUInt64::create(size() + 1);

@@ -3,7 +3,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/IColumnUnique.h>
 #include <Core/Field.h>
-#include <Common/PODArray_fwd.h>
 
 #include <cstring>
 
@@ -32,9 +31,6 @@ private:
     ColumnUniqueFCBlockDF(const ColumnUniqueFCBlockDF & other);
 
 public:
-    using Length = UInt64;
-    using Lengths = PaddedPODArray<Length>;
-
     std::string getName() const override { return "UniqueFCBlockDF"; }
 
     MutableColumnPtr cloneEmpty() const override;
@@ -130,7 +126,10 @@ public:
     bool structureEquals(const IColumn & rhs) const override
     {
         if (const auto * rhs_concrete = typeid_cast<const ColumnUniqueFCBlockDF *>(&rhs))
-            return data_column->structureEquals(*rhs_concrete->data_column);
+        {
+            return data_column->structureEquals(*rhs_concrete->data_column) &&
+                   common_prefix_lengths->structureEquals(*rhs_concrete->common_prefix_lengths);
+        }
         return false;
     }
 
@@ -200,7 +199,7 @@ private:
     char * serializeIntoMemory(size_t pos, DecompressedValue value, char * memory) const;
 
     IColumn::WrappedPtr data_column;
-    Lengths common_prefix_lengths;
+    IColumn::WrappedPtr common_prefix_lengths;
     size_t block_size;
 
     ColumnPtr old_indexes_mapping;
