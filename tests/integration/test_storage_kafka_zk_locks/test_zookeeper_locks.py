@@ -4,9 +4,9 @@ import time
 import pytest
 import logging
 
-from . import common as k
+from helpers.kafka.common_direct import *
+import helpers.kafka.common as k
 
-from helpers.cluster import ClickHouseCluster
 from helpers.keeper_utils import KeeperClient
 
 cluster = ClickHouseCluster(__file__)
@@ -23,13 +23,16 @@ instance = cluster.add_instance(
         "kafka_group_name_new": "zk_locks_group",
         "kafka_client_id": "instance",
         "kafka_format_json_each_row": "JSONEachRow",
-    }
+    },
+    clickhouse_path_dir="clickhouse_path",
 )
 
 @pytest.fixture(scope="module")
 def kafka_cluster():
     try:
         cluster.start()
+        kafka_id = instance.cluster.kafka_docker_id
+        print(("kafka_id is {}".format(kafka_id)))
         yield cluster
     finally:
         cluster.shutdown()
@@ -98,7 +101,15 @@ def test_zookeeper_partition_locks(kafka_cluster):
         base = "/clickhouse/test/zk_locks/topic_partition_locks"
         expected_locks = {f"zk_locks_topic_{pid}.lock" for pid in range(num_partitions)}
         with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
-            k.wait_for_zk_children(zk, base, expected_locks)
+            start = time.time()
+            timeout, interval = 30.0, 1.0
+            while time.time() - start < timeout:
+                children = set(zk.ls(base))
+                if children == expected_locks:
+                    break
+                time.sleep(interval)
+            else:
+                pytest.fail(f"Timed out waiting for locks in ZK: got {children!r}, expected {expected_locks!r}")
 
             for lock in expected_locks:
                 owner = zk.get(f"{base}/{lock}")
@@ -154,7 +165,15 @@ def test_three_replicas_balance_ten_partitions(kafka_cluster):
         base = "/clickhouse/test/zk_dist3/topic_partition_locks"
         expected_locks = {f"{topic_name}_{pid}.lock" for pid in range(num_partitions)}
         with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
-            k.wait_for_zk_children(zk, base, expected_locks)
+            start = time.time()
+            timeout, interval = 30.0, 1.0
+            while time.time() - start < timeout:
+                children = set(zk.ls(base))
+                if children == expected_locks:
+                    break
+                time.sleep(interval)
+            else:
+                pytest.fail(f"Timed out waiting for locks in ZK: got {children!r}, expected {expected_locks!r}")
             
             counts = {replica: 0 for replica in replica_names}
             for lock in expected_locks:
