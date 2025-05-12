@@ -227,7 +227,7 @@ struct MakeSignedType
 };
 
 template <typename KeyHolder1, typename KeyHolder2>
-bool compareKeyHolders(const KeyHolder1 & lhs, const KeyHolder2 & rhs, const std::vector<OptimizationDataOneExpression> & optimization_indexes)
+static bool compareKeyHolders(const KeyHolder1 & lhs, const KeyHolder2 & rhs, const std::vector<OptimizationDataOneExpression> & optimization_indexes)
 {
     const auto & lhs_key = keyHolderGetKey(lhs);
     const auto & rhs_key = keyHolderGetKey(rhs);
@@ -325,7 +325,7 @@ public:
         return emplaceImplOptimization(key_holder, data, limit_plus_offset_length, optimization_indexes, max_allowable_fill);
     }
 
-    template <typename Data>
+    template <typename Data, typename Compare>
     ALWAYS_INLINE std::optional<EmplaceResult> emplaceKeyOptimizationWithHeap(
         Data & data,
         size_t row,
@@ -333,7 +333,8 @@ public:
         const std::vector<OptimizationDataOneExpression> & optimization_indexes,
         size_t limit_plus_offset_length,
         size_t max_allowable_fill,
-        std::vector<typename Data::iterator>& top_keys_heap)
+        std::vector<typename Data::iterator>& top_keys_heap,
+        Compare heap_cmp)
     {
         if constexpr (nullable)
         {
@@ -359,7 +360,7 @@ public:
         }
 
         auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
-        return emplaceImplOptimizationWithHeap(key_holder, data, limit_plus_offset_length, optimization_indexes, max_allowable_fill, top_keys_heap);
+        return emplaceImplOptimizationWithHeap(key_holder, data, limit_plus_offset_length, optimization_indexes, max_allowable_fill, top_keys_heap, heap_cmp);
     }
 
     template <typename Data>
@@ -513,14 +514,15 @@ protected:
             return EmplaceResult(inserted);
     }
 
-    template <typename Data, typename KeyHolder>
+    template <typename Data, typename KeyHolder, typename Compare>
     ALWAYS_INLINE std::optional<EmplaceResult> emplaceImplOptimizationWithHeap(
         KeyHolder & key_holder,
         Data & data,
         size_t limit_plus_offset_length,
         const std::vector<OptimizationDataOneExpression> & optimization_indexes,
         size_t max_allowable_fill,
-        std::vector<typename Data::iterator>& top_keys_heap)
+        std::vector<typename Data::iterator>& top_keys_heap,
+        Compare heap_cmp)
     {
         chassert(limit_plus_offset_length > 0);
         if constexpr (consecutive_keys_optimization)
@@ -548,7 +550,9 @@ protected:
                         // First check if key_holder more than top of top_keys_heap. If more, it could be skipped.
                         if (top_keys_heap.size() >= limit_plus_offset_length && // TODO ==
                             compareKeyHolders(top_keys_heap.front()->getKey(), key_holder, optimization_indexes))
+                        {
                             return std::nullopt;
+                        }
                     }
                 } else
                 {
@@ -556,12 +560,6 @@ protected:
                 }
             }
         }
-
-        using DataIterator = typename Data::iterator;
-        auto heap_cmp = [&](DataIterator& lhs, DataIterator& rhs)
-        {
-            return compareKeyHolders(lhs->getKey(), rhs->getKey(), optimization_indexes);
-        };
 
         typename Data::LookupResult it;
         bool inserted = false;

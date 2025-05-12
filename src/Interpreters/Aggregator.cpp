@@ -1280,6 +1280,20 @@ void NO_INLINE Aggregator::executeImplBatch(
                 using DataIterator = typename Data::iterator;
                 std::vector<DataIterator> top_keys_heap;
                 top_keys_heap.reserve(roundUpToPow2(params.limit_plus_offset_length));
+                chassert(method.data.size() <= max_allowable_fill);
+                for (auto iterator = method.data.begin(); iterator != method.data.end(); ++iterator)
+                    top_keys_heap.push_back(iterator);
+                using DataIterator = typename decltype(method.data)::iterator;
+                auto heap_cmp = [&](DataIterator& lhs, DataIterator& rhs)
+                {
+                    return ColumnsHashing::columns_hashing_impl::compareKeyHolders(lhs->getKey(), rhs->getKey(), optimization_indexes);
+                };
+                std::make_heap(top_keys_heap.begin(), top_keys_heap.end(), heap_cmp);
+                while (top_keys_heap.size() > params.limit_plus_offset_length)
+                {
+                    std::pop_heap(top_keys_heap.begin(), top_keys_heap.end(), heap_cmp);
+                    top_keys_heap.pop_back();
+                }
                 for (size_t i = key_start; i < key_end; ++i)
                 {
                     AggregateDataPtr aggregate_data = nullptr;
@@ -1296,7 +1310,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                         }
                     }
 
-                    auto emplace_result = state.emplaceKeyOptimizationWithHeap(method.data, i, *aggregates_pool, optimization_indexes, params.limit_plus_offset_length, max_allowable_fill, top_keys_heap);
+                    auto emplace_result = state.emplaceKeyOptimizationWithHeap(method.data, i, *aggregates_pool, optimization_indexes, params.limit_plus_offset_length, max_allowable_fill, top_keys_heap, heap_cmp);
 
                     if (!emplace_result.has_value())
                     {
