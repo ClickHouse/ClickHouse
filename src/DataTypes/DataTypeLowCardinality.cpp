@@ -147,7 +147,16 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
             }
             case ColumnUniqueCompressionType::FRONT_CODING_BLOCK_DF:
             {
-                return ColumnUniqueFCBlockDF::create(std::move(keys), column_unique_params.fc_block_size, keys_type.isNullable());
+                MutableColumnPtr ensured_keys;
+                if (keys)
+                {
+                    ensured_keys = std::move(keys);
+                }
+                else
+                {
+                    ensured_keys = ColumnString::create();
+                }
+                return ColumnUniqueFCBlockDF::create(std::move(ensured_keys), column_unique_params.fc_block_size, keys_type.isNullable());
             }
         }
     }
