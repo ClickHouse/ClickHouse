@@ -26,7 +26,7 @@
 #include <IO/WriteHelpers.h>
 #include <pcg_random.hpp>
 #include <Common/logger_useful.h>
-
+#include <Poco/DirectoryIterator.h>
 
 namespace CurrentMetrics
 {
@@ -214,7 +214,21 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes)
     }
 
     LOG_TRACE(logger, "Could not reserve {} on local disk {}. Not enough unreserved space", ReadableSize(bytes), backQuote(name));
-
+    if (name == "test1")
+    {
+        try
+        {
+            Poco::DirectoryIterator end;
+            for (Poco::DirectoryIterator it(disk_path); it != end; ++it)
+            {
+                LOG_INFO(logger, "Reserve failed in disk_path {}: {}", disk_path, it.name());
+            }
+        }
+        catch (const std::exception & e)
+        {
+            LOG_WARNING(logger, "Reserve failed  Failed to list {}: {}", disk_path, e.what());
+        }
+    }
 
     return {};
 }
@@ -617,6 +631,22 @@ try
 catch (const std::exception & e)
 {
     LOG_WARNING(logger, "Cannot achieve read over the disk directory: {}, exception: {}", disk_path, e.what());
+    if (disk_path == "/var/lib/clickhouse/path1/")
+    {
+        try
+        {
+            Poco::DirectoryIterator end;
+            for (Poco::DirectoryIterator it(disk_path); it != end; ++it)
+            {
+                LOG_INFO(logger, "Disk Local can read Found file in path {}: {}", disk_path, it.name());
+            }
+        }
+        catch (const std::exception & e)
+        {
+            LOG_WARNING(logger, "Disk Local can read Failed to list {}: {}", disk_path, e.what());
+        }
+    }
+
     return false;
 }
 catch (...)
