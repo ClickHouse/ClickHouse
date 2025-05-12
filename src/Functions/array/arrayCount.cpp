@@ -81,6 +81,27 @@ using FunctionArrayCount = FunctionArrayMapped<ArrayCountImpl, NameArrayCount>;
 
 REGISTER_FUNCTION(ArrayCount)
 {
+    FunctionDocumentation::Description description = R"(
+Returns the number of elements for which `func(arr1[i], ..., arrN[i])` returns something other than `0`.
+If `func` is not specified, it returns the number of non-zero elements in the array.
+
+:::note
+Note that the `arrayCount` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions).
+You can pass a lambda function to it as the first argument.
+:::
+
+    )";
+    FunctionDocumentation::Syntax syntax = "arrayCount([func,] arr1, ...)";
+    FunctionDocumentation::Arguments arguments = {
+        {"func", "Function to apply to each element of the array(s). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)"},
+        {"arr1 ... arrN", "N arrays"},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = "Returns the number of elements for which `func` returns something other than `0`. Otherwise, returns the number of non-zero elements in the array.";
+    FunctionDocumentation::Examples example = {{"Usage example", "SELECT arrayCount(x -> (x % 2), groupArray(number) FROM numbers(10)", "5"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+
     factory.registerFunction<FunctionArrayCount>();
 }
 

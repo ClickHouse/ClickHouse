@@ -94,12 +94,10 @@ arrayAll
 arrayAvg
 arrayCompact
 arrayConcat
-arrayCount
 arrayCumSum
 arrayCumSumNonNegative
 arrayDifference
 arrayDistinct
-arrayDotProduct
 arrayEnumerate
 arrayEnumerateDense
 arrayEnumerateDenseRanked
@@ -210,7 +208,6 @@ cos
 cosh
 cosineDistance
 countDigits
-countEqual
 countMatches
 countMatchesCaseInsensitive
 countSubstrings
@@ -339,14 +336,11 @@ greater
 greaterOrEquals
 greatest
 has
-hasAll
-hasAny
 hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
 hasSubsequenceCaseInsensitiveUTF8
 hasSubsequenceUTF8
-hasSubstr
 hasThreadFuzzer
 hex
 hiveHash
@@ -363,7 +357,6 @@ ilike
 in
 inIgnoreSet
 indexHint
-indexOf
 initcap
 initcapUTF8
 initialQueryID

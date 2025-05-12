@@ -110,12 +110,10 @@ arrayAll
 arrayAvg
 arrayCompact
 arrayConcat
-arrayCount
 arrayCumSum
 arrayCumSumNonNegative
 arrayDifference
 arrayDistinct
-arrayDotProduct
 arrayElement
 arrayElementOrNull
 arrayEnumerate
@@ -255,7 +253,6 @@ cos
 cosh
 cosineDistance
 countDigits
-countEqual
 countMatches
 countMatchesCaseInsensitive
 countSubstrings
@@ -468,14 +465,11 @@ greater
 greaterOrEquals
 greatest
 has
-hasAll
-hasAny
 hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
 hasSubsequenceCaseInsensitiveUTF8
 hasSubsequenceUTF8
-hasSubstr
 hasThreadFuzzer
 hasToken
 hasTokenCaseInsensitive
@@ -498,8 +492,6 @@ ilike
 in
 inIgnoreSet
 indexHint
-indexOf
-indexOfAssumeSorted
 initcap
 initcapUTF8
 initialQueryID
