@@ -1,7 +1,6 @@
+#include "Common/logger_useful.h"
 #include "config.h"
-
 #if USE_YTSAURUS
-
 #include "YTsaurusClient.h"
 
 #include <IO/HTTPHeaderEntries.h>
@@ -14,6 +13,8 @@
 #include <Core/Settings.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/JSON/Parser.h>
+#include <Storages/ColumnsDescription.h>
+#include <DataTypes/convertYTsaurusDataType.h>
 
 #include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/Pipe.h>
@@ -49,21 +50,12 @@ DB::ReadBufferPtr YTsaurusClient::readTable(const String & cypress_path)
 
 YTsaurusNodeType YTsaurusClient::getNodeType(const String & cypress_path)
 {
-    String attributes_path = cypress_path + "/@";
-    YTsaurusQueryPtr get_query(new YTsaurusGetQuery(attributes_path));
-    auto buf = createQueryRWBuffer(get_query);
-
-    String json_str;
-    readJSONObjectPossiblyInvalid(json_str, *buf);
-
-    Poco::JSON::Parser parser;
-    Poco::Dynamic::Var json = parser.parse(json_str);
-    const Poco::JSON::Object::Ptr & json_ptr = json.extract<Poco::JSON::Object::Ptr>();
+    auto json_ptr = getTableInfo(cypress_path);
     return getNodeTypeFromAttributes(json_ptr);
 }
 
 
-YTsaurusNodeType YTsaurusClient::getNodeTypeFromAttributes(const Poco::JSON::Object::Ptr json_ptr)
+YTsaurusNodeType YTsaurusClient::getNodeTypeFromAttributes(const Poco::JSON::Object::Ptr & json_ptr)
 {
     if (!json_ptr->has("type"))
         throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA, "Incorrect json with yt attributes, no field 'type'.");
@@ -149,6 +141,69 @@ DB::ReadBufferPtr YTsaurusClient::createQueryRWBuffer(const YTsaurusQueryPtr que
         }
     }
     throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "All connection tries with ytsaurus http proxies are failed.");
+}
+
+Poco::Dynamic::Var YTsaurusClient::getMetadata(const String & path)
+{
+    YTsaurusQueryPtr get_query(new YTsaurusGetQuery(path));
+    auto buf = createQueryRWBuffer(get_query);
+
+    String json_str;
+    readJSONObjectPossiblyInvalid(json_str, *buf);
+
+    Poco::JSON::Parser parser;
+    Poco::Dynamic::Var json = parser.parse(json_str);
+    return json;
+}
+
+Poco::JSON::Object::Ptr YTsaurusClient::getTableInfo(const String & cypress_path)
+{
+    String attributes_path = cypress_path + "/@";
+    auto json = getMetadata(attributes_path);
+    return json.extract<Poco::JSON::Object::Ptr>();
+}
+
+Poco::Dynamic::Var YTsaurusClient::getTableAttribute(const String & cypress_path, const String & attribute_name)
+{
+    String attribute_path = cypress_path + "/@" + attribute_name;
+    auto json = getMetadata(attribute_path);
+    return json;
+}
+
+Poco::JSON::Array::Ptr YTsaurusClient::getTableSchema(const String & cypress_path)
+{
+    auto schema = getTableAttribute(cypress_path, "schema");
+    return schema.extract<Poco::JSON::Array::Ptr>();
+}
+
+bool YTsaurusClient::checkSchemaCompatibility(const String & table_path, const ColumnsDescription & columns)
+{
+    auto schema_json = getTableSchema(table_path);
+    for (const auto& yt_column : *schema_json) {
+        try
+        {
+            const auto & yt_column_json = yt_column.extract<Poco::JSON::Object::Ptr>();
+            auto yt_column_name = yt_column_json->getValue<String>("name");
+            const auto * column_ptr = columns.tryGet(yt_column_name);
+            if (column_ptr == nullptr)
+            {
+                return false;
+            }
+            auto yt_column_type = yt_column_json->getValue<String>("type");
+            bool yt_column_required = yt_column_json->getValue<bool>("required");
+            auto data_type = convertYTsaurusDataType(yt_column_type, yt_column_required);
+            if (column_ptr->type != data_type)
+            {
+                return false;
+            }
+        }
+        catch (...)
+        {
+            LOG_DEBUG(log, "Couldn't extract schema from {}", table_path);
+            return false;
+        }
+    }
+    return true;
 }
 
 }
