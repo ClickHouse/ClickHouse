@@ -2338,8 +2338,8 @@ jobs:
   stateless_tests_amd_coverage_1_6:
     runs-on: [self-hosted, func-tester-aarch64]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsIDEvNik=') }}
-    name: "Stateless tests (amd_coverage, 1/6)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsMS82KQ==') }}
+    name: "Stateless tests (amd_coverage,1/6)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -2368,16 +2368,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_coverage, 1/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_coverage,1/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_coverage, 1/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_coverage,1/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_coverage_2_6:
     runs-on: [self-hosted, func-tester-aarch64]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsIDIvNik=') }}
-    name: "Stateless tests (amd_coverage, 2/6)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsMi82KQ==') }}
+    name: "Stateless tests (amd_coverage,2/6)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -2406,16 +2406,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_coverage, 2/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_coverage,2/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_coverage, 2/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_coverage,2/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_coverage_3_6:
     runs-on: [self-hosted, func-tester-aarch64]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsIDMvNik=') }}
-    name: "Stateless tests (amd_coverage, 3/6)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsMy82KQ==') }}
+    name: "Stateless tests (amd_coverage,3/6)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -2444,16 +2444,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_coverage, 3/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_coverage,3/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_coverage, 3/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_coverage,3/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_coverage_4_6:
     runs-on: [self-hosted, func-tester-aarch64]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsIDQvNik=') }}
-    name: "Stateless tests (amd_coverage, 4/6)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsNC82KQ==') }}
+    name: "Stateless tests (amd_coverage,4/6)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -2482,16 +2482,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_coverage, 4/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_coverage,4/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_coverage, 4/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_coverage,4/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_coverage_5_6:
     runs-on: [self-hosted, func-tester-aarch64]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsIDUvNik=') }}
-    name: "Stateless tests (amd_coverage, 5/6)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsNS82KQ==') }}
+    name: "Stateless tests (amd_coverage,5/6)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -2520,16 +2520,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_coverage, 5/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_coverage,5/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_coverage, 5/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_coverage,5/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_coverage_6_6:
     runs-on: [self-hosted, func-tester-aarch64]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsIDYvNik=') }}
-    name: "Stateless tests (amd_coverage, 6/6)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsNi82KQ==') }}
+    name: "Stateless tests (amd_coverage,6/6)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -2558,14 +2558,14 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_coverage, 6/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_coverage,6/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_coverage, 6/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_coverage,6/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
   bugfix_validation_integration_tests:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_debug]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, fast_test, build_amd_tidy, build_amd_debug]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVnZml4IHZhbGlkYXRpb24gKGludGVncmF0aW9uIHRlc3RzKQ==') }}
     name: "Bugfix validation (integration tests)"
     outputs:
@@ -4200,8 +4200,8 @@ jobs:
   performance_comparison_amd_release_master_head_1_3:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsbWFzdGVyX2hlYWQsMS8zKQ==') }}
-    name: "Performance Comparison (amd_release,master_head,1/3)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAxLzMp') }}
+    name: "Performance Comparison (amd_release, master_head, 1/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -4230,16 +4230,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Performance Comparison (amd_release,master_head,1/3)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 1/3)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Performance Comparison (amd_release,master_head,1/3)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 1/3)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
   performance_comparison_amd_release_master_head_2_3:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsbWFzdGVyX2hlYWQsMi8zKQ==') }}
-    name: "Performance Comparison (amd_release,master_head,2/3)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAyLzMp') }}
+    name: "Performance Comparison (amd_release, master_head, 2/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -4268,16 +4268,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Performance Comparison (amd_release,master_head,2/3)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 2/3)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Performance Comparison (amd_release,master_head,2/3)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 2/3)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
   performance_comparison_amd_release_master_head_3_3:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsbWFzdGVyX2hlYWQsMy8zKQ==') }}
-    name: "Performance Comparison (amd_release,master_head,3/3)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAzLzMp') }}
+    name: "Performance Comparison (amd_release, master_head, 3/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -4306,16 +4306,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Performance Comparison (amd_release,master_head,3/3)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 3/3)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Performance Comparison (amd_release,master_head,3/3)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 3/3)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
   performance_comparison_arm_release_master_head_1_3:
     runs-on: [self-hosted, func-tester-aarch64]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsbWFzdGVyX2hlYWQsMS8zKQ==') }}
-    name: "Performance Comparison (arm_release,master_head,1/3)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAxLzMp') }}
+    name: "Performance Comparison (arm_release, master_head, 1/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -4344,16 +4344,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Performance Comparison (arm_release,master_head,1/3)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 1/3)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Performance Comparison (arm_release,master_head,1/3)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 1/3)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
   performance_comparison_arm_release_master_head_2_3:
     runs-on: [self-hosted, func-tester-aarch64]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsbWFzdGVyX2hlYWQsMi8zKQ==') }}
-    name: "Performance Comparison (arm_release,master_head,2/3)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAyLzMp') }}
+    name: "Performance Comparison (arm_release, master_head, 2/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -4382,16 +4382,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Performance Comparison (arm_release,master_head,2/3)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 2/3)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Performance Comparison (arm_release,master_head,2/3)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 2/3)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
   performance_comparison_arm_release_master_head_3_3:
     runs-on: [self-hosted, func-tester-aarch64]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsbWFzdGVyX2hlYWQsMy8zKQ==') }}
-    name: "Performance Comparison (arm_release,master_head,3/3)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAzLzMp') }}
+    name: "Performance Comparison (arm_release, master_head, 3/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -4420,9 +4420,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Performance Comparison (arm_release,master_head,3/3)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 3/3)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Performance Comparison (arm_release,master_head,3/3)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 3/3)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
   finish_workflow:

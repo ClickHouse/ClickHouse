@@ -11,6 +11,7 @@
             --background-color: white;
             --text-color: #000;
             --tile-background: #f9f9f9;
+            --info-background: #e4e4e4;
             --footer-background: #f1f1f1;
             --footer-text-color: #000;
             --status-width: 300px;
@@ -51,7 +52,8 @@
         body.night-theme {
             --background-color: #1F1F1C;
             --text-color: #dedede;
-            --tile-background: #1F1F1C;
+            --tile-background: #1F1F1F;
+            --info-background: #575757;
             --header-background-color: #1F1F1C;
             --pending-bar-color: #595801;
             --skipped-bar-color: #575757;
@@ -174,6 +176,7 @@
             word-wrap: break-word;
             overflow-wrap: break-word;
             max-width: 100%; /* Prevent overflow */
+            background-color: var(--info-background);
         }
         #info-content {
             text-align: left;
@@ -297,10 +300,6 @@
             text-align: left;
         }
 
-        th {
-            background-color: var(--header-background-color);
-        }
-
         .status-success {
             color: green;
             font-weight: bold;
@@ -328,6 +327,11 @@
 
         .status-error {
             color: darkred;
+            font-weight: bold;
+        }
+
+        .status-dropped {
+            color: rgb(78, 0, 194);
             font-weight: bold;
         }
 
@@ -381,7 +385,7 @@
         const status_ = status.toLowerCase();
 
         const isFailure =
-            status_.includes('fail') || status_.includes('error') || status_.includes('drop');
+            status_.includes('fail') || status_.includes('error') || status_.includes('dropped');
         const isWarning =
             status_.includes('pending') || status_.includes('running');
 
@@ -479,7 +483,7 @@
     function formatDuration(durationInSeconds, detailed = false) {
         // Check if the duration is empty, null, or not a number
         if (!durationInSeconds || isNaN(durationInSeconds)) {
-            return '';
+            return '00s';
         }
 
         // Ensure duration is a floating-point number
@@ -517,6 +521,7 @@
         if (lowerStatus.includes('broken')) return 'status-broken';
         if (lowerStatus.includes('run')) return 'status-run';
         if (lowerStatus.includes('error')) return 'status-error';
+        if (lowerStatus.includes('dropped')) return 'status-dropped';
         return 'status-other';
     }
 
@@ -628,8 +633,7 @@
         shaSelectorText.push("latest");
         shaSelectorValues.push("latest");
 
-        const currentSha = sha === "latest" ? (commits.at(-1)?.sha || "latest") : sha;
-        const shaDropdown = createDropdown(currentSha, shaSelectorText, shaSelectorValues, "sha");
+        const shaDropdown = createDropdown(sha, shaSelectorText, shaSelectorValues, "sha");
         topRow.appendChild(shaDropdown);
 
         widget.appendChild(topRow);
@@ -642,7 +646,9 @@
         }
 
         // Current SHA (full), small
-        addLine(currentSha, { small: true });
+        const real_sha = sha === "latest" ? commits.at(-1)?.sha : sha
+        addLine(real_sha, { small: true });
+        addLine(": " + commits.find(c => c.sha === real_sha)?.message || "", { small: true });
 
         statusContainer.appendChild(widget);
     }
@@ -1017,14 +1023,14 @@
                 taskRects.push({ x, y, width, height, task });
 
                 // Save failure marker position for second pass
-                if (task.status === "failure" || task.status === "error") {
+                if (task.status === "failure" || task.status === "error" || task.status === "dropped") {
                     failedMarkers.push({ x: x + width, y: y + height / 2 });
                 }
             });
 
             // Draw failure markers on top
             failedMarkers.forEach(({ x, y }) => {
-                ctx.font = "12px sans-serif";
+                ctx.font = "8px sans-serif";
                 ctx.fillText("❌", Math.max(x - 14, 0), y + 4);
             });
 
@@ -1173,16 +1179,16 @@
             columns.forEach(column => {
                 const td = document.createElement('td');
                 const value = result[column];
-
+                    
                 if (column === 'status') {
                     const span = document.createElement('span');
                     span.className = getStatusClass(value);
                     span.textContent = value;
                     td.classList.add('status-column');
                     row.dataset.status = value ? value.toLowerCase() : "";
-                    if ((result.info && result.info.trim() !== "") || (Array.isArray(result.links) && result.links.length > 0)) {
+                    if ((result.info && result.info.trim() !== "") || (Array.isArray(result.links) && result.links.length > 0) || (Array.isArray(result.results) && result.results.length > 0)) {
                         span.style.cursor = "pointer";
-                        span.addEventListener('click', () => toggleInfoRow(row, result.info, result.ext && result.ext.results_preview, result.links));
+                        span.addEventListener('click', () => toggleInfoRow(row, result.info, result.results, result.links));
                     }
                     td.appendChild(span);
                     row.style.display = shouldShowRow(filter, row.dataset.status) ? '' : 'none';
@@ -1191,7 +1197,8 @@
 
                     if (
                         (nest_level === 1 && ["pending", "skipped", "running"].includes(statusValue)) ||
-                        (nest_level > 1 && (!Array.isArray(result.results) || result.results.length === 0))
+                        (nest_level > 1 && (!Array.isArray(result.results) || result.results.length === 0) ||
+                            nest_level === 0)
                     ) {
                         const span = document.createElement('span');
                         span.textContent = value;
@@ -1239,15 +1246,19 @@
             });
 
             tbody.appendChild(row);
+
+            // unfold all for preview mode (nest_level = 0 in this case)
+            if (nest_level === 0 && result.results.length > 0) {
+                toggleInfoRow(row, result.info, result.results, result.links);
+            }
+
         });
     }
 
     /**
      * Toggles an additional row below the clicked row to display the "info" text.
      */
-    function toggleInfoRow(row, infoText, previewData = [], links = []) {
-        if (!infoText && links.length === 0) return;
-
+    function toggleInfoRow(row, infoText, sub_results = [], links = []) {
         let nextRow = row.nextElementSibling;
 
         // Check if the next row is already an "info" row
@@ -1270,47 +1281,14 @@
                 infoCell.appendChild(content);
             }
 
-            // Handle previewData recursively
-            if (previewData) {
-                const previewContainer = document.createElement('div');
-                previewContainer.classList.add('preview-container');
-
-                function renderPreview(data, indent = 0) {
-                    const container = document.createElement('div');
-                    container.style.marginLeft = `${indent * 20}px`;
-
-                    if (data.name && data.status) {
-                        const line = document.createElement('div');
-
-                        const nameSpan = document.createElement('span');
-                        nameSpan.textContent = `${data.name}: `;
-
-                        const statusSpan = document.createElement('span');
-                        statusSpan.textContent = data.status;
-                        statusSpan.className = getStatusClass(data.status); // ✅ apply status color class
-
-                        line.appendChild(nameSpan);
-                        line.appendChild(statusSpan);
-                        container.appendChild(line);
+            // Handle subResults
+            if (sub_results) {
+                if (Array.isArray(sub_results) && sub_results.length > 0) {
+                    const table = createResultsTable(sub_results, 0);
+                    if (table) {
+                        infoCell.appendChild(table); // Appends table correctly
                     }
-
-                    if (Array.isArray(data.results) && data.results.length > 0) {
-                        data.results.forEach(sub => {
-                            const child = renderPreview(sub, indent + 1);
-                            container.appendChild(child);
-                        });
-                    }
-
-                    return container;
                 }
-
-                // If previewData is an array of root results
-                const roots = Array.isArray(previewData) ? previewData : [previewData];
-                roots.forEach(result => {
-                    previewContainer.appendChild(renderPreview(result));
-                });
-
-                infoCell.appendChild(previewContainer);
             }
 
             // If there are links, create a list of links
@@ -1606,6 +1584,8 @@
             } catch (error) {
                 console.error('Error fetching statistics:', error);
             }
+        } else {
+            console.log('statistics updated at:', new Date(persistentStorage.updatedAt).toISOString());
         }
     }
 

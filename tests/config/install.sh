@@ -17,6 +17,7 @@ EXPORT_S3_STORAGE_POLICIES=1
 USE_AZURE_STORAGE_FOR_MERGE_TREE=0
 USE_ASYNC_INSERT=0
 BUGFIX_VALIDATE_CHECK=0
+NO_AZURE=0
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -31,6 +32,7 @@ while [[ "$#" -gt 0 ]]; do
         --db-ordinary) USE_DATABASE_ORDINARY=1 ;;
 
         --azure) USE_AZURE_STORAGE_FOR_MERGE_TREE=1 ;;
+        --no-azure) NO_AZURE=1 ;;
 
         --async-insert) USE_ASYNC_INSERT=1 ;;
         --bugfix-validation) BUGFIX_VALIDATE_CHECK=1 ;;
@@ -93,7 +95,8 @@ if check_clickhouse_version 25.4; then
 fi
 ln -sf $SRC_PATH/config.d/merge_tree_old_dirs_cleanup.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/test_cluster_with_incorrect_pw.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/keeper_port.xml $DEST_SERVER_PATH/config.d/
+# copy to not update original file later on in the script
+cp $SRC_PATH/config.d/keeper_port.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/logging_no_rotate.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/merge_tree.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/lost_forever_check.xml $DEST_SERVER_PATH/config.d/
@@ -255,7 +258,9 @@ elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
 fi
 
 if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
-    ln -sf $SRC_PATH/config.d/azure_storage_conf.xml $DEST_SERVER_PATH/config.d/
+    if [[ "$NO_AZURE" != "1" ]]; then
+        ln -sf $SRC_PATH/config.d/azure_storage_conf.xml $DEST_SERVER_PATH/config.d/
+    fi
 
     if check_clickhouse_version 25.5; then
       ln -sf $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/
@@ -295,10 +300,10 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     ch_server_2_path=$DEST_SERVER_PATH/../clickhouse-server2
     mkdir -p $ch_server_1_path
     mkdir -p $ch_server_2_path
-    chown clickhouse $ch_server_1_path
-    chown clickhouse $ch_server_2_path
-    chgrp clickhouse $ch_server_1_path
-    chgrp clickhouse $ch_server_2_path
+#    chown clickhouse $ch_server_1_path
+#    chown clickhouse $ch_server_2_path
+#    chgrp clickhouse $ch_server_1_path
+#    chgrp clickhouse $ch_server_2_path
     cp -r $DEST_SERVER_PATH/* $ch_server_1_path
     cp -r $DEST_SERVER_PATH/* $ch_server_2_path
 

@@ -23,7 +23,8 @@ common_ft_job_config = Job.Config(
     runs_on=["..params.."],
     command='python3 ./ci/jobs/functional_tests.py --options "{PARAMETER}"',
     # some tests can be flaky due to very slow disks - use tmpfs for temporary ClickHouse files
-    run_in_docker="clickhouse/stateless-test+--network=host+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse",
+    # --cap-add=SYS_PTRACE and --privileged for gdb in docker
+    run_in_docker="clickhouse/stateless-test+--cap-add=SYS_PTRACE+--privileged+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/etc/clickhouse-server1:/etc/clickhouse-server1+--volume=./ci/tmp/etc/clickhouse-server2:/etc/clickhouse-server2+--volume=./ci/tmp/var/log:/var/log",
     digest_config=Job.CacheDigestConfig(
         include_paths=[
             "./ci/jobs/functional_tests.py",
@@ -73,7 +74,7 @@ class JobConfigs:
         runs_on=RunnerLabels.BUILDER_AMD,
         command="python3 ./ci/jobs/fast_test.py",
         # --network=host required for ec2 metadata http endpoint to work
-        run_in_docker="clickhouse/fasttest+--network=host",
+        run_in_docker="clickhouse/fasttest+--network=host+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/var/log:/var/log",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/fast_test.py",
@@ -365,7 +366,7 @@ class JobConfigs:
     functional_tests_jobs_coverage = common_ft_job_config.set_allow_merge_on_failure(
         True
     ).parametrize(
-        parameter=[f"amd_coverage, {i}/6" for i in range(1, 7)],
+        parameter=[f"amd_coverage,{i}/6" for i in range(1, 7)],
         runs_on=[RunnerLabels.FUNC_TESTER_ARM for _ in range(6)],
         requires=[[ArtifactNames.CH_COV_BIN] for _ in range(6)],
     )
@@ -762,9 +763,9 @@ class JobConfigs:
         timeout=2 * 3600,
     ).parametrize(
         parameter=[
-            "amd_release,prev_release,1/3",
-            "amd_release,prev_release,2/3",
-            "amd_release,prev_release,3/3",
+            "amd_release, prev_release, 1/3",
+            "amd_release, prev_release, 2/3",
+            "amd_release, prev_release, 3/3",
         ],
         runs_on=[RunnerLabels.FUNC_TESTER_AMD for _ in range(3)],
         requires=[[ArtifactNames.CH_AMD_RELEASE] for _ in range(3)],
@@ -791,12 +792,12 @@ class JobConfigs:
         result_name_for_cidb="Tests",
     ).parametrize(
         parameter=[
-            "amd_release,master_head,1/3",
-            "amd_release,master_head,2/3",
-            "amd_release,master_head,3/3",
-            "arm_release,master_head,1/3",
-            "arm_release,master_head,2/3",
-            "arm_release,master_head,3/3",
+            "amd_release, master_head, 1/3",
+            "amd_release, master_head, 2/3",
+            "amd_release, master_head, 3/3",
+            "arm_release, master_head, 1/3",
+            "arm_release, master_head, 2/3",
+            "arm_release, master_head, 3/3",
         ],
         runs_on=[RunnerLabels.FUNC_TESTER_AMD for _ in range(3)]
         + [RunnerLabels.FUNC_TESTER_ARM for _ in range(3)],

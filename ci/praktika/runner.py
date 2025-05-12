@@ -242,8 +242,17 @@ class Runner:
                     docker_tag += "_amd"
                 else:
                     raise RuntimeError("Unsupported CPU architecture")
+
             docker = docker or f"{docker_name}:{docker_tag}"
             current_dir = os.getcwd()
+            for setting in settings:
+                if setting.startswith("--volume"):
+                    volume = setting.removeprefix("--volume=").split(":")[0]
+                    if not Path(volume).exists():
+                        print(
+                            "WARNING: Create mount dir point in advance to have the same owner"
+                        )
+                        Shell.check(f"mkdir -p {volume}", verbose=True, strict=True)
             Shell.check(
                 "docker ps -a --format '{{.Names}}' | grep -q praktika && docker rm -f praktika",
                 verbose=True,
@@ -407,7 +416,7 @@ class Runner:
                                 "TODO: globe is not supported with comress = True"
                             )
                         print(f"Compress artifact file [{artifact.path}]")
-                        artifact.path = Utils.compress_file_zst(artifact.path)
+                        artifact.path = Utils.compress_zst(artifact.path)
 
                     if isinstance(artifact.path, (tuple, list)):
                         artifact_paths = artifact.path
