@@ -1,4 +1,4 @@
--- Tags: no-random-merge-tree-settings, no-random-settings
+-- Tags: no-random-merge-tree-settings, no-random-settings, no-parallel-replicas
 
 DROP TABLE IF EXISTS index_test;
 CREATE TABLE index_test
