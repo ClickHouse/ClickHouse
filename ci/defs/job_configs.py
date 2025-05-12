@@ -316,6 +316,23 @@ class JobConfigs:
             [ArtifactNames.CH_AMD_ASAN],
         ],
     )
+    bugfix_validation_ft_pr_job = Job.Config(
+        name=JobNames.BUGFIX_VALIDATE_FT,
+        runs_on=RunnerLabels.FUNC_TESTER_ARM,
+        command="python3 ./ci/jobs/functional_tests.py --options BugfixValidation",
+        # some tests can be flaky due to very slow disks - use tmpfs for temporary ClickHouse files
+        run_in_docker="clickhouse/stateless-test+--network=host+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/functional_tests.py",
+                "./tests/queries",
+                "./tests/clickhouse-test",
+                "./tests/config",
+                "./tests/*.txt",
+            ],
+        ),
+        result_name_for_cidb="Tests",
+    )
     functional_tests_jobs_required = common_ft_job_config.parametrize(
         parameter=[
             "amd_asan, distributed plan, 1/2",
@@ -418,8 +435,8 @@ class JobConfigs:
             ],
         )
     )
-    bugfix_validation_job = Job.Config(
-        name=JobNames.BUGFIX_VALIDATE,
+    bugfix_validation_it_job = Job.Config(
+        name=JobNames.BUGFIX_VALIDATE_IT,
         runs_on=RunnerLabels.FUNC_TESTER_AMD,
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
         requires=["Build (amd_debug)"],
@@ -894,13 +911,6 @@ class JobConfigs:
         requires=[ArtifactNames.CH_ARM_RELEASE],
         run_in_docker="clickhouse/stateless-test",
         timeout=10800,
-    )
-    # TODO: run by labels Labels.PR_BUGFIX, Labels.PR_CRITICAL_BUGFIX
-    bugfix_validation = Job.Config(
-        name=JobNames.BUGFIX_VALIDATE,
-        runs_on=RunnerLabels.STYLE_CHECK_AMD,
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
-        requires=["Build (amd_debug)"],
     )
     jepsen_keeper = Job.Config(
         name=JobNames.JEPSEN_KEEPER,
