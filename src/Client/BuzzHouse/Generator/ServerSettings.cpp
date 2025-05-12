@@ -991,7 +991,7 @@ std::unique_ptr<SQLType> size_tp, null_tp;
 
 std::unordered_map<String, DB::Strings> systemTables;
 
-void loadSystemTables(const FuzzConfig & fc)
+void loadSystemTables(FuzzConfig & fc)
 {
     size_tp = std::make_unique<IntType>(64, true);
     null_tp = std::make_unique<BoolType>();

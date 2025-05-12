@@ -244,12 +244,17 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
     {
         measure_performance |= entry.enabled;
     }
+    outf = std::ofstream(log_path, std::ios::out);
 }
 
-bool FuzzConfig::processServerQuery(const String & query) const
+bool FuzzConfig::processServerQuery(const bool outlog, const String & query)
 {
     try
     {
+        if (outlog)
+        {
+            outf << query << std::endl;
+        }
         if (this->cb->processTextAsSingleQuery(query))
         {
             return true;
@@ -266,17 +271,19 @@ bool FuzzConfig::processServerQuery(const String & query) const
     return false;
 }
 
-void FuzzConfig::loadServerSettings(DB::Strings & out, const bool distinct, const String & table, const String & col) const
+void FuzzConfig::loadServerSettings(DB::Strings & out, const bool distinct, const String & table, const String & col)
 {
     String buf;
     uint64_t found = 0;
 
-    if (processServerQuery(fmt::format(
-            R"(SELECT {}"{}" FROM "system"."{}" INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
-            distinct ? "DISTINCT " : "",
-            col,
-            table,
-            fuzz_server_out.generic_string())))
+    if (processServerQuery(
+            false,
+            fmt::format(
+                R"(SELECT {}"{}" FROM "system"."{}" INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
+                distinct ? "DISTINCT " : "",
+                col,
+                table,
+                fuzz_server_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out);
         out.clear();
@@ -304,17 +311,19 @@ String FuzzConfig::getConnectionHostAndPort(const bool secure) const
     return fmt::format("{}:{}", this->host, secure ? this->secure_port : this->port);
 }
 
-void FuzzConfig::loadSystemTables(std::unordered_map<String, DB::Strings> & tables) const
+void FuzzConfig::loadSystemTables(std::unordered_map<String, DB::Strings> & tables)
 {
     String buf;
     String current_table;
     DB::Strings next_cols;
 
-    if (processServerQuery(fmt::format(
-            "SELECT t.name, c.name from system.tables t JOIN system.columns c ON t.name = c.table WHERE t.database = 'system' AND "
-            "c.database = 'system' INTO OUTFILE "
-            "'{}' TRUNCATE FORMAT TabSeparated;",
-            fuzz_server_out.generic_string())))
+    if (processServerQuery(
+            false,
+            fmt::format(
+                "SELECT t.name, c.name from system.tables t JOIN system.columns c ON t.name = c.table WHERE t.database = 'system' AND "
+                "c.database = 'system' INTO OUTFILE "
+                "'{}' TRUNCATE FORMAT TabSeparated;",
+                fuzz_server_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out);
         while (std::getline(infile, buf) && buf.size() > 1)
@@ -343,18 +352,20 @@ void FuzzConfig::loadSystemTables(std::unordered_map<String, DB::Strings> & tabl
     }
 }
 
-bool FuzzConfig::tableHasPartitions(const bool detached, const String & database, const String & table) const
+bool FuzzConfig::tableHasPartitions(const bool detached, const String & database, const String & table)
 {
     String buf;
     const String & detached_tbl = detached ? "detached_parts" : "parts";
     const String & db_clause = database.empty() ? "" : (R"("database" = ')" + database + "' AND ");
 
-    if (processServerQuery(fmt::format(
-            R"(SELECT count() FROM "system"."{}" WHERE {}"table" = '{}' AND "partition_id" != 'all' INTO OUTFILE '{}' TRUNCATE FORMAT CSV;)",
-            detached_tbl,
-            db_clause,
-            table,
-            fuzz_server_out.generic_string())))
+    if (processServerQuery(
+            true,
+            fmt::format(
+                R"(SELECT count() FROM "system"."{}" WHERE {}"table" = '{}' AND "partition_id" != 'all' INTO OUTFILE '{}' TRUNCATE FORMAT CSV;)",
+                detached_tbl,
+                db_clause,
+                table,
+                fuzz_server_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out);
         if (std::getline(infile, buf))
@@ -365,27 +376,29 @@ bool FuzzConfig::tableHasPartitions(const bool detached, const String & database
     return false;
 }
 
-String
-FuzzConfig::tableGetRandomPartitionOrPart(const bool detached, const bool partition, const String & database, const String & table) const
+String FuzzConfig::tableGetRandomPartitionOrPart(const bool detached, const bool partition, const String & database, const String & table)
 {
     String res;
     const String & detached_tbl = detached ? "detached_parts" : "parts";
     const String & db_clause = database.empty() ? "" : (R"("database" = ')" + database + "' AND ");
 
     /// The system.parts table doesn't support sampling, so pick up a random part with a window function
-    if (processServerQuery(fmt::format(
-            "SELECT z.y FROM (SELECT (row_number() OVER () - 1) AS x, \"{}\" AS y FROM \"system\".\"{}\" WHERE {}\"table\" = '{}' AND "
-            "\"partition_id\" != 'all') AS z WHERE z.x = (SELECT rand() % (max2(count(), 1)::Int) FROM \"system\".\"{}\" WHERE {}\"table\" "
-            "= "
-            "'{}') INTO OUTFILE '{}' TRUNCATE FORMAT RawBlob;",
-            partition ? "partition_id" : "name",
-            detached_tbl,
-            db_clause,
-            table,
-            detached_tbl,
-            db_clause,
-            table,
-            fuzz_server_out.generic_string())))
+    if (processServerQuery(
+            true,
+            fmt::format(
+                "SELECT z.y FROM (SELECT (row_number() OVER () - 1) AS x, \"{}\" AS y FROM \"system\".\"{}\" WHERE {}\"table\" = '{}' AND "
+                "\"partition_id\" != 'all') AS z WHERE z.x = (SELECT rand() % (max2(count(), 1)::Int) FROM \"system\".\"{}\" WHERE "
+                "{}\"table\" "
+                "= "
+                "'{}') INTO OUTFILE '{}' TRUNCATE FORMAT RawBlob;",
+                partition ? "partition_id" : "name",
+                detached_tbl,
+                db_clause,
+                table,
+                detached_tbl,
+                db_clause,
+                table,
+                fuzz_server_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out, std::ios::in);
         std::getline(infile, res);

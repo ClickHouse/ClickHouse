@@ -129,6 +129,7 @@ public:
 class FuzzConfig
 {
 private:
+    std::ofstream outf;
     DB::ClientBase * cb = nullptr;
 
 public:
@@ -158,21 +159,21 @@ public:
 
     FuzzConfig(DB::ClientBase * c, const String & path);
 
-    bool processServerQuery(const String & query) const;
+    bool processServerQuery(bool outlog, const String & query);
 
 private:
-    void loadServerSettings(DB::Strings & out, bool distinct, const String & table, const String & col) const;
+    void loadServerSettings(DB::Strings & out, bool distinct, const String & table, const String & col);
 
 public:
     void loadServerConfigurations();
 
     String getConnectionHostAndPort(bool secure) const;
 
-    void loadSystemTables(std::unordered_map<String, DB::Strings> & tables) const;
+    void loadSystemTables(std::unordered_map<String, DB::Strings> & tables);
 
-    bool tableHasPartitions(bool detached, const String & database, const String & table) const;
+    bool tableHasPartitions(bool detached, const String & database, const String & table);
 
-    String tableGetRandomPartitionOrPart(bool detached, bool partition, const String & database, const String & table) const;
+    String tableGetRandomPartitionOrPart(bool detached, bool partition, const String & database, const String & table);
 
     void comparePerformanceResults(const String & oracle_name, PerformanceResult & server, PerformanceResult & peer) const;
 };
