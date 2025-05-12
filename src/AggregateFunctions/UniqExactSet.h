@@ -7,9 +7,6 @@
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
-
 namespace DB
 {
 
@@ -120,14 +117,16 @@ public:
 
     auto merge(const UniqExactSet & other, ThreadPool * thread_pool = nullptr, std::atomic<bool> * is_cancelled = nullptr)
     {
-        if (size() == 0 && worthConvertingToTwoLevel(other.size()))
-        {
-            two_level_set = other.getTwoLevelSet();
-            return;
-        }
+        /// size() == 0, for example, corresponds to the case of merging states after distributed aggregation,
+        /// when we initially create empty result sets.
+        // if (size() == 0 && worthConvertingToTwoLevel(other.size()))
+        // {
+        //     two_level_set = other.getTwoLevelSet();
+        //     return;
+        // }
 
-        if (isSingleLevel() && other.isTwoLevel())
-            convertToTwoLevel();
+        // if (isSingleLevel() && worthConvertingToTwoLevel(other.size()))
+        //     convertToTwoLevel();
 
         if (isSingleLevel())
         {
