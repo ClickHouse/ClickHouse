@@ -117,16 +117,14 @@ public:
 
     auto merge(const UniqExactSet & other, ThreadPool * thread_pool = nullptr, std::atomic<bool> * is_cancelled = nullptr)
     {
-        /// size() == 0, for example, corresponds to the case of merging states after distributed aggregation,
-        /// when we initially create empty result sets.
-        // if (size() == 0 && worthConvertingToTwoLevel(other.size()))
-        // {
-        //     two_level_set = other.getTwoLevelSet();
-        //     return;
-        // }
+        if (size() == 0 && other.isTwoLevel())
+        {
+            two_level_set = other.getTwoLevelSet();
+            return;
+        }
 
-        // if (isSingleLevel() && worthConvertingToTwoLevel(other.size()))
-        //     convertToTwoLevel();
+        if (isSingleLevel() && worthConvertingToTwoLevel(other.size()))
+            convertToTwoLevel();
 
         if (isSingleLevel())
         {
