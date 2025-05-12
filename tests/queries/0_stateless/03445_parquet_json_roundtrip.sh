@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel
-#
+
+
 # Tests for parsing JSON from Parquet files into CH JSON columns
 # and writing CH JSON columns back to Parquet.
- 
+
 set -e
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -11,7 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 ###############################################################################
-#  A.  ClickHouse -> Parquet -> ClickHouse (round-trip)
+#  A1.  ClickHouse -> Parquet -> ClickHouse (round-trip) (Default JSON)
 ###############################################################################
 
 PAR_FILE_A="${CLICKHOUSE_TMP}/example_json_roundtrip.parquet"
@@ -63,11 +63,90 @@ $CLICKHOUSE_LOCAL -q "
 echo "diff_roundtrip:"
 diff "${EXAMPLE_ORIG}" "${EXAMPLE_BACK}"
 
+# Sanity check: parsing enabled -> column is JSON
+$CLICKHOUSE_LOCAL -q "
+    SET input_format_parquet_enable_json_parsing = 1;
+    SELECT toTypeName(json_val) FROM file('${PAR_FILE_A}', Parquet) LIMIT 1;"
+
 # Sanity check: parsing disabled -> column is String
 $CLICKHOUSE_LOCAL -q "
     SET input_format_parquet_enable_json_parsing = 0;
     SELECT toTypeName(json_val) FROM file('${PAR_FILE_A}', Parquet) LIMIT 1;"
 
+
+###############################################################################
+#  A2.  ClickHouse -> Parquet -> ClickHouse (round-trip) (Non-Default JSON)
+###############################################################################
+
+PAR_FILE_A="${CLICKHOUSE_TMP}/example_json_roundtrip2.parquet"
+EXAMPLE_ORIG="${CLICKHOUSE_TMP}/example_orig2.dump"
+EXAMPLE_BACK="${CLICKHOUSE_TMP}/example_back2.dump"
+ 
+# 1) Original dump directly from ClickHouse (without Parquet)
+$CLICKHOUSE_LOCAL -n > "${EXAMPLE_ORIG}" <<'SQL'
+CREATE TABLE example
+(
+    id       Int32,
+    json_str String,
+    json_val JSON(max_dynamic_types = 1, max_dynamic_paths = 1, age UInt32, flag Bool)
+) ENGINE = Memory;
+
+INSERT INTO example VALUES
+    (1, '{"user":"alice","age":30}',         '{"user":"alice","age":"30"}'),
+    (2, '{"items":[1,2,3],"flag":true}',     '{"items":{"yes":[1,2,3]},"flag":true}'),
+    (3, '{"meta":{"x":10,"y":20}}',          NULL);
+
+SELECT * FROM example ORDER BY id FORMAT TSV;
+SQL
+
+# 2) Write Parquet File that contains JSON
+$CLICKHOUSE_LOCAL -n > "${PAR_FILE_A}" <<'SQL'
+CREATE TABLE example
+(
+    id       Int32,
+    json_str String,
+    json_val JSON(max_dynamic_types = 1, max_dynamic_paths = 1, age UInt32, flag Bool)
+) ENGINE = Memory;
+
+INSERT INTO example VALUES
+    (1, '{"user":"alice","age":30}',         '{"user":"alice","age":"30"}'),
+    (2, '{"items":[1,2,3],"flag":true}',     '{"items":{"yes":[1,2,3]},"flag":true}'),
+    (3, '{"meta":{"x":10,"y":20}}',          NULL);
+
+SELECT * FROM example ORDER BY id FORMAT Parquet;
+SQL
+
+# 3) read back with JSON parsing enabled and dump to file
+$CLICKHOUSE_LOCAL -q "
+    SET input_format_parquet_enable_json_parsing = 1;
+    SELECT *
+    FROM file(
+        '${PAR_FILE_A}',
+        Parquet,
+        'id Int32,
+         json_str String,
+         json_val JSON(max_dynamic_types = 1,
+                       max_dynamic_paths = 1,
+                       age UInt32,
+                       flag Bool)'
+    )
+    ORDER BY id
+    FORMAT TSV
+" > "${EXAMPLE_BACK}"
+
+# 4) Compare original and back-parsed data
+echo "diff_roundtrip:"
+diff "${EXAMPLE_ORIG}" "${EXAMPLE_BACK}"
+
+# Sanity check: parsing enabled -> column is JSON
+$CLICKHOUSE_LOCAL -q "
+    SET input_format_parquet_enable_json_parsing = 1;
+    SELECT toTypeName(json_val) FROM file('${PAR_FILE_A}', Parquet) LIMIT 1;"
+
+# Sanity check: parsing disabled -> column is String
+$CLICKHOUSE_LOCAL -q "
+    SET input_format_parquet_enable_json_parsing = 0;
+    SELECT toTypeName(json_val) FROM file('${PAR_FILE_A}', Parquet) LIMIT 1;"
 
 
 ###############################################################################
