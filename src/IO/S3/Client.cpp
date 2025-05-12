@@ -733,7 +733,7 @@ RequestResult Client::processRequestResult(RequestResult && outcome) const
 void Client::sleepAfterNetworkError(Aws::Client::AWSError<Aws::Client::CoreErrors> error, Int64 attempt_no) const
 {
     auto sleep_ms = client_configuration.retryStrategy->CalculateDelayBeforeNextRetry(error, attempt_no);
-    if (!client_configuration.slow_down_after_network_error)
+    if (!client_configuration.s3_slow_all_threads_after_network_error)
     {
         LOG_WARNING(log, "Request failed, now waiting {} ms before attempting again", sleep_ms);
         sleepForMilliseconds(sleep_ms);
@@ -752,7 +752,7 @@ void Client::sleepAfterNetworkError(Aws::Client::AWSError<Aws::Client::CoreError
 
 void Client::slowDownAfterNetworkError() const
 {
-    if (!client_configuration.slow_down_after_network_error)
+    if (!client_configuration.s3_slow_all_threads_after_network_error)
         return;
 
     /// Wait until `next_time_to_retry_after_network_error`.
@@ -1028,7 +1028,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     const RemoteHostFilter & remote_host_filter,
     unsigned int s3_max_redirects,
     unsigned int s3_retry_attempts,
-    bool slow_down_after_network_error,
+    bool s3_slow_all_threads_after_network_error,
     bool enable_s3_requests_logging,
     bool for_disk_s3,
     const ThrottlerPtr & get_request_throttler,
@@ -1048,7 +1048,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         remote_host_filter,
         s3_max_redirects,
         s3_retry_attempts,
-        slow_down_after_network_error,
+        s3_slow_all_threads_after_network_error,
         enable_s3_requests_logging,
         for_disk_s3,
         context->getGlobalContext()->getSettingsRef()[Setting::s3_use_adaptive_timeouts],
