@@ -112,6 +112,8 @@ struct FormatSettings
 
     size_t max_threads = 1;
 
+    size_t max_block_size_bytes = 0;
+
     enum class ArrowCompression : uint8_t
     {
         NONE,
@@ -302,6 +304,7 @@ struct FormatSettings
         size_t local_read_min_bytes_for_seek = 8192;
         double bloom_filter_bits_per_value = 10.5;
         size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
+        bool allow_geoparquet_parser = true;
     } parquet{};
 
     struct Pretty
@@ -325,6 +328,8 @@ struct FormatSettings
 
         UInt64 squash_consecutive_ms = 50;
         UInt64 squash_max_wait_ms = 1000;
+        /// Set to 2 for auto
+        UInt64 glue_chunks = 2;
 
         bool fallback_to_vertical = true;
         UInt64 fallback_to_vertical_max_rows_per_chunk = 100;

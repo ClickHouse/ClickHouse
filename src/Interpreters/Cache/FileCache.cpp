@@ -1613,6 +1613,11 @@ size_t FileCache::getUsedCacheSize() const
     return main_priority->getSizeApprox();
 }
 
+size_t FileCache::getMaxCacheSize() const
+{
+    return main_priority->getSizeLimitApprox();
+}
+
 size_t FileCache::getFileSegmentsNum() const
 {
     /// We use this method for metrics, so it is ok to get approximate result.

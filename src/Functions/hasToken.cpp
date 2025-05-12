@@ -25,10 +25,10 @@ using FunctionHasTokenOrNull
 REGISTER_FUNCTION(HasToken)
 {
     factory.registerFunction<FunctionHasToken>(FunctionDocumentation
-        {.description="Performs lookup of needle in haystack using tokenbf_v1 index."});
+        {.description="Performs lookup of needle in haystack using tokenbf_v1 index.", .category = FunctionDocumentation::Category::StringSearch});
 
     factory.registerFunction<FunctionHasTokenOrNull>(FunctionDocumentation
-        {.description="Performs lookup of needle in haystack using tokenbf_v1 index. Returns null if needle is ill-formed."});
+        {.description="Performs lookup of needle in haystack using tokenbf_v1 index. Returns null if needle is ill-formed.", .category = FunctionDocumentation::Category::StringSearch});
 }
 
 }

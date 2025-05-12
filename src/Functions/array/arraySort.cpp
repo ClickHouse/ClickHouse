@@ -241,7 +241,7 @@ For more details see documentation of `arraySort`.
             {"retain_sorted", "SELECT arrayResize(arrayPartialSort(2, [5, 9, 1, 3]), 2)", ""},
             {"lambda_simple", "SELECT arrayPartialSort((x) -> -x, 2, [5, 9, 1, 3])", ""},
             {"lambda_complex", "SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res", ""}},
-        .category{"Array"}});
+        .category = FunctionDocumentation::Category::Array});
 
     factory.registerFunction<FunctionArrayPartialReverseSort>(FunctionDocumentation{
         .description=R"(
@@ -269,7 +269,7 @@ For more details see documentation of `arraySort`.
             {"retain_sorted", "SELECT arrayResize(arrayPartialReverseSort(2, [5, 9, 1, 3]), 2)", ""},
             {"lambda_simple", "SELECT arrayPartialReverseSort((x) -> -x, 2, [5, 9, 1, 3])", ""},
             {"lambda_complex", "SELECT arrayPartialReverseSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res", ""}},
-        .category{"Array"}});
+        .category = FunctionDocumentation::Category::Array});
 }
 
 }
