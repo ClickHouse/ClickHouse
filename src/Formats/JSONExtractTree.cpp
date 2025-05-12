@@ -1705,12 +1705,22 @@ private:
 
         if (element.isObject() && !typed_path_nodes.contains(current_path))
         {
+            std::unordered_set<std::string_view> visited_keys;
             for (auto [key, value] : element.getObject())
             {
                 String path = current_path;
                 if (!is_root)
                     path.append(".");
                 path += key;
+
+                if (!visited_keys.insert(key).second)
+                {
+                    if (format_settings.json.type_json_skip_duplicated_paths)
+                        continue;
+                    error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
+                    return false;
+                }
+
                 if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false))
                     return false;
             }
