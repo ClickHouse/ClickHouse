@@ -122,8 +122,16 @@ Chunk ArrowFlightSource::generate()
         false /* case_insensitive_matching */,
         false /* is_stream */
     );
-
-    auto table = arrow::Table::FromRecordBatches({batch}).ValueOrDie();
+    auto batch_result = arrow::Table::FromRecordBatches({batch});
+    if (!batch_result.ok())
+    {
+        throw Exception(
+            ErrorCodes::ARROWFLIGHT_INTERNAL_ERROR,
+            "Arrow Flight internal error: {}",
+            batch_result.status().ToString()
+        );
+    }
+    auto table = std::move(batch_result).ValueOrDie();
     auto ch_chunk = converter.arrowTableToCHChunk(table, batch->num_rows());
     for (auto & col : ch_chunk.getColumns())
         columns.push_back(IColumn::mutate(col->cloneResized(batch->num_rows())));
