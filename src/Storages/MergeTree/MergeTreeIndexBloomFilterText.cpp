@@ -863,7 +863,7 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach
     else if (index.type == SparseGramTokenExtractor::getName())
     {
         if (index.arguments.size() != 5 && index.arguments.size() != 6)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "`sparce_gram` index must have exactly 5 arguments.");
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "`sparse_gram` index must have exactly 5 or 6 arguments.");
     }
     else
     {
