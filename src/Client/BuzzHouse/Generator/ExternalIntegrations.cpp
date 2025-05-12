@@ -125,7 +125,7 @@ bool ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableD
         case PeerTableDatabase::SQLite:
             return performQuery(query);
         case PeerTableDatabase::None:
-            return fc.processServerQuery(query);
+            return fc.processServerQuery(false, query);
     }
 }
 
@@ -138,8 +138,8 @@ void MySQLIntegration::closeMySQLConnection(MYSQL * mysql)
     }
 }
 
-std::unique_ptr<MySQLIntegration> MySQLIntegration::testAndAddMySQLConnection(
-    const FuzzConfig & fcc, const ServerCredentials & scc, const bool read_log, const String & server)
+std::unique_ptr<MySQLIntegration>
+MySQLIntegration::testAndAddMySQLConnection(FuzzConfig & fcc, const ServerCredentials & scc, const bool read_log, const String & server)
 {
     MYSQL * mcon = nullptr;
 
@@ -245,7 +245,7 @@ String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp) 
 }
 #else
 std::unique_ptr<MySQLIntegration>
-MySQLIntegration::testAndAddMySQLConnection(const FuzzConfig & fcc, const ServerCredentials &, const bool, const String &)
+MySQLIntegration::testAndAddMySQLConnection(FuzzConfig & fcc, const ServerCredentials &, const bool, const String &)
 {
     LOG_INFO(fcc.log, "ClickHouse not compiled with MySQL connector, skipping MySQL integration");
     return nullptr;
@@ -262,7 +262,7 @@ void PostgreSQLIntegration::closePostgreSQLConnection(pqxx::connection * psql)
 }
 
 std::unique_ptr<PostgreSQLIntegration>
-PostgreSQLIntegration::testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc, const bool read_log)
+PostgreSQLIntegration::testAndAddPostgreSQLIntegration(FuzzConfig & fcc, const ServerCredentials & scc, const bool read_log)
 {
     String connection_str;
     bool has_something = false;
@@ -364,7 +364,7 @@ String PostgreSQLIntegration::columnTypeAsString(RandomGenerator & rg, SQLType *
 
 #else
 std::unique_ptr<PostgreSQLIntegration>
-PostgreSQLIntegration::testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials &, const bool)
+PostgreSQLIntegration::testAndAddPostgreSQLIntegration(FuzzConfig & fcc, const ServerCredentials &, const bool)
 {
     LOG_INFO(fcc.log, "ClickHouse not compiled with PostgreSQL connector, skipping PostgreSQL integration");
     return nullptr;
@@ -380,7 +380,7 @@ void SQLiteIntegration::closeSQLiteConnection(sqlite3 * sqlite)
     }
 }
 
-std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials & scc)
+std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegration(FuzzConfig & fcc, const ServerCredentials & scc)
 {
     sqlite3 * scon = nullptr;
     const std::filesystem::path client_spath = fcc.client_file_path / "sqlite.db";
@@ -446,7 +446,7 @@ String SQLiteIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp)
     return tp->SQLitetypeName(rg, false);
 }
 #else
-std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials &)
+std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegration(FuzzConfig & fcc, const ServerCredentials &)
 {
     LOG_INFO(fcc.log, "ClickHouse not compiled with SQLite connector, skipping SQLite integration");
     return nullptr;
@@ -468,7 +468,7 @@ bool RedisIntegration::performIntegration(
 }
 
 #if defined USE_MONGODB && USE_MONGODB
-std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegration(const FuzzConfig & fcc, const ServerCredentials & scc)
+std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegration(FuzzConfig & fcc, const ServerCredentials & scc)
 {
     String connection_str = "mongodb://";
 
@@ -991,7 +991,7 @@ bool MongoDBIntegration::performIntegration(
     return true;
 }
 #else
-std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegration(const FuzzConfig & fcc, const ServerCredentials &)
+std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegration(FuzzConfig & fcc, const ServerCredentials &)
 {
     LOG_INFO(fcc.log, "ClickHouse not compiled with MongoDB connector, skipping MongoDB integration");
     return nullptr;
@@ -1158,7 +1158,7 @@ bool MinIOIntegration::performIntegration(
     return sendRequest(sc.database + "/file" + std::to_string(tname));
 }
 
-ExternalIntegrations::ExternalIntegrations(const FuzzConfig & fcc)
+ExternalIntegrations::ExternalIntegrations(FuzzConfig & fcc)
     : fc(fcc)
 {
     if (fc.mysql_server.has_value())
@@ -1406,9 +1406,11 @@ void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
         LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
         return;
     }
-    if (fc.processServerQuery(fmt::format(
-            "SELECT `name`, `value` FROM system.settings WHERE changed = 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
-            fc.fuzz_server_out.generic_string())))
+    if (fc.processServerQuery(
+            false,
+            fmt::format(
+                "SELECT `name`, `value` FROM system.settings WHERE changed = 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
+                fc.fuzz_server_out.generic_string())))
     {
         std::ifstream infile(fc.fuzz_client_out);
         while (std::getline(infile, buf) && buf.size() > 1)
