@@ -140,7 +140,6 @@ arrayLevenshteinDistanceWeighted
 arrayMap
 arrayMax
 arrayMin
-arrayPartialShuffle
 arrayProduct
 arrayROCAUC
 arrayRandomSample
@@ -153,7 +152,6 @@ arrayRotateLeft
 arrayRotateRight
 arrayShiftLeft
 arrayShiftRight
-arrayShuffle
 arraySimilarity
 arraySplit
 arrayStringConcat
