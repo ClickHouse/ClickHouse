@@ -3,7 +3,9 @@
 #include <Core/Types.h>
 #include <boost/noncopyable.hpp>
 #include "Interpreters/ActionsDAG.h"
+#include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/prepareReadingFromFormat.h>
 
 namespace DB
@@ -42,6 +44,17 @@ public:
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & /* path */) const { return {}; }
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String & /* path */) const { return {}; }
 
+    virtual bool hasDataTransformer() const { return false; }
+    virtual std::shared_ptr<ISimpleTransform> getDataTransformer(
+        const ObjectInfoPtr & /* object_info */,
+        const Block & /* header */,
+        const StorageObjectStorage::ConfigurationPtr /* configuration */,
+        const std::optional<FormatSettings> & /* format_settings */,
+        ContextPtr /*context*/) const
+    {
+        return {};
+    }
+
     /// Whether metadata is updateable (instead of recreation from scratch)
     /// to the latest version of table state in data lake.
     virtual bool supportsUpdate() const { return false; }
@@ -54,7 +67,7 @@ public:
     virtual std::optional<size_t> totalBytes() const { return {}; }
 
 protected:
-    ObjectIterator createKeysIterator(
+    virtual ObjectIterator createKeysIterator(
         Strings && data_files_,
         ObjectStoragePtr object_storage_,
         IDataLakeMetadata::FileProgressCallback callback_) const;

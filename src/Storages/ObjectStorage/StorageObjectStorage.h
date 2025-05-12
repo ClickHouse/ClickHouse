@@ -9,6 +9,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ColumnsDescription.h>
+#include <Processors/ISimpleTransform.h>
 
 #include <memory>
 namespace DB
@@ -236,6 +237,17 @@ public:
     virtual ColumnsDescription updateAndGetCurrentSchema(ObjectStoragePtr, ContextPtr)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateAndGetCurrentSchema is not supported by storage {}", getEngineName());
+    }
+
+    virtual bool hasDataTransformer() const { return false; }
+    virtual std::shared_ptr<ISimpleTransform> getDataTransformer(
+        const ObjectInfoPtr & /*object_info*/,
+        const Block & /*header*/,
+        const StorageObjectStorage::ConfigurationPtr /*configuration_*/,
+        const std::optional<FormatSettings> & /*format_settings*/,
+        ContextPtr /*context*/) const
+    {
+        return {};
     }
 
     virtual ReadFromFormatInfo prepareReadingFromFormat(

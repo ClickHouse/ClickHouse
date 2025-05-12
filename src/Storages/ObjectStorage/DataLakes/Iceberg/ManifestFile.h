@@ -34,6 +34,9 @@ enum class FileContentType : uint8_t
 
 struct DataFileEntry
 {
+    // It's the original string in the Iceberg metadata
+    String file_path_key;
+    // It's a processed file path to be used by Object Storage
     String file_name;
 };
 
@@ -99,6 +102,7 @@ public:
         DB::ContextPtr context);
 
     const std::vector<ManifestFileEntry> & getFiles() const;
+    const std::vector<ManifestFileEntry> & getPositionDeletesFiles() const;
     Int32 getSchemaId() const;
 
     bool hasPartitionKey() const;
@@ -122,6 +126,8 @@ private:
     std::optional<DB::KeyDescription> partition_key_description;
     // Size - number of files
     std::vector<ManifestFileEntry> files;
+    // Partition level deletes files
+    std::vector<ManifestFileEntry> position_deletes_files;
 
     std::set<Int32> column_ids_which_have_bounds;
 
