@@ -1,11 +1,14 @@
 #pragma once
 
+#include <Loggers/ExtendedLogChannel.h>
+
 #include <atomic>
-#include <memory>
 #include <map>
+#include <memory>
+
+#include <Poco/AsyncChannel.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/Channel.h>
-#include "ExtendedLogChannel.h"
 
 
 #ifndef WITHOUT_TEXT_LOG
@@ -54,4 +57,20 @@ private:
 #endif
 };
 
+/// Same as OwnSplitChannel but it uses a separate thread for logging.
+class OwnAsyncSplitChannel : public Poco::AsyncChannel
+{
+public:
+    OwnAsyncSplitChannel(Poco::Thread::Priority prio = Poco::Thread::PRIO_NORMAL);
+
+    void log(const Poco::Message & msg) override;
+
+    void setChannelProperty(const std::string & channel_name, const std::string & name, const std::string & value);
+    void addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name);
+
+#ifndef WITHOUT_TEXT_LOG
+    void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority);
+#endif
+    void setLevel(const std::string & name, int level);
+};
 }

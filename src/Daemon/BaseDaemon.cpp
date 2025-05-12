@@ -640,6 +640,11 @@ void BaseDaemon::setupWatchdog()
             channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATION, "never");
             channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATEONOPEN, "false");
         }
+        else if (auto * async_channel = dynamic_cast<OwnAsyncSplitChannel *>(logger().getChannel()))
+        {
+            async_channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATION, "never");
+            async_channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATEONOPEN, "false");
+        }
 
         logger().information(fmt::format("Will watch for the process with pid {}", pid));
 
