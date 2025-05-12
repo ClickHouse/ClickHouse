@@ -77,6 +77,7 @@
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Poco/Net/SocketAddress.h>
@@ -169,6 +170,8 @@ namespace Setting
     extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsFloat min_os_cpu_wait_time_ratio_to_throw;
     extern const SettingsFloat max_os_cpu_wait_time_ratio_to_throw;
+    extern const SettingsBool collect_workload;
+    extern const SettingsBool insert_allow_materialized_columns;
 }
 
 namespace ServerSetting
@@ -1137,6 +1140,23 @@ static BlockIO executeQueryImpl(
             logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds());
         }
         throw;
+    }
+
+    if (!internal && context->getSettingsRef()[Setting::collect_workload] && !out_ast->getID().starts_with("FinishCollectingWorkload"))
+    {
+        LOG_INFO(
+            getLogger("executeQuery"),
+            "Collecting workload for query {}", quoteString(query));
+        // executeQuery("INSERT INTO default.workload_collection VALUES (" + quoteString(query) + ")", context, QueryFlags{ .internal = true });
+        WriteBufferFromFile out_buf("/tmp/workload_collection.txt", DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+        out_buf.write(query.data(), query.size());
+        out_buf.write("\n", 1);
+        out_buf.finalize();
+    } else
+    {
+        LOG_INFO(
+            getLogger("executeQuery"),
+            "Not collecting workload for query {}", query);
     }
 
     /// Avoid early destruction of process_list_entry if it was not saved to `res` yet (in case of exception)

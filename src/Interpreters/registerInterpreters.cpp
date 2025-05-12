@@ -63,6 +63,8 @@ void registerInterpreterDropIndexQuery(InterpreterFactory & factory);
 void registerInterpreterBackupQuery(InterpreterFactory & factory);
 void registerInterpreterDeleteQuery(InterpreterFactory & factory);
 void registerInterpreterParallelWithQuery(InterpreterFactory & factory);
+void registerInterpreterStartCollectingWorkload(InterpreterFactory & factory);
+void registerInterpreterFinishCollectingWorkload(InterpreterFactory & factory);
 
 void registerInterpreters()
 {
@@ -128,5 +130,7 @@ void registerInterpreters()
     registerInterpreterBackupQuery(factory);
     registerInterpreterDeleteQuery(factory);
     registerInterpreterParallelWithQuery(factory);
+    registerInterpreterStartCollectingWorkload(factory);
+    registerInterpreterFinishCollectingWorkload(factory);
 }
 }

@@ -37,6 +37,8 @@
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Parsers/ASTStartCollectingWorkloadQuery.h>
+#include <Parsers/ASTFinishCollectingWorkloadQuery.h>
 
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>
@@ -382,6 +384,14 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTParallelWithQuery>())
     {
         interpreter_name = "InterpreterParallelWithQuery";
+    }
+    else if (query->as<ASTStartCollectingWorkloadQuery>())
+    {
+        interpreter_name = "InterpreterStartCollectingWorkload";
+    }
+    else if (query->as<ASTFinishCollectingWorkloadQuery>())
+    {
+        interpreter_name = "InterpreterFinishCollectingWorkload";
     }
 
     if (!interpreters.contains(interpreter_name))

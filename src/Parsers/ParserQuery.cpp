@@ -13,11 +13,13 @@
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserParallelWithQuery.h>
 #include <Parsers/ParserInsertQuery.h>
+#include <Parsers/ParserFinishCollectingWorkloadQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/ParserRenameQuery.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/ParserStartCollectingWorkloadQuery.h>
 #include <Parsers/ParserSystemQuery.h>
 #include <Parsers/ParserUseQuery.h>
 #include <Parsers/ParserExternalDDLQuery.h>
@@ -75,6 +77,17 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserTransactionControl transaction_control_p;
     ParserDeleteQuery delete_p;
     ParserUpdateQuery update_p;
+    ParserStartCollectingWorkloadQuery start_collecting_workload_p;
+    ParserFinishCollectingWorkloadQuery finish_collecting_workload_p;
+
+    if (start_collecting_workload_p.parse(pos, node, expected))
+    {
+        return true;
+    }
+    if (finish_collecting_workload_p.parse(pos, node, expected))
+    {
+        return true;
+    }
 
     bool res = query_with_output_p.parse(pos, node, expected)
         || insert_p.parse(pos, node, expected)
