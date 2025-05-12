@@ -57,9 +57,9 @@ public:
         String password;
         String database;
 
-        String sslcert = "";
-        String sslkey = "";
-        String sslrootcert = "";
+        String sslcert;
+        String sslkey;
+        String sslrootcert;
 
         String table;
         String schema;
