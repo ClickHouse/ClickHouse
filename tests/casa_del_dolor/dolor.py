@@ -71,7 +71,8 @@ try:
     os.unlink(server_path)
 except FileNotFoundError:
     pass
-os.symlink(args.server_binaries[0], server_path)
+current_server = args.server_binaries[0]
+os.symlink(current_server, server_path)
 os.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = server_path
 
 cluster = ClickHouseCluster(__file__)
@@ -124,14 +125,17 @@ while True:
     server.stop_clickhouse(stop_wait_sec = 10, kill = kill_server)
     # Replace server binary, using a new temporary symlink, then replace the old one
     if len(args.server_binaries) > 1 and random.randint(1, 100) <= args.change_server_version_prob:
-        new_server_binary = random.choice(args.server_binaries)
-        logger.info(f"Using the server binary {new_server_binary} after restart")
+        if len(args.server_binaries) == 2:
+            current_server = args.server_binaries[0] if current_server == args.server_binaries[1] else args.server_binaries[1]
+        else:
+            current_server = random.choice(args.server_binaries)
+        logger.info(f"Using the server binary {current_server} after restart")
         new_temp_server_path = os.path.join(tempfile.gettempdir(), "clickhousetemp")
         try:
             os.unlink(new_temp_server_path)
         except FileNotFoundError:
             pass
-        os.symlink(new_server_binary, new_temp_server_path)
+        os.symlink(current_server, new_temp_server_path)
         os.rename(new_temp_server_path, server_path)
     server.start_clickhouse(start_wait_sec = 10, retry_start = False)
 
