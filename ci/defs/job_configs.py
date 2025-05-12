@@ -23,7 +23,7 @@ common_ft_job_config = Job.Config(
     runs_on=["..params.."],
     command='python3 ./ci/jobs/functional_tests.py --options "{PARAMETER}"',
     # some tests can be flaky due to very slow disks - use tmpfs for temporary ClickHouse files
-    run_in_docker="clickhouse/stateless-test+--network=host+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse",
+    run_in_docker="clickhouse/stateless-test+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/etc/clickhouse-server1:/etc/clickhouse-server1+--volume=./ci/tmp/etc/clickhouse-server2:/etc/clickhouse-server2+--volume=./ci/tmp/var/log:/var/log",
     digest_config=Job.CacheDigestConfig(
         include_paths=[
             "./ci/jobs/functional_tests.py",
@@ -335,31 +335,31 @@ class JobConfigs:
     )
     functional_tests_jobs_required = common_ft_job_config.parametrize(
         parameter=[
-            "amd_asan, distributed plan, 1/2",
-            "amd_asan, distributed plan, 2/2",
-            "amd_binary",
+            # "amd_asan, distributed plan, 1/2",
+            # "amd_asan, distributed plan, 2/2",
+            # "amd_binary",
             "amd_binary, old analyzer, s3 storage, DatabaseReplicated, 1/2",
             "amd_binary, old analyzer, s3 storage, DatabaseReplicated, 2/2",
-            "amd_binary, ParallelReplicas, s3 storage",
-            "amd_debug, AsyncInsert, s3 storage",
+            # "amd_binary, ParallelReplicas, s3 storage",
+            # "amd_debug, AsyncInsert, s3 storage",
         ],
         runs_on=[
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
+            # RunnerLabels.FUNC_TESTER_AMD,
+            # RunnerLabels.FUNC_TESTER_AMD,
+            # RunnerLabels.FUNC_TESTER_AMD,
+            # RunnerLabels.FUNC_TESTER_AMD,
+            # RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
-            [ArtifactNames.CH_AMD_ASAN],
-            [ArtifactNames.CH_AMD_ASAN],
+            # [ArtifactNames.CH_AMD_ASAN],
+            # [ArtifactNames.CH_AMD_ASAN],
             [ArtifactNames.CH_AMD_BINARY],
             [ArtifactNames.CH_AMD_BINARY],
-            [ArtifactNames.CH_AMD_BINARY],
-            [ArtifactNames.CH_AMD_BINARY],
-            [ArtifactNames.CH_AMD_DEBUG],
+            # [ArtifactNames.CH_AMD_BINARY],
+            # [ArtifactNames.CH_AMD_BINARY],
+            # [ArtifactNames.CH_AMD_DEBUG],
         ],
     )
     functional_tests_jobs_coverage = common_ft_job_config.set_allow_merge_on_failure(

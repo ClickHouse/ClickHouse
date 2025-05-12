@@ -34,18 +34,26 @@ class ClickHouseProc:
     </backups>
 </clickhouse>
 """
+    MINIO_LOG = f"{temp_dir}/minio.log"
+    AZURITE_LOG = f"{temp_dir}/azurite.log"
 
     def __init__(self, fast_test=False):
-        self.ch_config_dir = f"{temp_dir}/etc/clickhouse-server"
+        self.ch_config_dir = f"/etc/clickhouse-server"
+        self.ch_var_lib_dir = f"/var/lib/clickhouse"
+        self.run_path0 = f"{temp_dir}/run_r0"
+        self.run_path1 = f"{temp_dir}/run_r1"
+        self.run_path2 = f"{temp_dir}/run_r2"
+        self.log_dir = f"/var/log/clickhouse-server"
         self.pid_file = f"{self.ch_config_dir}/clickhouse-server.pid"
         self.config_file = f"{self.ch_config_dir}/config.xml"
-        self.user_files_path = f"{self.ch_config_dir}/user_files"
+        self.user_files_path = f"{self.run_path0}/user_files"
+        self.user_files_path1 = f"{self.run_path1}/user_files"
+        self.user_files_path2 = f"{self.run_path2}/user_files"
         self.test_output_file = f"{temp_dir}/test_result.txt"
-        self.command = f"clickhouse-server --config-file {self.config_file} --pid-file {self.pid_file} -- --path {self.ch_config_dir} --user_files_path {self.user_files_path} --top_level_domains_path {self.ch_config_dir}/top_level_domains --keeper_server.storage_path {self.ch_config_dir}/coordination"
-
-        self.ch_config_dir_replica_1 = f"{temp_dir}/etc/clickhouse-server1"
+        self.command = f"clickhouse-server --config-file {self.config_file} --pid-file {self.pid_file} -- --path {self.run_path0} --user_files_path {self.user_files_path} --top_level_domains_path {self.ch_config_dir}/top_level_domains --keeper_server.storage_path {self.ch_config_dir}/coordination --logger.stderr {self.log_dir}/stderr.log"
+        self.ch_config_dir_replica_1 = f"/etc/clickhouse-server1"
         self.config_file_replica_1 = f"{self.ch_config_dir_replica_1}/config.xml"
-        self.ch_config_dir_replica_2 = f"{temp_dir}/etc/clickhouse-server2"
+        self.ch_config_dir_replica_2 = f"/etc/clickhouse-server2"
         self.config_file_replica_2 = f"{self.ch_config_dir_replica_2}/config.xml"
         self.pid_file_replica_1 = (
             f"{self.ch_config_dir_replica_1}/clickhouse-server.pid"
@@ -54,49 +62,57 @@ class ClickHouseProc:
             f"{self.ch_config_dir_replica_2}/clickhouse-server.pid"
         )
         self.pid_file = f"{self.ch_config_dir}/clickhouse-server.pid"
-        self.replica_command_1 = f"clickhouse-server --config-file {self.config_file_replica_1} --daemon --pid-file {self.pid_file_replica_1} -- --path {self.ch_config_dir_replica_1} --logger.stderr {temp_dir}/var/log/clickhouse-server/stderr1.log --logger.log {temp_dir}/var/log/clickhouse-server/clickhouse-server1.log --logger.errorlog {temp_dir}/var/log/clickhouse-server/clickhouse-server1.err.log --tcp_port 19000 --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 --mysql_port 19004 --postgresql_port 19005 --keeper_server.tcp_port 19181 --keeper_server.server_id 2 --prometheus.port 19988 --macros.replica r2"
-        self.replica_command_2 = f"clickhouse-server --config-file {self.config_file_replica_2} --daemon --pid-file {self.pid_file_replica_2} -- --path {self.ch_config_dir_replica_2} --logger.stderr {temp_dir}/var/log/clickhouse-server/stderr2.log --logger.log {temp_dir}/var/log/clickhouse-server/clickhouse-server2.log --logger.errorlog {temp_dir}/var/log/clickhouse-server/clickhouse-server2.err.log --tcp_port 29000 --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 --mysql_port 29004 --postgresql_port 29005 --keeper_server.tcp_port 29181 --keeper_server.server_id 3 --prometheus.port 29988 --macros.shard s2"
+        self.replica_command_1 = f"clickhouse-server --config-file {self.config_file_replica_1} --daemon --pid-file {self.pid_file_replica_1} -- --path {self.run_path1} --user_files_path {self.user_files_path} --logger.stderr {self.log_dir}/stderr1.log --logger.log {self.log_dir}/clickhouse-server1.log --logger.errorlog {self.log_dir}/clickhouse-server1.err.log --tcp_port 19000 --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 --mysql_port 19004 --postgresql_port 19005 --keeper_server.tcp_port 19181 --keeper_server.server_id 2 --prometheus.port 19988 --macros.replica r2"
+        self.replica_command_2 = f"clickhouse-server --config-file {self.config_file_replica_2} --daemon --pid-file {self.pid_file_replica_2} -- --path {self.run_path2} --user_files_path {self.user_files_path} --logger.stderr {self.log_dir}/stderr2.log --logger.log {self.log_dir}/clickhouse-server2.log --logger.errorlog {self.log_dir}/clickhouse-server2.err.log --tcp_port 29000 --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 --mysql_port 29004 --postgresql_port 29005 --keeper_server.tcp_port 29181 --keeper_server.server_id 3 --prometheus.port 29988 --macros.shard s2"
         self.proc = None
         self.proc_1 = None
         self.proc_2 = None
         self.pid = 0
         nproc = int(Utils.cpu_count() / 2)
-        self.fast_test_command = f"clickhouse-test --hung-check --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --zookeeper --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' \
+        self.fast_test_command = f"clickhouse-test --hung-check --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' \
         | tee -a \"{self.test_output_file}\""
         # TODO: store info in case of failure
         self.info = ""
         self.info_file = ""
 
+        Shell.check(
+            f"rm -rf {self.log_dir}",
+            verbose=True,
+        )
+        Shell.check(f"mkdir -p {self.log_dir}", verbose=True, strict=True)
+
+        Shell.check(f"chmod +x {temp_dir}/clickhouse", strict=True, verbose=True)
         Utils.set_env("CLICKHOUSE_CONFIG_DIR", self.ch_config_dir)
         Utils.set_env("CLICKHOUSE_CONFIG", self.config_file)
-        Utils.set_env("CLICKHOUSE_USER_FILES", self.user_files_path)
-        # Utils.set_env("CLICKHOUSE_SCHEMA_FILES", f"{self.ch_config_dir}/format_schemas")
-
+        Utils.set_env(
+            "CLICKHOUSE_SCHEMA_FILES", f"{self.ch_var_lib_dir}/format_schemas"
+        )
+        Utils.set_env("CLICKHOUSE_USER_FILES", f"{self.user_files_path}")
         # if not fast_test:
         #     with open(f"{self.ch_config_dir}/config.d/backups.xml", "w") as file:
         #         file.write(self.BACKUPS_XML)
 
         self.minio_proc = None
 
-    def start_minio(self, test_type, log_file_path):
+    def start_minio(self, test_type):
         os.environ["TEMP_DIR"] = f"{Utils.cwd()}/ci/tmp"
         command = [
             "./ci/jobs/scripts/functional_tests/setup_minio.sh",
             test_type,
             "./tests",
         ]
-        with open(log_file_path, "w") as log_file:
+        with open(self.MINIO_LOG, "w") as log_file:
             process = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT
             )
         print(f"Started setup_minio.sh asynchronously with PID {process.pid}")
         return True
 
-    def start_azurite(self, log_file_path):
+    def start_azurite(self):
         command = (
             "azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --silent --inMemoryPersistence",
         )
-        with open(log_file_path, "w") as log_file:
+        with open(self.AZURITE_LOG, "w") as log_file:
             process = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT, shell=True
             )
@@ -199,6 +215,17 @@ class ClickHouseProc:
     def start(self, replicated=False):
         print("Starting ClickHouse server")
         Shell.check(f"rm {self.pid_file}")
+        Shell.check(
+            f"rm -rf {self.run_path0} && mkdir -p {self.run_path0}",
+            verbose=True,
+            strict=True,
+        )
+        if replicated:
+            Shell.check(
+                f"rm -rf {self.run_path1} {self.run_path2} && mkdir -p {self.run_path1} {self.run_path2}",
+                verbose=True,
+                strict=True,
+            )
         self.proc = subprocess.Popen(self.command, stderr=subprocess.STDOUT, shell=True)
         started = False
         try:
@@ -281,7 +308,7 @@ class ClickHouseProc:
                 print("Server ready")
                 break
             else:
-                print(f"Server not ready, wait")
+                print(f"Server not ready, err: {err}, wait")
             Utils.sleep(delay)
         else:
             Utils.print_formatted_error(
@@ -303,14 +330,13 @@ class ClickHouseProc:
                     return False
         return True
 
-    def prepare_stateful_data(self, with_s3_storage):
+    def prepare_stateful_data(self, with_s3_storage, is_db_replicated):
+        if is_db_replicated:
+            print("Skip stateful data preparation for db replicated")
+            return True
         command = """
 set -e
 set -o pipefail
-if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-    echo "Stateful tests are disabled in replicated database configuration"
-    exit 0
-fi
 
 clickhouse-client --query "SHOW DATABASES"
 clickhouse-client --query "CREATE DATABASE datasets"
@@ -350,10 +376,12 @@ clickhouse-client --query "SELECT count() FROM test.visits"
     def insert_system_zookeeper_config(self):
         for _ in range(10):
             res = Shell.check(
-                f"insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')",
+                f"clickhouse-client --query \"insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')\"",
                 verbose=True,
+                strict=True,
             )
-            if not res:
+            time.sleep(1)
+            if res:
                 return True
         else:
             return False
@@ -385,6 +413,35 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
         if self.minio_proc:
             Utils.terminate_process_group(self.minio_proc.pid)
+
+    @classmethod
+    def get_logs_archive_coordination(cls):
+        Shell.check(
+            f"find ./ci/tmp/ -type d -name coordination | tar --zstd -cf {temp_dir}/coordination.tar.zst -T -",
+            verbose=True,
+        )
+        if Path(f"{temp_dir}/coordination.tar.zst").exists():
+            return f"{temp_dir}/coordination.tar.zst"
+        else:
+            print("WARNING: Coordination logs not found")
+
+    @classmethod
+    def get_logs_archives_if_status_failure(cls):
+        res = []
+        coordination = cls.get_logs_archive_coordination()
+        if coordination:
+            res.append(coordination)
+        if Path(cls.MINIO_LOG).exists():
+            res.append(Utils.compress_file_zst(cls.MINIO_LOG))
+        if Path(cls.AZURITE_LOG).exists():
+            res.append(Utils.compress_file_zst(cls.AZURITE_LOG))
+        return res
+
+    @classmethod
+    def get_logs_archives_server(cls):
+        archive = f"{temp_dir}/server_logs.tar.zst"
+        Shell.check(f"tar --zstd -cvf {archive} -C {temp_dir}/var/log .", verbose=True)
+        return [archive]
 
 
 class ClickHouseLight:

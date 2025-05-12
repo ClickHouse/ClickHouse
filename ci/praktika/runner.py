@@ -251,6 +251,14 @@ class Runner:
                     job.run_in_docker,
                     RunConfig.from_fs(workflow.name).digest_dockers[job.run_in_docker],
                 )
+            for setting in settings:
+                if setting.startswith("--volume"):
+                    volume = setting.removeprefix("--volume=").split(":")[0]
+                    if not Path(volume).exists():
+                        print(
+                            "WARNING: Create mount dir point in advance to have the same owner"
+                        )
+                        Shell.check(f"mkdir -p {volume}", verbose=True, strict=True)
             docker = docker or f"{docker_name}:{docker_tag}"
             current_dir = os.getcwd()
             Shell.check(

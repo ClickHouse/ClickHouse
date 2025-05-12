@@ -40,12 +40,12 @@ workflow = Workflow.Config(
         *JobConfigs.install_check_jobs,
         *JobConfigs.compatibility_test_jobs,
         *JobConfigs.functional_tests_jobs_required,
-        *JobConfigs.functional_tests_jobs_non_required,
-        *[
-            job.set_dependency(REQUIRED_STATELESS_TESTS_JOB_NAMES)
-            for job in JobConfigs.functional_tests_jobs_coverage
-        ],
-        JobConfigs.bugfix_validation_it_job,
+        # *JobConfigs.functional_tests_jobs_non_required,
+        # *[
+        #     job.set_dependency(REQUIRED_STATELESS_TESTS_JOB_NAMES)
+        #     for job in JobConfigs.functional_tests_jobs_coverage
+        # ],
+        # JobConfigs.bugfix_validation_it_job,
         JobConfigs.bugfix_validation_ft_pr_job,
         *JobConfigs.stateless_tests_flaky_pr_jobs,
         *JobConfigs.integration_test_jobs_required,

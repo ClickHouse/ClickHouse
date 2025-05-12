@@ -435,7 +435,7 @@ class Utils:
     @staticmethod
     def is_amd():
         arch = platform.machine()
-        if "x86_64" in arch.lower() or "amd64" in arch.lower():
+        if "x86" in arch.lower() or "amd" in arch.lower():
             return True
         return False
 

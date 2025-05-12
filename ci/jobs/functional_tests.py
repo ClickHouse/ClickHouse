@@ -10,7 +10,7 @@ from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
-temp_dir = f"{Utils.cwd()}/ci/tmp/"
+temp_dir = f"{Utils.cwd()}/ci/tmp"
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -74,8 +74,12 @@ def run_tests(
             f" --run-by-hash-total {batch_total} --run-by-hash-num {batch_num-1}"
         )
     else:
-        extra_args += f" --report-coverage"
-    command = f"clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check \
+        extra_args += " --report-coverage"
+    if "--no-shard" not in extra_args:
+        extra_args += " --shard"
+    if "--no-zookeeper" not in extra_args:
+        extra_args += " --zookeeper"
+    command = f"clickhouse-test --testname --check-zookeeper-session --hung-check \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs 1 --hung-check \
                 {'--no-parallel' if no_parallel else ''}  {'--no-sequential' if no_sequiential else ''} \
                 --jobs {nproc} --report-logs-stats {extra_args} \
@@ -196,8 +200,7 @@ def main():
                 print("skip log export config for local run")
 
         commands = [
-            f"rm -rf {temp_dir}/var/log/clickhouse-server/clickhouse-server.*",
-            f"chmod +x {ch_path}/clickhouse",
+            f"rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/*",
             # google *.proto files
             f"mkdir -p /usr/share/clickhouse/ && ln -sf /usr/local/include /usr/share/clickhouse/protos",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-server",
@@ -208,50 +211,27 @@ def main():
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-obfuscator",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-format",
             f"ln -sf /usr/bin/clickhouse-odbc-bridge {ch_path}/clickhouse-odbc-bridge",
-            f"rm -rf {temp_dir}/etc/ && mkdir -p {temp_dir}/etc/clickhouse-client {temp_dir}/etc/clickhouse-server",
-            f"cp programs/server/config.xml programs/server/users.xml {temp_dir}/etc/clickhouse-server/",
-            f"./tests/config/install.sh {temp_dir}/etc/clickhouse-server {temp_dir}/etc/clickhouse-client {config_installs_args}",
-            # clickhouse benchmark segfaults with --config-path, so provide client config by its default location
-            f"mkdir -p /etc/clickhouse-client && cp {temp_dir}/etc/clickhouse-client/* /etc/clickhouse-client/",
-            # update_path_ch_config,
-            # f"sed -i 's|>/var/|>{temp_dir}/var/|g; s|>/etc/|>{temp_dir}/etc/|g' {temp_dir}/etc/clickhouse-server/config.xml",
-            # f"sed -i 's|>/etc/|>{temp_dir}/etc/|g' {temp_dir}/etc/clickhouse-server/config.d/ssl_certs.xml",
-            f"for file in {temp_dir}/etc/clickhouse-server/config.d/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|>/var/log|>{temp_dir}/var/log|g; s|>/etc/|>{temp_dir}/etc/|g' $(readlink -f $file); done",
-            f"for file in {temp_dir}/etc/clickhouse-server/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|>/var/log|>{temp_dir}/var/log|g; s|>/etc/|>{temp_dir}/etc/|g' $(readlink -f $file); done",
-            f"for file in {temp_dir}/etc/clickhouse-server/config.d/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|<path>local_disk|<path>{temp_dir}/local_disk|g' $(readlink -f $file); done",
+            f"cp programs/server/config.xml programs/server/users.xml /etc/clickhouse-server/",
+            f"./tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client {config_installs_args}",
             f"clickhouse-server --version",
         ]
-
-        # sudo -E -u clickhouse /usr/bin/clickhouse server --config /etc/clickhouse-server1/config.xml --daemon \
-        #                                           --pid-file /var/run/clickhouse-server1/clickhouse-server.pid \
-        #                                           -- --path /var/lib/clickhouse1/ --logger.stderr /var/log/clickhouse-server/stderr1.log \
-        #                                           --logger.log /var/log/clickhouse-server/clickhouse-server1.log --logger.errorlog /var/log/clickhouse-server/clickhouse-server1.err.log \
-        #                                           --tcp_port 19000 --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 \
-        #
-        # sudo -E -u clickhouse /usr/bin/clickhouse server --config /etc/clickhouse-server2/config.xml --daemon \
-        #                                           --pid-file /var/run/clickhouse-server2/clickhouse-server.pid \
-        #                                           -- --path /var/lib/clickhouse2/ --logger.stderr /var/log/clickhouse-server/stderr2.log \
-        #                                           --logger.log /var/log/clickhouse-server/clickhouse-server2.log --logger.errorlog /var/log/clickhouse-server/clickhouse-server2.err.log \
-        #                                           --tcp_port 29000 --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 \
 
         if is_flaky_check:
             commands.append(CH.enable_thread_fuzzer_config)
         elif is_bugfix_validation:
-            if Utils.is_amd():
-                link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
-            elif Utils.is_arm():
+            if Utils.is_arm():
                 link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
             else:
-                assert False, "Not supported"
+                link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
             if not info.is_local_run or not (Path(temp_dir) / "clickhouse").exists():
                 print(
                     f"NOTE: Clickhouse binary will be downloaded to [{temp_dir}] from [{link_to_master_head_binary}]"
                 )
-                if info.is_local_run():
+                if info.is_local_run:
                     time.sleep(10)
                 commands.insert(
                     0,
-                    f"wget -nv -P {temp_dir} https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse",
+                    f"wget -nv -P {temp_dir} {link_to_master_head_binary}",
                 )
             os.environ["GLOBAL_TAGS"] = "no-random-settings"
 
@@ -268,46 +248,43 @@ def main():
     ), f"clickhouse binary not found under [{ch_path}]"
 
     if res and JobStages.START in stages:
-        stop_watch_ = Utils.Stopwatch()
         step_name = "Start ClickHouse Server"
         print(step_name)
-        minio_log = f"{temp_dir}/minio.log"
-        azurite_log = f"{temp_dir}/azurite.log"
-        res = (
-            res
-            and CH.start_minio(test_type="stateless", log_file_path=minio_log)
-            and CH.start_azurite(log_file_path=azurite_log)
-        )
-        logs_to_attach += [minio_log, azurite_log]
-        time.sleep(10)
-        Shell.check("ps -ef | grep minio", verbose=True)
-        res = res and Shell.check(
-            "aws s3 ls s3://test --endpoint-url http://localhost:11111/", verbose=True
-        )
-        res = res and CH.start(replicated=is_database_replicated)
-        res = res and CH.wait_ready()
-        if not Info().is_local_run:
-            if not CH.start_log_exports(stop_watch.start_time):
-                info.add_workflow_report_message("WARNING: Failed to start log export")
-                print("Failed to start log export")
-        if res:
-            print("ch started")
-        logs_to_attach += [
-            f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.log",
-            f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.err.log",
-        ]
-        res = (
-            res
-            and CH.prepare_stateful_data(with_s3_storage=is_s3_storage)
-            and CH.insert_system_zookeeper_config()
-        )
-        if res:
-            print("stateful data prepared")
+
+        def start():
+            res = CH.start_minio(test_type="stateless") and CH.start_azurite()
+            time.sleep(7)
+            Shell.check("ps -ef | grep minio", verbose=True)
+            res = res and Shell.check(
+                "aws s3 ls s3://test --endpoint-url http://localhost:11111/",
+                verbose=True,
+            )
+            res = res and CH.start(replicated=is_database_replicated)
+            res = res and CH.wait_ready()
+            if not Info().is_local_run:
+                if not CH.start_log_exports(stop_watch.start_time):
+                    info.add_workflow_report_message(
+                        "WARNING: Failed to start log export"
+                    )
+                    print("Failed to start log export")
+            if res:
+                print("ch started")
+            res = (
+                res
+                and CH.prepare_stateful_data(
+                    with_s3_storage=is_s3_storage,
+                    is_db_replicated=is_database_replicated,
+                )
+                and CH.insert_system_zookeeper_config()
+            )
+            if res:
+                print("stateful data prepared")
+            return res
+
         results.append(
-            Result.create_from(
+            Result.from_commands_run(
                 name=step_name,
-                status=res,
-                stopwatch=stop_watch_,
+                command=start,
             )
         )
         res = results[-1].is_ok()
@@ -316,10 +293,6 @@ def main():
         stop_watch_ = Utils.Stopwatch()
         step_name = "Tests"
         print(step_name)
-        assert Shell.check(
-            "clickhouse-client -q \"insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')\"",
-            verbose=True,
-        )
         if not is_flaky_check and not is_bugfix_validation:
             run_tests(
                 no_parallel=no_parallel,
@@ -343,6 +316,7 @@ def main():
             else:
                 print("WARNING: No tests to run")
         CH.stop_log_exports()
+        CH.terminate()
         results.append(FTResultsProcessor(wd=temp_dir).run())
 
         # invert result status for bugfix validation
@@ -362,10 +336,27 @@ def main():
         res = results[-1].is_ok()
 
     # TODO: collect logs
+    # blob_storage_log.tsv.zst
+    # dmesg.log
+    # error_log.tsv.zst
+    # latency_log.tsv.zst
+    # metric_log.tsv.zst
+    # minio_audit_logs.jsonl.zst
+    # minio_server_logs.jsonl.zst
+    # part_log.tsv.zst
+    # query_log.tsv.zst
+    # query_metric_log.tsv.zst
+    # trace_log.tsv.zst
+    # transactions_info_log.tsv.zst
+    # zookeeper_log.tsv.zst
     # and CH.flush_system_logs()
 
+    attachments = CH.get_logs_archives_server()
+    if not res:
+        attachments += CH.get_logs_archives_if_status_failure()
+
     Result.create_from(
-        results=results, stopwatch=stop_watch, files=logs_to_attach if not res else []
+        results=results, stopwatch=stop_watch, files=attachments
     ).complete_job()
 
 

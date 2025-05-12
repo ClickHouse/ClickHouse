@@ -295,10 +295,10 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     ch_server_2_path=$DEST_SERVER_PATH/../clickhouse-server2
     mkdir -p $ch_server_1_path
     mkdir -p $ch_server_2_path
-    chown clickhouse $ch_server_1_path
-    chown clickhouse $ch_server_2_path
-    chgrp clickhouse $ch_server_1_path
-    chgrp clickhouse $ch_server_2_path
+#    chown clickhouse $ch_server_1_path
+#    chown clickhouse $ch_server_2_path
+#    chgrp clickhouse $ch_server_1_path
+#    chgrp clickhouse $ch_server_2_path
     cp -r $DEST_SERVER_PATH/* $ch_server_1_path
     cp -r $DEST_SERVER_PATH/* $ch_server_2_path
 
