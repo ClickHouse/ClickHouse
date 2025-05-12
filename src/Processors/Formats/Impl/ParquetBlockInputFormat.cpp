@@ -1195,7 +1195,7 @@ NamesAndTypesList ParquetSchemaReader::readSchema()
 
         if (lt and !lt->is_invalid())
         {
-            std::shared_ptr<arrow::KeyValueMetadata> kv = field->metadata() ? field->metadata()->Copy() : arrow::key_value_metadata({}, {});
+            std::shared_ptr<arrow::KeyValueMetadata> kv = field->HasMetadata() ? field->metadata()->Copy() : arrow::key_value_metadata({}, {});
             THROW_ARROW_NOT_OK(kv->Set("PARQUET:logical_type", lt->ToString()));
 
             field = field->WithMetadata(std::move(kv));
