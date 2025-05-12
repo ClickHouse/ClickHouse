@@ -24,6 +24,7 @@ public:
     ArrowColumnToCHColumn(
         const Block & header_,
         const std::string & format_name_,
+        const FormatSettings & format_settings_,
         bool allow_missing_columns_,
         bool null_as_default_,
         FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
@@ -42,6 +43,7 @@ public:
         const arrow::Schema & schema,
         std::shared_ptr<const arrow::KeyValueMetadata> metadata,
         const std::string & format_name,
+        const FormatSettings & format_settings,
         bool skip_columns_with_unsupported_types = false,
         bool allow_inferring_nullable_columns = true,
         bool case_insensitive_matching = false,
@@ -71,6 +73,8 @@ private:
 
     const Block & header;
     const std::string format_name;
+
+    const FormatSettings & format_settings;
     /// If false, throw exception if some columns in header not exists in arrow table.
     bool allow_missing_columns;
     bool null_as_default;

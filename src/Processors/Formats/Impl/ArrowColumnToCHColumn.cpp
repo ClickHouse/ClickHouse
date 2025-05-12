@@ -846,6 +846,7 @@ static bool isColumnJSON(const std::shared_ptr<arrow::Field> & field, DataTypePt
 struct ReadColumnFromArrowColumnSettings
 {
     std::string format_name;
+    const FormatSettings & format_settings;
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior;
     bool allow_arrow_null_type;
     bool skip_columns_with_unsupported_types;
@@ -909,16 +910,17 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                         return readColumnWithBigNumberFromBinaryData<ColumnDecimal<Decimal256>>(arrow_column, column_name, type_hint);
                     case TypeIndex::Object:
                         if (settings.enable_json_parsing)
-                            return readColumnWithJSONData<arrow::BinaryArray>(arrow_column, column_name);
+                            return readColumnWithJSONData<arrow::BinaryArray>(
+                                arrow_column, column_name, type_hint, settings.format_settings);
                         [[fallthrough]];
                     default:
                         break;
                 }
             }
 
-            if (settings.enable_json_parsing && isColumnJSON(arrow_field))
+            if (settings.enable_json_parsing && isColumnJSON(arrow_field, type_hint))
             {
-                return readColumnWithJSONData<arrow::BinaryArray>(arrow_column, column_name);
+                return readColumnWithJSONData<arrow::BinaryArray>(arrow_column, column_name, type_hint, settings.format_settings);
             }
 
             if (geo_metadata)
@@ -950,8 +952,9 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
         }
         case arrow::Type::LARGE_STRING:
         case arrow::Type::LARGE_BINARY: {
-            if (settings.enable_json_parsing && ((type_hint && type_hint->getTypeId() == TypeIndex::Object) || isColumnJSON(arrow_field)))
-                return readColumnWithJSONData<arrow::LargeBinaryArray>(arrow_column, column_name);
+            if (settings.enable_json_parsing
+                && ((type_hint && type_hint->getTypeId() == TypeIndex::Object) || isColumnJSON(arrow_field, type_hint)))
+                return readColumnWithJSONData<arrow::LargeBinaryArray>(arrow_column, column_name, type_hint, settings.format_settings);
             return readColumnWithStringData<arrow::LargeBinaryArray>(arrow_column, column_name);
         }
         case arrow::Type::BOOL:
@@ -1407,6 +1410,7 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
     const arrow::Schema & schema,
     std::shared_ptr<const arrow::KeyValueMetadata> metadata,
     const std::string & format_name,
+    const FormatSettings & format_settings,
     bool skip_columns_with_unsupported_types,
     bool allow_inferring_nullable_columns,
     bool case_insensitive_matching,
@@ -1415,6 +1419,7 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
     ReadColumnFromArrowColumnSettings settings
     {
         .format_name = format_name,
+        .format_settings = format_settings,
         .date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore,
         .allow_arrow_null_type = false,
         .skip_columns_with_unsupported_types = skip_columns_with_unsupported_types,
@@ -1456,6 +1461,7 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
 ArrowColumnToCHColumn::ArrowColumnToCHColumn(
     const Block & header_,
     const std::string & format_name_,
+    const FormatSettings & format_settings_,
     bool allow_missing_columns_,
     bool null_as_default_,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
@@ -1464,6 +1470,7 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
     bool enable_json_parsing_)
     : header(header_)
     , format_name(format_name_)
+    , format_settings(format_settings_)
     , allow_missing_columns(allow_missing_columns_)
     , null_as_default(null_as_default_)
     , date_time_overflow_behavior(date_time_overflow_behavior_)
@@ -1507,6 +1514,7 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
     ReadColumnFromArrowColumnSettings settings
     {
         .format_name = format_name,
+        .format_settings = format_settings,
         .date_time_overflow_behavior = date_time_overflow_behavior,
         .allow_arrow_null_type = true,
         .skip_columns_with_unsupported_types = false,

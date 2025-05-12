@@ -863,6 +863,7 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
         row_group_batch.arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
             getPort().getHeader(),
             "Parquet",
+            format_settings,
             format_settings.parquet.allow_missing_columns,
             format_settings.null_as_default,
             format_settings.date_time_overflow_behavior,
@@ -1208,6 +1209,7 @@ NamesAndTypesList ParquetSchemaReader::readSchema()
         *schema,
         metadata->key_value_metadata(),
         "Parquet",
+        format_settings,
         format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference,
         format_settings.schema_inference_make_columns_nullable != 0,
         format_settings.parquet.case_insensitive_column_matching,
