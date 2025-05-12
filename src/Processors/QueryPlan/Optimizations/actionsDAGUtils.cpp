@@ -501,6 +501,8 @@ std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Nod
     }
 
     return new_inputs;
+}
+
 bool isInjectiveFunction(const ActionsDAG::Node * node)
 {
     if (node->function_base->isInjective({}))
