@@ -93,6 +93,16 @@ bool BloomFilter::contains(const BloomFilter & bf)
     return true;
 }
 
+bool BloomFilter::containsWithAnotherFilter(const BloomFilter & help_filter, const BloomFilter & bf)
+{
+    for (size_t i = 0; i < words; ++i)
+    {
+        if (((filter[i] | help_filter.filter[i]) & bf.filter[i]) != bf.filter[i])
+            return false;
+    }
+    return true;
+}
+
 UInt64 BloomFilter::isEmpty() const
 {
     for (size_t i = 0; i < words; ++i)

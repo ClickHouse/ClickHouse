@@ -20,20 +20,22 @@ public:
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
-        MergeTreeReaderSettings settings_);
+        MergeTreeReaderSettings reader_settings_);
 
     void read(size_t mark, MergeTreeIndexGranulePtr & granule);
     void read(size_t mark, size_t current_granule_num, MergeTreeIndexBulkGranulesPtr & granules);
 
 private:
     MergeTreeIndexPtr index;
+    MergeTreeIndexAggregatorPtr aggregator;
     MergeTreeData::DataPartPtr part;
     size_t marks_count;
     const MarkRanges & all_mark_ranges;
     MarkCache * mark_cache;
     UncompressedCache * uncompressed_cache;
     VectorSimilarityIndexCache * vector_similarity_index_cache;
-    MergeTreeReaderSettings settings;
+    MergeTreeReaderSettings reader_settings;
+    bool should_deserialize_aggregator = false;
 
     std::unique_ptr<MergeTreeReaderStream> stream;
     uint8_t version = 0;

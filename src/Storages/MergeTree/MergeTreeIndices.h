@@ -163,6 +163,16 @@ struct IMergeTreeIndexAggregator
     /// Reads no more than `limit` rows.
     /// After finishing updating `pos` will store the position of the first row which was not read.
     virtual void update(const Block & block, size_t * pos, size_t limit) = 0;
+
+    /// Similar method to method above. Used only for two-level bloom filter for texts.
+    virtual void preupdate(const Block & /*block*/, size_t * /*pos*/, size_t /*limit*/, size_t /*granula_index*/) {}
+
+    /// Deserialize common state, if any exists. Useful for two-level bloom filter for texts.
+    virtual void deserializeCommonState(ReadBuffer & /*istr*/) {}
+
+    virtual void serializeCommonState(WriteBuffer & /*ostr*/) const {}
+
+    virtual void setCommonState(std::shared_ptr<IMergeTreeIndexAggregator>) {}
 };
 
 using MergeTreeIndexAggregatorPtr = std::shared_ptr<IMergeTreeIndexAggregator>;
@@ -289,6 +299,8 @@ struct IMergeTreeIndex
     /// Returns filename without extension.
     String getFileName() const { return INDEX_FILE_PREFIX + index.name; }
     size_t getGranularity() const { return index.granularity; }
+
+    virtual bool haveCommonState() const { return false; }
 
     virtual bool isMergeable() const { return false; }
 

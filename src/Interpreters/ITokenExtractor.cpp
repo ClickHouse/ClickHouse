@@ -81,6 +81,21 @@ bool NgramTokenExtractor::nextInStringLike(const char * data, size_t length, siz
     return false;
 }
 
+#if USE_DATASKETCHES
+void NgramTokenExtractor::stringToSketch(const char * data, size_t length, datasketches::frequent_items_sketch<std::string> & sketch) const
+{
+    size_t cur = 0;
+    size_t token_start = 0;
+    size_t token_len = 0;
+
+    while (cur < length && nextInString(data, length, &cur, &token_start, &token_len))
+    {
+        std::string key(data + token_start, token_len);
+        sketch.update(key);
+    }
+}
+#endif
+
 bool SplitTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
 {
     *token_start = *pos;
@@ -269,5 +284,20 @@ void SplitTokenExtractor::substringToGinFilter(const char * data, size_t length,
         if ((token_start > 0 || is_prefix) && (token_start + token_len < length || is_suffix))
             gin_filter.addTerm(data + token_start, token_len);
 }
+
+#if USE_DATASKETCHES
+void SplitTokenExtractor::stringToSketch(const char * data, size_t length, datasketches::frequent_items_sketch<std::string> & sketch) const
+{
+    size_t cur = 0;
+    size_t token_start = 0;
+    size_t token_len = 0;
+
+    while (cur < length && nextInString(data, length, &cur, &token_start, &token_len))
+    {
+        std::string key(data + token_start, token_len);
+        sketch.update(key);
+    }
+}
+#endif
 
 }
