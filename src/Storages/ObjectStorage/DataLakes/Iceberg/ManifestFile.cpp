@@ -125,6 +125,11 @@ const std::vector<ManifestFileEntry> & ManifestFileContent::getFiles() const
     return files;
 }
 
+const std::vector<ManifestFileEntry> & ManifestFileContent::getPositionDeletesFiles() const
+{
+        return position_deletes_files;
+}
+
 Int32 ManifestFileContent::getSchemaId() const
 {
     return schema_id;
@@ -199,13 +204,14 @@ ManifestFileContent::ManifestFileContent(
         if (format_version_ > 1)
         {
             content_type = FileContentType(manifest_file_deserializer.getValueFromRowByName(i, SUBCOLUMN_CONTENT_NAME, TypeIndex::Int32).safeGet<UInt64>());
-            if (content_type != FileContentType::DATA)
+            if (content_type == FileContentType::EQUALITY_DELETES)
                 throw Exception(
-                    ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: positional and equality deletes are not supported");
+                    ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: equality deletes are not supported");
         }
         const auto status = ManifestEntryStatus(manifest_file_deserializer.getValueFromRowByName(i, COLUMN_STATUS_NAME, TypeIndex::Int32).safeGet<UInt64>());
 
-        const auto file_path = getProperFilePathFromMetadataInfo(manifest_file_deserializer.getValueFromRowByName(i, SUBCOLUMN_FILE_PATH_NAME, TypeIndex::String).safeGet<String>(), common_path, table_location);
+        const auto file_path_key = manifest_file_deserializer.getValueFromRowByName(i, SUBCOLUMN_FILE_PATH_NAME, TypeIndex::String).safeGet<String>();
+        const auto file_path = getProperFilePathFromMetadataInfo(file_path_key, common_path, table_location);
 
         /// NOTE: This is weird, because in manifest file partition looks like this:
         /// {
@@ -248,47 +254,50 @@ ManifestFileContent::ManifestFileContent(
             }
         }
 
-        std::unordered_map<Int32, std::pair<Field, Field>> value_for_bounds;
-        for (const auto & path : {SUBCOLUMN_LOWER_BOUNDS_NAME, SUBCOLUMN_UPPER_BOUNDS_NAME})
+        if (content_type == FileContentType::DATA)
         {
-            if (manifest_file_deserializer.hasPath(path))
+            std::unordered_map<Int32, std::pair<Field, Field>> value_for_bounds;
+            for (const auto & path : {SUBCOLUMN_LOWER_BOUNDS_NAME, SUBCOLUMN_UPPER_BOUNDS_NAME})
             {
-                Field bounds = manifest_file_deserializer.getValueFromRowByName(i, path);
-                for (const auto & column_stats : bounds.safeGet<Array>())
+                if (manifest_file_deserializer.hasPath(path))
                 {
-                    const auto & column_number_and_bound = column_stats.safeGet<Tuple>();
-                    Int32 number = column_number_and_bound[0].safeGet<Int32>();
-                    const Field & bound_value = column_number_and_bound[1];
+                    Field bounds = manifest_file_deserializer.getValueFromRowByName(i, path);
+                    for (const auto & column_stats : bounds.safeGet<Array>())
+                    {
+                        const auto & column_number_and_bound = column_stats.safeGet<Tuple>();
+                        Int32 number = column_number_and_bound[0].safeGet<Int32>();
+                        const Field & bound_value = column_number_and_bound[1];
 
-                    if (path == SUBCOLUMN_LOWER_BOUNDS_NAME)
-                        value_for_bounds[number].first = bound_value;
-                    else
-                        value_for_bounds[number].second = bound_value;
+                        if (path == SUBCOLUMN_LOWER_BOUNDS_NAME)
+                            value_for_bounds[number].first = bound_value;
+                        else
+                            value_for_bounds[number].second = bound_value;
 
-                    column_ids_which_have_bounds.insert(number);
+                        column_ids_which_have_bounds.insert(number);
+                    }
                 }
+            }
+
+            for (const auto & [column_id, bounds] : value_for_bounds)
+            {
+                DB::NameAndTypePair name_and_type = schema_processor.getFieldCharacteristics(schema_id, column_id);
+
+                String left_str;
+                String right_str;
+                /// lower_bound and upper_bound may be NULL.
+                if (!bounds.first.tryGet(left_str) || !bounds.second.tryGet(right_str))
+                    continue;
+
+                auto left = deserializeFieldFromBinaryRepr(left_str, name_and_type.type, true);
+                auto right = deserializeFieldFromBinaryRepr(right_str, name_and_type.type, false);
+                if (!left || !right)
+                    continue;
+
+                columns_infos[column_id].hyperrectangle.emplace(*left, true, *right, true);
             }
         }
 
-        for (const auto & [column_id, bounds] : value_for_bounds)
-        {
-            DB::NameAndTypePair name_and_type = schema_processor.getFieldCharacteristics(schema_id, column_id);
-
-            String left_str;
-            String right_str;
-            /// lower_bound and upper_bound may be NULL.
-            if (!bounds.first.tryGet(left_str) || !bounds.second.tryGet(right_str))
-                continue;
-
-            auto left = deserializeFieldFromBinaryRepr(left_str, name_and_type.type, true);
-            auto right = deserializeFieldFromBinaryRepr(right_str, name_and_type.type, false);
-            if (!left || !right)
-                continue;
-
-            columns_infos[column_id].hyperrectangle.emplace(*left, true, *right, true);
-        }
-
-        FileEntry file = FileEntry{DataFileEntry{file_path}};
+        FileEntry file = FileEntry{DataFileEntry{file_path_key, file_path}};
 
         Int64 added_sequence_number = 0;
         if (format_version_ > 1)
@@ -314,7 +323,20 @@ ManifestFileContent::ManifestFileContent(
                     break;
             }
         }
-        this->files.emplace_back(status, added_sequence_number, file, partition_key_value, columns_infos);
+        switch (content_type)
+        {
+            case FileContentType::DATA:
+                this->files.emplace_back(status, added_sequence_number, file, partition_key_value, columns_infos);
+                break;
+            case FileContentType::POSITION_DELETES:
+            {
+                this->position_deletes_files.emplace_back(status, added_sequence_number, file, partition_key_value, columns_infos);
+                break;
+            }
+            default:
+                throw Exception(
+                    ErrorCodes::UNSUPPORTED_METHOD, "FileContentType {} is not supported", content_type);
+        }
     }
 }
 

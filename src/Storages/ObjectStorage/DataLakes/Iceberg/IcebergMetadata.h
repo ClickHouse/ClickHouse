@@ -24,6 +24,26 @@
 namespace DB
 {
 
+struct IcebergDataObjectInfo : public RelativePathWithMetadata
+{
+    explicit IcebergDataObjectInfo(
+        Iceberg::ManifestFileEntry data_object_,
+        std::optional<ObjectMetadata> metadata_ = std::nullopt,
+        std::vector<Iceberg::ManifestFileEntry> position_deletes_objects_ = {})
+        : RelativePathWithMetadata(std::get<Iceberg::DataFileEntry>(data_object_.file).file_name, std::move(metadata_))
+        , data_object(data_object_)
+        , position_deletes_objects(std::move(position_deletes_objects_))
+    {
+    }
+
+    Iceberg::ManifestFileEntry data_object;
+    std::vector<Iceberg::ManifestFileEntry> position_deletes_objects;
+
+    // Return the path in the Iceberg metadata
+    std::string getIcebergDataPath() const { return std::get<Iceberg::DataFileEntry>(data_object.file).file_path_key; }
+};
+using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;
+
 class IcebergMetadata : public IDataLakeMetadata, private WithContext
 {
 public:
@@ -73,6 +93,14 @@ public:
             : nullptr;
     }
 
+    bool hasDataTransformer() const override { return !getPositionDeletesFiles().empty(); }
+
+    std::shared_ptr<ISimpleTransform> getDataTransformer(
+        const ObjectInfoPtr & /* object_info */,
+        const Block & /* header */,
+        const std::optional<FormatSettings> & /* format_settings */,
+        ContextPtr /* context */) const override;
+
     bool supportsSchemaEvolution() const override { return true; }
 
     static Int32
@@ -116,11 +144,14 @@ private:
     Int64 relevant_snapshot_id{-1};
     String table_location;
 
-    mutable std::optional<Strings> cached_unprunned_files_for_last_processed_snapshot;
+    mutable std::optional<std::vector<Iceberg::ManifestFileEntry>> cached_unprunned_files_for_last_processed_snapshot;
+    mutable std::optional<std::vector<Iceberg::ManifestFileEntry>> cached_unprunned_position_deletes_files_for_last_processed_snapshot;
 
     void updateState(const ContextPtr & local_context, bool metadata_file_changed);
 
-    Strings getDataFiles(const ActionsDAG * filter_dag) const;
+    std::vector<Iceberg::ManifestFileEntry> getDataFiles(const ActionsDAG * filter_dag) const;
+
+    std::vector<Iceberg::ManifestFileEntry> getPositionDeletesFiles() const;
 
     void updateSnapshot();
 

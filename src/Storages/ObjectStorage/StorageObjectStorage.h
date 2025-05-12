@@ -10,6 +10,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Processors/ISimpleTransform.h>
 
 #include <memory>
 namespace DB
@@ -244,6 +245,16 @@ public:
     }
 
     virtual void modifyFormatSettings(FormatSettings &) const {}
+
+    virtual bool hasDataTransformer() const { return false; }
+    virtual std::shared_ptr<ISimpleTransform> getDataTransformer(
+        const ObjectInfoPtr & /*object_info*/,
+        const Block & /*header*/,
+        const std::optional<FormatSettings> & /*format_settings*/,
+        ContextPtr /*context*/) const
+    {
+        return {};
+    }
 
     virtual ReadFromFormatInfo prepareReadingFromFormat(
         ObjectStoragePtr object_storage,
