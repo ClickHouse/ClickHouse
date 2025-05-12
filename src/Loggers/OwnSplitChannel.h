@@ -61,7 +61,7 @@ private:
 class OwnAsyncSplitChannel : public Poco::AsyncChannel
 {
 public:
-    OwnAsyncSplitChannel(Poco::Thread::Priority prio = Poco::Thread::PRIO_NORMAL);
+    explicit OwnAsyncSplitChannel(Poco::Thread::Priority prio = Poco::Thread::PRIO_NORMAL);
 
     void log(const Poco::Message & msg) override;
 
