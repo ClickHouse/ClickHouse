@@ -373,20 +373,29 @@
             return;
         }
         rows.forEach(row => {
-            const status = row.dataset.status?.toLowerCase() || '';
-            const isFailure = status.includes('fail') || status.includes('error');
-            const isWarning = status.includes('pending') || status.includes('running');
-
-            let shouldShow = false;
-
-            if (showOnlyFailures) {
-                shouldShow = isFailure;
-            } else if (showOnlyWarnings) {
-                shouldShow = isWarning || isFailure;
-            }
-
-            row.style.display = shouldShow ? '' : 'none';
+            row.style.display = shouldShowRow(filter, row.dataset.status) ? '' : 'none';
         });
+    }
+
+    function shouldShowRow(filter, status) {
+        const status_ = status.toLowerCase();
+
+        const isFailure =
+            status_.includes('fail') || status_.includes('error') || status_.includes('drop');
+        const isWarning =
+            status_.includes('pending') || status_.includes('running');
+
+        if (filter === 'failures') {
+            return isFailure;
+        }
+
+        if (filter === 'warnings') {
+            // Show both warnings and failures under 'warnings' filter
+            return isWarning || isFailure;
+        }
+
+        // If no filter is set, show all
+        return true;
     }
 
     function toggleStatusFilter(setValue=false) {
@@ -1155,6 +1164,7 @@
         const currentUrl = new URL(window.location.href);
         // Clear existing rows
         tbody.innerHTML = '';
+        const filter = localStorage.getItem('filter');
 
         results.forEach((result, _index) => {
             const row = document.createElement('tr');
@@ -1175,7 +1185,7 @@
                         span.addEventListener('click', () => toggleInfoRow(row, result.info, result.ext && result.ext.results_preview, result.links));
                     }
                     td.appendChild(span);
-
+                    row.style.display = shouldShowRow(filter, row.dataset.status) ? '' : 'none';
                 } else if (column === 'name') {
                     const statusValue = result["status"] ? result["status"].toLowerCase() : "";
 

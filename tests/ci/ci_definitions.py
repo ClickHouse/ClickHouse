@@ -227,7 +227,7 @@ class JobNames(metaclass=WithIter):
     BUILD_CHECK = "Builds"
 
     DOCS_CHECK = "Docs check"
-    BUGFIX_VALIDATE = "Bugfix validation"
+    BUGFIX_VALIDATE = "Bugfix validation (integration tests)"
 
 
 # hack to concatenate Build and non-build jobs under JobNames class

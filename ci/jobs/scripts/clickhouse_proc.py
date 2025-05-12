@@ -42,7 +42,23 @@ class ClickHouseProc:
         self.user_files_path = f"{self.ch_config_dir}/user_files"
         self.test_output_file = f"{temp_dir}/test_result.txt"
         self.command = f"clickhouse-server --config-file {self.config_file} --pid-file {self.pid_file} -- --path {self.ch_config_dir} --user_files_path {self.user_files_path} --top_level_domains_path {self.ch_config_dir}/top_level_domains --keeper_server.storage_path {self.ch_config_dir}/coordination"
+
+        self.ch_config_dir_replica_1 = f"{temp_dir}/etc/clickhouse-server1"
+        self.config_file_replica_1 = f"{self.ch_config_dir_replica_1}/config.xml"
+        self.ch_config_dir_replica_2 = f"{temp_dir}/etc/clickhouse-server2"
+        self.config_file_replica_2 = f"{self.ch_config_dir_replica_2}/config.xml"
+        self.pid_file_replica_1 = (
+            f"{self.ch_config_dir_replica_1}/clickhouse-server.pid"
+        )
+        self.pid_file_replica_2 = (
+            f"{self.ch_config_dir_replica_2}/clickhouse-server.pid"
+        )
+        self.pid_file = f"{self.ch_config_dir}/clickhouse-server.pid"
+        self.replica_command_1 = f"clickhouse-server --config-file {self.config_file_replica_1} --daemon --pid-file {self.pid_file_replica_1} -- --path {self.ch_config_dir_replica_1} --logger.stderr {temp_dir}/var/log/clickhouse-server/stderr1.log --logger.log {temp_dir}/var/log/clickhouse-server/clickhouse-server1.log --logger.errorlog {temp_dir}/var/log/clickhouse-server/clickhouse-server1.err.log --tcp_port 19000 --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 --mysql_port 19004 --postgresql_port 19005 --keeper_server.tcp_port 19181 --keeper_server.server_id 2 --prometheus.port 19988 --macros.replica r2"
+        self.replica_command_2 = f"clickhouse-server --config-file {self.config_file_replica_2} --daemon --pid-file {self.pid_file_replica_2} -- --path {self.ch_config_dir_replica_2} --logger.stderr {temp_dir}/var/log/clickhouse-server/stderr2.log --logger.log {temp_dir}/var/log/clickhouse-server/clickhouse-server2.log --logger.errorlog {temp_dir}/var/log/clickhouse-server/clickhouse-server2.err.log --tcp_port 29000 --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 --mysql_port 29004 --postgresql_port 29005 --keeper_server.tcp_port 29181 --keeper_server.server_id 3 --prometheus.port 29988 --macros.shard s2"
         self.proc = None
+        self.proc_1 = None
+        self.proc_2 = None
         self.pid = 0
         nproc = int(Utils.cpu_count() / 2)
         self.fast_test_command = f"clickhouse-test --hung-check --trace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --zookeeper --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' \
@@ -97,29 +113,39 @@ class ClickHouseProc:
     @staticmethod
     def enable_thread_fuzzer_config():
         # For flaky check we also enable thread fuzzer
-        os.environ["IS_FLAKY_CHECK"] = 1
-        os.environ["THREAD_FUZZER_CPU_TIME_PERIOD_US"] = 1000
-        os.environ["THREAD_FUZZER_SLEEP_PROBABILITY"] = 0.1
-        os.environ["THREAD_FUZZER_SLEEP_TIME_US_MAX"] = 100000
+        os.environ["IS_FLAKY_CHECK"] = "1"
+        os.environ["THREAD_FUZZER_CPU_TIME_PERIOD_US"] = "1000"
+        os.environ["THREAD_FUZZER_SLEEP_PROBABILITY"] = "0.1"
+        os.environ["THREAD_FUZZER_SLEEP_TIME_US_MAX"] = "100000"
 
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY"] = 1
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY"] = 1
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY"] = 1
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY"] = 1
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY"] = "1"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY"] = "1"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY"] = (
+            "1"
+        )
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY"] = "1"
 
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY"] = 0.001
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY"] = 0.001
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY"] = (
+            "0.001"
+        )
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY"] = "0.001"
 
         os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY"] = (
-            0.001
+            "0.001"
         )
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY"] = 0.001
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX"] = 10000
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX"] = 10000
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY"] = (
+            "0.001"
+        )
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX"] = (
+            "10000"
+        )
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX"] = "10000"
         os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX"] = (
-            10000
+            "10000"
         )
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX"] = 10000
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX"] = (
+            "10000"
+        )
 
     def create_log_export_config(self):
         print("Create log export config")
@@ -170,7 +196,7 @@ class ClickHouseProc:
             verbose=True,
         )
 
-    def start(self):
+    def start(self, replicated=False):
         print("Starting ClickHouse server")
         Shell.check(f"rm {self.pid_file}")
         self.proc = subprocess.Popen(self.command, stderr=subprocess.STDOUT, shell=True)
@@ -192,6 +218,52 @@ class ClickHouseProc:
             stdout = self.proc.stdout.read().strip() if self.proc.stdout else ""
             stderr = self.proc.stderr.read().strip() if self.proc.stderr else ""
             Utils.print_formatted_error("Failed to start ClickHouse", stdout, stderr)
+            return False
+
+        print(f"ClickHouse server started successfully, pid [{pid}]")
+
+        if replicated:
+            return self.start_replica(1) and self.start_replica(2)
+        return True
+
+    def start_replica(self, replica_num):
+        print(f"Starting ClickHouse server replica {replica_num}")
+        if replica_num == 1:
+            pid_file = self.pid_file_replica_1
+            command = self.replica_command_1
+        elif replica_num == 2:
+            pid_file = self.pid_file_replica_2
+            command = self.replica_command_2
+        else:
+            assert False
+
+        Shell.check(f"rm {pid_file}")
+
+        proc = subprocess.Popen(command, stderr=subprocess.STDOUT, shell=True)
+        if replica_num == 1:
+            self.proc_1 = proc
+        elif replica_num == 2:
+            self.proc_2 = proc
+        started = False
+        try:
+            for _ in range(5):
+                pid = Shell.get_output(f"cat {pid_file}").strip()
+                if not pid:
+                    Utils.sleep(1)
+                    continue
+                started = True
+                print(f"Got pid from fs [{pid}]")
+                _ = int(pid)
+                break
+        except Exception:
+            pass
+
+        if not started:
+            stdout = proc.stdout.read().strip() if proc.stdout else ""
+            stderr = proc.stderr.read().strip() if proc.stderr else ""
+            Utils.print_formatted_error(
+                f"Failed to start ClickHouse replica {replica_num}", stdout, stderr
+            )
             return False
 
         print(f"ClickHouse server started successfully, pid [{pid}]")
@@ -218,7 +290,20 @@ class ClickHouseProc:
             return False
         return True
 
-    def prepare_stateful_data(self):
+    def flush_system_logs(self):
+        for proc, port in zip(
+            (self.proc, self.proc_1, self.proc_2), (9000, 19000, 29000)
+        ):
+            if proc:
+                res = Shell.check(
+                    f'clickhouse-client --port {port} --query "system flush logs"',
+                    verbose=True,
+                )
+                if not res:
+                    return False
+        return True
+
+    def prepare_stateful_data(self, with_s3_storage):
         command = """
 set -e
 set -o pipefail
@@ -258,7 +343,20 @@ clickhouse-client --query "SHOW TABLES FROM test"
 clickhouse-client --query "SELECT count() FROM test.hits"
 clickhouse-client --query "SELECT count() FROM test.visits"
 """
+        if with_s3_storage:
+            command = "USE_S3_STORAGE_FOR_MERGE_TREE=1\n" + command
         return Shell.check(command, strict=True)
+
+    def insert_system_zookeeper_config(self):
+        for _ in range(10):
+            res = Shell.check(
+                f"insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')",
+                verbose=True,
+            )
+            if not res:
+                return True
+        else:
+            return False
 
     def run_fast_test(self, test=""):
         if Path(self.test_output_file).exists():
@@ -267,22 +365,23 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         return exit_code == 0
 
     def terminate(self):
-        print("Terminate ClickHouse process")
+        print("Terminate ClickHouse processes")
         timeout = 10
-        if self.proc:
-            Utils.terminate_process_group(self.proc.pid)
+        for proc in (self.proc_2, self.proc_1, self.proc):
+            if proc:
+                Utils.terminate_process_group(proc.pid)
 
-            self.proc.terminate()
-            try:
-                self.proc.wait(timeout=10)
-                print(f"Process {self.proc.pid} terminated gracefully.")
-            except Exception:
-                print(
-                    f"Process {self.proc.pid} did not terminate in {timeout} seconds, killing it..."
-                )
-                Utils.terminate_process_group(self.proc.pid, force=True)
-                self.proc.wait()  # Wait for the process to be fully killed
-                print(f"Process {self.proc} was killed.")
+                proc.terminate()
+                try:
+                    proc.wait(timeout=10)
+                    print(f"Process {proc.pid} terminated gracefully.")
+                except Exception:
+                    print(
+                        f"Process {proc.pid} did not terminate in {timeout} seconds, killing it..."
+                    )
+                    Utils.terminate_process_group(proc.pid, force=True)
+                    proc.wait()  # Wait for the process to be fully killed
+                    print(f"Process {proc} was killed.")
 
         if self.minio_proc:
             Utils.terminate_process_group(self.minio_proc.pid)
