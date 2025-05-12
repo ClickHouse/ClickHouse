@@ -1610,6 +1610,12 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
     size_t index_marks_count = (marks_count + index_granularity - 1) / index_granularity;
 
+    /// The vector similarity index can only be used if the PK did not prune some ranges within the part.
+    /// (the vector index is built on the entire part).
+    const bool all_match  = (marks_count == ranges.getNumberOfMarks());
+    if (index_helper->isVectorSimilarityIndex() && !all_match)
+        return ranges;
+
     MarkRanges index_ranges;
     for (const auto & range : ranges)
     {
