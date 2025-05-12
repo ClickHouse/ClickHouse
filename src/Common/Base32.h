@@ -2,24 +2,31 @@
 
 #include <optional>
 #include <base/types.h>
+#include "base/defines.h"
 
 namespace DB
 {
 
 struct Base32Rfc4648
 {
-    static constexpr char encoding_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    static constexpr char encodeChar(UInt8 c)
+    {
+        chassert(c < 32);
+        if (c < 26)
+            return 'A' + c;
+        return '2' + (c - 26);
+    }
     static constexpr UInt8 decodeChar(UInt8 c)
     {
         if (c >= 'A' && c <= 'Z')
             return c - 'A';
 
-        if (c >= '2' && c <= '7')
-            return (c - '2') + 26;
-
         // Handle lowercase letters the same as uppercase
         if (c >= 'a' && c <= 'z')
             return c - 'a';
+
+        if (c >= '2' && c <= '7')
+            return (c - '2') + 26;
 
         return 0xFF;
     }
@@ -53,14 +60,14 @@ struct Base32<Traits, Base32NaiveTag>
 
             while (bits_left >= 5)
             {
-                dst[opos++] = Traits::encoding_table[(buffer >> (bits_left - 5)) & 0x1F];
+                dst[opos++] = Traits::encodeChar((buffer >> (bits_left - 5)) & 0x1F);
                 bits_left -= 5;
             }
         }
 
         if (bits_left > 0)
         {
-            dst[opos++] = Traits::encoding_table[(buffer << (5 - bits_left)) & 0x1F];
+            dst[opos++] = Traits::encodeChar(buffer << (5 - bits_left)) & 0x1F);
         }
 
         while (opos % 8 != 0)
