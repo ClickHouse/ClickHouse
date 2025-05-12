@@ -388,10 +388,10 @@ void ParquetBlockOutputFormat::writeRowGroupInOneThread(Chunk chunk)
         base_offset = out.count();
         writeFileHeader(file_state, out);
     }
-    for (auto & s : columns_to_write)
+    for (size_t i = 0; i < columns_to_write.size(); ++i)
     {
-        writeColumnChunkBody(s, options, out);
-        finalizeColumnChunkAndWriteFooter(std::move(s), file_state, out);
+        writeColumnChunkBody(columns_to_write[i], options, out, header.getByPosition(i).type);
+        finalizeColumnChunkAndWriteFooter(std::move(columns_to_write[i]), file_state, out);
     }
 
     finalizeRowGroup(file_state, chunk.getNumRows(), options, out);
@@ -524,7 +524,7 @@ void ParquetBlockOutputFormat::threadFunction()
         auto task = std::move(task_queue.front());
         task_queue.pop_front();
 
-        if (task.column_type)
+        if (task.need_prepare)
         {
             lock.unlock();
 
@@ -551,6 +551,8 @@ void ParquetBlockOutputFormat::threadFunction()
                 auto & t = task_queue.emplace_back(task.row_group, task.column_idx, this);
                 t.subcolumn_idx = i;
                 t.state = std::move(subcolumns[i]);
+                t.column_type = task.column_type;
+                t.need_prepare = false;
                 t.mem.set(t.state.allocatedBytes());
             }
 
@@ -563,7 +565,7 @@ void ParquetBlockOutputFormat::threadFunction()
             PODArray<char> serialized;
             {
                 auto buf = WriteBufferFromVector<PODArray<char>>(serialized);
-                writeColumnChunkBody(task.state, options, buf);
+                writeColumnChunkBody(task.state, options, buf, task.column_type);
             }
 
             lock.lock();

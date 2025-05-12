@@ -403,11 +403,13 @@ struct ConverterJSON
     using Statistics = StatisticsStringRef;
 
     const ColumnObject & column;
+    DataTypePtr data_type;
     PODArray<parquet::ByteArray> buf;
     std::vector<String> stash;
 
-    explicit ConverterJSON(const ColumnPtr & c)
+    explicit ConverterJSON(const ColumnPtr & c, const DataTypePtr & data_type_)
         : column(assert_cast<const ColumnObject &>(*c))
+        , data_type(data_type_)
     {
     }
 
@@ -417,8 +419,8 @@ struct ConverterJSON
         stash.clear();
         stash.reserve(count);
 
-        auto data_type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
-        auto serialization = data_type->getDefaultSerialization();
+        auto internal_type = data_type ? data_type : std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
+        auto serialization = internal_type->getDefaultSerialization();
         FormatSettings fmt;
 
         for (size_t i = 0; i < count; ++i)
@@ -959,7 +961,7 @@ void writeColumnImpl(
 
 }
 
-void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & options, WriteBuffer & out)
+void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & options, WriteBuffer & out, DataTypePtr type)
 {
     s.column_chunk.meta_data.__set_num_values(s.max_def > 0 ? s.def.size() : s.primitive_column->size());
 
@@ -1049,8 +1051,7 @@ void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & option
                 s, options, out, ConverterFixedStringAsString(s.primitive_column));
             break;
         case TypeIndex::Object:
-            writeColumnImpl<parquet::ByteArrayType>(
-              s, options, out, ConverterJSON(s.primitive_column));
+            writeColumnImpl<parquet::ByteArrayType>(s, options, out, ConverterJSON(s.primitive_column, type));
             break;
 
         #define F(source_type) \
