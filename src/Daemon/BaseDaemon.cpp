@@ -272,8 +272,11 @@ void BaseDaemon::initialize(Application & self)
         struct rlimit rlim;
         if (getrlimit(RLIMIT_CORE, &rlim))
             throw Poco::Exception("Cannot getrlimit");
+
         /// 1 GiB by default. If more - it writes to disk too long.
-        rlim.rlim_cur = config().getUInt64("core_dump.size_limit", 1024 * 1024 * 1024);
+        rlim.rlim_cur = config().getBool("core_dump.enabled", true)
+            ? config().getUInt64("core_dump.size_limit", 1024 * 1024 * 1024)
+            : 0;
 
         if (rlim.rlim_cur && setrlimit(RLIMIT_CORE, &rlim))
         {
