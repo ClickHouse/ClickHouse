@@ -1599,6 +1599,15 @@ def test_alter_rename(started_cluster):
 
 
 def test_warn_on_database_ending_broken_replicated_tables(started_cluster):
+    for node in [main_node, dummy_node]:
+        result = node.query("SELECT name FROM system.databases WHERE name LIKE '%_broken_tables%' OR name LIKE '%_broken_replicated_tables%'").strip()
+        if result == "":
+            continue
+        databases_to_drop = result.split("\n")
+        logging.debug(f"Databases to drop: {databases_to_drop}")
+        for database in databases_to_drop:
+            node.query(f"DROP DATABASE {database} SYNC")
+
     database_name = "test_warn_on_database_name"
     main_node.query(
         f"CREATE DATABASE {database_name} ENGINE = Replicated('/clickhouse/databases/{database_name}', 'shard1', 'replica1');"
@@ -1624,6 +1633,7 @@ def test_warn_on_database_ending_broken_replicated_tables(started_cluster):
 
     main_node.query(f"SYSTEM SYNC REPLICA {database_name}.rmt_0")
 
+    # Let's break a table
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(dummy_node)
         dummy_node.query_and_get_error(
