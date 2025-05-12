@@ -3,10 +3,10 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionTokens.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/Exception.h>
-
-#include <zlib.h>
-#include <Poco/UTF8Encoding.h>
+#include <base/types.h>
+#include <Common/HashTable/Hash.h>
 
 namespace DB
 {
@@ -27,83 +27,164 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 namespace
 {
 
+struct CRC32CHasher
+{
+    size_t operator()(const char* data, size_t length) const
+    {
+        return updateWeakHash32(reinterpret_cast<const UInt8*>(data), length, 0);
+    }
+};
+
 using Pos = const char *;
 
 template <bool is_utf8>
 class SparseGramsImpl
 {
 private:
+    CRC32CHasher hasher;
+
     Pos pos;
     Pos end;
-    std::vector<UInt32> ngram_hashes;
-    std::vector<size_t> utf8_offsets;
-    size_t left;
-    size_t right;
     UInt64 min_ngram_length = 3;
     UInt64 max_ngram_length = 100;
 
-    void buildNgramHashes()
+    /// Current batch of answers. The size of result can not be greater than `convex_hull`.
+    /// The size of `convex_hull` should not be large, see comment to `convex_hull` for more details.
+    std::vector<std::pair<size_t, size_t>> result;
+    size_t iter_result = 0;
+
+    struct PositionAndHash
     {
-        if constexpr (is_utf8)
+        size_t position;
+        size_t left_ngram_position;
+        size_t symbol_index;
+        size_t hash;
+    };
+
+    class NGramSymbolIterator
+    {
+    public:
+        NGramSymbolIterator() = default;
+
+        NGramSymbolIterator(Pos data_, Pos end_, size_t n_)
+            : data(data_), end(end_), n(n_)
         {
-            Poco::UTF8Encoding encoder{};
-            size_t byte_offset = 0;
-            while (pos + byte_offset < end)
+        }
+
+        void increment()
+        {
+            right_iterator = getNextPosition(right_iterator);
+
+            if (++num_increments >= n)
+                left_iterator = getNextPosition(left_iterator);
+        }
+
+        bool isEnd() const
+        {
+            return data + right_iterator >= end;
+        }
+
+        std::pair<size_t, size_t> getNGramPositions() const
+        {
+            return {left_iterator, right_iterator};
+        }
+
+        size_t getRightSymbol() const
+        {
+            return num_increments;
+        }
+
+        size_t getNextPosition(size_t iterator) const
+        {
+            if constexpr (is_utf8)
+                return iterator + UTF8::seqLength(data[iterator]);
+            else
+                return iterator + 1;
+        }
+
+    private:
+
+        Pos data;
+        Pos end;
+        size_t n;
+        size_t right_iterator = 0;
+        size_t left_iterator = 0;
+        size_t num_increments = 0;
+    };
+
+    /// The convex hull contains the maximum values ​​of the suffixes that start from the current right iterator.
+    /// For example, if we have n-gram hashes like [1,5,2,4,1,3] and current right position is 4 (the last one)
+    /// than our convex hull will consists of elements:
+    /// [{position:1, hash:5}, {position:3, hash:4}, {position:4,hash:1}]
+    /// Assuming that hashes are uniformly distributed, the expected size of convex_hull is N^{1/3},
+    /// where N is the length of the string.
+    /// Proof: https://math.stackexchange.com/questions/3469295/expected-number-of-vertices-in-a-convex-hull
+    std::vector<PositionAndHash> convex_hull;
+    NGramSymbolIterator symbol_iterator;
+
+    /// Get the next batch of answers. Returns false if there can be no more answers.
+    bool consume()
+    {
+        if (symbol_iterator.isEnd())
+            return false;
+
+        auto [ngram_left_position, right_position] = symbol_iterator.getNGramPositions();
+        size_t right_symbol_index = symbol_iterator.getRightSymbol();
+        size_t next_right_position = symbol_iterator.getNextPosition(right_position);
+        size_t right_border_ngram_hash = hasher(pos + ngram_left_position, next_right_position - ngram_left_position);
+
+        while (!convex_hull.empty() && convex_hull.back().hash < right_border_ngram_hash)
+        {
+            size_t possible_left_position = convex_hull.back().left_ngram_position;
+            size_t possible_left_symbol_index = convex_hull.back().symbol_index;
+            size_t length = right_symbol_index - possible_left_symbol_index + 2;
+            if (length > max_ngram_length)
             {
-                utf8_offsets.push_back(byte_offset);
-                auto len = encoder.sequenceLength(reinterpret_cast<const unsigned char *>(pos + byte_offset), end - pos - byte_offset);
-                if (len < 1)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect utf8 symbol");
-                byte_offset += len;
+                /// If the current length is greater than the current right position, it will be greater at future right positions, so we can just delete them all.
+                convex_hull.clear();
+                break;
             }
-            if (pos + byte_offset != end)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect utf8 symbol");
-
-            utf8_offsets.push_back(byte_offset);
-
-            if (utf8_offsets.size() >= min_ngram_length)
-                ngram_hashes.reserve(utf8_offsets.size() - min_ngram_length + 1);
-            for (size_t i = 0; i + min_ngram_length - 1 < utf8_offsets.size(); ++i)
-                ngram_hashes.push_back(crc32_z(
-                    0UL,
-                    reinterpret_cast<const unsigned char *>(pos + utf8_offsets[i]),
-                    utf8_offsets[i + min_ngram_length - 1] - utf8_offsets[i]));
+            result.push_back({possible_left_position, next_right_position});
+            convex_hull.pop_back();
         }
-        else
+
+        if (!convex_hull.empty())
         {
-            if (pos + min_ngram_length <= end)
-                ngram_hashes.reserve(end - pos - min_ngram_length + 1);
-            for (size_t i = 0; pos + i + min_ngram_length - 2 < end; ++i)
-                ngram_hashes.push_back(crc32_z(0L, reinterpret_cast<const unsigned char *>(pos + i), min_ngram_length - 1));
+            size_t possible_left_position = convex_hull.back().left_ngram_position;
+            size_t possible_left_symbol_index = convex_hull.back().symbol_index;
+            size_t length = right_symbol_index - possible_left_symbol_index + 2;
+            if (length <= max_ngram_length)
+                result.push_back({possible_left_position, next_right_position});
         }
+
+        /// there should not be identical hashes in the convex hull. If there are, then we leave only the last one
+        while (!convex_hull.empty() && convex_hull.back().hash == right_border_ngram_hash)
+            convex_hull.pop_back();
+
+        convex_hull.push_back(PositionAndHash{
+            .position = right_position,
+            .left_ngram_position = ngram_left_position,
+            .symbol_index = right_symbol_index,
+            .hash = right_border_ngram_hash
+        });
+        symbol_iterator.increment();
+        return true;
     }
 
     std::optional<std::pair<size_t, size_t>> getNextIndices()
     {
-        chassert(right > left);
-        while (left < ngram_hashes.size())
+        if (result.size() <= iter_result)
         {
-            while (right < ngram_hashes.size() && right <= left + max_ngram_length - min_ngram_length + 1)
-            {
-                if (right > left + 1)
-                {
-                    if (ngram_hashes[left] < ngram_hashes[right - 1])
-                        break;
+            result.clear();
+            iter_result = 0;
 
-                    if (ngram_hashes[right] < ngram_hashes[right - 1])
-                    {
-                        ++right;
-                        continue;
-                    }
-                }
+            if (!consume())
+                return std::nullopt;
 
-                return {{left, right++}};
-            }
-            ++left;
-            right = left + 1;
+            return getNextIndices();
         }
 
-        return std::nullopt;
+        return result[iter_result++];
     }
 
 public:
@@ -154,35 +235,23 @@ public:
     {
         pos = pos_;
         end = end_;
-        left = 0;
-        right = 1;
 
-        ngram_hashes.clear();
-        if constexpr (is_utf8)
-            utf8_offsets.clear();
-
-        buildNgramHashes();
+        symbol_iterator = NGramSymbolIterator(pos, end, min_ngram_length - 1);
+        for (size_t i = 0; i < min_ngram_length - 2; ++i)
+            symbol_iterator.increment();
     }
 
     /// Get the next token, if any, or return false.
     bool get(Pos & token_begin, Pos & token_end)
     {
-        auto result = getNextIndices();
-        if (!result)
+        auto cur_result = getNextIndices();
+        if (!cur_result)
             return false;
 
-        auto [iter_left, iter_right] = *result;
+        auto [iter_left, iter_right] = *cur_result;
 
-        if constexpr (is_utf8)
-        {
-            token_begin = pos + utf8_offsets[iter_left];
-            token_end = pos + utf8_offsets[iter_right + min_ngram_length - 1];
-        }
-        else
-        {
-            token_begin = pos + iter_left;
-            token_end = pos + iter_right + min_ngram_length - 1;
-        }
+        token_begin = pos + iter_left;
+        token_end = pos + iter_right;
         return true;
     }
 };
@@ -211,6 +280,8 @@ public:
         SparseGramsImpl<is_utf8> impl;
         impl.init(arguments, false);
 
+        CRC32CHasher hasher;
+
         auto col_res = ColumnUInt32::create();
         auto & res_data = col_res->getData();
 
@@ -238,7 +309,7 @@ public:
                 end = reinterpret_cast<Pos>(&src_data[current_src_offset]) - 1;
                 impl.set(start, end);
                 while (impl.get(start, end))
-                    res_data.push_back(crc32_z(0UL, reinterpret_cast<const unsigned char *>(start), end - start));
+                    res_data.push_back(hasher(start, end - start));
 
                 res_offsets_data.push_back(res_data.size());
             }
