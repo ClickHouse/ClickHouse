@@ -212,64 +212,211 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
 
 REGISTER_FUNCTION(ArraySort)
 {
-    factory.registerFunction<FunctionArraySort>();
-    factory.registerFunction<FunctionArrayReverseSort>();
+    FunctionDocumentation::Description description = R"(
+Sorts the elements of the provided array in ascending order.
+If a lambda function `f` is specified, sorting order is determined by the result of
+the lambda applied each element of the array.
+If the lambda accepts multiple arguments, the `arraySort` function is passed several
+arrays that the arguments of `f` will correspond to.
 
-    factory.registerFunction<FunctionArrayPartialSort>(FunctionDocumentation{
-        .description=R"(
-Returns an array of the same size as the original array where elements in range `[1..limit]`
-are sorted in ascending order. Remaining elements `(limit..N]` shall contain elements in unspecified order.
-[example:simple_int]
-[example:simple_string]
+If the array to sort contains `-Inf`, `NULL`, `NaN`, or `Inf` they will be sorted in the following order:
 
-To retain only the sorted elements use `arrayResize`:
-[example:retain_sorted]
+1. `-Inf`
+2. `NaN`
+3. `NULL`
+3. `Inf`
 
-If the `func` function is specified, sorting order is determined by the result of the `func`
-function applied to the elements of the array.
-[example:lambda_simple]
+Note that `arraySort` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions).
+You can pass a lambda function to it as the first argument. In this case, the sorting order is determined by
+the result of the lambda function applied to the elements of the array.
 
-If `func` accepts multiple arguments, the `arrayPartialSort` function is passed several arrays
-that the arguments of `func` will correspond to.
-[example:lambda_complex]
+Let's consider the following example:
 
-For more details see documentation of `arraySort`.
-)",
-        .examples{
-            {"simple_int", "SELECT arrayPartialSort(2, [5, 9, 1, 3])", ""},
-            {"simple_string", "SELECT arrayPartialSort(2, ['expenses','lasso','embolism','gladly'])", ""},
-            {"retain_sorted", "SELECT arrayResize(arrayPartialSort(2, [5, 9, 1, 3]), 2)", ""},
-            {"lambda_simple", "SELECT arrayPartialSort((x) -> -x, 2, [5, 9, 1, 3])", ""},
-            {"lambda_complex", "SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res", ""}},
-        .category = FunctionDocumentation::Category::Array});
+```sql
+SELECT arraySort((x) -> -x, [1, 2, 3]) as res;
+```
 
-    factory.registerFunction<FunctionArrayPartialReverseSort>(FunctionDocumentation{
-        .description=R"(
-Returns an array of the same size as the original array where elements in range `[1..limit]`
-are sorted in descending order. Remaining elements `(limit..N]` shall contain elements in unspecified order.
-[example:simple_int]
-[example:simple_string]
+```text
+┌─res─────┐
+│ [3,2,1] │
+└─────────┘
+```
 
-To retain only the sorted elements use `arrayResize`:
-[example:retain_sorted]
+For each element of the source array, the lambda function returns the sorting key, that is, \[1 –\> -1, 2 –\> -2, 3 –\> -3\]. Since the `arraySort` function sorts the keys in ascending order, the result is \[3, 2, 1\]. Thus, the `(x) –> -x` lambda function sets the [descending order](#arrayreversesort) in a sorting.
 
-If the `func` function is specified, sorting order is determined by the result of the `func`
-function applied to the elements of the array.
-[example:lambda_simple]
+The lambda function can accept multiple arguments. In this case, you need to pass the `arraySort` function several arrays of identical length that the arguments of lambda function will correspond to. The resulting array will consist of elements from the first input array; elements from the next input array(s) specify the sorting keys. For example:
 
-If `func` accepts multiple arguments, the `arrayPartialSort` function is passed several arrays
-that the arguments of `func` will correspond to.
-[example:lambda_complex]
+```sql
+SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
+```
 
-For more details see documentation of `arraySort`.
-)",
-        .examples{
-            {"simple_int", "SELECT arrayPartialReverseSort(2, [5, 9, 1, 3])", ""},
-            {"simple_string", "SELECT arrayPartialReverseSort(2, ['expenses','lasso','embolism','gladly'])", ""},
-            {"retain_sorted", "SELECT arrayResize(arrayPartialReverseSort(2, [5, 9, 1, 3]), 2)", ""},
-            {"lambda_simple", "SELECT arrayPartialReverseSort((x) -> -x, 2, [5, 9, 1, 3])", ""},
-            {"lambda_complex", "SELECT arrayPartialReverseSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res", ""}},
-        .category = FunctionDocumentation::Category::Array});
+```text
+┌─res────────────────┐
+│ ['world', 'hello'] │
+└────────────────────┘
+```
+
+Here, the elements that are passed in the second array (\[2, 1\]) define a sorting key for the corresponding element from the source array (\['hello', 'world'\]), that is, \['hello' –\> 2, 'world' –\> 1\]. Since the lambda function does not use `x`, actual values of the source array do not affect the order in the result. So, 'hello' will be the second element in the result, and 'world' will be the first.
+
+Other examples are shown below.
+
+```sql
+SELECT arraySort((x, y) -> y, [0, 1, 2], ['c', 'b', 'a']) as res;
+```
+
+```text
+┌─res─────┐
+│ [2,1,0] │
+└─────────┘
+```
+
+```sql
+SELECT arraySort((x, y) -> -y, [0, 1, 2], [1, 2, 3]) as res;
+```
+
+```text
+┌─res─────┐
+│ [2,1,0] │
+└─────────┘
+```
+
+:::note
+To improve sorting efficiency, the [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used.
+:::
+)";
+    FunctionDocumentation::Syntax syntax = "arraySort([f,] x, ...yN)";
+    FunctionDocumentation::Arguments arguments = {
+        {"f(y1[, y2 ... yN])", "The lambda function to apply to elements of array `x`."},
+        {"x", "Array to be sorted."},
+        {"...yN", "N additional arrays, in the case when `f` accepts multiple arguments."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = R"(
+Returns the array `x` sorted in ascending order if no lambda function is provided, otherwise
+it returns an array sorted according to the logic of the provided lambda function. [Array](/sql-reference/data-types/array).
+    )"
+    FunctionDocumentation::Examples examples = {
+        {"Example 1", "SELECT arraySort([1, 3, 3, 0]);", "[0,1,3,3]"},
+        {"Example 2", "SELECT arraySort(['hello', 'world', '!']);", "['!','hello','world']"},
+        {"Example 3", "SELECT arraySort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf]);", "[-inf,-4,1,2,3,inf,nan,nan,NULL,NULL]"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArraySort>(documentation);
+
+    description = R"(
+Sorts the elements of an array in descending order.
+If a function `f` is specified, the provided array is sorted according to the result
+of the function applied to the elements of the array, and then the sorted array is reversed.
+If `f` accepts multiple arguments, the `arrayReverseSort` function is passed several arrays that
+the arguments of `func` will correspond to.
+
+If the array to sort contains `-Inf`, `NULL`, `NaN`, or `Inf` they will be sorted in the following order:
+1. `-Inf`
+2. `NaN`
+3. `NULL`
+3. `Inf`
+
+Note that the `arrayReverseSort` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument. Example is shown below.
+
+```sql
+SELECT arrayReverseSort((x) -> -x, [1, 2, 3]) as res;
+```
+
+```text
+┌─res─────┐
+│ [1,2,3] │
+└─────────┘
+```
+
+The array is sorted in the following way:
+
+1. At first, the source array (\[1, 2, 3\]) is sorted according to the result of the lambda function applied to the elements of the array. The result is an array \[3, 2, 1\].
+2. Array that is obtained on the previous step, is reversed. So, the final result is \[1, 2, 3\].
+
+The lambda function can accept multiple arguments. In this case, you need to pass the `arrayReverseSort` function several arrays of identical length that the arguments of lambda function will correspond to. The resulting array will consist of elements from the first input array; elements from the next input array(s) specify the sorting keys. For example:
+
+```sql
+SELECT arrayReverseSort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
+```
+
+```text
+┌─res───────────────┐
+│ ['hello','world'] │
+└───────────────────┘
+```
+
+In this example, the array is sorted in the following way:
+
+1. At first, the source array (\['hello', 'world'\]) is sorted according to the result of the lambda function applied to the elements of the arrays. The elements that are passed in the second array (\[2, 1\]), define the sorting keys for corresponding elements from the source array. The result is an array \['world', 'hello'\].
+2. Array that was sorted on the previous step, is reversed. So, the final result is \['hello', 'world'\].
+    )";
+    syntax = "arrayReverseSort([f,] x, ...yN)";
+    returned_value = R"(
+Returns the array `x` sorted in descending order if no lambda function is provided, otherwise
+it returns an array sorted according to the logic of the provided lambda function, and then reversed. [Array](/sql-reference/data-types/array).
+    )";
+    examples = {
+        {"Example 1", "SELECT arrayReverseSort((x, y) -> y, [4, 3, 5], ['a', 'b', 'c']) AS res;", "[5,3,4]"},
+        {"Example 2", "SELECT arrayReverseSort((x, y) -> -y, [4, 3, 5], [1, 2, 3]) AS res;", "[4,3,5]"},
+    };
+    documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayReverseSort>(documentation);
+
+    description = R"(
+This function is the same as `arraySort` but with an additional `limit` argument allowing partial sorting.
+
+:::tip
+To retain only the sorted elements use `arrayResize`.
+:::
+    )",
+    syntax = "arrayPartialSort([f,] x, ...yN, limit)";
+    arguments = {
+        {"f(y1[, y2 ... yN])", "The lambda function to apply to elements of array `x`."},
+        {"x", "Array to be sorted."},
+        {"...yN", "N additional arrays, in the case when `f` accepts multiple arguments."},
+        {"limit", "Index value up until which sorting will occur."}
+    };
+    returned_value = R"(
+Returns an array of the same size as the original array where elements in the range `[1..limit]` are sorted
+in ascending order. The remaining elements `(limit..N]` are in an unspecified order.
+    )"
+    examples = {
+        {"simple_int", "SELECT arrayPartialSort(2, [5, 9, 1, 3])", ""},
+        {"simple_string", "SELECT arrayPartialSort(2, ['expenses','lasso','embolism','gladly'])", ""},
+        {"retain_sorted", "SELECT arrayResize(arrayPartialSort(2, [5, 9, 1, 3]), 2)", ""},
+        {"lambda_simple", "SELECT arrayPartialSort((x) -> -x, 2, [5, 9, 1, 3])", ""},
+        {"lambda_complex", "SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res", ""}
+    },
+    introduced_in = {23, 2};
+    documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayPartialSort>(documentation);
+
+    description = R"(
+This function is the same as `arrayReverseSort` but with an additional `limit` argument allowing partial sorting.
+
+:::tip
+To retain only the sorted elements use `arrayResize`.
+:::
+    )";
+    syntax = "arrayPartialReverseSort([f,] x, ...yN, limit)";
+    returned_value = R"(
+Returns an array of the same size as the original array where elements in the range `[1..limit]` are sorted
+in descending order. The remaining elements `(limit..N]` are in an unspecified order.
+    )";
+    examples = {
+        {"simple_int", "SELECT arrayPartialReverseSort(2, [5, 9, 1, 3])", ""},
+        {"simple_string", "SELECT arrayPartialReverseSort(2, ['expenses','lasso','embolism','gladly'])", ""},
+        {"retain_sorted", "SELECT arrayResize(arrayPartialReverseSort(2, [5, 9, 1, 3]), 2)", ""},
+        {"lambda_simple", "SELECT arrayPartialReverseSort((x) -> -x, 2, [5, 9, 1, 3])", ""},
+        {"lambda_complex", "SELECT arrayPartialReverseSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res", ""}
+    };
+    documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayPartialReverseSort>(documentation);
 }
 
 }
