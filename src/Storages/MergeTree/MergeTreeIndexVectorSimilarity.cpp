@@ -422,8 +422,9 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
 {
     if (expansion_search == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'hnsw_candidate_list_size_for_search' must not be 0");
-    if (!std::isfinite(postfilter_multiplier) || !std::isfinite(postfilter_multiplier * parameters->limit) || postfilter_multiplier < 0.0)
-        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_postfilter_multiplier' must be bigger than 0.0");
+    if (!std::isfinite(postfilter_multiplier) || postfilter_multiplier < 0.0 ||
+        (parameters && !std::isfinite(postfilter_multiplier * parameters->limit)))
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_postfilter_multiplier' must be bigger than 0.0");
 }
 
 bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexGranulePtr) const
