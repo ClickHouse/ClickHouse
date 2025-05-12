@@ -15,7 +15,7 @@ public:
 
 REGISTER_FUNCTION(ArrayPopFront)
 {
-    FunctionDocumentation::Description description = "Removes the first item from the array."
+    FunctionDocumentation::Description description = "Removes the first item from the array.";
     FunctionDocumentation::Syntax syntax = "arrayPopFront(x)";
     FunctionDocumentation::Arguments arguments = {{"x", "The array for which to remove the first element from. [`Array`](/sql-reference/data-types/array)."}};
     FunctionDocumentation::ReturnedValue returned_value = "Returns an array identical to `x` but without the first element of `x`. [`Array`](/sql-reference/data-types/array).";

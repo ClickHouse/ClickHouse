@@ -27,7 +27,7 @@ It allows for enumeration of a multi-dimensional array with the ability to speci
         {"arr", "N-dimensional array to enumerate. [Array](/sql-reference/data-types/array)."},
         {"max_array_depth", "The maximum effective depth. Positive [Integer](../data-types/int-uint.md) less than or equal to the depth of `arr`."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns an N-dimensional array the same size as `arr` with each element showing the position of that element in relation to other elements of the same value."
+    FunctionDocumentation::ReturnedValue returned_value = "Returns an N-dimensional array the same size as `arr` with each element showing the position of that element in relation to other elements of the same value.";
     FunctionDocumentation::Examples examples = {
         {"Example 1", R"(
 With `clear_depth=1` and `max_array_depth=1`, the result of `arrayEnumerateUniqRanked` is identical to that which [`arrayEnumerateUniq`](#arrayenumerateuniq) would give for the same array.

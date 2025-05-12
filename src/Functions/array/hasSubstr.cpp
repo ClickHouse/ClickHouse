@@ -31,7 +31,7 @@ both `x` and `y`.
         {"x", "Array of any type with a set of elements. [`Array`](/sql-reference/data-types/array)."},
         {"y", "Array of any type with a set of elements. [`Array`](/sql-reference/data-types/array)."},
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns `1` if array `x` contains array `y`. Otherwise, returns `0`."
+    FunctionDocumentation::ReturnedValue returned_value = "Returns `1` if array `x` contains array `y`. Otherwise, returns `0`.";
     FunctionDocumentation::Examples examples = {
         {"Both arrays are empty", "SELECT hasSubstr([], [])", "1"},
         {"Arrays containing NULL values", "SELECT hasSubstr([1, Null], [Null])", "1"},
