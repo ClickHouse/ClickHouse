@@ -26,7 +26,7 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
         { "mutation_id",                   std::make_shared<DataTypeString>(), "The ID of the mutation. For replicated tables these IDs correspond to znode names in the <table_path_in_clickhouse_keeper>/mutations/ directory in ClickHouse Keeper. For non-replicated tables the IDs correspond to file names in the data directory of the table."},
         { "command",                       std::make_shared<DataTypeString>(), "The mutation command string (the part of the query after ALTER TABLE [db.]table)."},
         { "create_time",                   std::make_shared<DataTypeDateTime>(), "Date and time when the mutation command was submitted for execution."},
-        { "finish_time",                   std::make_shared<DataTypeDateTime>(), "Date and time when the mutation command was finished or zero if mutation still in process."},
+        { "finish_time",                   std::make_shared<DataTypeDateTime>(), "Date and time when the mutation command was finished."},
         { "block_numbers.partition_id",    std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "For mutations of replicated tables, the array contains the partitions' IDs (one record for each partition). For mutations of non-replicated tables the array is empty."},
         { "block_numbers.number",          std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>()),
             "For mutations of replicated tables, the array contains one record for each partition, with the block number that was acquired by the mutation. "

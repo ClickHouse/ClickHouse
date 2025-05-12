@@ -616,7 +616,7 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
             MergeTreeMutationEntry & entry = it->second;
             if (is_successful)
             {
-                entry.finish_time = time(nullptr);
+                entry.finish_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
                 if (!entry.latest_failed_part.empty() && result_part->part_info.contains(entry.latest_failed_part_info))
                 {
                     entry.latest_failed_part.clear();
@@ -812,7 +812,7 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
             return result;
         }
     }
-    result.finish_time = time(nullptr);
+    result.finish_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     result.is_done = true;
     return result;
 }
