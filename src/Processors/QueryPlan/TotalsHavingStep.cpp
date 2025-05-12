@@ -86,6 +86,8 @@ void TotalsHavingStep::transformPipeline(QueryPipelineBuilder & pipeline, const 
         final);
 
     pipeline.addTotalsHavingTransform(std::move(totals_having));
+
+    pipeline.resize(settings.max_threads);
 }
 
 static String totalsModeToString(TotalsMode totals_mode, double auto_include_threshold)
