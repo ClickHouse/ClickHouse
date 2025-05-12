@@ -167,17 +167,19 @@ static ColumnWithTypeAndName readColumnWithStringData(const std::shared_ptr<arro
 }
 
 template <typename ArrowArray>
-static ColumnWithTypeAndName readColumnWithJSONData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
+static ColumnWithTypeAndName readColumnWithJSONData(
+    const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
+    const String & column_name,
+    DataTypePtr type_hint,
+    const FormatSettings & format_settings)
 {
-    static const auto internal_type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
+    static const auto internal_type = type_hint ? type_hint : std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
     static const auto serialization = internal_type->getDefaultSerialization();
 
     auto internal_column = internal_type->createColumn();
     auto & column_object = assert_cast<ColumnObject &>(*internal_column);
 
     column_object.reserve(arrow_column->length());
-
-    FormatSettings fmt_settings;
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
@@ -189,7 +191,7 @@ static ColumnWithTypeAndName readColumnWithJSONData(const std::shared_ptr<arrow:
             {
                 auto view = chunk.GetView(row_i);
                 ReadBufferFromMemory rb(view.data(), view.size());
-                serialization->deserializeTextJSON(column_object, rb, fmt_settings);
+                serialization->deserializeTextJSON(column_object, rb, format_settings);
             }
         }
         else
@@ -203,7 +205,7 @@ static ColumnWithTypeAndName readColumnWithJSONData(const std::shared_ptr<arrow:
                 }
                 auto view = chunk.GetView(row_i);
                 ReadBufferFromMemory rb(view.data(), view.size());
-                serialization->deserializeTextJSON(column_object, rb, fmt_settings);
+                serialization->deserializeTextJSON(column_object, rb, format_settings);
             }
         }
     }
