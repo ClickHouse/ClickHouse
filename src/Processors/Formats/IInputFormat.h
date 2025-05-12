@@ -16,6 +16,14 @@ struct SelectQueryInfo;
 
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
 
+struct ChunkInfoReadRowsBefore : public ChunkInfoCloneable<ChunkInfoReadRowsBefore>
+{
+    ChunkInfoReadRowsBefore(const ChunkInfoReadRowsBefore & other) = default;
+    explicit ChunkInfoReadRowsBefore(Int64 read_rows_before_) : read_rows_before(read_rows_before_) { }
+
+    Int64 read_rows_before;
+};
+
 /** Input format is a source, that reads data from ReadBuffer.
   */
 class IInputFormat : public SourceWithKeyCondition
