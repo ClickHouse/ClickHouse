@@ -770,7 +770,7 @@ struct ContextSharedPart : boost::noncopyable
         SHUTDOWN(log, "backups worker", backups_worker, shutdown());
 
         /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
-          *  Note that part changes at shutdown won't be logged to part log.
+          *  Note that part changes won't be logged to part log and zookeeper connection changes won't be logged to zookeeper connection log at shutdown.
           */
         SHUTDOWN(log, "system logs", system_logs, flushAndShutdown());
 
