@@ -74,8 +74,6 @@ private:
 
     static void warningCallback(png_struct_def * png_ptr, png_const_charp warning_msg);
 
-    void cleanup();
-
     /**
      * Executes libpng operations within a setjmp context for error handling **/
     template<typename Func>

@@ -141,7 +141,7 @@ void PngWriter::flushDataCallback(png_struct_def * png_ptr_)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "PngWriter: libpng error: {}", std::string(error_msg ? error_msg : "Unknown libpng error"));
 }
 
-[[maybe_unused]] static void warningCallback(png_struct_def * png_ptr, png_const_charp warning_msg)
+void PngWriter::warningCallback(png_struct_def * png_ptr, png_const_charp warning_msg)
 {
 
     auto * writer = reinterpret_cast<PngWriter *>(png_get_io_ptr(png_ptr));
@@ -181,28 +181,28 @@ void PngWriter::startImage(size_t width_, size_t height_)
     handle_ = std::make_unique<PngResourceWrapper>(png_ptr, info_ptr);
 
     executePngOperation([&](){
-            png_set_write_fn(handle_->getPngPtr(), reinterpret_cast<void *>(this), PngWriter::writeDataCallback, PngWriter::flushDataCallback);
+        png_set_write_fn(handle_->getPngPtr(), reinterpret_cast<void *>(this), PngWriter::writeDataCallback, PngWriter::flushDataCallback);
+    
+        png_set_IHDR(
+            handle_->getPngPtr(),
+            handle_->getInfoPtr(),
+            static_cast<png_uint_32>(width_),
+            static_cast<png_uint_32>(height_),
+            bit_depth,
+            color_type,
+            PNG_INTERLACE_NONE,
+            PNG_COMPRESSION_TYPE_DEFAULT,
+            PNG_FILTER_TYPE_DEFAULT);
         
-            png_set_IHDR(
-                handle_->getPngPtr(),
-                handle_->getInfoPtr(),
-                static_cast<png_uint_32>(width_),
-                static_cast<png_uint_32>(height_),
-                bit_depth,
-                color_type,
-                PNG_INTERLACE_NONE,
-                PNG_COMPRESSION_TYPE_DEFAULT,
-                PNG_FILTER_TYPE_DEFAULT);
-            
-            /// Libpng assumes that the data is in big-endian format
-            if (bit_depth == 16)
-                png_set_swap(handle_->getPngPtr()); 
+        /// Libpng assumes that the data is in big-endian format
+        if (bit_depth == 16)
+            png_set_swap(handle_->getPngPtr()); 
 
-            /* TODO: Allow to control filters for better image compression */
-            png_set_filter(handle_->getPngPtr(), PNG_FILTER_TYPE_BASE, PNG_FILTER_NONE);
+        /* TODO: Allow to control filters for better image compression */
+        png_set_filter(handle_->getPngPtr(), PNG_FILTER_TYPE_BASE, PNG_FILTER_NONE);
 
-            png_set_compression_level(handle_->getPngPtr(), compression_level);
-        }, "image inizialization");
+        png_set_compression_level(handle_->getPngPtr(), compression_level);
+    }, "image inizialization");
     
     if (png_ptr)
             png_destroy_write_struct(&png_ptr, &info_ptr);
@@ -253,7 +253,6 @@ void PngWriter::writeRows(const unsigned char * data, size_t data_size)
     executePngOperation([&]() {
         png_write_info(handle_->getPngPtr(), handle_->getInfoPtr());
         png_write_image(handle_->getPngPtr(), row_pointers.data());
-        /// TODO TO FINALIZE: png_write_end(handle_->getPngPtr(), handle_->getInfoPtr());
     }, "writing image data");
 
     
@@ -280,8 +279,6 @@ void PngWriter::finalize()
     {
         throw;
     }
-
-    handle_.reset();   
 }
 
 void PngWriter::cleanup()
