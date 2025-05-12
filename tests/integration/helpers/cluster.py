@@ -1660,6 +1660,7 @@ class ClickHouseCluster:
         ipv4_address=None,
         ipv6_address=None,
         with_installed_binary=False,
+        with_dolor=False,
         external_dirs=None,
         tmpfs=None,
         mem_limit=None,
@@ -1792,6 +1793,7 @@ class ClickHouseCluster:
             ipv4_address=ipv4_address,
             ipv6_address=ipv6_address,
             with_installed_binary=with_installed_binary,
+            with_dolor=with_dolor,
             external_dirs=external_dirs,
             tmpfs=tmpfs or [],
             mem_limit=mem_limit,
@@ -3554,6 +3556,7 @@ class ClickHouseInstance:
         ipv4_address=None,
         ipv6_address=None,
         with_installed_binary=False,
+        with_dolor=False,
         external_dirs=None,
         tmpfs=None,
         mem_limit=None,
@@ -3685,6 +3688,7 @@ class ClickHouseInstance:
         self.ipv4_address = ipv4_address
         self.ipv6_address = ipv6_address
         self.with_installed_binary = with_installed_binary
+        self.with_dolor = with_dolor
         self.is_up = False
         self.config_root_name = config_root_name
         self.docker_init_flag = use_docker_init_flag
@@ -4744,11 +4748,11 @@ class ClickHouseInstance:
                 self.with_installed_binary,
             )
 
-        write_embedded_config("0_common_instance_users.xml", users_d_dir)
-
-        if self.with_installed_binary:
-            # Ignore CPU overload in this case
-            write_embedded_config("0_common_min_cpu_busy_time.xml", self.config_d_dir)
+        if not self.with_dolor:
+            write_embedded_config("0_common_instance_users.xml", users_d_dir)
+            if self.with_installed_binary:
+                # Ignore CPU overload in this case
+                write_embedded_config("0_common_min_cpu_busy_time.xml", self.config_d_dir)
 
         use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
         use_distributed_plan = (
