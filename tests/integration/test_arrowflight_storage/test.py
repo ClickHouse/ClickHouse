@@ -30,6 +30,22 @@ def arrowflight_check_result(result, reference):
     assert TSV(result) == TSV(reference)
 
 
-def test_get_data():
+def test_table_function():
     result = node.query(f"SELECT * FROM arrowflight('arrowflight1:5005', 'ABC');")
     assert TSV(result) == TSV('test_value_1\tdata1\nabcadbc\ttext_text_text\n123456789\tdata3\n')
+
+def test_arrowflight_storage():
+    node.query(
+        """
+        CREATE TABLE arrow_test (
+            id Int64,
+            data String
+        ) ENGINE=ArrowFlight('arrowflight1:5005', 'ABC')
+        ORDER BY id
+        """
+    )
+    result = node.query(f"SELECT * FROM arrow_test;")
+    assert TSV(result) == TSV('test_value_1\tdata1\nabcadbc\ttext_text_text\n123456789\tdata3\n')
+    
+    node.query("INSERT INTO arrow_test VALUES (0,'data'),(1,'data')")
+    

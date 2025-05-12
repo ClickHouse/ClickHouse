@@ -1,6 +1,6 @@
 services:
   arrowflight1:
-    image: zakr6000/arrowflight:latest
+    image: clickhouse/arrowflight:${DOCKER_ARROWFLIGHT_TAG:-latest}
     ports:
       - "5005:5005"
     command: ["python", "flight_server.py"]

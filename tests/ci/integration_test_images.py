@@ -9,6 +9,7 @@ IMAGES_ENV = {
     "clickhouse/mysql-golang-client": "DOCKER_MYSQL_GOLANG_CLIENT_TAG",
     "clickhouse/mysql-java-client": "DOCKER_MYSQL_JAVA_CLIENT_TAG",
     "clickhouse/mysql-js-client": "DOCKER_MYSQL_JS_CLIENT_TAG",
+    "clickhouse/arrowflight": "DOCKER_ARROWFLIGHT_TAG",
     "clickhouse/mysql-php-client": "DOCKER_MYSQL_PHP_CLIENT_TAG",
     "clickhouse/nginx-dav": "DOCKER_NGINX_DAV_TAG",
     "clickhouse/postgresql-java-client": "DOCKER_POSTGRESQL_JAVA_CLIENT_TAG",

@@ -75,7 +75,16 @@ ColumnsDescription TableFunctionArrowFlight::getActualTableStructure(ContextPtr 
         );
     }
     arrow::ipc::DictionaryMemo dict;
-    auto schema = status.ValueOrDie()->GetSchema(&dict).ValueOrDie();
+    auto schema_result = status.ValueOrDie()->GetSchema(&dict);
+    if (!schema_result.ok())
+    {
+        throw Exception(
+            ErrorCodes::ARROWFLIGHT_FETCH_SCHEMA_ERROR,
+            "Failed to get table schema: {}",
+            schema_result.status().ToString()
+        );
+    }
+    auto schema = std::move(schema_result).ValueOrDie();
 
     auto fields = schema->fields();
     ColumnsDescription desr;

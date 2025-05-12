@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/Session.h>
 #include <atomic>
 #include <memory>
 #include <Server/IServer.h>
@@ -39,49 +40,49 @@ class ArrowFlightHandler : public IGRPCServer, public arrow::flight::FlightServe
 public:
     explicit ArrowFlightHandler(IServer & iserver_, const Poco::Net::SocketAddress & address_to_listen_);
 
-    ~ArrowFlightHandler() override;
+    virtual ~ArrowFlightHandler() override;
 
-    void start() override;
+    virtual void start() override;
 
-    void stop() override;
+    virtual void stop() override;
 
-    UInt16 portNumber() const override;
+    virtual UInt16 portNumber() const override;
 
-    size_t currentThreads() const override { return 0; } // TODO
+    virtual size_t currentThreads() const override { return 0; } // TODO
 
-    size_t currentConnections() const override { return 0; } // TODO
+    virtual size_t currentConnections() const override { return 0; } // TODO
     
-    arrow::Status ListFlights(
+    virtual arrow::Status ListFlights(
         const arrow::flight::ServerCallContext&, const arrow::flight::Criteria*,
         std::unique_ptr<arrow::flight::FlightListing>* listings) override;
 
-    arrow::Status GetFlightInfo(const arrow::flight::ServerCallContext& context,
+    virtual arrow::Status GetFlightInfo(const arrow::flight::ServerCallContext& context,
                                const arrow::flight::FlightDescriptor& request,
                                std::unique_ptr<arrow::flight::FlightInfo>* info) override;
 
-    arrow::Status PollFlightInfo(const arrow::flight::ServerCallContext& context,
+    virtual arrow::Status PollFlightInfo(const arrow::flight::ServerCallContext& context,
                                 const arrow::flight::FlightDescriptor& request,
                                 std::unique_ptr<arrow::flight::PollInfo>* info) override;
 
-    arrow::Status GetSchema(const arrow::flight::ServerCallContext& context,
+    virtual arrow::Status GetSchema(const arrow::flight::ServerCallContext& context,
                            const arrow::flight::FlightDescriptor& request,
                            std::unique_ptr<arrow::flight::SchemaResult>* schema) override;
 
-    arrow::Status DoGet(const arrow::flight::ServerCallContext& context, const arrow::flight::Ticket& request,
+    virtual arrow::Status DoGet(const arrow::flight::ServerCallContext& context, const arrow::flight::Ticket& request,
                        std::unique_ptr<arrow::flight::FlightDataStream>* stream) override;
 
-    arrow::Status DoPut(const arrow::flight::ServerCallContext& context,
+    virtual arrow::Status DoPut(const arrow::flight::ServerCallContext& context,
                        std::unique_ptr<arrow::flight::FlightMessageReader> reader,
                        std::unique_ptr<arrow::flight::FlightMetadataWriter> writer) override;
 
-    arrow::Status DoExchange(const arrow::flight::ServerCallContext& context,
+    virtual arrow::Status DoExchange(const arrow::flight::ServerCallContext& context,
                             std::unique_ptr<arrow::flight::FlightMessageReader> reader,
                             std::unique_ptr<arrow::flight::FlightMessageWriter> writer) override;
 
-    arrow::Status DoAction(const arrow::flight::ServerCallContext& context, const arrow::flight::Action& action,
+    virtual arrow::Status DoAction(const arrow::flight::ServerCallContext& context, const arrow::flight::Action& action,
                           std::unique_ptr<arrow::flight::ResultStream>* result) override;
 
-    arrow::Status ListActions(const arrow::flight::ServerCallContext& context,
+    virtual arrow::Status ListActions(const arrow::flight::ServerCallContext& context,
                              std::vector<arrow::flight::ActionType>* actions) override;
 
 private:
@@ -89,7 +90,6 @@ private:
     LoggerPtr log;
     arrow::flight::Location location;
     const Poco::Net::SocketAddress address_to_listen;
-    Int32 last_connection_id = 0;
     std::unique_ptr<Session> session;
 };
 }
