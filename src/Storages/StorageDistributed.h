@@ -218,7 +218,7 @@ private:
     std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const;
     std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings, const StorageSnapshotPtr & storage_snapshot) const;
 
-    bool isShardingKeySuitsExpressionKey(const QueryTreeNodePtr & node, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const;
+    bool isShardingKeySuitsExpressionKey(const QueryTreeNodePtr & expr, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const;
 
     size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
     std::string getClusterName() const { return cluster_name.empty() ? "<remote>" : cluster_name; }

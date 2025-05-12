@@ -538,7 +538,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 /// Will skip merging step in the initial server when the following conditions are met:
 /// 1. Sharding key columns should be a subset of expression columns.
 /// 2. Sharding key expression is a deterministic function of col1, ..., coln and expression key is injective functions of these col1, ..., coln.
-/// 3. The expression should not only contain non-injective functions even.
+/// 3. If the expression contains non-injective function, return false.
 bool StorageDistributed::isShardingKeySuitsExpressionKey(
     const QueryTreeNodePtr & expr, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const
 {
@@ -562,14 +562,9 @@ bool StorageDistributed::isShardingKeySuitsExpressionKey(
     for (const auto & node : irreducibe_nodes)
     {
         if (node->type == ActionsDAG::ActionType::FUNCTION && !isInjectiveFunction(node))
-        {
-            LOG_DEBUG(log, "Expression key contains non-injective function: {}", node->result_name);
             return false;
-        }
     }
     const auto matches = matchTrees(expression_dag.getOutputs(), sharding_key_dag);
-    LOG_DEBUG(
-        log, "is sharding key suits expression key: {}", allOutputsDependsOnlyOnAllowedNodes(sharding_key_dag, irreducibe_nodes, matches));
     return allOutputsDependsOnlyOnAllowedNodes(sharding_key_dag, irreducibe_nodes, matches);
 }
 
