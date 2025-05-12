@@ -261,7 +261,7 @@ void registerStorageSQLite(StorageFactory & factory)
         {
             is_query_syntax = true;
             if (function_ast->arguments->children.size() != 1)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage SQLite expects only one argument in query() function");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage SQLite expects exactly one argument in query() function");
 
             auto evaluated_query_arg
                 = evaluateConstantExpressionOrIdentifierAsLiteral(function_ast->arguments->children[0], args.getLocalContext());
