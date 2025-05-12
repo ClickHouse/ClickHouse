@@ -1579,7 +1579,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
             if (!entry.is_done)
             {
                 entry.is_done = true;
-                entry.finish_time = time(nullptr);
+                entry.finish_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
                 decrementMutationsCounters(mutation_counters, *entry.commands);
             }
 

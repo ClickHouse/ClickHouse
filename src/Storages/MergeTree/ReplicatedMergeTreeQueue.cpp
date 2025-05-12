@@ -494,7 +494,7 @@ void ReplicatedMergeTreeQueue::removeCoveredPartsFromMutations(const String & pa
         if (status.parts_to_do.size() == 0)
             some_mutations_are_probably_done = true;
 
-        status.finish_time = time(nullptr);
+        status.finish_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
         if (!status.latest_failed_part.empty() && part_info.contains(status.latest_failed_part_info))
         {
