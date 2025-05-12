@@ -129,11 +129,11 @@ public:
 class FuzzConfig
 {
 private:
-    std::ofstream outf;
     DB::ClientBase * cb = nullptr;
 
 public:
     LoggerPtr log;
+    std::ofstream outf;
     DB::Strings collations, storage_policies, timezones, disks, clusters;
     std::optional<ServerCredentials> clickhouse_server, mysql_server, postgresql_server, sqlite_server, mongodb_server, redis_server,
         minio_server;

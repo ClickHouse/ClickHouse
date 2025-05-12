@@ -244,7 +244,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
     {
         measure_performance |= entry.enabled;
     }
-    outf = std::ofstream(log_path, std::ios::out);
+    outf = std::ofstream(log_path, std::ios::out | std::ios::trunc);
 }
 
 bool FuzzConfig::processServerQuery(const bool outlog, const String & query)
@@ -253,7 +253,7 @@ bool FuzzConfig::processServerQuery(const bool outlog, const String & query)
     {
         if (outlog)
         {
-            outf << query << std::endl << std::flush;
+            outf << query << std::endl;
         }
         if (this->cb->processTextAsSingleQuery(query))
         {
