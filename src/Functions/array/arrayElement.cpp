@@ -2232,7 +2232,7 @@ Operator `[n]` provides the same functionality.
 
     factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Zero>>(documentation);
 
-    description = R"(
+    FunctionDocumentation::Description description_null = R"(
 Gets the element of the provided array with index `n` where `n` can be any integer type.
 If the index falls outside of the bounds of an array, `NULL` is returned instead of a default value.
 
@@ -2242,20 +2242,20 @@ Arrays in ClickHouse are one-indexed.
 
 Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, `arr[-1]` is the last item in the array.
 )";
-    syntax = "arrayElementOrNull(arrays)";
-    arguments = {
+    FunctionDocumentation::Syntax syntax_null = "arrayElementOrNull(arrays)";
+    FunctionDocumentation::Arguments arguments_null = {
         {"arrays", "Arbitrary number of arguments of [`Array`](/sql-reference/data-types/array) type."},
     };
-    returned_value = "Returns a single combined array from the provided array arguments.";
-    examples = {
+    FunctionDocumentation::ReturnedValue returned_value_null = "Returns a single combined array from the provided array arguments.";
+    FunctionDocumentation::Examples examples_null = {
         {"Usage example", "SELECT arrayElementOrNull(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Negative indexing", "SELECT arrayElementOrNull(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
         {"Index out of array bounds", "SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "NULL"}
     };
-    introduced_in = {1, 1};
-    category = FunctionDocumentation::Category::Array;
-    documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation::IntroducedIn introduced_in_null = {1, 1};
+    FunctionDocumentation::Category category_null = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_null = {description_null, syntax_null, arguments_null, returned_value_null, examples_null, introduced_in_null, category_null};
 
-    factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Null>>(documentation);
+    factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Null>>(documentation_null);
 }
 }
