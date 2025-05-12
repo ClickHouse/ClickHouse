@@ -979,8 +979,9 @@ try
     Poco::Logger * log = &logger();
 
     /// NOLINTNEXTLINE
-    int * leak = new int[100];
-    (void)leak;
+    static std::vector<void *> leaky_storage;
+    int* leaked = new int(42);
+    leaky_storage.push_back(leaked);
 
     MainThreadStatus::getInstance();
 
