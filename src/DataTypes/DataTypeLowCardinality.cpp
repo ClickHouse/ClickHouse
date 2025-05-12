@@ -53,7 +53,7 @@ DataTypeLowCardinality::DataTypeLowCardinality(DataTypePtr dictionary_type_)
 namespace
 {
     template <typename T, typename Creator>
-    MutableColumnPtr wrappedCreator(const Creator & creator, MutableColumnPtr && keys)
+    MutableColumnUniquePtr wrappedCreator(const Creator & creator, MutableColumnPtr && keys)
     {
         return creator(static_cast<T *>(nullptr), std::move(keys));
     }
@@ -190,7 +190,7 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUnique(const IDataTyp
         using ColumnType = typename std::remove_pointer_t<decltype(x)>;
         return ColumnUnique<ColumnType>::create(keys_type);
     };
-    return createColumnUniqueImpl(keys_type, creator, nullptr);
+    return createColumnUniqueImpl(keys_type, creator, MutableColumnPtr{});
 }
 
 MutableColumnUniquePtr DataTypeLowCardinality::createColumnUnique(const IDataType & keys_type, MutableColumnPtr && keys)

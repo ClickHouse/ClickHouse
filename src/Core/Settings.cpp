@@ -6570,20 +6570,20 @@ Enable PRQL - an alternative to SQL.
 Trigger processor to spill data into external storage adpatively. grace join is supported at present.
 )", EXPERIMENTAL) \
     DECLARE(String, low_cardinality_experimental_compression, "", R"(
-    Allows to select compression type inside of dictionaries in LowCardinality.
-    The compression is applied only if the nested type is String or Nullable(String).
-    It's aimed to enhance LowCardinality performance in case of moderate or high number of unique strings. 
+Allows to select compression type inside of dictionaries in LowCardinality.
+The compression is applied only if the nested type is String or Nullable(String).
+It's aimed to enhance LowCardinality performance in case of moderate or high number of unique strings. 
     
-    Possible values:
+Possible values:
     
-    - "" — The dictionaries are not compressed.
-    - "fcblockdf" — The dictionaries are compressed using the Front Coding Block Difference to First algorithm.
-    )", EXPERIMENTAL) \
+- "" — The dictionaries are not compressed.
+- "fcblockdf" — The dictionaries are compressed using the Front Coding Block Difference to First algorithm.
+)", EXPERIMENTAL) \
     DECLARE(UInt64, low_cardinality_compression_fc_block_parameter, 4, R"(
-    Applies only if "low_cardinality_experimental_compression" = "fcblockdf".
-    Sets number of values per compressed block in Front Coding. It's used to fine-tune performance of this compression.
-    Values < 2 are senseless. Large values make compression rate worse.  
-    )", EXPERIMENTAL) \
+Applies only if "low_cardinality_experimental_compression" = "fcblockdf".
+Sets number of values per compressed block in Front Coding. It's used to fine-tune performance of this compression.
+Values < 2 are senseless. Large values make compression rate worse.  
+)", EXPERIMENTAL) \
     \
     /** Experimental tsToGrid aggregate function. */ \
     DECLARE(Bool, allow_experimental_ts_to_grid_aggregate_function, false, R"(
