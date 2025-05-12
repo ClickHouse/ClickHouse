@@ -168,6 +168,8 @@ public:
 #else
     int doCompareAt(size_t, size_t, const IColumn &, int nan_direction_hint) const override;
 #endif
+    bool equalsAt(size_t, size_t, const IColumn &) const override { return true; }
+
     void getExtremes(Field & min, Field & max) const override;
 
     void reserve(size_t n) override;
