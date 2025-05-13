@@ -97,7 +97,7 @@ public:
 #if USE_CPPJIEBA
         else if (tokenizer_arg == ChineseTokenExtractor::getExternalName())
         {
-            ChineseTokenizationGranularity granularity = ChineseTokenizationGranularity::Fine;
+            ChineseTokenizationGranularity granularity = ChineseTokenizationGranularity::Coarse;
             if (arguments.size() == 3)
             {
                 auto granularity_arg = arguments[arg_chinese_granularity].column->getDataAt(0).toView();

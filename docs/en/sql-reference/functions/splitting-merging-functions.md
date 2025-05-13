@@ -393,9 +393,9 @@ The default tokenizer uses non-alphanumeric ASCII characters as separators.
 **Arguments**
 
 - `value` — The input string. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `tokenizer` — The tokenizer to use. Valid arguments are `default`, `ngram`, `Chinese`, and `noop`. Optional, if not set explicitly, defaults to `default`. [const String](../data-types/string.md)
 - `ngrams` — Only relevant if argument `tokenizer` is `ngram`: Defines the length of the ngrams. Optional. If not set explicitly, defaults to `3`. [UInt8](../data-types/int-uint.md).
-- `chinese_granularity` — Only relevant if argument `tokenizer` is `Chinese`: Defines the granularity of the Chinese tokenizer. Valid values: `fine-grained` and `coarse-grained` values. Optional. If not set explicitly, defaults to `fine-grained`. [String](../data-types/string.md).
+- `tokenizer` — The tokenizer to use. Valid arguments are `default`, `ngram`, `Chinese`, and `noop`. Optional, if not set explicitly, defaults to `default`. [const String](../data-types/string.md)
+- `chinese_granularity` — Only relevant if argument `tokenizer` is `Chinese`: Defines the granularity of the Chinese tokenizer. Valid values: `fine-grained` and `coarse-grained` values. Optional. If not set explicitly, defaults to `coarse-grained`. [String](../data-types/string.md).
 
 **Returned value**
 

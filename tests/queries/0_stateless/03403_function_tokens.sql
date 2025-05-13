@@ -48,20 +48,20 @@ SELECT tokens('', 'noop') AS tokenized;
 SELECT tokens('abc def', 'noop') AS tokenized;
 
 SELECT 'Chinese tokenizer';
-SELECT '-- fine-grained (default)';
+SELECT '-- coarse-grained (default)';
 SELECT tokens('', 'chinese');
 SELECT tokens('他来到了网易杭研大厦', 'chinese');
 SELECT tokens('我来自北京邮电大学。', 'chinese');
 SELECT tokens('南京市长江大桥', 'chinese');
 SELECT tokens('我来自北京邮电大学。。。学号123456', 'chinese');
 SELECT tokens('小明硕士毕业于中国科学院计算所，后在日本京都大学深造', 'chinese');
-SELECT '-- coarse-grained';
-SELECT tokens('', 'chinese', 'coarse-grained');
-SELECT tokens('他来到了网易杭研大厦', 'chinese', 'coarse-grained');
-SELECT tokens('我来自北京邮电大学。', 'chinese', 'coarse-grained');
-SELECT tokens('南京市长江大桥', 'chinese', 'coarse-grained');
-SELECT tokens('我来自北京邮电大学。。。学号123456', 'chinese', 'coarse-grained');
-SELECT tokens('小明硕士毕业于中国科学院计算所，后在日本京都大学深造', 'chinese', 'coarse-grained');
+SELECT '-- fine-grained';
+SELECT tokens('', 'chinese', 'fine-grained');
+SELECT tokens('他来到了网易杭研大厦', 'chinese', 'fine-grained');
+SELECT tokens('我来自北京邮电大学。', 'chinese', 'fine-grained');
+SELECT tokens('南京市长江大桥', 'chinese', 'fine-grained');
+SELECT tokens('我来自北京邮电大学。。。学号123456', 'chinese', 'fine-grained');
+SELECT tokens('小明硕士毕业于中国科学院计算所，后在日本京都大学深造', 'chinese', 'fine-grained');
 
 SELECT 'Special cases (not systematically tested)';
 SELECT '-- FixedString inputs';
