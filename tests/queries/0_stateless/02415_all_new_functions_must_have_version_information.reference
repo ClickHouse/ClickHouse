@@ -127,7 +127,6 @@ arrayFirstIndex
 arrayFirstOrNull
 arrayFlatten
 arrayFold
-arrayIntersect
 arrayJaccardIndex
 arrayLast
 arrayLastIndex
@@ -166,8 +165,6 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
-arraySymmetricDifference
-arrayUnion
 arrayWithConstant
 arrayZip
 arrayZipUnaligned

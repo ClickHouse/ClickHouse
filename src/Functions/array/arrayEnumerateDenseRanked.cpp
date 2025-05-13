@@ -16,7 +16,7 @@ public:
 
 REGISTER_FUNCTION(ArrayEnumerateDenseRanked)
 {
-    FunctionDocumentation::Description description = "Returns an array the same size as the source array, indicating where each element first appears in the source array. It allows for enumeration of a multidimensional array with the ability to specify how deep to look inside the array."
+    FunctionDocumentation::Description description = "Returns an array the same size as the source array, indicating where each element first appears in the source array. It allows for enumeration of a multidimensional array with the ability to specify how deep to look inside the array.";
     FunctionDocumentation::Syntax syntax = "arrayEnumerateDenseRanked(clear_depth, arr, max_array_depth)";
     FunctionDocumentation::Arguments arguments = {
         {"clear_depth", "Enumerate elements at the specified level separately. Positive [Integer](../data-types/int-uint.md) less than or equal to `max_arr_depth`."},

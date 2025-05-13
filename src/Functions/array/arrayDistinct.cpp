@@ -289,7 +289,7 @@ void FunctionArrayDistinct::executeHashed(
 
 REGISTER_FUNCTION(ArrayDistinct)
 {
-    FunctionDocumentation::Description description = "Returns an array containing only the distinct elements of an array."
+    FunctionDocumentation::Description description = "Returns an array containing only the distinct elements of an array.";
     FunctionDocumentation::Syntax syntax = "arrayDistinct(x)";
     FunctionDocumentation::Arguments argument = {
         {"x", "Array for which to extract distinct elements. [`Array`](/sql-reference/data-types/array)."},

@@ -317,7 +317,6 @@ void FunctionArrayUniq::executeHashed(
     executeMethod<MethodHashed>(offsets, columns, {}, nullptr, res_values);
 }
 
-
 REGISTER_FUNCTION(ArrayUniq)
 {
         FunctionDocumentation::Description description = R"(
@@ -334,21 +333,21 @@ It will then count the number of unique tuples. In this case `2`.
 :::tip
 If you want to get a list of unique items in an array, you can use `arrayReduce('groupUniqArray', arr)`.
 :::
-)";
+	)";
     FunctionDocumentation::Syntax syntax = "arrayUniq(x[, ...yN])";
     FunctionDocumentation::Arguments arguments = {
         {"x", "Array for which to count the number of unique elements. [`Array`](/sql-reference/data-types/array)."},
-        {"...yN (optional)", "Additional same-size arrays used to count the number of unique tuples of elements at corresponding positions in multiple arrays. [`Array`](/sql-reference/data-types/array).},
+        {"...yN (optional)", "Additional same-size arrays used to count the number of unique tuples of elements at corresponding positions in multiple arrays. [`Array`](/sql-reference/data-types/array)."}
     };
     FunctionDocumentation::ReturnedValue returned_value = "For a single arguments returns the number of unique elements. For multiple arguments returns the number of unique tuples made from elements at corresponding positions across the arrays. [`UInt32`](/sql-reference/data-types/int-uint)";
     FunctionDocumentation::Examples examples = {
         {"Single argument", "SELECT arrayUniq([1,1,2,2])", "2"},
-        {"Multiple argument", "SELECT arrayUniq([1,2,3], [4,5,6])", "3"}};
+        {"Multiple argument", "SELECT arrayUniq([1,2,3], [4,5,6])", "3"}
+    };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayUniq>(documentation);
 }
-
 }
