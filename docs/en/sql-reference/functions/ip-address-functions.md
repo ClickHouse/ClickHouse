@@ -441,7 +441,7 @@ toIPv6(UInt128)
 
 **Argument**
 
-- `string` or `UInt128` — IP address. [String](../data-types/string.md) or [UInt128](../data-types/int-uint.md).
+- `x` — IP address. [`String`](../data-types/string.md) or [`UInt128`](../data-types/int-uint.md).
 
 **Returned value**
 
