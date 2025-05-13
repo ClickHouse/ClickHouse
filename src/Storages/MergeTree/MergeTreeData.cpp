@@ -4216,11 +4216,6 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(size_t bytes_uncompresse
     return {part_type, PartStorageType::Full};
 }
 
-MergeTreeDataPartFormat MergeTreeData::choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const
-{
-    return choosePartFormat(bytes_uncompressed, rows_count);
-}
-
 MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
     const String & name, const VolumePtr & volume, const String & part_dir, const ReadSettings & read_settings_) const
 {
@@ -9318,7 +9313,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
 
     auto tmp_dir_holder = getTemporaryPartDirectoryHolder(EMPTY_PART_TMP_PREFIX + new_part_name);
     auto new_data_part = getDataPartBuilder(new_part_name, data_part_volume, EMPTY_PART_TMP_PREFIX + new_part_name, getReadSettings())
-        .withBytesAndRowsOnDisk(0, 0)
+        .withBytesAndRows(0, 0)
         .withPartInfo(new_part_info)
         .build();
 
