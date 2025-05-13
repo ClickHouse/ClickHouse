@@ -10,6 +10,14 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/ProfileEvents.h>
+
+
+namespace ProfileEvents
+{
+extern const Event NaiveBayesClassifierModelsLoaded;
+extern const Event NaiveBayesClassifierModelsAllocatedBytes;
+}
 
 namespace DB
 {
@@ -204,6 +212,13 @@ public:
                     "Invalid mode {} for model {}. Only 'byte', 'codepoint', and 'token' are available",
                     mode,
                     model_name);
+
+            /// Increment profile events for loaded models
+            ProfileEvents::increment(ProfileEvents::NaiveBayesClassifierModelsLoaded);
+            std::visit(
+                [&](const auto & clf)
+                { ProfileEvents::increment(ProfileEvents::NaiveBayesClassifierModelsAllocatedBytes, clf.getAllocatedBytes()); },
+                models.at(model_name));
         }
 
         if (models.empty())
