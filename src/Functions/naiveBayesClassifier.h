@@ -30,7 +30,8 @@ using ProbabilityMap = HashMap<UInt32, double, HashCRC32<UInt32>>;
 
 template <class T>
 concept Tokenizer = requires(
-    T tok, std::string_view text, std::vector<std::string_view> & tokens, const std::string_view * start, size_t n, std::string & ngram) {
+    T tok, std::string_view text, std::vector<std::string_view> & tokens, const std::string_view * start, size_t n, std::string & ngram)
+{
     { T::start_token } -> std::convertible_to<std::string_view>;
     { T::end_token } -> std::convertible_to<std::string_view>;
     { tok.tokenize(text, tokens) } -> std::same_as<void>;

@@ -216,7 +216,8 @@ public:
             /// Increment profile events for loaded models
             ProfileEvents::increment(ProfileEvents::NaiveBayesClassifierModelsLoaded);
             std::visit(
-                [&](const auto & concrete_classifier) {
+                [&](const auto & concrete_classifier)
+                {
                     ProfileEvents::increment(
                         ProfileEvents::NaiveBayesClassifierModelsAllocatedBytes, concrete_classifier.getAllocatedBytes());
                 },
@@ -336,7 +337,7 @@ REGISTER_FUNCTION(NaiveBayesClassifier)
           ┌─naiveBayesClassifier('language', 'How are you?')─┐
           │ 0                                                │
           └──────────────────────────────────────────────────┘
-          
+
           Result 0 might represent English, while 1 could indicate French - class meanings depend on your training data.
         )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
