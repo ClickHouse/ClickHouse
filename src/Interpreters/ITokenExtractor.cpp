@@ -13,6 +13,11 @@
 #endif
 
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 namespace DB
 {
 
