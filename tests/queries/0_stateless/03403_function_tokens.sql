@@ -20,8 +20,6 @@ SELECT tokens('a', 'ngram', materialize(1)); -- { serverError ILLEGAL_COLUMN }
 SELECT tokens('a', 'ngram', 1); -- { serverError BAD_ARGUMENTS}
 SELECT tokens('a', 'ngram', 9); -- { serverError BAD_ARGUMENTS}
 
--- Todo test with fixed string
-
 SELECT 'Default tokenizer';
 
 SELECT tokens('');
