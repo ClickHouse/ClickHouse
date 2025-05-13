@@ -9,15 +9,17 @@ create table test_merge (x UInt64, t Tuple(a UInt32, b UInt32), y String) engine
 insert into test1 select 1, tuple(2, 3), 's1';
 insert into test2 select 4, tuple(5, 6), 's2';
 
-select * from test_merge;
-select t.a from test_merge;
-select t.b from test_merge;
-select x, t.a from test_merge;
-select y, t.a from test_merge;
-select t.a, t.b from test_merge;
-select x, t.a, t.b from test_merge;
-select y, t.a, t.b from test_merge;
-select x, t.a, t.b, y from test_merge;
+set allow_suspicious_types_in_order_by=1;
+
+select * from test_merge order by all;
+select t.a from test_merge order by all;
+select t.b from test_merge order by all;
+select x, t.a from test_merge order by all;
+select y, t.a from test_merge order by all;
+select t.a, t.b from test_merge order by all;
+select x, t.a, t.b from test_merge order by all;
+select y, t.a, t.b from test_merge order by all;
+select x, t.a, t.b, y from test_merge order by all;
 
 drop table test_merge;
 drop table test1;
