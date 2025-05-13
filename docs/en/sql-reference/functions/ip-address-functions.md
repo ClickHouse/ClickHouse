@@ -259,7 +259,7 @@ toIPv4(x)
 
 **Arguments**
 
-- `string`, `UInt32`, `UInt16`, or `UInt8` — IPv4 address. [String](../data-types/string.md) or [UInt](../data-types/int-uint.md).
+- `x` — IPv4 address. [`String`](../data-types/string.md), [`UInt8/16/32`](../data-types/int-uint.md).
 
 **Returned value**
 
