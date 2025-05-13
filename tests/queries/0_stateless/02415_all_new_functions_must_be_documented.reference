@@ -97,12 +97,8 @@ arrayConcat
 arrayCount
 arrayCumSum
 arrayCumSumNonNegative
-arrayDifference
-arrayDistinct
 arrayDotProduct
 arrayEnumerate
-arrayEnumerateDense
-arrayEnumerateDenseRanked
 arrayEnumerateUniq
 arrayEnumerateUniqRanked
 arrayExists
@@ -114,7 +110,6 @@ arrayFirstOrNull
 arrayFlatten
 arrayIntersect
 arrayJaccardIndex
-arrayJoin
 arrayLast
 arrayLastIndex
 arrayLastOrNull
@@ -142,7 +137,6 @@ arrayStringConcat
 arraySum
 arraySymmetricDifference
 arrayUnion
-arrayUniq
 arrayWithConstant
 asinh
 assumeNotNull
