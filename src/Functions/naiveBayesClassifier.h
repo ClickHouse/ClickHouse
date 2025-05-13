@@ -131,7 +131,12 @@ public:
 
     /// The model at model_path is expected to be serialized lines of: <class_id> <ngram> <count>
     NaiveBayesClassifier(
-        const String & model_path, ProbabilityMap && priors, const UInt32 given_n, const double given_alpha, Mode given_mode)
+        const String & model_name,
+        const String & model_path,
+        ProbabilityMap && priors,
+        const UInt32 given_n,
+        const double given_alpha,
+        Mode given_mode)
         : n(given_n)
         , alpha(given_alpha)
         , start_token(
@@ -179,7 +184,7 @@ public:
 
         if (!std::filesystem::exists(model_path))
         {
-            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist", model_path);
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist for model {}", model_path, model_name);
         }
 
         DB::ReadBufferFromFile in(model_path);
@@ -215,7 +220,7 @@ public:
                 }
                 else
                 {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to insert ngram {} into the map.", ngram);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to insert ngram {} into the map for model {}", ngram, model_name);
                 }
             }
 
@@ -225,69 +230,54 @@ public:
 
         if (ngram_counts.empty())
         {
-            throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "No ngrams found in the model file {}", model_path);
+            throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "No ngrams found in the model at {} of model {}", model_path, model_name);
         }
 
-        /// Make sure that the classes provided in priors are present in the model
-        for (const auto & prior : priors)
+        /// If classes are provided in prior, then all classes present in the model must be present in priors.
+        /// If prior is empty, then we assign equal probability to all classes.
+        if (priors.empty())
         {
-            const UInt32 class_id = prior.getKey();
-            if (class_totals.find(class_id) == class_totals.end()) // Class present in config's <priors> not found in model
+            for (const auto & class_entry : class_totals)
             {
-                String available_classes;
-                for (const auto & class_entry : class_totals)
-                {
-                    available_classes += std::to_string(class_entry.getKey()) + ", ";
-                }
+                UInt32 class_id = class_entry.getKey();
+                class_priors[class_id] = 1.0 / class_totals.size();
+            }
+        }
+        else /// Priors are provided
+        {
+            if (priors.size() != class_totals.size())
+            {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Class {} from <priors> not found in the model at {}. Available classes: {}",
-                    class_id,
-                    model_path,
-                    available_classes);
+                    "Number of classes in priors ({}) does not match the number of classes in the model at ({}) of model {}",
+                    priors.size(),
+                    class_totals.size(),
+                    model_name);
             }
-        }
-
-        /// The following handles the case where the user provides priors for some classes but not all.
-        /// After assigning the provided priors, we distribute the remaining probability equally among the classes
-        /// that were not provided in the priors map (i.e., the classes that are present in the model but not in the
-        /// config's <priors>)
-        double provided_total_prior_prob = 0.0;
-        for (const auto & prior : priors)
-        {
-            const double class_prior_prob = prior.getMapped();
-            provided_total_prior_prob += class_prior_prob;
-        }
-
-        /// Sanity check: the sum of provided priors should not exceed 1.0
-        if (provided_total_prior_prob - 1.0 > 1e-6)
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Sum of provided priors probability exceeds 1.0. Sum: {}", provided_total_prior_prob);
-        }
-
-        size_t missing_count = 0;
-        for (const auto & class_entry : class_totals)
-        {
-            UInt32 class_id = class_entry.getKey();
-            if (priors.find(class_id) == priors.end())
-                ++missing_count;
-        }
-
-        const double remaining_probability = 1.0 - provided_total_prior_prob;
-
-        /// Precompute the class priors
-        for (const auto & class_entry : class_totals)
-        {
-            UInt32 class_id = class_entry.getKey();
-            if (priors.find(class_id) != priors.end()) /// Class from model present in config's <priors>
+            for (const auto & prior : priors)
             {
-                class_priors[class_entry.getKey()] = priors.at(class_id);
+                const UInt32 class_id = prior.getKey();
+                if (class_totals.find(class_id) == class_totals.end()) /// Class present in config's <priors> not found in model
+                {
+                    String available_classes;
+                    for (const auto & class_entry : class_totals)
+                    {
+                        available_classes += std::to_string(class_entry.getKey()) + ", ";
+                    }
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Class {} from <priors> not found in the model at {} of model {}. Available classes: {}",
+                        class_id,
+                        model_path,
+                        model_name,
+                        available_classes);
+                }
             }
-            else
+
+            for (const auto & prior : priors)
             {
-                double equal_share = missing_count > 0 ? remaining_probability / missing_count : 0.0;
-                class_priors[class_entry.getKey()] = equal_share;
+                const UInt32 class_id = prior.getKey();
+                class_priors[class_id] = prior.getMapped();
             }
         }
 
