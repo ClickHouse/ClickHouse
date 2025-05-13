@@ -19,6 +19,8 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <boost/algorithm/string/split.hpp>
 #include <Core/Settings.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/ASTDropQuery.h>
 
 namespace DB
 {
@@ -81,7 +83,6 @@ void TableManager::buildTable(const String& table, const Strings & pk_columns)
     String target_table = table + ESTIMATION_SUFFIX;
     BlockIO io_show = executeQuery("SHOW CREATE TABLE " + table, context, QueryFlags{ .internal = true }).second;
     io_show.pipeline.setNumThreads(1);
-    // io_show.pipeline.init();
     PullingPipelineExecutor show_exec(io_show.pipeline);
     String ddl;
     {
@@ -102,18 +103,11 @@ void TableManager::buildTable(const String& table, const Strings & pk_columns)
 
     ASTPtr create_ast;
     std::vector<String> all_cols = extractColumnsFromCreateDDL(ddl, create_ast);
-    // for (auto & col : all_cols)
-    // {
-    //     LOG_INFO(getLogger("TableManager"), "Column: {}", col);
-    // }
     if (all_cols.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No columns found in CREATE TABLE AST");
 
     UInt64 sample_size = static_cast<UInt64>(context->getSettingsRef()[Setting::sampling_proportion] * 1000);
-    String hash_expr = "cityHash64(" + all_cols[0];
-    for (size_t i = 1; i < all_cols.size(); ++i)
-        hash_expr += ", " + all_cols[i];
-    hash_expr += ") % 1000 < " + std::to_string(sample_size);
+    String hash_expr = "rand() % 1000 < " + std::to_string(sample_size);
 
     String pk_expr = "(" + pk_columns[0];
     for (size_t i = 1; i < pk_columns.size(); ++i)
@@ -121,7 +115,6 @@ void TableManager::buildTable(const String& table, const Strings & pk_columns)
     pk_expr += ")";
 
     // LOG_INFO(getLogger("TableManager"), "DDL is {}", ddl);
-    // Use the parsed AST to reconstruct the column definitions instead of string search.
     String columns_def;
     const auto * create_ast_ptr = create_ast->as<ASTCreateQuery>();
     if (!create_ast_ptr || !create_ast_ptr->columns_list || !create_ast_ptr->columns_list->columns)
@@ -137,7 +130,7 @@ void TableManager::buildTable(const String& table, const Strings & pk_columns)
     executeQuery("DROP TABLE IF EXISTS " + target_table, context, QueryFlags{ .internal = true });
     String query_for_create_target_table = "CREATE TABLE " + target_table +
         " (" + columns_def + ") ENGINE = MergeTree() ORDER BY " + pk_expr;
-    // LOG_INFO(getLogger("TableManager"), "Creating table: {}", query_for_create_target_table);
+    // LOG_INFO(getLogger("TableManager"), "Creating table with query: {}", query_for_create_target_table);
     executeQuery(query_for_create_target_table, context, QueryFlags{ .internal = true });
 
     String query_for_insert_into_target_table = "WITH y as (SELECT * FROM " + table + " WHERE " + hash_expr + ")" + 
@@ -154,9 +147,21 @@ UInt64 TableManager::estimateQueries()
     for (const auto & q : workload.getWorkload())
     {
         String new_query = replaceTableNames(q, replacement_tables);
-        // LOG_INFO(getLogger("TableManager"), "Estimating query: {}", new_query);
-        BlockIO io_exp = executeQuery("EXPLAIN ESTIMATE " + new_query, context, QueryFlags{ .internal = true }).second;
-        io_exp.pipeline.setNumThreads(1);
+        BlockIO io_exp;
+        ParserQuery parser(new_query.c_str() + new_query.size());
+        auto query_ast = parseQuery(parser, new_query, "", DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        if (query_ast->as<ASTCreateQuery>() || query_ast->as<ASTSetQuery>() || query_ast->as<ASTDropQuery>())
+        {
+            // LOG_INFO(getLogger("TableManager"), "Skipping query: {}", new_query);
+            executeQuery(new_query, context, QueryFlags{ .internal = true });
+            continue;
+        }
+        else
+        {
+            // LOG_INFO(getLogger("TableManager"), "Estimating query: {}", new_query);
+            io_exp = executeQuery("EXPLAIN ESTIMATE " + new_query, context, QueryFlags{ .internal = true }).second;
+            io_exp.pipeline.setNumThreads(1);
+        }
         // io_exp.pipeline.init();
         PullingPipelineExecutor exec(io_exp.pipeline);
 

@@ -6852,7 +6852,7 @@ Experimental timeSeries* aggregate functions for Prometheus-like timeseries resa
         0 - collect workload for all queries disabled
         1 - collect workload for all queries enabled
     )", EXPERIMENTAL) \
-    DECLARE(Double, sampling_proportion, 0.1, R"(
+    DECLARE(Double, sampling_proportion, 0.01, R"(
 Proportion of data to sample for analysis (0.0 to 1.0). This setting controls how much data is used for sampling operations.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, max_pk_columns_count, 5, R"(

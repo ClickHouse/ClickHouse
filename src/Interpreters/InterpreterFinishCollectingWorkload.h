@@ -27,6 +27,8 @@ public:
 
     BlockIO execute() override
     {
+        executeQuery("SET collect_workload = 0", context, QueryFlags{ .internal = true });
+
         QueryInfo query_info("/tmp/workload_collection.txt", context);
         // for (const auto & query : query_info.getWorkload())
         // {
@@ -83,8 +85,6 @@ public:
             std::make_shared<DataTypeString>(),
             "primary_key_columns"
         });
-
-        executeQuery("SET collect_workload = 0", context, QueryFlags{ .internal = true });
         BlockIO block_io;
         block_io.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::move(block)));
         return block_io;
