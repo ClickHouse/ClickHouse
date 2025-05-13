@@ -26,6 +26,47 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
+static bool compareAuthMethod (AzureBlobStorage::AuthMethod auth_method_a, AzureBlobStorage::AuthMethod auth_method_b)
+{
+    const auto * conn_string_a = std::get_if<AzureBlobStorage::ConnectionString>(&auth_method_a);
+    const auto * conn_string_b = std::get_if<AzureBlobStorage::ConnectionString>(&auth_method_b);
+
+    if (conn_string_a && conn_string_b)
+    {
+        return conn_string_a == conn_string_b;
+    }
+
+    const auto * shared_key_a = std::get_if<std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>>(&auth_method_a);
+    const auto * shared_key_b = std::get_if<std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>>(&auth_method_b);
+
+    if (shared_key_a && shared_key_b)
+    {
+        return (shared_key_a->get()->AccountName == shared_key_b->get()->AccountName);
+    }
+
+    const auto * workload_identity_a = std::get_if<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(&auth_method_a);
+    const auto * workload_identity_b = std::get_if<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(&auth_method_b);
+
+    if (workload_identity_a && workload_identity_b)
+    {
+        Azure::Core::Credentials::TokenRequestContext tokenRequestContext;
+        return workload_identity_a->get()->GetToken(tokenRequestContext, {}).Token == workload_identity_b->get()->GetToken(tokenRequestContext, {}).Token;
+    }
+
+    const auto * managed_identity_a = std::get_if<std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>(&auth_method_a);
+    const auto * managed_identity_b = std::get_if<std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>(&auth_method_b);
+
+    if (managed_identity_a && managed_identity_b)
+    {
+        Azure::Core::Credentials::TokenRequestContext tokenRequestContext;
+        return managed_identity_a->get()->GetToken(tokenRequestContext, {}).Token == managed_identity_b->get()->GetToken(tokenRequestContext, {}).Token;
+    }
+
+    return false;
+
+}
+
 BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
     const AzureBlobStorage::ConnectionParams & connection_params_,
     const String & blob_path_,
@@ -104,7 +145,7 @@ void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup,
                 /* dest_path */ dst_blob_path[0],
                 settings,
                 read_settings,
-                connection_params.auth_method == destination_disk->getObjectStorage()->getAzureBlobStorageAuthMethod(),
+                compareAuthMethod(connection_params.auth_method, destination_disk->getObjectStorage()->getAzureBlobStorageAuthMethod()),
                 threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupRDAzure"));
 
             return file_size;
@@ -181,7 +222,7 @@ void BackupWriterAzureBlobStorage::copyFileFromDisk(
                 fs::path(blob_path) / path_in_backup,
                 settings,
                 read_settings,
-                src_disk->getObjectStorage()->getAzureBlobStorageAuthMethod() == connection_params.auth_method,
+                compareAuthMethod(src_disk->getObjectStorage()->getAzureBlobStorageAuthMethod(), connection_params.auth_method),
                 threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"));
             return; /// copied!
         }

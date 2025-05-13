@@ -46,6 +46,7 @@ using AuthMethod = std::variant<
     std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>,
     std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
     std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>;
+
 }
 
 
