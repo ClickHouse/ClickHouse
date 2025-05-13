@@ -1,0 +1,8 @@
+<test>
+<query>
+  SELECT
+      number, 
+      naiveBayesClassifier('lang_byte_2', 'Hello! How are you?')
+  FROM numbers(1_000_000);
+</query>
+</test>
