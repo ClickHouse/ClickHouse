@@ -10,10 +10,9 @@ import helpers.kafka.common as k
 from helpers.keeper_utils import KeeperClient
 
 cluster = ClickHouseCluster(__file__)
-
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/kafka.xml"],
+    main_configs=["configs/kafka_and_keeper.xml"],
     user_configs=["configs/users.xml"],
     with_kafka=True,
     with_zookeeper=True,
@@ -23,10 +22,11 @@ instance = cluster.add_instance(
         "kafka_group_name_new": "zk_locks_group",
         "kafka_client_id": "instance",
         "kafka_format_json_each_row": "JSONEachRow",
-    },
-    clickhouse_path_dir="clickhouse_path",
+    }
 )
 
+
+# Fixtures
 @pytest.fixture(scope="module")
 def kafka_cluster():
     try:
@@ -36,6 +36,7 @@ def kafka_cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
 
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
@@ -64,10 +65,15 @@ def kafka_setup_teardown():
         time.sleep(0.5)
     yield  # run test
 
+
+# Tests
+
+
 def test_zookeeper_partition_locks(kafka_cluster):
     admin = k.get_admin_client(kafka_cluster)
     num_partitions = 3
     topic_name = "zk_locks_topic"
+    keeper_path = "/clickhouse/test/zk_locks"
 
     k.kafka_create_topic(admin, "zk_locks_topic", num_partitions=num_partitions)
     with k.existing_kafka_topic(admin, topic_name):
@@ -77,9 +83,8 @@ def test_zookeeper_partition_locks(kafka_cluster):
             database="test",
             topic_list=topic_name,
             consumer_group=topic_name,
-            keeper_path="/clickhouse/test/zk_locks",
-            replica_name="r1",
-            brokers="kafka1:19092"
+            keeper_path=keeper_path,
+            replica_name="r1"
         )
         instance.query(
             f"""
@@ -98,7 +103,7 @@ def test_zookeeper_partition_locks(kafka_cluster):
             messages.append(json.dumps({"key": i, "value": i}))
         k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
         
-        base = "/clickhouse/test/zk_locks/topic_partition_locks"
+        base = f"{keeper_path}/topic_partition_locks"
         expected_locks = {f"zk_locks_topic_{pid}.lock" for pid in range(num_partitions)}
         with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
             start = time.time()
@@ -115,11 +120,12 @@ def test_zookeeper_partition_locks(kafka_cluster):
                 owner = zk.get(f"{base}/{lock}")
                 assert owner == "r1", f"Expected 'r1' in {lock}, got {owner}"
 
-def test_three_replicas_balance_ten_partitions(kafka_cluster):
+def test_three_replicas_ten_partitions_rebalance(kafka_cluster):
     admin = k.get_admin_client(kafka_cluster)
     topic_name= "zk_dist_topic_10p"
     num_partitions = 10
     replica_names = ["r1", "r2", "r3"]
+    keeper_path = "/clickhouse/test/zk_dist3"
 
     k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
     with k.existing_kafka_topic(admin, topic_name):
@@ -130,9 +136,8 @@ def test_three_replicas_balance_ten_partitions(kafka_cluster):
                 database="test",
                 topic_list=topic_name,
                 consumer_group=topic_name,
-                keeper_path="/clickhouse/test/zk_dist3",
-                replica_name=replica,
-                brokers="kafka1:19092"
+                keeper_path=keeper_path,
+                replica_name=replica
             ) + ";"
             for replica in replica_names
         ]
@@ -162,7 +167,7 @@ def test_three_replicas_balance_ten_partitions(kafka_cluster):
             messages.append(json.dumps({"key": i, "value": i}))
         k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
 
-        base = "/clickhouse/test/zk_dist3/topic_partition_locks"
+        base = f"{keeper_path}/topic_partition_locks"
         expected_locks = {f"{topic_name}_{pid}.lock" for pid in range(num_partitions)}
         with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
             start = time.time()
@@ -187,8 +192,3 @@ def test_three_replicas_balance_ten_partitions(kafka_cluster):
             assert sum(values) == num_partitions
             assert all(v in (base_count-1, base_count, base_count+1) for v in values)
             assert values[-1] - values[0] <= 2
-
-if __name__ == "__main__":
-    cluster.start()
-    input("Cluster created, press any key to destroy...")
-    cluster.shutdown()

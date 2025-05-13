@@ -891,7 +891,7 @@ void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, cons
     {
         tmp_locks_quota = std::min(tmp_locks_quota + TMP_LOCKS_QUOTA_STEP, tmp_locks_quota_max);
     }
-    LOG_INFO(log, "The replica can take {} in the next round", tmp_locks_quota);
+    LOG_INFO(log, "The replica can take {} locks in the next round", tmp_locks_quota);
 }
 
 // If the number of locks on a replica is greater than it can hold, then we first release the partitions that we can no longer hold.
