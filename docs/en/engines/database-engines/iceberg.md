@@ -19,6 +19,7 @@ SET allow_experimental_database_iceberg=1;
 :::
 
 ## Creating a connection {#creating-a-connection}
+
 ``` sql
 CREATE DATABASE catalog_name
 ENGINE = Iceberg(endpoint)
@@ -33,7 +34,6 @@ ENGINE = Iceberg(endpoint)
 **Engine Parameters**
 
 - `endpoint`: Endpoint of the catalog
-
 
 ## Using the catalog {#using-the-catalog}
 ClickHouse does not yet support an arbitrary number of namespaces. To avoid issues, enclose namespaces and table names in backticks when querying them. For example, if your table `my_table` is behind a catalog called `my_catalog` in the namespace `namespace1`, you should access it as follows:
@@ -76,7 +76,7 @@ Name of the warehouse to be used in the catalog.
 
 ### `oauth_server_uri`
 
-URI of the Oauth server, in case a different URI is needed, for Unity for example.
+URI of the OAuth server, in case a different URI is needed, for Unity for example.
 
 - String
 
