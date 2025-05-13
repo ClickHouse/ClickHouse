@@ -27,7 +27,7 @@ Columns:
 - `last_error_symbols` ([Array(LowCardinality(String))](../../sql-reference/data-types/array.md)), If the symbolization is enabled, contains demangled symbol names, corresponding to the `last_error_trace`.
 - `last_error_lines` ([Array(LowCardinality(String))](../../sql-reference/data-types/array.md)), If the symbolization is enabled, contains strings with file names with line numbers, corresponding to the `last_error_trace`.
 
-The symbolization can be enabled or disabled in the `symbolize` under `trace_log` in the server's configuration file.
+The symbolization can be enabled or disabled in the `symbolize` under `error_log` in the server's configuration file.
 
 **Example**
 

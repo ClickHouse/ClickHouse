@@ -59,19 +59,15 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
             res_columns[col_num++]->insert(error.query_id);
 
 
-            #if defined(__ELF__) && !defined(OS_FREEBSD)
-
+#if defined(__ELF__) && !defined(OS_FREEBSD)
             auto [symbols, lines] = generateArraysSymbolsLines(error_trace_uint);
 
             res_columns[col_num++]->insert(symbols);
             res_columns[col_num++]->insert(lines);
-
-            #else
-
+#else
             res_columns[col_num++]->insertDefault();
             res_columns[col_num++]->insertDefault();
-
-            #endif
+#endif
         }
     };
 

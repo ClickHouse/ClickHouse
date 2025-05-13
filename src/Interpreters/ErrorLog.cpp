@@ -124,7 +124,7 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[column_idx++]->insert(Array(error_trace_array.begin(), error_trace_array.end()));
 
-    #if defined(__ELF__) && !defined(OS_FREEBSD)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
     if (symbolize)
     {
         auto [symbols, lines] = generateArraysSymbolsLines(error_trace_array);
@@ -133,7 +133,7 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
         columns[column_idx++]->insert(lines);
     }
     else
-    #endif
+#endif
     {
         columns[column_idx++]->insertDefault();
         columns[column_idx++]->insertDefault();
