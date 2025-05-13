@@ -93,7 +93,7 @@ protected:
     /// Round padding up to an whole number of elements to simplify arithmetic.
     static constexpr size_t pad_right = integerRoundUp(pad_right_, ELEMENT_SIZE);
     /// pad_left is also rounded up to 16 bytes to maintain alignment of allocated memory.
-    static constexpr size_t pad_left = integerRoundUp(pad_left, std::lcm(ELEMENT_SIZE, 16));
+    static constexpr size_t pad_left = integerRoundUp(pad_left_, std::lcm(ELEMENT_SIZE, 16));
     /// Empty array will point to this static memory as padding and begin/end.
     static constexpr char * null = const_cast<char *>(empty_pod_array) + pad_left;
 
