@@ -108,11 +108,11 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization];
     max_limit_for_lazy_materialization = from[Setting::query_plan_max_limit_for_lazy_materialization];
 
-    vector_search_filter_strategy = from[Setting::vector_search_filter_strategy].value;
     max_limit_for_vector_search_queries = from[Setting::max_limit_for_vector_search_queries].value;
+    vector_search_with_rescoring = from[Setting::vector_search_with_rescoring];
+    vector_search_filter_strategy = from[Setting::vector_search_filter_strategy].value;
 
     query_plan_join_shard_by_pk_ranges = from[Setting::query_plan_join_shard_by_pk_ranges].value;
-    vector_search_with_rescoring = from[Setting::vector_search_with_rescoring];
 
     network_transfer_limits = SizeLimits(from[Setting::max_rows_to_transfer], from[Setting::max_bytes_to_transfer], from[Setting::transfer_overflow_mode]);
     use_index_for_in_with_subqueries_max_values = from[Setting::use_index_for_in_with_subqueries_max_values];

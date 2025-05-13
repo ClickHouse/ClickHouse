@@ -13,13 +13,13 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
-
 namespace DB::QueryPlanOptimizations
 {
 
 /// Vector search queries have this form:
 ///     SELECT [...]
 ///     FROM tab, [...]
+///     WHERE [...]      -- optional
 ///     ORDER BY distance_function(vec, reference_vec), [...]
 ///     LIMIT N
 /// where
@@ -37,8 +37,8 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
 {
     QueryPlan::Node * node = parent_node;
 
-    /// This optimization pass can change the ReadFromMergeTree & Expression steps of the query plan.
-    constexpr size_t NO_LAYERS_UPDATED = 0;
+    /// If the optimization pass did not change ReadFromMergeTree & Expression steps in the query plan.
+    constexpr size_t no_layers_updated = 0;
 
     bool additional_filters_present = false; /// WHERE or PREWHERE
 
@@ -59,24 +59,24 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
 
     auto * limit_step = typeid_cast<LimitStep *>(node->step.get());
     if (!limit_step)
-        return NO_LAYERS_UPDATED;
+        return no_layers_updated;
 
     if (node->children.size() != 1)
-        return NO_LAYERS_UPDATED;
+        return no_layers_updated;
     node = node->children.front();
     auto * sorting_step = typeid_cast<SortingStep *>(node->step.get());
     if (!sorting_step)
-        return NO_LAYERS_UPDATED;
+        return no_layers_updated;
 
     if (node->children.size() != 1)
-        return NO_LAYERS_UPDATED;
+        return no_layers_updated;
     node = node->children.front();
     auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
     if (!expression_step)
-        return NO_LAYERS_UPDATED;
+        return no_layers_updated;
 
     if (node->children.size() != 1)
-        return NO_LAYERS_UPDATED;
+        return no_layers_updated;
     node = node->children.front();
     auto * read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
     if (!read_from_mergetree_step)
@@ -84,13 +84,13 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
         /// Do we have a FilterStep on top of ReadFromMergeTree?
         auto * filter_step = typeid_cast<FilterStep *>(node->step.get());
         if (!filter_step)
-            return NO_LAYERS_UPDATED;
+            return no_layers_updated;
         if (node->children.size() != 1)
-            return NO_LAYERS_UPDATED;
+            return no_layers_updated;
         node = node->children.front();
         read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
         if (!read_from_mergetree_step)
-            return NO_LAYERS_UPDATED;
+            return no_layers_updated;
         additional_filters_present = true;
     }
 
@@ -98,24 +98,24 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
         additional_filters_present = true;
 
     if (additional_filters_present && settings.vector_search_filter_strategy == VectorSearchFilterStrategy::PREFILTER)
-        return NO_LAYERS_UPDATED; /// user explicitly wanted exact (brute-force) vector search
+        return no_layers_updated; /// user explicitly wanted exact (brute-force) vector search
 
     /// Extract N
     size_t n = limit_step->getLimitForSorting();
 
     /// Check that the LIMIT specified by the user isn't too big - otherwise the cost of vector search outweighs the benefit.
     if (n > settings.max_limit_for_vector_search_queries)
-        return NO_LAYERS_UPDATED;
+        return no_layers_updated;
 
     /// Not 100% sure but other sort types are likely not what we want
     SortingStep::Type sorting_step_type = sorting_step->getType();
     if (sorting_step_type != SortingStep::Type::Full)
-        return NO_LAYERS_UPDATED;
+        return no_layers_updated;
 
     /// Read ORDER BY clause
     const auto & sort_description = sorting_step->getSortDescription();
     if (sort_description.size() > 1)
-        return NO_LAYERS_UPDATED;
+        return no_layers_updated;
     const String & sort_column = sort_description.front().column_name;
 
     /// The ActionDAG of the ExpressionStep underneath SortingStep may have arbitrary output nodes (e.g. stuff
@@ -123,7 +123,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     ActionsDAG & expression = expression_step->getExpression();
     const ActionsDAG::Node * sort_column_node = expression.tryFindInOutputs(sort_column);
     if (sort_column_node == nullptr || sort_column_node->type != ActionsDAG::ActionType::FUNCTION)
-        return NO_LAYERS_UPDATED;
+        return no_layers_updated;
 
     /// Extract distance_function
     const String & function_name = sort_column_node->function_base->getName();
@@ -131,7 +131,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     if (function_name == "L2Distance" || function_name == "cosineDistance")
         distance_function = function_name;
     else
-        return NO_LAYERS_UPDATED;
+        return no_layers_updated;
 
     /// Extract stuff from the ORDER BY clause. It is expected to look like this: ORDER BY cosineDistance(vec1, [1.0, 2.0 ...])
     /// - The search column is 'vec1'.
@@ -183,7 +183,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
             {
                 Field::Types::Which field_array_value_type = field_array_value.getType();
                 if (field_array_value_type != Field::Types::Float64)
-                    return NO_LAYERS_UPDATED;
+                    return no_layers_updated;
                 Float64 float64 = field_array_value.safeGet<Float64>();
                 reference_vector.push_back(float64);
             }
@@ -191,9 +191,9 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     }
 
     if (search_column.empty() || reference_vector.empty())
-        return NO_LAYERS_UPDATED;
+        return no_layers_updated;
 
-    size_t updated_layers = NO_LAYERS_UPDATED;
+    size_t updated_layers = no_layers_updated;
     bool optimize_plan = !settings.vector_search_with_rescoring;
     if (optimize_plan)
     {
