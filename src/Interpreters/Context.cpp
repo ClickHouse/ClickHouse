@@ -4806,7 +4806,6 @@ std::shared_ptr<QueryMetricLog> Context::getQueryMetricLog() const
     return shared->system_logs->query_metric_log;
 }
 
-
 std::shared_ptr<ZooKeeperConnectionLog> Context::getZooKeeperConnectionLog() const
 {
     SharedLockGuard lock(shared->mutex);
