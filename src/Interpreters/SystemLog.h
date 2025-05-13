@@ -79,7 +79,7 @@ public:
     SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config);
     SystemLogs(const SystemLogs & other) = default;
 
-    void flush(bool should_prepare_tables_anyway, const Strings & names);
+    void flush(bool should_prepare_tables_anyway, const Strings & names, bool ignore_errors = false);
     void flushAndShutdown();
     void shutdown();
     void handleCrash();
