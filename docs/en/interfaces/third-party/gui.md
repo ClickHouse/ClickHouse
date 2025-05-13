@@ -49,12 +49,12 @@ A powerful web application for visualizing ClickHouse table relationships using 
 
 Features:
 
-- 🔍 Browse ClickHouse databases and tables with an intuitive interface
-- 📊 Visualize table relationships with Mermaid.js diagrams
-- ↔️ View direction of data flow between tables
-- 💾 Export diagrams as standalone HTML files
-- 🔒 Secure connection to ClickHouse with TLS support
-- 📱 Responsive web interface for all devices
+- Browse ClickHouse databases and tables with an intuitive interface
+- Visualize table relationships with Mermaid.js diagrams
+- View direction of data flow between tables
+- Export diagrams as standalone HTML files
+- Secure connection to ClickHouse with TLS support
+- Responsive web interface for all devices
 
 [ClickHouse Schema Flow Visualizer - source code](https://github.com/FulgerX2007/clickhouse-schemaflow-visualizer)
 
