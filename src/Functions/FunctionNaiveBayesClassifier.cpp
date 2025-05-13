@@ -238,6 +238,39 @@ public:
 
 REGISTER_FUNCTION(NaiveBayesClassifier)
 {
-    factory.registerFunction<FunctionNaiveBayesClassifier>();
+    FunctionDocumentation::Description description = "Classifies input text using a Naive Bayes model with ngrams and Laplace smoothing. "
+                                                     "The model must be configured in ClickHouse before use.";
+    FunctionDocumentation::Syntax syntax = "naiveBayesClassifier(model_name, input_text);";
+    FunctionDocumentation::Arguments arguments
+        = {{"model_name",
+            "Name of the pre-configured model. [String](../data-types/string.md) The model must be defined in ClickHouse's configuration "
+            "files."},
+           {"input_text",
+            "Text to classify. [String](../data-types/string.md) Input is processed exactly as provided (case/punctuation preserved)."}};
+    FunctionDocumentation::ReturnedValue returned_value = "Predicted class ID as an unsigned integer. [UInt32](../data-types/int-uint.md) "
+                                                          "Class IDs correspond to categories defined during model construction.";
+    FunctionDocumentation::Examples examples
+        = {{"Example",
+            "SELECT naiveBayesClassifier('language', 'How are you?');",
+            R"(
+          ┌─naiveBayesClassifier('language', 'How are you?')─┐
+          │ 0                                                │
+          └──────────────────────────────────────────────────┘
+          
+          Result 0 might represent English, while 1 could indicate French - class meanings depend on your training data.
+        )"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::MachineLearning;
+
+    FunctionDocumentation function_documentation
+        = {.description = description,
+           .syntax = syntax,
+           .arguments = arguments,
+           .returned_value = returned_value,
+           .examples = examples,
+           .introduced_in = introduced_in,
+           .category = category};
+
+    factory.registerFunction<FunctionNaiveBayesClassifier>(function_documentation);
 }
 }
