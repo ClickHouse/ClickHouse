@@ -186,7 +186,7 @@ void OwnSplitChannel::setChannelProperty(const std::string& channel_name, const 
 OwnAsyncSplitChannel::OwnAsyncSplitChannel()
     : thread("AsyncLogger")
 {
-    open();
+    OwnAsyncSplitChannel::open();
 }
 
 OwnAsyncSplitChannel::~OwnAsyncSplitChannel()
