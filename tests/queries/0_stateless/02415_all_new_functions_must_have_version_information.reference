@@ -748,6 +748,11 @@ randomPrintableASCII
 randomString
 randomStringUTF8
 range
+readWKBLineString
+readWKBMultiLineString
+readWKBMultiPolygon
+readWKBPoint
+readWKBPolygon
 readWKTLineString
 readWKTMultiLineString
 readWKTMultiPolygon

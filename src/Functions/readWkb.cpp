@@ -19,6 +19,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -225,7 +226,6 @@ REGISTER_FUNCTION(ReadWKB)
             ┌─readWKBMultiLineString('unhex('010500000002000000010200000003000000000...'))─┐
             │ [[(1,1),(2,2),(3,3)],[(4,4),(5,5),(6,6)]]                                    │
             └──────────────────────────────────────────────────────────────────────────────┘
-            
                         )"},
         },
         .category = FunctionDocumentation::Category::Geo});
