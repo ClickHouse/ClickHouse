@@ -168,6 +168,8 @@ public:
 
     String getName() const override { return name; }
 
+    bool isVariadic() const override { return false; }
+
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
@@ -197,7 +199,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * input_string_column = checkAndGetColumn<ColumnString>(arguments[1].column.get());
+        ColumnPtr model_name_column = arguments[0].column->convertToFullColumnIfConst();
+        ColumnPtr input_string_column = arguments[1].column->convertToFullColumnIfConst();
 
         auto result_column = ColumnUInt32::create();
 
@@ -205,16 +208,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            String model_name;
-            if (const auto * model_name_col_const = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
-            {
-                model_name = model_name_col_const->getValue<String>();
-            }
-            else
-            {
-                const auto * model_name_col = checkAndGetColumn<ColumnString>(arguments[0].column.get());
-                model_name = model_name_col->getDataAt(i).toString();
-            }
+            const String model_name = model_name_column->getDataAt(i).toString();
 
             if (models.find(model_name) == models.end())
             {
@@ -225,8 +219,9 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Model {} not found. Available models: {}", model_name, available_models);
             }
 
+            const String input_string = input_string_column->getDataAt(i).toString();
+
             const auto & model = models.at(model_name);
-            String input_string = input_string_column->getDataAt(i).toString();
             UInt32 predicted_class = model.classify(input_string);
             result_column->insert(predicted_class);
         }
