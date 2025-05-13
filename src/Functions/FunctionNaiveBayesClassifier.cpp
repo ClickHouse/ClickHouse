@@ -216,8 +216,10 @@ public:
             /// Increment profile events for loaded models
             ProfileEvents::increment(ProfileEvents::NaiveBayesClassifierModelsLoaded);
             std::visit(
-                [&](const auto & clf)
-                { ProfileEvents::increment(ProfileEvents::NaiveBayesClassifierModelsAllocatedBytes, clf.getAllocatedBytes()); },
+                [&](const auto & concrete_classifier) {
+                    ProfileEvents::increment(
+                        ProfileEvents::NaiveBayesClassifierModelsAllocatedBytes, concrete_classifier.getAllocatedBytes());
+                },
                 models.at(model_name));
         }
 
