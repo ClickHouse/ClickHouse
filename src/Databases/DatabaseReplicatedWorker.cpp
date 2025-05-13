@@ -178,7 +178,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
         if (!is_new_replica)
             LOG_WARNING(log, "Replica seems to be lost: our_log_ptr={}, max_log_ptr={}, local_digest={}, zk_digest={}",
                         our_log_ptr, max_log_ptr, local_digest, digest);
-        database->recoverLostReplica(zookeeper, our_log_ptr, max_log_ptr);
+        database->recoverLostReplica(zookeeper, our_log_ptr, max_log_ptr, lost_according_to_digest);
         zookeeper->set(database->replica_path + "/log_ptr", toString(max_log_ptr));
         initializeLogPointer(DDLTaskBase::getLogEntryName(max_log_ptr));
     }
