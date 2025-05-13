@@ -27,22 +27,16 @@ using Models = std::map<String, NaiveBayesClassifier>;
 
 NaiveBayesClassifier::Mode stringToMode(const std::string & s)
 {
-    if (s == "byte")
-    {
-        return NaiveBayesClassifier::Mode::Byte;
-    }
-    else if (s == "codepoint")
-    {
-        return NaiveBayesClassifier::Mode::CodePoint;
-    }
-    else if (s == "token")
-    {
-        return NaiveBayesClassifier::Mode::Token;
-    }
-    else
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}. Valid modes are: byte, codepoint, token", s);
-    }
+    static const std::unordered_map<std::string_view, NaiveBayesClassifier::Mode> table{
+        {"byte", NaiveBayesClassifier::Mode::Byte},
+        {"codepoint", NaiveBayesClassifier::Mode::CodePoint},
+        {"token", NaiveBayesClassifier::Mode::Token},
+    };
+
+    if (const auto it = table.find(s); it != table.end())
+        return it->second;
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}. Valid modes are: byte, codepoint, token", s);
 }
 
 class FunctionNaiveBayesClassifier : public IFunction
