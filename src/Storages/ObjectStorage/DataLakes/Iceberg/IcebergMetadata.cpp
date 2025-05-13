@@ -21,6 +21,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
@@ -60,19 +61,6 @@ extern const SettingsBool use_iceberg_partition_pruning;
 
 
 using namespace Iceberg;
-
-
-constexpr const char * SEQUENCE_NUMBER_COLUMN = "sequence_number";
-constexpr const char * MANIFEST_FILE_PATH_COLUMN = "manifest_path";
-constexpr const char * FORMAT_VERSION_FIELD = "format-version";
-constexpr const char * CURRENT_SNAPSHOT_ID_FIELD_IN_METADATA_FILE = "current-snapshot-id";
-constexpr const char * SNAPSHOT_ID_FIELD_IN_SNAPSHOT = "snapshot-id";
-constexpr const char * MANIFEST_LIST_PATH_FIELD = "manifest-list";
-constexpr const char * SNAPSHOT_LOG_FIELD = "snapshot-log";
-constexpr const char * TIMESTAMP_FIELD_INSIDE_SNAPSHOT = "timestamp-ms";
-constexpr const char * TABLE_LOCATION_FIELD = "location";
-constexpr const char * SNAPSHOTS_FIELD = "snapshots";
-constexpr const char * LAST_UPDATED_MS_FIELD = "last-updated-ms";
 
 namespace
 {
@@ -144,7 +132,7 @@ IcebergMetadata::IcebergMetadata(
     , last_metadata_object(metadata_object_)
     , format_version(format_version_)
     , relevant_snapshot_schema_id(-1)
-    , table_location(last_metadata_object->getValue<String>(TABLE_LOCATION_FIELD))
+    , table_location(last_metadata_object->getValue<String>(Flocation))
 {
     updateState(context_, true);
 }
@@ -221,7 +209,7 @@ void IcebergMetadata::addTableSchemaById(Int32 schema_id)
 Int32 IcebergMetadata::parseTableSchema(
     const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger)
 {
-    const auto format_version = metadata_object->getValue<Int32>(FORMAT_VERSION_FIELD);
+    const auto format_version = metadata_object->getValue<Int32>(Fformat_version);
     if (format_version == 2)
     {
         auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
@@ -286,7 +274,7 @@ static std::pair<Int32, String> getMetadataFileAndVersion(const std::string & pa
 
 enum class MostRecentMetadataFileSelectionWay
 {
-    BY_LAST_UPDATED_MS_FIELD,
+    BY_Flast_updated_ms,
     BY_METADATA_FILE_VERSION
 };
 
@@ -313,10 +301,10 @@ static std::pair<Int32, String> getLatestMetadataFileAndVersion(
     auto log = getLogger("IcebergMetadataFileResolver");
     MostRecentMetadataFileSelectionWay selection_way
         = configuration.getSettingsRef()[StorageObjectStorageSetting::iceberg_recent_metadata_file_by_last_updated_ms_field].value
-        ? MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD
+        ? MostRecentMetadataFileSelectionWay::BY_Flast_updated_ms
         : MostRecentMetadataFileSelectionWay::BY_METADATA_FILE_VERSION;
     bool need_all_metadata_files_parsing
-        = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD) || table_uuid.has_value();
+        = (selection_way == MostRecentMetadataFileSelectionWay::BY_Flast_updated_ms) || table_uuid.has_value();
     const auto metadata_files = listFiles(*object_storage, configuration, "metadata", ".metadata.json");
     if (metadata_files.empty())
     {
@@ -339,12 +327,12 @@ static std::pair<Int32, String> getLatestMetadataFileAndVersion(
                     if (normalizeUuid(table_uuid.value()) == normalizeUuid(current_table_uuid))
                     {
                         metadata_files_with_versions.emplace_back(
-                            version, metadata_file_object->getValue<UInt64>(LAST_UPDATED_MS_FIELD), metadata_file_path);
+                            version, metadata_file_object->getValue<UInt64>(Flast_updated_ms), metadata_file_path);
                     }
                 }
                 else
                 {
-                    Int64 format_version = metadata_file_object->getValue<Int64>(FORMAT_VERSION_FIELD);
+                    Int64 format_version = metadata_file_object->getValue<Int64>(Fformat_version);
                     throw Exception(
                         format_version == 1 ? ErrorCodes::BAD_ARGUMENTS : ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                         "Table UUID is not specified in some metadata files for table by path {}",
@@ -353,7 +341,7 @@ static std::pair<Int32, String> getLatestMetadataFileAndVersion(
             }
             else
             {
-                metadata_files_with_versions.emplace_back(version, metadata_file_object->getValue<UInt64>(LAST_UPDATED_MS_FIELD), metadata_file_path);
+                metadata_files_with_versions.emplace_back(version, metadata_file_object->getValue<UInt64>(Flast_updated_ms), metadata_file_path);
             }
         }
         else
@@ -365,7 +353,7 @@ static std::pair<Int32, String> getLatestMetadataFileAndVersion(
     /// Get the latest version of metadata file: v<V>.metadata.json
     const ShortMetadataFileInfo & latest_metadata_file_info = [&]()
     {
-        if (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
+        if (selection_way == MostRecentMetadataFileSelectionWay::BY_Flast_updated_ms)
         {
             return *std::max_element(
                 metadata_files_with_versions.begin(),
@@ -457,7 +445,7 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
         metadata_file_changed = true;
     }
 
-    chassert(format_version == last_metadata_object->getValue<int>(FORMAT_VERSION_FIELD));
+    chassert(format_version == last_metadata_object->getValue<int>(Fformat_version));
 
     auto previous_snapshot_id = relevant_snapshot_id;
     auto previous_snapshot_schema_id = relevant_snapshot_schema_id;
@@ -475,17 +463,17 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
 void IcebergMetadata::updateSnapshot()
 {
     auto configuration_ptr = configuration.lock();
-    if (!last_metadata_object->has(SNAPSHOTS_FIELD))
+    if (!last_metadata_object->has(Fsnapshots))
         throw Exception(
             ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
             "No snapshot set found in metadata for iceberg table `{}`, it is impossible to get manifest list by snapshot id `{}`",
             configuration_ptr->getPath(),
             relevant_snapshot_id);
-    auto snapshots = last_metadata_object->get(SNAPSHOTS_FIELD).extract<Poco::JSON::Array::Ptr>();
+    auto snapshots = last_metadata_object->get(Fsnapshots).extract<Poco::JSON::Array::Ptr>();
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
-        if (snapshot->getValue<Int64>(SNAPSHOT_ID_FIELD_IN_SNAPSHOT) == relevant_snapshot_id)
+        if (snapshot->getValue<Int64>(Fsnapshot_id) == relevant_snapshot_id)
         {
             if (!snapshot->has("manifest-list"))
                 throw Exception(
@@ -508,7 +496,7 @@ void IcebergMetadata::updateSnapshot()
 
             relevant_snapshot = IcebergSnapshot{
                 getManifestList(getProperFilePathFromMetadataInfo(
-                    snapshot->getValue<String>(MANIFEST_LIST_PATH_FIELD), configuration_ptr->getPath(), table_location)),
+                    snapshot->getValue<String>(Fmanifest_list), configuration_ptr->getPath(), table_location)),
                 relevant_snapshot_id, total_rows, total_bytes};
 
             if (!snapshot->has("schema-id"))
@@ -547,18 +535,18 @@ void IcebergMetadata::updateState(const ContextPtr & local_context, bool metadat
     {
         Int64 closest_timestamp = 0;
         Int64 query_timestamp = local_context->getSettingsRef()[Setting::iceberg_timestamp_ms];
-        if (!last_metadata_object->has(SNAPSHOT_LOG_FIELD))
+        if (!last_metadata_object->has(Fsnapshot_log))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "No snapshot log found in metadata for iceberg table {} so it is impossible to get relevant snapshot id using timestamp", configuration_ptr->getPath());
-        auto snapshots = last_metadata_object->get(SNAPSHOT_LOG_FIELD).extract<Poco::JSON::Array::Ptr>();
+        auto snapshots = last_metadata_object->get(Fsnapshot_log).extract<Poco::JSON::Array::Ptr>();
         relevant_snapshot_id = -1;
         for (size_t i = 0; i < snapshots->size(); ++i)
         {
             const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
-            Int64 snapshot_timestamp = snapshot->getValue<Int64>(TIMESTAMP_FIELD_INSIDE_SNAPSHOT);
+            Int64 snapshot_timestamp = snapshot->getValue<Int64>(Ftimestamp_ms);
             if (snapshot_timestamp <= query_timestamp && snapshot_timestamp > closest_timestamp)
             {
                 closest_timestamp = snapshot_timestamp;
-                relevant_snapshot_id = snapshot->getValue<Int64>(SNAPSHOT_ID_FIELD_IN_SNAPSHOT);
+                relevant_snapshot_id = snapshot->getValue<Int64>(Fsnapshot_id);
             }
         }
         if (relevant_snapshot_id < 0)
@@ -572,10 +560,10 @@ void IcebergMetadata::updateState(const ContextPtr & local_context, bool metadat
     }
     else if (metadata_file_changed)
     {
-        if (!last_metadata_object->has(CURRENT_SNAPSHOT_ID_FIELD_IN_METADATA_FILE))
+        if (!last_metadata_object->has(Fcurrent_snapshot_id))
             relevant_snapshot_id = -1;
         else
-            relevant_snapshot_id = last_metadata_object->getValue<Int64>(CURRENT_SNAPSHOT_ID_FIELD_IN_METADATA_FILE);
+            relevant_snapshot_id = last_metadata_object->getValue<Int64>(Fcurrent_snapshot_id);
         if (relevant_snapshot_id != -1)
         {
             updateSnapshot();
@@ -637,7 +625,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
 
     IcebergSchemaProcessor schema_processor;
 
-    auto format_version = object->getValue<int>(FORMAT_VERSION_FIELD);
+    auto format_version = object->getValue<int>(Fformat_version);
 
     auto ptr
         = std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, local_context, metadata_version, format_version, object, cache_ptr);
@@ -674,11 +662,11 @@ ManifestListPtr IcebergMetadata::getManifestList(const String & filename) const
 
         for (size_t i = 0; i < manifest_list_deserializer.rows(); ++i)
         {
-            const std::string file_path = manifest_list_deserializer.getValueFromRowByName(i, MANIFEST_FILE_PATH_COLUMN, TypeIndex::String).safeGet<std::string>();
+            const std::string file_path = manifest_list_deserializer.getValueFromRowByName(i, Fmanifest_path, TypeIndex::String).safeGet<std::string>();
             const auto manifest_file_name = getProperFilePathFromMetadataInfo(file_path, configuration_ptr->getPath(), table_location);
             Int64 added_sequence_number = 0;
             if (format_version > 1)
-                added_sequence_number = manifest_list_deserializer.getValueFromRowByName(i, SEQUENCE_NUMBER_COLUMN, TypeIndex::Int64).safeGet<Int64>();
+                added_sequence_number = manifest_list_deserializer.getValueFromRowByName(i, Fsequence_number, TypeIndex::Int64).safeGet<Int64>();
             manifest_file_cache_keys.emplace_back(manifest_file_name, added_sequence_number);
         }
         /// We only return the list of {file name, seq number} for cache.
@@ -717,7 +705,7 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory() const
 
     auto metadata_object = readJSON(metadata_file_path, object_storage, getContext(), log);
 
-    chassert(format_version == metadata_object->getValue<int>(FORMAT_VERSION_FIELD));
+    chassert(format_version == metadata_object->getValue<int>(Fformat_version));
 
     /// History
     std::vector<Iceberg::IcebergHistoryRecord> iceberg_history;
