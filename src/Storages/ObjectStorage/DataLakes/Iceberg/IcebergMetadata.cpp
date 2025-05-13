@@ -274,7 +274,7 @@ static std::pair<Int32, String> getMetadataFileAndVersion(const std::string & pa
 
 enum class MostRecentMetadataFileSelectionWay
 {
-    BY_Flast_updated_ms,
+    BY_LAST_UPDATED_MS_FIELD,
     BY_METADATA_FILE_VERSION
 };
 
@@ -301,10 +301,10 @@ static std::pair<Int32, String> getLatestMetadataFileAndVersion(
     auto log = getLogger("IcebergMetadataFileResolver");
     MostRecentMetadataFileSelectionWay selection_way
         = configuration.getSettingsRef()[StorageObjectStorageSetting::iceberg_recent_metadata_file_by_last_updated_ms_field].value
-        ? MostRecentMetadataFileSelectionWay::BY_Flast_updated_ms
+        ? MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD
         : MostRecentMetadataFileSelectionWay::BY_METADATA_FILE_VERSION;
     bool need_all_metadata_files_parsing
-        = (selection_way == MostRecentMetadataFileSelectionWay::BY_Flast_updated_ms) || table_uuid.has_value();
+        = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD) || table_uuid.has_value();
     const auto metadata_files = listFiles(*object_storage, configuration, "metadata", ".metadata.json");
     if (metadata_files.empty())
     {
@@ -353,7 +353,7 @@ static std::pair<Int32, String> getLatestMetadataFileAndVersion(
     /// Get the latest version of metadata file: v<V>.metadata.json
     const ShortMetadataFileInfo & latest_metadata_file_info = [&]()
     {
-        if (selection_way == MostRecentMetadataFileSelectionWay::BY_Flast_updated_ms)
+        if (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
         {
             return *std::max_element(
                 metadata_files_with_versions.begin(),
