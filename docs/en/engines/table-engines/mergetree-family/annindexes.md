@@ -78,7 +78,7 @@ ClickHouse provides a special "vector similarity" index to perform approximate n
 :::note
 Vector similarity indexes are currently experimental.
 To enable them, please first run `SET allow_experimental_vector_similarity_index = 1`.
-If you run into problems, kindly open an issue at github.com/clickhouse/clickhouse/issues.
+If you run into problems, kindly open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
 :::
 
 ### Creating a Vector Similarity Index {#creating-a-vector-similarity-index}
@@ -174,13 +174,13 @@ LIMIT <N>
 ClickHouse's query optimizer tries to match above query template and make use of available vector similarity indexes.
 A query can only use a vector similarity index if the distance function in the SELECT query is the same as the distance function in the index definition.
 
-Advanced users may provide a custom value for setting [hnsw_candidate_list_size_for_search](../../../operations/settings/settings.md#hnsw_candidate_list_size_for_search) (also know as HNSW hyperparameter `ef_search`) to tune the size of the candidate list during search (e.g.  `SELECT [...] SETTINGS hnsw_candidate_list_size_for_search = <value>`).
+Advanced users may provide a custom value for setting [hnsw_candidate_list_size_for_search](../../../operations/settings/settings.md#hnsw_candidate_list_size_for_search) (also know as HNSW hyperparameter "ef_search") to tune the size of the candidate list during search (e.g.  `SELECT [...] SETTINGS hnsw_candidate_list_size_for_search = <value>`).
 The default value of the setting 256 works well in the majority of use cases.
 Higher setting values mean better accuracy at the cost of slower performance.
 
 If the query can use a vector similarity index, ClickHouse checks that the LIMIT `<N>` provided in SELECT queries is within reasonable bounds.
-More specifically, an error is returned if `<N>` is bigger than the value of setting [max_limit_for_ann_queries](../../../operations/settings/settings.md#max_limit_for_ann_queries) with default value 100.
-Too large LIMITs can slow down searches and usually indicate a usage error.
+More specifically, an error is returned if `<N>` is bigger than the value of setting [max_limit_for_vector_search_queries](../../../operations/settings/settings.md#max_limit_for_vector_search_queries) with default value 100.
+Too large LIMIT values can slow down searches and usually indicate a usage error.
 
 To check if a SELECT query uses a vector similarity index, you can prefix the query with `EXPLAIN indexes = 1`.
 
@@ -231,23 +231,22 @@ To enforce index usage, you can run the SELECT query with setting [force_data_sk
 
 **Post-filtering and Pre-filtering**
 
-Users may optionally specify a `WHERE` clause with additional filter conditions in SELECT queries.
-Depending on these filter conditions, ClickHouse will utilize post-filtering or pre-filtering.
-These two strategies determine the order in which the filters are evaluated:
-- With post-filtering, the vector similarity index is evaluated first, afterwards ClickHouse evaluates the additional filter(s) specified of the `WHERE` clause.
-- With pre-filtering, the filter evaluation order is the other way round.
+Users may optionally specify a `WHERE` clause with additional filter conditions for the SELECT query.
+ClickHouse will evaluate these filter conditions using post-filtering or pre-filtering strategy.
+In short, both strategies determine the order in which the filters are evaluated:
+- Post-filtering means that the vector similarity index is evaluated first, afterwards ClickHouse evaluates the additional filter(s) specified in the `WHERE` clause.
+- Pre-filtering means that the filter evaluation order is the other way round.
 
-Both strategies have different trade-offs:
-- Post-filtering has the general problem that it may return less than the number of rows requested in the `LIMIT <N>` clause. This happens when at least one of the result rows returned by the vector similarity index fails to satisfy the additional filters. In ClickHouse, this situation is luckily unlikely to happen because vector similarity indexes do not return rows but blocks with thousands of rows (see "Differences to Regular Skipping Indexes" below).
-- Pre-filtering is an unsolved problem. Some specialized vector databases implement it but most databases including ClickHouse will fall back to exact neighbor search, i.e., a brute-force scan without index.
+The strategies have different trade-offs:
+- Post-filtering has the general problem that it may return less than the number of rows requested in the `LIMIT <N>` clause. This situation happens when one or more result rows returned by the vector similarity index fails to satisfy the additional filters.
+- Pre-filtering is generally an unsolved problem. Certain specialized vector databases provide pre-filtering algorithms but most relational databases (including ClickHouse) will fall back to exact neighbor search, i.e., a brute-force scan without index.
 
-What strategy is used comes down to whether ClickHouse can use indexes for the additional filter conditions.
+What strategy is used depends on the filter condition.
 
-If no index can be used, post-filtering will be applied.
+*Additional filters are part of the partition key*
 
 If the additional filter condition is part of the partition key, then ClickHouse will apply partition pruning.
-
-Example, assuming that the table is range-partitioned by `year`:
+As an example, a table is range-partitioned by column `year` and the following query is run:
 
 ```sql
 WITH [0., 2.] AS reference_vec
@@ -258,10 +257,58 @@ ORDER BY L2Distance(vec, reference_vec) ASC
 LIMIT 3;
 ```
 
-ClickHouse will ignore all partitions but the one for year 2025.
-Within this partition, a post-filtering strategy will be applied.
+ClickHouse will prune all partitions except the 2025 one.
 
-If the additional filter condition is part of the primary key, then ClickHouse will always apply pre-filtering.
+*Additional filters cannot be evaluated using indexes*
+
+If additional filter conditions cannot be evaluated using indexes (primary key index, skipping index), ClickHouse will apply post-filtering.
+
+*Additional filters can be evaluated using the primary key index*
+
+If additional filter conditions can be evaluated using the [primary key](mergetree.md#primary-key) (i.e., they form a prefix of the primary key) and
+- the filter condition eliminates at least one row within a part, the ClickHouse will fall back to pre-filtering for the "surviving" ranges within the part,
+- the filter condition eliminates no rows within a part, the ClickHouse will perform post-filtering for the part.
+
+In practical use cases, the latter case is rather unlikely.
+
+*Additional filters can be evaluated using skipping index*
+
+If additional filter conditions can be evaluated using [skipping indexes](mergetree.md#table_engine-mergetree-data_skipping-indexes) (minmax index, set index, etc.), Clickhouse performs post-filtering.
+In such cases, the vector similarity index is evaluated first as it is expected to remove the most rows relative to other skipping indexes.
+
+For finer control over post-filtering vs. pre-filtering, two settings can be used:
+
+Setting [vector_search_filter_strategy](../../../operations/settings/settings#vector_search_filter_strategy) (default: `auto` which implements above heuristics) may be set to `prefilter`.
+This is useful to force pre-filtering in cases where the additional filter conditions are extremely selective.
+As an example, the following query may benefit from pre-filtering:
+
+```sql
+SELECT bookid, author, title
+FROM books
+WHERE price < 2.00
+ORDER BY cosineDistance(book_vector, getEmbedding('Books on ancient Asian empires'))
+LIMIT 10
+```
+
+Assuming that only a very small number of books cost less than 2 dollar, post-filtering may return zero rows because the top 10 matches returned by the vector index could all be priced above 2 dollar.
+By forcing pre-filtering (add `SETTINGS vector_search_filter_strategy = 'prefilter'` to the query), ClickHouse first finds all books with a price of less than 2 dollar and then executes a brute-force vector search for the found books.
+
+As an alternative approach to resolve above issue, setting [vector_search_postfilter_multiplier](../../../operations/settings/settings#vector_search_postfilter_multiplier) (default: `1.0`) may be configured to a value > `1.0` (for example, `2.0`).
+The number of nearest neighbors fetched from the vector index is multiplied by the setting value and then the additional filter to be applied on those rows to return LIMIT-many rows.
+As an example, we can query again but with multiplier `3.0`:
+
+```sql
+SELECT bookid, author, title
+FROM books
+WHERE price < 2.00
+ORDER BY cosineDistance(book_vector, getEmbedding('Books on ancient Asian empires'))
+LIMIT 10
+SETTING vector_search_postfilter_multiplier = 3.0;
+```
+
+ClickHouse will fetch 3.0 x 10 = 30 nearest neighbors from the vector index in each part and afterwards evaluate the additional filters.
+Only the ten closest neighbors will be returned.
+We note that setting `vector_search_postfilter_multiplier` can mitigate the problem but in extreme cases (very selective WHERE condition), it is still possible that less than N requested rows returned.
 
 ### Performance Tuning {#performance-tuning}
 
@@ -394,7 +441,7 @@ returns
    └────┴─────────┘
 ```
 
-# References {#references}
+## References {#references}
 
 Blogs:
 - [Vector Search with ClickHouse - Part 1](https://clickhouse.com/blog/vector-search-clickhouse-p1)

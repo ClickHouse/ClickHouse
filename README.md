@@ -47,14 +47,20 @@ Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com.
 You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
 Upcoming meetups
-* [Jakarta Meetup with AWS](https://www.meetup.com/clickhouse-indonesia-user-group/events/306973747/) - April 22, 2025
-* [Denver Meetup](https://www.meetup.com/clickhouse-denver-user-group/events/306934991/) - April 23, 2025
 * [Austin Meetup](https://www.meetup.com/clickhouse-austin-user-group/events/307289908) - May 13, 2025
 * [London Meetup](https://www.meetup.com/clickhouse-london-user-group/events/306047172/) - May 14, 2025
 * [Istanbul Meetup](https://www.meetup.com/clickhouse-turkiye-meetup-group/events/306978337/) - May 15, 2025
 * [Shenzhen Meetup](https://www.huodongxing.com/event/7803892350511) - May 17, 2025
+* [Seattle Meetup](https://www.meetup.com/clickhouse-seattle-user-group/events/307622716/) - May 20, 2025
+* [Tokyo Meetup](https://www.meetup.com/clickhouse-tokyo-user-group/events/307689645/) - June 5, 2025
+* [Washington DC Meetup](https://www.meetup.com/clickhouse-dc-user-group/events/307622954/) - June 12, 2025
+* [Atlanta Meetup](https://www.meetup.com/clickhouse-atlanta-meetup-group/events/307627590/) - July 8, 2025
+* [New York Meetup](https://www.meetup.com/clickhouse-new-york-user-group/events/307627675/) - July 15, 2025
+
 
 Recent meetups
+* [Denver Meetup](https://www.meetup.com/clickhouse-denver-user-group/events/306934991/) - April 23, 2025
+* [Jakarta Meetup with AWS](https://www.meetup.com/clickhouse-indonesia-user-group/events/306973747/) - April 22, 2025
 * [Kuala Lumper Meetup with CNCF](https://www.meetup.com/clickhouse-malaysia-meetup-group/events/306697678/) - April 16, 2025
 * [Tokyo Meetup with Confluent](https://www.meetup.com/clickhouse-tokyo-user-group/events/306832118/) - April 15, 2025
 * [Ho Chi Minh Meetup with AWS & Infinite Lambda](https://www.meetup.com/clickhouse-vietnam-meetup-group/events/306810105/) - April 12, 2025
@@ -73,12 +79,7 @@ Recent meetups
 * [Seattle Meetup](https://www.meetup.com/clickhouse-seattle-user-group/events/305916325) - March 5, 2025
 * [Paris Meetup](https://www.meetup.com/clickhouse-france-user-group/events/305792997) - March 4, 2025
 * [Shanghai Meetup](https://www.huodongxing.com/event/3794544969111?td=3894807410019) - March 1, 2025
-* [Singapore Meetup](https://www.meetup.com/clickhouse-singapore-meetup-group/events/305917892/) - Feb 25, 2025
-* [Los Angeles Meetup (with DevOpsDays)](https://www.meetup.com/clickhouse-los-angeles-user-group/events/305952193) - Feb 20, 2025
-* [Wellington Meetup](https://www.meetup.com/clickhouse-wellington-user-group/events/305666164/) - Feb 20, 2025
-* [Auckland Meetup](https://www.meetup.com/clickhouse-auckland-meetup-group/events/305666103/) - Feb 19, 2025
-* [Dubai Meetup](https://www.meetup.com/clickhouse-dubai-meetup-group/events/303096989/) - Feb 10, 2025
-* [Bangalore Meetup](https://www.meetup.com/clickhouse-bangalore-user-group/events/305497951/) - Feb 8, 2025
+
 
 
 
