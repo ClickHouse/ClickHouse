@@ -87,6 +87,7 @@ server = cluster.add_instance("server",
 cluster.start()
 logger.info("Starting cluster")
 server.wait_start(8)
+logger.info(f"Server running on host {server.ip_address}, port 9000")
 
 # Start the load generator
 logger.info("Start load generator")
