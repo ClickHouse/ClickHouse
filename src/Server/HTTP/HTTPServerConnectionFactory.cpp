@@ -3,6 +3,8 @@
 #include <Server/HTTP/HTTP2/HTTP2ServerConnection.h>
 #include <Poco/ThreadPool.h>
 
+#include "config.h"
+
 namespace DB
 {
 
@@ -21,15 +23,19 @@ HTTPServerConnectionFactory::HTTPServerConnectionFactory(
 
 Poco::Net::TCPServerConnection * HTTPServerConnectionFactory::createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server)
 {
+#if USE_NGHTTP2
     if (isHTTP2Connection(socket, http2_params))
         return new HTTP2ServerConnection(context, tcp_server, socket, http2_params, factory, thread_pool, read_event, write_event);
+#endif
     return new HTTP1ServerConnection(context, tcp_server, socket, http1_params, factory, read_event, write_event);
 }
 
 Poco::Net::TCPServerConnection * HTTPServerConnectionFactory::createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server, TCPProtocolStackData & stack_data)
 {
+#if USE_NGHTTP2
     if (isHTTP2Connection(socket, http2_params))
         return new HTTP2ServerConnection(context, tcp_server, socket, http2_params, factory, thread_pool, stack_data.forwarded_for, read_event, write_event);
+#endif
     return new HTTP1ServerConnection(context, tcp_server, socket, http1_params, factory, stack_data.forwarded_for, read_event, write_event);
 }
 

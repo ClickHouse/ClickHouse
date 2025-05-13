@@ -1,5 +1,8 @@
 #pragma once
 
+#include "config.h"
+#if USE_NGHTTP2
+
 #include <Common/ProfileEvents.h>
 
 #include <IO/BufferWithOwnMemory.h>
@@ -12,7 +15,6 @@
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
 #include <Server/TCPServer.h>
 
-#include <Poco/Net/SecureServerSocket.h>
 #include <Poco/Net/TCPServerConnection.h>
 #include <Poco/Pipe.h>
 
@@ -23,8 +25,6 @@
 
 namespace DB
 {
-
-bool setHTTP2Alpn(const Poco::Net::SecureServerSocket & socket, HTTP2ServerParams::Ptr http2_params);
 
 bool isHTTP2Connection(const Poco::Net::StreamSocket & socket, HTTP2ServerParams::Ptr http2_params);
 
@@ -117,3 +117,5 @@ private:
 };
 
 }
+
+#endif

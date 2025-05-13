@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int REQUIRED_PASSWORD;
+    extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
 }
 
 namespace

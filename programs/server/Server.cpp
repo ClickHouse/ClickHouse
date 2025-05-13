@@ -114,7 +114,8 @@
 #include <Server/TLSHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/KeeperReadinessHandler.h>
-#include <Server/HTTP/HTTP2/HTTP2ServerConnection.h>
+#include <Server/HTTP/HTTP2/HTTP2ServerParams.h>
+#include <Server/HTTP/HTTP2/setHTTP2Alpn.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/CloudPlacementInfo.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -124,8 +125,6 @@
 
 #include <Common/Jemalloc.h>
 
-#include "Server/HTTP/HTTP2/HTTP2ServerConnection.h"
-#include "Server/HTTP/HTTP2/HTTP2ServerParams.h"
 #include "config.h"
 #include <Common/config_version.h>
 
@@ -158,7 +157,6 @@
 #   include <azure/storage/common/internal/xml_wrapper.hpp>
 #   include <azure/core/diagnostics/logger.hpp>
 #endif
-
 
 #include <incbin.h>
 /// A minimal file used when the server is run without installation

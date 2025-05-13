@@ -32,7 +32,7 @@ private:
     Poco::Net::HTTPServerParams::Ptr http1_params;
     HTTP2ServerParams::Ptr http2_params;
     HTTPRequestHandlerFactoryPtr factory;
-    Poco::ThreadPool & thread_pool;
+    [[maybe_unused]] Poco::ThreadPool & thread_pool;
     ProfileEvents::Event read_event;
     ProfileEvents::Event write_event;
 };

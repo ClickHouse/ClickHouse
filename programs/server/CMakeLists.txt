@@ -24,9 +24,6 @@ endif()
 if (TARGET ch_contrib::azure_sdk)
     list(APPEND CLICKHOUSE_SERVER_LINK PRIVATE ch_contrib::azure_sdk)
 endif()
-if (TARGET ch_contrib::nghttp2)
-    list(APPEND CLICKHOUSE_SERVER_LINK PRIVATE ch_contrib::nghttp2)
-endif()
 
 clickhouse_program_add(server)
 

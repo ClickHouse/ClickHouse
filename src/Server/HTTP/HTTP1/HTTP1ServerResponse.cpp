@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int REQUIRED_PASSWORD;
     extern const int ABORTED;
+    extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
 }
 
 static constexpr std::string_view EXCEPTION_MARKER = "__exception__";
