@@ -254,8 +254,7 @@ Similar to [`IPv4StringToNum`](#IPv4StringToNum) and [IPv4NumToString](#IPv4NumT
 **Syntax**
 
 ```sql
-toIPv4(string)
-toIPv4(UInt32)
+toIPv4(x)
 ```
 
 **Arguments**
