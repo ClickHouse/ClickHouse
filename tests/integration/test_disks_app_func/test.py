@@ -23,7 +23,7 @@ def started_cluster():
         # local disk requires its `path` directory to exist.
         # the two paths below belong to `test1` and `test2` disks
         node = cluster.instances["disks_app_test"]
-        for path in [path1, path1]:
+        for path in [path1, path2]:
             node.exec_in_container(
                 [
                     "bash",
@@ -282,11 +282,11 @@ def test_disks_app_func_ls(started_cluster):
 def test_disks_app_func_cp(started_cluster):
     source = cluster.instances["disks_app_test"]
 
-    touch(source, "test1", path1)
+    touch(source, "test1", "path1")
 
     out = ls(source, "test1", ".")
 
-    assert path1 in out
+    assert "path1" in out
 
     source.exec_in_container(
         [
@@ -299,20 +299,20 @@ def test_disks_app_func_cp(started_cluster):
 
     out = ls(source, "test2", ".")
 
-    assert path1 in out
+    assert "path1" in out
 
-    remove(source, "test2", path1)
-    remove(source, "test1", path1)
+    remove(source, "test2", "path1")
+    remove(source, "test1", "path1")
 
     # alesapin: Why we need list one more time?
     # kssenii: it is an assertion that the file is indeed deleted
     out = ls(source, "test2", ".")
 
-    assert path1 not in out
+    assert "path1" not in out
 
     out = ls(source, "test1", ".")
 
-    assert path1 not in out
+    assert "path1" not in out
 
 
 def test_disks_app_func_ln(started_cluster):
