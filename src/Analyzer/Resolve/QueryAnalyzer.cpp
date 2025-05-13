@@ -1744,19 +1744,26 @@ bool hasTableExpressionInJoinTree(const QueryTreeNodePtr & join_tree_node, const
         if (node_to_process == table_expression)
             return true;
 
-        if (node_to_process->getNodeType() == QueryTreeNodeType::JOIN)
+        auto node_type = node_to_process->getNodeType();
+
+        if (node_type == QueryTreeNodeType::JOIN)
         {
             const auto & join_node = node_to_process->as<JoinNode &>();
             nodes_to_process.push_back(join_node.getLeftTableExpression());
             nodes_to_process.push_back(join_node.getRightTableExpression());
         }
-
-        if (node_to_process->getNodeType() == QueryTreeNodeType::CROSS_JOIN)
+        else if (node_type == QueryTreeNodeType::CROSS_JOIN)
         {
             const auto & join_node = node_to_process->as<CrossJoinNode &>();
             for (const auto & expr : join_node.getTableExpressions())
                 nodes_to_process.push_back(expr);
         }
+        else if (node_type == QueryTreeNodeType::ARRAY_JOIN)
+        {
+            const auto & array_join_node = node_to_process->as<ArrayJoinNode &>();
+            nodes_to_process.push_back(array_join_node.getTableExpression());
+        }
+
     }
     return false;
 }
