@@ -351,9 +351,9 @@ Result:
 
 <DeprecatedBadge/>
 
-
 Splits a UTF-8 string into n-grams of `ngramsize` symbols.
-This function is deprecated. Prefer to use [tokens](#tokens) with the `ngram` tokenizer.
+This function is deprecated.
+Please use function [tokens](#tokens) with the `ngram` tokenizer.
 The function might be removed at some point in future.
 
 **Syntax**

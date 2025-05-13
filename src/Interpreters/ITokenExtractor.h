@@ -160,15 +160,12 @@ struct NgramTokenExtractor final : public ITokenExtractorHelper<NgramTokenExtrac
     static const char * getExternalName() { return "ngram"; }
 
     std::vector<String> getTokens(const char * data, size_t length) const override;
-
     bool nextInString(const char * data, size_t length, size_t *  __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
-
     bool nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const override;
 
     size_t getN() const { return n; }
 
 private:
-
     size_t n;
 };
 
@@ -178,30 +175,22 @@ struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtrac
     static const char * getName() { return "tokenbf_v1"; }
     static const char * getExternalName() { return "default"; }
 
-    std::vector<String> getTokens(const char * data, size_t length) const override;
-
     bool nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
-
     bool nextInStringPadded(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
-
     bool nextInStringLike(const char * data, size_t length, size_t * __restrict pos, String & token) const override;
-
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
-
     void substringToGinFilter(const char * data, size_t length, GinFilter & gin_filter, bool is_prefix, bool is_suffix) const override;
 };
 
 /// Parser doing "no operation". Returns the entire input as a single token.
 struct NoOpTokenExtractor final : public ITokenExtractorHelper<NoOpTokenExtractor>
 {
-    static const char * getName() { return "noop"; }
+    static const char * getName() { return "no_op"; }
     static const char * getExternalName() { return getName(); }
 
     std::vector<String> getTokens(const char * data, size_t length) const override;
-
-    bool nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
-
-    bool nextInStringLike(const char * data, size_t length, size_t * __restrict pos, String & token) const override;
+    bool nextInString(const char * data, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const override;
+    bool nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const override;
 };
 
 }
