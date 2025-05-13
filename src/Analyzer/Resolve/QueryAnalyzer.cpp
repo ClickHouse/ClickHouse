@@ -2204,6 +2204,8 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
             table_expression_columns,
             scope);
 
+        updateMatchedColumnsFromJoinUsing(matched_column_nodes_with_names, table_expression, scope);
+
         table_expressions_column_nodes_with_names_stack.push_back(std::move(matched_column_nodes_with_names));
     }
 
