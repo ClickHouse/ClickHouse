@@ -19,16 +19,6 @@ namespace DB
 
 void OwnSplitChannel::log(const Poco::Message & msg)
 {
-    if (!isLoggingEnabled())
-        return;
-
-#ifndef WITHOUT_TEXT_LOG
-    auto logs_queue = CurrentThread::getInternalTextLogsQueue();
-
-    if (channels.empty() && (logs_queue == nullptr || !logs_queue->isNeeded(msg.getPriority(), msg.getSource())))
-        return;
-#endif
-
     if (auto masker = SensitiveDataMasker::getInstance())
     {
         auto message_text = msg.getText();
@@ -38,7 +28,6 @@ void OwnSplitChannel::log(const Poco::Message & msg)
             tryLogSplit({msg, message_text}); // we will continue with the copy of original message with text modified
             return;
         }
-
     }
 
     tryLogSplit(msg);
@@ -90,7 +79,6 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
             channel.first->log(msg); // ordinary child
     }
 
-#ifndef WITHOUT_TEXT_LOG
     auto logs_queue = CurrentThread::getInternalTextLogsQueue();
 
     /// Log to "TCP queue" if message is not too noisy
@@ -156,7 +144,6 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
 
         text_log_locked->push(std::move(elem));
     }
-#endif
 }
 
 
@@ -165,13 +152,11 @@ void OwnSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel, const std
     channels.emplace(name, ExtendedChannelPtrPair(std::move(channel), dynamic_cast<ExtendedLogChannel *>(channel.get())));
 }
 
-#ifndef WITHOUT_TEXT_LOG
 void OwnSplitChannel::addTextLog(std::shared_ptr<SystemLogQueue<TextLogElement>> log_queue, int max_priority)
 {
     text_log = log_queue;
     text_log_max_priority.store(max_priority, std::memory_order_relaxed);
 }
-#endif
 
 void OwnSplitChannel::setLevel(const std::string & name, int level)
 {
@@ -202,6 +187,13 @@ void OwnAsyncSplitChannel::log(const Poco::Message & msg)
 {
     if (!isLoggingEnabled())
         return;
+    ExtendedLogMessage msg_ext = ExtendedLogMessage::getFrom(msg);
+
+    auto logs_queue = CurrentThread::getInternalTextLogsQueue();
+
+    if (assert_cast<DB::OwnSplitChannel *>(getChannel())->channels.empty()
+        && (logs_queue == nullptr || !logs_queue->isNeeded(msg.getPriority(), msg.getSource())))
+        return;
 
     AsyncChannel::log(msg);
 }
@@ -216,12 +208,10 @@ void OwnAsyncSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel, cons
     assert_cast<DB::OwnSplitChannel *>(getChannel())->addChannel(channel, name);
 }
 
-#ifndef WITHOUT_TEXT_LOG
 void OwnAsyncSplitChannel::addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority)
 {
     assert_cast<DB::OwnSplitChannel *>(getChannel())->addTextLog(log_queue, max_priority);
 }
-#endif
 
 void OwnAsyncSplitChannel::setLevel(const std::string & name, int level)
 {

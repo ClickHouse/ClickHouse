@@ -13,9 +13,7 @@
 #include <Poco/SyslogChannel.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
-#ifndef WITHOUT_TEXT_LOG
-    #include <Interpreters/TextLog.h>
-#endif
+#include <Interpreters/TextLog.h>
 
 #include <filesystem>
 
@@ -67,7 +65,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
     /// Split logs to ordinary log, error log, syslog and console.
     /// Use extended interface of Channel for more comprehensive logging.
-    split = new DB::OwnAsyncSplitChannel();
+    split = new DB::OwnSplitChannel();
 
     auto log_level_string = config.getString("logger.level", "trace");
 

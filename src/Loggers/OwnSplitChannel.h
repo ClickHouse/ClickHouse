@@ -13,14 +13,12 @@
 #include <Poco/Channel.h>
 
 
-#ifndef WITHOUT_TEXT_LOG
 namespace DB
 {
     template <typename> class SystemLogQueue;
     struct TextLogElement;
     using TextLogQueue = SystemLogQueue<TextLogElement>;
 }
-#endif
 
 namespace DB
 {
@@ -38,13 +36,10 @@ public:
     /// Adds a child channel
     void addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name);
 
-#ifndef WITHOUT_TEXT_LOG
     void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority);
-#endif
 
     void setLevel(const std::string & name, int level);
 
-private:
     void logSplit(const Poco::Message & msg);
     void tryLogSplit(const Poco::Message & msg);
 
@@ -53,10 +48,8 @@ private:
     using ExtendedChannelPtrPair = std::pair<ChannelPtr, ExtendedLogChannel *>;
     std::map<std::string, ExtendedChannelPtrPair> channels;
 
-#ifndef WITHOUT_TEXT_LOG
     std::weak_ptr<DB::TextLogQueue> text_log;
     std::atomic<int> text_log_max_priority = -1;
-#endif
 };
 
 /// Same as OwnSplitChannel but it uses a separate thread for logging.
@@ -70,9 +63,7 @@ public:
     void setChannelProperty(const std::string & channel_name, const std::string & name, const std::string & value);
     void addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name);
 
-#ifndef WITHOUT_TEXT_LOG
     void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority);
-#endif
     void setLevel(const std::string & name, int level);
 };
 }
