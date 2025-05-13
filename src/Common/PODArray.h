@@ -68,7 +68,7 @@ namespace DB
   * TODO Allow greater alignment than alignof(T). Example: array of char aligned to page size.
   */
 static constexpr size_t empty_pod_array_size = 1024;
-extern const char empty_pod_array[empty_pod_array_size];
+alignas(std::max_align_t) extern const char empty_pod_array[empty_pod_array_size];
 
 namespace PODArrayDetails
 {
