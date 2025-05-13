@@ -111,7 +111,7 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_bytes_for_materialized_views;
     extern const SettingsBool ignore_materialized_views_with_dropped_target_table;
     extern const SettingsBool distributed_foreground_insert;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsBool insert_null_as_default;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool use_concurrency_control;
