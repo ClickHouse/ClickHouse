@@ -18,8 +18,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
-    extern const int CANNOT_WRITE_TO_SOCKET;
     extern const int REQUIRED_PASSWORD;
     extern const int ABORTED;
 }
@@ -221,8 +219,8 @@ void WriteBufferFromHTTP1ServerResponse::startSendHeaders()
 
     headers_started_sending = true;
 
-    /// FIXME: next() works only for chunked transfer of HTTP/1.0 "end on connection close" transfer
-    /// Should check response headers for explicitely set Content-Length and do smth with it
+    /// FIXME: next() works only for chunked transfer and HTTP/1.0 "end on connection close" transfer
+    /// Should check response headers for explicitly set Content-Length and do smth with it
 
     if (!response.getChunkedTransferEncoding() && response.getContentLength() == Poco::Net::HTTPMessage::UNKNOWN_CONTENT_LENGTH)
     {
@@ -375,7 +373,7 @@ void WriteBufferFromHTTP1ServerResponse::finalizeImpl()
 void WriteBufferFromHTTP1ServerResponse::cancelImpl() noexcept
 {
     /// FIXME: Is it correct? When do we use it?
- 
+
     // we have to close connection when it has been canceled
     // client is waiting final empty chunk in the chunk encoding, chient has to receive EOF instead it ASAP
     response.setKeepAlive(false);

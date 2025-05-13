@@ -3,7 +3,6 @@
 
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPResponseHeaderWriter.h>
-#include <Server/HTTP/sendExceptionToHTTPClient.h>
 
 #include <Core/ServerSettings.h>
 #include <IO/HTTPCommon.h>
