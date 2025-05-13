@@ -1,3 +1,8 @@
+#include <Server/HTTP/HTTP2/HTTP2ServerConnection.h>
+
+#include "config.h"
+#if USE_NGHTTP2
+
 #include <base/scope_guard.h>
 
 #include <Common/Logger.h>
@@ -5,18 +10,17 @@
 
 #include <IO/ReadBufferFromPocoSocket.h>
 
-#include <Server/HTTP/HTTP2/HTTP2ServerConnection.h>
 #include <Server/HTTP/HTTP2/HTTP2ServerParams.h>
 
 #include <Poco/Exception.h>
 #include <Poco/Format.h>
-#include <Poco/Net/SecureServerSocket.h>
-#include <Poco/Net/SecureSocketImpl.h>
-#include <Poco/Net/SecureStreamSocketImpl.h>
 #include <Poco/Random.h>
 
-#include <sys/poll.h>
-#include <sys/socket.h>
+#if USE_SSL
+    #include <Poco/Net/SecureStreamSocketImpl.h>
+#endif
+
+#include <poll.h>
 
 namespace DB
 {
@@ -31,58 +35,8 @@ const char HTTP2_CLIENT_PREFACE[24] = {'P', 'R', 'I', ' ', '*', ' ', 'H', 'T', '
 
 const std::string HTTP2_ALPN = "h2";
 
-unsigned char ALL_ALPN_PROTOCOLS[] =
-{
-    0x02, 'h', '2',
-    0x08, 'h','t','t','p','/','1','.','1',
-    0x08, 'h','t','t','p','/','1','.','0',
-};
-
-unsigned char H2_ALPN_PROTOCOLS[] =
-{
-    0x02, 'h', '2',
-};
-
 uint8_t STATUS_PSEUDOHEADER[] = {':', 's', 't', 'a', 't', 'u', 's'};
 
-int alpnSelectCb(
-    SSL* /*ssl*/,
-    const unsigned char** out,
-    unsigned char* outlen,
-    const unsigned char* in,
-    unsigned int inlen,
-    void* /*arg*/)
-{
-    int res = SSL_select_next_proto(
-        const_cast<unsigned char**>(out),
-        outlen,
-        H2_ALPN_PROTOCOLS,
-        sizeof(H2_ALPN_PROTOCOLS),
-        in, inlen);
-    if (res == OPENSSL_NPN_NEGOTIATED)
-        return SSL_TLSEXT_ERR_OK;
-    return SSL_TLSEXT_ERR_NOACK;
-}
-
-}
-
-bool setHTTP2Alpn(const Poco::Net::SecureServerSocket & socket, HTTP2ServerParams::Ptr http2_params)
-{
-    if (!http2_params)
-        return false;
-
-    Poco::Net::Context::Ptr context = socket.context();
-    if (!context)
-        return false;
-
-    SSL_CTX * ssl_ctx = context->sslContext();
-    if (!ssl_ctx)
-        return false;
-
-    SSL_CTX_set_alpn_protos(ssl_ctx, ALL_ALPN_PROTOCOLS, sizeof(ALL_ALPN_PROTOCOLS));
-    SSL_CTX_set_alpn_select_cb(ssl_ctx, alpnSelectCb, nullptr);
-
-    return true;
 }
 
 bool isHTTP2Connection(const Poco::Net::StreamSocket & socket, HTTP2ServerParams::Ptr http2_params)
@@ -100,6 +54,7 @@ bool isHTTP2Connection(const Poco::Net::StreamSocket & socket, HTTP2ServerParams
         return memcmp(buf, HTTP2_CLIENT_PREFACE, sizeof(buf)) == 0;
     }
 
+#if USE_SSL
     /// dynamic_cast looks like a hack but can't think of a better way
     Poco::Net::SecureStreamSocketImpl * ssocket = dynamic_cast<Poco::Net::SecureStreamSocketImpl *>(socket.impl());
     chassert(ssocket != nullptr);  /// If this happens then something has changed in Poco internals
@@ -109,6 +64,9 @@ bool isHTTP2Connection(const Poco::Net::StreamSocket & socket, HTTP2ServerParams
     ssocket->completeHandshake();
     std::string alpn_selected = ssocket->getAlpnSelected();
     return alpn_selected == HTTP2_ALPN;
+#else
+    return false;
+#endif
 }
 
 HTTP2ServerConnection::HTTP2ServerConnection(
@@ -464,7 +422,7 @@ int HTTP2ServerConnection::onHeaderCallback(nghttp2_session * /*session*/, const
     HTTP2ServerConnection * self = reinterpret_cast<HTTP2ServerConnection *>(user_data);
 
     auto it = self->streams.find(frame->hd.stream_id);
-    chassert(it != streams.end() && it->second);
+    chassert(it != self->streams.end() && it->second);
     HTTP2Stream & stream = *it->second;
 
     /// FIXME: Double copying here and in request.set()
@@ -494,7 +452,7 @@ int HTTP2ServerConnection::onFrameRecvCallback(nghttp2_session * session,
         return 0;
 
     auto it = self->streams.find(frame->hd.stream_id);
-    chassert(it != streams.end() && it->second);
+    chassert(it != self->streams.end() && it->second);
     HTTP2Stream & stream = *it->second;
 
     if (frame->hd.flags & NGHTTP2_FLAG_END_STREAM)
@@ -519,7 +477,7 @@ int HTTP2ServerConnection::onStreamCloseCallback(nghttp2_session * /*session*/, 
     HTTP2ServerConnection * self = reinterpret_cast<HTTP2ServerConnection *>(user_data);
 
     auto it = self->streams.find(stream_id);
-    chassert(it != streams.end() && it->second);
+    chassert(it != self->streams.end() && it->second);
     it->second->closed = true;
 
     return 0;
@@ -535,7 +493,7 @@ int HTTP2ServerConnection::onDataChunkRecvCallback(nghttp2_session * /* session*
     chassert(self->buf.data() <= reinterpret_cast<const char *>(data) && reinterpret_cast<const char *>(data) <= self->buf.data() + self->buf.size());
 
     auto it = self->streams.find(stream_id);
-    chassert(it != streams.end() && it->second);
+    chassert(it != self->streams.end() && it->second);
     HTTP2Stream & stream = *it->second;
 
     std::lock_guard lock(stream.input_mutex);
@@ -548,3 +506,5 @@ int HTTP2ServerConnection::onDataChunkRecvCallback(nghttp2_session * /* session*
 }
 
 }
+
+#endif

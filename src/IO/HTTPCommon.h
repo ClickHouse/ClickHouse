@@ -18,8 +18,6 @@
 namespace DB
 {
 
-class HTTPServerResponse;
-
 class HTTPException : public Exception
 {
 public:
