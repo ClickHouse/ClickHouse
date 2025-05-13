@@ -43,8 +43,9 @@ minimal negative number by minus one.
     FunctionDocumentation::Example example1 = {"Integer division by zero", "SELECT intDivOrZero(1, 0)","0"};
     FunctionDocumentation::Example example2 = {"Dividing a minimal negative number by minus 1", "SELECT intDivOrZero(0.05, -1)","0"};
     FunctionDocumentation::Examples examples = {example1, example2};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
 
     factory.registerFunction<FunctionIntDivOrZero>(documentation);
 }

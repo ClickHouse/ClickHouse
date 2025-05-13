@@ -87,8 +87,9 @@ REGISTER_FUNCTION(Negate)
     FunctionDocumentation::ReturnedValue returned_value = "Returns -x from x";
     FunctionDocumentation::Example example1 = {"", "SELECT negate(10)", "-10"};
     FunctionDocumentation::Examples examples = {example1};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
 
     factory.registerFunction<FunctionNegate>(documentation);
 }
