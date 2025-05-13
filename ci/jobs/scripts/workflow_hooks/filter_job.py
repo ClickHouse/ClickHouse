@@ -1,4 +1,5 @@
 from ci.defs.defs import JobNames
+from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.pr_description import Labels
 from ci.praktika.info import Info
 
@@ -18,11 +19,10 @@ def only_docs(changed_files):
     return True
 
 
-ONLY_DOCS_JOBS = [
+DO_NOT_TEST_JOBS = [
     JobNames.STYLE_CHECK,
     JobNames.DOCKER_BUILDS_ARM,
     JobNames.DOCKER_BUILDS_AMD,
-    JobNames.Docs,
 ]
 
 PRELIMINARY_JOBS = [
@@ -30,6 +30,16 @@ PRELIMINARY_JOBS = [
     JobNames.FAST_TEST,
     "Build (amd_tidy)",
     "Build (arm_tidy)",
+]
+
+INTEGRATION_TEST_FLAKY_CHECK_JOBS = [
+    "Build (amd_asan)",
+    "Integration tests (asan, flaky check)",
+]
+
+FUNCTIONAL_TEST_FLAKY_CHECK_JOBS = [
+    "Build (amd_asan)",
+    "Stateless tests (asan, flaky check)",
 ]
 
 _info_cache = None
@@ -45,14 +55,48 @@ def should_skip_job(job_name):
         print("WARNING: no changed files found for PR - do not filter jobs")
         return False, ""
 
-    if only_docs(changed_files) and job_name not in ONLY_DOCS_JOBS:
-        return True, "Docs only update"
-
-    if Labels.DO_NOT_TEST in _info_cache.pr_labels and job_name not in ONLY_DOCS_JOBS:
+    if Labels.DO_NOT_TEST in _info_cache.pr_labels and job_name not in DO_NOT_TEST_JOBS:
         return True, f"Skipped, labeled with '{Labels.DO_NOT_TEST}'"
 
     if Labels.NO_FAST_TESTS in _info_cache.pr_labels and job_name in PRELIMINARY_JOBS:
         return True, f"Skipped, labeled with '{Labels.NO_FAST_TESTS}'"
+
+    if (
+        Labels.CI_INTEGRATION_FLAKY in _info_cache.pr_labels
+        and job_name not in INTEGRATION_TEST_FLAKY_CHECK_JOBS
+    ):
+        return (
+            True,
+            f"Skipped, labeled with '{Labels.CI_INTEGRATION_FLAKY}' - run integration test jobs only",
+        )
+
+    if (
+        Labels.CI_FUNCTIONAL_FLAKY in _info_cache.pr_labels
+        and job_name not in FUNCTIONAL_TEST_FLAKY_CHECK_JOBS
+    ):
+        return (
+            True,
+            f"Skipped, labeled with '{Labels.CI_FUNCTIONAL_FLAKY}' - run stateless test jobs only",
+        )
+
+    if Labels.CI_INTEGRATION in _info_cache.pr_labels and not (
+        job_name.startswith(JobNames.INTEGRATION)
+        or job_name in JobConfigs.builds_for_tests
+    ):
+        return (
+            True,
+            f"Skipped, labeled with '{Labels.CI_INTEGRATION}' - run integration test jobs only",
+        )
+
+    if Labels.CI_FUNCTIONAL in _info_cache.pr_labels and not (
+        job_name.startswith(JobNames.STATELESS)
+        or job_name.startswith(JobNames.STATEFUL)
+        or job_name in JobConfigs.builds_for_tests
+    ):
+        return (
+            True,
+            f"Skipped, labeled with '{Labels.CI_FUNCTIONAL}' - run stateless test jobs only",
+        )
 
     if Labels.CI_PERFORMANCE in _info_cache.pr_labels and (
         "performance" not in job_name.lower()

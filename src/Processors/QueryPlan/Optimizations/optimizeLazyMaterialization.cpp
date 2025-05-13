@@ -25,9 +25,6 @@ static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
     if (reading->isQueryWithSampling())
         return false;
 
-    if (reading->isParallelReadingEnabled())
-        return false;
-
     return true;
 }
 
@@ -118,7 +115,7 @@ static void collectLazilyReadColumnNames(
     auto storage_snapshot = read_from_merge_tree->getStorageSnapshot();
     NameSet lazily_read_column_name_set;
 
-    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+    const auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
         .withExtendedObjects()
         .withSubcolumns(storage_snapshot->storage.supportsSubcolumns());
 
@@ -222,7 +219,7 @@ static void updateStepsDataStreams(StepStack & steps_to_update)
     }
 }
 
-void optimizeLazyMaterialization(Stack & stack, QueryPlan::Nodes & nodes, size_t max_limit_for_lazy_materialization)
+void optimizeLazyMaterialization(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, size_t max_limit_for_lazy_materialization)
 {
     const auto & frame = stack.back();
 
@@ -267,6 +264,11 @@ void optimizeLazyMaterialization(Stack & stack, QueryPlan::Nodes & nodes, size_t
     if (lazily_read_info->lazily_read_columns.empty())
         return;
 
+    /// avoid applying this optimization on impractical queries for sake of implementation simplicity
+    /// i.e. when no column used in query until projection, for example, select * from t order by rand() limit 10
+    if (reading_step->getAllColumnNames().size() == lazily_read_info->lazily_read_columns.size())
+        return;
+
     lazily_read_info->data_part_infos = std::make_shared<DataPartInfoByIndex>();
 
     auto lazy_column_reader = std::make_unique<MergeTreeLazilyReader>(
@@ -280,25 +282,47 @@ void optimizeLazyMaterialization(Stack & stack, QueryPlan::Nodes & nodes, size_t
     reading_step->updateLazilyReadInfo(lazily_read_info);
 
     QueryPlan::Node * limit_node = frame.node;
-    auto & replace_node = nodes.emplace_back();
-    replace_node.children.emplace_back(limit_node);
+    auto lazily_read_step
+        = std::make_unique<LazilyReadStep>(sorting_step->getOutputHeader(), lazily_read_info, std::move(lazy_column_reader));
+    lazily_read_step->setStepDescription("Lazily Read");
 
-    QueryPlan::Node * limit_parent_node = (stack.rbegin() + 1)->node;
-
-    for (auto & limit_parent_child : limit_parent_node->children)
+    /// the root node can be a limit node when query is distributed
+    /// and executed on remote node till WithMergeableStateAfterAggregationAndLimit stage
+    /// see 03404_lazy_materialization_distributed.sql
+    if (limit_node == &root)
     {
-        if (limit_parent_child == limit_node)
+        chassert(stack.size() == 1);
+
+        /// move out limit from root node and move lazy read in
+        auto & new_limit_node = nodes.emplace_back();
+        new_limit_node.step = std::move(limit_node->step);
+        new_limit_node.children = limit_node->children;
+
+        root.children.clear();
+        root.children.push_back(&new_limit_node);
+        root.step = std::move(lazily_read_step);
+    }
+    else
+    {
+        chassert(stack.size() > 1);
+
+        auto & lazy_read_node = nodes.emplace_back();
+        lazy_read_node.step = std::move(lazily_read_step);
+        lazy_read_node.children.emplace_back(limit_node);
+
+        QueryPlan::Node * limit_parent_node = (stack.rbegin() + 1)->node;
+        chassert(limit_parent_node);
+        for (auto & limit_parent_child : limit_parent_node->children)
         {
-            limit_parent_child = &replace_node;
-            break;
+            if (limit_parent_child == limit_node)
+            {
+                limit_parent_child = &lazy_read_node;
+                break;
+            }
         }
     }
 
     updateStepsDataStreams(steps_to_update);
-
-    auto lazily_read_step = std::make_unique<LazilyReadStep>(sorting_step->getOutputHeader(), lazily_read_info, std::move(lazy_column_reader));
-    lazily_read_step->setStepDescription("Lazily Read");
-    replace_node.step = std::move(lazily_read_step);
 }
 
 }

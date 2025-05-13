@@ -176,7 +176,9 @@ class Shell:
         if res.stderr:
             print(f"WARNING: stderr: {res.stderr.strip()}")
         if strict and res.returncode != 0:
-            raise RuntimeError(f"command failed with {res.returncode}")
+            raise RuntimeError(
+                f"command failed with, exit_code {res.returncode}, stderr:\n>>>\n{res.stderr.strip()}\n<<<"
+            )
         return res.stdout.strip()
 
     @classmethod
@@ -625,7 +627,19 @@ class Utils:
         return path_out
 
     @classmethod
-    def compress_file(cls, path):
+    def compress_file_gz(cls, path):
+        path_out = ""
+        if Shell.check("which gzip"):
+            path_out = f"{path}.gz"
+            Shell.check(
+                f"rm -f {path_out} && gzip < {path} > {path_out}",
+                verbose=True,
+                strict=True,
+            )
+        return path_out
+
+    @classmethod
+    def compress_file(cls, path, no_strict=False):
         if Shell.check("which zstd"):
             return cls.compress_file_zst(path)
         elif Shell.check("which pigz"):
@@ -636,17 +650,13 @@ class Utils:
                 strict=True,
             )
         elif Shell.check("which gzip"):
-            path_out = f"{path}.gz"
-            Shell.check(
-                f"rm -f {path_out} && gzip < {path} > {path_out}",
-                verbose=True,
-                strict=True,
-            )
+            return cls.compress_file_gz(path)
         else:
             path_out = path
-            Utils.raise_with_error(
-                f"Failed to compress file [{path}] no zstd or gz installed"
-            )
+            if not no_strict:
+                raise RuntimeError(
+                    f"Failed to compress file [{path}] no zstd or gz installed"
+                )
         return path_out
 
     @classmethod
@@ -654,7 +664,7 @@ class Utils:
         path = str(path)
 
         if path.endswith(".zst"):
-            path_to = path_to or path.removesuffix('.zst')
+            path_to = path_to or path.removesuffix(".zst")
 
             # Ensure zstd is installed
             if not Shell.check("which zstd", verbose=True, strict=not no_strict):
@@ -668,7 +678,9 @@ class Utils:
                 strict=not no_strict,
             )
         else:
-            raise NotImplementedError(f"Decompression for file type not supported: {path}")
+            raise NotImplementedError(
+                f"Decompression for file type not supported: {path}"
+            )
 
         if res and remove_archive:
             Shell.check(f"rm -f {quote(path)}", verbose=True)

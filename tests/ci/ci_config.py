@@ -61,7 +61,7 @@ class CI:
             run_jobs=[
                 JobNames.STYLE_CHECK,
                 BuildNames.PACKAGE_AARCH64,
-                JobNames.INTEGRATION_TEST_AARCH64,
+                JobNames.INTEGRATION_TEST_AARCH64_DISTRIBUTED_PLAN,
             ]
         ),
         Tags.CI_SET_REQUIRED: LabelConfig(
@@ -286,7 +286,7 @@ class CI:
             required_builds=[BuildNames.PACKAGE_AARCH64],
             runner_type=Runners.STYLE_CHECKER_AARCH64,
         ),
-        JobNames.STATELESS_TEST_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
+        JobNames.STATELESS_TEST_ASAN_DISTRIBUTED_PLAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN], num_batches=2
         ),
         JobNames.STATELESS_TEST_AARCH64_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
@@ -322,11 +322,16 @@ class CI:
         JobNames.STATELESS_TEST_PARALLEL_REPLICAS_REPLICATED_RELEASE: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=1
         ),
-        JobNames.STATELESS_TEST_S3_DEBUG: CommonJobConfigs.STATELESS_TEST.with_properties(
+        JobNames.STATELESS_TEST_ASYNC_INSERT_DEBUG: CommonJobConfigs.STATELESS_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=1
+        ),
+        JobNames.STATELESS_TEST_S3_DEBUG_DISTRIBUTED_PLAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=1
         ),
         JobNames.STATELESS_TEST_AZURE_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_AARCH64_ASAN], num_batches=3, release_only=True
+            required_builds=[BuildNames.PACKAGE_AARCH64_ASAN],
+            num_batches=3,
+            release_only=True,
         ),
         JobNames.STATELESS_TEST_S3_TSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN],
@@ -389,7 +394,7 @@ class CI:
             num_batches=6,
             timeout=9000,  # the job timed out with default value (7200)
         ),
-        JobNames.INTEGRATION_TEST_AARCH64: CommonJobConfigs.INTEGRATION_TEST.with_properties(
+        JobNames.INTEGRATION_TEST_AARCH64_DISTRIBUTED_PLAN: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
             num_batches=6,
             runner_type=Runners.FUNC_TESTER_AARCH64,
@@ -616,7 +621,9 @@ class CI:
     @classmethod
     def get_job_config(cls, check_name: str) -> JobConfig:
         # remove job batch if it exists in check name (hack for migration to praktika)
-        check_name = check_name.replace("arm_", "").replace("amd_", "")  # hack for new names in praktika
+        check_name = check_name.replace("arm_", "").replace(
+            "amd_", ""
+        )  # hack for new names in praktika
         check_name = re.sub(r",\s*\d+/\d+\)", ")", check_name)
         return cls.JOB_CONFIGS[check_name]
 

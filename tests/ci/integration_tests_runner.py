@@ -180,6 +180,10 @@ class ClickhouseIntegrationTestsRunner:
             os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
         )
 
+        self.use_distributed_plan = (
+            os.environ.get("CLICKHOUSE_USE_DISTRIBUTED_PLAN") is not None
+        )
+
         if "run_by_hash_total" in self.params:
             self.run_by_hash_total = self.params["run_by_hash_total"]
             self.run_by_hash_num = self.params["run_by_hash_num"]
@@ -345,6 +349,8 @@ class ClickhouseIntegrationTestsRunner:
             result.append("--disable-net-host")
         if self.use_old_analyzer:
             result.append("--old-analyzer")
+        if self.use_distributed_plan:
+            result.append("--distributed-plan")
 
         return " ".join(result)
 

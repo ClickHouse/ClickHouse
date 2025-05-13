@@ -117,7 +117,7 @@ ProcessList::EntryPtr ProcessList::insert(
     {
         LockAndOverCommitTrackerBlocker<std::unique_lock, Mutex> locker(mutex); /// To avoid deadlock in case of OOM
         auto & lock = locker.getUnderlyingLock();
-        IAST::QueryKind query_kind = ast->getQueryKind();
+        IAST::QueryKind query_kind = ast ? ast->getQueryKind() : IAST::QueryKind::Select;
 
         const auto queue_max_wait_ms = settings[Setting::queue_max_wait_ms].totalMilliseconds();
         UInt64 waiting_queries = waiting_queries_amount.load();
