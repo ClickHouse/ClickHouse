@@ -1,4 +1,8 @@
 <test>
+<create_query>
+  SELECT naiveBayesClassifier('lang_byte_2', 'Load the model');
+</create_query>
+
 <query>
   SELECT
       number,
