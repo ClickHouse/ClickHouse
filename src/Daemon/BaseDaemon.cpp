@@ -414,12 +414,13 @@ extern const char * GIT_HASH;
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
     SentryWriter::initializeInstance(config());
-    if (config().getBool("send_crash_reports.send_logical_errors", false))
+    if (config().getBool("send_crash_reports.enabled", false)
+        && config().getBool("send_crash_reports.send_logical_errors", false))
     {
         /// In release builds send it to sentry (if it is configured)
         if (auto * sentry = SentryWriter::getInstance())
         {
-            LOG_DEBUG(&logger(), "Enable sending LOGICAL_ERRORs to sentry");
+            LOG_DEBUG(&logger(), "Sending logical errors to sentry is enabled");
             Exception::callback = [sentry](const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
             {
                 if (!remote && code == ErrorCodes::LOGICAL_ERROR)

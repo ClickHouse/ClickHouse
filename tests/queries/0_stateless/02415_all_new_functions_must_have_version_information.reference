@@ -185,6 +185,8 @@ atan
 atan2
 atanh
 bar
+base32Decode
+base32Encode
 base58Decode
 base58Encode
 basename
@@ -1029,6 +1031,12 @@ toStartOfYear
 toString
 toStringCutToZero
 toTime
+toTime64
+toTime64OrNull
+toTime64OrZero
+toTimeOrNull
+toTimeOrZero
+toTimeWithFixedDate
 toTimezone
 toTypeName
 toUInt128
@@ -1086,6 +1094,7 @@ trimBoth
 trimLeft
 trimRight
 trunc
+tryBase32Decode
 tryBase58Decode
 tumble
 tumbleEnd
