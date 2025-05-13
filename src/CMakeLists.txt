@@ -680,6 +680,10 @@ if (TARGET ch_contrib::sha3iuf)
     dbms_target_link_libraries(PUBLIC ch_contrib::sha3iuf)
 endif()
 
+if (ENABLE_CPPJIEBA)
+    dbms_target_link_libraries(PUBLIC ch_contrib::cppjieba)
+endif()
+
 if (ENABLE_BUZZHOUSE)
     dbms_target_link_libraries(PRIVATE clickhouse_buzzhouse_proto)
 endif()
