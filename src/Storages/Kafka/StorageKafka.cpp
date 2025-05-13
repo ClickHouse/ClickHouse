@@ -653,7 +653,7 @@ bool StorageKafka::streamToViews()
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
-    // We can't cancel during copyData, as it's not aware of commits and other kafka-related stuff.
+    // We can't cancel during copyData, as it's not aware of ?s and other kafka-related stuff.
     // It will be cancelled on underlying layer (kafka buffer)
 
     std::atomic_size_t rows = 0;
