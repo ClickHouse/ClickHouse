@@ -188,6 +188,7 @@ public:
         , s3_compaction_shutdown(false)
         , s3_compaction_queue(std::numeric_limits<size_t>::max())
         , writer_mutex(writer_mutex_)
+        , last_merged_index(0)
     {
         s3_compaction_thread = std::make_unique<ThreadFromGlobalPool>([this] { s3CompactionThread(); });
     }
@@ -307,6 +308,7 @@ private:
     std::atomic<bool> s3_compaction_shutdown;
     ConcurrentBoundedQueue<bool> s3_compaction_queue;
     std::mutex & writer_mutex; /* Reference to the writer_mutex from Changelog */
+    uint64_t last_merged_index;
 
     void s3CompactionThread()
     {
@@ -324,10 +326,22 @@ private:
 
                 if (existing_changelogs.empty())
                     continue;
+                
+                // Find the first changelog after last_merged_index
+                auto it = existing_changelogs.upper_bound(last_merged_index);
+                if (it == existing_changelogs.end())
+                    continue;
 
-                auto it = existing_changelogs.begin();
                 uint64_t current_from_index = it->second->from_log_index;
                 uint64_t current_to_index = it->second->to_log_index;
+                
+                // Check if current file already has enough entries
+                if (current_to_index - current_from_index + 1 >= log_file_settings.rotate_interval)
+                {
+                    last_merged_index = current_to_index;
+                    continue;
+                }
+                
                 to_merge.push_back(it->second);
 
                 ++it;
@@ -412,9 +426,9 @@ private:
                     }
                 }
 
-                // Add the new merged changelog
                 existing_changelogs[merged_changelog->from_log_index] = merged_changelog;
 
+                last_merged_index = merged_changelog->to_log_index;
                 LOG_INFO(log, "Successfully merged {} S3 changelogs", to_merge.size());
             }
             catch (...)
