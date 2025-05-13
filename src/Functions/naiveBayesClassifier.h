@@ -369,6 +369,19 @@ public:
 
         return best_class;
     }
+
+    UInt64 getAllocatedBytes() const
+    {
+        UInt64 total = pool.allocatedBytes();
+        total += ngram_counts.getBufferSizeInBytes();
+        total += class_totals.getBufferSizeInBytes();
+        for (const auto & entry : ngram_counts)
+        {
+            total += entry.getMapped().getBufferSizeInBytes();
+        }
+        total += sizeof(*this);
+        return total;
+    }
 };
 
 }
