@@ -9,6 +9,17 @@
 namespace DB
 {
 
+namespace
+{
+const Graphite::AggregationPattern * extract_aggregation_pattern_function(const std::optional<Graphite::RollupRule> & rule)
+{
+    if (!rule.has_value())
+        return nullptr;
+    const Graphite::AggregationPattern * aggregation_pattern = std::get<1>(rule.value());
+    return aggregation_pattern;
+}
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -143,7 +154,7 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
             if (graphite_rollup_merged_data.wasGroupStarted())
                 accumulateRow(current_subgroup_newest_row);
 
-            Graphite::RollupRule next_rule = graphite_rollup_merged_data.currentRule();
+            Graphite::RollupRule next_rule = graphite_rollup_merged_data.currentRule().value_or(Graphite::RollupRule(nullptr, nullptr));
             if (new_path)
                 next_rule = selectPatternForPath(this->params, next_path);
 
@@ -244,19 +255,16 @@ void GraphiteRollupSortedAlgorithm::GraphiteRollupMergedData::startNextGroup(
     const ColumnRawPtrs & raw_columns, size_t row,
     Graphite::RollupRule next_rule, ColumnsDefinition & def)
 {
-    const Graphite::AggregationPattern * aggregation_pattern = std::get<1>(next_rule);
-
     /// Copy unmodified column values (including path column).
     for (size_t j : def.unmodified_column_numbers)
         columns[j]->insertFrom(*raw_columns[j], row);
 
-    if (aggregation_pattern)
+    current_rule = next_rule;
+    if (const Graphite::AggregationPattern * aggregation_pattern = extract_aggregation_pattern_function(current_rule))
     {
         aggregation_pattern->function->create(place_for_aggregate_state.data());
-        aggregate_state_created = true;
     }
 
-    current_rule = next_rule;
     was_group_started = true;
 }
 
@@ -269,12 +277,11 @@ void GraphiteRollupSortedAlgorithm::GraphiteRollupMergedData::insertRow(
     columns[def.version_column_num]->insertFrom(*row_ref_version_column, row.row_num);
 
     auto & value_column = columns[def.value_column_num];
-    const Graphite::AggregationPattern * aggregation_pattern = std::get<1>(current_rule);
-    if (aggregate_state_created)
+    if (const Graphite::AggregationPattern * aggregation_pattern = extract_aggregation_pattern_function(current_rule))
     {
         aggregation_pattern->function->insertResultInto(place_for_aggregate_state.data(), *value_column, nullptr);
         aggregation_pattern->function->destroy(place_for_aggregate_state.data());
-        aggregate_state_created = false;
+        current_rule = std::nullopt;
     }
     else
         value_column->insertFrom(*(*row.all_columns)[def.value_column_num], row.row_num);
@@ -288,8 +295,7 @@ void GraphiteRollupSortedAlgorithm::GraphiteRollupMergedData::insertRow(
 
 void GraphiteRollupSortedAlgorithm::GraphiteRollupMergedData::accumulateRow(RowRef & row, ColumnsDefinition & def)
 {
-    const Graphite::AggregationPattern * aggregation_pattern = std::get<1>(current_rule);
-    if (aggregate_state_created)
+    if (const Graphite::AggregationPattern * aggregation_pattern = extract_aggregation_pattern_function(current_rule))
     {
         auto & column = (*row.all_columns)[def.value_column_num];
         aggregation_pattern->function->add(place_for_aggregate_state.data(), &column, row.row_num, nullptr);
@@ -298,8 +304,8 @@ void GraphiteRollupSortedAlgorithm::GraphiteRollupMergedData::accumulateRow(RowR
 
 GraphiteRollupSortedAlgorithm::GraphiteRollupMergedData::~GraphiteRollupMergedData()
 {
-    if (aggregate_state_created)
-        std::get<1>(current_rule)->function->destroy(place_for_aggregate_state.data());
+    if (const Graphite::AggregationPattern * aggregation_pattern = extract_aggregation_pattern_function(current_rule))
+        aggregation_pattern->function->destroy(place_for_aggregate_state.data());
 }
 
 }

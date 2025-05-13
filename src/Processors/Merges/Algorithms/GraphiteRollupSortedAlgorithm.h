@@ -4,6 +4,8 @@
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Common/AlignedBuffer.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -63,13 +65,12 @@ public:
         void accumulateRow(RowRef & row, ColumnsDefinition & def);
         bool wasGroupStarted() const { return was_group_started; }
 
-        const Graphite::RollupRule & currentRule() const { return current_rule; }
+        const std::optional<Graphite::RollupRule> & currentRule() const { return current_rule; }
         void allocMemForAggregates(size_t size, size_t alignment) { place_for_aggregate_state.reset(size, alignment); }
 
     private:
-        Graphite::RollupRule current_rule = {nullptr, nullptr};
+        std::optional<Graphite::RollupRule> current_rule = std::nullopt;
         AlignedBuffer place_for_aggregate_state;
-        bool aggregate_state_created = false; /// Invariant: if true then current_rule is not NULL.
         bool was_group_started = false;
     };
 
