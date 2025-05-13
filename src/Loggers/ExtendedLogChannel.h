@@ -14,6 +14,15 @@ class ExtendedLogMessage
 {
 public:
     explicit ExtendedLogMessage(const Poco::Message & base_) : base(base_) {}
+    explicit ExtendedLogMessage(const Poco::Message & new_base_, const ExtendedLogMessage & other)
+        : base(new_base_)
+        , time_seconds(other.time_seconds)
+        , time_microseconds(other.time_microseconds)
+        , time_in_microseconds(other.time_in_microseconds)
+        , thread_id(other.thread_id)
+        , query_id(other.query_id)
+    {
+    }
 
     /// Attach additional data to the message
     static ExtendedLogMessage getFrom(const Poco::Message & base);

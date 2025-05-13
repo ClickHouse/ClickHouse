@@ -8,20 +8,21 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <Poco/AsyncChannel.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/Channel.h>
-
-
-namespace DB
-{
-    template <typename> class SystemLogQueue;
-    struct TextLogElement;
-    using TextLogQueue = SystemLogQueue<TextLogElement>;
-}
+#include <Poco/NotificationQueue.h>
+#include <Poco/Runnable.h>
+#include <Poco/Thread.h>
 
 namespace DB
 {
+
+class InternalTextLogsQueue;
+template <typename>
+class SystemLogQueue;
+struct TextLogElement;
+using TextLogQueue = SystemLogQueue<TextLogElement>;
+
 /// Works as Poco::SplitterChannel, but performs additional work:
 ///  passes logs to Client via TCP interface
 ///  tries to use extended logging interface of child for more comprehensive logging
@@ -40,8 +41,11 @@ public:
 
     void setLevel(const std::string & name, int level);
 
-    void logSplit(const Poco::Message & msg);
-    void tryLogSplit(const Poco::Message & msg);
+    void logSplit(
+        const ExtendedLogMessage & msg_ext,
+        const std::shared_ptr<InternalTextLogsQueue> & logs_queue,
+        const std::string & thread_name,
+        bool check_masker = true);
 
     using ChannelPtr = Poco::AutoPtr<Poco::Channel>;
     /// Handler and its pointer cast to extended interface
@@ -53,17 +57,25 @@ public:
 };
 
 /// Same as OwnSplitChannel but it uses a separate thread for logging.
-class OwnAsyncSplitChannel : public Poco::AsyncChannel, public boost::noncopyable
+/// Based on AsyncChannel
+class OwnAsyncSplitChannel : public Poco::Channel, public Poco::Runnable, public boost::noncopyable
 {
 public:
-    explicit OwnAsyncSplitChannel(Poco::Thread::Priority prio = Poco::Thread::PRIO_NORMAL);
+    OwnAsyncSplitChannel();
+    ~OwnAsyncSplitChannel() override;
 
     void log(const Poco::Message & msg) override;
+    void run() override;
 
     void setChannelProperty(const std::string & channel_name, const std::string & name, const std::string & value);
     void addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name);
 
     void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority);
     void setLevel(const std::string & name, int level);
+
+private:
+    OwnSplitChannel sync_channel;
+    Poco::Thread thread;
+    Poco::NotificationQueue queue;
 };
-}
+};
