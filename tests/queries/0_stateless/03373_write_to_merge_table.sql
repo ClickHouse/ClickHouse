@@ -29,6 +29,9 @@ INSERT INTO test03373_merge_wr_1 VALUES (2,1);
 INSERT INTO test03373_merge_wr_2 VALUES (2,2);
 INSERT INTO test03373_merge_wr_3 VALUES (2,3);
 
+OPTIMIZE TABLE test03373_table_1 FINAL;
+OPTIMIZE TABLE test03373_table_2 FINAL;
+
 SELECT * FROM test03373_table_2 ORDER BY key, value;
 
 SELECT * FROM test03373_merge_ro ORDER BY key, value;
@@ -40,12 +43,14 @@ SELECT * FROM test03373_merge_wr_auto ORDER BY key, value;
 
 -- insert into test03373_table_2
 INSERT INTO test03373_merge_wr_auto VALUES (3,1);
+OPTIMIZE TABLE test03373_table_2 FINAL;
 SELECT count() FROM test03373_table_2;
 SELECT * FROM test03373_table_2 ORDER BY key, value;
 
 CREATE TABLE test03373_table_4 (key UInt32, value UInt32) ENGINE=MergeTree() ORDER BY key;
 -- insert into test03373_table_4
 INSERT INTO test03373_merge_wr_auto VALUES (3,2);
+OPTIMIZE TABLE test03373_table_4 FINAL;
 SELECT count() FROM test03373_table_2;
 SELECT * FROM test03373_table_2 ORDER BY key, value;
 SELECT count() FROM test03373_table_4;
@@ -54,6 +59,7 @@ SELECT * FROM test03373_table_4 ORDER BY key, value;
 CREATE TABLE test03373_table_3 (key UInt32, value UInt32) ENGINE=MergeTree() ORDER BY key;
 -- insert into test03373_table_4
 INSERT INTO test03373_merge_wr_auto VALUES (3,3);
+OPTIMIZE TABLE test03373_table_4 FINAL;
 SELECT count() FROM test03373_table_2;
 SELECT * FROM test03373_table_2 ORDER BY key, value;
 SELECT count() FROM test03373_table_3;

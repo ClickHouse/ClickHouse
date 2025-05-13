@@ -54,6 +54,9 @@ $CLICKHOUSE_CLIENT --multiline --user $CLICKHOUSE_USER --password user_03409_pas
 """
 
 $CLICKHOUSE_CLIENT --multiline -q """
+    OPTIMIZE TABLE test03409_table_1 FINAL;
+    OPTIMIZE TABLE test03409_table_2 FINAL;
+    OPTIMIZE TABLE test03409_table_3 FINAL;
     SELECT '*** Select from test03409_table_1 ***';
     SELECT * FROM test03409_table_1 ORDER BY key FORMAT CSV;
     SELECT '*** Select from test03409_table_2 ***';
