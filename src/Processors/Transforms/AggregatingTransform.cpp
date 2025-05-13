@@ -1,15 +1,18 @@
-#include <atomic>
 #include <Processors/Transforms/AggregatingTransform.h>
 
-#include <Formats/NativeReader.h>
-#include <Processors/ISource.h>
-#include <QueryPipeline/Pipe.h>
-#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Core/ProtocolDefines.h>
-#include <Common/logger_useful.h>
-#include <Common/formatReadable.h>
+#include <Formats/NativeReader.h>
+#include <Processors/Chunk.h>
+#include <Processors/ISource.h>
+#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
+#include <QueryPipeline/Pipe.h>
+#include <base/types.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 
+#include <algorithm>
+#include <atomic>
 
 namespace ProfileEvents
 {
@@ -31,6 +34,7 @@ Chunk convertToChunk(const Block & block)
     auto info = std::make_shared<AggregatedChunkInfo>();
     info->bucket_num = block.info.bucket_num;
     info->is_overflows = block.info.is_overflows;
+    info->out_of_order_buckets = block.info.out_of_order_buckets;
 
     UInt64 num_rows = block.rows();
     Chunk chunk(block.getColumns(), num_rows);
@@ -406,24 +410,78 @@ private:
             }
         }
 
+        auto get_bucket_if_ready = [&](UInt32 bucket_num) -> Chunk
+        {
+            if (!shared_data->is_bucket_processed[bucket_num])
+                return {};
+
+            if (!two_level_chunks[bucket_num])
+                return {};
+
+            return std::move(two_level_chunks[bucket_num]);
+        };
+
         while (current_bucket_num < NUM_BUCKETS)
         {
-            if (!shared_data->is_bucket_processed[current_bucket_num])
-                return Status::NeedData;
+            Chunk chunk;
+            /// Try push an out of order bucket first, if it is ready.
+            for (auto it = out_of_order_buckets.begin(); it != out_of_order_buckets.end(); ++it)
+            {
+                if ((chunk = get_bucket_if_ready(*it)))
+                {
+                    out_of_order_buckets.erase(it);
+                    break;
+                }
+            }
+            if (!chunk)
+            {
+                /// Try push the current bucket.
+                if ((chunk = get_bucket_if_ready(current_bucket_num)))
+                {
+                    ++current_bucket_num;
+                }
+                else if (params->params.enable_producing_buckets_out_of_order_in_aggregation)
+                {
+                    /// Otherwise, if there is an empty slot, postpone the current bucket until better times.
+                    if (out_of_order_buckets.size() < NUM_OOO_BUCKETS)
+                    {
+                        out_of_order_buckets.push_back(current_bucket_num);
+                        ++current_bucket_num;
+                        continue;
+                    }
+                }
+            }
 
-            if (!two_level_chunks[current_bucket_num])
+            if (!chunk)
                 return Status::NeedData;
-
-            auto chunk = std::move(two_level_chunks[current_bucket_num]);
-            ++current_bucket_num;
 
             const auto has_rows = chunk.hasRows();
             if (has_rows)
             {
+                chunk.getChunkInfos().get<AggregatedChunkInfo>()->out_of_order_buckets = out_of_order_buckets;
                 output.push(std::move(chunk));
                 return Status::PortFull;
             }
         }
+
+        auto try_push_out_of_order_bucket = [&](auto & it)
+        {
+            if (auto chunk = get_bucket_if_ready(*it))
+            {
+                out_of_order_buckets.erase(it);
+                chunk.getChunkInfos().template get<AggregatedChunkInfo>()->out_of_order_buckets = out_of_order_buckets;
+                output.push(std::move(chunk));
+                return true;
+            }
+            return false;
+        };
+
+        for (auto it = out_of_order_buckets.begin(); it != out_of_order_buckets.end(); ++it)
+            if (try_push_out_of_order_bucket(it))
+                return Status::PortFull;
+
+        if (!out_of_order_buckets.empty())
+            return Status::NeedData;
 
         output.finish();
         /// Do not close inputs, they must be finished.
@@ -444,6 +502,15 @@ private:
     UInt32 current_bucket_num = 0;
     static constexpr Int32 NUM_BUCKETS = 256;
     std::array<Chunk, NUM_BUCKETS> two_level_chunks;
+
+    /// In principle we should produce buckets in order of their id-s for memory efficient merging.
+    /// The problem is that on the initiator we cannot start merging buckets #(N+1) until we received all buckets #(<=N).
+    /// Sometimes this dependency introduces a noticeable slowdown and in order to eliminate it we allow a few buckets
+    /// to be delayed for a while and at that time merging still can be performed for some buckets with bigger id-s.
+    /// It works because we don't actually require any specific order of buckets anywhere, we only need to make sure that
+    /// `GroupingAggregatedTransform` will output all buckets (from all the nodes) with the same id together.
+    static constexpr UInt32 NUM_OOO_BUCKETS = 4;
+    std::vector<Int32> out_of_order_buckets;
 
     Processors processors;
 
@@ -484,12 +551,12 @@ private:
 
         ++current_bucket_num;
 
-    #define M(NAME) \
-                else if (first->type == AggregatedDataVariants::Type::NAME) \
-                    params->aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data, shared_data->is_cancelled);
+#define M(NAME) \
+    else if (first->type == AggregatedDataVariants::Type::NAME) \
+        params->aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data, shared_data->is_cancelled);
         if (false) {} // NOLINT
         APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
-    #undef M
+#undef M
         else
             throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
 
@@ -833,7 +900,8 @@ void AggregatingTransform::initGenerate()
             ReadableSize(uncompressed_size));
 
         auto pipe = Pipe::unitePipes(std::move(pipes));
-        addMergingAggregatedMemoryEfficientTransform(pipe, params, temporary_data_merge_threads);
+        addMergingAggregatedMemoryEfficientTransform(
+            pipe, params, temporary_data_merge_threads, /*should_produce_results_in_order_of_bucket_number=*/true);
 
         processors = Pipe::detachProcessors(std::move(pipe));
     }
