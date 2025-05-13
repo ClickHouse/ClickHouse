@@ -37,5 +37,5 @@ private:
     std::optional<std::string> config_logger;
 
 
-    Poco::AutoPtr<DB::OwnSplitChannel> split;
+    Poco::AutoPtr<DB::OwnAsyncSplitChannel> split;
 };

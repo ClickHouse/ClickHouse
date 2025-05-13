@@ -64,6 +64,9 @@ public:
     OwnAsyncSplitChannel();
     ~OwnAsyncSplitChannel() override;
 
+    void open() override;
+    void close() override;
+
     void log(const Poco::Message & msg) override;
     void run() override;
 

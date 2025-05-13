@@ -186,10 +186,21 @@ void OwnSplitChannel::setChannelProperty(const std::string& channel_name, const 
 OwnAsyncSplitChannel::OwnAsyncSplitChannel()
     : thread("AsyncLogger")
 {
-    thread.start(*this);
+    open();
 }
 
 OwnAsyncSplitChannel::~OwnAsyncSplitChannel()
+{
+    OwnAsyncSplitChannel::close();
+}
+
+void OwnAsyncSplitChannel::open()
+{
+    if (!thread.isRunning())
+        thread.start(*this);
+}
+
+void OwnAsyncSplitChannel::close()
 {
     try
     {
@@ -216,13 +227,15 @@ OwnAsyncSplitChannel::~OwnAsyncSplitChannel()
 class OwnMessageNotification : public Poco::Notification
 {
 public:
-    OwnMessageNotification(const Message & msg, const std::shared_ptr<InternalTextLogsQueue> & logs_queue_)
-        : msg_ext(ExtendedLogMessage::getFrom(msg))
+    OwnMessageNotification(const Message & msg_, const std::shared_ptr<InternalTextLogsQueue> & logs_queue_)
+        : msg(msg_)
+        , msg_ext(ExtendedLogMessage::getFrom(msg))
         , logs_queue(logs_queue_)
         , thread_name(getThreadName())
     {
     }
 
+    Message msg; /// Need to keep a copy
     ExtendedLogMessage msg_ext;
     std::shared_ptr<InternalTextLogsQueue> logs_queue;
     std::string thread_name;
@@ -230,6 +243,7 @@ public:
 
 void OwnAsyncSplitChannel::log(const Poco::Message & msg)
 {
+    /// TODO: Implement log(Message &&)
     if (!isLoggingEnabled())
         return;
 
