@@ -542,9 +542,10 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 bool StorageDistributed::isShardingKeySuitsExpressionKey(
     const QueryTreeNodePtr & expr, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const
 {
-    ASTPtr expr_ast
-        = expr->toAST({.add_cast_for_constants = false, .fully_qualified_identifiers = false, .qualify_indentifiers_with_database = false})
-              ->clone();
+    auto expr_ast
+        = expr->toAST({.add_cast_for_constants = false, .fully_qualified_identifiers = false, .qualify_indentifiers_with_database = false});
+    if (!expr_ast)
+        return false;
     const auto & context = query_info.planner_context->getQueryContext();
     const auto & syntax_result = TreeRewriter(context).analyze(expr_ast, storage_snapshot->getAllColumnsDescription().getAllPhysical());
     auto expr_analyzer = ExpressionAnalyzer(expr_ast, syntax_result, context);
