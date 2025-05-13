@@ -418,4 +418,17 @@ bool SparseGramTokenExtractor::nextInStringLike(const char * data, size_t length
     }
 }
 
+#if USE_CPPJIEBA
+bool ChineseTokenExtractor::nextInString(const char * /*data*/, size_t /*length*/, size_t * __restrict /*pos*/, size_t * __restrict /*token_start*/, size_t * __restrict /*token_length*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method nextInString is not supported by ChineseTokenExtractor");
+}
+
+bool ChineseTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t * /*pos*/, String & /*token*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method nextInStringLike is not supported by ChineseTokenExtractor");
+}
+
+#endif
+
 }

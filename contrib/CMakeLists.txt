@@ -167,6 +167,12 @@ add_contrib (datasketches-cpp-cmake datasketches-cpp)
 add_contrib (incbin-cmake incbin)
 add_contrib (sqids-cpp-cmake sqids-cpp)
 
+option(ENABLE_CPPJIEBA "Enable cppjieba support" ${ENABLE_LIBRARIES})
+if (ENABLE_CPPJIEBA)
+    add_contrib (limonp-cmake limonp)
+    add_contrib (cppjieba-cmake cppjieba) # requires: limonp
+endif()
+
 option(USE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})
 if (USE_MONGODB)
     add_contrib (mongo-c-driver-cmake mongo-c-driver) # requires: zlib

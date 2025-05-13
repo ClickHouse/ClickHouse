@@ -269,6 +269,12 @@
 [submodule "contrib/ulid-c"]
 	path = contrib/ulid-c
 	url = https://github.com/ClickHouse/ulid-c.git
+[submodule "contrib/limonp"]
+	path = contrib/limonp
+	url = https://github.com/yanyiwu/limonp
+[submodule "contrib/cppjieba"]
+	path = contrib/cppjieba
+	url = https://github.com/yanyiwu/cppjieba
 [submodule "contrib/aws-crt-cpp"]
 	path = contrib/aws-crt-cpp
 	url = https://github.com/ClickHouse/aws-crt-cpp

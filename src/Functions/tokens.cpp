@@ -9,6 +9,8 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ITokenExtractor.h>
 
+#include "config.h"
+
 namespace DB
 {
 
@@ -25,11 +27,12 @@ constexpr size_t arg_value = 0;
 constexpr size_t arg_tokenizer = 1;
 constexpr size_t arg_ngrams = 2;
 constexpr size_t arg_separators = 2;
+constexpr size_t arg_chinese_granularity = 2;
 
 std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & arguments, std::string_view name)
 {
-    const auto tokenizer_arg = arguments.size() < 2 ? DefaultTokenExtractor::getExternalName()
-                                                        : arguments[arg_tokenizer].column->getDataAt(0).toView();
+    const auto tokenizer_arg
+        = arguments.size() < 2 ? DefaultTokenExtractor::getExternalName() : arguments[arg_tokenizer].column->getDataAt(0).toView();
 
     if (tokenizer_arg == DefaultTokenExtractor::getExternalName())
     {
@@ -48,7 +51,13 @@ std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & 
             const ColumnArray * col_separators_const = checkAndGetColumnConstData<ColumnArray>(arguments[arg_separators].column.get());
 
             if (!col_separators_const && !col_separators)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "3rd argument of function {} should be Array(String), got: {}", name, arguments[arg_separators].column->getFamilyName());
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "3rd argument of function {} should be Array(String), got: {}",
+                    name,
+                    arguments[arg_separators].column->getFamilyName());
+            }
 
             if (col_separators_const)
                 col_separators = col_separators_const;
@@ -62,10 +71,12 @@ std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & 
 
         return std::make_unique<SplitTokenExtractor>(separators);
     }
+
     if (tokenizer_arg == NoOpTokenExtractor::getExternalName())
     {
         return std::make_unique<NoOpTokenExtractor>();
     }
+
     if (tokenizer_arg == NgramTokenExtractor::getExternalName())
     {
         auto ngrams = (arguments.size() < 3) ? 3 : arguments[arg_ngrams].column->getUInt(0);
@@ -73,6 +84,7 @@ std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & 
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Ngrams argument of function {} should be between 2 and 8, got: {}", name, ngrams);
         return std::make_unique<NgramTokenExtractor>(ngrams);
     }
+
     if (tokenizer_arg == SparseGramTokenExtractor::getExternalName())
     {
         auto min_length = arguments.size() < 3 ? 3
@@ -84,6 +96,34 @@ std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & 
 
         return std::make_unique<SparseGramTokenExtractor>(min_length, max_length, min_cutoff_length);
     }
+
+#if USE_CPPJIEBA
+    if (tokenizer_arg == ChineseTokenExtractor::getExternalName())
+    {
+        ChineseTokenizationGranularity granularity = ChineseTokenizationGranularity::Coarse;
+        if (arguments.size() == 3)
+        {
+            auto granularity_arg = arguments[arg_chinese_granularity].column->getDataAt(0).toView();
+            if (granularity_arg == ChineseTokenExtractor::FINE_GRAINED)
+            {
+                granularity = ChineseTokenizationGranularity::Fine;
+            }
+            else if (granularity_arg == ChineseTokenExtractor::COARSE_GRAINED)
+            {
+                granularity = ChineseTokenizationGranularity::Coarse;
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Chinese tokenizer in function '{}' supports only modes 'fine-grained' or 'coarse-grained', got: {}",
+                    name,
+                    granularity);
+            }
+        }
+        return std::make_unique<ChineseTokenExtractor>(granularity);
+    }
+#endif
 
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
@@ -214,6 +254,11 @@ public:
                     optional_args.emplace_back("ngrams", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
                 else if (tokenizer == SplitTokenExtractor::getExternalName())
                     optional_args.emplace_back("separators", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array");
+#if USE_CPPJIEBA
+                else if (tokenizer == ChineseTokenExtractor::getExternalName())
+                    optional_args.emplace_back(
+                        "chinese_granularity", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "String");
+#endif
             }
 
             if (arguments.size() == 4 || arguments.size() == 5)
@@ -257,7 +302,7 @@ For example, with separators = `['%21', '%']` string `%21abc` would be tokenized
     FunctionDocumentation::Syntax syntax = "tokens(value[, tokenizer[, ngrams[, separators]]])";
     FunctionDocumentation::Arguments arguments = {
         {"value", "The input string.", {"String", "FixedString"}},
-        {"tokenizer", "The tokenizer to use. Valid arguments are `default`, `ngram`, `split`, and `no_op`. Optional, if not set explicitly, defaults to `default`.", {"const String"}},
+        {"tokenizer", "The tokenizer to use. Valid arguments are `default`, `ngram`, `split`, `chinese` and `no_op`. Optional, if not set explicitly, defaults to `default`.", {"const String"}},
         {"ngrams", "Only relevant if argument `tokenizer` is `ngram`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`.", {"const UInt8"}},
         {"separators", "Only relevant if argument `tokenizer` is `split`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`.", {"const Array(String)"}}
     };
