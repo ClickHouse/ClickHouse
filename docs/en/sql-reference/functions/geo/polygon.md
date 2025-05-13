@@ -246,6 +246,138 @@ select polygonsWithinSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879
 0
 ```
 
+## readWKBMultiPolygon {#readwkbmultipolygon}
+
+Converts a WKB (Well Known Binary) MultiPolygon into a MultiPolygon type.
+
+### Example {#example}
+
+```sql
+SELECT
+    toTypeName(readWKBMultiPolygon(unhex('0106000000020000000103000000020000000500000000000000000000400000000000000000000000000000244000000000000000000000000000002440000000000000244000000000000000000000000000002440000000000000004000000000000000000500000000000000000010400000000000001040000000000000144000000000000010400000000000001440000000000000144000000000000010400000000000001440000000000000104000000000000010400103000000010000000400000000000000000024c000000000000024c000000000000024c000000000000022c000000000000022c0000000000000244000000000000024c000000000000024c0'))) AS type,
+    readWKBMultiPolygon(unhex('0106000000020000000103000000020000000500000000000000000000400000000000000000000000000000244000000000000000000000000000002440000000000000244000000000000000000000000000002440000000000000004000000000000000000500000000000000000010400000000000001040000000000000144000000000000010400000000000001440000000000000144000000000000010400000000000001440000000000000104000000000000010400103000000010000000400000000000000000024c000000000000024c000000000000024c000000000000022c000000000000022c0000000000000244000000000000024c000000000000024c0')) AS output FORMAT Markdown
+
+```
+| type | output |
+|:-|:-|
+| MultiPolygon | [[[(2,0),(10,0),(10,10),(0,10),(2,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]],[[(-10,-10),(-10,-9),(-9,10),(-10,-10)]]] |
+
+### Input parameters {#input-parameters}
+
+String starting with `MULTIPOLYGON`
+
+### Returned value {#returned-value}
+
+MultiPolygon
+
+## readWKBPolygon {#readwkbpolygon}
+
+Converts a WKB (Well Known Binary) MultiPolygon into a Polygon type.
+
+### Example {#example-1}
+
+```sql
+SELECT
+    toTypeName(readWKBPolygon(unhex('010300000001000000050000000000000000000040000000000000000000000000000024400000000000000000000000000000244000000000000024400000000000000000000000000000244000000000000000400000000000000000'))) AS type,
+    readWKBPolygon(unhex('010300000001000000050000000000000000000040000000000000000000000000000024400000000000000000000000000000244000000000000024400000000000000000000000000000244000000000000000400000000000000000')) AS output
+FORMAT Markdown
+```
+| type | output |
+|:-|:-|
+| Polygon | [[(2,0),(10,0),(10,10),(0,10),(2,0)]] |
+
+### Input parameters {#input-parameters-1}
+
+String starting with `POLYGON`
+
+### Returned value {#returned-value-1}
+
+Polygon
+
+## readWKBPoint {#readwkbpoint}
+
+The `readWKBPoint` function in ClickHouse parses a Well-Known Binary (WKB) representation of a Point geometry and returns a point in the internal ClickHouse format.
+
+### Syntax {#syntax}
+
+```sql
+readWKBPoint(wkb_string)
+```
+
+### Arguments {#arguments}
+
+- `wkb_string`: The input WKB string representing a Point geometry.
+
+### Returned value {#returned-value-2}
+
+The function returns a ClickHouse internal representation of the Point geometry.
+
+### Example {#example-2}
+
+```sql
+SELECT readWKBPoint(unhex('0101000000333333333333f33f3333333333330b40'));
+```
+
+```response
+(1.2,3.4)
+```
+
+## readWKBLineString {#readwkblinestring}
+
+Parses a Well-Known Binary (WKB) representation of a LineString geometry and returns it in the internal ClickHouse format.
+
+### Syntax {#syntax-1}
+
+```sql
+readWKBLineString(wkb_string)
+```
+
+### Arguments {#arguments-1}
+
+- `wkb_string`: The input WKB string representing a LineString geometry.
+
+### Returned value {#returned-value-3}
+
+The function returns a ClickHouse internal representation of the linestring geometry.
+
+### Example {#example-3}
+
+```sql
+SELECT readWKBLineString(unhex('010200000004000000000000000000f03f000000000000f03f0000000000000040000000000000004000000000000008400000000000000840000000000000f03f000000000000f03f'));
+```
+
+```response
+[(1,1),(2,2),(3,3),(1,1)]
+```
+
+## readWKBMultiLineString {#readwkbmultilinestring}
+
+Parses a Well-Known Binary (WKB) representation of a MultiLineString geometry and returns it in the internal ClickHouse format.
+
+### Syntax {#syntax-2}
+
+```sql
+readWKBMultiLineString(wkb_string)
+```
+
+### Arguments {#arguments-2}
+
+- `wkb_string`: The input WKB string representing a MultiLineString geometry.
+
+### Returned value {#returned-value-4}
+
+The function returns a ClickHouse internal representation of the multilinestring geometry.
+
+### Example {#example-4}
+
+```sql
+SELECT readWKBMultiLineString(unhex('010500000002000000010200000003000000000000000000f03f000000000000f03f0000000000000040000000000000004000000000000008400000000000000840010200000003000000000000000000104000000000000010400000000000001440000000000000144000000000000018400000000000001840'));
+```
+
+```response
+[[(1,1),(2,2),(3,3)],[(4,4),(5,5),(6,6)]]
+```
+
 ### Input parameters {#input-parameters-2}
 
 ### Returned value {#returned-value-6}
