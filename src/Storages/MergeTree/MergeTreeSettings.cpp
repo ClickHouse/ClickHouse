@@ -1,3 +1,4 @@
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
@@ -10,7 +11,6 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/isDiskFunction.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
@@ -1709,10 +1709,10 @@ namespace ErrorCodes
     Compression encoding used by primary, primary key is small enough and cached,
     so the default compression is ZSTD(3).
     )", 0) \
-    DECLARE(UInt64, marks_compress_block_size, 65536, R"(
+    DECLARE(NonZeroUInt64, marks_compress_block_size, 65536, R"(
     Mark compress block size, the actual size of the block to compress.
     )", 0) \
-    DECLARE(UInt64, primary_key_compress_block_size, 65536, R"(
+    DECLARE(NonZeroUInt64, primary_key_compress_block_size, 65536, R"(
     Primary compress block size, the actual size of the block to compress.
     )", 0) \
     DECLARE(Bool, primary_key_lazy_load, true, R"(Load primary key in memory on

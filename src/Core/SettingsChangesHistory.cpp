@@ -73,6 +73,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"secondary_indices_enable_bulk_filtering", false, true, "A new algorithm for filtering by data skipping indices"},
             {"implicit_table_at_top_level", "", "", "A new setting, used in clickhouse-local"},
             {"use_skip_indexes_if_final_exact_mode", 0, 0, "This setting was introduced to help FINAL query return correct results with skip indexes"},
+            {"parsedatetime_e_requires_space_padding", true, false, "Improved compatibility with MySQL DATE_FORMAT/STR_TO_DATE"},
+            {"formatdatetime_e_with_space_padding", true, false, "Improved compatibility with MySQL DATE_FORMAT/STR_TO_DATE"},
             {"input_format_max_block_size_bytes", 0, 0, "New setting to limit bytes size if blocks created by input format"},
             {"parallel_replicas_insert_select_local_pipeline", false, true, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"},
             {"page_cache_block_size", 1048576, 1048576, "Made this setting adjustable on a per-query level."},
