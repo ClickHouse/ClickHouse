@@ -9,7 +9,7 @@ namespace DB
 /** DynamicWriteBufferManager manage vector of WriteBufferPtr.
   * Unlike ForkWriteBuffer it can not be used directly to write data:
   * next/write should not be called on this buffer.
-  * But it is usefull to proxy finalize, cancel and sync calls to all
+  * But it is useful to proxy finalize, cancel and sync calls to all
   * WriteBuffers managed by this buffer
   **/
 class DynamicWriteBufferManager : public WriteBuffer

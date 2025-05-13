@@ -21,7 +21,7 @@ SELECT <expr_list> INTO OUTFILE file_name [APPEND | TRUNCATE] [AND STDOUT] [PART
 
 `level` is a numeric literal. Positive integers in following ranges are supported: `1-12` for `lz4` type, `1-22` for `zstd` type and `1-9` for other compression types.
 
-## PARTITION BY
+## PARTITION BY {#partition-by}
 
 If specified result of `SELECT` query is partitioned using `partition_by_expr_list`, each partition goes to a separate file. `file_name` used as a template to get actual filename for each partition.  Each placeholder `{a}` in `file_name` will be substituted with `ToString(a)` value of column `a`. Column can be referred by expression name or alias. 
 
