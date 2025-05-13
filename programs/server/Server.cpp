@@ -217,7 +217,6 @@ namespace ServerSetting
     extern const ServerSettingsInt32 dns_cache_update_period;
     extern const ServerSettingsUInt32 dns_max_consecutive_failures;
     extern const ServerSettingsBool enable_azure_sdk_logging;
-    extern const ServerSettingsBool format_alter_operations_with_parentheses;
     extern const ServerSettingsUInt64 global_profiler_cpu_time_period_ns;
     extern const ServerSettingsUInt64 global_profiler_real_time_period_ns;
     extern const ServerSettingsUInt64 http_connections_soft_limit;
@@ -983,8 +982,6 @@ try
 
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
-
-    ASTAlterCommand::setFormatAlterCommandsWithParentheses(server_settings[ServerSetting::format_alter_operations_with_parentheses]);
 
     StackTrace::setShowAddresses(server_settings[ServerSetting::show_addresses_in_stack_traces]);
 
