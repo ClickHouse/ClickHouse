@@ -65,6 +65,7 @@ private:
 
     bool is_http_method_head;
 
+    /// FIXME: this flag looks useless
     bool initialized = false;
 
     bool headers_started_sending = false;

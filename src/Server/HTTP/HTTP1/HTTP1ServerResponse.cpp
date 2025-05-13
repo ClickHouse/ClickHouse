@@ -39,6 +39,8 @@ WriteBufferFromHTTP1ServerResponse::WriteBufferFromHTTP1ServerResponse(
 
 void WriteBufferFromHTTP1ServerResponse::sendBufferAndFinalize(const char * ptr, size_t size)
 {
+    std::unique_lock lock(mutex);
+
     chassert(offset() == 0);
     chassert(!headers_started_sending);
     if (headers_started_sending)
@@ -50,8 +52,11 @@ void WriteBufferFromHTTP1ServerResponse::sendBufferAndFinalize(const char * ptr,
     response.setChunkedTransferEncoding(false);
     if (compression_method != CompressionMethod::None)
         response.set("Content-Encoding", toContentEncodingName(compression_method));
+    initialized = true;
     startSendHeaders();
     finishSendHeaders();
+    lock.unlock();
+
     if (!is_http_method_head)
         socket_out->socketSendBytes(ptr, size);
     finalize();
@@ -344,9 +349,6 @@ void WriteBufferFromHTTP1ServerResponse::nextImpl()
 
 void WriteBufferFromHTTP1ServerResponse::finalizeImpl()
 {
-    chassert(socket_out->offset() == 0);
-    socket_out->finalize();
-
     if (!headers_finished_sending)
     {
         std::lock_guard lock(mutex);
@@ -363,10 +365,13 @@ void WriteBufferFromHTTP1ServerResponse::finalizeImpl()
         finishSendHeaders();
     }
 
+    chassert(socket_out->offset() == 0);
+    socket_out->finalize();   /// It should be a no-op
+
     if (is_http_method_head)
         return;
 
-    nextImpl();
+    WriteBufferFromHTTPServerResponseBase::finalizeImpl();
     if (response.getChunkedTransferEncoding())
         socket_out->socketSendBytes("0\r\n\r\n", 5);
 }
