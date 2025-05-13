@@ -97,16 +97,13 @@ private:
 
         MemoryToken mem;
 
+        /// If not null, we need to call prepareColumnForWrite().
+        /// Otherwise we need to call writeColumnChunkBody().
         DataTypePtr column_type;
         std::string column_name;
         std::vector<ColumnPtr> column_pieces;
 
         Parquet::ColumnChunkWriteState state;
-
-        /// If true, we need to call prepareColumnForWrite().
-        /// Otherwise we need to call writeColumnChunkBody().
-        bool need_prepare = true;
-
 
         Task(RowGroupState * rg, size_t ci, ParquetBlockOutputFormat * p)
             : row_group(rg), column_idx(ci), mem(p) {}

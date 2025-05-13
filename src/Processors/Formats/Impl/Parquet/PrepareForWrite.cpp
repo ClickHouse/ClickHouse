@@ -234,6 +234,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
     /// Add physical column info.
     auto & state = states.emplace_back();
     state.primitive_column = column;
+    state.type = type;
     state.compression = options.compression;
     state.compression_level = options.compression_level;
 

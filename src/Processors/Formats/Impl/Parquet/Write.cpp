@@ -961,7 +961,7 @@ void writeColumnImpl(
 
 }
 
-void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & options, WriteBuffer & out, DataTypePtr type)
+void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & options, WriteBuffer & out)
 {
     s.column_chunk.meta_data.__set_num_values(s.max_def > 0 ? s.def.size() : s.primitive_column->size());
 
@@ -1051,7 +1051,7 @@ void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & option
                 s, options, out, ConverterFixedStringAsString(s.primitive_column));
             break;
         case TypeIndex::Object:
-            writeColumnImpl<parquet::ByteArrayType>(s, options, out, ConverterJSON(s.primitive_column, type));
+            writeColumnImpl<parquet::ByteArrayType>(s, options, out, ConverterJSON(s.primitive_column, s.type));
             break;
 
         #define F(source_type) \
