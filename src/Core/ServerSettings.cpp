@@ -319,6 +319,7 @@ namespace DB
     - [`cgroup_memory_watcher_hard_limit_ratio`](/operations/server-configuration-parameters/settings#cgroup_memory_watcher_hard_limit_ratio)
     )", 0) \
     DECLARE(UInt64, async_insert_threads, 16, R"(Maximum number of threads to actually parse and insert data in background. Zero means asynchronous mode is disabled)", 0) \
+    DECLARE(UInt64, async_insert_parse_threads, 0, R"(Number of threads to parse data in background. Zero means parsing is done by the same thread that inserts data)", 0) \
     DECLARE(Bool, async_insert_queue_flush_on_shutdown, true, R"(If true queue of asynchronous inserts is flushed on graceful shutdown)", 0) \
     DECLARE(Bool, ignore_empty_sql_security_in_create_view_query, true, R"(
     If true, ClickHouse doesn't write defaults for empty SQL security statement in `CREATE VIEW` queries.
