@@ -26,18 +26,19 @@ def list_of_paths(arg):
     return arg.split(',')
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--server-settings-prob", type = int, default = 80, choices=range(0, 100), help = 'Probability to set server properties')
-parser.add_argument("--change-server-version-prob", type = int, default = 80, choices=range(0, 100), help = 'Probability to change server version after restart')
+parser.add_argument("--server-settings-prob", type = int, default = 80, choices=range(0, 101), help = 'Probability to set server properties')
+parser.add_argument("--change-server-version-prob", type = int, default = 80, choices=range(0, 101), help = 'Probability to change server version after restart')
 parser.add_argument("--client-binary", type = pathlib.Path, required = True, help = 'Path to client binary')
 parser.add_argument("--server-binaries", type = list_of_paths, required = True, help = 'Path of server binaries to test')
 parser.add_argument("-c", "--client-config", type = pathlib.Path, help = 'Path to client configuration file')
 parser.add_argument("-g", "--generator", choices =['buzzhouse'], type = str.lower, required = True, help = 'What generator to use')
 #parser.add_argument("--number-instances", type = int, default = 2, help = 'Number of default instances')
 parser.add_argument("-l", "--log-path", type = pathlib.Path, default=tempfile.NamedTemporaryFile(), help = 'Log path')
+parser.add_argument("--number-nodes", type = int, default = 1, choices=range(1, 101), help = 'Number of nodes')
 parser.add_argument("--server-config", type = pathlib.Path, help = 'Path to config.xml file')
 parser.add_argument("-s", "--seed", type = int, default = 0, help = 'Server fuzzer seed')
 parser.add_argument("-u", "--user-config", type = pathlib.Path, help = 'Path to users.xml file')
-parser.add_argument("--kill-server-prob", type = int, default = 50, choices=range(0, 100), help = 'Probability to kill the server instead of shutting it down')
+parser.add_argument("--kill-server-prob", type = int, default = 50, choices=range(0, 101), help = 'Probability to kill the server instead of shutting it down')
 parser.add_argument('--time-between-shutdowns', type=ordered_pair, default=(20, 30), help="Two ordered integers separated by comma (e.g., 30,60)")
 args = parser.parse_args()
 
@@ -76,22 +77,23 @@ os.symlink(current_server, server_path)
 os.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = server_path
 
 cluster = ClickHouseCluster(__file__)
-server = cluster.add_instance("server",
-                              with_zookeeper = True,
-                              with_minio = True,
-                              stay_alive = True,
-                              with_dolor = True,
-                              main_configs = [server_settings] if server_settings is not None else [],
-                              user_configs = [args.user_config] if args.user_config is not None else[],
-                              macros = {"shard" : 1, "replica" : 1 })
+servers = []
+for i in range(1, args.number_nodes + 1):
+    servers.append(cluster.add_instance(f"node{i}",
+                                        with_zookeeper = True,
+                                        with_minio = True,
+                                        stay_alive = True,
+                                        with_dolor = True,
+                                        main_configs = [server_settings] if server_settings is not None else [],
+                                        user_configs = [args.user_config] if args.user_config is not None else []))
 cluster.start()
-logger.info("Starting cluster")
-server.wait_start(8)
-logger.info(f"Server running on host {server.ip_address}, port 9000")
+logger.info(f"Starting cluster with {len(servers)} server(s)")
+servers[len(servers) - 1].wait_start(8)
+logger.info(f"First server running on host {servers[0].ip_address}, port 9000")
 
 # Start the load generator
 logger.info("Start load generator")
-client = generator.run_generator(server)
+client = generator.run_generator(servers[0])
 def dolor_cleanup():
     if client.process.poll() is None:
         client.process.kill()
@@ -112,18 +114,22 @@ while True:
     if client.process.poll() is not None:
         logger.info("Load generator finished")
         break
-    try:
-        server.query("SELECT 1;")
-    except:
-        logger.info("The server is not running")
-        break
+    for server in servers:
+        try:
+            server.query("SELECT 1;")
+        except:
+            logger.info(f"The server {server.name} is not running")
+            break
 
     lower_bound, upper_bound = args.time_between_shutdowns
     time.sleep(int(random.uniform(lower_bound, upper_bound)))
-    kill_server = random.randint(1, 100) <= args.kill_server_prob
-    logger.info(f"Restart the server with {"kill" if kill_server else "manual shutdown"}")
 
-    server.stop_clickhouse(stop_wait_sec = 10, kill = kill_server)
+    # Pick one of the servers to restart
+    next_pick = random.choice(servers)
+    kill_server = random.randint(1, 100) <= args.kill_server_prob
+    logger.info(f"Restart the server {next_pick.name} with {"kill" if kill_server else "manual shutdown"}")
+
+    next_pick.stop_clickhouse(stop_wait_sec = 10, kill = kill_server)
     # Replace server binary, using a new temporary symlink, then replace the old one
     if len(args.server_binaries) > 1 and random.randint(1, 100) <= args.change_server_version_prob:
         if len(args.server_binaries) == 2:
@@ -138,6 +144,6 @@ while True:
             pass
         os.symlink(current_server, new_temp_server_path)
         os.rename(new_temp_server_path, server_path)
-    server.start_clickhouse(start_wait_sec = 10, retry_start = False)
+    next_pick.start_clickhouse(start_wait_sec = 10, retry_start = False)
 
 cluster.shutdown()
