@@ -32,7 +32,6 @@ QueryInfo::QueryInfo(const String & path, ContextMutablePtr context_)
         // LOG_INFO(getLogger("QueryInfo"), "Processing query: {}", query);
         parseColumnsFromQuery(query);
     }
-    // Finally execute all DROP VIEW statements
     for (const auto & q : drop_view_queries)
     {
         try
@@ -73,7 +72,6 @@ void QueryInfo::readQueries(const String & path)
         query.resize(size);
         if (!query.empty())
         {
-            // Convert to uppercase for case-insensitive comparison
             String upper_query = query;
             std::transform(upper_query.begin(), upper_query.end(), upper_query.begin(), ::toupper);
             
@@ -98,7 +96,6 @@ void QueryInfo::readQueries(const String & path)
         pos = next + 1;
     }
 
-    // First execute all CREATE VIEW statements
     for (const auto & query : create_view_queries)
     {
         try
@@ -135,7 +132,6 @@ void QueryInfo::parseColumnsFromQuery(const String & query)
         return;
     }
 
-    // Handle CREATE VIEW queries
     if (const auto * create_query = ast->as<ASTCreateQuery>())
     {
         if (create_query->isView())
@@ -147,25 +143,20 @@ void QueryInfo::parseColumnsFromQuery(const String & query)
                 LOG_INFO(getLogger("QueryInfo"), "Found view name: {}", view_name);
             }
 
-            // Parse the SELECT query inside the view definition
             if (create_query->select)
             {
-                // Collect all tables from the view's SELECT query
                 CollectTablesMatcher::Data tables_data;
                 ASTPtr select_ast = create_query->select->ptr();
                 collectTables(select_ast, tables_data);
                 
-                // Process tables and columns from the view's SELECT query
                 processTablesAndColumns(tables_data, nullptr, select_ast);
             }
             return;
         }
     }
 
-    // Handle SELECT queries
     if (const auto * select_with_union = ast->as<ASTSelectWithUnionQuery>())
     {
-        // First, collect all CTE names to exclude them from real tables
         std::set<String> cte_names;
         for (const auto & child : select_with_union->list_of_selects->children)
         {
@@ -184,37 +175,29 @@ void QueryInfo::parseColumnsFromQuery(const String & query)
             }
         }
 
-        // Collect all tables from the query
         CollectTablesMatcher::Data tables_data;
         ASTPtr query_ast = ast;
         collectTables(query_ast, tables_data);
         
-        // Process tables and columns
         processTablesAndColumns(tables_data, &cte_names, query_ast);
     }
 }
 
 void QueryInfo::processTablesAndColumns(const CollectTablesMatcher::Data & tables_data, const std::set<String> * cte_names, const ASTPtr & ast)
 {
-    // Map to store table -> columns mapping
     std::unordered_map<String, std::set<String>> table_columns;
     
-    // Cache for table metadata to avoid repeated DatabaseCatalog calls
     std::unordered_map<String, std::set<String>> table_metadata_cache;
     
-    // Process each table found in the query and cache its metadata
     for (const auto & table : tables_data.tables)
     {
-        // Skip if this is a CTE
         if (cte_names && cte_names->contains(table))
             continue;
 
         // LOG_INFO(getLogger("QueryInfo"), "Processing table: {}", table);
         
-        // Try to get table storage from current database first
         StoragePtr storage = DatabaseCatalog::instance().getTable({context->getCurrentDatabase(), table}, context);
         
-        // If not found in current database, try to find in other databases
         if (!storage)
         {
             auto databases = DatabaseCatalog::instance().getDatabases();
@@ -229,42 +212,34 @@ void QueryInfo::processTablesAndColumns(const CollectTablesMatcher::Data & table
             }
         }
 
-        // If still not found, skip this table but continue processing others
         if (!storage)
         {
             // LOG_INFO(getLogger("QueryInfo"), "Table {} not found in any database, skipping", table);
             continue;
         }
 
-        // Skip if this is a view
         if (storage->isView())
         {
             // LOG_INFO(getLogger("QueryInfo"), "Skipping view: {}", table);
             continue;
         }
 
-        // Get all physical columns from the table and cache them
         auto metadata = storage->getInMemoryMetadataPtr();
         auto columns = metadata->getColumns().getNamesOfPhysical();
         table_metadata_cache[table] = std::set<String>(columns.begin(), columns.end());
         
-        // Initialize empty set for this table's used columns
         table_columns[table] = {};
     }
 
-    // Collect all column identifiers from the query
     auto idents = IdentifiersCollector::collect(ast);
     
-    // Process each identifier to find column references using cached metadata
     for (const auto * ident : idents)
     {
         // LOG_INFO(getLogger("QueryInfo"), "Processing identifier: {}", ident->getColumnName());
         if (auto column_name = IdentifierSemantic::getColumnName(*ident))
         {
-            // Try to find which table this column belongs to using cached metadata
             for (const auto & [table, columns] : table_metadata_cache)
             {
-                // If column exists in this table, add it to the mapping
                 if (columns.contains(*column_name))
                 {
                     table_columns[table].insert(*column_name);
@@ -275,7 +250,6 @@ void QueryInfo::processTablesAndColumns(const CollectTablesMatcher::Data & table
         }
     }
 
-    // Update the final tables_to_columns mapping
     for (const auto & [table, columns] : table_columns)
     {
         Strings cols_vec(columns.begin(), columns.end());
