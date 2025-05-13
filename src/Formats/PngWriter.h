@@ -9,12 +9,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-extern const int CANNOT_CONVERT_TYPE;
-}
-
 class WriteBuffer;
 
 /** RAII wrapper for managing libpng resources */
@@ -36,7 +30,7 @@ public:
 
     png_structp getPngPtr() const noexcept { return png_ptr; }
 
-    png_infop getInfoPtr() const noexcept { return info_ptr; }    
+    png_infop getInfoPtr() const noexcept { return info_ptr; }
 };
 
 
@@ -51,7 +45,7 @@ public:
     /// RAII ensures libpng resources are freed, but the WriteBuffer is not flushed
     ~PngWriter() = default;
 
-    /// Initialize the png stream and writes IHDR chunk 
+    /// Initialize the png stream and writes IHDR chunk
     void startImage(size_t width_, size_t height_);
 
     void finishImage();
@@ -65,18 +59,18 @@ public:
 private:
     static void writeDataCallback(png_struct_def * png_ptr, unsigned char * data, size_t length);
     static void flushDataCallback(png_struct_def * png_ptr);
-     
+
     /**
      * This callback is called by libpng just before it calls longjmp
      * We convert the C error message to a C++ exception.
-     * This exception wont be caught locally but indicates the cause of the longjmp **/
+     * This exception won't be caught locally but indicates the cause of the longjmp **/
     [[noreturn]] static void errorCallback(png_struct_def * png_ptr, png_const_charp error_msg);
 
     static void warningCallback(png_struct_def * png_ptr, png_const_charp warning_msg);
 
     /**
      * Executes libpng operations within a setjmp context for error handling **/
-    template<typename Func>
+    template <typename Func>
     void executePngOperation(Func && func, const char * error_context);
 
     WriteBuffer & out;

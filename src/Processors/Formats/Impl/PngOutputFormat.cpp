@@ -18,10 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int UNKNOWN_FORMAT;
-extern const int NOT_IMPLEMENTED;
-extern const int INCORRECT_NUMBER_OF_COLUMNS;
 extern const int LOGICAL_ERROR;
-extern const int CANNOT_CONVERT_TYPE;
 extern const int TOO_MANY_ROWS;
 }
 

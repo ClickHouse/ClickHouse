@@ -10,6 +10,16 @@
 namespace DB
 {
 
+
+namespace ErrorCodes
+{
+extern const int INCORRECT_NUMBER_OF_COLUMNS;
+extern const int LOGICAL_ERROR;
+extern const int TOO_MANY_ROWS;
+extern const int LOGICAL_ERROR;
+extern const int CANNOT_CONVERT_TYPE;
+}
+
 namespace
 {
 
@@ -30,7 +40,7 @@ inline bool extractBool(const IColumn & col, size_t row_num)
 }
 
 inline UInt16 extractPixelComponentImpl(const IColumn & data_col, size_t row_num, int bit_depth)
-{ 
+{
     auto type_id = data_col.getDataType();
     auto max_val_u16 = (bit_depth == 16) ? 65535 : 255;
     Float64 max_val_float = static_cast<Float64>(max_val_u16);
@@ -228,11 +238,11 @@ public:
     void writeRow(size_t row_num) override
     {
         bool val = extractBool(*impl->src_columns[0], row_num);
-        std::array<UInt16, 1> comps = 
-            {static_cast<UInt16>(val ? 255 : 0)};
-        
+        std::array<UInt16, 1> comps = {static_cast<UInt16>(val ? 255 : 0)};
+
         impl->commonAppendPixelRow(comps.data(), components_per_pixel);
     }
+
 private:
     size_t components_per_pixel = 1;
 };
@@ -249,11 +259,11 @@ public:
 
     void writeRow(size_t row_num) override
     {
-        std::array<UInt16, 1> comps 
-            = {extractPixelComponent(*impl->src_columns[0], row_num, impl->bit_depth)};
-        
+        std::array<UInt16, 1> comps = {extractPixelComponent(*impl->src_columns[0], row_num, impl->bit_depth)};
+
         impl->commonAppendPixelRow(comps.data(), components_per_pixel);
     }
+
 private:
     size_t components_per_pixel = 1;
 };
@@ -274,7 +284,7 @@ public:
             = {extractPixelComponent(*impl->src_columns[0], row_num, impl->bit_depth),
                extractPixelComponent(*impl->src_columns[1], row_num, impl->bit_depth),
                extractPixelComponent(*impl->src_columns[2], row_num, impl->bit_depth)};
-        
+
         impl->commonAppendPixelRow(comps.data(), components_per_pixel);
     }
 
@@ -299,7 +309,7 @@ public:
                extractPixelComponent(*impl->src_columns[1], row_num, impl->bit_depth),
                extractPixelComponent(*impl->src_columns[2], row_num, impl->bit_depth),
                extractPixelComponent(*impl->src_columns[3], row_num, impl->bit_depth)};
-        
+
         impl->commonAppendPixelRow(comps.data(), components_per_pixel);
     }
 

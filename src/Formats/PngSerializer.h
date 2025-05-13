@@ -8,13 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int INCORRECT_NUMBER_OF_COLUMNS;
-extern const int CANNOT_CONVERT_TYPE;
-extern const int TOO_MANY_ROWS;
-}
-
 using PngPixelFormat = FormatSettings::PngPixelFormat;
 
 class PngWriter;
@@ -35,18 +28,13 @@ public:
 
     void reset();
 
-    static std::unique_ptr<PngSerializer> create(
-        const DataTypes & data_types,
-        size_t width,
-        size_t height,
-        PngPixelFormat pixel_format,
-        PngWriter & writer,
-        int bit_depth);
+    static std::unique_ptr<PngSerializer>
+    create(const DataTypes & data_types, size_t width, size_t height, PngPixelFormat pixel_format, PngWriter & writer, int bit_depth);
 
 protected:
     class SerializerImpl;
     std::unique_ptr<SerializerImpl> impl;
-    
+
     PngSerializer(size_t width_, size_t height_, PngWriter & writer_, int bit_depth_, size_t channels);
 };
 
