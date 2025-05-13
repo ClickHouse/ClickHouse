@@ -751,6 +751,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.5",
         {
+            {"escape_variant_subcolumn_filenames", false, true, "Escape special symbols for filenames created for Variant type subcolumns in Wide parts"},
             {"apply_patches_on_merge", true, true, "New setting"},
             {"remove_unused_patch_parts", true, true, "New setting"},
             {"write_marks_for_substreams_in_compact_parts", false, true, "New setting"},
