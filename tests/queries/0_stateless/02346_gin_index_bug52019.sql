@@ -12,7 +12,7 @@ CREATE TABLE tab (
 ENGINE = MergeTree
 ORDER BY id
 SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi',
-         min_bytes_for_full_part_storage = 0; -- GIN index works only with full parts.
+         min_bytes_for_full_part_storage = 0; -- GIN indexes currently don't work with packed parts
 
 INSERT INTO tab (id) VALUES (0);
 

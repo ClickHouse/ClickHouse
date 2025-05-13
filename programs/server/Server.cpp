@@ -217,7 +217,6 @@ namespace ServerSetting
     extern const ServerSettingsInt32 dns_cache_update_period;
     extern const ServerSettingsUInt32 dns_max_consecutive_failures;
     extern const ServerSettingsBool enable_azure_sdk_logging;
-    extern const ServerSettingsBool format_alter_operations_with_parentheses;
     extern const ServerSettingsUInt64 global_profiler_cpu_time_period_ns;
     extern const ServerSettingsUInt64 global_profiler_real_time_period_ns;
     extern const ServerSettingsUInt64 http_connections_soft_limit;
@@ -314,14 +313,12 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_size;
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_free_size;
     extern const ServerSettingsUInt64 prefixes_deserialization_thread_pool_thread_pool_queue_size;
-    extern const ServerSettingsUInt64 page_cache_block_size;
     extern const ServerSettingsUInt64 page_cache_history_window_ms;
     extern const ServerSettingsString page_cache_policy;
     extern const ServerSettingsDouble page_cache_size_ratio;
     extern const ServerSettingsUInt64 page_cache_min_size;
     extern const ServerSettingsUInt64 page_cache_max_size;
     extern const ServerSettingsDouble page_cache_free_memory_ratio;
-    extern const ServerSettingsUInt64 page_cache_lookahead_blocks;
     extern const ServerSettingsUInt64 page_cache_shards;
     extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
     extern const ServerSettingsFloat min_os_cpu_wait_time_ratio_to_drop_connection;
@@ -828,6 +825,8 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
         config.keys("startup_scripts", keys);
 
         SetResultDetailsFunc callback;
+        std::vector<String> skipped_startup_scripts;
+
         for (const auto & key : keys)
         {
             std::string full_prefix = "startup_scripts." + key;
@@ -854,17 +853,20 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
                 executeQuery(condition_read_buffer, condition_write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
 
                 auto result = condition_write_buffer.str();
-
                 if (result != "1\n" && result != "true\n")
                 {
                     if (result != "0\n" && result != "false\n")
-                        context->addOrUpdateWarningMessage(
-                            Context::WarningType::SKIPPING_CONDITION_QUERY,
-                            PreformattedMessage::create(
-                                "The condition query returned `{}`, which can't be interpreted as a boolean (`0`, "
-                                "`false`, `1`, `true`). Will skip this query.",
-                                result));
-
+                    {
+                        if (result.empty())
+                            LOG_DEBUG(log, "Skipping startup script as condition query returned empty value.");
+                        else
+                            LOG_DEBUG(
+                                log,
+                                "Skipping startup script as condition query returned value `{}` "
+                                "which can't be interpreted as a boolean (`0`, `false`, `1`, `true`).",
+                                result);
+                        skipped_startup_scripts.emplace_back(full_prefix);
+                    }
                     continue;
                 }
 
@@ -878,6 +880,16 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
             LOG_DEBUG(log, "Executing query `{}`", query);
             startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
             executeQuery(read_buffer, write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
+        }
+
+        if (!skipped_startup_scripts.empty())
+        {
+            context->addOrUpdateWarningMessage(
+                Context::WarningType::SKIPPING_CONDITION_QUERY,
+                PreformattedMessage::create(
+                    "Skipped the following startup script(s): {} as the condition query for those returned values, "
+                    "which can't be interpreted as a boolean (`0`, `false`, `1`, `true`).",
+                    fmt::join(skipped_startup_scripts, ", ")));
         }
 
         CurrentMetrics::set(CurrentMetrics::StartupScriptsExecutionState, StartupScriptsExecutionState::Success);
@@ -970,8 +982,6 @@ try
 
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
-
-    ASTAlterCommand::setFormatAlterCommandsWithParentheses(server_settings[ServerSetting::format_alter_operations_with_parentheses]);
 
     StackTrace::setShowAddresses(server_settings[ServerSetting::show_addresses_in_stack_traces]);
 
@@ -1104,6 +1114,19 @@ try
         LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
             " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
 
+    // Settings validation for page cache. Ensure that page_cache_max_size is > page_cache_min_size.
+    // Otherwise, crash might happen during cache resizing in src/Common/PageCache.cpp::autoResize
+    size_t page_cache_min_size = server_settings[ServerSetting::page_cache_min_size];
+    size_t page_cache_max_size = server_settings[ServerSetting::page_cache_max_size];
+    if (page_cache_max_size != 0 && (page_cache_min_size > page_cache_max_size))
+    {
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Invalid page cache configuration: page_cache_min_size ({}) is greater than page_cache_max_size ({}).",
+            page_cache_min_size,
+            page_cache_max_size);
+    }
+
     // Initialize global thread pool. Do it before we fetch configs from zookeeper
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
     // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
@@ -1152,11 +1175,9 @@ try
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
 
-    if (server_settings[ServerSetting::page_cache_max_size] != 0)
+    if (page_cache_max_size != 0)
     {
         global_context->setPageCache(
-            server_settings[ServerSetting::page_cache_block_size],
-            server_settings[ServerSetting::page_cache_lookahead_blocks],
             std::chrono::milliseconds(Int64(server_settings[ServerSetting::page_cache_history_window_ms])),
             server_settings[ServerSetting::page_cache_policy],
             server_settings[ServerSetting::page_cache_size_ratio],

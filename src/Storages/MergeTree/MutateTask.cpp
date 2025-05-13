@@ -56,6 +56,7 @@ namespace ProfileEvents
 {
     extern const Event MutationTotalParts;
     extern const Event MutationUntouchedParts;
+    extern const Event MutationCreatedEmptyParts;
     extern const Event MutationTotalMilliseconds;
     extern const Event MutationExecuteMilliseconds;
     extern const Event MutationAllPartColumns;
@@ -66,8 +67,6 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric PartMutation;
-    extern const Metric TotalMergeFailures;
-    extern const Metric NonAbortedMergeFailures;
 }
 
 namespace DB
@@ -1177,7 +1176,7 @@ static NameSet collectFilesToSkip(
     const Block & updated_header,
     const std::set<MergeTreeIndexPtr> & indices_to_recalc,
     const String & mrk_extension,
-    const std::set<ProjectionDescriptionRawPtr> & projections_to_skip,
+    const std::vector<ProjectionDescriptionRawPtr> & projections_to_skip,
     const std::set<ColumnStatisticsPartPtr> & stats_to_recalc)
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
@@ -1505,6 +1504,93 @@ void finalizeMutatedPart(
 
 }
 
+<<<<<<< HEAD
+=======
+struct MutationContext
+{
+    MergeTreeData * data;
+    MergeTreeDataMergerMutator * mutator;
+    PartitionActionBlocker * merges_blocker;
+    TableLockHolder * holder;
+    MergeListEntry * mutate_entry;
+
+    LoggerPtr log{getLogger("MutateTask")};
+
+    FutureMergedMutatedPartPtr future_part;
+    MergeTreeData::DataPartPtr source_part;
+    StorageMetadataPtr metadata_snapshot;
+
+    MutationCommandsConstPtr commands;
+    time_t time_of_mutation;
+    ContextPtr context;
+    ReservationSharedPtr space_reservation;
+
+    CompressionCodecPtr compression_codec;
+
+    std::unique_ptr<CurrentMetrics::Increment> num_mutations;
+
+    QueryPipelineBuilder mutating_pipeline_builder;
+    QueryPipeline mutating_pipeline; // in
+    std::unique_ptr<PullingPipelineExecutor> mutating_executor;
+    ProgressCallback progress_callback;
+    Block updated_header;
+
+    std::unique_ptr<MutationsInterpreter> interpreter;
+    UInt64 watch_prev_elapsed = 0;
+    std::unique_ptr<MergeStageProgress> stage_progress;
+
+    MutationCommands commands_for_part;
+    MutationCommands for_interpreter;
+    MutationCommands for_file_renames;
+
+    NamesAndTypesList storage_columns;
+    NameSet materialized_indices;
+    NameSet materialized_projections;
+    NameSet materialized_statistics;
+
+    MergeTreeData::MutableDataPartPtr new_data_part;
+    IMergedBlockOutputStreamPtr out;
+
+    String mrk_extension;
+
+    std::vector<ProjectionDescriptionRawPtr> projections_to_build;
+    IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
+
+    std::set<MergeTreeIndexPtr> indices_to_recalc;
+    std::set<ColumnStatisticsPartPtr> stats_to_recalc;
+    std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
+    MergeTreeData::DataPart::Checksums existing_indices_stats_checksums;
+    NameSet files_to_skip;
+    NameToNameVector files_to_rename;
+
+    bool need_sync;
+    ExecuteTTLType execute_ttl_type{ExecuteTTLType::NONE};
+
+    MergeTreeTransactionPtr txn;
+
+    HardlinkedFiles hardlinked_files;
+
+    bool need_prefix = true;
+
+    scope_guard temporary_directory_lock;
+
+    bool checkOperationIsNotCanceled() const
+    {
+        if (new_data_part ? merges_blocker->isCancelledForPartition(new_data_part->info.getPartitionId()) : merges_blocker->isCancelled()
+            || (*mutate_entry)->is_cancelled)
+        {
+            throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
+        }
+
+        return true;
+    }
+
+    /// Whether we need to count lightweight delete rows in this mutation
+    bool count_lightweight_deleted_rows;
+    UInt64 execute_elapsed_ns = 0;
+};
+
+>>>>>>> upstream/master
 using MutationContextPtr = std::shared_ptr<MutationContext>;
 
 // This class is responsible for:
@@ -1691,9 +1777,9 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
         ctx->new_data_part.get(),
         ++block_num);
 
-    tmp_part.finalize();
-    tmp_part.part->getDataPartStorage().commitTransaction();
-    projection_parts[projection.name].emplace_back(std::move(tmp_part.part));
+    tmp_part->finalize();
+    tmp_part->part->getDataPartStorage().commitTransaction();
+    projection_parts[projection.name].emplace_back(std::move(tmp_part->part));
 }
 
 void PartMergerWriter::finalizeTempProjections()
@@ -2320,8 +2406,9 @@ bool MutateTask::execute()
     Stopwatch watch;
     SCOPE_EXIT({ ctx->execute_elapsed_ns += watch.elapsedNanoseconds(); });
 
-    try
+    switch (state)
     {
+<<<<<<< HEAD
         LOG_DEBUG(getLogger("KEK"), "MutateTask::execute() state: {}", state);
         switch (state)
         {
@@ -2360,19 +2447,37 @@ bool MutateTask::execute()
                 ++projection_tasks_it;
                 return true;
             }
-        }
-        return false;
-    }
-    catch (...)
-    {
-        const auto error_code = getCurrentExceptionCode();
-        if (error_code != ErrorCodes::ABORTED)
+=======
+        case State::NEED_PREPARE:
         {
-            CurrentMetrics::add(CurrentMetrics::NonAbortedMergeFailures);
+            if (!prepare())
+                return false;
+
+            state = State::NEED_EXECUTE;
+            return true;
+>>>>>>> upstream/master
         }
-        CurrentMetrics::add(CurrentMetrics::TotalMergeFailures);
-        throw;
+        case State::NEED_EXECUTE:
+        {
+            ctx->checkOperationIsNotCanceled();
+
+            if (task->executeStep())
+                return true;
+
+            // The `new_data_part` is a shared pointer and must be moved to allow
+            // part deletion in case it is needed in `MutateFromLogEntryTask::finalize`.
+            //
+            // `tryRemovePartImmediately` requires `std::shared_ptr::unique() == true`
+            // to delete the part timely. When there are multiple shared pointers,
+            // only the part state is changed to `Deleting`.
+            //
+            // Fetching a byte-identical part (in case of checksum mismatches) will fail with
+            // `Part ... should be deleted after previous attempt before fetch`.
+            promise.set_value(std::move(ctx->new_data_part));
+            return false;
+        }
     }
+    return false;
 }
 
 void MutateTask::setDataPartPromise()
@@ -2448,7 +2553,7 @@ static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, con
     if (command.partition)
     {
         auto command_partition_id = part->storage.getPartitionIDFromQuery(command.partition, context);
-        if (part->info.partition_id != command_partition_id)
+        if (part->info.getPartitionId() != command_partition_id)
             return true;
     }
 
@@ -2501,7 +2606,9 @@ bool MutateTask::prepare()
             ctx->commands_for_part.emplace_back(command);
     }
 
-    if (!isStorageTouchedByMutations(ctx->source_part, mutations_snapshot, ctx->metadata_snapshot, ctx->commands_for_part, context_for_reading))
+    auto is_storage_touched = isStorageTouchedByMutations(ctx->source_part, mutations_snapshot, ctx->metadata_snapshot, ctx->commands_for_part, context_for_reading);
+
+    if (!is_storage_touched.any_rows_affected)
     {
         NameSet files_to_copy_instead_of_hardlinks;
         auto settings_ptr = ctx->data->getSettings();
@@ -2548,8 +2655,36 @@ bool MutateTask::prepare()
         return false;
     }
 
+    if (is_storage_touched.all_rows_affected)
+    {
+        bool has_only_delete_commands = std::ranges::all_of(ctx->commands_for_part, [](const auto & command)
+        {
+            return command.type == MutationCommand::DELETE;
+        });
+
+<<<<<<< HEAD
+=======
+        if (has_only_delete_commands)
+        {
+            LOG_TRACE(ctx->log,
+                "Part {} is fully deleted, creating empty part with mutation version {}",
+                ctx->source_part->name, ctx->future_part->part_info.mutation);
+
+            auto [empty_part, _] = ctx->data->createEmptyPart(
+                ctx->future_part->part_info,
+                ctx->source_part->partition,
+                ctx->future_part->name,
+                ctx->txn);
+
+            ProfileEvents::increment(ProfileEvents::MutationCreatedEmptyParts);
+            promise.set_value(std::move(empty_part));
+            return false;
+        }
+    }
+
     LOG_TRACE(ctx->log, "Mutating part {} to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
 
+>>>>>>> upstream/master
     /// We must read with one thread because it guarantees that output stream will be sorted.
     /// Disable all settings that can enable reading with several streams.
     /// NOTE: isStorageTouchedByMutations() above is done without this settings because it
@@ -2669,11 +2804,34 @@ bool MutateTask::prepare()
 
         std::set<ProjectionDescriptionRawPtr> projections_to_skip;
 
+<<<<<<< HEAD
         for (const auto & projection : ctx->projections_to_build)
             projections_to_skip.insert(projection);
 
         for (const auto & [projection, _] : ctx->projections_to_mutate)
             projections_to_skip.insert(projection);
+=======
+        std::vector<ProjectionDescriptionRawPtr> projections_to_skip;
+
+        bool should_create_projections = !(lightweight_delete_mode && lightweight_delete_drops_projections);
+        /// Under lightweight delete mode, if option is drop, projections_to_recalc should be empty.
+        if (should_create_projections)
+        {
+            ctx->projections_to_recalc = MutationHelpers::getProjectionsToRecalculate(
+                ctx->source_part,
+                ctx->metadata_snapshot,
+                ctx->materialized_projections);
+
+            projections_to_skip.assign(ctx->projections_to_recalc.begin(), ctx->projections_to_recalc.end());
+        }
+        else
+        {
+            for (const auto & projection : ctx->metadata_snapshot->getProjections())
+                projections_to_skip.emplace_back(&projection);
+        }
+
+        ctx->stats_to_recalc = MutationHelpers::getStatisticsToRecalculate(ctx->metadata_snapshot, ctx->materialized_statistics);
+>>>>>>> upstream/master
 
         ctx->files_to_skip = MutationHelpers::collectFilesToSkip(
             ctx->source_part,
@@ -2682,7 +2840,11 @@ bool MutateTask::prepare()
             ctx->indices_to_build,
             ctx->mrk_extension,
             projections_to_skip,
+<<<<<<< HEAD
             ctx->statistics_to_build);
+=======
+            ctx->stats_to_recalc);
+>>>>>>> upstream/master
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
             ctx->source_part,

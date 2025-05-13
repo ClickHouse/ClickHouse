@@ -391,6 +391,7 @@ class Result(MetaClasses.Serializable):
         workdir=None,
         command_args=None,
         command_kwargs=None,
+        retries=1,
     ):
         """
         Executes shell commands or Python callables, optionally logging output, and handles errors.
@@ -431,6 +432,9 @@ class Result(MetaClasses.Serializable):
         with ContextManager.cd(workdir):
             for command_ in command:
                 if callable(command_):
+                    assert (
+                        retries == 1
+                    ), "FIXME: retry not supported for python callables"
                     # If command is a Python function, call it with provided arguments
                     if with_info or with_info_on_failure:
                         buffer = io.StringIO()
@@ -438,18 +442,21 @@ class Result(MetaClasses.Serializable):
                             result = command_(*command_args, **command_kwargs)
                     else:
                         result = command_(*command_args, **command_kwargs)
-                    if isinstance(result, bool):
-                        res = result
-                    elif result:
-                        error_infos.append(str(result))
-                        res = False
-                    if with_info or (with_info_on_failure and not res):
-                        error_infos = buffer.getvalue()
+                    res = result if isinstance(result, bool) else not bool(result)
+                    if (with_info_on_failure and not res) or with_info:
+                        if isinstance(result, bool):
+                            error_infos = buffer.getvalue().splitlines()
+                        else:
+                            error_infos = str(result).splitlines()
                 else:
                     # Run shell command in a specified directory with logging and verbosity
-                    exit_code = Shell.run(command_, verbose=True, log_file=log_file)
+                    exit_code = Shell.run(
+                        command_, verbose=True, log_file=log_file, retries=retries
+                    )
                     if with_info or (with_info_on_failure and exit_code != 0):
-                        with open(log_file, "r") as f:
+                        with open(
+                            log_file, "r", encoding="utf-8", errors="ignore"
+                        ) as f:
                             error_infos.append(f.read().strip())
                     res = exit_code == 0
 
@@ -534,10 +541,26 @@ class _ResultS3:
     def copy_result_to_s3(cls, result, clean=False):
         result.dump()
         env = _Environment.get()
-        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}"
+        result_file_path = result.file_name()
+        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{Path(result_file_path).name}"
         if clean:
             S3.delete(s3_path)
-        url = S3.copy_file_to_s3(s3_path=s3_path, local_path=result.file_name())
+        # gzip is supported by most browsers
+        archive_file = Utils.compress_file_gz(result_file_path)
+        if archive_file:
+            assert archive_file.endswith(".gz")
+            content_encoding = "gzip"
+        else:
+            content_encoding = ""
+            archive_file = result_file_path
+
+        url = S3.copy_file_to_s3(
+            s3_path=s3_path,
+            local_path=archive_file,
+            text=True,
+            content_encoding=content_encoding,
+            with_rename=True,
+        )
         return url
 
     @classmethod

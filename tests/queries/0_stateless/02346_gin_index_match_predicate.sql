@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+
 -- Tests that match() utilizes the inverted index
 
 SET allow_experimental_full_text_index = true;
@@ -12,8 +14,8 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
-
+SETTINGS index_granularity = 1,
+         min_bytes_for_full_part_storage = 0; -- GIN indexes currently don't work with packed parts
 INSERT INTO tab VALUES (1, 'Well, Hello ClickHouse !'), (2, 'Well, Hello World !'), (3, 'Good Weather !'), (4, 'Say Hello !'), (5, 'Its An OLAP Database'), (6, 'True World Champion');
 
 SELECT * FROM tab WHERE match(str, ' Hello (ClickHouse|World) ') ORDER BY id;
