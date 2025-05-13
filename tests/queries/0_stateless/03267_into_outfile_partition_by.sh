@@ -19,15 +19,19 @@ function perform()
     code=$?
 
     if [ "$code" -eq 0 ]; then
-        for f in "${CLICKHOUSE_TMP_OUTPUT}"/*
-        do
-            echo "file: $(basename "$f")"
-            if [ "$sort" -eq 1 ]; then
-                sort < "$f"
-            else
-                cat "$f"
-            fi
-        done
+        (
+            # define order for `{` char
+            export LC_ALL=C
+            for f in "${CLICKHOUSE_TMP_OUTPUT}"/*
+            do
+                echo "file: $(basename "$f")"
+                if [ "$sort" -eq 1 ]; then
+                    sort < "$f"
+                else
+                    cat "$f"
+                fi
+            done
+        )
     else
         echo "query failed"
     fi

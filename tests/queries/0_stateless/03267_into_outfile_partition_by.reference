@@ -87,9 +87,9 @@ performing test: escape__heredoc
 file: heredoc_{42}
 42
 performing test: no_precheck_for_tempalte_itself
-file: {42}
 file: 42
 42
+file: {42}
 performing test: simple_append
 file: 42
 42
