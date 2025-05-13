@@ -1,16 +1,19 @@
 import pytest
-
+import os
+import time
+import logging
 from helpers.cluster import ClickHouseCluster
 
 
 @pytest.fixture(scope="module")
 def started_cluster():
-    global cluster
+    global cluster, path1, path2
     try:
+        config_file, path1, path2 = render_config()
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "disks_app_test",
-            main_configs=["config.xml"],
+            main_configs=[config_file],
             with_minio=True,
             with_zookeeper=True,
             with_remote_database_disk=False,  # The tests work on the local disk and check local files
@@ -20,7 +23,7 @@ def started_cluster():
         # local disk requires its `path` directory to exist.
         # the two paths below belong to `test1` and `test2` disks
         node = cluster.instances["disks_app_test"]
-        for path in ["path1", "path2"]:
+        for path in [path1, path1]:
             node.exec_in_container(
                 [
                     "bash",
@@ -33,6 +36,34 @@ def started_cluster():
 
     finally:
         cluster.shutdown()
+
+
+def render_config(template_filename="config_template.xml"):
+    timestamp = int(time.time())
+    path1 = f"path1_{timestamp}"
+    path2 = f"path2_{timestamp + 1}"
+    output_filename = f"config.generated.{timestamp}.xml"
+
+    # current directory
+    base_dir = os.path.dirname(__file__)
+    # config template file
+    template_path = os.path.join(base_dir, template_filename)
+    # config file
+    output_path = os.path.join(base_dir, output_filename)
+
+    # render the template
+    with open(template_path, "r") as f:
+        template = f.read()
+    rendered = template.format(path1=path1, path2=path2)
+
+    # write to tmp file
+    with open(output_path, "w") as f:
+        f.write(rendered)
+    logging.debug("Rendered config file %s with path1 $s and path2 %s",
+                  output_filename, path1, path2)
+    logging.debug("Redered config file: %s", rendered)
+
+    return output_filename, path1, path2
 
 
 def write(source, disk, path):
@@ -251,11 +282,11 @@ def test_disks_app_func_ls(started_cluster):
 def test_disks_app_func_cp(started_cluster):
     source = cluster.instances["disks_app_test"]
 
-    touch(source, "test1", "path1")
+    touch(source, "test1", path1)
 
     out = ls(source, "test1", ".")
 
-    assert "path1" in out
+    assert path1 in out
 
     source.exec_in_container(
         [
@@ -268,20 +299,20 @@ def test_disks_app_func_cp(started_cluster):
 
     out = ls(source, "test2", ".")
 
-    assert "path1" in out
+    assert path1 in out
 
-    remove(source, "test2", "path1")
-    remove(source, "test1", "path1")
+    remove(source, "test2", path1)
+    remove(source, "test1", path1)
 
     # alesapin: Why we need list one more time?
     # kssenii: it is an assertion that the file is indeed deleted
     out = ls(source, "test2", ".")
 
-    assert "path1" not in out
+    assert path1 not in out
 
     out = ls(source, "test1", ".")
 
-    assert "path1" not in out
+    assert path1 not in out
 
 
 def test_disks_app_func_ln(started_cluster):
