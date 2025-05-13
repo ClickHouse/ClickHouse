@@ -137,6 +137,7 @@ public:
             config.keys(model_priors_path, prior_keys);
 
             ProbabilityMap priors;
+            double total_prior_prob = 0.0;
             for (const auto & prior_key : prior_keys)
             {
                 const String model_prior_path = model_priors_path + "." + prior_key;
@@ -148,6 +149,36 @@ public:
                 const UInt32 class_id = config.getInt(model_prior_path + ".class");
                 const double prior = config.getDouble(model_prior_path + ".value");
                 priors[class_id] = prior;
+                total_prior_prob += prior;
+
+                if (prior <= 0.0)
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Prior probability must be greater than 0 for model {} and class {}. Got {}",
+                        model_name,
+                        class_id,
+                        prior);
+                }
+
+                if (prior > 1.0)
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Prior probability must be less than or equal to 1 for model {} and class {}. Got {}",
+                        model_name,
+                        class_id,
+                        prior);
+                }
+            }
+
+            if (!priors.empty() && fabs(total_prior_prob - 1.0) > 1e-6)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Sum of provided priors probability is not equal to 1.0 for model {}. Sum: {}",
+                    model_name,
+                    total_prior_prob);
             }
 
             const double alpha = config.getDouble("nb_models." + key + ".alpha", 1.0);
@@ -161,7 +192,7 @@ public:
             models.emplace(
                 std::piecewise_construct,
                 std::make_tuple(model_name),
-                std::make_tuple(model_data, std::move(priors), n, alpha, model_mode));
+                std::make_tuple(model_name, model_data, std::move(priors), n, alpha, model_mode));
         }
 
         if (models.empty())
