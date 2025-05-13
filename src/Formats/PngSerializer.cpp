@@ -16,8 +16,8 @@ namespace ErrorCodes
 extern const int INCORRECT_NUMBER_OF_COLUMNS;
 extern const int LOGICAL_ERROR;
 extern const int TOO_MANY_ROWS;
-extern const int LOGICAL_ERROR;
 extern const int CANNOT_CONVERT_TYPE;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace

@@ -48,9 +48,9 @@ struct FormatSettings
 
     enum class DateTimeInputFormat : uint8_t
     {
-        Basic,        /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
-        BestEffort,   /// Use sophisticated rules to parse whatever possible.
-        BestEffortUS  /// Use sophisticated rules to parse American style: mm/dd/yyyy
+        Basic, /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
+        BestEffort, /// Use sophisticated rules to parse whatever possible.
+        BestEffortUS /// Use sophisticated rules to parse American style: mm/dd/yyyy
     };
 
     DateTimeInputFormat date_time_input_format = DateTimeInputFormat::Basic;
@@ -487,9 +487,9 @@ struct FormatSettings
 
     enum class PngPixelFormat : uint8_t
     {
-        BINARY,     
-        GRAYSCALE,  
-        RGB,        
+        BINARY,
+        GRAYSCALE,
+        RGB,
         RGBA
     };
 
@@ -500,7 +500,6 @@ struct FormatSettings
         Int32 bit_depth;
         String pixel_output_format;
         Int64 compression_level;
-        /// String image_name = "placeholder";
     } png_image{};
 
     struct

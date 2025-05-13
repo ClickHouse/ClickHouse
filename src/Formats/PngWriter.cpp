@@ -12,7 +12,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
-extern const int CANNOT_CONVERT_TYPE;
 }
 
 PngResourceWrapper::PngResourceWrapper(png_structp png_ptr_, png_infop info_ptr_) noexcept
