@@ -1,5 +1,10 @@
 set(NGHTTP2_DIR "${ClickHouse_SOURCE_DIR}/contrib/nghttp2")
 
+# We use this trick because nghttp2 contains a LICENSE file with "See COPYING" in it
+# It breaks ClickHouse license checker (because LICENSE is prioritized over COPYING) so we just remove it
+# Unfortunately, it actually removes the file from the filesystem but I can't think of a better solution now
+file(REMOVE "${NGHTTP2_DIR}/LICENSE")
+
 set(ENABLE_LIB_ONLY ON CACHE BOOL "Build libnghttp2 only" FORCE)
 set(BUILD_STATIC_LIBS ON CACHE BOOL "Build nghttp2 as static lib" FORCE)
 
