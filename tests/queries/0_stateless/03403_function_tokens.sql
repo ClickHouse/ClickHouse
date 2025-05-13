@@ -28,6 +28,7 @@ SELECT tokens('abc+ def- foo! bar? baz= code; hello: world/', 'default');
 
 SELECT 'Ngram tokenizer';
 
+SELECT tokens('', 'ngram') AS tokenized;
 SELECT tokens('abc def', 'ngram') AS tokenized;
 SELECT tokens('abc def', 'ngram', 3) AS tokenized;
 SELECT tokens('abc def', 'ngram', 8) AS tokenized;
