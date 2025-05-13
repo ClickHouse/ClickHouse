@@ -65,11 +65,9 @@ inline UInt16 extractPixelComponentImpl(const IColumn & data_col, size_t row_num
         case TypeIndex::Float32:
         case TypeIndex::Float64: {
             Float64 val = data_col.getFloat64(row_num);
-            /*
-             * IMPORTANT: Input floats are expected to be directly in the target range 
-             * For 8 bit is [0, 255], or [0, 65535] for 16.
-             * Values outside this range will be clamped. No automatic scaling (TODO)
-             */
+            /* IMPORTANT: Input floats are expected to be directly in the target range
+             * For 8 bit is [0, 255], or [0, 65535] for 16
+             * Values outside this range will be clamped. No automatic scaling */
             val = std::round(std::clamp(val, 0.0, max_val_float));
             return static_cast<UInt16>(val);
         }

@@ -34,8 +34,7 @@ public:
 };
 
 
-/** 
- * Utility class for writing in the png format.
+/** Utility class for writing in the png format
  * Provides useful functions to configure, write pixel data and finalize the PNG stream */
 class PngWriter : private boost::noncopyable
 {

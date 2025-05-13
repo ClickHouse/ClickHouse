@@ -114,11 +114,9 @@ void PngWriter::writeDataCallback(png_struct_def * png_ptr_, unsigned char * dat
     }
     catch (...)
     {
-        /**
-         * If WriteBuffer throws, signal png error. libpng should longjmp
+        /** If WriteBuffer throws, signal png error. libpng should longjmp
          * We rely on main error handler to convert this
-         * Avoid throwing directly from a C callback if possible using png_error 
-         * **/
+         * Avoid throwing directly from a C callback if possible using png_error **/
         png_error(png_ptr_, "Error writing png image via WriteBuffer");
     }
 }
