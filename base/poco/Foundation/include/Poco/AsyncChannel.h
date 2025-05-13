@@ -86,6 +86,7 @@ protected:
     void run();
     void setPriority(const std::string & value);
 
+private:
     Channel * _pChannel;
     Thread _thread;
     FastMutex _threadMutex;

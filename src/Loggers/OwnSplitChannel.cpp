@@ -208,23 +208,23 @@ void OwnAsyncSplitChannel::log(const Poco::Message & msg)
 
 void OwnAsyncSplitChannel::setChannelProperty(const std::string & channel_name, const std::string & name, const std::string & value)
 {
-    assert_cast<DB::OwnSplitChannel *>(_pChannel)->setChannelProperty(channel_name, name, value);
+    assert_cast<DB::OwnSplitChannel *>(getChannel())->setChannelProperty(channel_name, name, value);
 }
 
 void OwnAsyncSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name)
 {
-    assert_cast<DB::OwnSplitChannel *>(_pChannel)->addChannel(channel, name);
+    assert_cast<DB::OwnSplitChannel *>(getChannel())->addChannel(channel, name);
 }
 
 #ifndef WITHOUT_TEXT_LOG
 void OwnAsyncSplitChannel::addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority)
 {
-    assert_cast<DB::OwnSplitChannel *>(_pChannel)->addTextLog(log_queue, max_priority);
+    assert_cast<DB::OwnSplitChannel *>(getChannel())->addTextLog(log_queue, max_priority);
 }
 #endif
 
 void OwnAsyncSplitChannel::setLevel(const std::string & name, int level)
 {
-    assert_cast<DB::OwnSplitChannel *>(_pChannel)->setLevel(name, level);
+    assert_cast<DB::OwnSplitChannel *>(getChannel())->setLevel(name, level);
 }
 }

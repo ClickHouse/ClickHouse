@@ -6,6 +6,8 @@
 #include <map>
 #include <memory>
 
+#include <boost/noncopyable.hpp>
+
 #include <Poco/AsyncChannel.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/Channel.h>
@@ -58,7 +60,7 @@ private:
 };
 
 /// Same as OwnSplitChannel but it uses a separate thread for logging.
-class OwnAsyncSplitChannel : public Poco::AsyncChannel
+class OwnAsyncSplitChannel : public Poco::AsyncChannel, public boost::noncopyable
 {
 public:
     explicit OwnAsyncSplitChannel(Poco::Thread::Priority prio = Poco::Thread::PRIO_NORMAL);
