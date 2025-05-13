@@ -4,7 +4,6 @@
 #include <Common/quoteString.h>
 
 #include <DataTypes/FieldToDataType.h>
-#include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -47,12 +46,12 @@
 
 #include <Databases/IDatabase.h>
 
-#include <Interpreters/StorageID.h>
 #include <Interpreters/Context.h>
 
 
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsBool allow_experimental_variant_type;
@@ -62,6 +61,7 @@ namespace Setting
     extern const SettingsUInt64 limit;
     extern const SettingsUInt64 offset;
     extern const SettingsBool use_variant_as_common_type;
+    extern const SettingsString implicit_table_at_top_level;
 }
 
 
@@ -123,7 +123,7 @@ private:
 
     QueryTreeNodePtr buildWindow(const ASTPtr & window_definition, const ContextPtr & context) const;
 
-    QueryTreeNodePtr buildJoinTree(const ASTSelectQuery & select_query, const ContextPtr & context) const;
+    QueryTreeNodePtr buildJoinTree(bool is_subquery, const ASTSelectQuery & select_query, const ContextPtr & context) const;
 
     ColumnTransformersNodes buildColumnTransformers(const ASTPtr & matcher_expression, const ContextPtr & context) const;
 
@@ -239,7 +239,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(const ASTPtr 
     return union_node;
 }
 
-QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_query,
+QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
+    const ASTPtr & select_query,
     bool is_subquery,
     const std::string & cte_name,
     const ASTPtr & aliases,
@@ -313,7 +314,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
 
     auto current_context = current_query_tree->getContext();
 
-    current_query_tree->getJoinTree() = buildJoinTree(select_query_typed, current_context);
+    current_query_tree->getJoinTree() = buildJoinTree(is_subquery, select_query_typed, current_context);
 
     auto select_with_list = select_query_typed.with();
     if (select_with_list)
@@ -853,16 +854,23 @@ std::shared_ptr<TableFunctionNode> QueryTreeBuilder::buildTableFunction(const AS
     return node;
 }
 
-QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTSelectQuery & select_query, const ContextPtr & context) const
+QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSelectQuery & select_query, const ContextPtr & context) const
 {
     const auto & tables_in_select_query = select_query.tables();
     if (!tables_in_select_query)
     {
-        /** If no table is specified in SELECT query we substitute system.one table.
-          * SELECT * FROM system.one;
+        /** If no table is specified in SELECT query,
+          * if 'implicit_table_at_top_level' is set, we substitute it as a table,
+          * otherwise, we substitute the system.one table: SELECT * FROM system.one;
           */
-        Identifier storage_identifier("system.one");
-        return std::make_shared<IdentifierNode>(storage_identifier);
+        if (!is_subquery)
+        {
+            String implicit_table = context->getSettingsRef()[Setting::implicit_table_at_top_level];
+            if (!implicit_table.empty())
+                return std::make_shared<IdentifierNode>(Identifier(implicit_table));
+        }
+
+        return std::make_shared<IdentifierNode>(Identifier("system.one"));
     }
 
     auto & tables = tables_in_select_query->as<ASTTablesInSelectQuery &>();

@@ -1,3 +1,4 @@
+#include <memory>
 #include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
 
 #include <Core/ColumnWithTypeAndName.h>
@@ -463,6 +464,11 @@ void ReadFromSystemNumbersStep::initializePipeline(QueryPipelineBuilder & pipeli
     pipeline.init(std::move(pipe));
 }
 
+QueryPlanStepPtr ReadFromSystemNumbersStep::clone() const
+{
+    return std::make_unique<ReadFromSystemNumbersStep>(column_names, getQueryInfo(), getStorageSnapshot(), getContext(), storage, max_block_size, num_streams);
+}
+
 Pipe ReadFromSystemNumbersStep::makePipe()
 {
     auto & numbers_storage = storage->as<StorageSystemNumbers &>();
@@ -481,7 +487,8 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     chassert(numbers_storage.step != UInt64{0});
 
     /// Build rpn of query filters
-    KeyCondition condition(filter_actions_dag ? &*filter_actions_dag : nullptr, context, column_names, key_expression);
+    ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag ? filter_actions_dag->getOutputs().front() : nullptr, context);
+    KeyCondition condition(inverted_dag, context, column_names, key_expression);
 
     if (condition.extractPlainRanges(ranges))
     {
