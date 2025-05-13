@@ -17,6 +17,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int NO_ELEMENTS_IN_CONFIG;
+extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
 }
 
 namespace
@@ -77,6 +78,17 @@ public:
         for (const auto & key : keys)
         {
             const String model_name_path = "nb_models." + key + ".name";
+            const String model_name = config.getString(model_name_path);
+
+            /// Check if there is already a model with the same name
+            if (models.find(model_name) != models.end())
+            {
+                throw Exception(
+                    ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
+                    "Duplicate model name {} found in <nb_models>. Please use unique names for each model",
+                    model_name);
+            }
+
             const String model_data_path = "nb_models." + key + ".path";
             const String model_n_path = "nb_models." + key + ".n";
             const String model_mode_path = "nb_models." + key + ".mode";
@@ -98,7 +110,6 @@ public:
                 throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Missing model mode via 'mode' key in <nb_models> for model {}", key);
             }
 
-            const String model_name = config.getString(model_name_path);
             const String model_data = config.getString(model_data_path);
             const UInt32 n = config.getInt(model_n_path);
 
@@ -146,6 +157,7 @@ public:
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS, "Laplace smoothing parameter 'alpha' must be greater than 0 for model {}", model_name);
             }
+
             models.emplace(
                 std::piecewise_construct,
                 std::make_tuple(model_name),
