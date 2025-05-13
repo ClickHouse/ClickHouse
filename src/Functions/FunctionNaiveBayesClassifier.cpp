@@ -197,36 +197,57 @@ public:
         return std::make_shared<DataTypeUInt32>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        const auto & models = getModelCache();
+
+        const auto * const_model_name_col = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
+        const auto * const_input_string_col = checkAndGetColumn<ColumnConst>(arguments[1].column.get());
+        if (const_model_name_col and const_input_string_col)
+        {
+            const String model_name = const_model_name_col->getValue<String>();
+            validateModelName(model_name);
+            const String input_string = const_input_string_col->getValue<String>();
+            const auto & model = models.at(model_name);
+            UInt32 predicted_class = model.classify(input_string);
+            return result_type->createColumnConst(input_rows_count, predicted_class);
+        }
+
         ColumnPtr model_name_column = arguments[0].column->convertToFullColumnIfConst();
         ColumnPtr input_string_column = arguments[1].column->convertToFullColumnIfConst();
 
-        auto result_column = ColumnUInt32::create();
-
-        const auto & models = getModelCache();
+        auto result_column = ColumnVector<UInt32>::create(input_rows_count);
+        auto & data = result_column->getData();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const String model_name = model_name_column->getDataAt(i).toString();
 
-            if (models.find(model_name) == models.end())
-            {
-                String available_models;
-                for (const auto & model : models)
-                    available_models += model.first + ", ";
-
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Model {} not found. Available models: {}", model_name, available_models);
-            }
+            validateModelName(model_name);
 
             const String input_string = input_string_column->getDataAt(i).toString();
 
             const auto & model = models.at(model_name);
             UInt32 predicted_class = model.classify(input_string);
-            result_column->insert(predicted_class);
+            data[i] = predicted_class;
         }
 
         return result_column;
+    }
+
+private:
+    void validateModelName(const String model_name) const
+    {
+        const auto & models = getModelCache();
+
+        if (models.find(model_name) == models.end())
+        {
+            String available_models;
+            for (const auto & model : models)
+                available_models += model.first + ", ";
+
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Model {} not found. Available models: {}", model_name, available_models);
+        }
     }
 };
 }
