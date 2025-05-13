@@ -24,21 +24,13 @@ namespace
 {
 
 using ProbabilityMap = HashMap<UInt32, double, HashCRC32<UInt32>>;
-using Models = std::map<String, NaiveBayesClassifier>;
 
-NaiveBayesClassifier::Mode stringToMode(const std::string & s)
-{
-    static const std::unordered_map<std::string_view, NaiveBayesClassifier::Mode> table{
-        {"byte", NaiveBayesClassifier::Mode::Byte},
-        {"codepoint", NaiveBayesClassifier::Mode::CodePoint},
-        {"token", NaiveBayesClassifier::Mode::Token},
-    };
+using ByteNBC = NaiveBayesClassifier<BytePolicy>;
+using CodeNBC = NaiveBayesClassifier<CodePointPolicy>;
+using TokenNBC = NaiveBayesClassifier<TokenPolicy>;
 
-    if (const auto it = table.find(s); it != table.end())
-        return it->second;
-
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}. Valid modes are: byte, codepoint, token", s);
-}
+using AnyNBC = std::variant<ByteNBC, CodeNBC, TokenNBC>;
+using Models = std::unordered_map<String, AnyNBC>;
 
 class FunctionNaiveBayesClassifier : public IFunction
 {
@@ -50,6 +42,12 @@ private:
     {
         static Models models;
         return models;
+    }
+
+    static UInt32 classifyVariant(const AnyNBC & model_variant, const String & input_text)
+    {
+        return std::visit(
+            [&](const auto & concrete_classifier) -> UInt32 { return concrete_classifier.classify(input_text); }, model_variant);
     }
 
 public:
@@ -118,18 +116,6 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Ngram size 'n' must be greater than 0 for model {}", model_name);
             }
 
-            const String model_mode_str = config.getString(model_mode_path);
-            NaiveBayesClassifier::Mode model_mode;
-            try
-            {
-                model_mode = stringToMode(model_mode_str);
-            }
-            catch (const Exception & e)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode for model {}. {}", model_name, e.message());
-            }
-
-
             /// Extract the priors from the config if they exist
             Poco::Util::AbstractConfiguration::Keys prior_keys;
 
@@ -189,15 +175,40 @@ public:
                     ErrorCodes::BAD_ARGUMENTS, "Laplace smoothing parameter 'alpha' must be greater than 0 for model {}", model_name);
             }
 
-            models.emplace(
-                std::piecewise_construct,
-                std::make_tuple(model_name),
-                std::make_tuple(model_name, model_data, std::move(priors), n, alpha, model_mode));
+            const String mode = config.getString(model_mode_path);
+
+            if (mode == "byte")
+            {
+                models.emplace(
+                    std::piecewise_construct,
+                    std::forward_as_tuple(model_name),
+                    std::forward_as_tuple(std::in_place_type<ByteNBC>, model_name, model_data, std::move(priors), n, alpha));
+            }
+            else if (mode == "codepoint")
+            {
+                models.emplace(
+                    std::piecewise_construct,
+                    std::forward_as_tuple(model_name),
+                    std::forward_as_tuple(std::in_place_type<CodeNBC>, model_name, model_data, std::move(priors), n, alpha));
+            }
+            else if (mode == "token")
+            {
+                models.emplace(
+                    std::piecewise_construct,
+                    std::forward_as_tuple(model_name),
+                    std::forward_as_tuple(std::in_place_type<TokenNBC>, model_name, model_data, std::move(priors), n, alpha));
+            }
+            else
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Invalid mode {} for model {}. Only 'byte', 'codepoint', and 'token' are available",
+                    mode,
+                    model_name);
         }
 
         if (models.empty())
         {
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No models found under <nb_models> in config.");
+            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No models found under <nb_models> in config");
         }
     }
 
@@ -215,16 +226,16 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const auto model_name_input_argument_type = WhichDataType(arguments[0].type);
-        if (!model_name_input_argument_type.isStringOrFixedString())
+        const auto model_name_argument_type = WhichDataType(arguments[0].type);
+        if (!model_name_argument_type.isStringOrFixedString())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Function {} first argument type should be String. Actual {}",
                 getName(),
                 arguments[0].type->getName());
 
-        const auto input_string_input_argument_type = WhichDataType(arguments[1].type);
-        if (!input_string_input_argument_type.isStringOrFixedString())
+        const auto input_text_argument_type = WhichDataType(arguments[1].type);
+        if (!input_text_argument_type.isStringOrFixedString())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Function {} second argument type should be String. Actual {}",
@@ -239,19 +250,19 @@ public:
         const auto & models = getModelCache();
 
         const auto * const_model_name_col = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
-        const auto * const_input_string_col = checkAndGetColumn<ColumnConst>(arguments[1].column.get());
-        if (const_model_name_col and const_input_string_col)
+        const auto * const_input_text_col = checkAndGetColumn<ColumnConst>(arguments[1].column.get());
+        if (const_model_name_col and const_input_text_col)
         {
             const String model_name = const_model_name_col->getValue<String>();
             validateModelName(model_name);
-            const String input_string = const_input_string_col->getValue<String>();
-            const auto & model = models.at(model_name);
-            UInt32 predicted_class = model.classify(input_string);
+            const String input_text = const_input_text_col->getValue<String>();
+
+            UInt32 predicted_class = classifyVariant(models.at(model_name), input_text);
             return result_type->createColumnConst(input_rows_count, predicted_class);
         }
 
         ColumnPtr model_name_column = arguments[0].column->convertToFullColumnIfConst();
-        ColumnPtr input_string_column = arguments[1].column->convertToFullColumnIfConst();
+        ColumnPtr input_text_column = arguments[1].column->convertToFullColumnIfConst();
 
         auto result_column = ColumnVector<UInt32>::create(input_rows_count);
         auto & data = result_column->getData();
@@ -262,10 +273,9 @@ public:
 
             validateModelName(model_name);
 
-            const String input_string = input_string_column->getDataAt(i).toString();
+            const String input_text = input_text_column->getDataAt(i).toString();
 
-            const auto & model = models.at(model_name);
-            UInt32 predicted_class = model.classify(input_string);
+            UInt32 predicted_class = classifyVariant(models.at(model_name), input_text);
             data[i] = predicted_class;
         }
 

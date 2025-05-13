@@ -1,5 +1,6 @@
 #pragma once
 
+#include <concepts>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -7,7 +8,6 @@
 #include <vector>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
-#include <boost/algorithm/string.hpp>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
@@ -27,70 +27,124 @@ using ClassCountMap = HashMap<UInt32, UInt32, HashCRC32<UInt32>>;
 using NGramMap = HashMap<StringRef, ClassCountMap, StringRefHash>;
 using ProbabilityMap = HashMap<UInt32, double, HashCRC32<UInt32>>;
 
-class ITokenizer
-{
-public:
-    virtual std::vector<String> extract(const String & input) const = 0;
-    virtual ~ITokenizer() = default;
+
+template <class T>
+concept Tokenizer = requires(
+    T tok, std::string_view text, std::vector<std::string_view> & tokens, const std::string_view * start, size_t n, std::string & ngram) {
+    { T::start_token } -> std::convertible_to<std::string_view>;
+    { T::end_token } -> std::convertible_to<std::string_view>;
+    { tok.tokenize(text, tokens) } -> std::same_as<void>;
+    { tok.join(start, n, ngram) } -> std::same_as<void>;
 };
 
 /// Byte-level tokenizer: each token is a single byte
-class ByteTokenizer : public ITokenizer
+struct BytePolicy
 {
-public:
-    std::vector<String> extract(const String & input) const override
+    static constexpr std::string_view start_token{"\x01", 1};
+    static constexpr std::string_view end_token{"\xFF", 1};
+
+    void tokenize(std::string_view text, std::vector<std::string_view> & tokens) const
     {
-        std::vector<String> tokens;
-        tokens.reserve(input.size());
-        for (char c : input)
-        {
-            tokens.push_back(String(1, c));
-        }
-        return tokens;
+        tokens.reserve(tokens.size() + text.size());
+        for (size_t i = 0; i < text.size(); ++i)
+            tokens.emplace_back(text.data() + i, 1);
+    }
+
+    void join(const std::string_view * start, size_t n, std::string & ngram) const
+    {
+        ngram.resize(n);
+        for (size_t i = 0; i < n; ++i)
+            ngram[i] = (*start++)[0];
     }
 };
 
 /// CodePoint-level tokenizer: each token corresponds to a single Unicode (UTF-8) code point
-class CodePointTokenizer : public ITokenizer
+struct CodePointPolicy
 {
-public:
-    std::vector<String> extract(const String & input) const override
+    // U+10FFFE -> F4 8F BF BE
+    static constexpr std::string_view start_token{"\xF4\x8F\xBF\xBE"};
+    // U+10FFFF -> F4 8F BF BF
+    static constexpr std::string_view end_token{"\xF4\x8F\xBF\xBF"};
+
+    void tokenize(std::string_view text, std::vector<std::string_view> & tokens) const
     {
-        std::vector<String> tokens;
+        tokens.reserve(tokens.size() + text.size());
         size_t pos = 0;
-        const size_t len = input.size();
-        while (pos < len)
+        while (pos < text.size())
         {
-            size_t char_size = DB::UTF8::seqLength(static_cast<UInt8>(input[pos]));
-            tokens.push_back(input.substr(pos, char_size));
-            pos += char_size;
+            size_t len = DB::UTF8::seqLength(static_cast<UInt8>(text[pos]));
+            tokens.emplace_back(text.data() + pos, len);
+            pos += len;
         }
-        return tokens;
+    }
+
+    void join(const std::string_view * start, size_t n, std::string & ngram) const
+    {
+        size_t total = 0;
+        for (size_t i = 0; i < n; ++i)
+            total += start[i].size();
+        ngram.resize(total);
+
+        size_t pos = 0;
+        for (size_t i = 0; i < n; ++i)
+        {
+            memcpy(ngram.data() + pos, start[i].data(), start[i].size());
+            pos += start[i].size();
+        }
     }
 };
 
 // Token-level tokenizer: each token corresponds to a space-separated word
-class TokenTokenizer : public ITokenizer
+struct TokenPolicy
 {
-public:
-    std::vector<String> extract(const String & input) const override
+    static constexpr std::string_view start_token{"<s>"};
+    static constexpr std::string_view end_token{"</s>"};
+
+    void tokenize(std::string_view text, std::vector<std::string_view> & tokens) const
     {
-        std::vector<String> tokens;
-        boost::split(tokens, input, boost::is_any_of(" "));
-        return tokens;
+        tokens.reserve(tokens.size() + (text.size() / 3));
+        size_t pos = 0;
+        while (pos < text.size())
+        {
+            // skip leading spaces
+            size_t start = pos;
+            while (start < text.size() && text[start] == ' ')
+                ++start;
+            if (start == text.size())
+                break;
+
+            // find next space
+            size_t end = start;
+            while (end < text.size() && text[end] != ' ')
+                ++end;
+
+            tokens.emplace_back(text.data() + start, end - start);
+            pos = end;
+        }
+    }
+
+    void join(const std::string_view * start, size_t n, std::string & ngram) const
+    {
+        size_t total = n - 1; // spaces
+        for (size_t i = 0; i < n; ++i)
+            total += start[i].size();
+        ngram.resize(total);
+
+        size_t pos = 0;
+        for (size_t i = 0; i < n; ++i)
+        {
+            if (i)
+                ngram[pos++] = ' ';
+            memcpy(ngram.data() + pos, start[i].data(), start[i].size());
+            pos += start[i].size();
+        }
     }
 };
 
+
+template <Tokenizer Tok>
 class NaiveBayesClassifier
 {
-public:
-    enum class Mode
-    {
-        Byte,
-        CodePoint,
-        Token
-    };
-
 private:
     /// N-gram size
     const UInt32 n;
@@ -98,14 +152,11 @@ private:
     /// Laplace smoothing parameter
     const double alpha;
 
-    /// Start and end tokens to pad the input string
+    /// Start / end tokens to pad the input string - taken from Tok at compile time
     const String start_token;
     const String end_token;
 
-    /// The mode of the tokenizer
-    const Mode mode;
-
-    std::unique_ptr<ITokenizer> tokenizer;
+    Tok tokenizer;
 
     NGramMap ngram_counts;
     ClassCountMap class_totals;
@@ -128,6 +179,13 @@ private:
 
 public:
     NaiveBayesClassifier() = delete;
+    NaiveBayesClassifier(const NaiveBayesClassifier &) = delete;
+    NaiveBayesClassifier & operator=(const NaiveBayesClassifier &) = delete;
+
+    NaiveBayesClassifier(NaiveBayesClassifier &&) noexcept = default;
+    NaiveBayesClassifier & operator=(NaiveBayesClassifier &&) noexcept = default;
+
+    ~NaiveBayesClassifier() = default;
 
     /// The model at model_path is expected to be serialized lines of: <class_id> <ngram> <count>
     NaiveBayesClassifier(
@@ -136,52 +194,13 @@ public:
         ProbabilityMap && priors,
         const UInt32 given_n,
         const double given_alpha,
-        Mode given_mode)
+        Tok given_tokenizer = {})
         : n(given_n)
         , alpha(given_alpha)
-        , start_token(
-              [&]()
-              {
-                  switch (given_mode)
-                  {
-                      case Mode::Byte:
-                          return String("\x01");
-                      case Mode::CodePoint:
-                          return String(reinterpret_cast<const char *>(u8"\U0010FFFE"));
-                      case Mode::Token:
-                          return String("<s>");
-                  }
-                  return String("");
-              }())
-        , end_token(
-              [&]()
-              {
-                  switch (given_mode)
-                  {
-                      case Mode::Byte:
-                          return String("\xff");
-                      case Mode::CodePoint:
-                          return String(reinterpret_cast<const char *>(u8"\U0010FFFF"));
-                      case Mode::Token:
-                          return String("</s>");
-                  }
-                  return String("");
-              }())
-        , mode(given_mode)
+        , start_token(Tok::start_token)
+        , end_token(Tok::end_token)
+        , tokenizer(std::move(given_tokenizer))
     {
-        switch (given_mode)
-        {
-            case Mode::Byte:
-                tokenizer = std::make_unique<ByteTokenizer>();
-                break;
-            case Mode::CodePoint:
-                tokenizer = std::make_unique<CodePointTokenizer>();
-                break;
-            case Mode::Token:
-                tokenizer = std::make_unique<TokenTokenizer>();
-                break;
-        }
-
         if (!std::filesystem::exists(model_path))
         {
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist for model {}", model_path, model_name);
@@ -286,7 +305,7 @@ public:
     }
 
     /// Classify an input string. The function splits the input into tokens (by space)
-    /// and adds (n - 1) start tokens at the front and (n - 1) end tokens at the back.
+    ///  and adds (n - 1) start tokens at the front and (n - 1) end tokens at the back.
     /// Then, it creates n-grams and computes the log probabilities for each class.
     /// Finally, it returns the class with the highest log probability.
     UInt32 classify(const String & input) const
@@ -297,71 +316,42 @@ public:
             class_log_probabilities[entry.getKey()] = std::log(entry.getMapped());
         }
 
-        auto tokens = tokenizer->extract(input);
+        std::vector<std::string_view> tokens;
+        tokenizer.tokenize(input, tokens);
 
         /// Add (n - 1) start tokens at the front and (n - 1) end tokens at the back
         if (n > 1)
         {
-            std::vector<String> padded_tokens;
-            padded_tokens.reserve(tokens.size() + (n - 1) * 2);
-            padded_tokens.insert(padded_tokens.end(), n - 1, start_token);
-            padded_tokens.insert(padded_tokens.end(), tokens.begin(), tokens.end());
-            padded_tokens.insert(padded_tokens.end(), n - 1, end_token);
-            tokens = std::move(padded_tokens);
+            tokens.insert(tokens.begin(), n - 1, std::string_view(start_token));
+            tokens.insert(tokens.end(), n - 1, std::string_view(end_token));
         }
 
-        /// Now, create n-grams: each ngram will consist of n consecutive tokens
-        std::vector<String> ngrams;
+        /// Now, create n-grams and calculate probability on the fly; each ngram will consist of n consecutive tokens
         if (tokens.size() >= n)
         {
-            ngrams.reserve(tokens.size() - n + 1);
-            for (size_t i = 0; i <= tokens.size() - n; ++i)
+            std::string ngram;
+            for (size_t i = 0; i + n <= tokens.size(); ++i)
             {
-                // Pre-calculate the final length of the ngram
-                size_t total_length = 0;
-                for (size_t j = i; j < i + n; ++j)
-                {
-                    total_length += tokens[j].size();
-                    if (mode == Mode::Token && j > i)
-                        total_length++; // space delimiter between tokens for token mode
-                }
+                tokenizer.join(&tokens[i], n, ngram);
 
-                String ngram;
-                ngram.resize(total_length);
-                size_t pos = 0;
-                for (size_t j = i; j < i + n; ++j)
+                StringRef ngram_ref(ngram);
+                const auto * ref_it = ngram_counts.find(ngram_ref);
+                bool token_exists = (ref_it != ngram_counts.end());
+                const auto * token_class_map = token_exists ? &ref_it->getMapped() : nullptr;
+                for (const auto & class_entry : class_totals)
                 {
-                    if (mode == Mode::Token && j > i)
+                    UInt32 class_id = class_entry.getKey();
+                    double class_total = static_cast<double>(class_entry.getMapped());
+                    double count = 0.0;
+                    if (token_exists)
                     {
-                        ngram[pos++] = ' '; // space delimiter between tokens for token mode
+                        const auto * it = token_class_map->find(class_id);
+                        if (it != token_class_map->end())
+                            count = static_cast<double>(it->getMapped());
                     }
-                    const String & token = tokens[j];
-                    memcpy(&ngram[pos], token.data(), token.size());
-                    pos += token.size();
+                    const double probability = (count + alpha) / (class_total + alpha * vocabulary_size);
+                    class_log_probabilities[class_id] += std::log(probability);
                 }
-                ngrams.push_back(std::move(ngram));
-            }
-        }
-
-        for (const auto & ngram : ngrams)
-        {
-            StringRef ngram_ref(ngram);
-            const auto * ref_it = ngram_counts.find(ngram_ref);
-            bool token_exists = (ref_it != ngram_counts.end());
-            const auto * token_class_map = token_exists ? &ref_it->getMapped() : nullptr;
-            for (const auto & class_entry : class_totals)
-            {
-                UInt32 class_id = class_entry.getKey();
-                double class_total = static_cast<double>(class_entry.getMapped());
-                double count = 0.0;
-                if (token_exists)
-                {
-                    const auto * it = token_class_map->find(class_id);
-                    if (it != token_class_map->end())
-                        count = static_cast<double>(it->getMapped());
-                }
-                const double probability = (count + alpha) / (class_total + alpha * vocabulary_size);
-                class_log_probabilities[class_id] += std::log(probability);
             }
         }
 
