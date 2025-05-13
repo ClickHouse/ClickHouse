@@ -16,8 +16,8 @@ from properties import modify_server_settings_with_random_properties
 def ordered_pair(value):
     try:
         x, y = map(int, value.split(','))
-        if x >= y:
-            raise argparse.ArgumentTypeError(f"First value must be less than second (got {x} >= {y})")
+        if x > y:
+            raise argparse.ArgumentTypeError(f"First value must be less than second (got {x} > {y})")
         return (x, y)
     except ValueError:
         raise argparse.ArgumentTypeError("Must be two comma-separated integers (e.g., '1,10')")
