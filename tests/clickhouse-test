@@ -206,7 +206,7 @@ class SharedEngineReplacer:
         return (
             (self.replace_replicated or self.replace_non_replicated)
             and "shared_merge_tree" not in self.file_name
-        ) or self.cloud
+        ) or self.cloud or self.args.replace_log_memory_with_merge_tree
 
     def _has_show_create_table(self):
         with open(self.file_name, "r", encoding="utf-8") as f:
@@ -302,8 +302,7 @@ class SharedEngineReplacer:
                     self.replace_replicated = True
                     self.replace_non_replicated = True
 
-                # raw replace for initial evaluation
-                if self.args.no_parallel_replicas:
+                if self.args.replace_log_memory_with_merge_tree:
                     line = self._replace_data_engines(line, replace_engine="MergeTree")
 
                 if (
@@ -3838,6 +3837,12 @@ def parse_args():
         action="store_true",
         default=os.environ.get("REPLACE_MT_WITH_SMT", False),
         help="Replace ordinary MergeTree engine with SharedMergeTree",
+    )
+    parser.add_argument(
+        "--replace-log-memory-with-merge-tree",
+        action="store_true",
+        default=os.environ.get("REPLACE_LOG_MEM_WITH_MT", False),
+        help="Replace *Log and Memory engines with MergeTree",
     )
 
     parser.add_argument(
