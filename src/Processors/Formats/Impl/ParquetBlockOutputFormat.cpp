@@ -388,10 +388,10 @@ void ParquetBlockOutputFormat::writeRowGroupInOneThread(Chunk chunk)
         base_offset = out.count();
         writeFileHeader(file_state, out);
     }
-    for (size_t i = 0; i < columns_to_write.size(); ++i)
+    for (auto & s : columns_to_write)
     {
-        writeColumnChunkBody(columns_to_write[i], options, out);
-        finalizeColumnChunkAndWriteFooter(std::move(columns_to_write[i]), file_state, out);
+        writeColumnChunkBody(s, options, out);
+        finalizeColumnChunkAndWriteFooter(std::move(s), file_state, out);
     }
 
     finalizeRowGroup(file_state, chunk.getNumRows(), options, out);
