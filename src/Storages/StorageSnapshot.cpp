@@ -112,6 +112,24 @@ NamesAndTypesList StorageSnapshot::getColumnsByNames(const GetColumnsOptions & o
     return res;
 }
 
+ColumnNumbers StorageSnapshot::getColumnNumbersByNames(const Names & column_names) const
+{
+    std::unordered_set<String> names(column_names.begin(), column_names.end());
+
+    ColumnNumbers columns;
+    auto all_columns = metadata->getColumns().get(GetColumnsOptions::All);
+
+    size_t i = 0;
+    for (const auto & column : all_columns)
+    {
+        if (names.contains(column.name))
+            columns.emplace_back(i);
+        ++i;
+    }
+
+    return columns;
+}
+
 std::optional<NameAndTypePair> StorageSnapshot::tryGetColumn(const GetColumnsOptions & options, const String & column_name) const
 {
     const auto & columns = metadata->getColumns();
