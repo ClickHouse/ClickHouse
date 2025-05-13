@@ -255,11 +255,11 @@ void HTTP2ServerConnection::doRun()
 
 void HTTP2ServerConnection::sendPendingFrames()
 {
-    while (nghttp2_session_want_write(session)) 
+    while (nghttp2_session_want_write(session))
     {
         const uint8_t * data;
         ssize_t data_len = nghttp2_session_mem_send(session, &data);
-        if (data_len < 0) 
+        if (data_len < 0)
         {
             LOG_ERROR(log, "nghttp2_session_mem_send error: {}", nghttp2_strerror(data_len));
             break;
@@ -373,7 +373,7 @@ void HTTP2ServerConnection::onOutputReady(uint32_t stream_id)
 void HTTP2ServerConnection::prepareHeaders(HTTP2Stream & stream, std::vector<nghttp2_nv> & nva)
 {
     nva.reserve(nva.size() + stream.response.size());
-    for (const auto & header : stream.response) 
+    for (const auto & header : stream.response)
     {
         if (strcasecmp(header.first.c_str(), "Connection") == 0 ||
             strcasecmp(header.first.c_str(), "Keep-Alive") == 0 ||
@@ -471,15 +471,15 @@ int HTTP2ServerConnection::onHeaderCallback(nghttp2_session * /*session*/, const
     std::string header_name(reinterpret_cast<const char *>(name), namelen);
     std::string header_value(reinterpret_cast<const char *>(value), valuelen);
 
-    if (header_name == ":method") 
+    if (header_name == ":method")
         stream.request.setMethod(header_value);
     else if (header_name == ":scheme")
         {}
-    else if (header_name == ":path") 
+    else if (header_name == ":path")
         stream.request.setURI(header_value);
-    else if (header_name == ":authority") 
+    else if (header_name == ":authority")
         stream.request.set("Host", header_value);
-    else 
+    else
         stream.request.set(header_name, header_value);
 
     return 0;

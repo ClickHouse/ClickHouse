@@ -1,7 +1,6 @@
 #include <Server/PrometheusRequestHandler.h>
 
 #include <IO/HTTPCommon.h>
-#include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/HTTPHandler.h>
 #include <Server/IServer.h>
 #include <Server/PrometheusMetricsWriter.h>

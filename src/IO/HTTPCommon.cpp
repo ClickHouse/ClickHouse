@@ -36,22 +36,6 @@ namespace ErrorCodes
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
 }
 
-// void setResponseDefaultHeaders(HTTPServerResponse & response)
-// {
-//     if (!response.getKeepAlive())
-//         return;
-
-//     const size_t keep_alive_timeout = response.getSession().getKeepAliveTimeout();
-//     const size_t keep_alive_max_requests = response.getSession().getMaxKeepAliveRequests();
-//     if (keep_alive_timeout)
-//     {
-//         if (keep_alive_max_requests)
-//             response.set("Keep-Alive", fmt::format("timeout={}, max={}", keep_alive_timeout, keep_alive_max_requests));
-//         else
-//             response.set("Keep-Alive", fmt::format("timeout={}", keep_alive_timeout));
-//     }
-// }
-
 HTTPSessionPtr makeHTTPSession(
     HTTPConnectionGroupType group,
     const Poco::URI & uri,
