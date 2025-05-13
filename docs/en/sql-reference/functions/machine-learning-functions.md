@@ -27,7 +27,7 @@ Classifies input text using a Naive Bayes model with ngrams and Laplace smoothin
 **Syntax**
 
 ```sql
-naiveBayesClassifier(model_name, input_text)
+naiveBayesClassifier(model_name, input_text);
 ```
 
 **Arguments**
@@ -45,7 +45,7 @@ naiveBayesClassifier(model_name, input_text)
 
 Classify text with a language detection model:
 ```sql
-SELECT naiveBayesClassifier('language', 'How are you?')
+SELECT naiveBayesClassifier('language', 'How are you?');
 ```
 ```response
 ┌─naiveBayesClassifier('language', 'How are you?')─┐
