@@ -25,5 +25,3 @@ select bech32Decode('bc1w508d6qejxtdg4y5r3zarvary0c5xw7k8zcwmq') ==
 -- decode valid string, witver 1, hrp=tb, see above comment
 select bech32Decode('tb1w508d6qejxtdg4y5r3zarvary0c5xw7khalasw') ==
        bech32Decode('tb1w508d6qejxtdg4y5r3zarvary0c5xw7kzp034v');
-
-
