@@ -3,11 +3,15 @@
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/LocalDate.h>
+#include <Parsers/Lexer.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <string_view>
 
 
 namespace DB
@@ -236,5 +240,54 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     }
 }
 #endif
+
+String formatQuery(String query)
+{
+    const unsigned max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
+    const unsigned max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
+
+    ParserQuery parser(query.data() + query.size(), /*allow_settings_after_format_in_insert_=*/ false, /*implicit_select_=*/ false);
+
+    String res;
+    res.reserve(query.size());
+
+    const char * begin = query.data();
+    const char * pos = begin;
+    const char * end = begin + query.size();
+    while (pos < end)
+    {
+        const char * query_start = pos;
+
+        Tokens tokens(pos, end);
+        IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
+        while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
+            ++token_iterator;
+        const char * query_end = token_iterator->end;
+        bool has_semicolon = token_iterator.isValid() && token_iterator->type == TokenType::Semicolon;
+
+        const ASTPtr ast = parseQueryAndMovePosition(parser, pos, query_end, "query in editor", true, /*max_query_size=*/ 0, max_parser_depth, max_parser_backtracks);
+
+        bool multiline_query = std::string_view(query_start, query_end).contains('\n');
+        if (multiline_query)
+            res += ast->formatWithSecretsMultiLine();
+        else
+            res += ast->formatWithSecretsOneLine();
+
+        if (const auto * insert_ast = ast->as<ASTInsertQuery>(); insert_ast && insert_ast->data)
+        {
+            res += ' ';
+            res += std::string_view(insert_ast->data, insert_ast->end);
+            pos = insert_ast->end;
+        }
+
+        if (has_semicolon)
+            res += ';';
+
+        while (pos < end && isWhitespaceASCII(*pos))
+            res.push_back(*pos++);
+    }
+
+    return res;
+}
 
 }
