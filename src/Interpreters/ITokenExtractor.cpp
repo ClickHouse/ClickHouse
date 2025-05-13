@@ -6,18 +6,12 @@
 #include <Common/UTF8Helpers.h>
 
 #if defined(__SSE2__)
-#include <emmintrin.h>
-
-#if defined(__SSE4_2__)
-#include <nmmintrin.h>
+#  include <emmintrin.h>
+#  if defined(__SSE4_2__)
+#    include <nmmintrin.h>
+#  endif
 #endif
 
-#endif
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
 
 namespace DB
 {
