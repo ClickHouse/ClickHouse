@@ -152,6 +152,7 @@ CapContains
 CapUnion
 CapnProto
 CapnProtoEnumComparingMode
+CardSecondary
 CatBoost
 CellAreaM
 CellAreaRads

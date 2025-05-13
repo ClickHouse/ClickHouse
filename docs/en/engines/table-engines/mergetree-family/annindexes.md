@@ -290,8 +290,8 @@ ORDER BY cosineDistance(book_vector, getEmbedding('Books on ancient Asian empire
 LIMIT 10
 ```
 
-Assuming that only a very small number of books cost less than $2, post-filtering may return zero rows because the top 10 matches returned by the vector index could all be priced above $2.
-By forcing pre-filtering (add `SETTINGS vector_search_filter_strategy = 'prefilter'` to the query), ClickHouse first finds all books with a price of less than $2 and then executes a brute-force vector search for the found books.
+Assuming that only a very small number of books cost less than 2 dollar, post-filtering may return zero rows because the top 10 matches returned by the vector index could all be priced above 2 dollar.
+By forcing pre-filtering (add `SETTINGS vector_search_filter_strategy = 'prefilter'` to the query), ClickHouse first finds all books with a price of less than 2 dollar and then executes a brute-force vector search for the found books.
 
 As an alternative approach to resolve above issue, setting [vector_search_postfilter_multiplier](../../../operations/settings/settings#vector_search_postfilter_multiplier) (default: `1.0`) may be configured to a value > `1.0` (for example, `2.0`).
 The number of nearest neighbors fetched from the vector index is multiplied by the setting value and then the additional filter to be applied on those rows to return LIMIT-many rows.

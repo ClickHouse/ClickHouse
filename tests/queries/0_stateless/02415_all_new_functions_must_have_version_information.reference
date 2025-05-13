@@ -185,6 +185,8 @@ atan
 atan2
 atanh
 bar
+base32Decode
+base32Encode
 base58Decode
 base58Encode
 basename
@@ -1092,6 +1094,7 @@ trimBoth
 trimLeft
 trimRight
 trunc
+tryBase32Decode
 tryBase58Decode
 tumble
 tumbleEnd
