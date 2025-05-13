@@ -132,7 +132,6 @@ arrayFirstOrNull
 arrayFlatten
 arrayFold
 arrayIntersect
-arrayJaccardIndex
 arrayJoin
 arrayLast
 arrayLastIndex
@@ -152,7 +151,6 @@ arrayPushBack
 arrayPushFront
 arrayROCAUC
 arrayRandomSample
-arrayReduce
 arrayReduceInRanges
 arrayResize
 arrayReverse
