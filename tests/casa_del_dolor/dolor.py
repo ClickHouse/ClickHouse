@@ -71,7 +71,7 @@ try:
     os.unlink(server_path)
 except FileNotFoundError:
     pass
-current_server = args.server_binaries[0]
+current_server = random.choice(args.server_binaries)
 os.symlink(current_server, server_path)
 os.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = server_path
 
