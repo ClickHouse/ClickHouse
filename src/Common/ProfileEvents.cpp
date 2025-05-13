@@ -136,8 +136,16 @@
     M(LocalWriteThrottlerBytes, "Bytes passed through 'max_local_write_bandwidth_for_server'/'max_local_write_bandwidth' throttler.", ValueType::Bytes) \
     M(LocalWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_local_write_bandwidth_for_server'/'max_local_write_bandwidth' throttling.", ValueType::Microseconds) \
     M(ThrottlerSleepMicroseconds, "Total time a query was sleeping to conform all throttling settings.", ValueType::Microseconds) \
-    M(ReadTasksWithAppliedMutationsOnFly, "Total number of parts for which there was any mutation applied on fly", ValueType::Number) \
-    M(MutationsAppliedOnFlyInAllReadTasks, "The sum of number of applied mutations on-fly for part among all read parts", ValueType::Number) \
+    M(ReadTasksWithAppliedPatches, "Total number of read tasks for which there was any patch part applied", ValueType::Number) \
+    M(PatchesAppliedInAllReadTasks, "Total number of applied patch parts among all read tasks", ValueType::Number) \
+    M(PatchesMergeAppliedInAllReadTasks, "Total number of applied patch parts with Merge mode among all read tasks", ValueType::Number) \
+    M(PatchesJoinAppliedInAllReadTasks, "Total number of applied patch parts with Join mode among all read tasks", ValueType::Number) \
+    M(ApplyPatchesMicroseconds, "Total time spent applying patch parts", ValueType::Number) \
+    M(ApplyPatchesMergeMicroseconds, "Total time spent applying patch parts with Merge mode", ValueType::Number) \
+    M(ApplyPatchesJoinMicroseconds, "Total time spent applying patch parts with Join mode", ValueType::Number) \
+    M(AnalyzePatchRangesMicroseconds, "Total time spent analyzing index of patch parts", ValueType::Number) \
+    M(ReadTasksWithAppliedMutationsOnFly, "Total number of read tasks for which there was any mutation applied on fly", ValueType::Number) \
+    M(MutationsAppliedOnFlyInAllReadTasks, "Total number of applied mutations on-fly among all read tasks", ValueType::Number) \
     \
     M(SchedulerIOReadRequests, "Resource requests passed through scheduler for IO reads.", ValueType::Number) \
     M(SchedulerIOReadBytes, "Bytes passed through scheduler for IO reads.", ValueType::Bytes) \
@@ -995,6 +1003,8 @@ The server successfully detected this situation and will download merged part fr
     M(MemoryWorkerRunElapsedMicroseconds, "Total time spent by MemoryWorker for background work", ValueType::Microseconds) \
     \
     M(ParquetFetchWaitTimeMicroseconds, "Time of waiting fetching parquet data", ValueType::Microseconds) \
+    M(ParquetReadRowGroups, "The total number of row groups read from parquet data", ValueType::Number) \
+    M(ParquetPrunedRowGroups, "The total number of row groups pruned from parquet data", ValueType::Number) \
     M(FilterTransformPassedRows, "Number of rows that passed the filter in the query", ValueType::Number) \
     M(FilterTransformPassedBytes, "Number of bytes that passed the filter in the query", ValueType::Bytes) \
     M(QueryPreempted, "How many times tasks are paused and waiting due to 'priority' setting", ValueType::Number) \
@@ -1133,6 +1143,8 @@ Event end() { return END; }
 
 bool checkCPUOverload(Int64 os_cpu_busy_time_threshold, double min_ratio, double max_ratio, bool should_throw)
 {
+    if ((max_ratio <= 0.0) || (max_ratio <= min_ratio))
+        return false;
     double cpu_load = global_counters.getCPUOverload(os_cpu_busy_time_threshold);
 
     if (cpu_load > DBL_EPSILON)

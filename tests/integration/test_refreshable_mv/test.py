@@ -8,8 +8,6 @@ from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry, assert_logs_contain
 
-test_recover_staled_replica_run = 1
-
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
@@ -17,6 +15,7 @@ node1 = cluster.add_instance(
     main_configs=["configs/config.xml"],
     user_configs=["configs/users.xml"],
     with_zookeeper=True,
+    with_minio=True,
     keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
     macros={"shard": "shard1", "replica": "1"},
     stay_alive=True,
@@ -228,7 +227,6 @@ def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
     for node in nodes:
         assert node.query("show tables from re") == ""
 
-
 def test_refreshable_mv_in_system_db(started_cluster, cleanup):
     node1.query(
         "create materialized view system.a refresh every 1 second (x Int64) engine Memory as select number+1 as x from numbers(2);"
@@ -340,6 +338,99 @@ def test_refresh_vs_shutdown_smoke(started_cluster, cleanup):
 
     node1.start_clickhouse()
 
+def test_pause(started_cluster, cleanup):
+    for node in nodes:
+        node.query(
+            "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
+        )
+    node1.query(
+        "create table re.src (x Int64) engine ReplicatedMergeTree order by x;"
+        "insert into re.src values (1);")
+    node2.query(
+        "system sync database replica re;"
+        "system sync replica re.src;"
+        "create materialized view re.a refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x as select x from re.src;"
+        "system wait view re.a")
+    assert node2.query("select * from re.a") == "1\n"
+    node2.query("system stop replicated view re.a")
+    node1.restart_clickhouse() # just to guarantee that it notices the new znode
+    node2.query(
+        "system wait view re.a;"
+        "truncate table re.src;"
+        "insert into re.src values (2);")
+    time.sleep(3)
+    assert node1.query("select * from re.a") == "1\n"
+    node1.query("system start replicated view re.a")
+    assert_eq_with_retry(
+        node1,
+        "select * from re.a",
+        "2\n",
+    )
+
+backup_id_counter = 0
+
+def new_backup_destination():
+    global backup_id_counter
+    backup_id_counter += 1
+    backup_name = f"backup{backup_id_counter}"
+
+    return (
+        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'ClickHouse_Minio_P@ssw0rd')"
+    )
+
+def do_test_backup(to_table):
+    for node in nodes:
+        node.query(
+            "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
+        )
+
+    target = 'rmv'
+    if to_table:
+        node1.query("create table re.tgt (x Int64) engine ReplicatedMergeTree order by x")
+        target = 'tgt'
+
+    node1.query(
+        "create table re.src (x Int64) engine ReplicatedMergeTree order by x;"
+        "insert into re.src values (1);")
+    node2.query(
+        "system sync database replica re;"
+        "system sync replica re.src;"
+        f"create materialized view re.rmv refresh every 1 second {'TO re.tgt' if to_table else '(x Int64) engine ReplicatedMergeTree order by x'} as select x from re.src;"
+        "system wait view re.rmv")
+    assert node2.query(f"select * from re.{target}") == "1\n"
+
+    backup_destination = new_backup_destination()
+    tables_exist_query = "SELECT count() FROM system.tables where database='re' AND name in ('src', 'rmv')"
+
+    node1.query(
+        f"BACKUP ALL EXCEPT DATABASE system ON CLUSTER 'default' TO {backup_destination};"
+    )
+    for node in nodes:
+        node.query(
+            "drop database re sync;"
+            "drop database if exists re_broken_replicated_tables sync;")
+    assert node1.query(tables_exist_query) == "0\n"
+
+    node1.query(f"RESTORE ALL ON CLUSTER 'default' FROM {backup_destination};")
+
+    assert node1.query(tables_exist_query) == "2\n"
+    assert node2.query(tables_exist_query) == "2\n"
+    assert node1.query(f'SELECT * FROM re.{target}') == '1\n'
+    assert node2.query(f'SELECT * FROM re.{target}') == '1\n'
+
+    node1.query("insert into re.src values (2)")
+    assert_eq_with_retry(
+        node2,
+        f"select * from re.{target} order by x",
+        "1\n2\n",
+    )
+
+def test_backup_outer_table(started_cluster, cleanup):
+    do_test_backup(True)
+
+def test_backup_inner_table(started_cluster, cleanup):
+    do_test_backup(False)
+
 def test_adding_replica(started_cluster, cleanup):
     node1.query(
         "create database re engine = Replicated('/test/re', 'shard1', 'r1');"
@@ -354,12 +445,7 @@ def test_adding_replica(started_cluster, cleanup):
     assert node2.query("select * from re.a order by all") == "0\n10\n"
 
     node1.query("system stop view re.a")
-    r = node2.query(
-        "system wait view re.a;"
-        "system refresh view re.a;"
-        "system wait view re.a;"
-        "select last_refresh_replica from system.view_refreshes")
-    assert r == "2\n"
+    node2.query_with_retry("select last_refresh_replica from system.view_refreshes", check_callback=lambda x: x == "2\n", sleep_time=1, retry_count=20)
 
 def test_replicated_db_startup_race(started_cluster, cleanup):
     for node in nodes:

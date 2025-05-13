@@ -103,7 +103,7 @@ This is an expert-level setting, and you shouldn't change it if you're just gett
 
 Don't confuse blocks for compression (a chunk of memory consisting of bytes) with blocks for query processing (a set of rows from a table).
 )", 0) \
-    DECLARE(UInt64, max_block_size, DEFAULT_BLOCK_SIZE, R"(
+    DECLARE(NonZeroUInt64, max_block_size, DEFAULT_BLOCK_SIZE, R"(
 In ClickHouse, data is processed by blocks, which are sets of column parts. The internal processing cycles for a single block are efficient but there are noticeable costs when processing each block.
 
 The `max_block_size` setting indicates the recommended maximum number of rows to include in a single block when loading data from tables. Blocks the size of `max_block_size` are not always loaded from the table: if ClickHouse determines that less data needs to be retrieved, a smaller block is processed.
@@ -917,8 +917,8 @@ Allows or restricts using not comparable types (like JSON/Object/AggregateFuncti
     DECLARE(Bool, allow_not_comparable_types_in_comparison_functions, false, R"(
 Allows or restricts using not comparable types (like JSON/Object/AggregateFunction) in comparison functions `equal/less/greater/etc`.
 )", 0) \
-    DECLARE(Bool, compile_expressions, false, R"(
-Compile some scalar functions and operators to native code. Due to a bug in the LLVM compiler infrastructure, on AArch64 machines, it is known to lead to a nullptr dereference and, consequently, server crash. Do not enable this setting.
+    DECLARE(Bool, compile_expressions, true, R"(
+Compile some scalar functions and operators to native code.
 )", 0) \
     DECLARE(UInt64, min_count_to_compile_expression, 3, R"(
 Minimum count of executing same expression before it is get compiled.
@@ -1007,6 +1007,11 @@ Possible values:
     DECLARE(Bool, allow_nonconst_timezone_arguments, false, R"(
 Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*()
 )", 0) \
+    DECLARE(Bool, use_legacy_to_time, false, R"(
+When enabled, allows to use legacy toTime function, which converts a date with time to a certain fixed date, while preserving the time.
+Otherwise, uses a new toTime function, that converts different type of data into the Time type.
+The old legacy function is also unconditionally accessible as toTimeWithFixedDate.
+)", IMPORTANT) \
     DECLARE(Bool, function_locate_has_mysql_compatible_argument_order, true, R"(
 Controls the order of arguments in function [locate](../../sql-reference/functions/string-search-functions.md/#locate).
 
@@ -1811,6 +1816,17 @@ See also:
 - [insert_quorum](#insert_quorum)
 - [insert_quorum_timeout](#insert_quorum_timeout)
 - [insert_quorum_parallel](#insert_quorum_parallel)
+)", 0) \
+    DECLARE(Bool, update_sequential_consistency, true, R"(
+If true set of parts is updated to the latest version before execution of update.
+)", 0) \
+    DECLARE(UpdateParallelMode, update_parallel_mode, UpdateParallelMode::AUTO, R"(
+Determines the behavior of concurrent update queries.
+
+Possible values:
+- `sync` - run sequentially all `UPDATE` queries.
+- `auto` - run sequentially only `UPDATE` queries with dependencies between columns updated in one query and columns used in expressions of another query.
+- `async` - do not synchronize update queries.
 )", 0) \
     DECLARE(UInt64, table_function_remote_max_addresses, 1000, R"(
 Sets the maximum number of addresses generated from patterns for the [remote](../../sql-reference/table-functions/remote.md) function.
@@ -3615,9 +3631,15 @@ Formatter '%M' in functions 'formatDateTime' and 'parseDateTime' print/parse the
     DECLARE(Bool, parsedatetime_parse_without_leading_zeros, true, R"(
 Formatters '%c', '%l' and '%k' in function 'parseDateTime' parse months and hours without leading zeros.
 )", 0) \
+    DECLARE(Bool, parsedatetime_e_requires_space_padding, false, R"(
+Formatter '%e' in function 'parseDateTime' expects that single-digit days are space-padded, e.g., ' 2' is accepted but '2' raises an error.
+    )", 0) \
     DECLARE(Bool, formatdatetime_format_without_leading_zeros, false, R"(
 Formatters '%c', '%l' and '%k' in function 'formatDateTime' print months and hours without leading zeros.
 )", 0) \
+    DECLARE(Bool, formatdatetime_e_with_space_padding, false, R"(
+Formatter '%e' in function 'formatDateTime' prints single-digit days with a leading space, e.g. ' 2' instead of '2'.
+    )", 0) \
     DECLARE(Bool, least_greatest_legacy_null_behavior, false, R"(
 If enabled, functions 'least' and 'greatest' return NULL if one of their arguments is NULL.
 )", 0) \
@@ -3936,6 +3958,14 @@ Possible values:
     DECLARE_WITH_ALIAS(Bool, enable_lightweight_delete, true, R"(
 Enable lightweight DELETE mutations for mergetree tables.
 )", 0, allow_experimental_lightweight_delete) \
+    DECLARE(LightweightDeleteMode, lightweight_delete_mode, LightweightDeleteMode::ALTER_UPDATE, R"(
+A mode of internal update query that is executed as a part of lightweight delete.
+
+Possible values:
+- `alter_update` - run `ALTER UPDATE` query that creates a heavyweight mutation.
+- `lightweight_update` - run lightweight update if possible, run `ALTER UPDATE` otherwise.
+- `lightweight_update_force` - run lightweight update if possible, throw otherwise.
+)", 0) \
     DECLARE(UInt64, lightweight_deletes_sync, 2, R"(
 The same as [`mutations_sync`](#mutations_sync), but controls only execution of lightweight deletes.
 
@@ -4706,6 +4736,17 @@ If true, include only column names and types into result of DESCRIBE query
 )", 0) \
     DECLARE(Bool, apply_mutations_on_fly, false, R"(
 If true, mutations (UPDATEs and DELETEs) which are not materialized in data part will be applied on SELECTs.
+)", 0) \
+    DECLARE(Bool, apply_patch_parts, true, R"(
+If true, patch parts (that represent lightweight updates) are applied on SELECTs.
+)", 0) \
+    DECLARE(AlterUpdateMode, alter_update_mode, AlterUpdateMode::HEAVY, R"(
+A mode for `ALTER` queries that have the `UPDATE` commands.
+
+Possible values:
+- `heavy` - run regular mutation.
+- `lightweight` - run lightweight update if possible, run regular mutation otherwise.
+- `lightweight_force` - run lightweight update if possible, throw otherwise.
 )", 0) \
     DECLARE(Bool, mutations_execute_nondeterministic_on_initiator, false, R"(
 If true constant nondeterministic functions (e.g. function `now()`) are executed on initiator and replaced to literals in `UPDATE` and `DELETE` queries. It helps to keep data in sync on replicas while executing mutations with constant nondeterministic functions. Default value: `false`.
@@ -5833,6 +5874,9 @@ Only has an effect in ClickHouse Cloud. Discard connection if some data is unrea
     DECLARE(UInt64, distributed_cache_min_bytes_for_seek, 0, R"(
 Only has an effect in ClickHouse Cloud. Minimum number of bytes to do seek in distributed cache.
 )", 0) \
+    DECLARE(Bool, distributed_cache_read_only_from_current_az, true, R"(
+Only has an effect in ClickHouse Cloud. Allow to read only from current availability zone. If disabled, will read from all cache servers in all availability zones.
+)", 0) \
     DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
 Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
 )", 0) \
@@ -6505,8 +6549,8 @@ File/S3 engines/table function will parse paths with '::' as `<archive> :: <file
     DECLARE(Milliseconds, low_priority_query_wait_time_ms, 1000, R"(
 When the query prioritization mechanism is employed (see setting `priority`), low-priority queries wait for higher-priority queries to finish. This setting specifies the duration of waiting.
 )", BETA) \
-    DECLARE(Float, min_os_cpu_wait_time_ratio_to_throw, 2.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
-    DECLARE(Float, max_os_cpu_wait_time_ratio_to_throw, 6.0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
+    DECLARE(Float, min_os_cpu_wait_time_ratio_to_throw, 0.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
+    DECLARE(Float, max_os_cpu_wait_time_ratio_to_throw, 0.0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
@@ -6529,10 +6573,7 @@ Enable experimental hash functions
 Allow the obsolete Object data type
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_time_series_table, false, R"(
-Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine.
-
-Possible values:
-
+Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine. Possible values:
 - 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
 - 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
 )", EXPERIMENTAL) \
@@ -6542,11 +6583,20 @@ Allow experimental vector similarity index
     DECLARE(Bool, allow_experimental_codecs, false, R"(
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, max_limit_for_ann_queries, 1'000'000, R"(
+    DECLARE(UInt64, max_limit_for_vector_search_queries, 1'000, R"(
 SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, hnsw_candidate_list_size_for_search, 256, R"(
 The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'.
+)", EXPERIMENTAL) \
+    DECLARE(VectorSearchFilterStrategy, vector_search_filter_strategy, VectorSearchFilterStrategy::AUTO, R"(
+If a vector search query has a WHERE clause, this setting determines if it is evaluated first (pre-filtering) OR if the vector similarity index is checked first (post-filtering). Possible values:
+- 'auto' - Postfiltering (the exact semantics may change in future).
+- 'postfilter' - Use vector similarity index to identify the nearest neighbours, then apply other filters
+- 'prefilter' - Evaluate other filters first, then perform brute-force search to identify neighbours.
+)", EXPERIMENTAL) \
+    DECLARE(Float, vector_search_postfilter_multiplier, 1.0, R"(
+Multiply the fetched nearest neighbors from the vector similarity index by this number before performing post-filtering on other predicates.
 )", EXPERIMENTAL) \
     DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction
@@ -6585,6 +6635,9 @@ If it is set to true, allow to use experimental inverted index.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_full_text_index, false, R"(
 If it is set to true, allow to use experimental full-text index.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_lightweight_update, false, R"(
+Allow to use lightweight updates.
 )", EXPERIMENTAL) \
     \
     DECLARE(Bool, allow_experimental_join_condition, false, R"(
@@ -6652,9 +6705,9 @@ Enable PRQL - an alternative to SQL.
     DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
 Trigger processor to spill data into external storage adpatively. grace join is supported at present.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_delta_kernel_rs, false, R"(
+    DECLARE(Bool, allow_experimental_delta_kernel_rs, true, R"(
 Allow experimental delta-kernel-rs implementation.
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(Bool, make_distributed_plan, false, R"(
 Make distributed query plan.
 )", EXPERIMENTAL) \
@@ -6757,6 +6810,7 @@ Experimental tsToGrid aggregate function for Prometheus-like timeseries resampli
     MAKE_OBSOLETE(M, Bool, allow_experimental_annoy_index, false) \
     MAKE_OBSOLETE(M, UInt64, max_threads_for_annoy_index_creation, 4) \
     MAKE_OBSOLETE(M, Int64, annoy_index_search_k_nodes, -1) \
+    MAKE_OBSOLETE(M, Int64, max_limit_for_ann_queries, -1) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_usearch_index, false) \
     MAKE_OBSOLETE(M, Bool, optimize_move_functions_out_of_any, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_undrop_table_query, true) \

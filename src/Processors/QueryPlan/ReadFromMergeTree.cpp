@@ -34,7 +34,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/LazilyReadInfo.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <Storages/MergeTree/MergeTreeIndexLegacyVectorSimilarity.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
@@ -1774,9 +1773,6 @@ static void buildIndexes(
             if (const auto * vector_similarity_index = typeid_cast<const MergeTreeIndexVectorSimilarity *>(index_helper.get()))
                 condition = vector_similarity_index->createIndexCondition(filter_dag.predicate, context, vector_search_parameters);
 #endif
-            if (const auto * legacy_vector_similarity_index = typeid_cast<const MergeTreeIndexLegacyVectorSimilarity *>(index_helper.get()))
-                condition = legacy_vector_similarity_index->createIndexCondition(filter_dag.predicate, context);
-
             if (!condition)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown vector search index {}", index_helper->index.name);
         }
@@ -1792,15 +1788,24 @@ static void buildIndexes(
             skip_indexes.useful_indices.emplace_back(index_helper, condition);
     }
 
-    // move minmax indices to first positions, so they will be applied first as cheapest ones
-    std::stable_sort(begin(skip_indexes.useful_indices), end(skip_indexes.useful_indices), [](const auto & l, const auto & r)
+    // Move minmax indices to first positions, so they will be applied first as cheapest ones
+    std::stable_sort(skip_indexes.useful_indices.begin(), skip_indexes.useful_indices.end(), [](const auto & l, const auto & r)
     {
-        const bool l_min_max = (typeid_cast<const MergeTreeIndexMinMax *>(l.index.get()));
-        const bool r_min_max = (typeid_cast<const MergeTreeIndexMinMax *>(r.index.get()));
-        if (l_min_max == r_min_max)
+        bool l_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(l.index.get());
+        bool r_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(r.index.get());
+        if (l_is_minmax == r_is_minmax)
             return false;
 
-        if (l_min_max)
+#if USE_USEARCH
+        // A vector similarity index (if present) is the most selective, hence move it to front
+        bool l_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(l.index.get());
+        bool r_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(r.index.get());
+        if (l_is_vectorsimilarity)
+            return true;
+        if (r_is_vectorsimilarity)
+            return false;
+#endif
+        if (l_is_minmax)
             return true; // left is min max but right is not
 
         return false; // right is min max but left is not

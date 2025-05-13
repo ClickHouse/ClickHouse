@@ -541,10 +541,26 @@ class _ResultS3:
     def copy_result_to_s3(cls, result, clean=False):
         result.dump()
         env = _Environment.get()
-        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}"
+        result_file_path = result.file_name()
+        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{Path(result_file_path).name}"
         if clean:
             S3.delete(s3_path)
-        url = S3.copy_file_to_s3(s3_path=s3_path, local_path=result.file_name())
+        # gzip is supported by most browsers
+        archive_file = Utils.compress_file_gz(result_file_path)
+        if archive_file:
+            assert archive_file.endswith(".gz")
+            content_encoding = "gzip"
+        else:
+            content_encoding = ""
+            archive_file = result_file_path
+
+        url = S3.copy_file_to_s3(
+            s3_path=s3_path,
+            local_path=archive_file,
+            text=True,
+            content_encoding=content_encoding,
+            with_rename=True,
+        )
         return url
 
     @classmethod
