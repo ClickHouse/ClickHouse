@@ -15,6 +15,5 @@ AND name NOT IN (
     'geoToS2', 's2CapContains', 's2CapUnion', 's2CellsIntersect', 's2GetNeighbors', 's2RectAdd', 's2RectContains', 's2RectIntersection', 's2RectUnion', 's2ToGeo',
     'normalizeUTF8NFC', 'normalizeUTF8NFD', 'normalizeUTF8NFKC', 'normalizeUTF8NFKD',
     'lemmatize', 'stem', 'synonyms', 'kql_array_sort_asc', 'kql_array_sort_desc',
-    'detectCharset', 'detectLanguageUnknown', 'detectProgrammingLanguage', 'detectTonality',
-    'naiveBayesClassifier'
+    'detectCharset', 'detectLanguageUnknown', 'detectProgrammingLanguage', 'detectTonality'
 ) ORDER BY name;
