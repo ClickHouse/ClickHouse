@@ -159,6 +159,8 @@ private:
     const String index_column;
     const unum::usearch::metric_kind_t metric_kind;
     const size_t expansion_search;
+    const float postfilter_multiplier;
+    const size_t max_limit;
 };
 
 

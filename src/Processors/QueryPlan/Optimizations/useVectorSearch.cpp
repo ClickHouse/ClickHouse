@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -39,6 +40,8 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     /// This optimization pass can change the ReadFromMergeTree & Expression steps of the query plan.
     constexpr size_t NO_LAYERS_UPDATED = 0;
 
+    bool additional_filters_present = false; /// WHERE or PREWHERE
+
     /// Expect this query plan:
     /// LimitStep
     ///    ^
@@ -47,6 +50,9 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     ///    ^
     ///    |
     /// ExpressionStep
+    ///    ^
+    ///    |
+    /// (FilterStep, optional)
     ///    ^
     ///    |
     /// ReadFromMergeTree
@@ -74,7 +80,25 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     node = node->children.front();
     auto * read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
     if (!read_from_mergetree_step)
-        return NO_LAYERS_UPDATED;
+    {
+        /// Do we have a FilterStep on top of ReadFromMergeTree?
+        auto * filter_step = typeid_cast<FilterStep *>(node->step.get());
+        if (!filter_step)
+            return NO_LAYERS_UPDATED;
+        if (node->children.size() != 1)
+            return NO_LAYERS_UPDATED;
+        node = node->children.front();
+        read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
+        if (!read_from_mergetree_step)
+            return NO_LAYERS_UPDATED;
+        additional_filters_present = true;
+    }
+
+    if (const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo())
+        additional_filters_present = true;
+
+    if (additional_filters_present && settings.vector_search_filter_strategy == VectorSearchFilterStrategy::PREFILTER)
+        return NO_LAYERS_UPDATED; /// user explicitly wanted exact (brute-force) vector search
 
     /// Extract N
     size_t n = limit_step->getLimitForSorting();
@@ -127,6 +151,8 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
         else if (child->type == ActionsDAG::ActionType::INPUT) /// old analyzer
         {
             search_column = child->result_name;
+            if (search_column.contains('.'))
+                search_column = search_column.substr(search_column.find('.') + 1); /// admittedly fragile but hey, it's the old path ...
         }
         else if (child->type == ActionsDAG::ActionType::COLUMN)
         {
@@ -200,7 +226,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
         }
     }
 
-    auto vector_search_parameters = std::make_optional<VectorSearchParameters>(search_column, distance_function, n, reference_vector, optimize_plan);
+    auto vector_search_parameters = std::make_optional<VectorSearchParameters>(search_column, distance_function, n, reference_vector, optimize_plan, additional_filters_present);
     read_from_mergetree_step->setVectorSearchParameters(std::move(vector_search_parameters));
 
     return updated_layers;

@@ -250,7 +250,8 @@ class Runner:
             docker = docker or f"{docker_name}:{docker_tag}"
             current_dir = os.getcwd()
             Shell.check(
-                "docker ps | grep -q praktika && docker rm -f praktika", verbose=True
+                "docker ps -a --format '{{.Names}}' | grep -q praktika && docker rm -f praktika",
+                verbose=True,
             )
             cmd = f"docker run --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='.:./ci' --volume ./:{current_dir} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
         else:
