@@ -123,6 +123,7 @@ namespace ErrorCodes
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int ABORTED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNKNOWN_TABLE;
     extern const int TOO_DEEP_RECURSION;
 }
 
@@ -1268,7 +1269,19 @@ bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sy
 void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
 {
     getContext()->checkAccess(AccessType::SYSTEM_SYNC_REPLICA, table_id);
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    StoragePtr table;
+
+    if (query.if_exists.has_value() && query.if_exists.value())
+    {
+        table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+        if (!table)
+            return;
+    }
+    else
+    {
+        table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    }
+
     std::unordered_set<std::string> replicas(query.src_replicas.begin(), query.src_replicas.end());
     if (!trySyncReplica(table, query.sync_replica_mode, replicas, getContext()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());

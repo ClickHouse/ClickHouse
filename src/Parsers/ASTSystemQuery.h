@@ -129,6 +129,7 @@ public:
 
     ASTPtr database;
     ASTPtr table;
+    std::optional<bool> if_exists;
     ASTPtr query_settings;
 
     String getDatabase() const;
