@@ -125,6 +125,13 @@ def test_cluster_discovery_startup_and_stop(start_cluster):
 
 
 def test_cluster_discovery_macros(start_cluster):
+    # wait for all nodes to be started
+    check_nodes_count = functools.partial(
+        check_on_cluster, what="count()", msg="Wrong nodes count in cluster"
+    )
+    total_nodes = len(nodes) - 1
+    check_nodes_count([nodes["node_observer"]], total_nodes)
+
     # check macros
     res = nodes["node_observer"].query(
         "SELECT sum(number) FROM clusterAllReplicas('{autocluster}', system.numbers) WHERE number=1"
