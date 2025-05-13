@@ -88,7 +88,7 @@ private:
 
     /// For mono_block == true only
     Chunk mono_chunk;
-    Widths prev_chunk_name_widths;
+    Widths prev_chunk_max_widths;
     bool had_footer = false;
 
     /// Implements squashing of chunks by time

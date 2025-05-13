@@ -60,10 +60,11 @@ namespace ErrorCodes
     extern const int REFRESH_FAILED;
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
+    extern const int INCORRECT_QUERY;
 }
 
 RefreshTask::RefreshTask(
-    StorageMaterializedView * view_, ContextPtr context, const DB::ASTRefreshStrategy & strategy, bool /* attach */, bool coordinated, bool empty)
+    StorageMaterializedView * view_, ContextPtr context, const DB::ASTRefreshStrategy & strategy, bool /* attach */, bool coordinated, bool empty, bool is_restore_from_backup)
     : log(getLogger("RefreshTask"))
     , view(view_)
     , refresh_schedule(strategy)
@@ -96,14 +97,35 @@ RefreshTask::RefreshTask(
         {
             zookeeper->createAncestors(coordination.path);
             Coordination::Requests ops;
-            ops.emplace_back(zkutil::makeCreateRequest(coordination.path, coordination.root_znode.toString(), zkutil::CreateMode::Persistent, true));
+            ops.emplace_back(zkutil::makeCreateRequest(coordination.path, coordination.root_znode.toString(), zkutil::CreateMode::Persistent, /*ignore_if_exists*/ true));
             ops.emplace_back(zkutil::makeCreateRequest(coordination.path + "/replicas", "", zkutil::CreateMode::Persistent, true));
             ops.emplace_back(zkutil::makeCreateRequest(replica_path, "", zkutil::CreateMode::Persistent));
+
+            /// When restoring multiple tables from backup (e.g. a RESTORE DATABASE), the restored
+            /// refreshable materialized views shouldn't start refreshing on any replica until all
+            /// tables and their data is restored on all replicas. Otherwise things break:
+            ///  * Refresh may EXCHANGE+DROP a table before its data is restored. The restore will
+            ///    then fail when trying to write to a dropped table.
+            ///  * Refresh may see empty source table before they're restored, producing empty
+            ///    refresh result.
+            ///
+            /// Note that with replicated catalog a replicated database may be restored
+            /// by a RESTORE running on just one replica, so one replica needs to be able to unpause
+            /// refreshes on all replicas. This is the only reason why "paused" znode is a thing,
+            /// otherwise we could just use stop_requested.
+            if (is_restore_from_backup)
+                ops.emplace_back(zkutil::makeCreateRequest(coordination.path + "/paused", "restored from backup", zkutil::CreateMode::Persistent, /*ignore_if_exists*/ true));
+
             zookeeper->multi(ops);
         }
 
         if (server_settings[ServerSetting::disable_insertion_and_mutation])
             coordination.read_only = true;
+    }
+    else
+    {
+        if (is_restore_from_backup)
+            scheduling.stop_requested = true;
     }
 }
 
@@ -113,9 +135,10 @@ OwnedRefreshTask RefreshTask::create(
     const DB::ASTRefreshStrategy & strategy,
     bool attach,
     bool coordinated,
-    bool empty)
+    bool empty,
+    bool is_restore_from_backup)
 {
-    auto task = std::make_shared<RefreshTask>(view, context, strategy, attach, coordinated, empty);
+    auto task = std::make_shared<RefreshTask>(view, context, strategy, attach, coordinated, empty, is_restore_from_backup);
 
     task->refresh_task = context->getSchedulePool().createTask("RefreshTask",
         [self = task.get()] { self->refreshTask(); });
@@ -141,6 +164,14 @@ void RefreshTask::startup()
 
     std::lock_guard guard(mutex);
     scheduleRefresh(guard);
+}
+
+void RefreshTask::finalizeRestoreFromBackup()
+{
+    if (coordination.coordinated)
+        startReplicated();
+    else
+        start();
 }
 
 void RefreshTask::shutdown()
@@ -270,6 +301,28 @@ void RefreshTask::stop()
         return;
     interruptExecution();
     scheduleRefresh(guard);
+}
+
+void RefreshTask::startReplicated()
+{
+    if (!coordination.coordinated)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Refreshable materialized view is not coordinated.");
+    const auto zookeeper = view->getContext()->getZooKeeper();
+    String path = coordination.path + "/paused";
+    auto code = zookeeper->tryRemove(path);
+    if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+        throw Coordination::Exception::fromPath(code, path);
+}
+
+void RefreshTask::stopReplicated(const String & reason)
+{
+    if (!coordination.coordinated)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Refreshable materialized view is not coordinated.");
+    const auto zookeeper = view->getContext()->getZooKeeper();
+    String path = coordination.path + "/paused";
+    auto code = zookeeper->tryCreate(path, reason, zkutil::CreateMode::Persistent);
+    if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
+        throw Coordination::Exception::fromPath(code, path);
 }
 
 void RefreshTask::run()
@@ -422,7 +475,7 @@ void RefreshTask::refreshTask()
 
             chassert(lock.owns_lock());
 
-            if (scheduling.stop_requested || view->getContext()->getRefreshSet().refreshesStopped() || coordination.read_only)
+            if (scheduling.stop_requested || coordination.paused_znode_exists || view->getContext()->getRefreshSet().refreshesStopped() || coordination.read_only)
             {
                 /// Exit the task and wait for the user to start or resume, which will schedule the task again.
                 setState(RefreshState::Disabled, lock);
@@ -512,9 +565,10 @@ void RefreshTask::refreshTask()
                 znode.randomize();
             }
 
-            bool ok = updateCoordinationState(znode, false, zookeeper, lock);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
-            chassert(ok);
+            bool ok = updateCoordinationState(znode, false, zookeeper, lock);
             chassert(lock.owns_lock());
+            if (!ok)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Refresh coordination znode was changed while refresh was in progress.");
 
             if (refreshed)
             {
@@ -860,19 +914,21 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
             });
     }
 
-    Strings paths {coordination.path, coordination.path + "/running"};
+    Strings paths {coordination.path, coordination.path + "/running", coordination.path + "/paused"};
     auto responses = zookeeper->tryGet(paths.begin(), paths.end());
 
     lock.lock();
 
     if (responses[0].error != Coordination::Error::ZOK)
         throw Coordination::Exception::fromPath(responses[0].error, paths[0]);
-    if (responses[1].error != Coordination::Error::ZOK && responses[1].error != Coordination::Error::ZNONODE)
-        throw Coordination::Exception::fromPath(responses[1].error, paths[1]);
+    for (size_t i = 1; i < 3; ++i)
+        if (responses[i].error != Coordination::Error::ZOK && responses[i].error != Coordination::Error::ZNONODE)
+            throw Coordination::Exception::fromPath(responses[i].error, paths[i]);
 
     coordination.root_znode.parse(responses[0].data);
     coordination.root_znode.version = responses[0].stat.version;
     coordination.running_znode_exists = responses[1].error == Coordination::Error::ZOK;
+    coordination.paused_znode_exists = responses[2].error == Coordination::Error::ZOK;
 
     if (coordination.root_znode.last_completed_timeslot != prev_last_completed_timeslot)
     {
@@ -998,6 +1054,9 @@ void RefreshTask::CoordinationZnode::randomize()
 String RefreshTask::CoordinationZnode::toString() const
 {
     WriteBufferFromOwnString out;
+    /// "format version" should be incremented when making incompatible change, to make older servers
+    /// refuse to parse it. For backwards compatible changes, just add new fields at the end and old
+    /// servers will ignore them.
     out << "format version: 1\n"
         << "last_completed_timeslot: " << Int64(last_completed_timeslot.time_since_epoch().count()) << "\n"
         << "last_success_time: " << Int64(last_success_time.time_since_epoch().count()) << "\n"
