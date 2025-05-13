@@ -392,9 +392,8 @@ The default tokenizer uses non-alphanumeric ASCII characters as separators.
 **Arguments**
 
 - `value` — The input string. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `tokenizer` — The tokenizer to use. Valid arguments are `default`, `noop`, `ngram`, and `chinese`.
+- `tokenizer` — The tokenizer to use. Valid arguments are `default`, `noop`, and `ngram`.
 - `ngrams` — Only relevant if argument `tokenizer` is `ngram`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`. [UInt8](../data-types/int-uint.md).
-- `chinese_granularity` — Only relevant if argument `tokenizer` is `chinese`: An optional parameter defines the granularity of the Chinese tokenizer. Valid values: `fine-grained` and `coarse-grained` values. If not set explicitly, defaults to `fine-grained`. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -428,18 +427,4 @@ Result:
 ┌─tokens──────────────────────────┐
 │ ['abc','bc ','c d',' de','def'] │
 └─────────────────────────────────┘
-```
-
-Using the fine-grained Chinese tokenizer:
-
-```sql
-SELECT tokens('南京市长江大桥', 'chinese', 'fine-grained') AS tokens;
-```
-
-Result:
-
-```text
-┌─tokens────────────────────────────────────────────┐
-│ ['南京','京市','南京市','长江','大桥','长江大桥'] │
-└───────────────────────────────────────────────────┘
 ```

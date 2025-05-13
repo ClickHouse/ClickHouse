@@ -166,12 +166,6 @@ add_contrib (datasketches-cpp-cmake datasketches-cpp)
 add_contrib (incbin-cmake incbin)
 add_contrib (sqids-cpp-cmake sqids-cpp)
 
-option(ENABLE_CPPJIEBA "Enable cppjieba support" ${ENABLE_LIBRARIES})
-if (ENABLE_CPPJIEBA)
-    add_contrib (limonp-cmake limonp)
-    add_contrib (cppjieba-cmake cppjieba) # requires: limonp
-endif()
-
 option(USE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})
 if (USE_MONGODB)
     add_contrib (mongo-c-driver-cmake mongo-c-driver) # requires: zlib
@@ -256,6 +250,7 @@ add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf,
 add_contrib (jwt-cpp-cmake jwt-cpp)
 
 add_contrib (sha3iuf-cmake SHA3IUF)
+
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
