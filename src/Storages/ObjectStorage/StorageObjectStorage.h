@@ -277,7 +277,7 @@ public:
     /*
      * Only supported by hive partitioning style for now
      */
-    bool partition_columns_in_data_file = false;
+    bool partition_columns_in_data_file = true;
     std::shared_ptr<PartitionStrategy> partition_strategy;
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
