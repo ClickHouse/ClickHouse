@@ -55,6 +55,7 @@ constexpr size_t UNWIND_MINSIGSTKSZ = 32 << 10;
 struct ThreadStack
 {
     ThreadStack()
+    : data(aligned_alloc(getPageSize(), getSize()))
     {
         auto page_size = getPageSize();
         data = aligned_alloc(page_size, getSize());
