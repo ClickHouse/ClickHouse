@@ -505,6 +505,9 @@ protected:
     /// if we already use a different mode of parallel replicas we want to disable this mode
     bool offset_parallel_replicas_enabled = true;
 
+    /// Indicates if the query was executed from startup scripts
+    bool is_startup_script = false;
+
 public:
     /// Some counters for current query execution.
     /// Most of them are workarounds and should be removed in the future.
@@ -1515,6 +1518,9 @@ public:
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock() const;
 
     const ServerSettings & getServerSettings() const;
+
+    bool getIsStartupScript() const;
+    void setIsStartupScript(bool is_startup);
 
 private:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;

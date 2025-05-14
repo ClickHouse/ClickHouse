@@ -833,6 +833,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
 
             auto user = config.getString(full_prefix + ".user", "");
             auto startup_context = Context::createCopy(context);
+            startup_context->setIsStartupScript(true);
 
             if (!user.empty())
             {

@@ -6498,4 +6498,14 @@ Poco::Timespan HTTPContext::getSendTimeout() const
     return context->getSettingsRef()[Setting::http_send_timeout];
 }
 
+bool Context::getIsStartupScript() const
+{
+    return is_startup_script;
+}
+
+void Context::setIsStartupScript(bool is_startup)
+{
+    is_startup_script = is_startup;
+}
+
 }
