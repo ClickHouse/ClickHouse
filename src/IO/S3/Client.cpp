@@ -926,6 +926,7 @@ ClientFactory::ClientFactory()
     aws_options.loggingOptions.logger_create_fn = []() { return std::make_shared<AWSLogger>(false); };
 
     aws_options.ioOptions = Aws::IoOptions{};
+    /// We don't need to initialize TLS, because we use PocoHTTPClientFactory
     aws_options.ioOptions.tlsConnectionOptions_create_fn = []() { return nullptr; };
 
     Aws::InitAPI(aws_options);
