@@ -752,6 +752,16 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.5",
         {
+            {"shared_merge_tree_enable_coordinated_merges", false, false, "New setting"},
+            {"shared_merge_tree_merge_coordinator_merges_prepare_count", 100, 100, "New setting"},
+            {"shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms", 10000, 10000, "New setting"},
+            {"shared_merge_tree_merge_coordinator_max_merge_request_size", 20, 20, "New setting"},
+            {"shared_merge_tree_merge_coordinator_election_check_period_ms", 30000, 30000, "New setting"},
+            {"shared_merge_tree_merge_coordinator_min_period_ms", 1, 1, "New setting"},
+            {"shared_merge_tree_merge_coordinator_max_period_ms", 10000, 10000, "New setting"},
+            {"shared_merge_tree_merge_coordinator_factor", 2, 2, "New setting"},
+            {"shared_merge_tree_merge_worker_fast_timeout_ms", 100, 100, "New setting"},
+            {"shared_merge_tree_merge_worker_regular_timeout_ms", 10000, 10000, "New setting"},
             {"apply_patches_on_merge", true, true, "New setting"},
             {"remove_unused_patch_parts", true, true, "New setting"},
             {"write_marks_for_substreams_in_compact_parts", false, true, "New setting"},
