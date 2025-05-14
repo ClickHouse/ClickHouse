@@ -192,11 +192,7 @@ void OwnJSONPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_
 
         writeJSONString(source_file, wb, settings);
         DB::writeChar(':', wb);
-        const char * source_file_name = msg.getSourceFile();
-        if (source_file_name != nullptr)
-            writeJSONString(source_file_name, wb, settings);
-        else
-            writeJSONString("", wb, settings);
+        writeJSONString(msg.getSourceFile(), wb, settings);
     }
 
     if (!source_line.empty())

@@ -105,9 +105,7 @@ void OwnSplitChannel::logSplit(
             elem.message = msg.getText();
             elem.logger_name = msg.getSource();
             elem.level = msg.getPriority();
-
-            if (msg.getSourceFile() != nullptr)
-                elem.source_file = msg.getSourceFile();
+            elem.source_file = msg.getSourceFile();
 
             elem.source_line = msg.getSourceLine();
             elem.message_format_string = msg.getFormatString();
