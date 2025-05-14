@@ -132,11 +132,11 @@ Function:
 
 The flattened array contains all the elements from all source arrays.
 )";
-    FunctionDocumentation::Syntax syntax = "arrayFlatten(x)";
+    FunctionDocumentation::Syntax syntax = "arrayFlatten(arr)";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "A multidimensional array. [`Array`](/sql-reference/data-types/array)(`Array`)"}
+        {"arr", "A multidimensional array. [`Array(T)`](/sql-reference/data-types/array)(`Array`)"}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns a flattened array from the multidimensional array. [`Array`](/sql-reference/data-types/array).";
+    FunctionDocumentation::ReturnedValue returned_value = "Returns a flattened array from the multidimensional array. [`Array(T)`](/sql-reference/data-types/array).";
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayFlatten([[[1]], [[2], [3]]]);", "[1,2,3]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;

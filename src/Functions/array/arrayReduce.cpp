@@ -221,10 +221,10 @@ Applies an aggregate function to array elements and returns its result.
 The name of the aggregation function is passed as a string in single quotes `'max'`, `'sum'`.
 When using parametric aggregate functions, the parameter is indicated after the function name in parentheses `'uniqUpTo(6)'`.
 )";
-    FunctionDocumentation::Syntax syntax = "arrayReduce(agg_f, x1, x2, ..., xN)";
+    FunctionDocumentation::Syntax syntax = "arrayReduce(agg_f, arr1 [, arr2, ... , arrN)]";
     FunctionDocumentation::Arguments arguments = {
-        {"agg_f", "The name of an aggregate function which should be a constant [string](/sql-reference/data-types/string)."},
-        {"xN", "Any number of [array](/sql-reference/data-types/array) type columns as the parameters of the aggregation function."},
+        {"agg_f", "The name of an aggregate function which should be a constant [String](/sql-reference/data-types/string)."},
+        {"arr1 [, arr2, ... , arrN)]", "N arrays corresponding to the arguments of `agg_f`. [`Array(T)`](/sql-reference/data-types/array)."},
     };
     FunctionDocumentation::ReturnedValue returned_value = "Returns the result of the aggregate function";
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayReduce('max', [1, 2, 3]);", R"(
