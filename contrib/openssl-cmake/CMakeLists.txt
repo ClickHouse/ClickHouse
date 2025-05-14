@@ -1303,6 +1303,7 @@ set(SSL_SRC
 # SRP API is deprecated in OpenSSL 3.0.
 # https://docs.openssl.org/3.1/man3/SRP_Calc_B/#history
 add_definitions(-DOPENSSL_NO_DEPRECATED)
+add_definitions(-DOPENSSL_API_COMPAT=30000) # 3.0
 add_definitions(-DOPENSSL_NO_ENGINE)
 add_definitions(-DOPENSSL_NO_SRP)
 
