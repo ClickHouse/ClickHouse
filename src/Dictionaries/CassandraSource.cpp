@@ -270,6 +270,9 @@ void CassandraSource::assertTypes(const CassResultPtr & result)
             if (expected == CASS_VALUE_TYPE_TEXT && (got == CASS_VALUE_TYPE_ASCII || got == CASS_VALUE_TYPE_VARCHAR))
                 continue;
 
+            if (expected == CASS_VALUE_TYPE_UUID && got == CASS_VALUE_TYPE_TIMEUUID)
+                continue;
+
             const auto & column_name = description.sample_block.getColumnsWithTypeAndName()[i].name;
             throw Exception(ErrorCodes::TYPE_MISMATCH,
                 "Type mismatch for column {} : expected Cassandra type {}",
