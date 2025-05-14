@@ -260,7 +260,7 @@ private:
     // The second number in the pair is the number of active replicas
     std::pair<TopicPartitionSet, UInt32> getLockedTopicPartitions(zkutil::ZooKeeper & keeper_to_use);
     std::pair<TopicPartitions, UInt32> getAvailableTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & all_topic_partitions);
-    std::optional<LockedTopicPartitionInfo> createLocksInfo(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & partition_to_lock);
+    std::optional<LockedTopicPartitionInfo> createLocksInfoIfFree(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & partition_to_lock);
 
     // Takes lock over topic partitions and sets the committed offset in topic_partitions
     void updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & tmp_locks, size_t & tmp_locks_quota);

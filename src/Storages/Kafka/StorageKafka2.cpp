@@ -470,7 +470,6 @@ cppkafka::Configuration StorageKafka2::getConsumerConfiguration(size_t consumer_
     auto kafka_config = KafkaConfigLoader::getConsumerConfiguration(*this, params);
     // It is disabled, because in case of no materialized views are attached, it can cause live memory leak. To enable it, a similar cleanup mechanism must be introduced as for StorageKafka.
     kafka_config.set("statistics.interval.ms", "0");
-    // kafka_config.set("auto.offset.reset", "latest");
     // Making more frequent updates, now 1 min
     kafka_config.set("topic.metadata.refresh.interval.ms", "60000");
     return kafka_config;
@@ -789,7 +788,7 @@ std::pair<StorageKafka2::TopicPartitionSet, UInt32> StorageKafka2::getLockedTopi
         already_locked_partitions_str.push_back(fmt::format("[{}:{}]", already_locks.topic, already_locks.partition_id));
     LOG_INFO(
         log,
-        "Already locked topic partitions are {}",
+        "Already locked topic partitions are [{}]",
         boost::algorithm::join(already_locked_partitions_str, ", ")
     );
 
@@ -799,7 +798,7 @@ std::pair<StorageKafka2::TopicPartitionSet, UInt32> StorageKafka2::getLockedTopi
 std::pair<StorageKafka2::TopicPartitions, UInt32> StorageKafka2::getAvailableTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & all_topic_partitions)
 {
     const auto get_locked_partitions_res = getLockedTopicPartitions(keeper_to_use);
-    const auto already_locked_partitions = get_locked_partitions_res.first;
+    const auto & already_locked_partitions = get_locked_partitions_res.first;
     TopicPartitions available_topic_partitions;
     available_topic_partitions.reserve(all_topic_partitions.size());
     for (const auto & partition : all_topic_partitions)
@@ -813,14 +812,14 @@ std::pair<StorageKafka2::TopicPartitions, UInt32> StorageKafka2::getAvailableTop
         available_topic_partitions_str.push_back(fmt::format("[{}:{}]", available_partition.topic, available_partition.partition_id));
     LOG_INFO(
         log,
-        "Topic partitions {} are available",
+        "Topic partitions [{}] are available to lock",
         boost::algorithm::join(available_topic_partitions_str, ", ")
     );
 
     return {available_topic_partitions, get_locked_partitions_res.second};
 }
 
-std::optional<StorageKafka2::LockedTopicPartitionInfo> StorageKafka2::createLocksInfo(zkutil::ZooKeeper & keeper_to_use, const TopicPartition& partition_to_lock)
+std::optional<StorageKafka2::LockedTopicPartitionInfo> StorageKafka2::createLocksInfoIfFree(zkutil::ZooKeeper & keeper_to_use, const TopicPartition& partition_to_lock)
 {
     const auto topic_partition_path = getTopicPartitionPath(partition_to_lock);
     const auto lock_file_path = getTopicPartitionLockPath(partition_to_lock);
@@ -863,14 +862,14 @@ void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, cons
 {
     LOG_TRACE(log, "Starting to update temporary locks");
     const auto available_topic_partitions_res = getAvailableTopicPartitions(keeper_to_use, topic_partitions);
-    const auto available_topic_partitions = available_topic_partitions_res.first;
+    const auto & available_topic_partitions = available_topic_partitions_res.first;
 
     tmp_locks.clear(); // to maintain order: looked at the old state, updated the state, committed the new state
     for (const auto & tp : available_topic_partitions)
     {
         if (tmp_locks.size() >= tmp_locks_quota)
             break;
-        auto maybe_lock = createLocksInfo(keeper_to_use, tp);
+        auto maybe_lock = createLocksInfoIfFree(keeper_to_use, tp);
         if (!maybe_lock.has_value())
             continue;
         tmp_locks.emplace(TopicPartition(tp), std::move(*maybe_lock));
@@ -900,7 +899,7 @@ void StorageKafka2::updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, cons
 {
     LOG_TRACE(log, "Starting to update permanent locks");
     const auto available_topic_partitions_res = getAvailableTopicPartitions(keeper_to_use, topic_partitions);
-    const auto available_topic_partitions = available_topic_partitions_res.first;
+    const auto & available_topic_partitions = available_topic_partitions_res.first;
     const auto active_replica_count = available_topic_partitions_res.second;
     size_t can_lock_partitions = std::max<size_t>(active_replica_count != 0 ?
         topic_partitions.size() / static_cast<size_t>(active_replica_count) : LOCKS_QUOTA_MIN,
@@ -925,7 +924,7 @@ void StorageKafka2::updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, cons
         {
             const auto &tp = *tp_it;
             ++tp_it;
-            auto maybe_lock = createLocksInfo(keeper_to_use, tp);
+            auto maybe_lock = createLocksInfoIfFree(keeper_to_use, tp);
             if (!maybe_lock.has_value())
                 continue;
             if (!permanent_locks_changed)

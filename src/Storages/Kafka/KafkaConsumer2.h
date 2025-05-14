@@ -133,7 +133,6 @@ private:
     Messages::const_iterator current;
 
     // order is important, need to be destructed before consumer
-    bool needs_offset_update{false};
     std::unordered_map<TopicPartition, cppkafka::Queue, OnlyTopicNameAndPartitionIdHash, OnlyTopicNameAndPartitionIdEquality> queues;
     const Names topics;
 

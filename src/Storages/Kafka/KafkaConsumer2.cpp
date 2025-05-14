@@ -98,7 +98,6 @@ void KafkaConsumer2::updateOffsets(const TopicPartitions & topic_partitions)
             return cppkafka::TopicPartition{tp.topic, tp.partition_id, tp.offset};
         });
     initializeQueues(original_topic_partitions);
-    needs_offset_update = false;
     stalled_status = StalledStatus::NOT_STALLED;
 }
 
