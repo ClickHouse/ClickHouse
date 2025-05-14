@@ -4,6 +4,7 @@
 #include <Common/HashTable/HashTableAllocator.h>
 #include <Common/HashTable/DynamicBloomFilter.h>
 #include <Common/HashTable/CuckooFilter.h>
+#include <Common/HashTable/VacuumFilter.h>
 
 template <typename Key, typename Hash = DefaultHash<Key>, typename Allocator = HashTableAllocator>
 class ProbHashSetBloomFilter
@@ -54,15 +55,15 @@ private:
     double targetFPR;
 };
 
-template <typename Key, typename Hash = DefaultHash<Key>, typename Allocator = HashTableAllocator>
-class ProbHashSetCuckooFilter
+template <template <typename, typename, typename> class Filter, typename Key, typename Hash = DefaultHash<Key>, typename Allocator = HashTableAllocator>
+class ProbHashSetCuckooOrVacuumFilter
 {
 public:
     using key_type = Key;
     using value_type = Key;
     using LookupResult = const bool*;
 
-    explicit ProbHashSetCuckooFilter(double targetFPR_ = 0.001) : targetFPR(targetFPR_)
+    explicit ProbHashSetCuckooOrVacuumFilter(double targetFPR_ = 0.001) : targetFPR(targetFPR_)
     {
         filters.emplace_back(targetFPR);
     }
@@ -120,7 +121,13 @@ public:
 private:
     constexpr static bool lookup_result = true;
 
-    std::vector<CuckooFilter<Key, Hash, Allocator>> filters;
+    std::vector<Filter<Key, Hash, Allocator>> filters;
     size_t filter_size = 0;
     double targetFPR;
 };
+
+template <typename Key, typename Hash = DefaultHash<Key>, typename Allocator = HashTableAllocator>
+using ProbHashSetCuckooFilter = ProbHashSetCuckooOrVacuumFilter<CuckooFilter, Key, Hash, Allocator>;
+
+template <typename Key, typename Hash = DefaultHash<Key>, typename Allocator = HashTableAllocator>
+using ProbHashSetVacuumFilter = ProbHashSetCuckooOrVacuumFilter<VacuumFilter, Key, Hash, Allocator>;

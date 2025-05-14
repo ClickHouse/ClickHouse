@@ -211,8 +211,10 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
 
     if (set_type == SetType::BLOOM_FILTER)
         return Type::key64_bloom;
-    else
+    else if (set_type == SetType::CUCKOO_FILTER)
         return Type::key64_cuckoo;
+    else
+        return Type::key64_vacuum;
 }
 
 template struct SetVariantsTemplate<NonClearableSet>;

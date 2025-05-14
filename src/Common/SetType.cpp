@@ -26,6 +26,10 @@ SetType getSetTypeFromFunctionInName(const std::string & function_name)
     {
         return SetType::CUCKOO_FILTER;
     }
+    else if (function_name == "inVacuumFilter")
+    {
+        return SetType::VACUUM_FILTER;
+    }
     else
     {
         return SetType::SET;

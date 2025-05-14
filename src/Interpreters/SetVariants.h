@@ -232,6 +232,9 @@ struct NonClearableSet
 
     std::unique_ptr<SetMethodOneNumberProb<UInt32, ProbHashSetCuckooFilter<UInt32, HashCRC32<UInt32>>, false /* use_cache */>> key32_cuckoo;
     std::unique_ptr<SetMethodOneNumberProb<UInt64, ProbHashSetCuckooFilter<UInt64, HashCRC32<UInt64>>, false /* use_cache */>> key64_cuckoo;
+
+    std::unique_ptr<SetMethodOneNumberProb<UInt32, ProbHashSetVacuumFilter<UInt32, HashCRC32<UInt32>>, false /* use_cache */>> key32_vacuum;
+    std::unique_ptr<SetMethodOneNumberProb<UInt64, ProbHashSetVacuumFilter<UInt64, HashCRC32<UInt64>>, false /* use_cache */>> key64_vacuum;
 };
 
 struct ClearableSet
@@ -260,6 +263,9 @@ struct ClearableSet
 
     std::unique_ptr<SetMethodOneNumberProb<UInt32, ProbHashSetCuckooFilter<UInt32, HashCRC32<UInt32>>, false /* use_cache */>> key32_cuckoo;
     std::unique_ptr<SetMethodOneNumberProb<UInt64, ProbHashSetCuckooFilter<UInt64, HashCRC32<UInt64>>, false /* use_cache */>> key64_cuckoo;
+
+    std::unique_ptr<SetMethodOneNumberProb<UInt32, ProbHashSetVacuumFilter<UInt32, HashCRC32<UInt32>>, false /* use_cache */>> key32_vacuum;
+    std::unique_ptr<SetMethodOneNumberProb<UInt64, ProbHashSetVacuumFilter<UInt64, HashCRC32<UInt64>>, false /* use_cache */>> key64_vacuum;
 };
 
 template <typename Variant>
@@ -282,7 +288,9 @@ struct SetVariantsTemplate: public Variant
         M(key32_bloom)          \
         M(key64_bloom)          \
         M(key32_cuckoo)         \
-        M(key64_cuckoo)
+        M(key64_cuckoo)         \
+        M(key32_vacuum)         \
+        M(key64_vacuum)
 
     #define APPLY_FOR_NOT_PROB_SET_VARIANTS(M) \
         M(key8)                 \
@@ -301,7 +309,9 @@ struct SetVariantsTemplate: public Variant
         M(key32_bloom)          \
         M(key64_bloom)          \
         M(key32_cuckoo)         \
-        M(key64_cuckoo)
+        M(key64_cuckoo)         \
+        M(key32_vacuum)         \
+        M(key64_vacuum)
 
     #define M(NAME) using Variant::NAME;
         APPLY_FOR_SET_VARIANTS(M)

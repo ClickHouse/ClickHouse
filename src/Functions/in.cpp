@@ -48,6 +48,7 @@ template <> struct FunctionInName<true, false, false, true> { static constexpr a
 template <> struct FunctionInName<true, true, false, true> { static constexpr auto name = "globalNotNullInIgnoreSet"; };
 template <> struct FunctionInName<false, false, true, false, DB::SetType::BLOOM_FILTER> { static constexpr auto name = "inBloomFilter"; };
 template <> struct FunctionInName<false, false, true, false, DB::SetType::CUCKOO_FILTER> { static constexpr auto name = "inCuckooFilter"; };
+template <> struct FunctionInName<false, false, true, false, DB::SetType::VACUUM_FILTER> { static constexpr auto name = "inVacuumFilter"; };
 
 template <bool negative, bool global, bool null_is_skipped, bool ignore_set, DB::SetType set_type = DB::SetType::SET>
 class FunctionIn : public IFunction
@@ -203,6 +204,7 @@ void registerFunctionsProbInImpl(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionIn<false, false, true, false, DB::SetType::BLOOM_FILTER>>();
     factory.registerFunction<FunctionIn<false, false, true, false, DB::SetType::CUCKOO_FILTER>>();
+    factory.registerFunction<FunctionIn<false, false, true, false, DB::SetType::VACUUM_FILTER>>();
 }
 
 }
