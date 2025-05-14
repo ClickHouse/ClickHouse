@@ -1,6 +1,10 @@
 #pragma once
 
 #include <base/types.h>
+#include <Disks/IDisk.h>
+#include <IO/ReadBuffer.h>
+#include <IO/WriteBuffer.h>
+#include <Core/Types_fwd.h>
 
 #include <map>
 #include <optional>
@@ -89,6 +93,8 @@ struct MergeTreeDataPartChecksums
 
     UInt64 getTotalSizeOnDisk() const;
     UInt64 getTotalSizeUncompressedOnDisk() const;
+
+    Strings getFileNames() const;
 };
 
 /// A kind of MergeTreeDataPartChecksums intended to be stored in ZooKeeper (to save its RAM)
