@@ -120,6 +120,7 @@ def test_zookeeper_partition_locks(kafka_cluster):
                 owner = zk.get(f"{base}/{lock}")
                 assert owner == "r1", f"Expected 'r1' in {lock}, got {owner}"
 
+
 def test_three_replicas_ten_partitions_rebalance(kafka_cluster):
     admin = k.get_admin_client(kafka_cluster)
     topic_name= "zk_dist_topic_10p"
