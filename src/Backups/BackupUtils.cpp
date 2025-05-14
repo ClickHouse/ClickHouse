@@ -3,7 +3,6 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Databases/DDLRenamingVisitor.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/setThreadName.h>
 
@@ -105,14 +104,14 @@ bool compareRestoredTableDef(const IAST & restored_table_create_query, const IAS
         auto new_query = query.clone();
         adjustCreateQueryForBackup(new_query, global_context);
         ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*new_query);
-        create.setUUID({});
+        create.resetUUIDs();
         create.if_not_exists = false;
         return new_query;
     };
 
     ASTPtr query1 = adjust_before_comparison(restored_table_create_query);
     ASTPtr query2 = adjust_before_comparison(create_query_from_backup);
-    return serializeAST(*query1) == serializeAST(*query2);
+    return query1->formatWithSecretsOneLine() == query2->formatWithSecretsOneLine();
 }
 
 bool compareRestoredDatabaseDef(const IAST & restored_database_create_query, const IAST & create_query_from_backup, const ContextPtr & global_context)

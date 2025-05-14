@@ -6,17 +6,23 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Cache/QueryCache.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
-
-#include <Common/PageCache.h>
 
 #include <Databases/IDatabase.h>
 
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
+#include <Common/PageCache.h>
+#include <Common/quoteString.h>
+
+#include "config.h"
+#if USE_AWS_S3
+#include <IO/S3/Client.h>
+#endif
 
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MarkCache.h>
@@ -54,10 +60,14 @@ void calculateMaxAndSum(Max & max, Sum & sum, T x)
 ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     ContextPtr global_context_,
     unsigned update_period_seconds,
+    bool update_heavy_metrics_,
     unsigned heavy_metrics_update_period_seconds,
-    const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
+    const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
+    bool update_jemalloc_epoch_,
+    bool update_rss_)
     : WithContext(global_context_)
-    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_)
+    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_, update_jemalloc_epoch_, update_rss_, global_context_)
+    , update_heavy_metrics(update_heavy_metrics_)
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
 {
     /// sanity check
@@ -79,14 +89,20 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["MarkCacheFiles"] = { mark_cache->count(), "Total number of mark files cached in the mark cache" };
     }
 
+    if (auto primary_index_cache = getContext()->getPrimaryIndexCache())
+    {
+        new_values["PrimaryIndexCacheBytes"] = { primary_index_cache->sizeInBytes(), "Total size of primary index cache in bytes" };
+        new_values["PrimaryIndexCacheFiles"] = { primary_index_cache->count(), "Total number of index files cached in the primary index cache" };
+    }
+
     if (auto page_cache = getContext()->getPageCache())
     {
-        auto rss = page_cache->getResidentSetSize();
-        new_values["PageCacheBytes"] = { rss.page_cache_rss, "Userspace page cache memory usage in bytes" };
-        new_values["PageCachePinnedBytes"] = { page_cache->getPinnedSize(), "Userspace page cache memory that's currently in use and can't be evicted" };
-
-        if (rss.unreclaimable_rss.has_value())
-            new_values["UnreclaimableRSS"] = { *rss.unreclaimable_rss, "The amount of physical memory used by the server process, in bytes, excluding memory reclaimable by the OS (MADV_FREE)" };
+        new_values["PageCacheMaxBytes"] = { page_cache->maxSizeInBytes(),
+            "Current limit on the size of userspace page cache, in bytes." };
+        new_values["PageCacheBytes"] = { page_cache->sizeInBytes(),
+            "Total size of userspace page cache in bytes." };
+        new_values["PageCacheCells"] = { page_cache->count(),
+            "Total number of entries in the userspace page cache." };
     }
 
     if (auto uncompressed_cache = getContext()->getUncompressedCache())
@@ -119,25 +135,29 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             " The files opened with `mmap` are kept in the cache to avoid costly TLB flushes."};
     }
 
-    if (auto query_cache = getContext()->getQueryCache())
+    if (auto query_result_cache = getContext()->getQueryResultCache())
     {
-        new_values["QueryCacheBytes"] = { query_cache->sizeInBytes(), "Total size of the query cache in bytes." };
-        new_values["QueryCacheEntries"] = { query_cache->count(), "Total number of entries in the query cache." };
+        new_values["QueryCacheBytes"] = { query_result_cache->sizeInBytes(), "Total size of the query cache in bytes." };
+        new_values["QueryCacheEntries"] = { query_result_cache->count(), "Total number of entries in the query cache." };
     }
 
     {
         auto caches = FileCacheFactory::instance().getAll();
         size_t total_bytes = 0;
+        size_t max_bytes = 0;
         size_t total_files = 0;
 
         for (const auto & [_, cache_data] : caches)
         {
             total_bytes += cache_data->cache->getUsedCacheSize();
+            max_bytes += cache_data->cache->getMaxCacheSize();
             total_files += cache_data->cache->getFileSegmentsNum();
         }
 
         new_values["FilesystemCacheBytes"] = { total_bytes,
             "Total bytes in the `cache` virtual filesystem. This cache is hold on disk." };
+        new_values["FilesystemCacheCapacity"] = { max_bytes,
+            "Total capacity in the `cache` virtual filesystem. This cache is hold on disk." };
         new_values["FilesystemCacheFiles"] = { total_files,
             "Total number of cached file segments in the `cache` virtual filesystem. This cache is hold on disk." };
     }
@@ -210,27 +230,47 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             auto total = disk->getTotalSpace();
 
             /// Some disks don't support information about the space.
-            if (!total)
-                continue;
-
-            auto available = disk->getAvailableSpace();
-            auto unreserved = disk->getUnreservedSpace();
-
-            new_values[fmt::format("DiskTotal_{}", name)] = { *total,
-                "The total size in bytes of the disk (virtual filesystem). Remote filesystems may not provide this information." };
-
-            if (available)
+            if (total)
             {
-                new_values[fmt::format("DiskUsed_{}", name)] = { *total - *available,
-                    "Used bytes on the disk (virtual filesystem). Remote filesystems not always provide this information." };
+                auto available = disk->getAvailableSpace();
+                auto unreserved = disk->getUnreservedSpace();
 
-                new_values[fmt::format("DiskAvailable_{}", name)] = { *available,
-                    "Available bytes on the disk (virtual filesystem). Remote filesystems may not provide this information." };
+                new_values[fmt::format("DiskTotal_{}", name)] = { *total,
+                    "The total size in bytes of the disk (virtual filesystem). Remote filesystems may not provide this information." };
+
+                if (available)
+                {
+                    new_values[fmt::format("DiskUsed_{}", name)] = { *total - *available,
+                        "Used bytes on the disk (virtual filesystem). Remote filesystems not always provide this information." };
+
+                    new_values[fmt::format("DiskAvailable_{}", name)] = { *available,
+                        "Available bytes on the disk (virtual filesystem). Remote filesystems may not provide this information." };
+                }
+
+                if (unreserved)
+                    new_values[fmt::format("DiskUnreserved_{}", name)] = { *unreserved,
+                        "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information." };
             }
 
-            if (unreserved)
-                new_values[fmt::format("DiskUnreserved_{}", name)] = { *unreserved,
-                    "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information." };
+#if USE_AWS_S3
+            if (auto s3_client = disk->tryGetS3StorageClient())
+            {
+                if (auto put_throttler = s3_client->getPutRequestThrottler())
+                {
+                    new_values[fmt::format("DiskPutObjectThrottlerRPS_{}", name)] = { put_throttler->getMaxSpeed(),
+                        "PutObject Request throttling limit on the disk in requests per second (virtual filesystem). Local filesystems may not provide this information." };
+                    new_values[fmt::format("DiskPutObjectThrottlerAvailable_{}", name)] = { put_throttler->getAvailable(),
+                        "Number of PutObject requests that can be currently issued without hitting throttling limit on the disk (virtual filesystem). Local filesystems may not provide this information." };
+                }
+                if (auto get_throttler = s3_client->getGetRequestThrottler())
+                {
+                    new_values[fmt::format("DiskGetObjectThrottlerRPS_{}", name)] = { get_throttler->getMaxSpeed(),
+                        "GetObject Request throttling limit on the disk in requests per second (virtual filesystem). Local filesystems may not provide this information." };
+                    new_values[fmt::format("DiskGetObjectThrottlerAvailable_{}", name)] = { get_throttler->getAvailable(),
+                        "Number of GetObject requests that can be currently issued without hitting throttling limit on the disk (virtual filesystem). Local filesystems may not provide this information." };
+                }
+            }
+#endif
         }
     }
 
@@ -291,12 +331,10 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 
                 if (MergeTreeData * table_merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
                 {
-                    const auto & settings = getContext()->getSettingsRef();
-
                     calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountAndSizeForPartition().first);
 
-                    size_t bytes = table_merge_tree->totalBytes(settings).value();
-                    size_t rows = table_merge_tree->totalRows(settings).value();
+                    size_t bytes = table_merge_tree->totalBytes(getContext()).value();
+                    size_t rows = table_merge_tree->totalRows(getContext()).value();
                     size_t parts = table_merge_tree->getActivePartsCount();
 
                     total_number_of_bytes += bytes;
@@ -390,7 +428,8 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     }
 #endif
 
-    updateHeavyMetricsIfNeeded(current_time, update_time, force_update, first_run, new_values);
+    if (update_heavy_metrics)
+        updateHeavyMetricsIfNeeded(current_time, update_time, force_update, first_run, new_values);
 }
 
 void ServerAsynchronousMetrics::logImpl(AsynchronousMetricValues & new_values)
@@ -400,9 +439,10 @@ void ServerAsynchronousMetrics::logImpl(AsynchronousMetricValues & new_values)
         asynchronous_metric_log->addValues(new_values);
 }
 
-void ServerAsynchronousMetrics::updateDetachedPartsStats()
+void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
 {
     DetachedPartsStats current_values{};
+    MutationStats current_mutation_stats{};
 
     for (const auto & db : DatabaseCatalog::instance().getDatabases())
     {
@@ -427,20 +467,44 @@ void ServerAsynchronousMetrics::updateDetachedPartsStats()
 
                     ++current_values.count;
                 }
+
+                // mutation status
+                const auto max_pending_mutations_execution_time_sec = static_cast<std::chrono::seconds::rep>(getContext()->getMaxPendingMutationsExecutionTimeToWarn());
+                for (const auto & mutation_status : table_merge_tree->getMutationsStatus())
+                {
+                    if (!mutation_status.is_done)
+                    {
+                        ++current_mutation_stats.pending_mutations;
+                        // Check if the pending mutation is over the setting max_pending_mutations_execution_time_to_warn
+                        // The aim here is to warn the user about mutations that are pending for a very long time (default is 24 hours)
+                        {
+                            if (!mutation_status.parts_to_do_names.empty())
+                            {
+                                auto mutation_create_time = std::chrono::system_clock::from_time_t(mutation_status.create_time);
+                                auto current_time = std::chrono::system_clock::now();
+                                const auto time_elapsed_sec = std::chrono::duration_cast<std::chrono::seconds>(current_time - mutation_create_time).count();
+
+                                if (time_elapsed_sec > max_pending_mutations_execution_time_sec)
+                                    ++current_mutation_stats.pending_mutations_over_execution_time;
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 
     detached_parts_stats = current_values;
+    mutation_stats = current_mutation_stats;
 }
 
 void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values)
 {
     const auto time_since_previous_update = current_time - heavy_metric_previous_update_time;
-    const bool update_heavy_metrics = (time_since_previous_update >= heavy_metric_update_period) || force_update || first_run;
+    const bool need_update_heavy_metrics = (time_since_previous_update >= heavy_metric_update_period) || force_update || first_run;
 
     Stopwatch watch;
-    if (update_heavy_metrics)
+    if (need_update_heavy_metrics)
     {
         heavy_metric_previous_update_time = update_time;
         if (first_run)
@@ -449,7 +513,7 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
             heavy_update_interval = std::chrono::duration_cast<std::chrono::microseconds>(time_since_previous_update).count() / 1e6;
 
         /// Test shows that listing 100000 entries consuming around 0.15 sec.
-        updateDetachedPartsStats();
+        updateMutationAndDetachedPartsStats();
 
         watch.stop();
 
@@ -476,6 +540,8 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
 
     new_values["NumberOfDetachedParts"] = { detached_parts_stats.count, "The total number of parts detached from MergeTree tables. A part can be detached by a user with the `ALTER TABLE DETACH` query or by the server itself it the part is broken, unexpected or unneeded. The server does not care about detached parts and they can be removed." };
     new_values["NumberOfDetachedByUserParts"] = { detached_parts_stats.detached_by_user, "The total number of parts detached from MergeTree tables by users with the `ALTER TABLE DETACH` query (as opposed to unexpected, broken or ignored parts). The server does not care about detached parts and they can be removed." };
+    new_values["NumberOfPendingMutations"] = { mutation_stats.pending_mutations, "The total number of mutations that are in left to be mutated." };
+    new_values["NumberOfPendingMutationsOverExecutionTime"] = { mutation_stats.pending_mutations_over_execution_time, "The total number of mutations which have data part left to be mutated over the specified max_pending_mutations_execution_time_to_warn setting." };
 }
 
 }

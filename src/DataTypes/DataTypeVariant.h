@@ -46,14 +46,14 @@ public:
     bool haveSubtypes() const override { return true; }
     bool textCanContainOnlyValidUTF8() const override;
     bool haveMaximumSizeOfValue() const override;
-    bool hasDynamicSubcolumns() const override;
+    bool hasDynamicSubcolumnsDeprecated() const override;
     size_t getMaximumSizeOfValueInMemory() const override;
 
     const DataTypePtr & getVariant(size_t i) const { return variants[i]; }
     const DataTypes & getVariants() const { return variants; }
 
     /// Check if Variant has provided type in the list of variants and return its discriminator.
-    std::optional<ColumnVariant::Discriminator> tryGetVariantDiscriminator(const IDataType & type) const;
+    std::optional<ColumnVariant::Discriminator> tryGetVariantDiscriminator(const String & type_name) const;
 
     void forEachChild(const ChildCallback & callback) const override;
 

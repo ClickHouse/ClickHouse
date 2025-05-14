@@ -324,13 +324,13 @@ JSON
 
 	"rows": 3,
 
-	"exception": "Code: 36. : Unexpected value 99 in enum: While executing JSONRowOutputFormat. (BAD_ARGUMENTS) "
+	"exception": "Code: 691. : Unexpected value 99 in enum: While executing JSONRowOutputFormat. (UNKNOWN_ELEMENT_OF_ENUM) "
 }
 JSONEachRow
 {"x":1,"s":"str1","y":"a"}
 {"x":2,"s":"str2","y":"a"}
 {"x":3,"s":"str3","y":"a"}
-{"exception": "Code: 36. : Unexpected value 99 in enum: While executing JSONEachRowRowOutputFormat. (BAD_ARGUMENTS) "}
+{"exception": "Code: 691. : Unexpected value 99 in enum: While executing JSONEachRowRowOutputFormat. (UNKNOWN_ELEMENT_OF_ENUM) "}
 JSONCompact
 {
 	"meta":
@@ -358,19 +358,19 @@ JSONCompact
 
 	"rows": 3,
 
-	"exception": "Code: 36. : Unexpected value 99 in enum: While executing JSONCompactRowOutputFormat. (BAD_ARGUMENTS) "
+	"exception": "Code: 691. : Unexpected value 99 in enum: While executing JSONCompactRowOutputFormat. (UNKNOWN_ELEMENT_OF_ENUM) "
 }
 JSONCompactEachRow
 [1, "str1", "a"]
 [2, "str2", "a"]
 [3, "str3", "a"]
-["Code: 36. : Unexpected value 99 in enum: While executing JSONCompactEachRowRowOutputFormat. (BAD_ARGUMENTS) "]
+["Code: 691. : Unexpected value 99 in enum: While executing JSONCompactEachRowRowOutputFormat. (UNKNOWN_ELEMENT_OF_ENUM) "]
 JSONObjectEachRow
 {
 	"row_1": {"x":1,"s":"str1","y":"a"},
 	"row_2": {"x":2,"s":"str2","y":"a"},
 	"row_3": {"x":3,"s":"str3","y":"a"},
-	"exception": "Code: 36. : Unexpected value 99 in enum: While executing JSONObjectEachRowRowOutputFormat. (BAD_ARGUMENTS) "
+	"exception": "Code: 691. : Unexpected value 99 in enum: While executing JSONObjectEachRowRowOutputFormat. (UNKNOWN_ELEMENT_OF_ENUM) "
 }
 XML
 <?xml version='1.0' encoding='UTF-8' ?>
@@ -409,7 +409,7 @@ XML
 		</row>
 	</data>
 	<rows>3</rows>
-	<exception>Code: 36. : Unexpected value 99 in enum: While executing XMLRowOutputFormat. (BAD_ARGUMENTS) </exception>
+	<exception>Code: 691. : Unexpected value 99 in enum: While executing XMLRowOutputFormat. (UNKNOWN_ELEMENT_OF_ENUM) </exception>
 </result>
 With parallel formatting
 JSON
@@ -697,10 +697,10 @@ JSON
 
 	"rows": 0,
 
-	"exception": "Code: 36. : Unexpected value 99 in enum: While executing JSONRowOutputFormat. (BAD_ARGUMENTS) "
+	"exception": "Code: 691. : Unexpected value 99 in enum: While executing JSONRowOutputFormat. (UNKNOWN_ELEMENT_OF_ENUM) "
 }
 JSONEachRow
-{"exception": "Code: 36. : Unexpected value 99 in enum: While executing JSONEachRowRowOutputFormat. (BAD_ARGUMENTS) "}
+{"exception": "Code: 691. : Unexpected value 99 in enum: While executing JSONEachRowRowOutputFormat. (UNKNOWN_ELEMENT_OF_ENUM) "}
 JSONCompact
 {
 	"meta":
@@ -726,13 +726,13 @@ JSONCompact
 
 	"rows": 0,
 
-	"exception": "Code: 36. : Unexpected value 99 in enum: While executing JSONCompactRowOutputFormat. (BAD_ARGUMENTS) "
+	"exception": "Code: 691. : Unexpected value 99 in enum: While executing JSONCompactRowOutputFormat. (UNKNOWN_ELEMENT_OF_ENUM) "
 }
 JSONCompactEachRow
-["Code: 36. : Unexpected value 99 in enum: While executing JSONCompactEachRowRowOutputFormat. (BAD_ARGUMENTS) "]
+["Code: 691. : Unexpected value 99 in enum: While executing JSONCompactEachRowRowOutputFormat. (UNKNOWN_ELEMENT_OF_ENUM) "]
 JSONObjectEachRow
 {
-	"exception": "Code: 36. : Unexpected value 99 in enum: While executing JSONObjectEachRowRowOutputFormat. (BAD_ARGUMENTS) "
+	"exception": "Code: 691. : Unexpected value 99 in enum: While executing JSONObjectEachRowRowOutputFormat. (UNKNOWN_ELEMENT_OF_ENUM) "
 }
 XML
 <?xml version='1.0' encoding='UTF-8' ?>
@@ -756,7 +756,7 @@ XML
 	<data>
 	</data>
 	<rows>0</rows>
-	<exception>Code: 36. : Unexpected value 99 in enum: While executing XMLRowOutputFormat. (BAD_ARGUMENTS) </exception>
+	<exception>Code: 691. : Unexpected value 99 in enum: While executing XMLRowOutputFormat. (UNKNOWN_ELEMENT_OF_ENUM) </exception>
 </result>
 With parallel formatting
 JSON

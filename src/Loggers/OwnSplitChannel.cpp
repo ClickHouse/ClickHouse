@@ -1,23 +1,26 @@
 #include "OwnSplitChannel.h"
 #include "OwnFormattingChannel.h"
 
-#include <Interpreters/InternalTextLogsQueue.h>
-#include <Interpreters/TextLog.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
-#include <Poco/Message.h>
+#include <Columns/IColumn.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
 #include <Common/setThreadName.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/IO.h>
+#include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/TextLog.h>
 
+#include <Poco/Message.h>
 
 namespace DB
 {
 
 void OwnSplitChannel::log(const Poco::Message & msg)
 {
+    if (!isLoggingEnabled())
+        return;
+
 #ifndef WITHOUT_TEXT_LOG
     auto logs_queue = CurrentThread::getInternalTextLogsQueue();
 
@@ -107,6 +110,10 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
         [[maybe_unused]] bool push_result = logs_queue->emplace(std::move(columns));
     }
 
+    auto text_log_locked = text_log.lock();
+    if (!text_log_locked)
+        return;
+
     /// Also log to system.text_log table, if message is not too noisy
     auto text_log_max_priority_loaded = text_log_max_priority.load(std::memory_order_relaxed);
     if (text_log_max_priority_loaded && msg.getPriority() <= text_log_max_priority_loaded)
@@ -146,10 +153,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
 
 #undef SET_VALUE_IF_EXISTS
 
-        std::shared_ptr<SystemLogQueue<TextLogElement>> text_log_locked{};
-        text_log_locked = text_log.lock();
-        if (text_log_locked)
-            text_log_locked->push(std::move(elem));
+        text_log_locked->push(std::move(elem));
     }
 #endif
 }

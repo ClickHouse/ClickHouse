@@ -1,0 +1,6 @@
+information_schema	tables
+both	default	test_03217_system_tables_replica_1	r1
+both	default	test_03217_system_tables_replica_2	r2
+default	test_03217_system_tables_replica_1	r1
+1
+1

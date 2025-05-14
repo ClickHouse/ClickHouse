@@ -9,7 +9,7 @@ SET max_rows_to_read = 8192, force_primary_key = 1, analyze_index_with_space_fil
 SELECT count() FROM test WHERE x >= 10 AND x <= 20 AND y >= 20 AND y <= 30;
 
 SET max_rows_to_read = 8192, force_primary_key = 1, analyze_index_with_space_filling_curves = 0;
-SELECT count() FROM test WHERE x >= 10 AND x <= 20 AND y >= 20 AND y <= 30;  -- { serverError 277 }
+SELECT count() FROM test WHERE x >= 10 AND x <= 20 AND y >= 20 AND y <= 30;  -- { serverError INDEX_NOT_USED }
 
 DROP TABLE test;
 

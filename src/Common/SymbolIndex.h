@@ -4,7 +4,6 @@
 
 #include <vector>
 #include <string>
-#include <unordered_map>
 #include <Common/Elf.h>
 #include <boost/noncopyable.hpp>
 

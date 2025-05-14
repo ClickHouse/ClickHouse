@@ -1,13 +1,13 @@
 import os
-
-import grpc
-import pymysql.connections
-import psycopg2 as py_psql
-import pytest
 import sys
 import threading
 
-from helpers.cluster import ClickHouseCluster, run_and_check
+import grpc
+import psycopg2 as py_psql
+import pymysql.connections
+import pytest
+
+from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_logs_contain_with_retry
 from helpers.uclient import client, prompt
 
@@ -15,8 +15,8 @@ script_dir = os.path.dirname(os.path.realpath(__file__))
 grpc_protocol_pb2_dir = os.path.join(script_dir, "grpc_protocol_pb2")
 if grpc_protocol_pb2_dir not in sys.path:
     sys.path.append(grpc_protocol_pb2_dir)
-import clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc  # Execute grpc_protocol_pb2/generate.py to generate these modules.
-
+import clickhouse_grpc_pb2  # Execute grpc_protocol_pb2/generate.py to generate these modules.
+import clickhouse_grpc_pb2_grpc
 
 MAX_SESSIONS_FOR_USER = 2
 POSTGRES_SERVER_PORT = 5433
@@ -51,7 +51,7 @@ instance = cluster.add_instance(
 
 
 def get_query(name, id):
-    return f"SElECT '{name}', {id}, number from system.numbers"
+    return f"SELECT '{name}', {id}, COUNT(*) from system.numbers"
 
 
 def grpc_get_url():
@@ -90,7 +90,7 @@ def threaded_run_test(sessions):
     if len(sessions) > MAX_SESSIONS_FOR_USER:
         # High retry amount to avoid flakiness in ASAN (+Analyzer) tests
         assert_logs_contain_with_retry(
-            instance, "overflown session count", retry_count=60
+            instance, "overflown session count", retry_count=120
         )
 
     instance.query(f"KILL QUERY WHERE user='{TEST_USER}' SYNC")

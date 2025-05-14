@@ -1,0 +1,46 @@
+name: Installation issue
+description: Issue with ClickHouse installation from https://clickhouse.com/docs/en/install/
+labels: ["comp-install"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > **I have tried the following solutions**: https://clickhouse.com/docs/en/faq/troubleshooting/#troubleshooting-installation-errors
+  - type: textarea
+    attributes:
+      label: Company or project name
+      description: Put your company name or project description here.
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: Installation type
+      description: Packages, docker, single binary, curl?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Source of the ClickHouse
+      description: A link to the source. Or the command you've tried.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Describe the problem.
+      description: What went wrong and what is the expected result?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Error message and/or stacktrace
+      description: You can find additional information in server logs.
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: How to reproduce
+      description: |
+        * For Linux-based operating systems: provide a script for clear docker container from the official image
+        * For anything else: steps to reproduce on as much as possible clear system
+    validations:
+      required: false

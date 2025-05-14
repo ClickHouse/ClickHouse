@@ -1,8 +1,13 @@
 ---
-slug: /en/operations/external-authenticators/kerberos
+description: 'Existing and properly configured ClickHouse users can be authenticated
+  via Kerberos authentication protocol.'
+slug: /operations/external-authenticators/kerberos
+title: 'Kerberos'
 ---
+
+import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
+
 # Kerberos
-import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.md';
 
 <SelfManaged />
 
@@ -17,7 +22,7 @@ For this approach, Kerberos must be configured in the system and must be enabled
 
 To enable Kerberos, one should include `kerberos` section in `config.xml`. This section may contain additional parameters.
 
-#### Parameters:
+#### Parameters: {#parameters}
 
 - `principal` - canonical service principal name that will be acquired and used when accepting security contexts.
     - This parameter is optional, if omitted, the default principal will be used.
@@ -113,7 +118,7 @@ Note, that now, once user `my_user` uses `kerberos`, Kerberos must be enabled in
 
 ### Enabling Kerberos using SQL {#enabling-kerberos-using-sql}
 
-When [SQL-driven Access Control and Account Management](/docs/en/guides/sre/user-management/index.md#access-control) is enabled in ClickHouse, users identified by Kerberos can also be created using SQL statements.
+When [SQL-driven Access Control and Account Management](/operations/access-rights#access-control-usage) is enabled in ClickHouse, users identified by Kerberos can also be created using SQL statements.
 
 ```sql
 CREATE USER my_user IDENTIFIED WITH kerberos REALM 'EXAMPLE.COM'

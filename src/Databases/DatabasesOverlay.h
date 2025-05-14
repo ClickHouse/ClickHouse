@@ -35,12 +35,21 @@ public:
 
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
 
+    void renameTable(
+        ContextPtr current_context,
+        const String & name,
+        IDatabase & to_database,
+        const String & to_name,
+        bool exchange,
+        bool dictionary) override;
+
     ASTPtr getCreateTableQueryImpl(const String & name, ContextPtr context, bool throw_on_error) const override;
     ASTPtr getCreateDatabaseQuery() const override;
 
     String getTableDataPath(const String & table_name) const override;
     String getTableDataPath(const ASTCreateQuery & query) const override;
 
+    UUID getUUID() const override;
     UUID tryGetTableUUID(const String & table_name) const override;
 
     void drop(ContextPtr context) override;
@@ -56,6 +65,40 @@ public:
     bool empty() const override;
 
     void shutdown() override;
+
+    bool canContainMergeTreeTables() const override;
+    bool canContainDistributedTables() const override;
+    void loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode) override;
+    bool supportsLoadingInTopologicalOrder() const override;
+    void beforeLoadingMetadata(ContextMutablePtr local_context, LoadingStrictnessLevel mode) override;
+    void loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup) override;
+    void loadTableFromMetadata(
+        ContextMutablePtr local_context,
+        const String & file_path,
+        const QualifiedTableName & name,
+        const ASTPtr & ast,
+        LoadingStrictnessLevel mode) override;
+    LoadTaskPtr loadTableFromMetadataAsync(
+        AsyncLoader & async_loader,
+        LoadJobSet load_after,
+        ContextMutablePtr local_context,
+        const String & file_path,
+        const QualifiedTableName & name,
+        const ASTPtr & ast,
+        LoadingStrictnessLevel mode) override;
+    [[nodiscard]] LoadTaskPtr startupTableAsync(
+        AsyncLoader & async_loader,
+        LoadJobSet startup_after,
+        const QualifiedTableName & name,
+        LoadingStrictnessLevel mode) override;
+    [[nodiscard]] LoadTaskPtr startupDatabaseAsync(
+        AsyncLoader & async_loader,
+        LoadJobSet startup_after,
+        LoadingStrictnessLevel mode) override;
+    void waitTableStarted(const String & name) const override;
+    void waitDatabaseStarted() const override;
+    void stopLoading() override;
+    void checkMetadataFilenameAvailability(const String & table_name) const override;
 
 protected:
     std::vector<DatabasePtr> databases;

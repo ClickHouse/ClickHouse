@@ -1,0 +1,33 @@
+200
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_ind_merge_1)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 2/2
+            Granules: 32/32
+          Skip
+            Name: idx_b
+            Description: minmax GRANULARITY 1
+            Parts: 2/2
+            Granules: 4/32
+200
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_ind_merge_1)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 32/32
+          Skip
+            Name: idx_b
+            Description: minmax GRANULARITY 1
+            Parts: 1/1
+            Granules: 4/32
+4	1	3

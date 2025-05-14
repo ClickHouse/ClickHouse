@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
 #include <Processors/Formats/ISchemaReader.h>
@@ -10,9 +9,11 @@
 namespace DB
 {
 
+class TabSeparatedFormatReader;
+
 /** A stream to input data in tsv format.
   */
-class TabSeparatedRowInputFormat final : public RowInputFormatWithNamesAndTypes
+class TabSeparatedRowInputFormat final : public RowInputFormatWithNamesAndTypes<TabSeparatedFormatReader>
 {
 public:
     /** with_names - the first line is the header with the names of the columns
@@ -81,8 +82,6 @@ public:
 
     bool checkForSuffix() override;
     bool checkForEndOfRow() override;
-
-    bool allowVariableNumberOfColumns() const override { return format_settings.tsv.allow_variable_number_of_columns; }
 
 private:
     template <bool is_header>

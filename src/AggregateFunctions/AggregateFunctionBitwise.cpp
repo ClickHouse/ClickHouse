@@ -234,9 +234,9 @@ void registerAggregateFunctionsBitwise(AggregateFunctionFactory & factory)
     factory.registerFunction("groupBitXor", createAggregateFunctionBitwise<AggregateFunctionGroupBitXorData>);
 
     /// Aliases for compatibility with MySQL.
-    factory.registerAlias("BIT_OR", "groupBitOr", AggregateFunctionFactory::CaseInsensitive);
-    factory.registerAlias("BIT_AND", "groupBitAnd", AggregateFunctionFactory::CaseInsensitive);
-    factory.registerAlias("BIT_XOR", "groupBitXor", AggregateFunctionFactory::CaseInsensitive);
+    factory.registerAlias("BIT_OR", "groupBitOr", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("BIT_AND", "groupBitAnd", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("BIT_XOR", "groupBitXor", AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

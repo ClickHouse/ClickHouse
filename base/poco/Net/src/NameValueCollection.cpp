@@ -102,9 +102,9 @@ const std::string& NameValueCollection::get(const std::string& name, const std::
 		return defaultValue;
 }
 
-const std::vector<std::reference_wrapper<const std::string>> NameValueCollection::getAll(const std::string& name) const
+std::vector<std::string> NameValueCollection::getAll(const std::string& name) const
 {
-    std::vector<std::reference_wrapper<const std::string>> values;
+    std::vector<std::string> values;
     for (ConstIterator it = _map.find(name); it != _map.end(); it++)
         if (it->first == name)
             values.push_back(it->second);

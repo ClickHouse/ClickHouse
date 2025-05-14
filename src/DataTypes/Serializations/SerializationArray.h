@@ -55,7 +55,8 @@ public:
 
     void deserializeBinaryBulkStatePrefix(
             DeserializeBinaryBulkSettings & settings,
-            DeserializeBinaryBulkStatePtr & state) const override;
+            DeserializeBinaryBulkStatePtr & state,
+            SubstreamsDeserializeStatesCache * cache) const override;
 
     void serializeBinaryBulkWithMultipleStreams(
             const IColumn & column,
@@ -66,12 +67,12 @@ public:
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const override;
 
-private:
     struct SubcolumnCreator : public ISubcolumnCreator
     {
         const ColumnPtr offsets;
@@ -79,9 +80,13 @@ private:
         explicit SubcolumnCreator(const ColumnPtr & offsets_) : offsets(offsets_) {}
 
         DataTypePtr create(const DataTypePtr & prev) const override;
-        SerializationPtr create(const SerializationPtr & prev) const override;
+        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
         ColumnPtr create(const ColumnPtr & prev) const override;
     };
+
+private:
+    template <typename ReturnType>
+    ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;
 };
 
 }

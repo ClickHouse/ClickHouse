@@ -1,54 +1,97 @@
 ---
-slug: /en/sql-reference/functions/rounding-functions
+description: 'Documentation for Rounding Functions'
+sidebar_label: 'Rounding'
 sidebar_position: 155
-sidebar_label: Rounding
+slug: /sql-reference/functions/rounding-functions
+title: 'Rounding Functions'
 ---
 
 # Rounding Functions
 
-## floor(x\[, N\])
+## floor {#floor}
 
-Returns the largest round number that is less than or equal to `x`. A round number is a multiple of 1/10N, or the nearest number of the appropriate data type if 1 / 10N isn’t exact.
-‘N’ is an integer constant, optional parameter. By default it is zero, which means to round to an integer.
-‘N’ may be negative.
+Returns the largest rounded number less than or equal `x`.
+A rounded number is a multiple of 1 / 10 * N, or the nearest number of the appropriate data type if 1 / 10 * N isn't exact.
 
-Examples: `floor(123.45, 1) = 123.4, floor(123.45, -1) = 120.`
+Integer arguments may be rounded with negative `N` argument, with non-negative `N` the function returns `x`, i.e. does nothing.
 
-`x` is any numeric type. The result is a number of the same type.
-For integer arguments, it makes sense to round with a negative `N` value (for non-negative `N`, the function does not do anything).
-If rounding causes overflow (for example, floor(-128, -1)), an implementation-specific result is returned.
-
-## ceil(x\[, N\]), ceiling(x\[, N\])
-
-Returns the smallest round number that is greater than or equal to `x`. In every other way, it is the same as the `floor` function (see above).
-
-## trunc(x\[, N\]), truncate(x\[, N\])
-
-Returns the round number with largest absolute value that has an absolute value less than or equal to `x`‘s. In every other way, it is the same as the ’floor’ function (see above).
+If rounding causes an overflow (for example, `floor(-128, -1)`), the result is undefined.
 
 **Syntax**
 
 ```sql
-trunc(input, precision)
+floor(x[, N])
 ```
-
-Alias: `truncate`.
 
 **Parameters**
 
-- `input`: A numeric type ([Float](/docs/en/sql-reference/data-types/float.md), [Decimal](/docs/en/sql-reference/data-types/decimal.md) or [Integer](/docs/en/sql-reference/data-types/int-uint.md)).
-- `precision`: An [Integer](/docs/en/sql-reference/data-types/int-uint.md) type.
+- `x` - The value to round. [Float*](../data-types/float.md), [Decimal*](../data-types/decimal.md), or [(U)Int*](../data-types/int-uint.md).
+- `N` . [(U)Int*](../data-types/int-uint.md). The default is zero, which means rounding to an integer. Can be negative.
 
 **Returned value**
 
-- A data type of `input`.
+A rounded number of the same type as `x`.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT floor(123.45, 1) AS rounded
+```
+
+Result:
+
+```response
+┌─rounded─┐
+│   123.4 │
+└─────────┘
+```
+
+Query:
+
+```sql
+SELECT floor(123.45, -1)
+```
+
+Result:
+
+```response
+┌─rounded─┐
+│     120 │
+└─────────┘
+```
+
+## ceiling {#ceiling}
+
+Like `floor` but returns the smallest rounded number greater than or equal `x`.
+
+**Syntax**
+
+```sql
+ceiling(x[, N])
+```
+
+Alias: `ceil`
+
+## truncate {#truncate}
+
+Like `floor` but returns the rounded number with largest absolute value that has an absolute value less than or equal to `x`'s.
+
+**Syntax**
+
+```sql
+truncate(x[, N])
+```
+
+Alias: `trunc`.
 
 **Example**
 
 Query:
 
 ```sql
-SELECT trunc(123.499, 1) as res;
+SELECT truncate(123.499, 1) as res;
 ```
 
 ```response
@@ -57,37 +100,40 @@ SELECT trunc(123.499, 1) as res;
 └───────┘
 ```
 
-## round(x\[, N\])
+## round {#round}
 
 Rounds a value to a specified number of decimal places.
 
-The function returns the nearest number of the specified order. In case when given number has equal distance to surrounding numbers, the function uses banker’s rounding for float number types and rounds away from zero for the other number types (Decimal).
+The function returns the nearest number of the specified order.
+If the input value has equal distance to two neighboring numbers, the function uses banker's rounding for [Float*](../data-types/float.md) inputs and rounds away from zero for the other number types ([Decimal*](../data-types/decimal.md).
 
-``` sql
-round(expression [, decimal_places])
+**Syntax**
+
+```sql
+round(x[, N])
 ```
 
 **Arguments**
 
-- `expression` — A number to be rounded. Can be any [expression](../../sql-reference/syntax.md#syntax-expressions) returning the numeric [data type](../../sql-reference/data-types/index.md#data_types).
-- `decimal-places` — An integer value.
-    - If `decimal-places > 0` then the function rounds the value to the right of the decimal point.
-    - If `decimal-places < 0` then the function rounds the value to the left of the decimal point.
-    - If `decimal-places = 0` then the function rounds the value to integer. In this case the argument can be omitted.
+- `x` — A number to round. [Float*](../data-types/float.md), [Decimal*](../data-types/decimal.md), or [(U)Int*](../data-types/int-uint.md).
+- `N` — The number of decimal places to round to. Integer. Defaults to `0`.
+    - If `N > 0`, the function rounds to the right of the decimal point.
+    - If `N < 0`, the function rounds to the left of the decimal point.
+    - If `N = 0`, the function rounds to the next integer.
 
 **Returned value:**
 
-The rounded number of the same type as the input number.
+A rounded number of the same type as `x`.
 
 **Examples**
 
-Example of usage with Float:
+Example with `Float` inputs:
 
-``` sql
+```sql
 SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3;
 ```
 
-``` text
+```response
 ┌───x─┬─round(divide(number, 2))─┐
 │   0 │                        0 │
 │ 0.5 │                        0 │
@@ -95,13 +141,13 @@ SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3;
 └─────┴──────────────────────────┘
 ```
 
-Example of usage with Decimal:
+Example with `Decimal` inputs:
 
-``` sql
+```sql
 SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3;
 ```
 
-``` text
+```sql
 ┌───x─┬─round(CAST(divide(number, 2), 'Decimal(10, 4)'))─┐
 │   0 │                                                0 │
 │ 0.5 │                                                1 │
@@ -109,14 +155,14 @@ SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIM
 └─────┴──────────────────────────────────────────────────┘
 ```
 
-If you want to keep the trailing zeros, you need to enable `output_format_decimal_trailing_zeros`
+To retain trailing zeros, enable setting `output_format_decimal_trailing_zeros`:
 
-``` sql
+```sql
 SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3 settings output_format_decimal_trailing_zeros=1;
 
 ```
 
-``` text
+```sql
 ┌──────x─┬─round(CAST(divide(number, 2), 'Decimal(10, 4)'))─┐
 │ 0.0000 │                                           0.0000 │
 │ 0.5000 │                                           1.0000 │
@@ -126,7 +172,7 @@ SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIM
 
 Examples of rounding to the nearest number:
 
-``` text
+```text
 round(3.2, 0) = 3
 round(4.1267, 2) = 4.13
 round(22,-1) = 20
@@ -134,9 +180,9 @@ round(467,-2) = 500
 round(-467,-2) = -500
 ```
 
-Banker’s rounding.
+Banker's rounding.
 
-``` text
+```text
 round(3.5) = 4
 round(4.5) = 4
 round(3.55, 1) = 3.6
@@ -147,51 +193,61 @@ round(3.65, 1) = 3.6
 
 - [roundBankers](#roundbankers)
 
-## roundBankers
+## roundBankers {#roundbankers}
 
 Rounds a number to a specified decimal position.
 
-- If the rounding number is halfway between two numbers, the function uses banker’s rounding. Banker's rounding is a method of rounding fractional numbers. When the rounding number is halfway between two numbers, it's rounded to the nearest even digit at the specified decimal position. For example: 3.5 rounds up to 4, 2.5 rounds down to 2. It's the default rounding method for floating point numbers defined in [IEEE 754](https://en.wikipedia.org/wiki/IEEE_754#Roundings_to_nearest). The [round](#rounding_functions-round) function performs the same rounding for floating point numbers. The `roundBankers` function also rounds integers the same way, for example, `roundBankers(45, -1) = 40`.
+If the rounding number is halfway between two numbers, the function uses banker's rounding.
+Banker's rounding is a method of rounding fractional numbers
+When the rounding number is halfway between two numbers, it's rounded to the nearest even digit at the specified decimal position.
+For example: 3.5 rounds up to 4, 2.5 rounds down to 2.
+It's the default rounding method for floating point numbers defined in [IEEE 754](https://en.wikipedia.org/wiki/IEEE_754#Roundings_to_nearest).
+The [round](#round) function performs the same rounding for floating point numbers.
+The `roundBankers` function also rounds integers the same way, for example, `roundBankers(45, -1) = 40`.
 
-- In other cases, the function rounds numbers to the nearest integer.
+In other cases, the function rounds numbers to the nearest integer.
 
-Using banker’s rounding, you can reduce the effect that rounding numbers has on the results of summing or subtracting these numbers.
+Using banker's rounding, you can reduce the effect that rounding numbers has on the results of summing or subtracting these numbers.
 
 For example, sum numbers 1.5, 2.5, 3.5, 4.5 with different rounding:
 
 - No rounding: 1.5 + 2.5 + 3.5 + 4.5 = 12.
-- Banker’s rounding: 2 + 2 + 4 + 4 = 12.
+- Banker's rounding: 2 + 2 + 4 + 4 = 12.
 - Rounding to the nearest integer: 2 + 3 + 4 + 5 = 14.
 
 **Syntax**
 
-``` sql
-roundBankers(expression [, decimal_places])
+```sql
+roundBankers(x [, N])
 ```
 
 **Arguments**
 
-- `expression` — A number to be rounded. Can be any [expression](../../sql-reference/syntax.md#syntax-expressions) returning the numeric [data type](../../sql-reference/data-types/index.md#data_types).
-- `decimal-places` — Decimal places. An integer number.
-    - `decimal-places > 0` — The function rounds the number to the given position right of the decimal point. Example: `roundBankers(3.55, 1) = 3.6`.
-    - `decimal-places < 0` — The function rounds the number to the given position left of the decimal point. Example: `roundBankers(24.55, -1) = 20`.
-    - `decimal-places = 0` — The function rounds the number to an integer. In this case the argument can be omitted. Example: `roundBankers(2.5) = 2`.
+    - `N > 0` — The function rounds the number to the given position right of the decimal point. Example: `roundBankers(3.55, 1) = 3.6`.
+    - `N < 0` — The function rounds the number to the given position left of the decimal point. Example: `roundBankers(24.55, -1) = 20`.
+    - `N = 0` — The function rounds the number to an integer. In this case the argument can be omitted. Example: `roundBankers(2.5) = 2`.
+
+- `x` — A number to round. [Float*](../data-types/float.md), [Decimal*](../data-types/decimal.md), or [(U)Int*](../data-types/int-uint.md).
+- `N` — The number of decimal places to round to. Integer. Defaults to `0`.
+    - If `N > 0`, the function rounds to the right of the decimal point.
+    - If `N < 0`, the function rounds to the left of the decimal point.
+    - If `N = 0`, the function rounds to the next integer.
 
 **Returned value**
 
-A value rounded by the banker’s rounding method.
+A value rounded by the banker's rounding method.
 
 **Examples**
 
 Query:
 
-``` sql
+```sql
  SELECT number / 2 AS x, roundBankers(x, 0) AS b fROM system.numbers limit 10
 ```
 
 Result:
 
-``` text
+```response
 ┌───x─┬─b─┐
 │   0 │ 0 │
 │ 0.5 │ 0 │
@@ -206,9 +262,9 @@ Result:
 └─────┴───┘
 ```
 
-Examples of Banker’s rounding:
+Examples of Banker's rounding:
 
-``` text
+```response
 roundBankers(0.4) = 0
 roundBankers(-3.5) = -4
 roundBankers(4.5) = 4
@@ -220,9 +276,9 @@ roundBankers(10.755, 2) = 10.76
 
 **See Also**
 
-- [round](#rounding_functions-round)
+- [round](#round)
 
-## roundToExp2
+## roundToExp2 {#roundtoexp2}
 
 Accepts a number. If the number is less than one, it returns `0`. Otherwise, it rounds the number down to the nearest (whole non-negative) degree of two.
 
@@ -234,7 +290,7 @@ roundToExp2(num)
 
 **Parameters**
 
-- `num`: A number representing an age in years. [UInt](../data-types/int-uint.md)/[Float](../data-types/float.md).
+- `num`: A number to round. [UInt](../data-types/int-uint.md)/[Float](../data-types/float.md).
 
 **Returned value**
 
@@ -262,9 +318,9 @@ Result:
 └────────┴─────────────────────┘
 ```
 
-## roundDuration
+## roundDuration {#roundduration}
 
-Accepts a number. If the number is less than one, it returns `0`. Otherwise, it rounds the number down to numbers from the set of commonly used durations: `1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000`. 
+Accepts a number. If the number is less than one, it returns `0`. Otherwise, it rounds the number down to numbers from the set of commonly used durations: `1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000`.
 
 **Syntax**
 
@@ -312,7 +368,7 @@ Result:
 └────────┴───────────────────────┘
 ```
 
-## roundAge
+## roundAge {#roundage}
 
 Accepts a number within various commonly used ranges of human age and returns either a maximum or a minimum within that range.
 
@@ -360,7 +416,7 @@ Result:
 └────────┴──────────────────┘
 ```
 
-## roundDown
+## roundDown {#rounddown}
 
 Accepts a number and rounds it down to an element in the specified array. If the value is less than the lowest bound, the lowest bound is returned.
 

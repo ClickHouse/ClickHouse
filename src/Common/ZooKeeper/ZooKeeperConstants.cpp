@@ -1,5 +1,5 @@
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <unordered_set>
 
 namespace Coordination
@@ -29,6 +29,7 @@ static const std::unordered_set<int32_t> VALID_OPERATIONS =
     static_cast<int32_t>(OpNum::GetACL),
     static_cast<int32_t>(OpNum::FilteredList),
     static_cast<int32_t>(OpNum::CheckNotExists),
+    static_cast<int32_t>(OpNum::RemoveRecursive),
 };
 
 OpNum getOpNum(int32_t raw_op_num)

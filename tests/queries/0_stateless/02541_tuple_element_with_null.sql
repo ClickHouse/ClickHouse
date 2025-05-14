@@ -9,7 +9,7 @@ SETTINGS index_granularity = 8192;
 
 INSERT INTO test_tuple_element VALUES (tuple(1,2)), (tuple(NULL, 3));
 
-SELECT 
+SELECT
     tupleElement(tuple, 'k1', 0) fine_k1_with_0,
     tupleElement(tuple, 'k1', NULL) k1_with_null,
     tupleElement(tuple, 'k2', 0) k2_with_0,

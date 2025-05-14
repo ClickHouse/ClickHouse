@@ -17,12 +17,14 @@
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/IFunction.h>
 #include <Parsers/ASTSubquery.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/interpretSubquery.h>
+#include <Processors/ISource.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -31,11 +33,20 @@
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string.hpp>
 #include <algorithm>
-#include <deque>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_unrestricted_reads_from_keeper;
+    extern const SettingsFloat insert_keeper_fault_injection_probability;
+    extern const SettingsUInt64 insert_keeper_fault_injection_seed;
+    extern const SettingsUInt64 insert_keeper_max_retries;
+    extern const SettingsUInt64 insert_keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 insert_keeper_retry_max_backoff_ms;
+    extern const SettingsMaxThreads max_download_threads;
+}
 
 namespace ErrorCodes
 {
@@ -119,7 +130,7 @@ public:
     ZooKeeperSink(const Block & header, ContextPtr context) : SinkToStorage(header), zookeeper(context->getZooKeeper()) { }
     String getName() const override { return "ZooKeeperSink"; }
 
-    void consume(Chunk chunk) override
+    void consume(Chunk & chunk) override
     {
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
         size_t rows = block.rows();
@@ -130,7 +141,7 @@ public:
             String path = block.getByPosition(2).column->getDataAt(i).toString();
 
             /// We don't expect a "name" contains a path.
-            if (name.find('/') != std::string::npos)
+            if (name.contains('/'))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column `name` should not contain '/'");
             }
@@ -474,8 +485,9 @@ static Paths extractPath(const ActionsDAG::NodeRawConstPtrs & filter_nodes, Cont
 
 void ReadFromSystemZooKeeper::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
-    paths = extractPath(added_filter_nodes.nodes, context, context->getSettingsRef().allow_unrestricted_reads_from_keeper);
+    SourceStepWithFilter::applyFilters(added_filter_nodes);
+
+    paths = extractPath(added_filter_nodes.nodes, context, context->getSettingsRef()[Setting::allow_unrestricted_reads_from_keeper]);
 }
 
 
@@ -504,9 +516,10 @@ Chunk SystemZooKeeperSource::generate()
     /// Use insert settings for now in order not to introduce new settings.
     /// Hopefully insert settings will also be unified and replaced with some generic retry settings.
     ZooKeeperRetriesInfo retries_seetings(
-        settings.insert_keeper_max_retries,
-        settings.insert_keeper_retry_initial_backoff_ms,
-        settings.insert_keeper_retry_max_backoff_ms);
+        settings[Setting::insert_keeper_max_retries],
+        settings[Setting::insert_keeper_retry_initial_backoff_ms],
+        settings[Setting::insert_keeper_retry_max_backoff_ms],
+        query_status);
 
     /// Handles reconnects when needed
     auto get_zookeeper = [&] ()
@@ -514,15 +527,16 @@ Chunk SystemZooKeeperSource::generate()
         if (!zookeeper || zookeeper->expired())
         {
             zookeeper = ZooKeeperWithFaultInjection::createInstance(
-                settings.insert_keeper_fault_injection_probability,
-                settings.insert_keeper_fault_injection_seed,
+                settings[Setting::insert_keeper_fault_injection_probability],
+                settings[Setting::insert_keeper_fault_injection_seed],
                 context->getZooKeeper(),
-                "", nullptr);
+                "",
+                nullptr);
         }
         return zookeeper;
     };
 
-    const Int64 max_inflight_requests = std::max<Int64>(1, context->getSettingsRef().max_download_threads.value);
+    const Int64 max_inflight_requests = std::max<Int64>(1, context->getSettingsRef()[Setting::max_download_threads].value);
 
     struct ListTask
     {
@@ -573,7 +587,7 @@ Chunk SystemZooKeeperSource::generate()
         }
 
         zkutil::ZooKeeper::MultiTryGetChildrenResponse list_responses;
-        ZooKeeperRetriesControl("", nullptr, retries_seetings, query_status).retryLoop(
+        ZooKeeperRetriesControl("", nullptr, retries_seetings).retryLoop(
             [&]() { list_responses = get_zookeeper()->tryGetChildren(paths_to_list); });
 
         struct GetTask
@@ -606,7 +620,7 @@ Chunk SystemZooKeeperSource::generate()
                 // Remove nodes that do not match specified prefix
                 std::erase_if(nodes, [&task] (const String & node)
                 {
-                    return (task.path_part + '/' + node).substr(0, task.prefix.size()) != task.prefix;
+                    return !(task.path_part + '/' + node).starts_with(task.prefix);
                 });
             }
 
@@ -619,7 +633,7 @@ Chunk SystemZooKeeperSource::generate()
         }
 
         zkutil::ZooKeeper::MultiTryGetResponse get_responses;
-        ZooKeeperRetriesControl("", nullptr, retries_seetings, query_status).retryLoop(
+        ZooKeeperRetriesControl("", nullptr, retries_seetings).retryLoop(
             [&]() { get_responses = get_zookeeper()->tryGet(paths_to_get); });
 
         /// Add children count to query total rows. We can not get total rows in advance,
@@ -691,7 +705,7 @@ ReadFromSystemZooKeeper::ReadFromSystemZooKeeper(
     const Block & header,
     UInt64 max_block_size_)
     : SourceStepWithFilter(
-        {.header = header},
+        header,
         column_names_,
         query_info_,
         storage_snapshot_,
@@ -703,7 +717,7 @@ ReadFromSystemZooKeeper::ReadFromSystemZooKeeper(
 
 void ReadFromSystemZooKeeper::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    const auto & header = getOutputStream().header;
+    const auto & header = getOutputHeader();
     auto source = std::make_shared<SystemZooKeeperSource>(std::move(paths), header, max_block_size, context);
     source->setStorageLimits(storage_limits);
     processors.emplace_back(source);

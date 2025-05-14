@@ -7,7 +7,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
 #include <Interpreters/Context_fwd.h>
-#include <base/types.h>
 
 #if USE_MULTITARGET_CODE
 #include <immintrin.h>
@@ -250,7 +249,7 @@ private:
         {
             return executeWithLeftArgConst<ResultType, LeftType, RightType>(col_x, col_y, input_rows_count);
         }
-        else if (typeid_cast<const ColumnConst *>(col_y.get()))
+        if (typeid_cast<const ColumnConst *>(col_y.get()))
         {
             return executeWithLeftArgConst<ResultType, RightType, LeftType>(col_y, col_x, input_rows_count);
         }

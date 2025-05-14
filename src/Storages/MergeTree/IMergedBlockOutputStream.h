@@ -1,19 +1,24 @@
 #pragma once
 
-#include "Storages/MergeTree/IDataPartStorage.h"
-#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Common/Logger.h>
 
 namespace DB
 {
+
+struct MergeTreeSettings;
+using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
 class IMergedBlockOutputStream
 {
 public:
     IMergedBlockOutputStream(
-        const MergeTreeMutableDataPartPtr & data_part,
+        const MergeTreeSettingsPtr & storage_settings_,
+        MutableDataPartStoragePtr data_part_storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list,
         bool reset_columns_);
@@ -23,14 +28,24 @@ public:
     using WrittenOffsetColumns = std::set<std::string>;
 
     virtual void write(const Block & block) = 0;
+    virtual void cancel() noexcept = 0;
 
-    const MergeTreeIndexGranularity & getIndexGranularity() const
+    MergeTreeIndexGranularityPtr getIndexGranularity() const
     {
         return writer->getIndexGranularity();
     }
 
-protected:
+    PlainMarksByName releaseCachedMarks()
+    {
+        return writer ? writer->releaseCachedMarks() : PlainMarksByName{};
+    }
 
+    size_t getNumberOfOpenStreams() const
+    {
+        return writer->getNumberOfOpenStreams();
+    }
+
+protected:
     /// Remove all columns marked expired in data_part. Also, clears checksums
     /// and columns array. Return set of removed files names.
     NameSet removeEmptyColumnsFromPart(
@@ -39,11 +54,13 @@ protected:
         SerializationInfoByName & serialization_infos,
         MergeTreeData::DataPart::Checksums & checksums);
 
-    const MergeTreeData & storage;
+    MergeTreeSettingsPtr storage_settings;
+    LoggerPtr log;
+
     StorageMetadataPtr metadata_snapshot;
 
     MutableDataPartStoragePtr data_part_storage;
-    IMergeTreeDataPart::MergeTreeWriterPtr writer;
+    MergeTreeDataPartWriterPtr writer;
 
     bool reset_columns = false;
     SerializationInfoByName new_serialization_infos;

@@ -120,11 +120,9 @@ public:
                 this->merge(new_sketch);
                 return;
             }
-            else
-            {
-                DDSketchDenseLogarithmic new_sketch = changeMapping(other.mapping->getGamma());
-                copy(new_sketch);
-            }
+
+            DDSketchDenseLogarithmic new_sketch = changeMapping(other.mapping->getGamma());
+            copy(new_sketch);
         }
 
         // If the other sketch is empty, do nothing

@@ -40,8 +40,9 @@ create table Dates
     EventTime DateTime,
 ) ENGINE = Memory;
 
-Insert into Dates VALUES ('2015-10-12') , ('2016-10-12')
+Insert into Dates VALUES ('2015-10-12') , ('2016-10-12');
 Select '-- test summarize --' ;
+set allow_experimental_kusto_dialect=1;
 set dialect='kusto';
 Customers | summarize count(), min(Age), max(Age), avg(Age), sum(Age);
 Customers | summarize count(), min(Age), max(Age), avg(Age), sum(Age) by Occupation | order by Occupation;
@@ -54,7 +55,7 @@ Customers | summarize dcount(Education);
 Customers | summarize dcountif(Education, Occupation=='Professional');
 Customers | summarize count_ = count() by bin(Age, 10) | order by count_ asc;
 Customers | summarize job_count = count() by Occupation | where job_count > 0 | order by Occupation;
-Customers | summarize 'Edu Count'=count() by Education | sort by 'Edu Count' desc; -- { clientError 62 }
+Customers | summarize 'Edu Count'=count() by Education | sort by 'Edu Count' desc; -- { clientError SYNTAX_ERROR }
 
 print '-- make_list() --';
 Customers | summarize f_list = make_list(Education) by Occupation | sort by Occupation;

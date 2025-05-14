@@ -164,10 +164,10 @@ FROM test
 GROUP BY
     1 + greatest(x1, 1),
     x2
-select max(x1), x2 from test group by 1, 2; -- { serverError 43, 184 }
-select 1 + max(x1), x2 from test group by 1, 2; -- { serverError 43, 184 }
-select max(x1), x2 from test group by -2, -1; -- { serverError 43, 184 }
-select 1 + max(x1), x2 from test group by -2, -1; -- { serverError 43, 184 }
+select max(x1), x2 from test group by 1, 2; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT, 184 }
+select 1 + max(x1), x2 from test group by 1, 2; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT, 184 }
+select max(x1), x2 from test group by -2, -1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT, 184 }
+select 1 + max(x1), x2 from test group by -2, -1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT, 184 }
 explain syntax select x1 + x3, x3 from test group by 1, 2;
 SELECT
     x1 + x3,

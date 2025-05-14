@@ -63,6 +63,9 @@ const char USER_INTERSERVER_MARKER[] = " INTERSERVER SECRET ";
 /// Marker for SSH-keys-based authentication (passed as the user name)
 const char SSH_KEY_AUTHENTICAION_MARKER[] = " SSH KEY AUTHENTICATION ";
 
+/// Marker for JSON Web Token authentication
+const char JWT_AUTHENTICAION_MARKER[] = " JWT AUTHENTICATION ";
+
 };
 
 namespace Protocol
@@ -163,7 +166,10 @@ namespace Protocol
 
             SSHChallengeRequest = 11,       /// Request SSH signature challenge
             SSHChallengeResponse = 12,      /// Reply to SSH signature challenge
-            MAX = SSHChallengeResponse,
+
+            QueryPlan = 13,                 /// Query plan
+
+            MAX = QueryPlan,
         };
 
         inline const char * toString(UInt64 packet)

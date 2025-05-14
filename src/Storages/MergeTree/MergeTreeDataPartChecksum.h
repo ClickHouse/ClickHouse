@@ -1,11 +1,10 @@
 #pragma once
+
+#include <base/types.h>
+
 #include <map>
 #include <optional>
 #include <city.h>
-#include <base/types.h>
-#include <Disks/IDisk.h>
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
 
 class SipHash;
 
@@ -13,6 +12,8 @@ namespace DB
 {
 
 class IDataPartStorage;
+class ReadBuffer;
+class WriteBuffer;
 
 /// Checksum of one file.
 struct MergeTreeDataPartChecksum
@@ -64,9 +65,6 @@ struct MergeTreeDataPartChecksums
     void checkEqual(const MergeTreeDataPartChecksums & rhs, bool have_uncompressed, const String & part_name) const;
 
     static bool isBadChecksumsErrorCode(int code);
-
-    /// Checks that the directory contains all the needed files of the correct size. Does not check the checksum.
-    void checkSizes(const IDataPartStorage & storage) const;
 
     /// Returns false if the checksum is too old.
     bool read(ReadBuffer & in);

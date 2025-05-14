@@ -79,6 +79,22 @@ public:
         cells.erase(it);
     }
 
+    void remove(std::function<bool(const Key &, const MappedPtr &)> predicate) override
+    {
+        for (auto it = cells.begin(); it != cells.end();)
+        {
+            if (predicate(it->first, it->second.value))
+            {
+                Cell & cell = it->second;
+                current_size_in_bytes -= cell.size;
+                queue.erase(cell.queue_iterator);
+                it = cells.erase(it);
+            }
+            else
+                ++it;
+        }
+    }
+
     MappedPtr get(const Key & key) override
     {
         auto it = cells.find(key);
@@ -105,6 +121,11 @@ public:
         queue.splice(queue.end(), queue, cell.queue_iterator);
 
         return std::make_optional<KeyMapped>({it->first, cell.value});
+    }
+
+    bool contains(const Key & key) const override
+    {
+        return cells.count(key) != 0;
     }
 
     void set(const Key & key, const MappedPtr & mapped) override

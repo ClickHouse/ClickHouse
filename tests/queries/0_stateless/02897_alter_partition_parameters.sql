@@ -43,7 +43,7 @@ SELECT count() FROM test;
 INSERT INTO test VALUES(toDate('2023-10-09'));
 
 -- for some reason only tuples are allowed as non-string arguments
-ALTER TABLE test DROP PARTITION toMonday({partition:String}); --{clientError 62}
+ALTER TABLE test DROP PARTITION toMonday({partition:String}); --{clientError SYNTAX_ERROR}
 
 set param_partition_id = '20231009';
 

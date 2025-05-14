@@ -2,7 +2,9 @@
 #include <IO/WriteHelpers.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Processors/Formats/Impl/BinaryRowOutputFormat.h>
+#include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerWithNamesAndTypes.h>
 
@@ -35,9 +37,15 @@ void BinaryRowOutputFormat::writePrefix()
 
     if (with_types)
     {
-        for (size_t i = 0; i < columns; ++i)
+        if (format_settings.binary.encode_types_in_binary_format)
         {
-            writeStringBinary(header.safeGetByPosition(i).type->getName(), out);
+            for (size_t i = 0; i < columns; ++i)
+                encodeDataType(header.safeGetByPosition(i).type, out);
+        }
+        else
+        {
+            for (size_t i = 0; i < columns; ++i)
+                writeStringBinary(header.safeGetByPosition(i).type->getName(), out);
         }
     }
 }
@@ -63,6 +71,10 @@ void registerOutputFormatRowBinary(FormatFactory & factory)
     };
 
     registerWithNamesAndTypes("RowBinary", register_func);
+
+    factory.markOutputFormatNotTTYFriendly("RowBinary");
+    factory.markOutputFormatNotTTYFriendly("RowBinaryWithNames");
+    factory.markOutputFormatNotTTYFriendly("RowBinaryWithNamesAndTypes");
 }
 
 }

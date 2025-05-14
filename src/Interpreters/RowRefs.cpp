@@ -1,10 +1,13 @@
 #include <Interpreters/RowRefs.h>
 
-#include <Common/RadixSort.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
-#include <DataTypes/IDataType.h>
+#include <Common/assert_cast.h>
 #include <Core/Joins.h>
+#include <DataTypes/IDataType.h>
 #include <base/types.h>
+#include <Common/RadixSort.h>
 
 
 namespace DB
@@ -144,7 +147,7 @@ public:
         return low;
     }
 
-    RowRef findAsof(const IColumn & asof_column, size_t row_num) override
+    RowRef * findAsof(const IColumn & asof_column, size_t row_num) override
     {
         sort();
 
@@ -156,10 +159,10 @@ public:
         if (pos != entries.size())
         {
             size_t row_ref_index = entries[pos].row_ref_index;
-            return row_refs[row_ref_index];
+            return &row_refs[row_ref_index];
         }
 
-        return {nullptr, 0};
+        return nullptr;
     }
 
 private:
@@ -183,7 +186,7 @@ private:
         if (sorted.load(std::memory_order_relaxed))
             return;
 
-        if constexpr (std::is_arithmetic_v<TKey> && !std::is_floating_point_v<TKey>)
+        if constexpr (std::is_arithmetic_v<TKey> && !is_floating_point<TKey>)
         {
             if (likely(entries.size() > 256))
             {

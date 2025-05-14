@@ -14,6 +14,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Processors/Port.h>
 #include <Processors/Transforms/PasteJoinTransform.h>
 
 
@@ -58,6 +59,16 @@ static void prepareChunk(Chunk & chunk)
     chunk.setColumns(std::move(columns), num_rows);
 }
 
+IMergingAlgorithm::MergedStats PasteJoinAlgorithm::getMergedStats() const
+{
+    return
+    {
+        .bytes = stat.num_bytes[0] + stat.num_bytes[1],
+        .rows = stat.num_rows[0] + stat.num_rows[1],
+        .blocks = stat.num_blocks[0] + stat.num_blocks[1],
+    };
+}
+
 void PasteJoinAlgorithm::initialize(Inputs inputs)
 {
     if (inputs.size() != 2)
@@ -91,6 +102,7 @@ IMergingAlgorithm::Status PasteJoinAlgorithm::merge()
         return Status(0);
     if (last_used_row[1] >= chunks[1].getNumRows())
         return Status(1);
+
     /// We have unused rows from both inputs
     size_t result_num_rows = std::min(chunks[0].getNumRows() - last_used_row[0], chunks[1].getNumRows() - last_used_row[1]);
 
@@ -100,6 +112,7 @@ IMergingAlgorithm::Status PasteJoinAlgorithm::merge()
             result.addColumn(col->cut(last_used_row[source_num], result_num_rows));
     last_used_row[0] += result_num_rows;
     last_used_row[1] += result_num_rows;
+
     return Status(std::move(result));
 }
 

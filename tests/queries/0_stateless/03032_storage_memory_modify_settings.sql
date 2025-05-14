@@ -67,8 +67,8 @@ SELECT total_rows FROM system.tables WHERE name = 'memory' and database = curren
 SELECT 'TESTING INVALID SETTINGS';
 DROP TABLE IF EXISTS memory;
 CREATE TABLE memory (i UInt32) ENGINE = Memory;
-ALTER TABLE memory MODIFY SETTING min_rows_to_keep = 100;  -- { serverError 452 }
-ALTER TABLE memory MODIFY SETTING min_bytes_to_keep = 100; -- { serverError 452 }
+ALTER TABLE memory MODIFY SETTING min_rows_to_keep = 100;  -- { serverError SETTING_CONSTRAINT_VIOLATION }
+ALTER TABLE memory MODIFY SETTING min_bytes_to_keep = 100; -- { serverError SETTING_CONSTRAINT_VIOLATION }
 ALTER TABLE memory MODIFY SETTING max_rows_to_keep = 1000;
 ALTER TABLE memory MODIFY SETTING max_bytes_to_keep = 1000;
 

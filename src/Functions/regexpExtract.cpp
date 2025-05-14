@@ -54,8 +54,13 @@ public:
         if (arguments.size() == 3)
             args.emplace_back(FunctionArgumentDescriptor{"index", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "Integer"});
 
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArguments(*this, arguments, args);
 
+        return std::make_shared<DataTypeString>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeString>();
     }
 
@@ -250,10 +255,10 @@ private:
 REGISTER_FUNCTION(RegexpExtract)
 {
     factory.registerFunction<FunctionRegexpExtract>(
-        FunctionDocumentation{.description="Extracts the first string in haystack that matches the regexp pattern and corresponds to the regex group index."});
+        FunctionDocumentation{.description="Extracts the first string in haystack that matches the regexp pattern and corresponds to the regex group index.", .category = FunctionDocumentation::Category::StringSearch});
 
     /// For Spark compatibility.
-    factory.registerAlias("REGEXP_EXTRACT", "regexpExtract", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("REGEXP_EXTRACT", "regexpExtract", FunctionFactory::Case::Insensitive);
 }
 
 }

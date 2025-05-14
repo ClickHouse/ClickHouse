@@ -12,7 +12,7 @@ insert into ttl values (toDateTime('2100-10-10 00:00:00'), 4);
 
 set materialize_ttl_after_modify = 0;
 
-alter table ttl materialize ttl; -- { serverError 80 }
+alter table ttl materialize ttl; -- { serverError INCORRECT_QUERY }
 
 alter table ttl modify ttl d + interval 1 day;
 -- TTL should not be applied

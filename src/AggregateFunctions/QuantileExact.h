@@ -146,7 +146,7 @@ struct QuantileExactExclusive : public QuantileExact<Value>
 
             if (n >= array.size())
                 return static_cast<Float64>(*std::max_element(array.begin(), array.end()));
-            else if (n < 1)
+            if (n < 1)
                 return static_cast<Float64>(*std::min_element(array.begin(), array.end()));
 
             ::nth_element(array.begin(), array.begin() + n - 1, array.end());
@@ -211,7 +211,7 @@ struct QuantileExactInclusive : public QuantileExact<Value>
 
             if (n >= array.size())
                 return static_cast<Float64>(*std::max_element(array.begin(), array.end()));
-            else if (n < 1)
+            if (n < 1)
                 return static_cast<Float64>(*std::min_element(array.begin(), array.end()));
             ::nth_element(array.begin(), array.begin() + n - 1, array.end());
             auto * nth_elem = std::min_element(array.begin() + n, array.end());

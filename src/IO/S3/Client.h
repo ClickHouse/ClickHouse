@@ -40,11 +40,6 @@ struct ServerSideEncryptionKMSConfig
 #include <aws/core/client/AWSErrorMarshaller.h>
 #include <aws/core/client/RetryStrategy.h>
 
-namespace MockS3
-{
-    struct Client;
-}
-
 namespace DB::S3
 {
 
@@ -54,10 +49,7 @@ struct ClientCache
 {
     ClientCache() = default;
 
-    ClientCache(const ClientCache & other)
-        : region_for_bucket_cache(other.region_for_bucket_cache)
-        , uri_for_bucket_cache(other.uri_for_bucket_cache)
-    {}
+    ClientCache(const ClientCache & other);
 
     ClientCache(ClientCache && other) = delete;
 
@@ -66,11 +58,11 @@ struct ClientCache
 
     void clearCache();
 
-    std::mutex region_cache_mutex;
-    std::unordered_map<std::string, std::string> region_for_bucket_cache;
+    mutable std::mutex region_cache_mutex;
+    std::unordered_map<std::string, std::string> region_for_bucket_cache TSA_GUARDED_BY(region_cache_mutex);
 
-    std::mutex uri_cache_mutex;
-    std::unordered_map<std::string, URI> uri_for_bucket_cache;
+    mutable std::mutex uri_cache_mutex;
+    std::unordered_map<std::string, URI> uri_for_bucket_cache TSA_GUARDED_BY(uri_cache_mutex);
 };
 
 class ClientCacheRegistry
@@ -89,7 +81,7 @@ private:
     ClientCacheRegistry() = default;
 
     std::mutex clients_mutex;
-    std::unordered_map<ClientCache *, std::weak_ptr<ClientCache>> client_caches;
+    std::unordered_map<ClientCache *, std::weak_ptr<ClientCache>> client_caches TSA_GUARDED_BY(clients_mutex);
 };
 
 bool isS3ExpressEndpoint(const std::string & endpoint);
@@ -162,7 +154,7 @@ public:
     class RetryStrategy : public Aws::Client::RetryStrategy
     {
     public:
-        explicit RetryStrategy(uint32_t maxRetries_ = 10, uint32_t scaleFactor_ = 25, uint32_t maxDelayMs_ = 90000);
+        explicit RetryStrategy(uint32_t maxRetries_ = 10, uint32_t scaleFactor_ = 25, uint32_t maxDelayMs_ = 5000);
 
         /// NOLINTNEXTLINE(google-runtime-int)
         bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
@@ -172,6 +164,16 @@ public:
 
         /// NOLINTNEXTLINE(google-runtime-int)
         long GetMaxAttempts() const override;
+
+        /// Sometimes [1] GCS may suggest to use Rewrite over CopyObject, i.e.:
+        ///
+        ///     AWSError 'InternalError': Copy spanning locations and/or storage classes could not complete within 30 seconds. Please use the Rewrite method in the JSON API (https://cloud.google.com/storage/docs/json_api/v1/objects/rewrite) instead.
+        ///
+        /// Note, that GCS may return other errors (like EntityTooLarge), but
+        /// those are not retriable by default S3 RetryStrategy.
+        ///
+        ///   [1]: https://github.com/ClickHouse/ClickHouse/issues/59660
+        static bool useGCSRewrite(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error);
 
     private:
         uint32_t maxRetries;
@@ -219,9 +221,13 @@ public:
         return client_configuration.for_disk_s3;
     }
 
-private:
-    friend struct ::MockS3::Client;
+    ThrottlerPtr getPutRequestThrottler() const { return client_configuration.put_request_throttler; }
+    ThrottlerPtr getGetRequestThrottler() const { return client_configuration.get_request_throttler; }
 
+    std::string getRegionForBucket(const std::string & bucket, bool force_detect = false) const;
+
+protected:
+    // visible for testing
     Client(size_t max_redirects_,
            ServerSideEncryptionKMSConfig sse_kms_config_,
            const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider_,
@@ -229,6 +235,7 @@ private:
            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
            const ClientSettings & client_settings_);
 
+private:
     Client(
         const Client & other, const PocoHTTPClientConfiguration & client_configuration);
 
@@ -264,14 +271,13 @@ private:
     std::optional<S3::URI> getURIFromError(const Aws::S3::S3Error & error) const;
     std::optional<Aws::S3::S3Error> updateURIForBucketForHead(const std::string & bucket) const;
 
-    std::string getRegionForBucket(const std::string & bucket, bool force_detect = false) const;
     std::optional<S3::URI> getURIForBucket(const std::string & bucket) const;
 
     bool checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const;
     void insertRegionOverride(const std::string & bucket, const std::string & region) const;
 
     template <typename RequestResult>
-    RequestResult enrichErrorMessage(RequestResult && outcome) const;
+    RequestResult processRequestResult(RequestResult && outcome) const;
 
     String initial_endpoint;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;

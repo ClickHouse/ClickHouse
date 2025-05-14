@@ -21,6 +21,8 @@
 #include <atomic>
 #include <cstddef>
 #include <map>
+#include <memory>
+#include <unordered_map>
 #include <vector>
 
 #include "Poco/Channel.h"

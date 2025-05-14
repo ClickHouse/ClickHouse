@@ -3,6 +3,7 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
+#include <Common/UniqueLock.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <chrono>
@@ -42,7 +43,7 @@ bool BackgroundSchedulePoolTaskInfo::scheduleAfter(size_t milliseconds, bool ove
     if (!delayed && only_if_scheduled)
         return false;
 
-    pool.scheduleDelayedTask(shared_from_this(), milliseconds, lock);
+    pool.scheduleDelayedTask(*this, milliseconds, lock);
     return true;
 }
 
@@ -58,7 +59,7 @@ void BackgroundSchedulePoolTaskInfo::deactivate()
     scheduled = false;
 
     if (delayed)
-        pool.cancelDelayedTask(shared_from_this(), lock_schedule);
+        pool.cancelDelayedTask(*this, lock_schedule);
 }
 
 void BackgroundSchedulePoolTaskInfo::activate()
@@ -128,7 +129,7 @@ void BackgroundSchedulePoolTaskInfo::execute()
         /// will have their chance to execute
 
         if (scheduled)
-            pool.scheduleTask(shared_from_this());
+            pool.scheduleTask(*this);
     }
 }
 
@@ -137,13 +138,13 @@ void BackgroundSchedulePoolTaskInfo::scheduleImpl(std::lock_guard<std::mutex> & 
     scheduled = true;
 
     if (delayed)
-        pool.cancelDelayedTask(shared_from_this(), schedule_mutex_lock);
+        pool.cancelDelayedTask(*this, schedule_mutex_lock);
 
     /// If the task is not executing at the moment, enqueue it for immediate execution.
     /// But if it is currently executing, do nothing because it will be enqueued
     /// at the end of the execute() method.
     if (!executing)
-        pool.scheduleTask(shared_from_this());
+        pool.scheduleTask(*this);
 }
 
 Coordination::WatchCallback BackgroundSchedulePoolTaskInfo::getWatchCallback()
@@ -237,40 +238,41 @@ BackgroundSchedulePool::TaskHolder BackgroundSchedulePool::createTask(const std:
     return TaskHolder(std::make_shared<TaskInfo>(*this, name, function));
 }
 
-void BackgroundSchedulePool::scheduleTask(TaskInfoPtr task_info)
+void BackgroundSchedulePool::scheduleTask(TaskInfo & task_info)
 {
     {
         std::lock_guard tasks_lock(tasks_mutex);
-        tasks.push_back(std::move(task_info));
+        tasks.emplace_back(task_info.shared_from_this());
     }
 
     tasks_cond_var.notify_one();
 }
 
-void BackgroundSchedulePool::scheduleDelayedTask(const TaskInfoPtr & task, size_t ms, std::lock_guard<std::mutex> & /* task_schedule_mutex_lock */)
+void BackgroundSchedulePool::scheduleDelayedTask(TaskInfo & task, size_t ms, std::lock_guard<std::mutex> & /* task_schedule_mutex_lock */) TSA_REQUIRES(task.schedule_mutex)
 {
     Poco::Timestamp current_time;
 
     {
         std::lock_guard lock(delayed_tasks_mutex);
 
-        if (task->delayed)
-            delayed_tasks.erase(task->iterator);
+        if (task.delayed)
+            delayed_tasks.erase(task.iterator);
 
-        task->iterator = delayed_tasks.emplace(current_time + (ms * 1000), task);
-        task->delayed = true;
+        task.iterator = delayed_tasks.emplace(current_time + (ms * 1000), task.shared_from_this());
+        task.delayed = true;
     }
 
     delayed_tasks_cond_var.notify_all();
 }
 
 
-void BackgroundSchedulePool::cancelDelayedTask(const TaskInfoPtr & task, std::lock_guard<std::mutex> & /* task_schedule_mutex_lock */)
+void BackgroundSchedulePool::cancelDelayedTask(TaskInfo & task, std::lock_guard<std::mutex> & /* task_schedule_mutex_lock */) TSA_REQUIRES(task.schedule_mutex)
 {
     {
         std::lock_guard lock(delayed_tasks_mutex);
-        delayed_tasks.erase(task->iterator);
-        task->delayed = false;
+        delayed_tasks.erase(task.iterator);
+        task.delayed = false;
+        task.iterator = delayed_tasks.end();
     }
 
     delayed_tasks_cond_var.notify_all();
@@ -286,9 +288,11 @@ void BackgroundSchedulePool::threadFunction()
         TaskInfoPtr task;
 
         {
-            std::unique_lock<std::mutex> tasks_lock(tasks_mutex);
+            UniqueLock tasks_lock(tasks_mutex);
 
-            tasks_cond_var.wait(tasks_lock, [&]()
+            /// TSA_NO_THREAD_SAFETY_ANALYSIS because it doesn't understand within the lambda that the
+            /// tasks_lock has already locked tasks_mutex.
+            tasks_cond_var.wait(tasks_lock.getUnderlyingLock(), [&]() TSA_NO_THREAD_SAFETY_ANALYSIS
             {
                 return shutdown || !tasks.empty();
             });
@@ -316,7 +320,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
         bool found = false;
 
         {
-            std::unique_lock lock(delayed_tasks_mutex);
+            UniqueLock lock(delayed_tasks_mutex);
 
             while (!shutdown)
             {
@@ -331,7 +335,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
 
                 if (!task)
                 {
-                    delayed_tasks_cond_var.wait(lock);
+                    delayed_tasks_cond_var.wait(lock.getUnderlyingLock());
                     continue;
                 }
 
@@ -339,15 +343,13 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
 
                 if (min_time > current_time)
                 {
-                    delayed_tasks_cond_var.wait_for(lock, std::chrono::microseconds(min_time - current_time));
+                    delayed_tasks_cond_var.wait_for(lock.getUnderlyingLock(), std::chrono::microseconds(min_time - current_time));
                     continue;
                 }
-                else
-                {
-                    /// We have a task ready for execution
-                    found = true;
-                    break;
-                }
+
+                /// We have a task ready for execution
+                found = true;
+                break;
             }
         }
 

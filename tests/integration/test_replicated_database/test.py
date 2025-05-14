@@ -1,13 +1,16 @@
+import logging
 import os
-import shutil
-import time
 import re
-import pytest
+import shutil
 import threading
+import time
+
+import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry, assert_logs_contain
 from helpers.network import PartitionManager
+from helpers.test_tools import assert_eq_with_retry, assert_logs_contain
+from helpers.database_disk import get_database_disk_name, replace_text_in_metadata
 
 test_recover_staled_replica_run = 1
 
@@ -20,11 +23,13 @@ main_node = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
     macros={"shard": 1, "replica": 1},
+    # Disable `with_remote_database_disk` as in `test_startup_without_zk`, Keeper rejects `main_node` connections before restarting
+    with_remote_database_disk=False,
 )
 dummy_node = cluster.add_instance(
     "dummy_node",
     main_configs=["configs/config.xml"],
-    user_configs=["configs/settings.xml"],
+    user_configs=["configs/settings2.xml"],
     with_zookeeper=True,
     stay_alive=True,
     macros={"shard": 1, "replica": 2},
@@ -59,6 +64,14 @@ all_nodes = [
     snapshot_recovering_node,
 ]
 
+bad_settings_node = cluster.add_instance(
+    "bad_settings_node",
+    main_configs=["configs/config2.xml"],
+    user_configs=["configs/inconsistent_settings.xml"],
+    with_zookeeper=True,
+    macros={"shard": 1, "replica": 4},
+)
+
 uuid_regex = re.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 
@@ -77,6 +90,45 @@ def started_cluster():
 
     finally:
         cluster.shutdown()
+
+
+def test_flatten_nested(started_cluster):
+    main_node.query(
+        "CREATE DATABASE flatten_nested ENGINE = Replicated('/test/flatten_nested', 'shard1', 'replica' || '1');"
+    )
+    dummy_node.query(
+        "CREATE DATABASE flatten_nested ENGINE = Replicated('/test/flatten_nested', 'shard1', 'replica2');"
+    )
+
+    main_node.query(
+        "CREATE TABLE flatten_nested.replicated_table (d Date, k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree ORDER BY k PARTITION BY toYYYYMM(d);"
+    )
+
+    main_node.query(
+        "CREATE MATERIALIZED VIEW flatten_nested.mv ENGINE=ReplicatedMergeTree ORDER BY tuple() AS select d, cast([(k, toString(i32))] as Nested(a UInt64, b String)) from flatten_nested.replicated_table"
+    )
+
+    main_node.query(
+        "CREATE TABLE flatten_nested.no_flatten (n Nested(a UInt64, b String)) ENGINE=ReplicatedMergeTree ORDER BY tuple();",
+        settings={"flatten_nested": 0},
+    )
+
+    snapshot_recovering_node.query(
+        "CREATE DATABASE flatten_nested ENGINE = Replicated('/test/flatten_nested', 'shard1', 'replica3');"
+    )
+    snapshot_recovering_node.query(
+        "SYSTEM SYNC DATABASE REPLICA flatten_nested"
+    )
+
+    for node in [dummy_node, snapshot_recovering_node]:
+        for table in ["replicated_table", "mv", "no_flatten"]:
+            assert main_node.query(
+                f"show create flatten_nested.{table}"
+            ) == node.query(f"show create flatten_nested.{table}")
+
+    main_node.query("DROP DATABASE flatten_nested SYNC")
+    dummy_node.query("DROP DATABASE flatten_nested SYNC")
+    snapshot_recovering_node.query("DROP DATABASE flatten_nested SYNC")
 
 
 def test_create_replicated_table(started_cluster):
@@ -306,8 +358,12 @@ def test_alter_attach(started_cluster, attachable_part, engine):
         main_node.query(f"SELECT CounterID FROM {database}.alter_attach_test")
         == "123\n"
     )
+
     # On the other node, data is replicated only if using a Replicated table engine
     if engine == "ReplicatedMergeTree":
+        dummy_node.query(
+            f"SYSTEM SYNC REPLICA {database}.alter_attach_test LIGHTWEIGHT"
+        )
         assert (
             dummy_node.query(f"SELECT CounterID FROM {database}.alter_attach_test")
             == "123\n"
@@ -373,6 +429,8 @@ def test_alter_detach_part(started_cluster, engine):
     main_node.query(f"INSERT INTO {database}.alter_detach VALUES (123)")
     if engine == "MergeTree":
         dummy_node.query(f"INSERT INTO {database}.alter_detach VALUES (456)")
+    else:
+        main_node.query(f"SYSTEM SYNC REPLICA {database}.alter_detach PULL")
     main_node.query(f"ALTER TABLE {database}.alter_detach DETACH PART '{part_name}'")
     detached_parts_query = f"SELECT name FROM system.detached_parts WHERE database='{database}' AND table='alter_detach'"
     assert main_node.query(detached_parts_query) == f"{part_name}\n"
@@ -705,11 +763,11 @@ def create_some_tables(db):
         settings=settings,
     )
     main_node.query(
-        f"CREATE MATERIALIZED VIEW {db}.mv1 (n int) ENGINE=ReplicatedMergeTree order by n AS SELECT n FROM recover.rmt1",
+        f"CREATE MATERIALIZED VIEW {db}.mv1 (n int) ENGINE=ReplicatedMergeTree order by n AS SELECT n FROM {db}.rmt1",
         settings=settings,
     )
     dummy_node.query(
-        f"CREATE MATERIALIZED VIEW {db}.mv2 (n int) ENGINE=ReplicatedMergeTree order by n  AS SELECT n FROM recover.rmt2",
+        f"CREATE MATERIALIZED VIEW {db}.mv2 (n int) ENGINE=ReplicatedMergeTree order by n  AS SELECT n FROM {db}.rmt2",
         settings=settings,
     )
     main_node.query(
@@ -877,6 +935,11 @@ def test_recover_staled_replica(started_cluster):
         )
     for table in ["m1", "mt1"]:
         assert dummy_node.query(f"SELECT count() FROM recover.{table}") == "0\n"
+
+    logging.debug("Result: %s", dummy_node.query("SHOW DATABASES"))
+    logging.debug("Result: %s", dummy_node.query("SHOW TABLES FROM recover_broken_tables"))
+    logging.debug("Result: %s", dummy_node.query("SHOW TABLES FROM recover_broken_replicated_tables"))
+
     global test_recover_staled_replica_run
     assert (
         dummy_node.query(
@@ -891,10 +954,6 @@ def test_recover_staled_replica(started_cluster):
         == f"{test_recover_staled_replica_run}\n"
     )
     test_recover_staled_replica_run += 1
-
-    print(dummy_node.query("SHOW DATABASES"))
-    print(dummy_node.query("SHOW TABLES FROM recover_broken_tables"))
-    print(dummy_node.query("SHOW TABLES FROM recover_broken_replicated_tables"))
 
     table = dummy_node.query(
         "SHOW TABLES FROM recover_broken_tables LIKE 'mt1_41_%' LIMIT 1"
@@ -924,8 +983,8 @@ def test_recover_staled_replica(started_cluster):
 
 
 def test_recover_staled_replica_many_mvs(started_cluster):
-    main_node.query("DROP DATABASE IF EXISTS recover_mvs")
-    dummy_node.query("DROP DATABASE IF EXISTS recover_mvs")
+    main_node.query("DROP DATABASE IF EXISTS recover_mvs SYNC")
+    dummy_node.query("DROP DATABASE IF EXISTS recover_mvs SYNC")
 
     main_node.query_with_retry(
         "CREATE DATABASE IF NOT EXISTS recover_mvs ENGINE = Replicated('/clickhouse/databases/recover_mvs', 'shard1', 'replica1');"
@@ -1066,8 +1125,8 @@ def test_recover_staled_replica_many_mvs(started_cluster):
     query = "SELECT name FROM system.tables WHERE database='recover_mvs' ORDER BY name"
     assert main_node.query(query) == dummy_node.query(query)
 
-    main_node.query("DROP DATABASE IF EXISTS recover_mvs")
-    dummy_node.query("DROP DATABASE IF EXISTS recover_mvs")
+    main_node.query("DROP DATABASE IF EXISTS recover_mvs SYNC")
+    dummy_node.query("DROP DATABASE IF EXISTS recover_mvs SYNC")
 
 
 def test_startup_without_zk(started_cluster):
@@ -1086,8 +1145,10 @@ def test_startup_without_zk(started_cluster):
 
     main_node.query("INSERT INTO startup.rmt VALUES (42)")
     with PartitionManager() as pm:
-        pm.drop_instance_zk_connections(main_node)
-        main_node.restart_clickhouse(stop_start_wait_sec=60)
+        pm.drop_instance_zk_connections(
+            main_node, action="REJECT --reject-with tcp-reset"
+        )
+        main_node.restart_clickhouse(stop_start_wait_sec=120)
         assert main_node.query("SELECT (*,).1 FROM startup.rmt") == "42\n"
 
     # we need to wait until the table is not readonly
@@ -1182,6 +1243,11 @@ def test_sync_replica(started_cluster):
 
 
 def test_force_synchronous_settings(started_cluster):
+    main_node.query("DROP DATABASE IF EXISTS test_force_synchronous_settings SYNC")
+    dummy_node.query("DROP DATABASE IF EXISTS test_force_synchronous_settings SYNC")
+    snapshotting_node.query(
+        "DROP DATABASE IF EXISTS test_force_synchronous_settings SYNC"
+    )
     main_node.query(
         "CREATE DATABASE test_force_synchronous_settings ENGINE = Replicated('/clickhouse/databases/test2', 'shard1', 'replica1');"
     )
@@ -1244,63 +1310,17 @@ def test_force_synchronous_settings(started_cluster):
     )
     select_thread.join()
 
-
-def test_recover_digest_mismatch(started_cluster):
-    main_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
-    dummy_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
-
-    main_node.query(
-        "CREATE DATABASE recover_digest_mismatch ENGINE = Replicated('/clickhouse/databases/recover_digest_mismatch', 'shard1', 'replica1');"
+    main_node.query("DROP DATABASE test_force_synchronous_settings SYNC")
+    dummy_node.query("DROP DATABASE test_force_synchronous_settings SYNC")
+    snapshotting_node.query(
+        "DROP DATABASE test_force_synchronous_settings SYNC"
     )
-    dummy_node.query(
-        "CREATE DATABASE recover_digest_mismatch ENGINE = Replicated('/clickhouse/databases/recover_digest_mismatch', 'shard1', 'replica2');"
-    )
-
-    create_some_tables("recover_digest_mismatch")
-
-    main_node.query("SYSTEM SYNC DATABASE REPLICA recover_digest_mismatch")
-    dummy_node.query("SYSTEM SYNC DATABASE REPLICA recover_digest_mismatch")
-
-    ways_to_corrupt_metadata = [
-        "mv /var/lib/clickhouse/metadata/recover_digest_mismatch/t1.sql /var/lib/clickhouse/metadata/recover_digest_mismatch/m1.sql",
-        "sed --follow-symlinks -i 's/Int32/String/' /var/lib/clickhouse/metadata/recover_digest_mismatch/mv1.sql",
-        "rm -f /var/lib/clickhouse/metadata/recover_digest_mismatch/d1.sql",
-        "rm -rf /var/lib/clickhouse/metadata/recover_digest_mismatch/",  # Will trigger "Directory already exists"
-        "rm -rf /var/lib/clickhouse/store",
-    ]
-
-    for command in ways_to_corrupt_metadata:
-        print(f"Corrupting data using `{command}`")
-        need_remove_is_active_node = "rm -rf" in command
-        dummy_node.stop_clickhouse(kill=not need_remove_is_active_node)
-        dummy_node.exec_in_container(["bash", "-c", command])
-
-        query = (
-            "SELECT name, uuid, create_table_query FROM system.tables WHERE database='recover_digest_mismatch' AND name NOT LIKE '.inner_id.%' "
-            "ORDER BY name SETTINGS show_table_uuid_in_table_create_query_if_not_nil=1"
-        )
-        expected = main_node.query(query)
-
-        if need_remove_is_active_node:
-            # NOTE Otherwise it fails to recreate ReplicatedMergeTree table due to "Replica already exists"
-            main_node.query(
-                "SYSTEM DROP REPLICA '2' FROM DATABASE recover_digest_mismatch"
-            )
-
-        # There is a race condition between deleting active node and creating it on server startup
-        # So we start a server only after we deleted all table replicas from the Keeper
-        dummy_node.start_clickhouse()
-        assert_eq_with_retry(dummy_node, query, expected)
-
-    main_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
-    dummy_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
-
-    print("Everything Okay")
 
 
 def test_replicated_table_structure_alter(started_cluster):
-    main_node.query("DROP DATABASE IF EXISTS table_structure")
-    dummy_node.query("DROP DATABASE IF EXISTS table_structure")
+    main_node.query("DROP DATABASE IF EXISTS table_structure SYNC")
+    dummy_node.query("DROP DATABASE IF EXISTS table_structure SYNC")
+    competing_node.query("DROP DATABASE IF EXISTS table_structure SYNC")
 
     main_node.query(
         "CREATE DATABASE table_structure ENGINE = Replicated('/clickhouse/databases/table_structure', 'shard1', 'replica1');"
@@ -1332,8 +1352,24 @@ def test_replicated_table_structure_alter(started_cluster):
     )
     main_node.query("INSERT INTO table_structure.rmt VALUES (1, 2, 3)")
 
-    command = "rm -f /var/lib/clickhouse/metadata/table_structure/mem.sql"
-    competing_node.exec_in_container(["bash", "-c", command])
+    metadata_path = competing_node.query(
+        f"SELECT metadata_path FROM system.tables WHERE database='table_structure' AND name='mem'"
+    ).strip()
+    db_disk_name = get_database_disk_name(competing_node)
+    competing_node.exec_in_container(
+        [
+            "/usr/bin/clickhouse",
+            "disks",
+            "-C",
+            "/etc/clickhouse-server/config.xml",
+            "--disk",
+            f"{db_disk_name}",
+            "--save-logs",
+            "--query",
+            f"remove {metadata_path}",
+        ],
+        user="root",
+    )
     competing_node.restart_clickhouse(kill=True)
 
     dummy_node.query("ATTACH DATABASE table_structure")
@@ -1402,8 +1438,8 @@ def test_modify_comment(started_cluster):
 
 
 def test_table_metadata_corruption(started_cluster):
-    main_node.query("DROP DATABASE IF EXISTS table_metadata_corruption")
-    dummy_node.query("DROP DATABASE IF EXISTS table_metadata_corruption")
+    main_node.query("DROP DATABASE IF EXISTS table_metadata_corruption SYNC")
+    dummy_node.query("DROP DATABASE IF EXISTS table_metadata_corruption SYNC")
 
     main_node.query(
         "CREATE DATABASE table_metadata_corruption ENGINE = Replicated('/clickhouse/databases/table_metadata_corruption', 'shard1', 'replica1');"
@@ -1417,13 +1453,16 @@ def test_table_metadata_corruption(started_cluster):
     main_node.query("SYSTEM SYNC DATABASE REPLICA table_metadata_corruption")
     dummy_node.query("SYSTEM SYNC DATABASE REPLICA table_metadata_corruption")
 
+    metadata_path = dummy_node.query(
+        f"SELECT metadata_path FROM system.tables WHERE database='table_metadata_corruption' AND name='rmt1'"
+    ).strip()
     # Server should handle this by throwing an exception during table loading, which should lead to server shutdown
-    corrupt = "sed --follow-symlinks -i 's/ReplicatedMergeTree/CorruptedMergeTree/' /var/lib/clickhouse/metadata/table_metadata_corruption/rmt1.sql"
 
-    print(f"Corrupting metadata using `{corrupt}`")
+    print(f"Corrupting metadata {metadata_path}")
     dummy_node.stop_clickhouse(kill=True)
-    dummy_node.exec_in_container(["bash", "-c", corrupt])
-
+    replace_text_in_metadata(
+        dummy_node, metadata_path, "ReplicatedMergeTree", "CorruptedMergeTree"
+    )
     query = (
         "SELECT name, uuid, create_table_query FROM system.tables WHERE database='table_metadata_corruption' AND name NOT LIKE '.inner_id.%' "
         "ORDER BY name SETTINGS show_table_uuid_in_table_create_query_if_not_nil=1"
@@ -1432,14 +1471,125 @@ def test_table_metadata_corruption(started_cluster):
 
     # We expect clickhouse server to shutdown without LOGICAL_ERRORs or deadlocks
     dummy_node.start_clickhouse(expected_to_fail=True)
+
     assert not dummy_node.contains_in_log("LOGICAL_ERROR")
 
-    fix_corrupt = "sed --follow-symlinks -i 's/CorruptedMergeTree/ReplicatedMergeTree/' /var/lib/clickhouse/metadata/table_metadata_corruption/rmt1.sql"
-    print(f"Fix corrupted metadata using `{fix_corrupt}`")
-    dummy_node.exec_in_container(["bash", "-c", fix_corrupt])
+    print(f"Fix corrupted metadata")
+    replace_text_in_metadata(
+        dummy_node, metadata_path, "CorruptedMergeTree", "ReplicatedMergeTree"
+    )
 
     dummy_node.start_clickhouse()
     assert_eq_with_retry(dummy_node, query, expected)
 
-    main_node.query("DROP DATABASE IF EXISTS table_metadata_corruption")
-    dummy_node.query("DROP DATABASE IF EXISTS table_metadata_corruption")
+    main_node.query("DROP DATABASE IF EXISTS table_metadata_corruption SYNC")
+    dummy_node.query("DROP DATABASE IF EXISTS table_metadata_corruption SYNC")
+
+
+def test_auto_recovery(started_cluster):
+    dummy_node.query("DROP DATABASE IF EXISTS auto_recovery SYNC")
+    bad_settings_node.query(
+        "DROP DATABASE IF EXISTS auto_recovery",
+        settings={
+            "implicit_transaction": 0,
+        },
+    )
+
+    dummy_node.query(
+        "CREATE DATABASE auto_recovery ENGINE = Replicated('/clickhouse/databases/auto_recovery', 'shard1', 'replica1');"
+    )
+    bad_settings_node.query(
+        "CREATE DATABASE auto_recovery ENGINE = Replicated('/clickhouse/databases/auto_recovery', 'shard1', 'replica2') SETTINGS max_retries_before_automatic_recovery=3;"
+    )
+
+    dummy_node.query(
+        "CREATE TABLE auto_recovery.t1 (n int) ENGINE=ReplicatedMergeTree ORDER BY n"
+    )
+    dummy_node.query("INSERT INTO auto_recovery.t1 SELECT 42")
+    # dummy_node has <throw_on_unsupported_query_inside_transaction>0</throw_on_unsupported_query_inside_transaction> (default is 1),
+    # so it will consider that the setting is changed, and will write it to the DDL entry
+    # bad_settings_node has implicit_transaction=1, so it will fail and recover from snapshot
+    dummy_node.query(
+        "CREATE TABLE auto_recovery.t2 (n int) ENGINE=ReplicatedMergeTree ORDER BY tuple()",
+        settings={
+            "throw_on_unsupported_query_inside_transaction": 1,
+            "distributed_ddl_task_timeout": 0,
+        },
+    )
+    dummy_node.query("INSERT INTO auto_recovery.t2 SELECT 137")
+    dummy_node.query(
+        "EXCHANGE TABLES auto_recovery.t1 AND auto_recovery.t2",
+        settings={"distributed_ddl_task_timeout": 0},
+    )
+
+    bad_settings_node.query(
+        "SYSTEM SYNC DATABASE REPLICA auto_recovery", settings={"receive_timeout": 60}
+    )
+    assert bad_settings_node.contains_in_log(
+        "Unexpected error (3 times in a row), will try to restart main thread"
+    )
+    assert bad_settings_node.contains_in_log("Cannot begin an implicit transaction")
+    bad_settings_node.query("SYSTEM SYNC REPLICA auto_recovery.t1")
+    bad_settings_node.query("SYSTEM SYNC REPLICA auto_recovery.t2")
+
+    assert "42\n" == dummy_node.query("SELECT * FROM auto_recovery.t2")
+    assert "137\n" == dummy_node.query("SELECT * FROM auto_recovery.t1")
+
+    assert "42\n" == bad_settings_node.query("SELECT * FROM auto_recovery.t2")
+    assert "137\n" == bad_settings_node.query("SELECT * FROM auto_recovery.t1")
+
+
+def test_all_groups_cluster(started_cluster):
+    dummy_node.query("DROP DATABASE IF EXISTS db_cluster SYNC")
+    bad_settings_node.query("DROP DATABASE IF EXISTS db_cluster SYNC")
+    dummy_node.query(
+        "CREATE DATABASE db_cluster ENGINE = Replicated('/clickhouse/databases/all_groups_cluster', 'shard1', 'replica1');"
+    )
+    bad_settings_node.query(
+        "CREATE DATABASE db_cluster ENGINE = Replicated('/clickhouse/databases/all_groups_cluster', 'shard1', 'replica2');"
+    )
+
+    assert "dummy_node\n" == dummy_node.query(
+        "select host_name from system.clusters where name='db_cluster' order by host_name"
+    )
+    assert "bad_settings_node\n" == bad_settings_node.query(
+        "select host_name from system.clusters where name='db_cluster' order by host_name"
+    )
+    assert "bad_settings_node\ndummy_node\n" == bad_settings_node.query(
+        "select host_name from system.clusters where name='all_groups.db_cluster' order by host_name"
+    )
+
+
+def test_detach_attach_table(started_cluster):
+    main_node.query("DROP DATABASE IF EXISTS detach_attach_db SYNC")
+    main_node.query(
+        "CREATE DATABASE detach_attach_db ENGINE = Replicated('/clickhouse/databases/detach_attach_db');"
+    )
+    main_node.query(
+        "CREATE TABLE detach_attach_db.detach_attach_table (k UInt64) ENGINE=ReplicatedMergeTree ORDER BY k;"
+    )
+    main_node.query("INSERT INTO detach_attach_db.detach_attach_table VALUES (1);")
+    main_node.query("DETACH TABLE detach_attach_db.detach_attach_table PERMANENTLY;")
+    main_node.query("ATTACH TABLE detach_attach_db.detach_attach_table;")
+    assert (
+        main_node.query("SELECT * FROM detach_attach_db.detach_attach_table;") == "1\n"
+    )
+
+
+def test_alter_rename(started_cluster):
+    settings = {
+        "distributed_ddl_output_mode": "none",
+        "alter_sync": 0,
+    }
+    res = main_node.query(
+        """
+        DROP DATABASE IF EXISTS bug SYNC;
+        CREATE DATABASE bug ENGINE = Replicated('/clickhouse/databases/bug');
+        CREATE TABLE bug.table (`date` DateTime, `id` String) ENGINE = ReplicatedReplacingMergeTree(date) ORDER BY id SETTINGS deduplicate_merge_projection_mode = 'drop';
+        ALTER TABLE bug.table ADD PROJECTION max_date (SELECT max(date));
+        RENAME TABLE bug.table TO bug.table2;
+        SELECT value from system.zookeeper WHERE path = '/clickhouse/databases/bug/metadata';
+        """,
+        settings=settings,
+    )
+    assert "PROJECTION" in res

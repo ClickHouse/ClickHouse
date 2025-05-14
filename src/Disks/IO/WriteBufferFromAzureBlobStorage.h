@@ -13,7 +13,7 @@
 #include <azure/core/io/body_stream.hpp>
 #include <Common/ThreadPoolTaskTracker.h>
 #include <Common/BufferAllocationPolicy.h>
-#include <Storages/StorageAzureBlob.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 
 namespace Poco
 {
@@ -28,14 +28,14 @@ class TaskTracker;
 class WriteBufferFromAzureBlobStorage : public WriteBufferFromFileBase
 {
 public:
-    using AzureClientPtr = std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient>;
+    using AzureClientPtr = std::shared_ptr<const AzureBlobStorage::ContainerClient>;
 
     WriteBufferFromAzureBlobStorage(
         AzureClientPtr blob_container_client_,
         const String & blob_path_,
         size_t buf_size_,
         const WriteSettings & write_settings_,
-        std::shared_ptr<const AzureObjectStorageSettings> settings_,
+        std::shared_ptr<const AzureBlobStorage::RequestSettings> settings_,
         ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {});
 
     ~WriteBufferFromAzureBlobStorage() override;
@@ -48,15 +48,23 @@ public:
 private:
     struct PartData;
 
-    void writePart();
+    void writeMultipartUpload();
+    void writePart(PartData && part_data);
+    void detachBuffer();
+    void reallocateFirstBuffer();
     void allocateBuffer();
+    void hidePartialData();
+    void setFakeBufferWhenPreFinalized();
 
     void finalizeImpl() override;
     void execWithRetry(std::function<void()> func, size_t num_tries, size_t cost = 0);
     void uploadBlock(const char * data, size_t size);
 
+    /// Returns true if not a single byte was written to the buffer
+    bool isEmpty() const { return total_size == 0 && count() == 0 && hidden_size == 0 && offset() == 0; }
+
     LoggerPtr log;
-    LogSeriesLimiterPtr limitedLog = std::make_shared<LogSeriesLimiter>(log, 1, 5);
+    LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 
     BufferAllocationPolicyPtr buffer_allocation_policy;
 
@@ -77,9 +85,17 @@ private:
 
     MemoryBufferPtr allocateBuffer() const;
 
-    bool first_buffer=true;
+    char fake_buffer_when_prefinalized[1] = {};
+
+    bool first_buffer = true;
+
+    size_t total_size = 0;
+    size_t hidden_size = 0;
 
     std::unique_ptr<TaskTracker> task_tracker;
+    bool check_objects_after_upload = false;
+
+    std::deque<PartData> detached_part_data;
 };
 
 }

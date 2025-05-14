@@ -44,7 +44,7 @@ REGISTER_FUNCTION(E)
 
 REGISTER_FUNCTION(Pi)
 {
-    factory.registerFunction<FunctionPi>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionPi>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

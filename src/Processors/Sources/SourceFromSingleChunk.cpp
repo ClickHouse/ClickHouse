@@ -5,7 +5,9 @@
 namespace DB
 {
 
-SourceFromSingleChunk::SourceFromSingleChunk(Block header, Chunk chunk_) : ISource(std::move(header)), chunk(std::move(chunk_)) {}
+SourceFromSingleChunk::SourceFromSingleChunk(Block header, Chunk chunk_) : ISource(std::move(header)), chunk(std::move(chunk_))
+{
+}
 
 SourceFromSingleChunk::SourceFromSingleChunk(Block data) : ISource(data.cloneEmpty()), chunk(data.getColumns(), data.rows())
 {
@@ -20,7 +22,7 @@ SourceFromSingleChunk::SourceFromSingleChunk(Block data) : ISource(data.cloneEmp
         auto info = std::make_shared<AggregatedChunkInfo>();
         info->bucket_num = data.info.bucket_num;
         info->is_overflows = data.info.is_overflows;
-        chunk.setChunkInfo(std::move(info));
+        chunk.getChunkInfos().add(std::move(info));
     }
 }
 

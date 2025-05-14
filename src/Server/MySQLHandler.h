@@ -8,6 +8,7 @@
 #include <base/getFQDNOrHostName.h>
 #include <Poco/Net/TCPServerConnection.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
 #include "IO/ReadBufferFromString.h"
 #include "IServer.h"
 
@@ -16,6 +17,7 @@
 
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
+#    include <Common/Crypto/KeyPair.h>
 #endif
 
 #include <memory>
@@ -125,8 +127,7 @@ public:
         const Poco::Net::StreamSocket & socket_,
         bool ssl_enabled,
         uint32_t connection_id_,
-        RSA & public_key_,
-        RSA & private_key_,
+        KeyPair & private_key_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
@@ -137,8 +138,7 @@ private:
         size_t packet_size, char * buf, size_t pos,
         std::function<void(size_t)> read_bytes, MySQLProtocol::ConnectionPhase::HandshakeResponse & packet) override;
 
-    RSA & public_key;
-    RSA & private_key;
+    KeyPair & private_key;
     std::shared_ptr<Poco::Net::SecureStreamSocket> ss;
 };
 #endif

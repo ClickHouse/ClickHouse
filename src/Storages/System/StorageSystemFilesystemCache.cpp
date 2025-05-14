@@ -1,11 +1,12 @@
-#include "StorageSystemFilesystemCache.h"
+#include <Storages/System/StorageSystemFilesystemCache.h>
+
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
-#include <Interpreters/Context.h>
 #include <Disks/IDisk.h>
 
 
@@ -47,6 +48,9 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
     for (const auto & [cache_name, cache_data] : caches)
     {
         const auto & cache = cache_data->cache;
+        if (!cache->isInitialized())
+            continue;
+
         cache->iterate([&](const FileSegment::Info & file_segment)
         {
             size_t i = 0;

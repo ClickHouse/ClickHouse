@@ -48,6 +48,8 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
+    bool supportsDynamicSubcolumns() const override { return true; }
+
     SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, bool) override
     {
         return std::make_shared<NullSinkToStorage>(metadata_snapshot->getSampleBlock());
@@ -57,11 +59,11 @@ public:
 
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
-    std::optional<UInt64> totalRows(const Settings &) const override
+    std::optional<UInt64> totalRows(ContextPtr) const override
     {
         return {0};
     }
-    std::optional<UInt64> totalBytes(const Settings &) const override
+    std::optional<UInt64> totalBytes(ContextPtr) const override
     {
         return {0};
     }

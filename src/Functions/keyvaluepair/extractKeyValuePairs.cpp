@@ -1,5 +1,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnMap.h>
+#include <Core/Settings.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -9,12 +10,16 @@
 
 #include <Interpreters/Context.h>
 
-#include <Functions/keyvaluepair/impl/KeyValuePairExtractor.h>
 #include <Functions/keyvaluepair/impl/KeyValuePairExtractorBuilder.h>
 #include <Functions/keyvaluepair/ArgumentExtractor.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 extract_key_value_pairs_max_pairs_per_row;
+}
 
 template <typename Name, bool WITH_ESCAPING>
 class ExtractKeyValuePairs : public IFunction
@@ -22,11 +27,6 @@ class ExtractKeyValuePairs : public IFunction
     auto getExtractor(const ArgumentExtractor::ParsedArguments & parsed_arguments) const
     {
         auto builder = KeyValuePairExtractorBuilder();
-
-        if constexpr (WITH_ESCAPING)
-        {
-            builder.withEscaping();
-        }
 
         if (parsed_arguments.key_value_delimiter)
         {
@@ -43,17 +43,24 @@ class ExtractKeyValuePairs : public IFunction
             builder.withQuotingCharacter(parsed_arguments.quoting_character.value());
         }
 
-        bool is_number_of_pairs_unlimited = context->getSettingsRef().extract_key_value_pairs_max_pairs_per_row == 0;
+        bool is_number_of_pairs_unlimited = context->getSettingsRef()[Setting::extract_key_value_pairs_max_pairs_per_row] == 0;
 
         if (!is_number_of_pairs_unlimited)
         {
-            builder.withMaxNumberOfPairs(context->getSettingsRef().extract_key_value_pairs_max_pairs_per_row);
+            builder.withMaxNumberOfPairs(context->getSettingsRef()[Setting::extract_key_value_pairs_max_pairs_per_row]);
         }
 
-        return builder.build();
+        if constexpr (WITH_ESCAPING)
+        {
+            return builder.buildWithEscaping();
+        }
+        else
+        {
+            return builder.buildWithoutEscaping();
+        }
     }
 
-    ColumnPtr extract(ColumnPtr data_column, std::shared_ptr<KeyValuePairExtractor> extractor) const
+    ColumnPtr extract(ColumnPtr data_column, auto & extractor, size_t input_rows_count) const
     {
         auto offsets = ColumnUInt64::create();
 
@@ -62,11 +69,11 @@ class ExtractKeyValuePairs : public IFunction
 
         uint64_t offset = 0u;
 
-        for (auto i = 0u; i < data_column->size(); i++)
+        for (auto i = 0u; i < input_rows_count; i++)
         {
             auto row = data_column->getDataAt(i).toView();
 
-            auto pairs_count = extractor->extract(row, keys, values);
+            auto pairs_count = extractor.extract(row, keys, values);
 
             offset += pairs_count;
 
@@ -96,13 +103,13 @@ public:
         return std::make_shared<ExtractKeyValuePairs>(context);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto parsed_arguments = ArgumentExtractor::extract(arguments);
 
         auto extractor = getExtractor(parsed_arguments);
 
-        return extract(parsed_arguments.data_column, extractor);
+        return extract(parsed_arguments.data_column, extractor, input_rows_count);
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
@@ -155,7 +162,7 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             A key-value pair consists of a key followed by a `key_value_delimiter` and a value. Quoted keys and values are also supported. Key value pairs must be separated by pair delimiters.
 
             **Syntax**
-            ``` sql
+            ```sql
             extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character])
             ```
 
@@ -173,7 +180,7 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             Query:
 
             **Simple case**
-            ``` sql
+            ```sql
             arthur :) select extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
 
             SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
@@ -186,7 +193,7 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             ```
 
             **Single quote as quoting character**
-            ``` sql
+            ```sql
             arthur :) select extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
 
             SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
@@ -199,7 +206,7 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             ```
 
             **Escape sequences without escape sequences support**
-            ``` sql
+            ```sql
             arthur :) select extractKeyValuePairs('age:a\\x0A\\n\\0') as kv
 
             SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv
@@ -209,7 +216,9 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             ┌─kv────────────────────┐
             │ {'age':'a\\x0A\\n\\0'} │
             └───────────────────────┘
-            ```)"}
+            ```)",
+            .category = FunctionDocumentation::Category::Map
+        }
     );
 
     factory.registerFunction<ExtractKeyValuePairs<NameExtractKeyValuePairsWithEscaping, true>>(
@@ -228,7 +237,7 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             Leading escape sequences will be skipped in keys and will be considered invalid for values.
 
             **Escape sequences with escape sequence support turned on**
-            ``` sql
+            ```sql
             arthur :) select extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') as kv
 
             SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv
@@ -238,9 +247,11 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             ┌─kv───────────────┐
             │ {'age':'a\n\n\0'} │
             └──────────────────┘
-            ```)"}
+            ```)",
+            .category = FunctionDocumentation::Category::Map
+        }
     );
-    factory.registerAlias("str_to_map", NameExtractKeyValuePairs::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("str_to_map", NameExtractKeyValuePairs::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("mapFromString", NameExtractKeyValuePairs::name);
 }
 

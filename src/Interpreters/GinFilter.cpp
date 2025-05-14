@@ -10,9 +10,7 @@
 #include <Interpreters/GinFilter.h>
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
-#include <Storages/MergeTree/MergeTreeIndexFullText.h>
-#include <string>
-#include <algorithm>
+#include <Storages/MergeTree/MergeTreeIndexGin.h>
 #include <city.h>
 
 namespace DB

@@ -21,7 +21,8 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserWithElement.h>
-#include <format>
+
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -95,12 +96,12 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 String aggregate_fun = String(begin_pos->begin, begin_pos->end);
                 if (aggregate_functions.find(aggregate_fun) == aggregate_functions.end())
                 {
-                    alias = std::format("Columns{}", new_column_index);
+                    alias = fmt::format("Columns{}", new_column_index);
                     ++new_column_index;
                 }
                 else
                 {
-                    alias = std::format("{}_", aggregate_fun);
+                    alias = fmt::format("{}_", aggregate_fun);
                     auto agg_colum_pos = begin_pos;
                     ++agg_colum_pos;
                     ++agg_colum_pos;
@@ -112,7 +113,7 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                             alias = alias + String(agg_colum_pos->begin, agg_colum_pos->end);
                     }
                 }
-                expr = std::format("{} = {}", alias, expr);
+                expr = fmt::format("{} = {}", alias, expr);
             }
             expr_aggregations.push_back(expr);
         }
@@ -141,11 +142,11 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     }
                     if (alias.empty())
                     {
-                        alias = std::format("Columns{}", new_column_index);
+                        alias = fmt::format("Columns{}", new_column_index);
                         ++new_column_index;
                     }
 
-                    expr = std::format("{} = {}", alias, expr);
+                    expr = fmt::format("{} = {}", alias, expr);
                 }
             }
             expr_groupbys.push_back(expr);
@@ -194,7 +195,7 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     String converted_columns = getExprFromToken(expr_columns, pos.max_depth, pos.max_backtracks);
 
-    Tokens token_converted_columns(converted_columns.c_str(), converted_columns.c_str() + converted_columns.size());
+    Tokens token_converted_columns(converted_columns.data(), converted_columns.data() + converted_columns.size(), 0, true);
     IParser::Pos pos_converted_columns(token_converted_columns, pos.max_depth, pos.max_backtracks);
 
     if (!ParserNotEmptyExpressionList(true).parse(pos_converted_columns, select_expression_list, expected))
@@ -206,7 +207,7 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     {
         String converted_groupby = getExprFromToken(expr_groupby, pos.max_depth, pos.max_backtracks);
 
-        Tokens token_converted_groupby(converted_groupby.c_str(), converted_groupby.c_str() + converted_groupby.size());
+        Tokens token_converted_groupby(converted_groupby.data(), converted_groupby.data() + converted_groupby.size(), 0, true);
         IParser::Pos postoken_converted_groupby(token_converted_groupby, pos.max_depth, pos.max_backtracks);
 
         if (!ParserNotEmptyExpressionList(false).parse(postoken_converted_groupby, group_expression_list, expected))

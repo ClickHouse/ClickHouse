@@ -56,7 +56,7 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         node = query;
         return true;
     }
-    else if (s_rename_table.ignore(pos, expected))
+    if (s_rename_table.ignore(pos, expected))
         ;
     else if (s_exchange_tables.ignore(pos, expected))
         exchange = true;

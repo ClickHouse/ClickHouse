@@ -1,6 +1,8 @@
 #include <IO/WriteBufferFromHTTP.h>
 
 #include <Common/logger_useful.h>
+#include <Common/ProxyConfigurationResolverProvider.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -24,16 +26,16 @@ WriteBufferFromHTTP::WriteBufferFromHTTP(
     request.setHost(uri.getHost());
     request.setChunkedTransferEncoding(true);
 
-    if (!content_type.empty())
-    {
-        request.set("Content-Type", content_type);
-    }
-
     if (!content_encoding.empty())
         request.set("Content-Encoding", content_encoding);
 
     for (const auto & header: additional_headers)
         request.add(header.name, header.value);
+
+    if (!content_type.empty() && !request.has("Content-Type"))
+    {
+        request.set("Content-Type", content_type);
+    }
 
     LOG_TRACE((getLogger("WriteBufferToHTTP")), "Sending request to {}", uri.toString());
 
@@ -47,6 +49,25 @@ void WriteBufferFromHTTP::finalizeImpl()
 
     receiveResponse(*session, request, response, false);
     /// TODO: Response body is ignored.
+
+    WriteBufferFromOStream::finalizeImpl();
+}
+
+std::unique_ptr<WriteBufferFromHTTP> BuilderWriteBufferFromHTTP::create()
+{
+    ProxyConfiguration proxy_configuration;
+
+    if (!bypass_proxy)
+    {
+        auto proxy_protocol = ProxyConfiguration::protocolFromString(uri.getScheme());
+        proxy_configuration = ProxyConfigurationResolverProvider::get(proxy_protocol)->resolve();
+    }
+
+    /// WriteBufferFromHTTP constructor is private and can't be used in `make_unique`
+    std::unique_ptr<WriteBufferFromHTTP> ptr(new WriteBufferFromHTTP(
+        connection_group, uri, method, content_type, content_encoding, additional_headers, timeouts, buffer_size_, proxy_configuration));
+
+    return ptr;
 }
 
 }

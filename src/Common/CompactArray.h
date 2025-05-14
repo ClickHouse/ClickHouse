@@ -1,10 +1,7 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <Core/Defines.h>
 
 namespace DB
 {
@@ -36,8 +33,7 @@ public:
 
         if (locus.index_l == locus.index_r)
             return locus.read(bitset[locus.index_l]);
-        else
-            return locus.read(bitset[locus.index_l], bitset[locus.index_r]);
+        return locus.read(bitset[locus.index_l], bitset[locus.index_r]);
     }
 
     Locus ALWAYS_INLINE operator[](BucketIndex bucket_index)
@@ -116,15 +112,14 @@ public:
 
     /** Return the current cell number and the corresponding content.
       */
-    inline std::pair<BucketIndex, UInt8> get() const
+    std::pair<BucketIndex, UInt8> get() const
     {
         if ((current_bucket_index == 0) || is_eof)
             throw Exception(ErrorCodes::NO_AVAILABLE_DATA, "No available data.");
 
         if (fits_in_byte)
             return std::make_pair(current_bucket_index - 1, locus.read(value_l));
-        else
-            return std::make_pair(current_bucket_index - 1, locus.read(value_l, value_r));
+        return std::make_pair(current_bucket_index - 1, locus.read(value_l, value_r));
     }
 
 private:
@@ -163,8 +158,7 @@ public:
     {
         if (content_l == content_r)
             return read(*content_l);
-        else
-            return read(*content_l, *content_r);
+        return read(*content_l, *content_r);
     }
 
     Locus ALWAYS_INLINE & operator=(UInt8 content)

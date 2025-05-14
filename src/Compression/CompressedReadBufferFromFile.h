@@ -1,10 +1,10 @@
 #pragma once
 
+#include <memory>
+#include <time.h>
 #include <Compression/CompressedReadBufferBase.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/ReadSettings.h>
-#include <time.h>
-#include <memory>
+#include "Common/LoggingFormatStringHelpers.h"
 
 
 namespace DB
@@ -27,6 +27,8 @@ private:
     std::unique_ptr<ReadBufferFromFileBase> p_file_in;
     ReadBufferFromFileBase & file_in;
     size_t size_compressed = 0;
+
+    LogSeriesLimiter log;
 
     /// This field inherited from ReadBuffer. It's used to perform "lazy" seek, so in seek() call we:
     /// 1) actually seek only underlying compressed file_in to offset_in_compressed_file;

@@ -12,14 +12,14 @@
 #include <Common/ErrorCodes.h>
 #include <Common/SymbolIndex.h>
 #include <Common/StackTrace.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Core/ServerUUID.h>
 #include <IO/WriteHelpers.h>
 
 #include "config.h"
 #include <Common/config_version.h>
 
-#if USE_SENTRY && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_SENTRY
 
 #    include <sentry.h>
 #    include <cstdio>
@@ -54,7 +54,7 @@ void setExtras(bool anonymize, const std::string & server_data_path)
 
     /// Sentry does not support 64-bit integers.
     sentry_set_extra("total_ram", sentry_value_new_string(formatReadableSizeWithBinarySuffix(getMemoryAmountOrZero()).c_str()));
-    sentry_set_extra("physical_cpu_cores", sentry_value_new_int32(getNumberOfPhysicalCPUCores()));
+    sentry_set_extra("cpu_cores", sentry_value_new_int32(getNumberOfCPUCoresToUse()));
 
     if (!server_data_path.empty())
         sentry_set_extra("disk_free_space", sentry_value_new_string(formatReadableSizeWithBinarySuffix(fs::space(server_data_path).free).c_str()));
@@ -79,17 +79,9 @@ void SentryWriter::resetInstance()
 
 SentryWriter::SentryWriter(Poco::Util::LayeredConfiguration & config)
 {
-    bool enabled = false;
-    bool debug = config.getBool("send_crash_reports.debug", false);
     auto logger = getLogger("SentryWriter");
 
     if (config.getBool("send_crash_reports.enabled", false))
-    {
-        if (debug || (strlen(VERSION_OFFICIAL) > 0))
-            enabled = true;
-    }
-
-    if (enabled)
     {
         server_data_path = config.getString("path", DB::DBMS_DEFAULT_PATH);
         const std::filesystem::path & default_tmp_path = fs::path(config.getString("tmp_path", fs::temp_directory_path())) / "sentry";
@@ -101,10 +93,6 @@ SentryWriter::SentryWriter(Poco::Util::LayeredConfiguration & config)
 
         sentry_options_t * options = sentry_options_new();  /// will be freed by sentry_init or sentry_shutdown
         sentry_options_set_release(options, VERSION_STRING_SHORT);
-        if (debug)
-        {
-            sentry_options_set_debug(options, 1);
-        }
         sentry_options_set_dsn(options, endpoint.c_str());
         sentry_options_set_database_path(options, temp_folder_path.c_str());
 
@@ -180,7 +168,7 @@ void SentryWriter::sendError(Type type, int sig_or_error, const std::string & er
             {
                 int code = sig_or_error;
                 /// Can be only LOGICAL_ERROR, but just in case.
-                sentry_set_tag("exception", DB::ErrorCodes::getName(code).data());
+                sentry_set_tag("exception", DB::ErrorCodes::getName(code).data());  /// NOLINT(bugprone-suspicious-stringview-data-usage)
                 sentry_set_extra("exception_code", sentry_value_new_int32(code));
                 break;
             }
@@ -262,7 +250,6 @@ void SentryWriter::resetInstance() {}
 
 SentryWriter::SentryWriter(Poco::Util::LayeredConfiguration &) {}
 SentryWriter::~SentryWriter() = default;
-void SentryWriter::sendError(Type, int, const std::string &, const FramePointers &, size_t, size_t) {}
 void SentryWriter::onSignal(int, const std::string &, const FramePointers &, size_t, size_t) {}
 void SentryWriter::onException(int, const std::string &, const FramePointers &, size_t, size_t) {}
 

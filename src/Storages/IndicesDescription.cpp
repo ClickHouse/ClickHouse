@@ -1,12 +1,13 @@
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/IndicesDescription.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/extractKeyExpressionList.h>
 
@@ -113,7 +114,7 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression is not set");
     }
 
-    auto syntax = TreeRewriter(context).analyze(expr_list, columns.getAllPhysical());
+    auto syntax = TreeRewriter(context).analyze(expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
     result.expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
     result.sample_block = result.expression->getSampleBlock();
 
@@ -130,10 +131,15 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
     {
         for (size_t i = 0; i < index_type->arguments->children.size(); ++i)
         {
-            const auto * argument = index_type->arguments->children[i]->as<ASTLiteral>();
-            if (!argument)
+            const auto & child = index_type->arguments->children[i];
+            if (const auto * ast_literal = child->as<ASTLiteral>(); ast_literal != nullptr)
+                /// E.g. INDEX index_name column_name TYPE vector_similarity('hnsw', 'f32')
+                result.arguments.emplace_back(ast_literal->value);
+            else if (const auto * ast_identifier = child->as<ASTIdentifier>(); ast_identifier != nullptr)
+                /// E.g. INDEX index_name column_name TYPE vector_similarity(hnsw, f32)
+                result.arguments.emplace_back(ast_identifier->name());
+            else
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only literals can be skip index arguments");
-            result.arguments.emplace_back(argument->value);
         }
     }
 
@@ -153,6 +159,14 @@ bool IndicesDescription::has(const String & name) const
     return false;
 }
 
+bool IndicesDescription::hasType(const String & type) const
+{
+    for (const auto & index : *this)
+        if (index.type == type)
+            return true;
+    return false;
+}
+
 String IndicesDescription::toString() const
 {
     if (empty())
@@ -162,7 +176,7 @@ String IndicesDescription::toString() const
     for (const auto & index : *this)
         list.children.push_back(index.definition_ast);
 
-    return serializeAST(list);
+    return list.formatWithSecretsOneLine();
 }
 
 
@@ -189,7 +203,7 @@ ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const Col
         for (const auto & index_expr : index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
 
-    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.getAllPhysical());
+    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
 }
 

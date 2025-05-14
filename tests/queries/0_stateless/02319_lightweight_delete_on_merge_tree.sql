@@ -102,7 +102,7 @@ ALTER TABLE t_proj ADD PROJECTION p_1 (SELECT avg(a), avg(b), count()) SETTINGS 
 
 INSERT INTO t_proj SELECT number + 1, number + 1  FROM numbers(1000);
 
-DELETE FROM t_proj WHERE a < 100; -- { serverError BAD_ARGUMENTS }
+DELETE FROM t_proj WHERE a < 100; -- { serverError SUPPORT_IS_DISABLED }
 
 SELECT avg(a), avg(b), count() FROM t_proj;
 

@@ -22,7 +22,7 @@ namespace ErrorCodes
 
         if (field.getType() == Field::Types::String)
         {
-            const String & str = field.get<const String &>();
+            const String & str = field.safeGet<String>();
             if (str.empty())
             {
                 value = std::nullopt;

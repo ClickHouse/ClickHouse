@@ -27,10 +27,10 @@ select _table, key from m where (value = 10 and _table = 'v3') or (value = 20 an
 set max_threads=1;
 -- { echoOn }
 {% for settings in [
-    'allow_experimental_analyzer=0, convert_query_to_cnf=0',
-    'allow_experimental_analyzer=0, convert_query_to_cnf=1',
-    'allow_experimental_analyzer=1, convert_query_to_cnf=0',
-    'allow_experimental_analyzer=1, convert_query_to_cnf=1'
+    'enable_analyzer=0, convert_query_to_cnf=0',
+    'enable_analyzer=0, convert_query_to_cnf=1',
+    'enable_analyzer=1, convert_query_to_cnf=0',
+    'enable_analyzer=1, convert_query_to_cnf=1'
 ] %}
 select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v1') settings {{ settings }};
 select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v2') settings {{ settings }};

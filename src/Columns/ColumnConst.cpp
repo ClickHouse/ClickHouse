@@ -19,8 +19,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
+extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
 ColumnConst::ColumnConst(const ColumnPtr & data_, size_t s_)
@@ -75,7 +76,7 @@ void ColumnConst::expand(const Filter & mask, bool inverted)
 
     if (bytes_count < s)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
-    else if (bytes_count > s)
+    if (bytes_count > s)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
 
     s = mask.size();
@@ -125,6 +126,11 @@ MutableColumns ColumnConst::scatter(ColumnIndex num_columns, const Selector & se
     return res;
 }
 
+void ColumnConst::gather(ColumnGathererStream &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot gather into constant column {}", getName());
+}
+
 void ColumnConst::getPermutation(PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
                                 size_t /*limit*/, int /*nan_direction_hint*/, Permutation & res) const
 {
@@ -137,18 +143,10 @@ void ColumnConst::updatePermutation(PermutationSortDirection /*direction*/, Perm
 {
 }
 
-void ColumnConst::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnConst::getWeakHash32() const
 {
-    if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
-
-    WeakHash32 element_hash(1);
-    data->updateWeakHash32(element_hash);
-    size_t data_hash = element_hash.getData()[0];
-
-    for (auto & value : hash.getData())
-        value = static_cast<UInt32>(intHashCRC32(data_hash, value));
+    WeakHash32 element_hash = data->getWeakHash32();
+    return WeakHash32(s, element_hash.getData()[0]);
 }
 
 void ColumnConst::compareColumn(

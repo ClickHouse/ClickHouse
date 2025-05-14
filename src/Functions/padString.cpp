@@ -1,4 +1,5 @@
 #include <Columns/ColumnFixedString.h>
+#include <Common/StringUtils.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
@@ -60,10 +61,10 @@ namespace
             {
                 if (num_chars <= step)
                 {
-                    writeSlice(StringSource::Slice{std::bit_cast<const UInt8 *>(pad_string.data()), numCharsToNumBytes(num_chars)}, res_sink);
+                    writeSlice(StringSource::Slice{reinterpret_cast<const UInt8 *>(pad_string.data()), numCharsToNumBytes(num_chars)}, res_sink);
                     break;
                 }
-                writeSlice(StringSource::Slice{std::bit_cast<const UInt8 *>(pad_string.data()), numCharsToNumBytes(step)}, res_sink);
+                writeSlice(StringSource::Slice{reinterpret_cast<const UInt8 *>(pad_string.data()), numCharsToNumBytes(step)}, res_sink);
                 num_chars -= step;
             }
         }
@@ -191,6 +192,11 @@ namespace
             return std::make_shared<DataTypeString>();
         }
 
+        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        {
+            return std::make_shared<DataTypeString>();
+        }
+
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             auto column_string = arguments[0].column;
@@ -237,8 +243,8 @@ namespace
         void executeForSource(SourceStrings && strings, const ColumnPtr & column_length, const String & pad_string, StringSink & res_sink) const
         {
             const auto & chars = strings.getElements();
-            bool all_ascii = UTF8::isAllASCII(reinterpret_cast<const UInt8 *>(pad_string.data()), pad_string.size())
-                && UTF8::isAllASCII(chars.data(), chars.size());
+            bool all_ascii = isAllASCII(reinterpret_cast<const UInt8 *>(pad_string.data()), pad_string.size())
+                && isAllASCII(chars.data(), chars.size());
             bool is_actually_utf8 = is_utf8 && !all_ascii;
 
             if (!is_actually_utf8)
@@ -334,8 +340,8 @@ REGISTER_FUNCTION(PadString)
     factory.registerFunction<FunctionPadString<true, false>>();  /// rightPad
     factory.registerFunction<FunctionPadString<true, true>>();   /// rightPadUTF8
 
-    factory.registerAlias("lpad", "leftPad", FunctionFactory::CaseInsensitive);
-    factory.registerAlias("rpad", "rightPad", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("lpad", "leftPad", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("rpad", "rightPad", FunctionFactory::Case::Insensitive);
 }
 
 }

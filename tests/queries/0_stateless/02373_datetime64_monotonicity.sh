@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 for tz in Asia/Tehran UTC Canada/Atlantic Europe/Berlin
 do
     echo "$tz"
-    TZ=$tz $CLICKHOUSE_LOCAL --multiline --multiquery "
+    TZ=$tz $CLICKHOUSE_LOCAL --multiline "
       drop table if exists dt64_monotonicity_test;
       drop table if exists dt64_monotonicity_test_string;
       CREATE TABLE dt64_monotonicity_test (date_time DateTime64(3, 'Europe/Berlin'), id String) ENGINE = MergeTree PARTITION BY toDate(date_time, 'Europe/Berlin') ORDER BY date_time;

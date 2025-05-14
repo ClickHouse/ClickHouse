@@ -6,6 +6,7 @@
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
+#include <Storages/MergeTree/InsertBlockInfo.h>
 
 
 namespace Poco { class Logger; }
@@ -20,8 +21,45 @@ namespace DB
 {
 
 class StorageReplicatedMergeTree;
+struct BlockWithPartition;
+
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
+
+struct MergeTreeTemporaryPart;
+using TemporaryPartPtr = std::unique_ptr<MergeTreeTemporaryPart>;
+
+template <typename BlockInfo>
+struct ReplicatedMergeTreeDelayedChunk
+{
+    struct Partition : public BlockInfo
+    {
+        TemporaryPartPtr temp_part;
+        UInt64 elapsed_ns;
+        ProfileEvents::Counters part_counters;
+
+        Partition() = default;
+        Partition(LoggerPtr log_,
+            TemporaryPartPtr && temp_part_,
+            UInt64 elapsed_ns_,
+            BlockInfo::BlockIDsType && block_id_,
+            BlockWithPartition && block_,
+            std::optional<BlockWithPartition> && unmerged_block_with_partition_,
+            ProfileEvents::Counters && part_counters_)
+            : BlockInfo(log_, std::move(block_id_), std::move(block_), std::move(unmerged_block_with_partition_))
+            , temp_part(std::move(temp_part_))
+            , elapsed_ns(elapsed_ns_)
+            , part_counters(std::move(part_counters_))
+        {
+        }
+    };
+
+    ReplicatedMergeTreeDelayedChunk() = default;
+    explicit ReplicatedMergeTreeDelayedChunk(size_t replicas_num_) : replicas_num(replicas_num_) {}
+
+    size_t replicas_num = 0;
+    std::vector<Partition> partitions;
+};
 
 
 /// ReplicatedMergeTreeSink will sink data to replicated merge tree with deduplication.
@@ -51,7 +89,7 @@ public:
     ~ReplicatedMergeTreeSinkImpl() override;
 
     void onStart() override;
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
     void onFinish() override;
 
     String getName() const override { return "ReplicatedMergeTreeSink"; }
@@ -59,21 +97,18 @@ public:
     /// For ATTACHing existing data on filesystem.
     bool writeExistingPart(MergeTreeData::MutableDataPartPtr & part);
 
-    /// For proper deduplication in MaterializedViews
-    bool lastBlockIsDuplicate() const override
-    {
-        /// If MV is responsible for deduplication, block is not considered duplicating.
-        if (context->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views)
-            return false;
+protected:
+    virtual void finishDelayedChunk(const ZooKeeperWithFaultInjectionPtr & zookeeper);
+    virtual TemporaryPartPtr writeNewTempPart(BlockWithPartition & block);
 
-        return last_block_is_duplicate;
-    }
-
-    struct DelayedChunk;
-private:
     std::vector<String> detectConflictsInAsyncBlockIDs(const std::vector<String> & ids);
 
-    using BlockIDsType = std::conditional_t<async_insert, std::vector<String>, String>;
+    using BlockInfo = std::conditional_t<async_insert, AsyncInsertBlockInfo, SyncInsertBlockInfo>;
+    using DelayedChunk = ReplicatedMergeTreeDelayedChunk<BlockInfo>;
+    using BlockIDsType = typename BlockInfo::BlockIDsType;
+
+    /// We can delay processing for previous chunk and start writing a new one.
+    std::unique_ptr<DelayedChunk> delayed_chunk;
 
     struct QuorumInfo
     {
@@ -126,7 +161,6 @@ private:
     bool allow_attach_while_readonly = false;
     bool quorum_parallel = false;
     const bool deduplicate = true;
-    bool last_block_is_duplicate = false;
     UInt64 num_blocks_processed = 0;
 
     LoggerPtr log;
@@ -135,11 +169,6 @@ private:
     StorageSnapshotPtr storage_snapshot;
 
     UInt64 chunk_dedup_seqnum = 0; /// input chunk ordinal number in case of dedup token
-
-    /// We can delay processing for previous chunk and start writing a new one.
-    std::unique_ptr<DelayedChunk> delayed_chunk;
-
-    void finishDelayedChunk(const ZooKeeperWithFaultInjectionPtr & zookeeper);
 };
 
 using ReplicatedMergeTreeSinkWithAsyncDeduplicate = ReplicatedMergeTreeSinkImpl<true>;

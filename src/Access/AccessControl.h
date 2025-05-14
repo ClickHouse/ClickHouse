@@ -1,13 +1,12 @@
 #pragma once
 
+#include <memory>
+
 #include <Access/MultipleAccessStorage.h>
 #include <Access/Common/AuthenticationType.h>
 #include <Common/SettingsChanges.h>
-#include <Common/ZooKeeper/Common.h>
 #include <base/scope_guard.h>
 #include <boost/container/flat_set.hpp>
-
-#include <memory>
 
 
 namespace Poco
@@ -20,6 +19,14 @@ namespace Poco
     {
         class AbstractConfiguration;
     }
+}
+
+namespace zkutil
+{
+    class ZooKeeper;
+
+    using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
+    using GetZooKeeper = std::function<ZooKeeperPtr()>;
 }
 
 namespace DB
@@ -53,8 +60,11 @@ public:
     AccessControl();
     ~AccessControl() override;
 
+    /// Shutdown the access control and stops all background activity.
+    void shutdown() override;
+
     /// Initializes access storage (user directories).
-    void setUpFromMainConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_path_,
+    void setupFromMainConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_path_,
                              const zkutil::GetZooKeeper & get_zookeeper_function_);
 
     /// Parses access entities from a configuration loaded from users.xml.
@@ -118,10 +128,10 @@ public:
     scope_guard subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const;
     scope_guard subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const;
 
-    AuthResult authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const String & forwarded_address) const;
+    AuthResult authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const ClientInfo & client_info) const;
 
     /// Makes a backup of access entities.
-    void restoreFromBackup(RestorerFromBackup & restorer) override;
+    void restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup) override;
 
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
 
@@ -162,6 +172,10 @@ public:
     /// Workfactor for bcrypt encoded passwords
     void setBcryptWorkfactor(int workfactor_);
     int getBcryptWorkfactor() const;
+
+    /// Compatibility setting
+    void setEnableUserNameAccessType(bool enable_user_name_access_type_);
+    bool isEnabledUserNameAccessType() const;
 
     /// Enables logic that users without permissive row policies can still read rows using a SELECT query.
     /// For example, if there are two users A, B and a row policy is defined only for A, then
@@ -205,7 +219,7 @@ public:
         const UUID & user_id,
         const String & user_name,
         const boost::container::flat_set<UUID> & enabled_roles,
-        const Poco::Net::IPAddress & address,
+        const std::shared_ptr<Poco::Net::IPAddress> & address,
         const String & forwarded_address,
         const String & custom_quota_key) const;
 
@@ -235,12 +249,20 @@ public:
     /// Gets manager of notifications.
     AccessChangesNotifier & getChangesNotifier();
 
+    /// Allow all setting names - this can be used in clients to pass-through unknown settings to the server.
+    void allowAllSettings();
+
+    void setAllowTierSettings(UInt32 value);
+    UInt32 getAllowTierSettings() const;
+    bool getAllowExperimentalTierSettings() const;
+    bool getAllowBetaTierSettings() const;
+
 private:
     class ContextAccessCache;
     class CustomSettingsPrefixes;
     class PasswordComplexityRules;
 
-    bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
+    bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id) override;
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
 
@@ -264,6 +286,9 @@ private:
     std::atomic_bool table_engines_require_grant = false;
     std::atomic_int bcrypt_workfactor = 12;
     std::atomic<AuthenticationType> default_password_type = AuthenticationType::SHA256_PASSWORD;
+    std::atomic_bool allow_experimental_tier_settings = true;
+    std::atomic_bool allow_beta_tier_settings = true;
+    std::atomic_bool enable_user_name_access_type = true;
 };
 
 }
