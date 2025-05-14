@@ -393,8 +393,9 @@ The default tokenizer uses non-alphanumeric ASCII characters as separators.
 **Arguments**
 
 - `value` — The input string. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `tokenizer` — The tokenizer to use. Valid arguments are `default`, `ngram`, and `noop`. Optional, if not set explicitly, defaults to `default`. [const String](../data-types/string.md)
-- `ngrams` — Only relevant if argument `tokenizer` is `ngram`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`. [UInt8](../data-types/int-uint.md).
+- `ngrams` — Only relevant if argument `tokenizer` is `ngram`: Defines the length of the ngrams. Optional. If not set explicitly, defaults to `3`. [UInt8](../data-types/int-uint.md).
+- `tokenizer` — The tokenizer to use. Valid arguments are `default`, `ngram`, `Chinese`, and `noop`. Optional, if not set explicitly, defaults to `default`. [const String](../data-types/string.md)
+- `chinese_granularity` — Only relevant if argument `tokenizer` is `Chinese`: Defines the granularity of the Chinese tokenizer. Valid values: `fine-grained` and `coarse-grained` values. Optional. If not set explicitly, defaults to `coarse-grained`. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -428,4 +429,18 @@ Result:
 ┌─tokens──────────────────────────┐
 │ ['abc','bc ','c d',' de','def'] │
 └─────────────────────────────────┘
+```
+
+Using the fine-grained Chinese tokenizer:
+
+```sql
+SELECT tokens('南京市长江大桥', 'chinese', 'fine-grained') AS tokens;
+```
+
+Result:
+
+```text
+┌─tokens────────────────────────────────────────────┐
+│ ['南京','京市','南京市','长江','大桥','长江大桥'] │
+└───────────────────────────────────────────────────┘
 ```

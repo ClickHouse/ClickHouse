@@ -13,6 +13,11 @@
 #endif
 
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 namespace DB
 {
 
@@ -314,5 +319,26 @@ bool NoOpTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*length
 {
     return false;
 }
+
+#if USE_CPPJIEBA
+ChineseTokenExtractor::ChineseTokenExtractor(ChineseTokenizationGranularity granularity_)
+    : granularity(granularity_)
+{}
+
+std::vector<String> ChineseTokenExtractor::getTokens(const char * data, size_t /*length*/) const
+{
+    return ChineseTokenizer::instance().tokenize(data, granularity);
+}
+
+bool ChineseTokenExtractor::nextInString(const char * /*data*/, size_t /*length*/, size_t * __restrict /*pos*/, size_t * __restrict /*token_start*/, size_t * __restrict /*token_length*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method nextInStringLike is not supported by ChineseTokenExtractor");
+}
+
+bool ChineseTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t * /*pos*/, String & /*token*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method nextInStringLike is not supported by ChineseTokenExtractor");
+}
+#endif
 
 }

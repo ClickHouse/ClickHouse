@@ -9,6 +9,8 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ITokenExtractor.h>
 
+#include "config.h"
+
 namespace DB
 {
 
@@ -22,6 +24,7 @@ class FunctionTokens : public IFunction
     static constexpr size_t arg_value = 0;
     static constexpr size_t arg_tokenizer = 1;
     static constexpr size_t arg_ngrams = 2;
+    static constexpr size_t arg_chinese_granularity = arg_ngrams;
 
 public:
     static constexpr auto name = "tokens";
@@ -53,6 +56,10 @@ public:
 
                 if (tokenizer == NgramTokenExtractor::getExternalName())
                     optional_args.emplace_back("ngrams", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "UInt8");
+#if USE_CPPJIEBA
+                else if (tokenizer == ChineseTokenExtractor::getExternalName())
+                    optional_args.emplace_back("chinese_granularity", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "String");
+#endif
             }
         }
 
@@ -87,11 +94,30 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Ngrams argument of function {} should be between 2 and 8, got: {}", name, ngrams);
             token_extractor = std::make_unique<NgramTokenExtractor>(ngrams);
         }
+#if USE_CPPJIEBA
+        else if (tokenizer_arg == ChineseTokenExtractor::getExternalName())
+        {
+            ChineseTokenizationGranularity granularity = ChineseTokenizationGranularity::Coarse;
+            if (arguments.size() == 3)
+            {
+                auto granularity_arg = arguments[arg_chinese_granularity].column->getDataAt(0).toView();
+                if (granularity_arg == ChineseTokenExtractor::FINE_GRAINED)
+                    granularity = ChineseTokenizationGranularity::Fine;
+                else if (granularity_arg == ChineseTokenExtractor::COARSE_GRAINED)
+                    granularity = ChineseTokenizationGranularity::Coarse;
+                else
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Chinese tokenizer in function '{}' supports only modes 'fine-grained' or 'coarse-grained', got: {}", name, granularity);
+            }
+            token_extractor = std::make_unique<ChineseTokenExtractor>(granularity);
+        }
+#endif
         else
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Function '{}' supports only tokenizers 'default', 'ngram', and 'noop'", name);
+                "Function '{}' supports only tokenizers 'default', 'ngram', 'chinese' and 'noop'", name);
         }
 
         if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))

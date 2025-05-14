@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: Chinese tokenization relies on a 3rd party library
+
 SELECT 'Negative tests';
 -- Must accept one to three arguments
 SELECT tokens(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
@@ -16,9 +19,15 @@ SELECT tokens('a', 'ngram', 'c'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokens('a', 'ngram', toInt8(-1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokens('a', 'ngram', toFixedString('c', 1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokens('a', 'ngram', materialize(1)); -- { serverError ILLEGAL_COLUMN }
+--    const String (for "chinese")
+SELECT tokens('a', 'chinese', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT tokens('a', 'chinese', toFixedString('c', 1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT tokens('a', 'chinese', materialize('c')); -- { serverError ILLEGAL_COLUMN }
 -- If 2nd arg is "ngram", then the 3rd arg must be between 2 and 8
 SELECT tokens('a', 'ngram', 1); -- { serverError BAD_ARGUMENTS}
 SELECT tokens('a', 'ngram', 9); -- { serverError BAD_ARGUMENTS}
+-- If 2nd arg is "chinese", then the 3rd arg must be 'fine-granular' or 'coarse-granular'
+SELECT tokens('a', 'chinese', 'shanghai'); -- { serverError BAD_ARGUMENTS}
 
 SELECT 'Default tokenizer';
 
@@ -37,6 +46,22 @@ SELECT 'NoOp tokenizer';
 
 SELECT tokens('', 'noop') AS tokenized;
 SELECT tokens('abc def', 'noop') AS tokenized;
+
+SELECT 'Chinese tokenizer';
+SELECT '-- coarse-grained (default)';
+SELECT tokens('', 'chinese');
+SELECT tokens('他来到了网易杭研大厦', 'chinese');
+SELECT tokens('我来自北京邮电大学。', 'chinese');
+SELECT tokens('南京市长江大桥', 'chinese');
+SELECT tokens('我来自北京邮电大学。。。学号123456', 'chinese');
+SELECT tokens('小明硕士毕业于中国科学院计算所，后在日本京都大学深造', 'chinese');
+SELECT '-- fine-grained';
+SELECT tokens('', 'chinese', 'fine-grained');
+SELECT tokens('他来到了网易杭研大厦', 'chinese', 'fine-grained');
+SELECT tokens('我来自北京邮电大学。', 'chinese', 'fine-grained');
+SELECT tokens('南京市长江大桥', 'chinese', 'fine-grained');
+SELECT tokens('我来自北京邮电大学。。。学号123456', 'chinese', 'fine-grained');
+SELECT tokens('小明硕士毕业于中国科学院计算所，后在日本京都大学深造', 'chinese', 'fine-grained');
 
 SELECT 'Special cases (not systematically tested)';
 SELECT '-- FixedString inputs';
