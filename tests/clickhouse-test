@@ -204,9 +204,13 @@ class SharedEngineReplacer:
 
     def _need_to_replace_something(self):
         return (
-            (self.replace_replicated or self.replace_non_replicated)
-            and "shared_merge_tree" not in self.file_name
-        ) or self.cloud or self.args.replace_log_memory_with_merge_tree
+            (
+                (self.replace_replicated or self.replace_non_replicated)
+                and "shared_merge_tree" not in self.file_name
+            )
+            or self.cloud
+            or self.args.replace_log_memory_with_merge_tree
+        )
 
     def _has_show_create_table(self):
         with open(self.file_name, "r", encoding="utf-8") as f:
@@ -230,9 +234,14 @@ class SharedEngineReplacer:
         data_engines = r"(Engine\s*=?\s*)(Log|TinyLog|StripeLog|Memory)\(?\)?"
         # Replace them with SMT
         replace_with = f"{replace_engine}() ORDER BY tuple()"
+        if self.reference_file:
+            replace_with = (
+                f"{replace_engine}\nORDER BY tuple()\nSETTINGS index_granularity = 8192"
+            )
+
         if (
             re.search(data_engines, line, flags=re.IGNORECASE)
-            and "CREATE DATABASE" not in line
+            and "CREATE DATABASE" not in line.capitalize()
         ):
             modified_statement = re.sub(
                 data_engines,
@@ -1459,6 +1468,12 @@ class TestCase:
 
         if "no-async-insert" in tags and args.no_async_insert:
             return FailureReason.NO_ASYNC_INSERT
+
+        # Do not run *Log and Memory engine-specific tests
+        if (
+            "memory-engine" in tags or "log-engine" in tags
+        ) and args.replace_log_memory_with_merge_tree:
+            return FailureReason.NOT_SUPPORTED
 
         if args.skip and any(s in self.name for s in args.skip):
             return FailureReason.SKIP

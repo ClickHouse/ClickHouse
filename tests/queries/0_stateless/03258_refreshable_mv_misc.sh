@@ -13,6 +13,7 @@ $CLICKHOUSE_CLIENT -q "
     insert into a values ('hi');
     grant create, insert, select on ${second_db}.* to $test_user; -- no drop yet
     grant table engine on Memory to $test_user;
+    grant table engine on MergeTree to $test_user;
     grant select on a to $test_user;
     grant system views on ${second_db}.* to $test_user;
 "
