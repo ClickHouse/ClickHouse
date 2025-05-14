@@ -91,7 +91,7 @@ String RandomGenerator::nextDate32()
     return fmt::format("{}-{}{}-{}{}", 1900 + datetime64_years(generator), month < 10 ? "0" : "", month, day < 10 ? "0" : "", day);
 }
 
-String RandomGenerator::nextDateTime()
+String RandomGenerator::nextDateTime(const bool has_subseconds)
 {
     const uint32_t month = months(generator);
     const uint32_t day = days[month - 1](generator);
@@ -100,7 +100,7 @@ String RandomGenerator::nextDateTime()
     const uint32_t second = minutes(generator);
 
     return fmt::format(
-        "{}-{}{}-{}{} {}{}:{}{}:{}{}",
+        "{}-{}{}-{}{} {}{}:{}{}:{}{}{}{}",
         1970 + datetime_years(generator),
         month < 10 ? "0" : "",
         month,
@@ -111,10 +111,12 @@ String RandomGenerator::nextDateTime()
         minute < 10 ? "0" : "",
         minute,
         second < 10 ? "0" : "",
-        second);
+        second,
+        has_subseconds ? "." : "",
+        has_subseconds ? std::to_string(subseconds(generator)) : "");
 }
 
-String RandomGenerator::nextDateTime64()
+String RandomGenerator::nextDateTime64(const bool has_subseconds)
 {
     const uint32_t month = months(generator);
     const uint32_t day = days[month - 1](generator);
@@ -123,7 +125,7 @@ String RandomGenerator::nextDateTime64()
     const uint32_t second = minutes(generator);
 
     return fmt::format(
-        "{}-{}{}-{}{} {}{}:{}{}:{}{}",
+        "{}-{}{}-{}{} {}{}:{}{}:{}{}{}{}",
         1900 + datetime64_years(generator),
         month < 10 ? "0" : "",
         month,
@@ -134,7 +136,9 @@ String RandomGenerator::nextDateTime64()
         minute < 10 ? "0" : "",
         minute,
         second < 10 ? "0" : "",
-        second);
+        second,
+        has_subseconds ? "." : "",
+        has_subseconds ? std::to_string(subseconds(generator)) : "");
 }
 
 double RandomGenerator::randomGauss(const double mean, const double stddev)
