@@ -227,18 +227,11 @@ When using parametric aggregate functions, the parameter is indicated after the 
         {"xN", "Any number of [array](/sql-reference/data-types/array) type columns as the parameters of the aggregation function."},
     };
     FunctionDocumentation::ReturnedValue returned_value = "Returns the result of the aggregate function";
-    FunctionDocumentation::Examples examples = {
-		{
-            "Usage example",
-            "SELECT arrayReduce('max', [1, 2, 3]);", R"(
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayReduce('max', [1, 2, 3]);", R"(
 ┌─arrayReduce('max', [1, 2, 3])─┐
 │                             3 │
 └───────────────────────────────┘
-)"
-		},
-		{
-            "Example with aggregate function using multiple arguments", R"(
-If an aggregate function takes multiple arguments, then this function must be applied to multiple arrays of the same size.
+)"},{"Example with aggregate function using multiple arguments", R"(If an aggregate function takes multiple arguments, then this function must be applied to multiple arrays of the same size.
 
 ```sql
 SELECT arrayReduce('maxIf', [3, 5], [1, 0]);
@@ -247,18 +240,13 @@ SELECT arrayReduce('maxIf', [3, 5], [1, 0]);
 ┌─arrayReduce('maxIf', [3, 5], [1, 0])─┐
 │                                    3 │
 └──────────────────────────────────────┘
-)"
-		},
-		{
-            "Example with a parametric aggregate function", R"(
+)"},{"Example with a parametric aggregate function", R"(
 SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 )", R"(
 ┌─arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])─┐
 │                                                           4 │
 └─────────────────────────────────────────────────────────────┘
-)"
-		}
-	};
+)"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
