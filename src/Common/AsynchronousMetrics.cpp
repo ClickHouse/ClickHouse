@@ -1667,8 +1667,11 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                         std::string_view tx_queue = std::string_view(tx_rx_queue).substr(0, pos);
                         std::string_view rx_queue = std::string_view(tx_rx_queue).substr(pos + 1);
 
-                        UInt32 tx_queue_size = unhexUInt<UInt32>(tx_queue.data());
-                        UInt32 rx_queue_size = unhexUInt<UInt32>(rx_queue.data());
+                        if (tx_queue.size() == 8 && rx_queue.size() == 8)
+                        {
+                            UInt32 tx_queue_size = unhexUInt<UInt32>(tx_queue.data()); // NOLINT
+                            UInt32 rx_queue_size = unhexUInt<UInt32>(rx_queue.data()); // NOLINT
+                        }
 
                         transmit_queue_size += tx_queue_size;
                         receive_queue_size += rx_queue_size;
