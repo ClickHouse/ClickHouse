@@ -1585,9 +1585,43 @@ def test_row_based_deletes(started_cluster, storage_type):
         "",
     )
 
-    error = instance.query_and_get_error(f"SELECT * FROM {TABLE_NAME}")
-    assert "UNSUPPORTED_METHOD" in error
+    # We have to disable optimize_trivial_count_query to get correct count
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} SETTINGS optimize_trivial_count_query=0")) == 90
 
+    # Check that filters are applied after deletes
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} where id >= 10")) == 90
+
+    # Check deletes after deletes
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id >= 90")
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        "",
+    )
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} SETTINGS optimize_trivial_count_query=0")) == 80
+
+    # Check adds after deletes
+    spark.sql(
+        f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(100, 200)"
+    )
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} SETTINGS optimize_trivial_count_query=0")) == 180
+
+    # Check deletes after adds
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id >= 150")
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        "",
+    )
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} SETTINGS optimize_trivial_count_query=0")) == 130
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
