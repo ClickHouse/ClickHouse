@@ -502,9 +502,6 @@ randomPrintableASCII
 randomString
 randomStringUTF8
 range
-readWKBMultiPolygon
-readWKBPoint
-readWKBPolygon
 readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
