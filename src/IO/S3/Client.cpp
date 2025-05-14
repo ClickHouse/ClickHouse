@@ -1,4 +1,5 @@
 #include <IO/S3/Client.h>
+#include <aws/core/Aws.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 
@@ -913,6 +914,10 @@ void ClientCacheRegistry::clearCacheForAll()
 ClientFactory::ClientFactory()
 {
     aws_options = Aws::SDKOptions{};
+
+    aws_options.cryptoOptions = Aws::CryptoOptions{};
+    aws_options.cryptoOptions.initAndCleanupOpenSSL = false;
+
     Aws::InitAPI(aws_options);
     Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>(false));
     Aws::Http::SetHttpClientFactory(std::make_shared<PocoHTTPClientFactory>());
