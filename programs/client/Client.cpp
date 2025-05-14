@@ -71,7 +71,7 @@ Client::Client()
 
 Client::~Client() = default;
 
-void Client::processError(const String & query) const
+void Client::processError(std::string_view query) const
 {
     if (server_exception)
     {
@@ -353,7 +353,6 @@ try
     initTTYBuffer(
         toProgressOption(config().getString("progress", "default")), toProgressOption(config().getString("progress-table", "default")));
     initKeystrokeInterceptor();
-    ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
     {
         // All that just to set DB::CurrentThread::get().getGlobalContext()

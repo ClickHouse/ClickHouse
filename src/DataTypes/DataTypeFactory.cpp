@@ -170,11 +170,6 @@ DataTypePtr DataTypeFactory::getCustom(const String & base_name, DataTypeCustomD
     return type;
 }
 
-void DataTypeFactory::setCustom(DataTypePtr & type, DataTypeCustomDescPtr customization)
-{
-    type->setCustomization(std::move(customization));
-}
-
 void DataTypeFactory::registerDataType(const String & family_name, Value creator, Case case_sensitiveness)
 {
     if (creator == nullptr)
@@ -266,6 +261,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDate(*this);
     registerDataTypeDate32(*this);
     registerDataTypeDateTime(*this);
+    registerDataTypeTime(*this);
     registerDataTypeString(*this);
     registerDataTypeFixedString(*this);
     registerDataTypeEnum(*this);
