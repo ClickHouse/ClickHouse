@@ -154,7 +154,7 @@ public:
             if (current_index >= data_files.size())
                 return nullptr;
 
-            auto key = std::get<DataFileEntry>(data_files[current_index].file).file_name;
+            auto key = data_files[current_index].file.file_name;
             auto object_metadata = object_storage->getObjectMetadata(key);
 
             if (callback)
@@ -698,8 +698,7 @@ void IcebergMetadata::initializeDataFiles(ManifestListPtr manifest_list_ptr) con
     {
         for (const auto & data_file_path : manifest_file_content->getFiles())
         {
-            if (std::holds_alternative<DataFileEntry>(data_file_path.file))
-                manifest_file_by_data_file.emplace(std::get<DataFileEntry>(data_file_path.file).file_name, manifest_file_content);
+            manifest_file_by_data_file.emplace(data_file_path.file.file_name, manifest_file_content);
         }
     }
 }
@@ -889,8 +888,7 @@ std::vector<Iceberg::ManifestFileEntry> IcebergMetadata::getDataFiles(const Acti
             {
                 if (!pruner.canBePruned(manifest_file_entry))
                 {
-                    if (std::holds_alternative<DataFileEntry>(manifest_file_entry.file))
-                        data_files.push_back(manifest_file_entry);
+                    data_files.push_back(manifest_file_entry);
                 }
             }
         }

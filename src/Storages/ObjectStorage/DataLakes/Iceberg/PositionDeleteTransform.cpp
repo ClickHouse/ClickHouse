@@ -35,7 +35,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
         if (position_deletes_object.added_sequence_number < iceberg_object_info->data_object.added_sequence_number)
             continue;
 
-        auto object_path = std::get<Iceberg::DataFileEntry>(position_deletes_object.file).file_name;
+        auto object_path = position_deletes_object.file.file_name;
         auto object_metadata = object_storage->getObjectMetadata(object_path);
         auto object_info = std::make_shared<ObjectInfo>(object_path, object_metadata);
 
