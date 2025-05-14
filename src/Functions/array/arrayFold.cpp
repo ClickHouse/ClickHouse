@@ -299,10 +299,7 @@ REGISTER_FUNCTION(ArrayFold)
     FunctionDocumentation::ReturnedValue returned_value = "Returns the result of the lambda sequentially applied to each";
     FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT arrayFold( acc,x -> acc + x*2,  [1, 2, 3, 4], 3::Int64) AS res;", "23"},
-        {"Fibonacci sequence", R"(
-SELECT arrayFold( acc,x -> (acc.2, acc.2 + acc.1), range(number), (1::Int64, 0::Int64)).1 AS fibonacci
-FROM numbers(1,10);
-)", R"(
+        {"Fibonacci sequence", "SELECT arrayFold( acc,x -> (acc.2, acc.2 + acc.1), range(number), (1::Int64, 0::Int64)).1 AS fibonacci FROM numbers(1,10);", R"(
 ┌─fibonacci─┐
 │         0 │
 │         1 │
@@ -316,8 +313,7 @@ FROM numbers(1,10);
 │        34 │
 └───────────┘
 )"},
-      {"Example using multiple arrays", R"(
-SELECT arrayFold(
+      {"Example using multiple arrays", R"(SELECT arrayFold(
     (acc, x, y) -> acc + (x * y),
     [1, 2, 3, 4],
     [10, 20, 30, 40],
