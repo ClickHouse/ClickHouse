@@ -15,6 +15,7 @@ select bech32Encode('tltssdfsdvjnasdfnjkbhksdfasnbdfkljhaksdjfnakjsdhasdfnasdkfa
 -- negative tests
 -- empty hrp
 select bech32Encode('', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'));
+select bech32Encode('bcrt', unhex(''));
 -- 51 chars should return nothing
 select bech32Encode('', unhex('751e76e8199196d454941c45d1b3a323f1433bd6751e76e8199196d454941c45d1b3a323f1433bd6751e76e8199196d45494a'));
 

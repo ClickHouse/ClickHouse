@@ -7,7 +7,6 @@
 #include <Functions/IFunction.h>
 
 #include "bech32.h"
-#include "segwit_addr.h"
 
 namespace
 {
@@ -137,25 +136,25 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         bool have_witver = arguments.size() == 3;
-        const ColumnPtr & hpr_column = arguments[0].column;
+        const ColumnPtr & hrp_column = arguments[0].column;
         const ColumnPtr & data_column = arguments[1].column;
         const ColumnPtr & witver_column = have_witver ? arguments[2].column : IColumn::Ptr();
 
-        if (const ColumnString * hpr_col = checkAndGetColumn<ColumnString>(hpr_column.get()))
+        if (const ColumnString * hrp_col = checkAndGetColumn<ColumnString>(hrp_column.get()))
         {
-            const ColumnString::Chars & hrp_vec = hpr_col->getChars();
-            const ColumnString::Offsets & hrp_offsets = hpr_col->getOffsets();
+            const ColumnString::Chars & hrp_vec = hrp_col->getChars();
+            const ColumnString::Offsets & hrp_offsets = hrp_col->getOffsets();
 
             return chooseDataColAndExecute(data_column, hrp_vec, hrp_offsets, witver_column, input_rows_count, have_witver);
         }
 
-        if (const ColumnFixedString * hpr_col_fix_string = checkAndGetColumn<ColumnFixedString>(hpr_column.get()))
+        if (const ColumnFixedString * hrp_col_fix_string = checkAndGetColumn<ColumnFixedString>(hrp_column.get()))
         {
-            const ColumnString::Chars & hrp_vec = hpr_col_fix_string->getChars();
+            const ColumnString::Chars & hrp_vec = hrp_col_fix_string->getChars();
             const ColumnString::Offsets & hrp_offsets = PaddedPODArray<IColumn::Offset>(); // dummy
 
             return chooseDataColAndExecute(
-                data_column, hrp_vec, hrp_offsets, witver_column, input_rows_count, have_witver, hpr_col_fix_string->getN());
+                data_column, hrp_vec, hrp_offsets, witver_column, input_rows_count, have_witver, hrp_col_fix_string->getN());
         }
 
         throw Exception(
@@ -228,7 +227,7 @@ private:
             size_t hrp_new_offset = n1 == 0 ? hrp_offsets[i] : n1;
             size_t data_new_offset = n2 == 0 ? data_offsets[i] : n2;
 
-            // max encodable data is 50 bytes to stay within 90-char limit on Bech32 output
+            // max encodable data to stay within 90-char limit on Bech32 output
             // hrp must be at least 1 character and no more than 83
             auto data_len = data_new_offset - data_prev_offset - data_zero_offset;
             auto hrp_len = hrp_new_offset - hrp_prev_offset - hrp_zero_offset;
