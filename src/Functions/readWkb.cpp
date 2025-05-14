@@ -254,7 +254,30 @@ REGISTER_FUNCTION(ReadWKB)
         .introduced_in = {25, 5},
         .category = FunctionDocumentation::Category::Geo});
     factory.registerFunction<
-        FunctionReadWKB<DataTypePolygonName, CartesianPolygon, PolygonSerializer<CartesianPoint>, ReadWKBPolygonNameHolder>>();
+        FunctionReadWKB<DataTypePolygonName, CartesianPolygon, PolygonSerializer<CartesianPoint>, ReadWKBPolygonNameHolder>>(
+        FunctionDocumentation{
+            .description = R"(
+                Parses a Well-Known Binary (WKB) representation of a Polygon geometry and returns it in the internal ClickHouse format.
+                )",
+            .syntax = "readWKBPolygon(wkt_string)",
+            .arguments{{"wkb_string", "The input WKB string representing a Polygon geometry."}},
+            .returned_value = "The function returns a ClickHouse internal representation of the Polygon geometry.",
+            .examples{
+                {"first call",
+                 "SELECT "
+                 "readWKBPolygon(unhex('"
+                 "01030000000100000005000000000000000000f03f0000000000000000000000000000244000000000000000000000000000002440000000000000244"
+                 "000000000000000000000000000002440000000000000f03f0000000000000000"
+                 "'));",
+                 R"(
+                ┌─readWKBPolygon(unhex'01030000000200000005000000000000000000000000000000000000000000000000002440000000000000000000000000000024...'))─┐
+                │ (1,0),(10,0),(10,10),(0,10),(1,0)]]                                                                                                 │
+                └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+                            )"},
+            },
+            .introduced_in = {25, 5},
+            .category = FunctionDocumentation::Category::Geo,
+        });
     factory.registerFunction<FunctionReadWKB<
         DataTypeMultiPolygonName,
         CartesianMultiPolygon,
