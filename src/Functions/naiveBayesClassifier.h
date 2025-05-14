@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cctype>
 #include <cmath>
 #include <concepts>
 #include <cstring>
@@ -99,24 +100,26 @@ struct TokenPolicy
 
     void tokenize(std::string_view text, std::vector<std::string_view> & tokens) const
     {
-        tokens.reserve(tokens.size() + (text.size() / 3));
+        tokens.reserve(tokens.size() + text.size() / 3);
+
         size_t pos = 0;
-        while (pos < text.size())
+        const char * data = text.data();
+        const size_t size = text.size();
+
+        while (pos < size)
         {
-            // skip leading spaces
-            size_t start = pos;
-            while (start < text.size() && text[start] == ' ')
-                ++start;
-            if (start == text.size())
+            // Skip any leading ASCII whitespace
+            while (pos < size && std::isspace(static_cast<unsigned char>(data[pos])))
+                ++pos;
+            if (pos == size)
                 break;
 
-            // find next space
-            size_t end = start;
-            while (end < text.size() && text[end] != ' ')
-                ++end;
+            // Find the next whitespace
+            size_t start = pos;
+            while (pos < size && !std::isspace(static_cast<unsigned char>(data[pos])))
+                ++pos;
 
-            tokens.emplace_back(text.data() + start, end - start);
-            pos = end;
+            tokens.emplace_back(data + start, pos - start);
         }
     }
 
