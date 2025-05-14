@@ -574,6 +574,7 @@ bool StorageNATS::isSubjectInSubscriptions(const std::string & subject)
     return false;
 }
 
+
 bool StorageNATS::checkDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
@@ -600,6 +601,7 @@ bool StorageNATS::checkDependencies(const StorageID & table_id)
 
     return true;
 }
+
 
 void StorageNATS::streamingToViewsFunc()
 {

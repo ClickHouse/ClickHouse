@@ -23,8 +23,8 @@ using namespace DB;
 
 namespace ProfileEvents
 {
-    extern const Event IcebergPartitionPrunedFiles;
-    extern const Event IcebergMinMaxIndexPrunedFiles;
+    extern const Event IcebergPartitionPrunnedFiles;
+    extern const Event IcebergMinMaxIndexPrunnedFiles;
 }
 
 
@@ -53,50 +53,32 @@ DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String &
     if (transform_name == "void")
         return makeASTFunction("tuple");
 
-    if (transform_name.starts_with("truncate") || transform_name.starts_with("bucket"))
+    if (transform_name.starts_with("truncate"))
     {
-        /// should look like transform[N] or bucket[N]
-
-        auto log_warning = [&transform_name]()
-        { LOG_WARNING(&Poco::Logger::get("Iceberg Partition Pruning"), "Cannot parse iceberg transform name: {}.", transform_name); };
+        /// should look like transform[N]
 
         if (transform_name.back() != ']')
-        {
-            log_warning();
             return nullptr;
-        }
 
         auto argument_start = transform_name.find('[');
 
         if (argument_start == std::string::npos)
-        {
-            log_warning();
             return nullptr;
-        }
 
         auto argument_width = transform_name.length() - 2 - argument_start;
-        std::string argument_string_representation = transform_name.substr(argument_start + 1, argument_width);
-        size_t argument;
-        bool parsed = DB::tryParse<size_t>(argument, argument_string_representation);
+        std::string width = transform_name.substr(argument_start + 1, argument_width);
+        size_t truncate_width;
+        bool parsed = DB::tryParse<size_t>(truncate_width, width);
 
         if (!parsed)
-        {
-            log_warning();
             return nullptr;
-        }
 
-        if (transform_name.starts_with("truncate"))
-        {
-            return makeASTFunction(
-                "icebergTruncate", std::make_shared<DB::ASTLiteral>(argument), std::make_shared<DB::ASTIdentifier>(column_name));
-        }
-        else if (transform_name.starts_with("bucket"))
-        {
-            return makeASTFunction(
-                "icebergBucket", std::make_shared<DB::ASTLiteral>(argument), std::make_shared<DB::ASTIdentifier>(column_name));
-        }
+        return makeASTFunction("icebergTruncate", std::make_shared<DB::ASTLiteral>(truncate_width), std::make_shared<DB::ASTIdentifier>(column_name));
     }
-    return nullptr;
+    else
+    {
+        return nullptr;
+    }
 }
 
 std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManifest(const DB::ActionsDAG * source_dag, std::vector<Int32> & used_columns_in_filter) const
@@ -163,10 +145,7 @@ ManifestFilesPruner::ManifestFilesPruner(
     {
         partition_key = &manifest_file.getPartitionKeyDescription();
         if (transformed_dag != nullptr)
-        {
-            ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
-            partition_key_condition.emplace(inverted_dag, context, partition_key->column_names, partition_key->expression, true /* single_point */);
-        }
+            partition_key_condition.emplace(transformed_dag.get(), context, partition_key->column_names, partition_key->expression, true /* single_point */);
     }
 
     if (manifest_file.hasBoundsInfoInManifests() && transformed_dag != nullptr)
@@ -184,8 +163,7 @@ ManifestFilesPruner::ManifestFilesPruner(
                 ExpressionActionsPtr expression = std::make_shared<ExpressionActions>(
                     ActionsDAG({name_and_type}), ExpressionActionsSettings(context));
 
-                ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
-                min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type.name}, expression));
+                min_max_key_conditions.emplace(used_column_id, KeyCondition(transformed_dag.get(), context, {name_and_type.name}, expression));
             }
         }
     }
@@ -209,7 +187,7 @@ bool ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
 
         if (!can_be_true)
         {
-            ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunedFiles);
+            ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunnedFiles);
             return true;
         }
     }
@@ -225,7 +203,7 @@ bool ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
         auto hyperrectangle = entry.columns_infos.at(column_id).hyperrectangle;
         if (hyperrectangle.has_value() && !key_condition.mayBeTrueInRange(1, &hyperrectangle->left, &hyperrectangle->right, {name_and_type->type}))
         {
-            ProfileEvents::increment(ProfileEvents::IcebergMinMaxIndexPrunedFiles);
+            ProfileEvents::increment(ProfileEvents::IcebergMinMaxIndexPrunnedFiles);
             return true;
         }
     }

@@ -7,7 +7,6 @@
 
 #include <initializer_list>
 #include <vector>
-#include <Common/StringHashForHeterogeneousLookup.h>
 
 
 class SipHash;
@@ -31,7 +30,7 @@ class Block
 {
 private:
     using Container = ColumnsWithTypeAndName;
-    using IndexByName = std::unordered_map<String, size_t, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
+    using IndexByName = std::unordered_map<String, size_t>;
 
     Container data;
     IndexByName index_by_name;
@@ -70,8 +69,6 @@ public:
         return const_cast<ColumnWithTypeAndName *>(
             const_cast<const Block *>(this)->findByName(name, case_insensitive));
     }
-
-    const ColumnWithTypeAndName * findByName(std::string_view name, bool case_insensitive = false) const;
 
     const ColumnWithTypeAndName * findByName(const std::string & name, bool case_insensitive = false) const;
     std::optional<ColumnWithTypeAndName> findSubcolumnByName(const std::string & name) const;

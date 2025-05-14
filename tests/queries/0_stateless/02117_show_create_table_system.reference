@@ -302,7 +302,6 @@ CREATE TABLE system.functions
     `arguments` String,
     `returned_value` String,
     `examples` String,
-    `introduced_in` String,
     `categories` String
 )
 ENGINE = SystemFunctions

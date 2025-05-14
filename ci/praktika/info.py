@@ -114,10 +114,6 @@ class Info:
         return self.env.EVENT_TYPE == "push"
 
     @property
-    def is_dispatch_event(self):
-        return self.env.EVENT_TYPE == "dispatch"
-
-    @property
     def instance_lifecycle(self):
         return self.env.INSTANCE_LIFE_CYCLE
 

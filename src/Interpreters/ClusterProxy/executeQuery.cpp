@@ -563,7 +563,7 @@ static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepairConnectionPoolsF
     size_t max_replicas_to_use = settings[Setting::max_parallel_replicas];
     if (max_replicas_to_use > shard.getAllNodeCount())
     {
-        LOG_TRACE(
+        LOG_INFO(
             logger,
             "The number of replicas requested ({}) is bigger than the real number available in the cluster ({}). "
             "Will use the latter number to execute the query.",
@@ -749,7 +749,7 @@ void executeQueryWithParallelReplicas(
 {
     QueryTreeNodePtr modified_query_tree = query_tree->clone();
     rewriteJoinToGlobalJoin(modified_query_tree, context);
-    modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
+    modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree);
 
     auto header
         = InterpreterSelectQueryAnalyzer::getSampleBlock(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());

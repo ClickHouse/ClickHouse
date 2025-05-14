@@ -1,4 +1,3 @@
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
@@ -11,6 +10,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/isDiskFunction.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
@@ -48,7 +48,7 @@ namespace ErrorCodes
 /** These settings represent fine tunes for internal details of MergeTree storages
   * and should not be changed by the user without a reason.
   */
-#define MERGE_TREE_SETTINGS(DECLARE, DECLARE_WITH_ALIAS) \
+#define MERGE_TREE_SETTINGS(DECLARE, ALIAS) \
     DECLARE(UInt64, min_compress_block_size, 0, R"(
     Minimum size of blocks of uncompressed data required for compression when
     writing the next mark. You can also specify this setting in the global settings
@@ -252,10 +252,6 @@ namespace ErrorCodes
     This mode allows to use significantly less memory for storing discriminators
     in parts when there is mostly one variant or a lot of NULL values.
     )", 0) \
-    DECLARE(Bool, write_marks_for_substreams_in_compact_parts, true, R"(
-    Enables writing marks per each substream instead of per each column in Compact parts.
-    It allows to read individual subcolumns from the data part efficiently.
-    )", 0) \
     \
     /** Merge selector settings. */ \
     DECLARE(UInt64, merge_selector_blurry_base_scale_factor, 0, R"(
@@ -288,11 +284,11 @@ namespace ErrorCodes
     DECLARE(UInt64, max_bytes_to_merge_at_max_space_in_pool, 150ULL * 1024 * 1024 * 1024, R"(
     The maximum total parts size (in bytes) to be merged into one part, if there
     are enough resources available. Corresponds roughly to the maximum possible
-    part size created by an automatic background merge. (0 means merges will be disabled)
+    part size created by an automatic background merge.
 
     Possible values:
 
-    - Any non-negative integer.
+    - Any positive integer.
 
     The merge scheduler periodically analyzes the sizes and number of parts in
     partitions, and if there are enough free resources in the pool, it starts
@@ -599,9 +595,6 @@ namespace ErrorCodes
     Minimal amount of data parts which merge selector can pick to merge at once
     (expert level setting, don't change if you don't understand what it is doing).
     0 - disabled. Works for Simple and StochasticSimple merge selectors.
-    )", 0) \
-    DECLARE(Bool, apply_patches_on_merge, true, R"(
-    If true patch parts are applied on merges
     )", 0) \
     \
     /** Inserts settings. */ \
@@ -1451,9 +1444,6 @@ namespace ErrorCodes
     Remove empty parts after they were pruned by TTL, mutation, or collapsing
     merge algorithm.
     )", 0) \
-    DECLARE(Bool, remove_unused_patch_parts, true, R"(
-    Remove in background patch parts which are applied for all active parts.
-    )", 0) \
     DECLARE(Bool, assign_part_uuids, false, R"(
     When enabled, a unique part identifier will be assigned for every new part.
     Before enabling, check that all replicas support UUID version 4.
@@ -1576,9 +1566,9 @@ namespace ErrorCodes
     DECLARE(Bool, disable_fetch_partition_for_zero_copy_replication, true, R"(
     Disable FETCH PARTITION query for zero copy replication.
     )", 0) \
-    DECLARE_WITH_ALIAS(Bool, enable_block_number_column, false, R"(
+    DECLARE(Bool, enable_block_number_column, false, R"(
     Enable persisting column _block_number for each row.
-    )", 0, allow_experimental_block_number_column) \
+    )", 0) ALIAS(allow_experimental_block_number_column) \
     DECLARE(Bool, enable_block_offset_column, false, R"(
     Persists virtual column `_block_number` on merges.
     )", 0) \
@@ -1709,10 +1699,10 @@ namespace ErrorCodes
     Compression encoding used by primary, primary key is small enough and cached,
     so the default compression is ZSTD(3).
     )", 0) \
-    DECLARE(NonZeroUInt64, marks_compress_block_size, 65536, R"(
+    DECLARE(UInt64, marks_compress_block_size, 65536, R"(
     Mark compress block size, the actual size of the block to compress.
     )", 0) \
-    DECLARE(NonZeroUInt64, primary_key_compress_block_size, 65536, R"(
+    DECLARE(UInt64, primary_key_compress_block_size, 65536, R"(
     Primary compress block size, the actual size of the block to compress.
     )", 0) \
     DECLARE(Bool, primary_key_lazy_load, true, R"(Load primary key in memory on
@@ -2105,11 +2095,11 @@ void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
     }
 }
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) MergeTreeSettings##TYPE NAME = &MergeTreeSettingsImpl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) MergeTreeSettings##TYPE NAME = &MergeTreeSettingsImpl ::NAME;
 
 namespace MergeTreeSetting
 {
-    LIST_OF_MERGE_TREE_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)  /// NOLINT(misc-use-internal-linkage)
+    LIST_OF_MERGE_TREE_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)  /// NOLINT(misc-use-internal-linkage)
 }
 
 #undef INITIALIZE_SETTING_EXTERN

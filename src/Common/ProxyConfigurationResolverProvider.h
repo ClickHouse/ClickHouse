@@ -15,11 +15,6 @@ public:
     using Protocol = ProxyConfiguration::Protocol;
 
     /*
-     * Tries to use global context to call the below methods. If global context can't be fetched, returns env resolver
-     * */
-    static std::shared_ptr<ProxyConfigurationResolver> get(Protocol protocol);
-
-    /*
      * Returns appropriate ProxyConfigurationResolver based on current CH settings (Remote resolver or List resolver).
      * If no configuration is found, returns Environment Resolver.
      * */

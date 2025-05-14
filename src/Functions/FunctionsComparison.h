@@ -1,9 +1,8 @@
 #pragma once
 
 #include <base/memcmpSmall.h>
-#include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
-#include <Common/checkStackSize.h>
+#include <Common/TargetSpecific.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
@@ -69,8 +68,6 @@ static inline bool callOnAtLeastOneDecimalType(TypeIndex type_num1, TypeIndex ty
     {
         case TypeIndex::DateTime64:
             return callOnBasicType<DateTime64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-        case TypeIndex::Time64:
-            return callOnBasicType<Time64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
         case TypeIndex::Decimal32:
             return callOnBasicType<Decimal32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
         case TypeIndex::Decimal64:
@@ -87,8 +84,6 @@ static inline bool callOnAtLeastOneDecimalType(TypeIndex type_num1, TypeIndex ty
     {
         case TypeIndex::DateTime64:
             return callOnBasicTypeSecondArg<DateTime64, _int, _float, _decimal, _datetime>(type_num1, std::forward<F>(f));
-        case TypeIndex::Time64:
-            return callOnBasicTypeSecondArg<Time64, _int, _float, _decimal, _datetime>(type_num1, std::forward<F>(f));
         case TypeIndex::Decimal32:
             return callOnBasicTypeSecondArg<Decimal32, _int, _float, _decimal, _datetime>(type_num1, std::forward<F>(f));
         case TypeIndex::Decimal64:
@@ -782,8 +777,6 @@ private:
 
     ColumnPtr executeString(const IColumn * c0, const IColumn * c1) const
     {
-        checkStackSize();
-
         const ColumnString * c0_string = checkAndGetColumn<ColumnString>(c0);
         const ColumnString * c1_string = checkAndGetColumn<ColumnString>(c1);
         const ColumnFixedString * c0_fixed_string = checkAndGetColumn<ColumnFixedString>(c0);
@@ -896,8 +889,6 @@ private:
             const DataTypePtr & result_type, const IColumn * col_left_untyped, const IColumn * col_right_untyped,
             const DataTypePtr & left_type, const DataTypePtr & right_type, size_t input_rows_count) const
     {
-        checkStackSize();
-
         /// To compare something with const string, we cast constant to appropriate type and compare as usual.
         /// It is ok to throw exception if value is not convertible.
         /// We should deal with possible overflows, e.g. toUInt8(1) = '257' should return false.
@@ -1266,8 +1257,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        checkStackSize();
-
         const auto & col_with_type_and_name_left = arguments[0];
         const auto & col_with_type_and_name_right = arguments[1];
         const IColumn * col_left_untyped = col_with_type_and_name_left.column.get();

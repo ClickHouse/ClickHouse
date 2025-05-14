@@ -94,7 +94,7 @@ namespace Setting
     extern const SettingsBool enable_unaligned_array_join;
     extern const SettingsBool join_use_nulls;
     extern const SettingsBool query_plan_use_new_logical_join_step;
-    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_block_size;
     extern const SettingsUInt64 max_columns_to_read;
     extern const SettingsUInt64 max_distributed_connections;
     extern const SettingsUInt64 max_rows_in_set_to_optimize_join;
@@ -1837,27 +1837,19 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
             auto & inner_columns_list = join_node_using_column_node.getExpressionOrThrow()->as<ListNode &>();
 
             auto & left_inner_column_node = inner_columns_list.getNodes().at(0);
-            auto * left_inner_column = left_inner_column_node->as<ColumnNode>();
-            if (!left_inner_column)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "JOIN USING clause expected column identifier. Actual {}",
-                    left_inner_column_node->formatASTForErrorMessage());
+            auto & left_inner_column = left_inner_column_node->as<ColumnNode &>();
 
             auto & right_inner_column_node = inner_columns_list.getNodes().at(1);
-            auto * right_inner_column = right_inner_column_node->as<ColumnNode>();
-            if (!right_inner_column)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "JOIN USING clause expected column identifier. Actual {}",
-                    right_inner_column_node->formatASTForErrorMessage());
+            auto & right_inner_column = right_inner_column_node->as<ColumnNode &>();
 
             const auto & join_node_using_column_node_type = join_node_using_column_node.getColumnType();
-            if (!left_inner_column->getColumnType()->equals(*join_node_using_column_node_type))
+            if (!left_inner_column.getColumnType()->equals(*join_node_using_column_node_type))
             {
                 const auto & left_inner_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(left_inner_column_node);
                 left_plan_column_name_to_cast_type.emplace(left_inner_column_identifier, join_node_using_column_node_type);
             }
 
-            if (!right_inner_column->getColumnType()->equals(*join_node_using_column_node_type))
+            if (!right_inner_column.getColumnType()->equals(*join_node_using_column_node_type))
             {
                 const auto & right_inner_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(right_inner_column_node);
                 right_plan_column_name_to_cast_type.emplace(right_inner_column_identifier, join_node_using_column_node_type);
