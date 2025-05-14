@@ -22,7 +22,7 @@ DEFINE_ICEBERG_FIELD_NAME(timestamp_ms, timestamp-ms);
 DEFINE_ICEBERG_FIELD_NAME_SAME(location);
 DEFINE_ICEBERG_FIELD_NAME_SAME(snapshots);
 DEFINE_ICEBERG_FIELD_NAME_SAME(schemas);
-DEFINE_ICEBERG_FIELD_NAME(last_updated_ms, last-update-ms);
+DEFINE_ICEBERG_FIELD_NAME(last_updated_ms, last-updated-ms);
 DEFINE_ICEBERG_FIELD_NAME(source_id, source-id);
 DEFINE_ICEBERG_FIELD_NAME_SAME(transform);
 DEFINE_ICEBERG_FIELD_NAME_SAME(status);
