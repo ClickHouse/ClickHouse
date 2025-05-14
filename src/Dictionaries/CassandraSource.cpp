@@ -137,9 +137,9 @@ void CassandraSource::insertValue(IColumn & column, ValueType type, const CassVa
         {
             CassUuid value;
             cass_value_get_uuid(cass_value, &value);
-            std::array<char, CASS_UUID_STRING_LENGTH> uuid_str;
+            std::array<char, CASS_UUID_STRING_LENGTH> uuid_str; // null terminated
             cass_uuid_string(value, uuid_str.data());
-            assert_cast<ColumnUUID &>(column).insert(parse<UUID>(uuid_str.data(), uuid_str.size()));
+            assert_cast<ColumnUUID &>(column).insert(parse<UUID>(uuid_str.data(), uuid_str.size()-1));
             break;
         }
         default:
