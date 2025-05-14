@@ -110,14 +110,14 @@ void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
     IColumn::Filter delete_vector(num_rows, true);
     size_t num_rows_after_filtration = num_rows;
 
-    auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumBase>();
+    auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumOffset>();
     if (!chunk_info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumBase does not exist");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumOffset does not exist");
 
-    size_t base_row_num = chunk_info->row_num_base;
+    size_t row_num_offset = chunk_info->row_num_offset;
     for (size_t i = 0; i < num_rows; i++)
     {
-        size_t row_idx = base_row_num + i;
+        size_t row_idx = row_num_offset + i;
         if (bitmap.rb_contains(row_idx))
         {
             delete_vector[i] = false;
