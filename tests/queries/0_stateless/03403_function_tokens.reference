@@ -8,6 +8,13 @@ Ngram tokenizer
 ['abc','bc ','c d',' de','def']
 ['abc','bc ','c d',' de','def']
 ['abc def']
+String tokenizer
+[]
+['  a  bc d']
+['a','bc','d']
+['a','bc','d']
+['a','bc','d']
+['a','bc','d']
 No-op tokenizer
 ['']
 ['abc def']

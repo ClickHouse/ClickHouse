@@ -169,7 +169,7 @@ private:
     size_t n;
 };
 
-/// Parser extracting tokens (sequences of numbers and ascii letters).
+/// Parser extracting tokens which consist of alphanumeric ASCII characters or Unicode characters (not necessarily alphanumeric)
 struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtractor>
 {
     static const char * getName() { return "tokenbf_v1"; }
@@ -180,6 +180,22 @@ struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtrac
     bool nextInStringLike(const char * data, size_t length, size_t * __restrict pos, String & token) const override;
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToGinFilter(const char * data, size_t length, GinFilter & gin_filter, bool is_prefix, bool is_suffix) const override;
+};
+
+/// Parser extracting tokens which are separated by certain strings.
+/// Allows to emulate e.g. BigQuery's LOG_ANALYZER.
+struct StringTokenExtractor final : public ITokenExtractorHelper<StringTokenExtractor>
+{
+    explicit StringTokenExtractor(const std::vector<String> & separators_);
+
+    static const char * getName() { return "string"; }
+    static const char * getExternalName() { return getName(); }
+
+    bool nextInString(const char * data, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const override;
+    bool nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const override;
+
+private:
+    std::vector<String> separators;
 };
 
 /// Parser doing "no operation". Returns the entire input as a single token.
