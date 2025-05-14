@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-class FunctionTokens : public IFunction
+class FunctionTokensExtractor : public IFunction
 {
     static constexpr size_t arg_value = 0;
     static constexpr size_t arg_tokenizer = 1;
@@ -28,7 +28,7 @@ class FunctionTokens : public IFunction
 public:
     static constexpr auto name = "tokens";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTokens>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTokensExtractor>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -207,6 +207,6 @@ For example, with separators = `['%21', '%']` string `%21abc` would be tokenized
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionTokens>(documentation);
+    factory.registerFunction<FunctionTokensExtractor>(documentation);
 }
 }
