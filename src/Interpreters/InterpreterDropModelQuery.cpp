@@ -17,7 +17,9 @@ BlockIO InterpreterDropModelQuery::execute()
     const auto & drop_model_query = query_ptr->as<const ASTDropModelQuery &>();
 
     const String model_name = drop_model_query.model_name->as<ASTIdentifier>()->name();
-    ModelRegistry::instance().unregisterModel(model_name);
+
+    if (!drop_model_query.if_exists || ModelRegistry::instance().hasModel(model_name))
+        ModelRegistry::instance().unregisterModel(model_name);
 
     return {};
 }

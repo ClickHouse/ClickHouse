@@ -6,7 +6,7 @@ namespace DB
 {
 
 /** Query like this:
-  * DROP MODEL model_name
+  * DROP MODEL [IF EXISTS] model_name
   */
 
 class ParserDropModelQuery : public IParserBase

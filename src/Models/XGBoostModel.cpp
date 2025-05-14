@@ -1,5 +1,7 @@
 #include <Models/XGBoostModel.h>
 
+#include <xgboost/c_api.h>
+
 namespace DB
 {
 

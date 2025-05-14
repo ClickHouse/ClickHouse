@@ -10,6 +10,7 @@ class ASTDropModelQuery : public IAST
 {
 public:
     ASTPtr model_name;
+    bool if_exists = false;
 
     String getID(char) const override { return "DropModelQuery"; }
 

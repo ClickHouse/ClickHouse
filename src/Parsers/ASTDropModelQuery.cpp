@@ -18,7 +18,10 @@ ASTPtr ASTDropModelQuery::clone() const
 
 void ASTDropModelQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "DROP MODEL " << (settings.hilite ? hilite_none : "");
+    ostr << (settings.hilite ? hilite_keyword : "") << "DROP MODEL ";
+    if (if_exists)
+        ostr << "IF EXISTS ";
+    ostr << (settings.hilite ? hilite_none : "");
     model_name->format(ostr, settings, state, frame);
 }
 
