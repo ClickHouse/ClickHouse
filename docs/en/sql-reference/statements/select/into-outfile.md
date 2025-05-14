@@ -81,11 +81,11 @@ INTO OUTFILE 'name_{_partition_id}' TRUNCATE PARTITION BY number % 2"
 $ ls name*
 name_0  name_1
 $ cat name_0
-0	1
-0	2
-2	5
-2	6
+0   1
+0   2
+2   5
+2   6
 $ cat name_1
-1	3
-1	4
+1   3
+1   4
 ```
