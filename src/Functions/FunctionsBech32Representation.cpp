@@ -18,6 +18,44 @@
 #include "bech32.h"
 #include "segwit_addr.h"
 
+namespace
+{
+
+typedef std::vector<uint8_t> bech32_data;
+
+/** Convert from one power-of-2 number base to another. */
+template <int frombits, int tobits, bool pad>
+bool convertbits(bech32_data & out, const bech32_data & in)
+{
+    int acc = 0;
+    int bits = 0;
+    const int maxv = (1 << tobits) - 1;
+    const int max_acc = (1 << (frombits + tobits - 1)) - 1;
+    for (size_t i = 0; i < in.size(); ++i)
+    {
+        int value = in[i];
+        acc = ((acc << frombits) | value) & max_acc;
+        bits += frombits;
+        while (bits >= tobits)
+        {
+            bits -= tobits;
+            out.push_back((acc >> bits) & maxv);
+        }
+    }
+    if (pad)
+    {
+        if (bits)
+            out.push_back((acc << (tobits - bits)) & maxv);
+    }
+    else if (bits >= frombits || ((acc << (tobits - bits)) & maxv))
+    {
+        return false;
+    }
+    return true;
+}
+
+}
+
 namespace DB
 {
 
@@ -141,7 +179,9 @@ public:
 
                 const auto dec = bech32::decode(input);
 
-                if (dec.encoding == bech32::Encoding::INVALID)
+                bech32_data data_8bit;
+                if (dec.encoding == bech32::Encoding::INVALID
+                    || !convertbits<5, 8, false>(data_8bit, bech32_data(dec.data.begin(), dec.data.end())))
                 {
                     // add empty strings and continue
                     *hrp_pos = '\0';
@@ -165,8 +205,8 @@ public:
                 hrp_offsets[i] = hrp_pos - hrp_begin;
 
                 // store data output in data_pos
-                std::memcpy(data_pos, dec.data.data(), dec.data.size());
-                data_pos += dec.data.size();
+                std::memcpy(data_pos, data_8bit.data(), data_8bit.size());
+                data_pos += data_8bit.size();
                 *data_pos = '\0';
                 ++data_pos;
 
