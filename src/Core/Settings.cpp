@@ -6585,19 +6585,19 @@ If it is set to true, allow to specify experimental compression codecs (but we d
 )", EXPERIMENTAL) \
     DECLARE(UInt64, max_limit_for_vector_search_queries, 1'000, R"(
 SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(UInt64, hnsw_candidate_list_size_for_search, 256, R"(
 The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'.
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(VectorSearchFilterStrategy, vector_search_filter_strategy, VectorSearchFilterStrategy::AUTO, R"(
 If a vector search query has a WHERE clause, this setting determines if it is evaluated first (pre-filtering) OR if the vector similarity index is checked first (post-filtering). Possible values:
 - 'auto' - Postfiltering (the exact semantics may change in future).
 - 'postfilter' - Use vector similarity index to identify the nearest neighbours, then apply other filters
 - 'prefilter' - Evaluate other filters first, then perform brute-force search to identify neighbours.
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(Float, vector_search_postfilter_multiplier, 1.0, R"(
 Multiply the fetched nearest neighbors from the vector similarity index by this number before performing post-filtering on other predicates.
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction
 )", EXPERIMENTAL) \
