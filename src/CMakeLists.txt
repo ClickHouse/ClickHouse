@@ -419,7 +419,6 @@ target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::abseil_swiss_tabl
 dbms_target_link_libraries(PUBLIC ch_contrib::roaring)
 
 if (TARGET ch_contrib::libpng)
-    # Thats bad: we need to link only with clickhouse_formats (?) 
     dbms_target_link_libraries(PUBLIC ch_contrib::libpng)
 endif()
 
