@@ -23,6 +23,7 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     auto res = std::make_shared<ASTTableExpression>();
 
     if (!ParserWithOptionalAlias(std::make_unique<ParserSubquery>(), allow_alias_without_as_keyword).parse(pos, res->subquery, expected)
+        && !ParserWithOptionalAlias(std::make_unique<ParserDescribeSubquery>(), allow_alias_without_as_keyword).parse(pos, res->subquery, expected)
         && !ParserWithOptionalAlias(std::make_unique<ParserFunction>(false, true), allow_alias_without_as_keyword).parse(pos, res->table_function, expected)
         && !ParserWithOptionalAlias(std::make_unique<ParserCompoundIdentifier>(true, true), allow_alias_without_as_keyword)
                 .parse(pos, res->database_and_table_name, expected)
