@@ -58,6 +58,19 @@ public:
                 else if (tokenizer == SplitTokenExtractor::getExternalName())
                     optional_args.emplace_back("separators", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array");
             }
+
+            if (arguments.size() == 4 || arguments.size() == 5)
+            {
+                const auto tokenizer = arguments[arg_tokenizer].column->getDataAt(0).toString();
+
+                if (tokenizer == SparseGramTokenExtractor::getExternalName())
+                {
+                    optional_args.emplace_back("min_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "UInt8");
+                    optional_args.emplace_back("max_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "UInt8");
+                    if (arguments.size() == 5)
+                        optional_args.emplace_back("min_cutoff_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "UInt8");
+                }
+            }
         }
 
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
@@ -124,6 +137,16 @@ public:
             if (ngrams < 2 || ngrams > 8)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Ngrams argument of function {} should be between 2 and 8, got: {}", name, ngrams);
             token_extractor = std::make_unique<NgramTokenExtractor>(ngrams);
+        }
+        else if (tokenizer_arg == SparseGramTokenExtractor::getExternalName())
+        {
+            auto min_length = arguments.size() < 3 ? 3
+                : arguments[2].column->getUInt(0);
+            auto max_length = arguments.size() < 4 ? 100
+                : arguments[3].column->getUInt(0);
+            auto min_cutoff_length = arguments.size() < 5 ? std::nullopt
+                : std::optional(arguments[4].column->getUInt(0));
+            token_extractor = std::make_unique<SparseGramTokenExtractor>(min_length, max_length, min_cutoff_length);
         }
         else
         {

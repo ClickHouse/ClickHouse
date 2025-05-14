@@ -112,3 +112,11 @@ INSERT INTO tab (id, str) VALUES (1, ''), (2, 'abc def');
 SELECT tokens(str, 'no_op') AS tokenized, toTypeName(tokenized), isConstant(tokenized) FROM tab;
 
 DROP TABLE tab;
+SELECT tokens(materialize('abc+ def- foo! bar? baz= code; hello: world/'));
+
+SELECT 'Sparse tokenizer';
+
+SELECT tokens('', 'sparse_gram') AS tokenized;
+SELECT tokens('abc def cba', 'sparse_gram') AS tokenized;
+SELECT tokens('abc def cba', 'sparse_gram', 4, 10) AS tokenized;
+SELECT tokens('abc def cba', 'sparse_gram', 4, 10, 6) AS tokenized;

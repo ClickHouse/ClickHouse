@@ -211,6 +211,7 @@ struct SparseGramTokenExtractor final : public ITokenExtractorHelper<SparseGramT
     explicit SparseGramTokenExtractor(size_t min_length = 3, size_t max_length = 100, std::optional<size_t> min_cutoff_length_ = std::nullopt);
 
     static const char * getName() { return "sparse_gram"; }
+    static const char * getExternalName() { return getName(); }
 
     bool nextInString(const char * data, size_t length, size_t *  __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
 
