@@ -320,7 +320,7 @@ public:
                 tokenizer.join(&tokens[i], n, ngram);
 
                 StringRef ngram_ref(ngram);
-                const auto ref_it = ngram_to_class_count_index.find(ngram_ref);
+                const auto * const ref_it = ngram_to_class_count_index.find(ngram_ref);
                 const bool token_exists = (ref_it != ngram_to_class_count_index.end());
 
                 const auto * token_class_map = token_exists ? &all_ngram_class_counts[ref_it->getMapped()] : nullptr;
@@ -367,7 +367,6 @@ public:
         total += class_totals.getBufferSizeInBytes();
         total += log_class_priors.getBufferSizeInBytes();
 
-        total += sizeof(all_ngram_class_counts);
         total += all_ngram_class_counts.capacity() * sizeof(ClassCountMap);
 
         for (const auto & m : all_ngram_class_counts)
