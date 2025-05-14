@@ -54,6 +54,7 @@
 #include <Common/CPUID.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/StartupScriptMode.h>
 #include <Server/waitServersToFinish.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -826,6 +827,8 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
 
         SetResultDetailsFunc callback;
         std::vector<String> skipped_startup_scripts;
+
+        auto startup_scripts_mode_guard = StartupScriptMode::getGuard();
 
         for (const auto & key : keys)
         {
