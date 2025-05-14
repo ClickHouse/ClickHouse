@@ -1,7 +1,7 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
-#include "IO/CompressionMethod.h"
 
+#include <IO/CompressionMethod.h>
 #include <IO/WriteHelpers.h>
 
 #include <Server/HTTP/exceptionCodeToHTTPStatus.h>
@@ -15,6 +15,7 @@ namespace ErrorCodes
 {
     extern const int REQUIRED_PASSWORD;
     extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
+    extern const int NETWORK_ERROR;
 }
 
 namespace
@@ -23,7 +24,7 @@ namespace
 class WriteBufferFromHTTP2ServerResponse : public WriteBufferFromHTTPServerResponseBase
 {
 public:
-    explicit WriteBufferFromHTTP2ServerResponse(HTTP2Stream & stream_) : stream(stream_) {}
+    explicit WriteBufferFromHTTP2ServerResponse(HTTP2Stream & stream_, bool is_http_method_head_) : stream(stream_), is_http_method_head(is_http_method_head_) {}
 
     void sendBufferAndFinalize(const char * ptr, size_t size) override
     {
@@ -123,18 +124,26 @@ private:
         }
 
         stream.end_stream = end_stream;
-        stream.output = &memory;
-        stream.output_len = offset();
+        stream.output = is_http_method_head ? nullptr : &memory;
+        stream.output_len = is_http_method_head ? 0 : offset();
         stream.output_consumed = 0;
+
         HTTP2StreamEvent event{.type=HTTP2StreamEventType::OUTPUT_READY, .stream_id=stream.id};
         stream.stream_event_pipe->writeBytes(&event, sizeof(event));
-        while (stream.output_consumed != stream.output_len)
+
+        while (stream.output_consumed != stream.output_len && !stream.closed)
             stream.output_cv.wait(lock);
+
+        if (stream.closed)
+            throw Exception(ErrorCodes::NETWORK_ERROR, "HTTP/2 stream has been closed");
+
         stream.output = nullptr;
         set(memory.data(), memory.size());
     }
 
     HTTP2Stream & stream;
+
+    bool is_http_method_head;
 };
 
 }
@@ -145,9 +154,9 @@ void HTTP2ServerResponse::send100Continue()
     stream.stream_event_pipe->writeBytes(&event, sizeof(event));
 }
 
-WriteBufferFromHTTPServerResponseBase * HTTP2ServerResponse::makeNewStream() noexcept
+std::unique_ptr<WriteBufferFromHTTPServerResponseBase> HTTP2ServerResponse::makeUniqueStream()
 {
-    return new WriteBufferFromHTTP2ServerResponse(stream);  /// NOLINT
+    return std::make_unique<WriteBufferFromHTTP2ServerResponse>(stream, request && request->getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD);
 }
 
 }

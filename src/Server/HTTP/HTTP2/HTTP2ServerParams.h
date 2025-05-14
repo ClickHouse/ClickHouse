@@ -1,6 +1,7 @@
 #pragma once
 
-#include <cstdint>
+#include <Core/Defines.h>
+
 #include <Poco/AutoPtr.h>
 #include <Poco/RefCountedObject.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -21,7 +22,7 @@ public:
 
 private:
     uint32_t max_concurrent_streams = 100;
-    uint32_t initial_window_size = 65535;
+    uint32_t initial_window_size = DBMS_DEFAULT_BUFFER_SIZE;
     uint32_t max_frame_size = 65535;
 };
 

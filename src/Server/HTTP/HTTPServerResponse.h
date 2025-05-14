@@ -70,12 +70,9 @@ public:
     bool sendStarted() const noexcept { return send_started; }
     void markSendStarted() noexcept { send_started = true; }
 
-    /// FIXME: ugly interface. You never want to call these methods more then once
-    std::shared_ptr<WriteBufferFromHTTPServerResponseBase> makeStream() { return std::shared_ptr<WriteBufferFromHTTPServerResponseBase>(makeNewStream()); }
-    std::unique_ptr<WriteBufferFromHTTPServerResponseBase> makeUniqueStream() { return std::unique_ptr<WriteBufferFromHTTPServerResponseBase>(makeNewStream()); }
-
-private:
-    virtual WriteBufferFromHTTPServerResponseBase * makeNewStream() noexcept = 0;
+    /// FIXME: ugly interface. You should never want to call these methods more then once
+    virtual std::unique_ptr<WriteBufferFromHTTPServerResponseBase> makeUniqueStream() = 0;
+    std::shared_ptr<WriteBufferFromHTTPServerResponseBase> makeStream() { return std::shared_ptr<WriteBufferFromHTTPServerResponseBase>(makeUniqueStream().release()); }
 
 protected:
     const HTTPServerRequest * request = nullptr;

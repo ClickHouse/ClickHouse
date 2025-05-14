@@ -92,7 +92,7 @@ public:
     void setResponseDefaultHeaders() override;
     void drainRequestIfNeeded() override;
 
-    WriteBufferFromHTTPServerResponseBase * makeNewStream() noexcept override;
+    std::unique_ptr<WriteBufferFromHTTPServerResponseBase> makeUniqueStream() override;
 
     Poco::Net::HTTPServerSession & getSession() const noexcept { return session; }
 

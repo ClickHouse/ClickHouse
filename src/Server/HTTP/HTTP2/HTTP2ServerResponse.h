@@ -15,7 +15,7 @@ public:
     void send100Continue();
 
 private:
-    WriteBufferFromHTTPServerResponseBase * makeNewStream() noexcept override;
+    std::unique_ptr<WriteBufferFromHTTPServerResponseBase> makeUniqueStream() override;
 
     HTTP2Stream & stream;
 };

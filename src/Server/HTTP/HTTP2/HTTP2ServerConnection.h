@@ -106,6 +106,7 @@ private:
     std::string peer_address;
 
     nghttp2_session * session = nullptr;
+    nghttp2_option * option_no_auto_window_update = nullptr;
     std::unordered_map<int32_t, std::unique_ptr<HTTP2Stream>> streams;
 
     std::unique_ptr<ReadBufferFromPocoSocket> socket_in;

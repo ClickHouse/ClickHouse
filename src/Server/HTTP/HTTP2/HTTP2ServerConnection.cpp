@@ -110,6 +110,7 @@ void HTTP2ServerConnection::run()
         LOG_ERROR(log, "Error in HTTP/2 connection with {}: {}", peer_address, e.what());
     }
     nghttp2_session_del(session);
+    nghttp2_option_del(option_no_auto_window_update);
     socket_out->finalize();
     LOG_INFO(log, "HTTP/2 connection with {} finished", peer_address);
 }
@@ -241,7 +242,8 @@ bool HTTP2ServerConnection::processNextFrame()
         return false;
     }
     /// Frame format is defined in RFC 9113 section 4.1.
-    uint32_t frame_size = (static_cast<uint32_t>(buf[0]) << 16) + (static_cast<uint32_t>(buf[1]) << 8) + static_cast<uint32_t>(buf[2]);
+    unsigned char * ubuf = reinterpret_cast<unsigned char *>(buf.data());
+    uint32_t frame_size = (static_cast<uint32_t>(ubuf[0]) << 16) + (static_cast<uint32_t>(ubuf[1]) << 8) + static_cast<uint32_t>(ubuf[2]);
     /// If we get a larger frame size then the call to nghttp2_session_mem_recv should fail
     frame_size = std::min(frame_size, params->getMaxFrameSize());
     buf.resize(buf.size() + frame_size);
@@ -271,6 +273,8 @@ bool HTTP2ServerConnection::processNextStreamEvent()
         submit100Continue(event.stream_id);
     else if (event.type == HTTP2StreamEventType::OUTPUT_READY)
         onOutputReady(event.stream_id);
+    else if (event.type == HTTP2StreamEventType::DATA_CONSUMED)
+        nghttp2_session_consume(session, event.stream_id, event.payload);
     else
     {
         LOG_ERROR(log, "Unknown HTTP/2 stream event type ({}) in connection with {}", event.type, peer_address);
@@ -299,7 +303,6 @@ void HTTP2ServerConnection::onOutputReady(uint32_t stream_id)
     HTTP2Stream & stream = *it->second;
 
     std::lock_guard lock(stream.output_mutex);
-    chassert(stream.output != nullptr);
 
     if (!stream.response_submitted)
     {
@@ -336,6 +339,7 @@ void HTTP2ServerConnection::prepareHeaders(HTTP2Stream & stream, std::vector<ngh
         if (strcasecmp(header.first.c_str(), "Connection") == 0 ||
             strcasecmp(header.first.c_str(), "Keep-Alive") == 0 ||
             strcasecmp(header.first.c_str(), "Transfer-Encoding") == 0)
+            /// What about Content-Length?
             continue;
 
         nva.push_back({
@@ -361,6 +365,8 @@ void HTTP2ServerConnection::initSession()
 
     nghttp2_session_server_new(&session, callbacks, this);
 
+    nghttp2_session_callbacks_del(callbacks);
+
     nghttp2_settings_entry settings[] = {
         {NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, params->getMaxConcurrentStreams()},
         {NGHTTP2_SETTINGS_INITIAL_WINDOW_SIZE, params->getInitialWindowSize()},
@@ -370,7 +376,11 @@ void HTTP2ServerConnection::initSession()
 
     nghttp2_submit_settings(session, NGHTTP2_FLAG_NONE, settings, sizeof(settings) / sizeof(settings[0]));
 
-    nghttp2_session_callbacks_del(callbacks);
+    int32_t connection_window_size = params->getInitialWindowSize() * params->getMaxConcurrentStreams();
+    nghttp2_session_set_local_window_size(session, NGHTTP2_FLAG_NONE, 0, connection_window_size);
+
+    nghttp2_option_new(&option_no_auto_window_update);
+    nghttp2_option_set_no_auto_window_update(option_no_auto_window_update, 1);
 }
 
 ssize_t HTTP2ServerConnection::dataSourceReadCallback(nghttp2_session * /*session*/, int32_t /*stream_id*/,
@@ -448,12 +458,32 @@ int HTTP2ServerConnection::onFrameRecvCallback(nghttp2_session * session,
 {
     HTTP2ServerConnection * self = reinterpret_cast<HTTP2ServerConnection *>(user_data);
 
-    if (frame->hd.type != NGHTTP2_HEADERS || frame->headers.cat != NGHTTP2_HCAT_REQUEST)
+    if (frame->hd.stream_id == 0)
         return 0;
 
     auto it = self->streams.find(frame->hd.stream_id);
     chassert(it != self->streams.end() && it->second);
     HTTP2Stream & stream = *it->second;
+
+    if (frame->hd.type == NGHTTP2_DATA && frame->hd.length == 0 && (frame->hd.flags & NGHTTP2_FLAG_END_STREAM) && !stream.eof)
+    {
+        stream.eof = true;
+        stream.input_cv.notify_one();
+        return 0;
+    }
+
+    if (frame->hd.type != NGHTTP2_HEADERS)
+        return 0;
+
+    if (frame->hd.type == NGHTTP2_HCAT_HEADERS)
+    {
+        /// Trailers are not supported
+        LOG_ERROR(self->log, "Received trailers in stream {} of an HTTP/2 connection with {}, going to close the stream", self->peer_address, frame->hd.stream_id);
+        nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE, frame->hd.stream_id, NGHTTP2_INTERNAL_ERROR);
+        return 0;
+    }
+
+    chassert(frame->hd.type == NGHTTP2_HCAT_REQUEST);
 
     if (frame->hd.flags & NGHTTP2_FLAG_END_STREAM)
         stream.eof = true;
@@ -479,6 +509,8 @@ int HTTP2ServerConnection::onStreamCloseCallback(nghttp2_session * /*session*/, 
     auto it = self->streams.find(stream_id);
     chassert(it != self->streams.end() && it->second);
     it->second->closed = true;
+    it->second->input_cv.notify_one();
+    it->second->output_cv.notify_one();
 
     return 0;
 }

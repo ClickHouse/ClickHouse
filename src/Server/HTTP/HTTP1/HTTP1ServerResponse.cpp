@@ -439,9 +439,9 @@ void HTTP1ServerResponse::drainRequestIfNeeded()
     }
 }
 
-WriteBufferFromHTTPServerResponseBase * HTTP1ServerResponse::makeNewStream() noexcept
+std::unique_ptr<WriteBufferFromHTTPServerResponseBase> HTTP1ServerResponse::makeUniqueStream()
 {
-    return new WriteBufferFromHTTP1ServerResponse(  // NOLINT
+    return std::make_unique<WriteBufferFromHTTP1ServerResponse>(
         *this, request && request->getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, write_event, buf_size);
 }
 
