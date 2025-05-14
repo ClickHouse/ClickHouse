@@ -30,7 +30,6 @@
 #include <Analyzer/Resolve/TypoCorrection.h>
 
 #include <Core/Settings.h>
-#include <iostream>
 
 namespace DB
 {
