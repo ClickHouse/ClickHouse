@@ -181,7 +181,29 @@ struct ReadWKBMultiPolygonNameHolder
 
 REGISTER_FUNCTION(ReadWKB)
 {
-    factory.registerFunction<FunctionReadWKB<DataTypePointName, CartesianPoint, PointSerializer<CartesianPoint>, ReadWKBPointNameHolder>>();
+    factory.registerFunction<FunctionReadWKB<DataTypePointName, CartesianPoint, PointSerializer<CartesianPoint>, ReadWKBPointNameHolder>>(
+        FunctionDocumentation{
+            .description = R"(
+    Parses a Well-Known Binary (WKB) representation of a Point geometry and returns it in the internal ClickHouse format.
+    )",
+            .syntax = "readWKBPoint(wkt_string)",
+            .arguments{{"wkb_string", "The input WKB string representing a Point geometry."}},
+            .returned_value = "The function returns a ClickHouse internal representation of the point geometry.",
+            .examples{
+                {"first call",
+                 "SELECT "
+                 "readWKBPoint(unhex('"
+                 "010100000000000000000000000000000000000000"
+                 "'));",
+                 R"(
+    ┌─readWKBPoint(unhex'010100000000000000000000000...'))─┐
+    │ (0,0)                                                │
+    └──────────────────────────────────────────────────────┘
+                )"},
+            },
+            .introduced_in = {25, 5},
+            .category = FunctionDocumentation::Category::Geo,
+        });
     factory.registerFunction<
         FunctionReadWKB<DataTypeLineStringName, CartesianLineString, LineStringSerializer<CartesianPoint>, ReadWKBLineStringNameHolder>>(
         FunctionDocumentation{
@@ -203,7 +225,8 @@ REGISTER_FUNCTION(ReadWKB)
     └──────────────────────────────────────────────────────┘
                 )"},
             },
-            .category = FunctionDocumentation::Category::UUID});
+            .introduced_in = {25, 5},
+            .category = FunctionDocumentation::Category::Geo});
     factory.registerFunction<FunctionReadWKB<
         DataTypeMultiLineStringName,
         CartesianMultiLineString,
@@ -228,6 +251,7 @@ REGISTER_FUNCTION(ReadWKB)
             └──────────────────────────────────────────────────────────────────────────────┘
                         )"},
         },
+        .introduced_in = {25, 5},
         .category = FunctionDocumentation::Category::Geo});
     factory.registerFunction<
         FunctionReadWKB<DataTypePolygonName, CartesianPolygon, PolygonSerializer<CartesianPoint>, ReadWKBPolygonNameHolder>>();
@@ -235,7 +259,34 @@ REGISTER_FUNCTION(ReadWKB)
         DataTypeMultiPolygonName,
         CartesianMultiPolygon,
         MultiPolygonSerializer<CartesianPoint>,
-        ReadWKBMultiPolygonNameHolder>>();
+        ReadWKBMultiPolygonNameHolder>>(FunctionDocumentation{
+        .description = R"(
+        Parses a Well-Known Binary (WKB) representation of a MultiPolygon geometry and returns it in the internal ClickHouse format.
+        )",
+        .syntax = "readWKBMultiPolygon(wkt_string)",
+        .arguments{{"wkb_string", "The input WKB string representing a MultiPolygon geometry."}},
+        .returned_value = "The function returns a ClickHouse internal representation of the MultiPolygon geometry.",
+        .examples{
+            {"first call",
+             "SELECT "
+             "readWKBMultiPolygon(unhex('"
+             "01060000000200000001030000000200000005000000000000000000004000000000000000000000000000002440000000000000000000000000000024400"
+             "00000000000244000000000000000000000000000002440000000000000004000000000000000000500000000000000000010400000000000001040000000"
+             "00000014400000000000001040000000000000144000000000000014400000000000001040000000000000144000000000000010400000000000001040010"
+             "3000000010000000400000000000000000024c000000000000024c000000000000024c000000000000022c000000000000022c00000000000002440000000"
+             "00000024c000000000000024c0"
+             "'));",
+             R"(
+        ┌─readWKBMultiPolygon(unhex'01060000000200000001030000000200000005000000000000000000004000000000000000000000000000002440...'))─┐
+        │ [[[(2,0),(10,0),(10,10),(0,10),(2,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]],[[(-10,-10),(-10,-9),(-9,10),(-10,-10)]]]             │
+        └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+                    )"},
+        },
+        .introduced_in = {25, 5},
+        .category = FunctionDocumentation::Category::Geo,
+    }
+
+    );
 }
 
 }
