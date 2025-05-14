@@ -64,7 +64,6 @@ __bitSwapLastTwo
 __bitWrapperFunc
 __getScalar
 __scalarSubqueryResult
-abs
 accurateCast
 accurateCastOrDefault
 accurateCastOrNull
@@ -242,7 +241,6 @@ defaultValueOfArgumentType
 defaultValueOfTypeName
 degrees
 demangle
-divide
 divideOrNull
 dotProduct
 dumpColumnStructure
@@ -316,7 +314,6 @@ fromUnixTimestamp64Second
 fromUnixTimestampInJodaSyntax
 fuzzBits
 gccMurmurHash
-gcd
 generateUUIDv4
 geoDistance
 geohashDecode
@@ -360,7 +357,6 @@ hostName
 hypot
 identity
 if
-ifNotFinite
 ifNull
 ignore
 ilike
@@ -372,21 +368,16 @@ initcap
 initcapUTF8
 initialQueryID
 initializeAggregation
-intDiv
 intDivOrNull
-intDivOrZero
 intExp10
 intExp2
 intHash32
 intHash64
 isConstant
 isDecimalOverflow
-isFinite
 isIPAddressInRange
 isIPv4String
 isIPv6String
-isInfinite
-isNaN
 isNotNull
 isNull
 isNullable
@@ -400,7 +391,6 @@ joinGetOrNull
 jumpConsistentHash
 kafkaMurmurHash
 kostikConsistentHash
-lcm
 least
 left
 leftPad
@@ -431,13 +421,9 @@ mapSubtract
 mapUpdate
 match
 materialize
-max2
 metroHash64
-min2
 minSampleSizeContinuous
 minSampleSizeConversion
-minus
-modulo
 moduloLegacy
 moduloOrNull
 moduloOrZero
@@ -465,13 +451,11 @@ multiSearchFirstPosition
 multiSearchFirstPositionCaseInsensitive
 multiSearchFirstPositionCaseInsensitiveUTF8
 multiSearchFirstPositionUTF8
-multiply
 murmurHash2_32
 murmurHash2_64
 murmurHash3_128
 murmurHash3_32
 murmurHash3_64
-negate
 neighbor
 netloc
 ngramDistance
@@ -494,7 +478,6 @@ ngramSimHash
 ngramSimHashCaseInsensitive
 ngramSimHashCaseInsensitiveUTF8
 ngramSimHashUTF8
-ngrams
 normalizeQuery
 normalizeQueryKeepNames
 normalizedQueryHash
@@ -547,7 +530,6 @@ partitionId
 path
 pathFull
 pi
-plus
 pointInEllipses
 pointInPolygon
 polygonAreaCartesian
@@ -828,6 +810,12 @@ toStartOfYear
 toString
 toStringCutToZero
 toTime
+toTime64
+toTime64OrNull
+toTime64OrZero
+toTimeOrNull
+toTimeOrZero
+toTimeWithFixedDate
 toTimezone
 toTypeName
 toUInt128
@@ -871,7 +859,6 @@ toYYYYMMDDhhmmss
 toYear
 toYearWeek
 today
-tokens
 transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot
