@@ -36,7 +36,7 @@ class Runner:
             BRANCH="branch_name",
             SHA=sha or Shell.get_output("git rev-parse HEAD"),
             PR_NUMBER=pr or -1,
-            EVENT_TYPE="",
+            EVENT_TYPE=workflow.event,
             JOB_OUTPUT_STREAM="",
             EVENT_FILE_PATH="",
             CHANGE_URL="",
