@@ -168,12 +168,12 @@ REGISTER_FUNCTION(ArrayDifference)
 {
     FunctionDocumentation::Description description = R"(
 Calculates an array of differences between adjacent array elements.
-The first element of the result array will be 0, the second `a[1] - a[0]`, the third `a[2] - a[1]`, etc.
+The first element of the result array will be 0, the second `arr[1] - arr[0]`, the third `arr[2] - arr[1]`, etc.
 The type of elements in the result array are determined by the type inference rules for subtraction (e.g. `UInt8` - `UInt8` = `Int16`).
     )";
-    FunctionDocumentation::Syntax syntax = "arrayDifference(x)";
+    FunctionDocumentation::Syntax syntax = "arrayDifference(arr)";
     FunctionDocumentation::Arguments argument = {
-        {"x", "Array for which to calculate differences between adjacent elements. [`Array`](/sql-reference/data-types/array)."},
+        {"arr", "Array for which to calculate differences between adjacent elements. [`Array(T)`](/sql-reference/data-types/array)."},
     };
     FunctionDocumentation::ReturnedValue returned_value = "Returns an array of differences between adjacent array elements. [`UInt*`](/sql-reference/data-types/int-uint#integer-ranges), [`Int*`](/sql-reference/data-types/int-uint#integer-ranges), [`Float*`](/sql-reference/data-types/float).";
     FunctionDocumentation::Examples examples = {

@@ -329,24 +329,26 @@ For example `SELECT arrayUniq([1,2], [3,4], [5,6])` will form the following tupl
 
 It will then count the number of unique tuples. In this case `2`.
 
+All arrays passed must have the same length.
+
 :::tip
 If you want to get a list of unique items in an array, you can use `arrayReduce('groupUniqArray', arr)`.
 :::
 )";
-    FunctionDocumentation::Syntax syntax = "arrayUniq(x[, ...yN])";
+    FunctionDocumentation::Syntax syntax = "arrayUniq(arr1[, arr2, ..., arrN])";
     FunctionDocumentation::Arguments arguments = {
         {
-            "x",
-            "Array for which to count the number of unique elements. [`Array`](/sql-reference/data-types/array)."
+            "arr1",
+            "Array for which to count the number of unique elements. [`Array(T)`](/sql-reference/data-types/array)."
         },
         {
-            "...yN (optional)",
-            "Additional same-size arrays used to count the number of unique tuples of elements at corresponding positions in multiple arrays. [`Array`](/sql-reference/data-types/array)."
+            "[, arr2, ..., arrN] (optional)",
+            "Optional. Additional arrays used to count the number of unique tuples of elements at corresponding positions in multiple arrays. [`Array(T)`](/sql-reference/data-types/array)."
         }
     };
     FunctionDocumentation::Examples examples =
-{{"Single argument", "SELECT arrayUniq([1,1,2,2])", "2"},
-{"Multiple argument", "SELECT arrayUniq([1,2,3], [4,5,6])", "3"}};
+{{"Single argument", "SELECT arrayUniq([1, 1, 2, 2])", "2"},
+{"Multiple argument", "SELECT arrayUniq([1, 2, 3, 1], [4, 5, 6, 4])", "3"}};
     FunctionDocumentation::ReturnedValue returned_value = R"(
 For a single argument returns the number of unique
 elements. For multiple arguments returns the number of unique tuples made from

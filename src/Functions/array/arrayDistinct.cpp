@@ -290,11 +290,11 @@ void FunctionArrayDistinct::executeHashed(
 REGISTER_FUNCTION(ArrayDistinct)
 {
     FunctionDocumentation::Description description = "Returns an array containing only the distinct elements of an array.";
-    FunctionDocumentation::Syntax syntax = "arrayDistinct(x)";
+    FunctionDocumentation::Syntax syntax = "arrayDistinct(arr)";
     FunctionDocumentation::Arguments argument = {
-        {"x", "Array for which to extract distinct elements. [`Array`](/sql-reference/data-types/array)."},
+        {"arr", "Array for which to extract distinct elements. [`Array(T)`](/sql-reference/data-types/array)."},
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns an array containing the distinct elements.";
+    FunctionDocumentation::ReturnedValue returned_value = "Returns an array containing the distinct elements. [`Array(T)`](/sql-reference/data-types/array).";
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayDistinct([1, 2, 2, 3, 1]);", "[1,2,3]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;

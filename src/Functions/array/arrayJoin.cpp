@@ -85,11 +85,11 @@ and Aggregate Functions which take a group of rows and "compress" or "reduce" th
 All the values in the columns are simply copied, except the values in the column where this function is applied;
 these are replaced with the corresponding array value.
 )";
-    FunctionDocumentation::Syntax syntax = "arrayJoin(x)";
+    FunctionDocumentation::Syntax syntax = "arrayJoin(arr)";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "An array to unfold. [`Array`](/sql-reference/data-types/array)"}
+        {"arr", "An array to unfold. [`Array(T)`](/sql-reference/data-types/array)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns a set of rows unfolded from `x`.";
+    FunctionDocumentation::ReturnedValue returned_value = "Returns a set of rows unfolded from `arr`.";
     FunctionDocumentation::Examples examples = {
         {"Basic usage", R"(SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src)", R"(
 ┌─dst─┬─\'Hello\'─┬─src─────┐

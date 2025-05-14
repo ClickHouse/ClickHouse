@@ -20,8 +20,8 @@ REGISTER_FUNCTION(ArrayEnumerateDenseRanked)
     FunctionDocumentation::Syntax syntax = "arrayEnumerateDenseRanked(clear_depth, arr, max_array_depth)";
     FunctionDocumentation::Arguments arguments = {
         {"clear_depth", "Enumerate elements at the specified level separately. Positive [Integer](../data-types/int-uint.md) less than or equal to `max_arr_depth`."},
-        {"x", "N-dimensional array to enumerate. [Array](/sql-reference/data-types/array)."},
-        {"max_array_depth", "The maximum effective depth. Positive [Integer](../data-types/int-uint.md) less than or equal to the depth of `arr`."},
+        {"arr", "N-dimensional array to enumerate. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"max_array_depth", "The maximum effective depth. Positive [(U)Int*](../data-types/int-uint.md) less than or equal to the depth of `arr`."},
     };
     FunctionDocumentation::ReturnedValue returned_value = "Returns an array denoting where each element first appears in the source array. [Array](/sql-reference/data-types/array).";
     FunctionDocumentation::Examples examples = {
