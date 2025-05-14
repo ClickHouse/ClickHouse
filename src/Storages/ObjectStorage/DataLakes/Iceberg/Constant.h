@@ -32,7 +32,7 @@ DEFINE_ICEBERG_FIELD_ALIAS(manifest_list, manifest-list);
 DEFINE_ICEBERG_FIELD_ALIAS(timestamp_ms, timestamp-ms);
 DEFINE_ICEBERG_FIELD_ALIAS(last_updated_ms, last-updated-ms);
 DEFINE_ICEBERG_FIELD_ALIAS(source_id, source-id);
-/// These are compound fields like `data_file.file_path`, we use prefix 'c_' to distingish them.
+/// These are compound fields like `data_file.file_path`, we use prefix 'c_' to distinguish them.
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_path);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, content);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, partition);
