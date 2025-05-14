@@ -1,9 +1,9 @@
-# option(ENABLE_LIBPNG "Enable libpng" ${ENABLE_LIBRARIES})
+option(ENABLE_LIBPNG "Enable libpng" ${ENABLE_LIBRARIES})
 
-# if (NOT ENABLE_LIBPNG)
-#     message(STATUS "Not using libpng")
-#     return()
-# endif()
+if (NOT ENABLE_LIBPNG)
+    message(STATUS "Not using libpng")
+    return()
+endif()
 
 set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/libpng")
 set(SCRIPTS_DIR "${LIBRARY_DIR}/scripts")
