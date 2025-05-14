@@ -32,13 +32,13 @@ naiveBayesClassifier(model_name, input_text);
 
 **Arguments**
 
-- `model_name` — Name of the pre-configured model. [String](../data-types/string.md)  
+- `model_name` — Name of the pre-configured model. [String](../data-types/string.md)
   The model must be defined in ClickHouse's configuration files.
-- `input_text` — Text to classify. [String](../data-types/string.md)  
+- `input_text` — Text to classify. [String](../data-types/string.md)
   Input is processed exactly as provided (case/punctuation preserved).
 
 **Returned Value**
-- Predicted class ID as an unsigned integer. [UInt32](../data-types/int-uint.md)  
+- Predicted class ID as an unsigned integer. [UInt32](../data-types/int-uint.md)
   Class IDs correspond to categories defined during model construction.
 
 **Example**
@@ -56,9 +56,9 @@ SELECT naiveBayesClassifier('language', 'How are you?');
 
 ---
 
-### Implementation Details
+### Implementation Details {#implementation-details}
 
-**Algorithm**  
+**Algorithm**
 Uses Naive Bayes classification algorithm with [Laplace smoothing](https://en.wikipedia.org/wiki/Additive_smoothing) to handle unseen ngrams based on n-gram probabilities from [this](https://web.stanford.edu/~jurafsky/slp3/4.pdf).
 
 **Key Features**
@@ -70,7 +70,7 @@ Uses Naive Bayes classification algorithm with [Laplace smoothing](https://en.wi
 
 ---
 
-### Model Configuration
+### Model Configuration {#model-configuration}
 
 You can find reference source code for creating a Naive Bayes model for language detection [here](https://github.com/nihalzp/ClickHouse-NaiveBayesClassifier-Models).
 
@@ -115,7 +115,7 @@ Here is an example configuration for a Naive Bayes model in ClickHouse:
 
 **Model Training Guide**
 
-**File Format**  
+**File Format**
 In human-readable format, for `n=2` and `token` mode, the data might look like this:
 ```text
 <class_id> <ngram> <count>
@@ -130,7 +130,7 @@ For `n=3` and `codepoint` mode, it might look like:
 1 ref 28
 ```
 
-**Binary Format Details**  
+**Binary Format Details**
 Each n-gram stored as:
 1. 4-byte class ID
 2. 4-byte ngram bytes length
