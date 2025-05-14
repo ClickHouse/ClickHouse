@@ -2268,6 +2268,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
     static const String TMP_PREFIX = "tmp_replace_from_";
 
+    bool are_policies_partition_op_compatible = getStoragePolicy()->isCompatibleForPartitionOps(source_table->getStoragePolicy());
     for (const DataPartPtr & src_part : src_parts)
     {
         if (is_all)
@@ -2294,7 +2295,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                 clone_params,
                 local_context->getReadSettings(),
                 local_context->getWriteSettings(),
-                true/*must_on_same_disk*/);
+                !are_policies_partition_op_compatible /*must_on_same_disk*/);
             dst_parts.emplace_back(std::move(dst_part));
             dst_parts_locks.emplace_back(std::move(part_lock));
         }
@@ -2371,13 +2372,19 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Table {} supports movePartitionToTable only for MergeTree family of table engines. Got {}",
                         getStorageID().getNameForLogs(), dest_table->getName());
-    if (dest_table_storage->getStoragePolicy() != this->getStoragePolicy())
-        throw Exception(ErrorCodes::UNKNOWN_POLICY,
-                        "Destination table {} should have the same storage policy of source table {}. {}: {}, {}: {}",
-                        dest_table_storage->getStorageID().getNameForLogs(),
-                        getStorageID().getNameForLogs(), getStorageID().getNameForLogs(),
-                        this->getStoragePolicy()->getName(), dest_table_storage->getStorageID().getNameForLogs(),
-                        dest_table_storage->getStoragePolicy()->getName());
+    bool are_policies_partition_op_compatible = getStoragePolicy()->isCompatibleForPartitionOps(dest_table_storage->getStoragePolicy());
+
+    if (!are_policies_partition_op_compatible)
+        throw Exception(
+            ErrorCodes::UNKNOWN_POLICY,
+            "Destination table {} should have the same storage policy of source table, or the policies must be compatible for partition "
+            "operations {}. {}: {}, {}: {}",
+            dest_table_storage->getStorageID().getNameForLogs(),
+            getStorageID().getNameForLogs(),
+            getStorageID().getNameForLogs(),
+            this->getStoragePolicy()->getName(),
+            dest_table_storage->getStorageID().getNameForLogs(),
+            dest_table_storage->getStoragePolicy()->getName());
 
     // Use the same back-pressure (delay/throw) logic as for INSERTs to be consistent and avoid possibility of exceeding part limits using MOVE PARTITION queries
     dest_table_storage->delayInsertOrThrowIfNeeded(nullptr, local_context, true);
@@ -2437,7 +2444,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             clone_params,
             local_context->getReadSettings(),
             local_context->getWriteSettings(),
-            true/*must_on_same_disk*/
+            !are_policies_partition_op_compatible /*must_on_same_disk*/
         );
 
         dst_parts.emplace_back(std::move(dst_part));
