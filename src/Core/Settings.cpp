@@ -6133,6 +6133,26 @@ Use types inference during String to Dynamic conversion
     DECLARE(Bool, cast_string_to_variant_use_inference, true, R"(
 Use types inference during String to Variant conversion.
 )", 0) \
+    DECLARE(DateTimeInputFormat, cast_string_to_date_time_mode, "basic", R"(
+Allows choosing a parser of the text representation of date and time during cast from String.
+
+Possible values:
+
+- `'best_effort'` — Enables extended parsing.
+
+    ClickHouse can parse the basic `YYYY-MM-DD HH:MM:SS` format and all [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
+
+- `'best_effort_us'` — Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](../../sql-reference/functions/type-conversion-functions#parsedatetimebesteffortus)
+
+- `'basic'` — Use basic parser.
+
+    ClickHouse can parse only the basic `YYYY-MM-DD HH:MM:SS` or `YYYY-MM-DD` format. For example, `2019-08-20 10:18:56` or `2019-08-20`.
+
+See also:
+
+- [DateTime data type.](../../sql-reference/data-types/datetime.md)
+- [Functions for working with dates and times.](../../sql-reference/functions/date-time-functions.md)
+)", 0) \
     DECLARE(Bool, enable_blob_storage_log, true, R"(
 Write information about blob storage operations to system.blob_storage_log table
 )", 0) \
