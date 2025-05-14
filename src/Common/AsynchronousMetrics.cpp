@@ -1684,8 +1684,11 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                     /// Retransmits
                     String retransmits_str;
                     readStringUntilWhitespace(retransmits_str, *file);
-                    UInt32 retransmits = unhexUInt<UInt32>(retransmits_str.data());
-                    unrecovered_retransmits += retransmits;
+                    if (retransmits_str.size() == 8)
+                    {
+                        UInt32 retransmits = unhexUInt<UInt32>(retransmits_str.data());
+                        unrecovered_retransmits += retransmits;
+                    }
 
                     skipToNextLineOrEOF(*file);
                     ++total_sockets;
@@ -1704,13 +1707,13 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         if (net_tcp6)
             process_net("/proc/net/tcp6", net_tcp6);
 
-        new_values["NetworkSockets"] = { total_sockets,
+        new_values["NetworkTCPSockets"] = { total_sockets,
             "Total number of network sockets used on the server across TCPv4 and TCPv6, in all states." };
 
         auto process_socket_state = [&](UInt8 state, const char * description)
         {
             if (state < 16 && sockets_by_state[state])
-                new_values[fmt::format("NetworkSockets_{}", description)] = { sockets_by_state[state],
+                new_values[fmt::format("NetworkTCPSockets_{}", description)] = { sockets_by_state[state],
                     "Total number of network sockets in the specific state on the server across TCPv4 and TCPv6." };
         };
 
@@ -1726,13 +1729,13 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         process_socket_state(TCP_LISTEN, "LISTEN");
         process_socket_state(TCP_CLOSING, "CLOSING");
 
-        new_values["NetworkTransmitQueue"] = { transmit_queue_size,
+        new_values["NetworkTCPTransmitQueue"] = { transmit_queue_size,
             "Total size of transmit queues of network sockets used on the server across TCPv4 and TCPv6." };
-        new_values["NetworkReceiveQueue"] = { receive_queue_size,
+        new_values["NetworkTCPReceiveQueue"] = { receive_queue_size,
             "Total size of receive queues of network sockets used on the server across TCPv4 and TCPv6." };
-        new_values["NetworkUnrecoveredRetransmits"] = { unrecovered_retransmits,
+        new_values["NetworkTCPUnrecoveredRetransmits"] = { unrecovered_retransmits,
             "Total size of current retransmits (unrecovered at this moment) of network sockets used on the server across TCPv4 and TCPv6." };
-        new_values["NetworkSocketRemoteAddresses"] = { remote_addresses.size(),
+        new_values["NetworkTCPSocketRemoteAddresses"] = { remote_addresses.size(),
             "Total number of unique remote addresses of network sockets used on the server across TCPv4 and TCPv6." };
     }
 
