@@ -1,10 +1,12 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <Common/VariableContext.h>
 
 namespace DB
 {
+class PageCache;
 class TraceCollector;
 }
 
@@ -16,23 +18,33 @@ private:
     static thread_local VariableContext level;
 
     VariableContext previous_level;
+    uint64_t previous_counter; // if UINT64_MAX, this blocker is empty
 
     /// level_ - block in level and above
     explicit MemoryTrackerBlockerInThread(VariableContext level_);
 
+    /// Empty.
+    explicit MemoryTrackerBlockerInThread(std::nullopt_t);
+    MemoryTrackerBlockerInThread(MemoryTrackerBlockerInThread &&) noexcept;
+    MemoryTrackerBlockerInThread & operator=(MemoryTrackerBlockerInThread &&) noexcept;
+    void reset();
+
 public:
     explicit MemoryTrackerBlockerInThread();
     ~MemoryTrackerBlockerInThread();
-
-    MemoryTrackerBlockerInThread(const MemoryTrackerBlockerInThread &) = delete;
-    MemoryTrackerBlockerInThread & operator=(const MemoryTrackerBlockerInThread &) = delete;
 
     static bool isBlocked(VariableContext current_level)
     {
         return counter > 0 && current_level >= level;
     }
 
+    static bool isBlockedAny()
+    {
+        return counter > 0;
+    }
+
     friend class MemoryTracker;
     friend struct AllocationTrace;
+    friend class DB::PageCache;
     friend class DB::TraceCollector;
 };

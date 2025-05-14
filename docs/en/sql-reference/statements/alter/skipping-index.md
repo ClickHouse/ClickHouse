@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/statements/alter/skipping-index
-
-toc_hidden_folder: true
+description: 'Documentation for Manipulating Data Skipping Indices'
+sidebar_label: 'INDEX'
 sidebar_position: 42
-sidebar_label: INDEX
+slug: /sql-reference/statements/alter/skipping-index
+title: 'Manipulating Data Skipping Indices'
+toc_hidden_folder: true
 ---
 
 # Manipulating Data Skipping Indices

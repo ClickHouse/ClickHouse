@@ -1,8 +1,10 @@
 import json
 import time
+import traceback
 from typing import Any
 
 from ._environment import _Environment
+from .info import Info
 from .result import Result
 from .settings import Settings
 from .utils import Shell
@@ -36,7 +38,7 @@ class GH:
 
     @classmethod
     def post_pr_comment(
-        cls, comment_body, or_update_comment_with_substring, repo=None, pr=None
+        cls, comment_body, or_update_comment_with_substring="", pr=None, repo=None
     ):
         if not repo:
             repo = _Environment.get().REPOSITORY
@@ -69,11 +71,109 @@ class GH:
         return cls.do_command_with_retries(cmd)
 
     @classmethod
+    def get_pr_contributors(cls, pr=None, repo=None):
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        cmd = f"gh pr view {pr} --repo {repo} --json commits --jq '[.commits[].authors[].login]'"
+        contributors_str = Shell.get_output(cmd, verbose=True)
+        res = []
+        if contributors_str:
+            try:
+                res = json.loads(contributors_str)
+            except Exception:
+                print(
+                    f"ERROR: Failed to fetch contributors list for PR [{pr}], repo [{repo}]"
+                )
+                traceback.print_exc()
+        return res
+
+    @classmethod
+    def get_pr_labels(cls, pr=None, repo=None):
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        cmd = f"gh pr view {pr} --repo {repo} --json labels --jq '.labels[].name'"
+        output = Shell.get_output(cmd, verbose=True)
+        res = []
+        if output:
+            res = output.splitlines()
+        return list(set(res))
+
+    @classmethod
+    def get_pr_title_body_labels(cls, pr=None, repo=None):
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        cmd = f"gh pr view {pr} --json title,body,labels --repo {repo}"
+        output = Shell.get_output(cmd, verbose=True)
+        try:
+            pr_data = json.loads(output)
+            title = pr_data["title"]
+            body = pr_data["body"]
+            labels = [l["name"] for l in pr_data["labels"]]
+        except Exception:
+            print("ERROR: Failed to get PR data")
+            traceback.print_exc()
+            Info().store_traceback()
+            return "", "", []
+        return title, body, labels
+
+    @classmethod
+    def get_pr_label_assigner(cls, label, pr=None, repo=None):
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        cmd = f'gh api repos/{repo}/issues/{pr}/events --jq \'.[] | select(.event=="labeled" and .label.name=="{label}") | .actor.login\''
+        return Shell.get_output(cmd, verbose=True)
+
+    @classmethod
     def post_commit_status(cls, name, status, description, url):
+        """
+        Sets GH commit status
+        :param name: commit status name
+        :param status:
+        :param description:
+        :param url:
+        :param repo:
+        :return: True or False in case of error
+        """
+        status = cls.convert_to_gh_status(status)
+        repo = _Environment.get().REPOSITORY
+        command = (
+            f"gh api -X POST -H 'Accept: application/vnd.github.v3+json' "
+            f"/repos/{repo}/statuses/{_Environment.get().SHA} "
+            f"-f state='{status}' -f target_url='{url}' "
+            f"-f description='{description}' -f context='{name}'"
+        )
+        return cls.do_command_with_retries(command)
+
+    @classmethod
+    def post_foreign_commit_status(
+        cls, name, status, description, url, repo, commit_sha
+    ):
+        """
+        Sets GH commit status in foreign repo or commit
+        :param name: commit status name
+        :param status:
+        :param description:
+        :param url:
+        :param repo: Foreign repo
+        :param commit_sha: Commit in a foreign repo
+        :return: True or False in case of error
+        """
         status = cls.convert_to_gh_status(status)
         command = (
             f"gh api -X POST -H 'Accept: application/vnd.github.v3+json' "
-            f"/repos/{_Environment.get().REPOSITORY}/statuses/{_Environment.get().SHA} "
+            f"/repos/{repo}/statuses/{commit_sha} "
             f"-f state='{status}' -f target_url='{url}' "
             f"-f description='{description}' -f context='{name}'"
         )

@@ -1,9 +1,11 @@
 ---
-description: "System table containing error codes with the number of times they have been triggered."
+description: 'System table containing error codes with the number of times they have
+  been triggered.'
+keywords: ['system table', 'errors']
 slug: /operations/system-tables/errors
-title: "system.errors"
-keywords: ["system table", "errors"]
+title: 'system.errors'
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
@@ -26,7 +28,7 @@ Counters for some errors may increase during successful query execution. It's no
 
 **Example**
 
-``` sql
+```sql
 SELECT name, code, value
 FROM system.errors
 WHERE value > 0
@@ -38,7 +40,7 @@ LIMIT 1
 └──────────────────┴──────┴───────┘
 ```
 
-``` sql
+```sql
 WITH arrayMap(x -> demangle(addressToSymbol(x)), last_error_trace) AS all
 SELECT name, arrayStringConcat(all, '\n') AS res
 FROM system.errors

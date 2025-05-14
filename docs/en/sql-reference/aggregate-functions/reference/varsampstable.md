@@ -1,8 +1,10 @@
 ---
-title: "varSampStable"
-slug: /sql-reference/aggregate-functions/reference/varsampstable
+description: 'Calculate the sample variance of a data set. Unlike `varSamp` , this
+  function uses a numerically stable algorithm. It works slower but provides a lower
+  computational error.'
 sidebar_position: 213
-description: "Calculate the sample variance of a data set. Unlike `varSamp` , this function uses a numerically stable algorithm. It works slower but provides a lower computational error."
+slug: /sql-reference/aggregate-functions/reference/varsampstable
+title: 'varSampStable'
 ---
 
 ## varSampStable {#varsampstable}

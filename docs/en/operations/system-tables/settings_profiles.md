@@ -1,9 +1,11 @@
 ---
-description: "System table which contains properties of configured setting profiles."
+description: 'System table which contains properties of configured setting profiles.'
+keywords: ['system table', 'settings_profiles']
 slug: /operations/system-tables/settings_profiles
-title: "system.settings_profiles"
-keywords: ["system table", "settings_profiles"]
+title: 'system.settings_profiles'
 ---
+
+# system.settings_profiles
 
 Contains properties of configured setting profiles.
 
@@ -16,7 +18,7 @@ Columns:
 
 - `num_elements` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number of elements for this profile in the `system.settings_profile_elements` table.
 
-- `apply_to_all` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows that the settings profile set for all roles and/or users.
+- `apply_to_all` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Shows that the settings profile set for all roles and/or users.
 
 - `apply_to_list` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — List of the roles and/or users to which the setting profile is applied.
 
@@ -24,4 +26,4 @@ Columns:
 
 ## See Also {#see-also}
 
-- [SHOW PROFILES](../../sql-reference/statements/show.md#show-profiles-statement)
+- [SHOW PROFILES](/sql-reference/statements/show#show-profiles)

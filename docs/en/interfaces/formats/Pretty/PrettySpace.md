@@ -1,10 +1,11 @@
 ---
-title: PrettySpace
-slug: /interfaces/formats/PrettySpace
-keywords: [PrettySpace]
-input_format: false
-output_format: true
 alias: []
+description: 'Documentation for the PrettySpace format'
+input_format: false
+keywords: ['PrettySpace']
+output_format: true
+slug: /interfaces/formats/PrettySpace
+title: 'PrettySpace'
 ---
 
 import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';

@@ -6,15 +6,20 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/ThreadStatus.h>
+#include <QueryPipeline/QueryPipeline.h>
 
 namespace DB
 {
 
 class Chain;
 class ThreadStatus;
+class ReadBuffer;
 
 struct ThreadStatusesHolder;
 using ThreadStatusesHolderPtr = std::shared_ptr<ThreadStatusesHolder>;
+
+class ParallelReplicasReadingCoordinator;
+using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
 
 /** Interprets the INSERT query.
   */
@@ -66,7 +71,7 @@ public:
 
     bool supportsTransactions() const override { return true; }
 
-    void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.push_back(std::move(buffer)); }
+    void addBuffer(std::unique_ptr<ReadBuffer> buffer);
 
     bool shouldAddSquashingForStorage(const StoragePtr & table) const;
 
@@ -90,7 +95,11 @@ private:
         const Block & query_sample_block);
 
     QueryPipeline buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table);
+    QueryPipeline addInsertToSelectPipeline(ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline_builder);
     QueryPipeline buildInsertPipeline(ASTInsertQuery & query, StoragePtr table);
+    std::optional<QueryPipeline> buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table);
+    std::pair<QueryPipeline, ParallelReplicasReadingCoordinatorPtr>
+    buildLocalInsertSelectPipelineForParallelReplicas(ASTInsertQuery & query, const StoragePtr & table);
 
     Chain buildSink(
         const StoragePtr & table,

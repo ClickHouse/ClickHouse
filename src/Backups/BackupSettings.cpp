@@ -5,12 +5,12 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <IO/ReadHelpers.h>
 #include <Backups/SettingsFieldOptionalUUID.h>
-#include <Backups/SettingsFieldOptionalUInt64.h>
+
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_BACKUP_SETTINGS;
@@ -27,7 +27,6 @@ namespace ErrorCodes
     M(Bool, async) \
     M(Bool, decrypt_files_from_encrypted_disks) \
     M(Bool, deduplicate_files) \
-    M(Bool, allow_s3_native_copy) \
     M(Bool, allow_azure_native_copy) \
     M(Bool, use_same_s3_credentials_for_base_backup) \
     M(Bool, use_same_password_for_base_backup) \
@@ -64,7 +63,13 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
             else
 
             LIST_OF_BACKUP_SETTINGS(GET_BACKUP_SETTINGS_FROM_QUERY)
-            /// else
+
+            if (setting.name == "allow_s3_native_copy")
+            {
+                SettingFieldBoolAuto bool_auto{setting.value};
+                res.allow_s3_native_copy = bool_auto.is_auto ? std::nullopt : std::make_optional(bool_auto.base.value);
+            }
+            else
             {
                 /// (if setting.name is not the name of a field of BackupSettings)
                 res.core_settings.emplace_back(setting);
@@ -105,6 +110,9 @@ void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
         query_settings->changes.emplace_back(#NAME, static_cast<Field>(SettingField##TYPE{NAME})); \
 
     LIST_OF_BACKUP_SETTINGS(COPY_BACKUP_SETTINGS_TO_QUERY)
+
+    if (allow_s3_native_copy)
+        query_settings->changes.emplace_back("allow_s3_native_copy", static_cast<Field>(SettingFieldBool{*allow_s3_native_copy}));
 
     /// Copy the core settings to the query too.
     query_settings->changes.insert(query_settings->changes.end(), core_settings.begin(), core_settings.end());

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Parsers/IAST_fwd.h>
 #include <Common/IFactoryWithAliases.h>
 
 #include <functional>
@@ -14,6 +13,9 @@ namespace DB
 {
 
 static constexpr auto DEFAULT_CODEC_NAME = "Default";
+
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
 
 class ICompressionCodec;
 class IDataType;

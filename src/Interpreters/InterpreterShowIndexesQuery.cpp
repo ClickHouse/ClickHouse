@@ -6,7 +6,6 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTShowIndexesQuery.h>
-#include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 
@@ -28,7 +27,7 @@ String InterpreterShowIndexesQuery::getRewrittenQuery()
     String table = escapeString(query.table);
     String resolved_database = getContext()->resolveDatabase(query.database);
     String database = escapeString(resolved_database);
-    String where_expression = query.where_expression ? fmt::format("WHERE ({})", query.where_expression) : "";
+    String where_expression = query.where_expression ? fmt::format("WHERE ({})", query.where_expression->formatWithSecretsOneLine()) : "";
 
     String rewritten_query = fmt::format(R"(
 SELECT *

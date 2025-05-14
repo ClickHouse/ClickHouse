@@ -31,7 +31,7 @@ ORDER BY n
 SETTINGS log_comment='02402_external_disk_mertrics/join'
 FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT
     if(

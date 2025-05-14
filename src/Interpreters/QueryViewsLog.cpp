@@ -1,7 +1,8 @@
 #include "QueryViewsLog.h"
 
-#include<base/getFQDNOrHostName.h>
+#include <base/getFQDNOrHostName.h>
 #include <Columns/IColumn.h>
+#include <Common/DateLUTImpl.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>

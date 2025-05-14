@@ -27,8 +27,9 @@ void test_read(const auto & handler, std::string_view input, std::string_view ex
 {
     NextState next_state;
 
-    auto col = ColumnString::create();
-    NoEscapingStateHandler::StringWriter element(*col);
+    auto key = ColumnString::create();
+    auto val = ColumnString::create();
+    NoEscapingStateHandler::PairWriter element(*key, *val);
 
     if constexpr (quoted)
     {
@@ -41,7 +42,7 @@ void test_read(const auto & handler, std::string_view input, std::string_view ex
 
     ASSERT_EQ(next_state.position_in_string, expected_pos);
     ASSERT_EQ(next_state.state, expected_state);
-    ASSERT_EQ(element.uncommittedChunk(), expected_element);
+    ASSERT_EQ(element.uncommittedKeyChunk(), expected_element);
 }
 
 void test_read(const auto & handler, std::string_view input, std::string_view expected_element,

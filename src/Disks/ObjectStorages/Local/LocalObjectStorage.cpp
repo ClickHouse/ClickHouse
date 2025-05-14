@@ -21,10 +21,12 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_UNLINK;
+    extern const int CANNOT_RMDIR;
+    extern const int READONLY;
 }
 
-LocalObjectStorage::LocalObjectStorage(String key_prefix_)
-    : key_prefix(std::move(key_prefix_))
+LocalObjectStorage::LocalObjectStorage(LocalObjectStorageSettings settings_)
+    : settings(std::move(settings_))
     , log(getLogger("LocalObjectStorage"))
 {
     if (auto block_device_id = tryGetBlockDeviceId("/"); block_device_id.has_value())
@@ -32,7 +34,8 @@ LocalObjectStorage::LocalObjectStorage(String key_prefix_)
     else
         description = "/";
 
-    fs::create_directories(key_prefix);
+    if (!settings.read_only)
+        fs::create_directories(settings.key_prefix);
 }
 
 bool LocalObjectStorage::exists(const StoredObject & object) const
@@ -69,6 +72,8 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     size_t buf_size,
     const WriteSettings & /* write_settings */)
 {
+    throwIfReadonly();
+
     if (mode != WriteMode::Rewrite)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "LocalObjectStorage doesn't support append to files");
 
@@ -83,28 +88,52 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
 
 void LocalObjectStorage::removeObject(const StoredObject & object) const
 {
+    throwIfReadonly();
+
     /// For local object storage files are actually removed when "metadata" is removed.
     if (!exists(object))
         return;
 
     if (0 != unlink(object.remote_path.data()))
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, object.remote_path, "Cannot unlink file {}", object.remote_path);
+
+    /// Remove empty directories.
+    fs::path dir = fs::path(object.remote_path).parent_path();
+    fs::path root = fs::weakly_canonical(settings.key_prefix);
+    while (dir.has_parent_path() && dir.has_relative_path() && dir != root && pathStartsWith(dir, root))
+    {
+        LOG_TEST(log, "Removing empty directory {}, has_parent_path: {}, has_relative_path: {}, root: {}, starts with root: {}",
+            std::string(dir), dir.has_parent_path(), dir.has_relative_path(), std::string(root), pathStartsWith(dir, root));
+
+        std::string dir_str = dir;
+        if (0 != rmdir(dir_str.data()))
+        {
+            if (errno == ENOTDIR || errno == ENOTEMPTY)
+                break;
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, dir_str, "Cannot remove directory {}", dir_str);
+        }
+
+        dir = dir.parent_path();
+    }
 }
 
 void LocalObjectStorage::removeObjects(const StoredObjects & objects) const
 {
+    throwIfReadonly();
     for (const auto & object : objects)
         removeObject(object);
 }
 
 void LocalObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
+    throwIfReadonly();
     if (exists(object))
         removeObject(object);
 }
 
 void LocalObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
+    throwIfReadonly();
     for (const auto & object : objects)
         removeObjectIfExists(object);
 }
@@ -113,14 +142,21 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path) c
 {
     ObjectMetadata object_metadata;
     LOG_TEST(log, "Getting metadata for path: {}", path);
+
+    auto time = fs::last_write_time(path);
+
     object_metadata.size_bytes = fs::file_size(path);
+    object_metadata.etag = std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch()).count());
     object_metadata.last_modified = Poco::Timestamp::fromEpochTime(
-        std::chrono::duration_cast<std::chrono::seconds>(fs::last_write_time(path).time_since_epoch()).count());
+        std::chrono::duration_cast<std::chrono::seconds>(time.time_since_epoch()).count());
     return object_metadata;
 }
 
 void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t/* max_keys */) const
 {
+    if (!fs::exists(path) || !fs::is_directory(path))
+        return;
+
     for (const auto & entry : fs::directory_iterator(path))
     {
         if (entry.is_directory())
@@ -147,6 +183,7 @@ void LocalObjectStorage::copyObject( // NOLINT
     const WriteSettings & write_settings,
     std::optional<ObjectAttributes> /* object_to_attributes */)
 {
+    throwIfReadonly();
     auto in = readObject(object_from, read_settings);
     auto out = writeObject(object_to, WriteMode::Rewrite, /* attributes= */ {}, /* buf_size= */ DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     copyData(*in, *out);
@@ -161,19 +198,25 @@ void LocalObjectStorage::startup()
 {
 }
 
+void LocalObjectStorage::throwIfReadonly() const
+{
+    if (settings.read_only)
+        throw Exception(ErrorCodes::READONLY, "Local object storage `{}` is readonly", getName());
+}
+
 std::unique_ptr<IObjectStorage> LocalObjectStorage::cloneObjectStorage(
     const std::string & /* new_namespace */,
     const Poco::Util::AbstractConfiguration & /* config */,
     const std::string & /* config_prefix */, ContextPtr /* context */)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "cloneObjectStorage() is not implemented for LocalObjectStorage");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "cloneObjectStorage is not implemented for LocalObjectStorage");
 }
 
 ObjectStorageKey
 LocalObjectStorage::generateObjectKeyForPath(const std::string & /* path */, const std::optional<std::string> & /* key_prefix */) const
 {
     constexpr size_t key_name_total_size = 32;
-    return ObjectStorageKey::createAsRelative(key_prefix, getRandomASCIIString(key_name_total_size));
+    return ObjectStorageKey::createAsRelative(settings.key_prefix, getRandomASCIIString(key_name_total_size));
 }
 
 }

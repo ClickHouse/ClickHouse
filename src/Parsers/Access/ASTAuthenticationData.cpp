@@ -1,6 +1,5 @@
 #include <Parsers/Access/ASTAuthenticationData.h>
 
-#include <Access/AccessControl.h>
 #include <Common/Exception.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/Operators.h>
@@ -38,7 +37,7 @@ std::optional<String> ASTAuthenticationData::getPassword() const
 
 std::optional<String> ASTAuthenticationData::getSalt() const
 {
-    if (type && *type == AuthenticationType::SHA256_PASSWORD && children.size() == 2)
+    if (type && (*type == AuthenticationType::SHA256_PASSWORD || *type == AuthenticationType::SCRAM_SHA256_PASSWORD) && children.size() == 2)
     {
         if (const auto * salt = children[1]->as<const ASTLiteral>())
         {
@@ -88,6 +87,17 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
             {
                 if (contains_hash)
                     auth_type_name = "sha256_hash";
+
+                prefix = "BY";
+                password = true;
+                if (children.size() == 2)
+                    salt = true;
+                break;
+            }
+            case AuthenticationType::SCRAM_SHA256_PASSWORD:
+            {
+                if (contains_hash)
+                    auth_type_name = "scram_sha256_hash";
 
                 prefix = "BY";
                 password = true;
@@ -236,6 +246,7 @@ bool ASTAuthenticationData::hasSecretParts() const
     auto auth_type = *type;
     if ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD)
         || (auth_type == AuthenticationType::SHA256_PASSWORD)
+        || (auth_type == AuthenticationType::SCRAM_SHA256_PASSWORD)
         || (auth_type == AuthenticationType::DOUBLE_SHA1_PASSWORD)
         || (auth_type == AuthenticationType::BCRYPT_PASSWORD))
         return true;

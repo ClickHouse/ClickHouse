@@ -1,8 +1,17 @@
 ---
+description: 'Documentation for the MySQL protocol interface in ClickHouse, allowing
+  MySQL clients to connect to ClickHouse'
+sidebar_label: 'MySQL Interface'
+sidebar_position: 25
 slug: /interfaces/mysql
-sidebar_position: 20
-sidebar_label: MySQL Interface
+title: 'MySQL Interface'
 ---
+
+import Image from '@theme/IdealImage';
+import mysql0 from '@site/static/images/interfaces/mysql0.png';
+import mysql1 from '@site/static/images/interfaces/mysql1.png';
+import mysql2 from '@site/static/images/interfaces/mysql2.png';
+import mysql3 from '@site/static/images/interfaces/mysql3.png';
 
 # MySQL Interface
 
@@ -22,7 +31,7 @@ If there is a native driver available (e.g., [DBeaver](../integrations/dbeaver))
 If your use case involves a particular tool that does not have a native ClickHouse driver, and you would like to use it via the MySQL interface and you found certain incompatibilities - please [create an issue](https://github.com/ClickHouse/ClickHouse/issues) in the ClickHouse repository.
 
 ::::note
-To support the SQL dialect of above BI tools better, ClickHouse's MySQL interface implicitly runs SELECT queries with setting [prefer_column_name_to_alias = 1](../operations/settings/settings.md#prefer-column-name-to-alias).
+To support the SQL dialect of above BI tools better, ClickHouse's MySQL interface implicitly runs SELECT queries with setting [prefer_column_name_to_alias = 1](/operations/settings/settings#prefer_column_name_to_alias).
 This cannot be turned off and it can lead in rare edge cases to different behavior between queries sent to ClickHouse's normal and MySQL query interfaces.
 ::::
 
@@ -32,23 +41,23 @@ This cannot be turned off and it can lead in rare edge cases to different behavi
 
 <br/>
 
-![Credentials screen - Prompt](./images/mysql0.png)
+<Image img={mysql0} alt="Credentials screen - Prompt" size="md"/>
 
 2. Change the `Connect with` drop-down to `MySQL`. 
 
 <br/>
 
-![Credentials screen - Prompt](./images/mysql1.png)
+<Image img={mysql1} alt="Credentials screen - MySQL selected" size="md" />
 
 3. Toggle the switch to enable the MySQL interface for this specific service. This will expose port `3306` for this service and prompt you with your MySQL connection screen that include your unique MySQL username. The password will be the same as the service's default user password.
 
 <br/>
 
-![Credentials screen - Enabled MySQL](./images/mysql2.png)
+<Image img={mysql2} alt="Credentials screen - Enabled MySQL" size="md"/>
 
 Copy the MySQL connection string shown.
 
-![Credentials screen - Connection String](./images/mysql3.png)
+<Image img={mysql3} alt="Credentials screen - Connection String" size="md"/>
 
 ## Creating multiple MySQL users in ClickHouse Cloud {#creating-multiple-mysql-users-in-clickhouse-cloud}
 
@@ -104,7 +113,7 @@ In this case, ensure that the username follows the `mysql4<subdomain>_<username>
 
 Add the [mysql_port](../operations/server-configuration-parameters/settings.md#mysql_port) setting to your server's configuration file. For example, you could define the port in a new XML file in your `config.d/` [folder](../operations/configuration-files):
 
-``` xml
+```xml
 <clickhouse>
     <mysql_port>9004</mysql_port>
 </clickhouse>
@@ -126,13 +135,13 @@ mysql --protocol tcp -h [hostname] -u [username] -P [port_number] [database_name
 
 For example:
 
-``` bash
+```bash
 $ mysql --protocol tcp -h 127.0.0.1 -u default -P 9004 default
 ```
 
 Output if a connection succeeded:
 
-``` text
+```text
 Welcome to the MySQL monitor.  Commands end with ; or \g.
 Your MySQL connection id is 4
 Server version: 20.2.1.1-ClickHouse
@@ -148,8 +157,8 @@ Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
 mysql>
 ```
 
-For compatibility with all MySQL clients, it is recommended to specify user password with [double SHA1](../operations/settings/settings-users.md#password_double_sha1_hex) in configuration file.
-If user password is specified using [SHA256](../operations/settings/settings-users.md#password_sha256_hex), some clients won't be able to authenticate (mysqljs and old versions of command-line tool MySQL and MariaDB).
+For compatibility with all MySQL clients, it is recommended to specify user password with [double SHA1](/operations/settings/settings-users#user-namepassword) in configuration file.
+If user password is specified using [SHA256](/sql-reference/functions/hash-functions#sha1-sha224-sha256-sha512-sha512_256), some clients won't be able to authenticate (mysqljs and old versions of command-line tool MySQL and MariaDB).
 
 Restrictions:
 
@@ -159,6 +168,6 @@ Restrictions:
 
 To cancel a long query use `KILL QUERY connection_id` statement (it is replaced with `KILL QUERY WHERE query_id = connection_id` while proceeding). For example:
 
-``` bash
+```bash
 $ mysql --protocol tcp -h mysql_server -P 9004 default -u default --password=123 -e "KILL QUERY 123456;"
 ```

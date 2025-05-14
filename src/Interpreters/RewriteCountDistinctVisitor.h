@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include "Interpreters/TreeRewriter.h"
 
 namespace DB
 {

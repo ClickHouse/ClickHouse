@@ -9,8 +9,6 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/ProcessList.h>
 
-#include <base/hex.h>
-
 
 namespace ProfileEvents
 {

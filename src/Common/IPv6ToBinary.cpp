@@ -105,8 +105,7 @@ bool matchIPv6Subnet(const uint8_t * addr, const uint8_t * cidr_addr, UInt8 pref
 
 bool matchIPv6Subnet(const uint8_t * addr, const uint8_t * cidr_addr, UInt8 prefix)
 {
-    if (prefix > IPV6_BINARY_LENGTH * 8U)
-        prefix = IPV6_BINARY_LENGTH * 8U;
+    prefix = std::min<size_t>(prefix, IPV6_BINARY_LENGTH * 8U);
 
     size_t i = 0;
     for (; prefix >= 8; ++i, prefix -= 8)

@@ -1,9 +1,11 @@
 ---
-slug: /engines/database-engines/replicated
+description: 'The engine is based on the Atomic engine. It supports replication of
+  metadata via DDL log being written to ZooKeeper and executed on all of the replicas
+  for a given database.'
+sidebar_label: 'Replicated'
 sidebar_position: 30
-sidebar_label: Replicated
-title: "Replicated"
-description: "The engine is based on the Atomic engine. It supports replication of metadata via DDL log being written to ZooKeeper and executed on all of the replicas for a given database."
+slug: /engines/database-engines/replicated
+title: 'Replicated'
 ---
 
 # Replicated
@@ -13,7 +15,7 @@ The engine is based on the [Atomic](../../engines/database-engines/atomic.md) en
 One ClickHouse server can have multiple replicated databases running and updating at the same time. But there can't be multiple replicas of the same replicated database.
 
 ## Creating a Database {#creating-a-database}
-``` sql
+```sql
 CREATE DATABASE testdb ENGINE = Replicated('zoo_path', 'shard_name', 'replica_name') [SETTINGS ...]
 ```
 
@@ -23,7 +25,7 @@ CREATE DATABASE testdb ENGINE = Replicated('zoo_path', 'shard_name', 'replica_na
 - `shard_name` — Shard name. Database replicas are grouped into shards by `shard_name`.
 - `replica_name` — Replica name. Replica names must be different for all replicas of the same shard.
 
-For [ReplicatedMergeTree](../table-engines/mergetree-family/replication.md#table_engines-replication) tables if no arguments provided, then default arguments are used: `/clickhouse/tables/{uuid}/{shard}` and `{replica}`. These can be changed in the server settings [default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path) and [default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name). Macro `{uuid}` is unfolded to table's uuid, `{shard}` and `{replica}` are unfolded to values from server config, not from database engine arguments. But in the future, it will be possible to use `shard_name` and `replica_name` of Replicated database.
+For [ReplicatedMergeTree](/engines/table-engines/mergetree-family/replication) tables if no arguments provided, then default arguments are used: `/clickhouse/tables/{uuid}/{shard}` and `{replica}`. These can be changed in the server settings [default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path) and [default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name). Macro `{uuid}` is unfolded to table's uuid, `{shard}` and `{replica}` are unfolded to values from server config, not from database engine arguments. But in the future, it will be possible to use `shard_name` and `replica_name` of Replicated database.
 
 ## Specifics and Recommendations {#specifics-and-recommendations}
 
@@ -33,7 +35,7 @@ First, the DDL request tries to execute on the initiator (the host that original
 
 The behavior in case of errors is regulated by the [distributed_ddl_output_mode](../../operations/settings/settings.md#distributed_ddl_output_mode) setting, for a `Replicated` database it is better to set it to `null_status_on_timeout` — i.e. if some hosts did not have time to execute the request for [distributed_ddl_task_timeout](../../operations/settings/settings.md#distributed_ddl_task_timeout), then do not throw an exception, but show the `NULL` status for them in the table.
 
-The [system.clusters](../../operations/system-tables/clusters.md) system table contains a cluster named like the replicated database, which consists of all replicas of the database. This cluster is updated automatically when creating/deleting replicas, and it can be used for [Distributed](../../engines/table-engines/special/distributed.md#distributed) tables.
+The [system.clusters](../../operations/system-tables/clusters.md) system table contains a cluster named like the replicated database, which consists of all replicas of the database. This cluster is updated automatically when creating/deleting replicas, and it can be used for [Distributed](/engines/table-engines/special/distributed) tables.
 
 When creating a new replica of the database, this replica creates tables by itself. If the replica has been unavailable for a long time and has lagged behind the replication log — it checks its local metadata with the current metadata in ZooKeeper, moves the extra tables with data to a separate non-replicated database (so as not to accidentally delete anything superfluous), creates the missing tables, updates the table names if they have been renamed. The data is replicated at the `ReplicatedMergeTree` level, i.e. if the table is not replicated, the data will not be replicated (the database is responsible only for metadata).
 
@@ -45,7 +47,7 @@ In case you need only configure a cluster without maintaining table replication,
 
 Creating a cluster with three hosts:
 
-``` sql
+```sql
 node1 :) CREATE DATABASE r ENGINE=Replicated('some/path/r','shard1','replica1');
 node2 :) CREATE DATABASE r ENGINE=Replicated('some/path/r','shard1','other_replica');
 node3 :) CREATE DATABASE r ENGINE=Replicated('some/path/r','other_shard','{replica}');
@@ -53,11 +55,11 @@ node3 :) CREATE DATABASE r ENGINE=Replicated('some/path/r','other_shard','{repli
 
 Running the DDL-query:
 
-``` sql
+```sql
 CREATE TABLE r.rmt (n UInt64) ENGINE=ReplicatedMergeTree ORDER BY n;
 ```
 
-``` text
+```text
 ┌─────hosts────────────┬──status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
 │ shard1|replica1      │    0    │       │          2          │        0         │
 │ shard1|other_replica │    0    │       │          1          │        0         │
@@ -67,12 +69,12 @@ CREATE TABLE r.rmt (n UInt64) ENGINE=ReplicatedMergeTree ORDER BY n;
 
 Showing the system table:
 
-``` sql
+```sql
 SELECT cluster, shard_num, replica_num, host_name, host_address, port, is_local
 FROM system.clusters WHERE cluster='r';
 ```
 
-``` text
+```text
 ┌─cluster─┬─shard_num─┬─replica_num─┬─host_name─┬─host_address─┬─port─┬─is_local─┐
 │ r       │     1     │      1      │   node3   │  127.0.0.1   │ 9002 │     0    │
 │ r       │     2     │      1      │   node2   │  127.0.0.1   │ 9001 │     0    │
@@ -82,13 +84,13 @@ FROM system.clusters WHERE cluster='r';
 
 Creating a distributed table and inserting the data:
 
-``` sql
+```sql
 node2 :) CREATE TABLE r.d (n UInt64) ENGINE=Distributed('r','r','rmt', n % 2);
 node3 :) INSERT INTO r.d SELECT * FROM numbers(10);
 node1 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY host;
 ```
 
-``` text
+```text
 ┌─hosts─┬─groupArray(n)─┐
 │ node3 │  [1,3,5,7,9]  │
 │ node2 │  [0,2,4,6,8]  │
@@ -97,13 +99,13 @@ node1 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY
 
 Adding replica on the one more host:
 
-``` sql
+```sql
 node4 :) CREATE DATABASE r ENGINE=Replicated('some/path/r','other_shard','r2');
 ```
 
 The cluster configuration will look like this:
 
-``` text
+```text
 ┌─cluster─┬─shard_num─┬─replica_num─┬─host_name─┬─host_address─┬─port─┬─is_local─┐
 │ r       │     1     │      1      │   node3   │  127.0.0.1   │ 9002 │     0    │
 │ r       │     1     │      2      │   node4   │  127.0.0.1   │ 9003 │     0    │

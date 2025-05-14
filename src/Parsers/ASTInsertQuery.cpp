@@ -125,8 +125,7 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         ostr << delim;
         select->format(ostr, settings, state, frame);
     }
-
-    if (!select)
+    else
     {
         if (!format.empty())
         {

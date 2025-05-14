@@ -37,7 +37,7 @@ size_t chooseSegmentSize(
     /// it would be a huge waste of cache space.
     constexpr std::array<size_t, 3> borders{128, 1024, 16384};
 
-    LOG_DEBUG(
+    LOG_TRACE(
         log,
         "mark_segment_size={}, min_marks_per_task*threads={}, sum_marks/number_of_replicas^2={}",
         mark_segment_size,
@@ -62,7 +62,7 @@ size_t chooseSegmentSize(
     {
         if (mark_segment_size >= border)
         {
-            LOG_DEBUG(log, "Chosen segment size: {}", border);
+            LOG_TRACE(log, "Chosen segment size: {}", border);
             return border;
         }
     }
@@ -72,8 +72,9 @@ size_t chooseSegmentSize(
 
 size_t getMinMarksPerTask(size_t min_marks_per_task, const std::vector<DB::MergeTreeReadTaskInfoPtr> & per_part_infos)
 {
-    for (const auto & info : per_part_infos)
-        min_marks_per_task = std::max(min_marks_per_task, info->min_marks_per_task);
+    const auto min_across_parts = std::ranges::min(
+        per_part_infos, [](const auto & lhs, const auto & rhs) { return lhs->min_marks_per_task < rhs->min_marks_per_task; });
+    min_marks_per_task = std::max(min_marks_per_task, min_across_parts->min_marks_per_task);
 
     if (min_marks_per_task == 0)
         throw DB::Exception(

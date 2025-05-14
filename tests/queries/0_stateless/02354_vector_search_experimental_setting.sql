@@ -7,10 +7,10 @@ DROP TABLE IF EXISTS tab;
 -- Test CREATE TABLE
 
 SET allow_experimental_vector_similarity_index = 0;
-CREATE TABLE tab (id UInt32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance')) ENGINE = MergeTree ORDER BY tuple(); -- { serverError SUPPORT_IS_DISABLED }
+CREATE TABLE tab (id UInt32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 1)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError SUPPORT_IS_DISABLED }
 
 SET allow_experimental_vector_similarity_index = 1;
-CREATE TABLE tab (id UInt32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance')) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE tab (id UInt32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 1)) ENGINE = MergeTree ORDER BY tuple();
 DROP TABLE tab;
 
 -- Test ADD INDEX
@@ -18,10 +18,10 @@ DROP TABLE tab;
 CREATE TABLE tab (id UInt32, vec Array(Float32)) ENGINE = MergeTree ORDER BY tuple();
 
 SET allow_experimental_vector_similarity_index = 0;
-ALTER TABLE tab ADD INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance');  -- { serverError SUPPORT_IS_DISABLED }
+ALTER TABLE tab ADD INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 1);  -- { serverError SUPPORT_IS_DISABLED }
 
 SET allow_experimental_vector_similarity_index = 1;
-ALTER TABLE tab ADD INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance');
+ALTER TABLE tab ADD INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 1);
 
 -- Other index DDL must work regardless of the setting
 SET allow_experimental_vector_similarity_index = 0;

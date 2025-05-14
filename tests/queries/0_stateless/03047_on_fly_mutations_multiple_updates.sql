@@ -25,7 +25,7 @@ SELECT s2 FROM t_lightweight_mut_5 ORDER BY id;
 SYSTEM DROP MARK CACHE;
 SELECT s1, s2 FROM t_lightweight_mut_5 ORDER BY id;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT query, ProfileEvents['FileOpen'] FROM system.query_log
 WHERE

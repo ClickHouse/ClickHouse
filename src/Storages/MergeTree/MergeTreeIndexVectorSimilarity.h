@@ -118,6 +118,7 @@ struct MergeTreeIndexAggregatorVectorSimilarity final : IMergeTreeIndexAggregato
     MergeTreeIndexAggregatorVectorSimilarity(
         const String & index_name_,
         const Block & index_sample_block,
+        UInt64 dimensions_,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_,
         UsearchHnswParams usearch_hnsw_params_);
@@ -130,6 +131,7 @@ struct MergeTreeIndexAggregatorVectorSimilarity final : IMergeTreeIndexAggregato
 
     const String index_name;
     const Block index_sample_block;
+    const UInt64 dimensions;
     const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
     const UsearchHnswParams usearch_hnsw_params;
@@ -142,6 +144,7 @@ class MergeTreeIndexConditionVectorSimilarity final : public IMergeTreeIndexCond
 public:
     explicit MergeTreeIndexConditionVectorSimilarity(
         const std::optional<VectorSearchParameters> & parameters_,
+        const String & index_column_,
         unum::usearch::metric_kind_t metric_kind_,
         ContextPtr context);
 
@@ -153,8 +156,11 @@ public:
 
 private:
     std::optional<VectorSearchParameters> parameters;
+    const String index_column;
     const unum::usearch::metric_kind_t metric_kind;
     const size_t expansion_search;
+    const float postfilter_multiplier;
+    const size_t max_limit;
 };
 
 
@@ -163,6 +169,7 @@ class MergeTreeIndexVectorSimilarity : public IMergeTreeIndex
 public:
     MergeTreeIndexVectorSimilarity(
         const IndexDescription & index_,
+        UInt64 dimensions_,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_,
         UsearchHnswParams usearch_hnsw_params_);
@@ -171,17 +178,17 @@ public:
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
-    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG * filter_actions_dag, ContextPtr context) const override;
-    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG * filter_actions_dag, ContextPtr context, const std::optional<VectorSearchParameters> & parameters) const override;
+    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
+    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context, const std::optional<VectorSearchParameters> & parameters) const override;
     bool isVectorSimilarityIndex() const override { return true; }
 
 private:
+    const UInt64 dimensions;
     const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
     const UsearchHnswParams usearch_hnsw_params;
 };
 
 }
-
 
 #endif

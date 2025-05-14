@@ -158,6 +158,11 @@ public:
         return std::make_optional<KeyMapped>({it->first, cell.value});
     }
 
+    bool contains(const Key & key) const override
+    {
+        return cells.count(key) != 0;
+    }
+
     void set(const Key & key, const MappedPtr & mapped) override
     {
         auto [it, inserted] = cells.emplace(std::piecewise_construct,

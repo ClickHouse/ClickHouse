@@ -55,6 +55,6 @@ def test_tmp_data_no_leftovers(start_cluster):
     node.restart_clickhouse(kill=True)
     path_to_data = "/var/lib/clickhouse/"
 
-    # Check that there are no temporary files left
-    result = node.exec_in_container(["ls", path_to_data + "tmp/"])
+    # Check that there are no temporary files left. Other than from the Sentry library.
+    result = node.exec_in_container(["bash", "-c", f"ls -1 {path_to_data}tmp/ | grep -v 'sentry' ||:"])
     assert result == ""

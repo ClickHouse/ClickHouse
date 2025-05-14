@@ -76,6 +76,11 @@ void StaticThreadPool::initialize(size_t max_threads, size_t max_free_threads, s
         /* shutdown_on_exception= */ false);
 }
 
+bool StaticThreadPool::isInitialized() const
+{
+    return instance.operator bool();
+}
+
 void StaticThreadPool::reloadConfiguration(size_t max_threads, size_t max_free_threads, size_t queue_size)
 {
     if (!instance)

@@ -116,7 +116,7 @@ The range tuple must be a constant:
             {"from_table", "SELECT hilbertDecode(2, code) FROM table", ""},
             {"from_table_range", "SELECT hilbertDecode((1,2), code) FROM table", ""},
             },
-        .category {"Encoding"}
+        .category = FunctionDocumentation::Category::Encoding
     });
 }
 

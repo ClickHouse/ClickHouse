@@ -1,6 +1,9 @@
 ---
+description: 'Guide to backing up and restoring ClickHouse databases and tables'
+sidebar_label: 'Backup and Restore'
+sidebar_position: 10
 slug: /operations/backup
-description: In order to effectively mitigate possible human errors, you should carefully prepare a strategy for backing up and restoring your data.
+title: 'Backup and Restore'
 ---
 
 # Backup and Restore
@@ -35,7 +38,7 @@ Prior to version 23.4 of ClickHouse, `ALL` was only applicable to the `RESTORE` 
 
 ## Background {#background}
 
-While [replication](../engines/table-engines/mergetree-family/replication.md) provides protection from hardware failures, it does not protect against human errors: accidental deletion of data, deletion of the wrong table or a table on the wrong cluster, and software bugs that result in incorrect data processing or data corruption. In many cases mistakes like these will affect all replicas. ClickHouse has built-in safeguards to prevent some types of mistakes — for example, by default [you can't just drop tables with a MergeTree-like engine containing more than 50 Gb of data](server-configuration-parameters/settings.md#max-table-size-to-drop). However, these safeguards do not cover all possible cases and can be circumvented.
+While [replication](../engines/table-engines/mergetree-family/replication.md) provides protection from hardware failures, it does not protect against human errors: accidental deletion of data, deletion of the wrong table or a table on the wrong cluster, and software bugs that result in incorrect data processing or data corruption. In many cases mistakes like these will affect all replicas. ClickHouse has built-in safeguards to prevent some types of mistakes — for example, by default [you can't just drop tables with a MergeTree-like engine containing more than 50 Gb of data](/operations/settings/settings#max_table_size_to_drop). However, these safeguards do not cover all possible cases and can be circumvented.
 
 In order to effectively mitigate possible human errors, you should carefully prepare a strategy for backing up and restoring your data **in advance**.
 
@@ -81,7 +84,7 @@ The BACKUP and RESTORE statements take a list of DATABASE and TABLE names, a des
 - PARTITIONS: a list of partitions to restore
 - SETTINGS:
     - `id`: id of backup or restore operation, randomly generated UUID is used, if not specified manually. If there is already running operation with the same `id` exception is thrown.
-    - [`compression_method`](/sql-reference/statements/create/table.md/#column-compression-codecs) and compression_level
+    - [`compression_method`](/sql-reference/statements/create/table#column_compression_codec) and compression_level
     - `password` for the file on disk
     - `base_backup`: the destination of the previous backup of this source.  For example, `Disk('backups', '1.zip')`
     - `use_same_s3_credentials_for_base_backup`: whether base backup to S3 should inherit credentials from the query. Only works with `S3`.
@@ -460,7 +463,7 @@ For smaller volumes of data, a simple `INSERT INTO ... SELECT ...` to remote tab
 ClickHouse allows using the `ALTER TABLE ... FREEZE PARTITION ...` query to create a local copy of table partitions. This is implemented using hardlinks to the `/var/lib/clickhouse/shadow/` folder, so it usually does not consume extra disk space for old data. The created copies of files are not handled by ClickHouse server, so you can just leave them there: you will have a simple backup that does not require any additional external system, but it will still be prone to hardware issues. For this reason, it's better to remotely copy them to another location and then remove the local copies. Distributed filesystems and object stores are still a good options for this, but normal attached file servers with a large enough capacity might work as well (in this case the transfer will occur via the network filesystem or maybe [rsync](https://en.wikipedia.org/wiki/Rsync)).
 Data can be restored from backup using the `ALTER TABLE ... ATTACH PARTITION ...`
 
-For more information about queries related to partition manipulations, see the [ALTER documentation](../sql-reference/statements/alter/partition.md#alter_manipulations-with-partitions).
+For more information about queries related to partition manipulations, see the [ALTER documentation](/sql-reference/statements/alter/partition).
 
 A third-party tool is available to automate this approach: [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup).
 

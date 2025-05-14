@@ -1,10 +1,11 @@
 ---
+description: 'Quickly find search terms in text.'
+keywords: ['full-text search', 'text search', 'index', 'indices']
+sidebar_label: 'Full-text Indexes'
 slug: /engines/table-engines/mergetree-family/invertedindexes
-sidebar_label: Full-text Indexes
-description: Quickly find search terms in text.
-keywords: [full-text search, text search, index, indices]
-title: "Full-text Search using Full-text Indexes"
+title: 'Full-text Search using Full-text Indexes'
 ---
+
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
@@ -48,37 +49,33 @@ SET allow_experimental_full_text_index = true;
 
 An full-text index can be defined on a string column using the following syntax
 
-``` sql
+```sql
 CREATE TABLE tab
 (
     `key` UInt64,
     `str` String,
-    INDEX inv_idx(str) TYPE full_text(0) GRANULARITY 1
+    INDEX inv_idx(str) TYPE gin(0) GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY key
 ```
 
-:::note
-In earlier versions of ClickHouse, the corresponding index type name was `inverted`.
-:::
-
 where `N` specifies the tokenizer:
 
-- `full_text(0)` (or shorter: `full_text()`) set the tokenizer to "tokens", i.e. split strings along spaces,
-- `full_text(N)` with `N` between 2 and 8 sets the tokenizer to "ngrams(N)"
+- `gin(0)` (or shorter: `gin()`) set the tokenizer to "tokens", i.e. split strings along spaces,
+- `gin(N)` with `N` between 2 and 8 sets the tokenizer to "ngrams(N)"
 
 The maximum rows per postings list can be specified as the second parameter. This parameter can be used to control postings list sizes to avoid generating huge postings list files. The following variants exist:
 
-- `full_text(ngrams, max_rows_per_postings_list)`: Use given max_rows_per_postings_list (assuming it is not 0)
-- `full_text(ngrams, 0)`: No limitation of maximum rows per postings list
-- `full_text(ngrams)`: Use a default maximum rows which is 64K.
+- `gin(ngrams, max_rows_per_postings_list)`: Use given max_rows_per_postings_list (assuming it is not 0)
+- `gin(ngrams, 0)`: No limitation of maximum rows per postings list
+- `gin(ngrams)`: Use a default maximum rows which is 64K.
 
 Being a type of skipping index, full-text indexes can be dropped or added to a column after table creation:
 
-``` sql
+```sql
 ALTER TABLE tab DROP INDEX inv_idx;
-ALTER TABLE tab ADD INDEX inv_idx(s) TYPE full_text(2);
+ALTER TABLE tab ADD INDEX inv_idx(s) TYPE gin(2);
 ```
 
 To use the index, no special functions or syntax are required. Typical string search predicates automatically leverage the index. As
@@ -132,7 +129,7 @@ The 28.7M rows are in a Parquet file in S3 - let's insert them into the `hackern
 
 ```sql
 INSERT INTO hackernews
-	SELECT * FROM s3Cluster(
+    SELECT * FROM s3Cluster(
         'default',
         'https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet',
         'Parquet',
@@ -143,9 +140,9 @@ INSERT INTO hackernews
     by String,
     time DateTime,
     text String,
-	dead UInt8,
-	parent UInt64,
-	poll UInt64,
+    dead UInt8,
+    parent UInt64,
+    poll UInt64,
     kids Array(UInt32),
     url String,
     score UInt32,
@@ -176,7 +173,7 @@ We will use `ALTER TABLE` and add an full-text index on the lowercase of the `co
 
 ```sql
 ALTER TABLE hackernews
-     ADD INDEX comment_lowercase(lower(comment)) TYPE full_text;
+     ADD INDEX comment_lowercase(lower(comment)) TYPE gin;
 
 ALTER TABLE hackernews MATERIALIZE INDEX comment_lowercase;
 ```

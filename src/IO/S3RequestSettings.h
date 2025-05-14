@@ -3,6 +3,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Common/Throttler_fwd.h>
 
 namespace Poco::Util
 {
@@ -19,6 +20,7 @@ struct Settings;
 /// List of available types supported in the Settings object
 #define S3REQUEST_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, Bool) \
+    M(CLASS_NAME, BoolAuto) \
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, String)
 

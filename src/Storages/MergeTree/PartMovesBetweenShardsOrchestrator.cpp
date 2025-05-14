@@ -428,7 +428,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                     auto drop_part_info = MergeTreePartInfo::fromPartName(attach_log_entry->new_part_name, storage.format_version);
 
                     storage.getClearBlocksInPartitionOps(
-                        ops, *zk, drop_part_info.partition_id, drop_part_info.min_block, drop_part_info.max_block);
+                        ops, *zk, drop_part_info.getPartitionId(), drop_part_info.min_block, drop_part_info.max_block);
                     size_t clear_block_ops_size = ops.size();
 
                     attach_rollback_log_entry.type = ReplicatedMergeTreeLogEntryData::DROP_RANGE;
@@ -474,7 +474,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
             /// Allocating block number in other replicas zookeeper path
             /// TODO Maybe we can do better.
             auto block_number_lock
-                = storage.allocateBlockNumber(part->info.partition_id, zk, attach_log_entry_barrier_path, entry.to_shard);
+                = storage.allocateBlockNumber(part->info.getPartitionId(), zk, attach_log_entry_barrier_path, entry.to_shard);
 
             ReplicatedMergeTreeLogEntryData log_entry;
 
@@ -570,7 +570,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
 
                 storage.getClearBlocksInPartitionOps(
-                    ops, *zk, source_drop_part_info.partition_id, source_drop_part_info.min_block, source_drop_part_info.max_block);
+                    ops, *zk, source_drop_part_info.getPartitionId(), source_drop_part_info.min_block, source_drop_part_info.max_block);
 
                 source_drop_log_entry.type = ReplicatedMergeTreeLogEntryData::DROP_RANGE;
                 source_drop_log_entry.log_entry_id = source_drop_log_entry_barrier_path;

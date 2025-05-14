@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/table-functions/
-sidebar_label: Table Functions
+description: 'Documentation for Table Functions'
+sidebar_label: 'Table Functions'
 sidebar_position: 1
+slug: /sql-reference/table-functions/
+title: 'Table Functions'
 ---
 
 # Table Functions
@@ -18,8 +20,8 @@ You can use table functions in:
 
    It's one of the methods of creating a table.
 
-- [INSERT INTO TABLE FUNCTION](../../sql-reference/statements/insert-into.md#inserting-into-table-function) query.
+- [INSERT INTO TABLE FUNCTION](/sql-reference/statements/insert-into#inserting-using-a-table-function) query.
 
 :::note
-You can't use table functions if the [allow_ddl](../../operations/settings/permissions-for-queries.md#settings_allow_ddl) setting is disabled.
+You can't use table functions if the [allow_ddl](/operations/settings/settings#allow_ddl) setting is disabled.
 :::

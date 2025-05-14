@@ -1,6 +1,8 @@
 ---
+description: 'Documentation for ORDER BY Clause'
+sidebar_label: 'ORDER BY'
 slug: /sql-reference/statements/select/order-by
-sidebar_label: ORDER BY
+title: 'ORDER BY Clause'
 ---
 
 # ORDER BY Clause
@@ -11,8 +13,8 @@ The `ORDER BY` clause contains
 - a list of numbers referring to columns in the `SELECT` clause, e.g. `ORDER BY 2, 1`, or
 - `ALL` which means all columns of the `SELECT` clause, e.g. `ORDER BY ALL`.
 
-To disable sorting by column numbers, set setting [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments) = 0.
-To disable sorting by `ALL`, set setting [enable_order_by_all](../../../operations/settings/settings.md#enable-order-by-all) = 0.
+To disable sorting by column numbers, set setting [enable_positional_arguments](/operations/settings/settings#enable_positional_arguments) = 0.
+To disable sorting by `ALL`, set setting [enable_order_by_all](/operations/settings/settings#enable_order_by_all) = 0.
 
 The `ORDER BY` clause can be attributed by a `DESC` (descending) or `ASC` (ascending) modifier which determines the sorting direction.
 Unless an explicit sort order is specified, `ASC` is used by default.
@@ -33,7 +35,7 @@ There are two approaches to `NaN` and `NULL` sorting order:
 
 For the table
 
-``` text
+```text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 │ 2 │    2 │
@@ -50,7 +52,7 @@ For the table
 
 Run the query `SELECT * FROM t_null_nan ORDER BY y NULLS FIRST` to get:
 
-``` text
+```text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 │ 7 │ ᴺᵁᴸᴸ │
@@ -81,7 +83,7 @@ Example only with [String](../../../sql-reference/data-types/string.md) values:
 
 Input table:
 
-``` text
+```text
 ┌─x─┬─s────┐
 │ 1 │ bca  │
 │ 2 │ ABC  │
@@ -99,7 +101,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 Result:
 
-``` text
+```text
 ┌─x─┬─s────┐
 │ 3 │ 123a │
 │ 4 │ abc  │
@@ -113,7 +115,7 @@ Example with [Nullable](../../../sql-reference/data-types/nullable.md):
 
 Input table:
 
-``` text
+```text
 ┌─x─┬─s────┐
 │ 1 │ bca  │
 │ 2 │ ᴺᵁᴸᴸ │
@@ -133,7 +135,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 Result:
 
-``` text
+```text
 ┌─x─┬─s────┐
 │ 4 │ 123a │
 │ 5 │ abc  │
@@ -149,7 +151,7 @@ Example with [Array](../../../sql-reference/data-types/array.md):
 
 Input table:
 
-``` text
+```text
 ┌─x─┬─s─────────────┐
 │ 1 │ ['Z']         │
 │ 2 │ ['z']         │
@@ -169,7 +171,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 Result:
 
-``` text
+```text
 ┌─x─┬─s─────────────┐
 │ 7 │ ['']          │
 │ 3 │ ['a']         │
@@ -253,7 +255,7 @@ Result:
 
 ## Implementation Details {#implementation-details}
 
-Less RAM is used if a small enough [LIMIT](../../../sql-reference/statements/select/limit.md) is specified in addition to `ORDER BY`. Otherwise, the amount of memory spent is proportional to the volume of data for sorting. For distributed query processing, if [GROUP BY](../../../sql-reference/statements/select/group-by.md) is omitted, sorting is partially done on remote servers, and the results are merged on the requestor server. This means that for distributed sorting, the volume of data to sort can be greater than the amount of memory on a single server.
+Less RAM is used if a small enough [LIMIT](../../../sql-reference/statements/select/limit.md) is specified in addition to `ORDER BY`. Otherwise, the amount of memory spent is proportional to the volume of data for sorting. For distributed query processing, if [GROUP BY](/sql-reference/statements/select/group-by) is omitted, sorting is partially done on remote servers, and the results are merged on the requestor server. This means that for distributed sorting, the volume of data to sort can be greater than the amount of memory on a single server.
 
 If there is not enough RAM, it is possible to perform sorting in external memory (creating temporary files on a disk). Use the setting `max_bytes_before_external_sort` for this purpose. If it is set to 0 (the default), external sorting is disabled. If it is enabled, when the volume of data to sort reaches the specified number of bytes, the collected data is sorted and dumped into a temporary file. After all data is read, all the sorted files are merged and the results are output. Files are written to the `/var/lib/clickhouse/tmp/` directory in the config (by default, but you can use the `tmp_path` parameter to change this setting).
 
@@ -267,7 +269,7 @@ External sorting works much less effectively than sorting in RAM.
 
  When the `optimize_read_in_order` setting is enabled, the ClickHouse server uses the table index and reads the data in order of the `ORDER BY` key. This allows to avoid reading all data in case of specified [LIMIT](../../../sql-reference/statements/select/limit.md). So queries on big data with small limit are processed faster.
 
-Optimization works with both `ASC` and `DESC` and does not work together with [GROUP BY](../../../sql-reference/statements/select/group-by.md) clause and [FINAL](../../../sql-reference/statements/select/from.md#select-from-final) modifier.
+Optimization works with both `ASC` and `DESC` and does not work together with [GROUP BY](/sql-reference/statements/select/group-by) clause and [FINAL](/sql-reference/statements/select/from#final-modifier) modifier.
 
 When the `optimize_read_in_order` setting is disabled, the ClickHouse server does not use the table index while processing `SELECT` queries.
 
@@ -275,7 +277,7 @@ Consider disabling `optimize_read_in_order` manually, when running queries that 
 
 Optimization is supported in the following table engines:
 
-- [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) (including [materialized views](../../../sql-reference/statements/create/view.md#materialized-view)),
+- [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) (including [materialized views](/sql-reference/statements/create/view#materialized-view)),
 - [Merge](../../../engines/table-engines/special/merge.md),
 - [Buffer](../../../engines/table-engines/special/buffer.md)
 
@@ -283,14 +285,14 @@ In `MaterializedView`-engine tables the optimization works with views like `SELE
 
 ## ORDER BY Expr WITH FILL Modifier {#order-by-expr-with-fill-modifier}
 
-This modifier also can be combined with [LIMIT ... WITH TIES modifier](../../../sql-reference/statements/select/limit.md#limit-with-ties).
+This modifier also can be combined with [LIMIT ... WITH TIES modifier](/sql-reference/statements/select/limit#limit--with-ties-modifier).
 
 `WITH FILL` modifier can be set after `ORDER BY expr` with optional `FROM expr`, `TO expr` and `STEP expr` parameters.
 All missed values of `expr` column will be filled sequentially and other columns will be filled as defaults.
 
 To fill multiple columns, add `WITH FILL` modifier with optional parameters after each field name in `ORDER BY` section.
 
-``` sql
+```sql
 ORDER BY expr [WITH FILL] [FROM const_expr] [TO const_expr] [STEP const_numeric_expr] [STALENESS const_numeric_expr], ... exprN [WITH FILL] [FROM expr] [TO expr] [STEP numeric_expr] [STALENESS numeric_expr]
 [INTERPOLATE [(col [AS expr], ... colN [AS exprN])]]
 ```
@@ -305,7 +307,7 @@ When `STALENESS const_numeric_expr` is defined, the query will generate rows unt
 
 Example of a query without `WITH FILL`:
 
-``` sql
+```sql
 SELECT n, source FROM (
    SELECT toFloat32(number % 10) AS n, 'original' AS source
    FROM numbers(10) WHERE number % 3 = 1
@@ -314,7 +316,7 @@ SELECT n, source FROM (
 
 Result:
 
-``` text
+```text
 ┌─n─┬─source───┐
 │ 1 │ original │
 │ 4 │ original │
@@ -324,7 +326,7 @@ Result:
 
 Same query after applying `WITH FILL` modifier:
 
-``` sql
+```sql
 SELECT n, source FROM (
    SELECT toFloat32(number % 10) AS n, 'original' AS source
    FROM numbers(10) WHERE number % 3 = 1
@@ -333,7 +335,7 @@ SELECT n, source FROM (
 
 Result:
 
-``` text
+```text
 ┌───n─┬─source───┐
 │   0 │          │
 │ 0.5 │          │
@@ -355,7 +357,7 @@ For the case with multiple fields `ORDER BY field2 WITH FILL, field1 WITH FILL` 
 
 Example:
 
-``` sql
+```sql
 SELECT
     toDate((number * 10) * 86400) AS d1,
     toDate(number * 86400) AS d2,
@@ -369,7 +371,7 @@ ORDER BY
 
 Result:
 
-``` text
+```text
 ┌───d1───────┬───d2───────┬─source───┐
 │ 1970-01-11 │ 1970-01-02 │ original │
 │ 1970-01-01 │ 1970-01-03 │          │
@@ -385,7 +387,7 @@ Field `d1` does not fill in and use the default value cause we do not have repea
 
 The following query with the changed field in `ORDER BY`:
 
-``` sql
+```sql
 SELECT
     toDate((number * 10) * 86400) AS d1,
     toDate(number * 86400) AS d2,
@@ -399,7 +401,7 @@ ORDER BY
 
 Result:
 
-``` text
+```text
 ┌───d1───────┬───d2───────┬─source───┐
 │ 1970-01-11 │ 1970-01-02 │ original │
 │ 1970-01-16 │ 1970-01-01 │          │
@@ -419,7 +421,7 @@ Result:
 
 The following query uses the `INTERVAL` data type of 1 day for each data filled on column `d1`:
 
-``` sql
+```sql
 SELECT
     toDate((number * 10) * 86400) AS d1,
     toDate(number * 86400) AS d2,
@@ -500,7 +502,7 @@ Result:
 
 Example of a query without `STALENESS`:
 
-``` sql
+```sql
 SELECT number as key, 5 * number value, 'original' AS source
 FROM numbers(16) WHERE key % 5 == 0
 ORDER BY key WITH FILL;
@@ -508,7 +510,7 @@ ORDER BY key WITH FILL;
 
 Result:
 
-``` text
+```text
     ┌─key─┬─value─┬─source───┐
  1. │   0 │     0 │ original │
  2. │   1 │     0 │          │
@@ -531,7 +533,7 @@ Result:
 
 Same query after applying `STALENESS 3`:
 
-``` sql
+```sql
 SELECT number as key, 5 * number value, 'original' AS source
 FROM numbers(16) WHERE key % 5 == 0
 ORDER BY key WITH FILL STALENESS 3;
@@ -539,7 +541,7 @@ ORDER BY key WITH FILL STALENESS 3;
 
 Result:
 
-``` text
+```text
     ┌─key─┬─value─┬─source───┐
  1. │   0 │     0 │ original │
  2. │   1 │     0 │          │
@@ -558,7 +560,7 @@ Result:
 
 Example of a query without `INTERPOLATE`:
 
-``` sql
+```sql
 SELECT n, source, inter FROM (
    SELECT toFloat32(number % 10) AS n, 'original' AS source, number as inter
    FROM numbers(10) WHERE number % 3 = 1
@@ -567,7 +569,7 @@ SELECT n, source, inter FROM (
 
 Result:
 
-``` text
+```text
 ┌───n─┬─source───┬─inter─┐
 │   0 │          │     0 │
 │ 0.5 │          │     0 │
@@ -587,7 +589,7 @@ Result:
 
 Same query after applying `INTERPOLATE`:
 
-``` sql
+```sql
 SELECT n, source, inter FROM (
    SELECT toFloat32(number % 10) AS n, 'original' AS source, number as inter
    FROM numbers(10) WHERE number % 3 = 1
@@ -596,7 +598,7 @@ SELECT n, source, inter FROM (
 
 Result:
 
-``` text
+```text
 ┌───n─┬─source───┬─inter─┐
 │   0 │          │     0 │
 │ 0.5 │          │     0 │
@@ -618,7 +620,7 @@ Result:
 
 It can be useful to fill rows which have the same values in particular columns independently, - a good example is filling missing values in time series.
 Assume there is the following time series table:
-``` sql
+```sql
 CREATE TABLE timeseries
 (
     `sensor_id` UInt64,

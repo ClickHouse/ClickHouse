@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/rounding-functions
+description: 'Documentation for Rounding Functions'
+sidebar_label: 'Rounding'
 sidebar_position: 155
-sidebar_label: Rounding
+slug: /sql-reference/functions/rounding-functions
+title: 'Rounding Functions'
 ---
 
 # Rounding Functions
@@ -17,7 +19,7 @@ If rounding causes an overflow (for example, `floor(-128, -1)`), the result is u
 
 **Syntax**
 
-``` sql
+```sql
 floor(x[, N])
 ```
 
@@ -66,7 +68,7 @@ Like `floor` but returns the smallest rounded number greater than or equal `x`.
 
 **Syntax**
 
-``` sql
+```sql
 ceiling(x[, N])
 ```
 
@@ -107,7 +109,7 @@ If the input value has equal distance to two neighboring numbers, the function u
 
 **Syntax**
 
-``` sql
+```sql
 round(x[, N])
 ```
 
@@ -170,7 +172,7 @@ SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIM
 
 Examples of rounding to the nearest number:
 
-``` text
+```text
 round(3.2, 0) = 3
 round(4.1267, 2) = 4.13
 round(22,-1) = 20
@@ -180,7 +182,7 @@ round(-467,-2) = -500
 
 Banker's rounding.
 
-``` text
+```text
 round(3.5) = 4
 round(4.5) = 4
 round(3.55, 1) = 3.6
@@ -215,7 +217,7 @@ For example, sum numbers 1.5, 2.5, 3.5, 4.5 with different rounding:
 
 **Syntax**
 
-``` sql
+```sql
 roundBankers(x [, N])
 ```
 

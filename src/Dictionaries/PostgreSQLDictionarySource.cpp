@@ -9,6 +9,7 @@
 
 #if USE_LIBPQXX
 #include <Columns/ColumnString.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/RemoteHostFilter.h>
 #include <DataTypes/DataTypeString.h>
 #include <Processors/Sources/PostgreSQLSource.h>

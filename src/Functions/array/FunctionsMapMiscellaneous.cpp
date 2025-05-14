@@ -417,102 +417,104 @@ using FunctionMapPartialReverseSort = FunctionMapToArrayAdapter<FunctionArrayPar
 
 REGISTER_FUNCTION(MapMiscellaneous)
 {
+    constexpr auto category_map = FunctionDocumentation::Category::Map;
+
     factory.registerFunction<FunctionMapConcat>(
     FunctionDocumentation{
         .description="The same as arrayConcat.",
         .examples{{"mapConcat", "SELECT mapConcat(map('k1', 'v1'), map('k2', 'v2'))", ""}},
-        .category{"Maps"},
+        .category = category_map,
     });
 
     factory.registerFunction<FunctionMapKeys>(
     FunctionDocumentation{
         .description="Returns an array with the keys of map.",
         .examples{{"mapKeys", "SELECT mapKeys(map('k1', 'v1', 'k2', 'v2'))", ""}},
-        .category{"Maps"},
+        .category = category_map,
     });
 
     factory.registerFunction<FunctionMapValues>(
     FunctionDocumentation{
         .description="Returns an array with the values of map.",
         .examples{{"mapValues", "SELECT mapValues(map('k1', 'v1', 'k2', 'v2'))", ""}},
-        .category{"Maps"},
+        .category = category_map,
     });
 
     factory.registerFunction<FunctionMapContains>(
     FunctionDocumentation{
         .description="Checks whether the map has the specified key.",
         .examples{{"mapContains", "SELECT mapContains(map('k1', 'v1', 'k2', 'v2'), 'k1')", ""}},
-        .category{"Maps"},
+        .category = category_map,
     });
 
     factory.registerFunction<FunctionMapFilter>(
     FunctionDocumentation{
         .description="The same as arrayFilter.",
         .examples{{"mapFilter", "SELECT mapFilter((k, v) -> v > 1, map('k1', 1, 'k2', 2))", ""}},
-        .category{"Maps"},
+        .category = category_map,
     });
 
     factory.registerFunction<FunctionMapApply>(
     FunctionDocumentation{
         .description="The same as arrayMap.",
         .examples{{"mapApply", "SELECT mapApply((k, v) -> (k, v * 2), map('k1', 1, 'k2', 2))", ""}},
-        .category{"Maps"},
+        .category = category_map,
     });
 
     factory.registerFunction<FunctionMapExists>(
     FunctionDocumentation{
         .description="The same as arrayExists.",
         .examples{{"mapExists", "SELECT mapExists((k, v) -> v = 1, map('k1', 1, 'k2', 2))", ""}},
-        .category{"Maps"},
+        .category = category_map,
     });
 
     factory.registerFunction<FunctionMapAll>(
     FunctionDocumentation{
         .description="The same as arrayAll.",
         .examples{{"mapAll", "SELECT mapAll((k, v) -> v = 1, map('k1', 1, 'k2', 2))", ""}},
-        .category{"Maps"},
+        .category = category_map,
     });
 
     factory.registerFunction<FunctionMapSort>(
     FunctionDocumentation{
         .description="The same as arraySort.",
         .examples{{"mapSort", "SELECT mapSort((k, v) -> v, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
-        .category{"Maps"},
+        .category = category_map,
     });
 
     factory.registerFunction<FunctionMapReverseSort>(
     FunctionDocumentation{
         .description="The same as arrayReverseSort.",
         .examples{{"mapReverseSort", "SELECT mapReverseSort((k, v) -> v, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
-        .category{"Maps"},
+        .category = category_map,
     });
 
     factory.registerFunction<FunctionMapPartialSort>(
     FunctionDocumentation{
         .description="The same as arrayReverseSort.",
         .examples{{"mapPartialSort", "SELECT mapPartialSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
-        .category{"Maps"},
+        .category = category_map,
     });
 
     factory.registerFunction<FunctionMapPartialReverseSort>(
     FunctionDocumentation{
         .description="The same as arrayPartialReverseSort.",
         .examples{{"mapPartialReverseSort", "SELECT mapPartialReverseSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
-        .category{"Maps"},
+        .category = category_map,
     });
 
     factory.registerFunction<FunctionMapContainsKeyLike>(
     FunctionDocumentation{
         .description="Checks whether map contains key LIKE specified pattern.",
         .examples{{"mapContainsKeyLike", "SELECT mapContainsKeyLike(map('k1-1', 1, 'k2-1', 2), 'k1%')", ""}},
-        .category{"Maps"},
+        .category = category_map,
     });
 
     factory.registerFunction<FunctionMapExtractKeyLike>(
     FunctionDocumentation{
         .description="Returns a map with elements which key matches the specified pattern.",
         .examples{{"mapExtractKeyLike", "SELECT mapExtractKeyLike(map('k1-1', 1, 'k2-1', 2), 'k1%')", ""}},
-        .category{"Maps"},
+        .category = category_map,
     });
 }
 

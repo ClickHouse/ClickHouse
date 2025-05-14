@@ -20,6 +20,9 @@ def cluster():
                 ["configs/storage_arm.xml"] if is_arm() else ["configs/storage_amd.xml"]
             ),
             with_minio=True,
+            # Disable with_remote_database_disk to reduce diversion between the public and private repo.
+            # So we do not handle the test differently in the private repo
+            with_remote_database_disk=False,
         )
         cluster.start()
 

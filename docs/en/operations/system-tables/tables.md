@@ -1,9 +1,12 @@
 ---
-description: "System table containing metadata of each table that the server knows about."
+description: 'System table containing metadata of each table that the server knows
+  about.'
+keywords: ['system table', 'tables']
 slug: /operations/system-tables/tables
-title: "system.tables"
-keywords: ["system table", "tables"]
+title: 'system.tables'
 ---
+
+# system.tables
 
 Contains metadata of each table that the server knows about.
 
@@ -33,13 +36,15 @@ Columns:
 
 - `dependencies_database` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Database dependencies.
 
-- `dependencies_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Table dependencies ([materialized views](../../sql-reference/statements/create/view.md#materialized-view) the current table).
+- `dependencies_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Table dependencies ([materialized views](/sql-reference/statements/create/view#materialized-view) the current table).
 
 - `create_table_query` ([String](../../sql-reference/data-types/string.md)) - The query that was used to create the table.
 
 - `engine_full` ([String](../../sql-reference/data-types/string.md)) - Parameters of the table engine.
 
 - `as_select` ([String](../../sql-reference/data-types/string.md)) - `SELECT` query for view.
+
+- `parameterized_view_parameters` ([Array](../../sql-reference/data-types/array.md) of [Tuple](../../sql-reference/data-types/tuple.md)) — Parameters of parameterized view.
 
 - `partition_key` ([String](../../sql-reference/data-types/string.md)) - The partition key expression specified in the table.
 
@@ -52,7 +57,7 @@ Columns:
 - `storage_policy` ([String](../../sql-reference/data-types/string.md)) - The storage policy:
 
     - [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes)
-    - [Distributed](../../engines/table-engines/special/distributed.md#distributed)
+    - [Distributed](/engines/table-engines/special/distributed)
 
 - `total_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise `NULL` (including underlying `Buffer` table).
 

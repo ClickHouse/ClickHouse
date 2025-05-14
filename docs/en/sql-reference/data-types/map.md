@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/data-types/map
+description: 'Documentation for the Map data type in ClickHouse'
+sidebar_label: 'Map(K, V)'
 sidebar_position: 36
-sidebar_label: Map(K, V)
+slug: /sql-reference/data-types/map
+title: 'Map(K, V)'
 ---
 
 # Map(K, V)
@@ -23,7 +25,7 @@ Also, `m[k]` scans the map, i.e. the runtime of the operation is linear in the s
 
 Create a table with a column of type map:
 
-``` sql
+```sql
 CREATE TABLE tab (m Map(String, UInt64)) ENGINE=Memory;
 INSERT INTO tab VALUES ({'key1':1, 'key2':10}), ({'key1':2,'key2':20}), ({'key1':3,'key2':30});
 ```
@@ -64,19 +66,19 @@ Result:
 
 ## Converting Tuple to Map {#converting-tuple-to-map}
 
-Values of type `Tuple()` can be cast to values of type `Map()` using function [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast):
+Values of type `Tuple()` can be cast to values of type `Map()` using function [CAST](/sql-reference/functions/type-conversion-functions#cast):
 
 **Example**
 
 Query:
 
-``` sql
+```sql
 SELECT CAST(([1, 2, 3], ['Ready', 'Steady', 'Go']), 'Map(UInt8, String)') AS map;
 ```
 
 Result:
 
-``` text
+```text
 ┌─map───────────────────────────┐
 │ {1:'Ready',2:'Steady',3:'Go'} │
 └───────────────────────────────┘
@@ -90,7 +92,7 @@ To avoid reading the entire map, you can use subcolumns `keys` and `values` in s
 
 Query:
 
-``` sql
+```sql
 CREATE TABLE tab (m Map(String, UInt64)) ENGINE = Memory;
 INSERT INTO tab VALUES (map('key1', 1, 'key2', 2, 'key3', 3));
 
@@ -100,7 +102,7 @@ SELECT m.values FROM tab; -- same as mapValues(m)
 
 Result:
 
-``` text
+```text
 ┌─m.keys─────────────────┐
 │ ['key1','key2','key3'] │
 └────────────────────────┘
@@ -112,8 +114,8 @@ Result:
 
 **See Also**
 
-- [map()](../../sql-reference/functions/tuple-map-functions.md#function-map) function
-- [CAST()](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) function
+- [map()](/sql-reference/functions/tuple-map-functions#map) function
+- [CAST()](/sql-reference/functions/type-conversion-functions#cast) function
 - [-Map combinator for Map datatype](../aggregate-functions/combinators.md#-map)
 
 

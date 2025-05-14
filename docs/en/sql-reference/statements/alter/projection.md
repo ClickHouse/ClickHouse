@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/statements/alter/projection
+description: 'Documentation for Manipulating Projections'
+sidebar_label: 'PROJECTION'
 sidebar_position: 49
-sidebar_label: PROJECTION
-title: "Projections"
+slug: /sql-reference/statements/alter/projection
+title: 'Projections'
 ---
 
 Projections store data in a format that optimizes query execution, this feature is useful for:
@@ -134,6 +135,49 @@ GROUP BY user_agent
 As mentioned before, we could review the `system.query_log` table. On the `projections` field we have the name of the projection used or empty if none has been used:
 ```sql
 SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
+```
+
+## Normal projection with `_part_offset` field {#normal-projection-with-part-offset-field}
+
+Creating a table with a normal projection that utilizes the `_part_offset` field:
+
+```sql
+CREATE TABLE events
+(
+    `event_time` DateTime,
+    `event_id` UInt64,
+    `user_id` UInt64,
+    `huge_string` String,
+    PROJECTION order_by_user_id
+    (
+        SELECT
+            _part_offset
+        ORDER BY user_id
+    )
+)
+ENGINE = MergeTree()
+ORDER BY (event_id);
+```
+
+Inserting some sample data:
+
+```sql
+INSERT INTO events SELECT * FROM generateRandom() LIMIT 100000;
+```
+
+### Using `_part_offset` as a secondary index {#normal-projection-secondary-index}
+
+The `_part_offset` field preserves its value through merges and mutations, making it valuable for secondary indexing. We can leverage this in queries:
+
+```sql
+SELECT
+    count()
+FROM events
+WHERE (_part, _part_offset) IN (
+    SELECT _part, _part_offset
+    FROM events
+    WHERE user_id = 42
+)
 ```
 
 # Manipulating Projections

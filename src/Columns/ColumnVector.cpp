@@ -12,6 +12,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/NaNUtils.h>
@@ -22,6 +23,7 @@
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
 #include <Common/iota.h>
+#include <DataTypes/FieldToDataType.h>
 
 #include <bit>
 #include <cstring>
@@ -281,7 +283,7 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
 
                 RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), data_size, reverse, res.data());
 
-                /// Radix sort treats all NaNs to be greater than all numbers.
+                /// Radix sort treats all positive NaNs to be greater than all numbers.
                 /// If the user needs the opposite, we must move them accordingly.
                 if (is_floating_point<T> && nan_direction_hint < 0)
                 {
@@ -450,6 +452,14 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
     }
 
     return res;
+}
+
+template <typename T>
+std::pair<String, DataTypePtr> ColumnVector<T>::getValueNameAndType(size_t n) const
+{
+    chassert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
+    const auto & val = castToNearestFieldType(data[n]);
+    return {FieldVisitorToString()(val), FieldToDataType()(val)};
 }
 
 template <typename T>

@@ -23,6 +23,6 @@ The binary search algorithm is used for the search.
 For more details, see [https://en.wikipedia.org/wiki/Binary_search]
 For an unsorted array, the behavior is undefined.
 )",
-        .examples = {{.name = "", .query = "SELECT indexOfAssumeSorted([1, 2, 2, 2, 3, 3, 3, 4], 3) FROM test_table;", .result=""}}});
+        .examples = {{.name = "", .query = "SELECT indexOfAssumeSorted([1, 2, 2, 2, 3, 3, 3, 4], 3) FROM test_table;", .result=""}}, .category = FunctionDocumentation::Category::Array});
 }
 }

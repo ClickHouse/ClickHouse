@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/table-functions/icebergCluster
+description: 'An extension to the iceberg table function which allows processing files
+  from Apache Iceberg in parallel from many nodes in a specified cluster.'
+sidebar_label: 'icebergCluster'
 sidebar_position: 91
-sidebar_label: icebergCluster
-title: "icebergCluster"
-description: "An extension to the iceberg table function which allows processing files from Apache Iceberg in parallel from many nodes in a specified cluster."
+slug: /sql-reference/table-functions/icebergCluster
+title: 'icebergCluster'
 ---
 
 # icebergCluster Table Function
@@ -14,7 +15,7 @@ Allows processing files from Apache [Iceberg](https://iceberg.apache.org/) in pa
 
 **Syntax**
 
-``` sql
+```sql
 icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
 icebergS3Cluster(cluster_name, named_collection[, option=value [,..]])
 

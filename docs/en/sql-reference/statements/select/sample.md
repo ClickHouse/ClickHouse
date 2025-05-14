@@ -1,6 +1,8 @@
 ---
+description: 'Documentation for SAMPLE Clause'
+sidebar_label: 'SAMPLE'
 slug: /sql-reference/statements/select/sample
-sidebar_label: SAMPLE
+title: 'SAMPLE Clause'
 ---
 
 # SAMPLE Clause
@@ -40,7 +42,7 @@ Here `k` is the number from 0 to 1 (both fractional and decimal notations are su
 
 In a `SAMPLE k` clause, the sample is taken from the `k` fraction of data. The example is shown below:
 
-``` sql
+```sql
 SELECT
     Title,
     count() * 10 AS PageViews
@@ -68,7 +70,7 @@ The `_sample_factor` column contains relative coefficients that are calculated d
 
 Let's consider the table `visits`, which contains the statistics about site visits. The first example shows how to calculate the number of page views:
 
-``` sql
+```sql
 SELECT sum(PageViews * _sample_factor)
 FROM visits
 SAMPLE 10000000
@@ -76,7 +78,7 @@ SAMPLE 10000000
 
 The next example shows how to calculate the total number of visits:
 
-``` sql
+```sql
 SELECT sum(_sample_factor)
 FROM visits
 SAMPLE 10000000
@@ -84,7 +86,7 @@ SAMPLE 10000000
 
 The example below shows how to calculate the average session duration. Note that you do not need to use the relative coefficient to calculate the average values.
 
-``` sql
+```sql
 SELECT avg(Duration)
 FROM visits
 SAMPLE 10000000
@@ -96,7 +98,7 @@ Here `k` and `m` are numbers from 0 to 1. Examples are shown below.
 
 **Example 1**
 
-``` sql
+```sql
 SAMPLE 1/10
 ```
 
@@ -106,7 +108,7 @@ In this example, the sample is 1/10th of all data:
 
 **Example 2**
 
-``` sql
+```sql
 SAMPLE 1/10 OFFSET 1/2
 ```
 

@@ -2,6 +2,7 @@
 #include <Interpreters/TextLog.h>
 
 #include <Common/ClickHouseRevision.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -44,7 +45,7 @@ ColumnsDescription TextLogElement::getColumnsDescription()
 
         {"level", std::move(priority_datatype), "Entry level. Possible values: 1 or 'Fatal', 2 or 'Critical', 3 or 'Error', 4 or 'Warning', 5 or 'Notice', 6 or 'Information', 7 or 'Debug', 8 or 'Trace'."},
         {"query_id", std::make_shared<DataTypeString>(), "ID of the query."},
-        {"logger_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of the logger (i.e. DDLWorker)."},
+        {"logger_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of the logger (e.g., DDLWorker)."},
         {"message", std::make_shared<DataTypeString>(), "The message itself."},
 
         {"revision", std::make_shared<DataTypeUInt32>(), "ClickHouse revision."},

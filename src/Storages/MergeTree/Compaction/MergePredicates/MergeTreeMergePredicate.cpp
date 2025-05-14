@@ -13,7 +13,7 @@ MergeTreeMergePredicate::MergeTreeMergePredicate(const StorageMergeTree & storag
 
 std::expected<void, PreformattedMessage> MergeTreeMergePredicate::canMergeParts(const PartProperties & left, const PartProperties & right) const
 {
-    if (left.info.partition_id != right.info.partition_id)
+    if (left.info.getPartitionId() != right.info.getPartitionId())
         return std::unexpected(PreformattedMessage::create("Parts {} and {} belong to different partitions", left.name, right.name));
 
     if (left.projection_names != right.projection_names)

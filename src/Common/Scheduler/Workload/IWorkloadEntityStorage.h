@@ -44,12 +44,6 @@ public:
     /// Check if entity with entity_name is stored.
     virtual bool has(const String & entity_name) const = 0;
 
-    /// Get all entity names.
-    virtual std::vector<String> getAllEntityNames() const = 0;
-
-    /// Get all entity names of specified type.
-    virtual std::vector<String> getAllEntityNames(WorkloadEntityType entity_type) const = 0;
-
     /// Get all entities.
     virtual std::vector<std::pair<String, ASTPtr>> getAllEntities() const = 0;
 
@@ -86,6 +80,12 @@ public:
 
     /// Gets all current entries, pass them through `handler` and subscribes for all later changes.
     virtual scope_guard getAllEntitiesAndSubscribe(const OnChangedHandler & handler) = 0;
+
+    /// Returns the name of resource used for CPU scheduling of the master query threads
+    virtual String getMasterThreadResourceName() = 0;
+
+    /// Returns the name of resource used for CPU scheduling of the additional query threads
+    virtual String getWorkerThreadResourceName() = 0;
 };
 
 }

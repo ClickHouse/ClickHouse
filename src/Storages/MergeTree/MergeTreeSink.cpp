@@ -26,20 +26,6 @@ namespace Setting
     extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
 }
 
-struct MergeTreeSink::DelayedChunk
-{
-    struct Partition
-    {
-        MergeTreeDataWriter::TemporaryPart temp_part;
-        UInt64 elapsed_ns;
-        String block_dedup_token;
-        ProfileEvents::Counters part_counters;
-    };
-
-    std::vector<Partition> partitions;
-};
-
-
 MergeTreeSink::~MergeTreeSink()
 {
     if (!delayed_chunk)
@@ -49,7 +35,7 @@ MergeTreeSink::~MergeTreeSink()
 
     for (auto & partition : delayed_chunk->partitions)
     {
-        partition.temp_part.cancel();
+        partition.temp_part->cancel();
     }
 
     delayed_chunk.reset();
@@ -94,7 +80,7 @@ void MergeTreeSink::consume(Chunk & chunk)
 
     auto part_blocks = MergeTreeDataWriter::splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context);
 
-    using DelayedPartitions = std::vector<MergeTreeSink::DelayedChunk::Partition>;
+    using DelayedPartitions = std::vector<MergeTreeDelayedChunk::Partition>;
     DelayedPartitions partitions;
 
     const Settings & settings = context->getSettingsRef();
@@ -118,33 +104,33 @@ void MergeTreeSink::consume(Chunk & chunk)
         ProfileEvents::Counters part_counters;
 
         UInt64 elapsed_ns = 0;
-        MergeTreeDataWriter::TemporaryPart temp_part;
+        TemporaryPartPtr temp_part;
 
         {
             ProfileEventsScope scoped_attach(&part_counters);
 
             Stopwatch watch;
-            temp_part = storage.writer.writeTempPart(current_block, metadata_snapshot, context);
+            temp_part = writeNewTempPart(current_block);
             elapsed_ns = watch.elapsed();
         }
 
         /// Reset earlier to free memory
         current_block.block.clear();
-        current_block.partition.clear();
+        current_block.partition = {};
 
         /// If optimize_on_insert setting is true, current_block could become empty after merge
         /// and we didn't create part.
-        if (!temp_part.part)
+        if (!temp_part->part)
             continue;
 
         if (need_to_define_dedup_token)
         {
-            chassert(temp_part.part);
-            const auto hash_value = temp_part.part->getPartBlockIDHash();
+            chassert(temp_part->part);
+            const auto hash_value = temp_part->part->getPartBlockIDHash();
             token_info->addChunkHash(toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]));
         }
 
-        if (!support_parallel_write && temp_part.part->getDataPartStorage().supportParallelWrite())
+        if (!support_parallel_write && temp_part->part->getDataPartStorage().supportParallelWrite())
             support_parallel_write = true;
 
         size_t max_insert_delayed_streams_for_parallel_write;
@@ -158,13 +144,13 @@ void MergeTreeSink::consume(Chunk & chunk)
 
         /// In case of too much columns/parts in block, flush explicitly.
         size_t current_streams = 0;
-        for (const auto & stream : temp_part.streams)
+        for (const auto & stream : temp_part->streams)
             current_streams += stream.stream->getNumberOfOpenStreams();
 
         if (total_streams + current_streams > max_insert_delayed_streams_for_parallel_write)
         {
             finishDelayedChunk();
-            delayed_chunk = std::make_unique<MergeTreeSink::DelayedChunk>();
+            delayed_chunk = std::make_unique<MergeTreeDelayedChunk>();
             delayed_chunk->partitions = std::move(partitions);
             finishDelayedChunk();
 
@@ -173,7 +159,7 @@ void MergeTreeSink::consume(Chunk & chunk)
             partitions = DelayedPartitions{};
         }
 
-        partitions.emplace_back(MergeTreeSink::DelayedChunk::Partition
+        partitions.emplace_back(MergeTreeDelayedChunk::Partition
         {
             .temp_part = std::move(temp_part),
             .elapsed_ns = elapsed_ns,
@@ -190,7 +176,7 @@ void MergeTreeSink::consume(Chunk & chunk)
     }
 
     finishDelayedChunk();
-    delayed_chunk = std::make_unique<MergeTreeSink::DelayedChunk>();
+    delayed_chunk = std::make_unique<MergeTreeDelayedChunk>();
     delayed_chunk->partitions = std::move(partitions);
 
     ++num_blocks_processed;
@@ -201,57 +187,19 @@ void MergeTreeSink::finishDelayedChunk()
     if (!delayed_chunk)
         return;
 
-    const Settings & settings = context->getSettingsRef();
-
     for (auto & partition : delayed_chunk->partitions)
     {
         ProfileEventsScope scoped_attach(&partition.part_counters);
 
-        partition.temp_part.finalize();
+        partition.temp_part->finalize();
 
-        auto & part = partition.temp_part.part;
-
-        bool added = false;
-
-        /// It's important to create it outside of lock scope because
-        /// otherwise it can lock parts in destructor and deadlock is possible.
-        MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
-        {
-            auto lock = storage.lockParts();
-            storage.fillNewPartName(part, lock);
-
-            auto * deduplication_log = storage.getDeduplicationLog();
-
-            if (settings[Setting::insert_deduplicate] && deduplication_log)
-            {
-                const String block_id = part->getNewPartBlockID(partition.block_dedup_token);
-                auto res = deduplication_log->addPart(block_id, part->info);
-                if (!res.second)
-                {
-                    ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
-                    LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartNameForLogs());
-                    continue;
-                }
-            }
-
-            /// FIXME: renames for MergeTree should be done under the same lock
-            /// to avoid removing extra covered parts after merge.
-            ///
-            /// Image the following:
-            /// - T1: all_2_2_0 is in renameParts()
-            /// - T2: merge assigned for [all_1_1_0, all_3_3_0]
-            /// - T1: renameParts() finished, part had been added as Active
-            /// - T2: merge finished, covered parts removed, and it will include all_2_2_0!
-            ///
-            /// Hence, for now rename_in_transaction is false.
-            added = storage.renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
-            transaction.commit(&lock);
-        }
+        auto & part = partition.temp_part->part;
+        bool added = commitPart(part, partition.block_dedup_token);
 
         /// Part can be deduplicated, so increment counters and add to part log only if it's really added
         if (added)
         {
-            partition.temp_part.prewarmCaches();
+            partition.temp_part->prewarmCaches();
 
             auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
             PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot));
@@ -263,6 +211,53 @@ void MergeTreeSink::finishDelayedChunk()
     }
 
     delayed_chunk.reset();
+}
+
+MergeTreeTemporaryPartPtr MergeTreeSink::writeNewTempPart(BlockWithPartition & block)
+{
+    return storage.writer.writeTempPart(block, metadata_snapshot, context);
+}
+
+bool MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr & part, const String & deduplication_token)
+{
+    bool added = false;
+
+    /// It's important to create it outside of lock scope because
+    /// otherwise it can lock parts in destructor and deadlock is possible.
+    MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
+    {
+        auto lock = storage.lockParts();
+        storage.fillNewPartName(part, lock);
+
+        auto * deduplication_log = storage.getDeduplicationLog();
+
+        if (context->getSettingsRef()[Setting::insert_deduplicate] && deduplication_log)
+        {
+            const String block_id = part->getNewPartBlockID(deduplication_token);
+            auto res = deduplication_log->addPart(block_id, part->info);
+            if (!res.second)
+            {
+                ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
+                LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartNameForLogs());
+                return false;
+            }
+        }
+
+        /// FIXME: renames for MergeTree should be done under the same lock
+        /// to avoid removing extra covered parts after merge.
+        ///
+        /// Image the following:
+        /// - T1: all_2_2_0 is in renameParts()
+        /// - T2: merge assigned for [all_1_1_0, all_3_3_0]
+        /// - T1: renameParts() finished, part had been added as Active
+        /// - T2: merge finished, covered parts removed, and it will include all_2_2_0!
+        ///
+        /// Hence, for now rename_in_transaction is false.
+        added = storage.renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
+        transaction.commit(&lock);
+    }
+
+    return added;
 }
 
 }

@@ -64,7 +64,7 @@ KafkaSource::~KafkaSource()
         return;
 
     if (broken)
-        consumer->unsubscribe();
+        consumer->markDirty();
 
     storage.pushConsumer(consumer);
 }
@@ -140,7 +140,7 @@ Chunk KafkaSource::generateImpl()
             consumer->currentTopic(),
             consumer->currentPartition(),
             consumer->currentOffset());
-        consumer->setExceptionInfo(e.message());
+        consumer->setExceptionInfo(e.message(), /* with_stacktrace = */ true);
         throw std::move(e);
     };
 

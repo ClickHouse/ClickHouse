@@ -109,7 +109,7 @@ def create_table(node, table_name, replica, **additional_settings):
     assert node.query(f"SELECT COUNT(*) FROM {table_name} FORMAT Values") == "(0)"
 
 
-def get_large_objects_count(blob_container_client, large_size_threshold=100):
+def get_large_objects_count(blob_container_client, large_size_threshold=150):
     return sum(
         blob["size"] > large_size_threshold
         for blob in blob_container_client.list_blobs()
@@ -139,7 +139,7 @@ def test_zero_copy_replication(cluster):
         == values1
     )
 
-    # Based on version 21.x - should be only one file with size 100+ (checksums.txt), used by both nodes
+    # Based on version 21.x - should be only one file with size 150+ (checksums.txt), used by both nodes
     assert get_large_objects_count(blob_container_client) == 1
 
     azure_query(node2, f"INSERT INTO {TABLE_NAME} VALUES {values2}")

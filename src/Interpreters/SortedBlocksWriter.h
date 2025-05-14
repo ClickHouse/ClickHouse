@@ -6,6 +6,7 @@
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 #include <Disks/TemporaryFileOnDisk.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/filesystemHelpers.h>
@@ -24,8 +25,7 @@ using VolumePtr = std::shared_ptr<IVolume>;
 
 struct SortedBlocksWriter
 {
-    using TmpFilePtr = TemporaryFileOnDiskHolder;
-    using SortedFiles = std::vector<TmpFilePtr>;
+    using SortedFiles = std::vector<TemporaryBlockStreamHolder>;
 
     struct Blocks
     {
@@ -66,28 +66,27 @@ struct SortedBlocksWriter
     std::mutex insert_mutex;
     std::condition_variable flush_condvar;
     const SizeLimits & size_limits;
-    VolumePtr volume;
+    TemporaryDataOnDiskScopePtr tmp_data;
+
     Block sample_block;
     const SortDescription & sort_description;
     Blocks inserted_blocks;
     const size_t rows_in_block;
     const size_t num_files_for_merge;
-    const String & codec;
     SortedFiles sorted_files;
     size_t row_count_in_flush = 0;
     size_t bytes_in_flush = 0;
     size_t flush_number = 0;
     size_t flush_inflight = 0;
 
-    SortedBlocksWriter(const SizeLimits & size_limits_, VolumePtr volume_, const Block & sample_block_,
-                       const SortDescription & description, size_t rows_in_block_, size_t num_files_to_merge_, const String & codec_)
+    SortedBlocksWriter(const SizeLimits & size_limits_, TemporaryDataOnDiskScopePtr tmp_data_, const Block & sample_block_,
+                       const SortDescription & description, size_t rows_in_block_, size_t num_files_to_merge_)
         : size_limits(size_limits_)
-        , volume(volume_)
+        , tmp_data(tmp_data_)
         , sample_block(sample_block_)
         , sort_description(description)
         , rows_in_block(rows_in_block_)
         , num_files_for_merge(num_files_to_merge_)
-        , codec(codec_)
     {}
 
     void addBlocks(const Blocks & blocks)
@@ -95,13 +94,10 @@ struct SortedBlocksWriter
         sorted_files.emplace_back(flush(blocks.blocks));
     }
 
-    String getPath() const;
-    Pipe streamFromFile(const TmpFilePtr & file) const;
-
     void insert(Block && block);
-    TmpFilePtr flush(const BlocksList & blocks) const;
+    TemporaryBlockStreamHolder flush(const BlocksList & blocks) const;
     PremergedFiles premerge();
-    SortedFiles finishMerge(std::function<void(const Block &)> callback = [](const Block &){});
+    SortedFiles finishMerge(std::function<void(const Block &)> callback);
 };
 
 

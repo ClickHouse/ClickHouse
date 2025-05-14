@@ -1,9 +1,11 @@
 ---
-slug: /operations/tips
+description: 'Documentation for http://hadoop.apache.org/zookeeper/docs/current/zookeeperAdmin.html'
+sidebar_label: 'Usage Recommendations'
 sidebar_position: 58
-sidebar_label: Usage Recommendations
-title: "Usage Recommendations"
+slug: /operations/tips
+title: 'Usage Recommendations'
 ---
+
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_automated.md';
 
 <SelfManaged />
@@ -12,7 +14,7 @@ import SelfManaged from '@site/docs/_snippets/_self_managed_only_automated.md';
 
 Always use the `performance` scaling governor. The `on-demand` scaling governor works much worse with constantly high demand.
 
-``` bash
+```bash
 $ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
@@ -29,7 +31,7 @@ Even for data volumes of ~50 TB per server, using 128 GB of RAM significantly im
 
 Do not disable overcommit. The value `cat /proc/sys/vm/overcommit_memory` should be 0 or 1. Run
 
-``` bash
+```bash
 $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 ```
 
@@ -77,7 +79,7 @@ in using LVM, there is nothing against using it.
 If you have more than 4 disks, use RAID-6 (preferred) or RAID-50, instead of RAID-5.
 When using RAID-5, RAID-6 or RAID-50, always increase stripe_cache_size, since the default value is usually not the best choice.
 
-``` bash
+```bash
 $ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
 ```
 
@@ -122,7 +124,7 @@ Use at least a 10 GB network, if possible. 1 Gb will also work, but it will be m
 If you are using old Linux kernel, disable transparent huge pages. It interferes with memory allocator, which leads to significant performance degradation.
 On newer Linux kernels transparent huge pages are alright.
 
-``` bash
+```bash
 $ echo 'madvise' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 ```
 
@@ -178,7 +180,7 @@ The ZooKeeper (3.5.1) configuration below is used in a large production environm
 
 zoo.cfg:
 
-``` bash
+```bash
 # http://hadoop.apache.org/zookeeper/docs/current/zookeeperAdmin.html
 
 # The number of milliseconds of each tick
@@ -240,7 +242,7 @@ dynamicConfigFile=/etc/zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}/conf/zoo.
 
 Java version:
 
-``` text
+```text
 openjdk 11.0.5-shenandoah 2019-10-15
 OpenJDK Runtime Environment (build 11.0.5-shenandoah+10-adhoc.heretic.src)
 OpenJDK 64-Bit Server VM (build 11.0.5-shenandoah+10-adhoc.heretic.src, mixed mode)
@@ -248,7 +250,7 @@ OpenJDK 64-Bit Server VM (build 11.0.5-shenandoah+10-adhoc.heretic.src, mixed mo
 
 JVM parameters:
 
-``` bash
+```bash
 NAME=zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}
 ZOOCFGDIR=/etc/$NAME/conf
 
@@ -279,7 +281,7 @@ JAVA_OPTS="-Xms{{ '{{' }} cluster.get('xms','128M') {{ '}}' }} \
 
 Salt initialization:
 
-``` text
+```text
 description "zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }} centralized coordination service"
 
 start on runlevel [2345]

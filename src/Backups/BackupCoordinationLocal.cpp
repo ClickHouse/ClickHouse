@@ -1,8 +1,8 @@
 #include <Backups/BackupCoordinationLocal.h>
 
-#include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/logger_useful.h>
+
 
 namespace DB
 {

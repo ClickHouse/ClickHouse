@@ -45,7 +45,7 @@ Chunk Squashing::squash(Chunk && input_chunk)
     return squash(std::move(squash_info->chunks), std::move(input_chunk.getChunkInfos()));
 }
 
-Chunk Squashing::add(Chunk && input_chunk)
+Chunk Squashing::add(Chunk && input_chunk, bool flush_if_enough_size)
 {
     if (!input_chunk || input_chunk.getNumRows() == 0)
         return {};
@@ -54,7 +54,7 @@ Chunk Squashing::add(Chunk && input_chunk)
     if (isEnoughSize(input_chunk))
     {
         /// If no accumulated data, return just read block.
-        if (!accumulated)
+        if (!accumulated || flush_if_enough_size)
         {
             accumulated.add(std::move(input_chunk));
             return convertToChunk(extract());
@@ -172,7 +172,7 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
         }
 
         /// We know all the data we will insert in advance and can make all necessary pre-allocations.
-        mutable_columns[i]->prepareForSquashing(source_columns_list[i]);
+        mutable_columns[i]->prepareForSquashing(source_columns_list[i], /* factor */ 1);
         for (auto & source_column : source_columns_list[i])
         {
             auto column = std::move(source_column);

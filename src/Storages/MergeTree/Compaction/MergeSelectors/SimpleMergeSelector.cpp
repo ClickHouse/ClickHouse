@@ -230,7 +230,7 @@ void selectWithinPartsRange(
             max_size = std::max(max_size, cur_size);
             min_age = std::min(min_age, cur_age);
 
-            if (max_total_size_to_merge && sum_size > max_total_size_to_merge)
+            if (sum_size > max_total_size_to_merge)
                 break;
 
             auto range_begin = parts.begin() + begin;

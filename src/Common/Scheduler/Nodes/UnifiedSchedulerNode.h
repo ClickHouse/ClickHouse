@@ -8,7 +8,7 @@
 #include <Common/Scheduler/ISchedulerQueue.h>
 #include <Common/Scheduler/Nodes/FifoQueue.h>
 #include <Common/Scheduler/ISchedulerNode.h>
-#include <Common/Scheduler/SchedulingSettings.h>
+#include <Common/Scheduler/WorkloadSettings.h>
 #include <Common/Exception.h>
 
 #include <memory>
@@ -34,7 +34,7 @@ using UnifiedSchedulerNodePtr = std::shared_ptr<UnifiedSchedulerNode>;
  * Unified node is capable of updating its internal structure based on:
  * 1. Number of children (fifo if =0 or fairness/priority if >0).
  * 2. Priorities of its children (for subtree structure).
- * 3. `SchedulingSettings` associated with unified node (for throttler and semaphore constraints).
+ * 3. `WorkloadSettings` associated with unified node (for throttler and semaphore constraints).
  *
  * In general, unified node has "internal" subtree with the following structure:
  *
@@ -317,23 +317,23 @@ private:
         SchedulerNodePtr throttler;
         SchedulerNodePtr semaphore;
         QueueOrChildrenBranch branch;
-        SchedulingSettings settings;
+        WorkloadSettings settings;
 
         // Should be called after constructor, before any other methods
-        [[nodiscard]] SchedulerNodePtr initialize(EventQueue * event_queue_, const SchedulingSettings & settings_)
+        [[nodiscard]] SchedulerNodePtr initialize(EventQueue * event_queue_, const WorkloadSettings & settings_)
         {
             settings = settings_;
             SchedulerNodePtr node = branch.initialize(event_queue_);
             if (settings.hasSemaphore())
             {
-                semaphore = std::make_shared<SemaphoreConstraint>(event_queue_, SchedulerNodeInfo{}, settings.max_requests, settings.max_cost);
+                semaphore = std::make_shared<SemaphoreConstraint>(event_queue_, SchedulerNodeInfo{}, settings.getSemaphoreMaxRequests(), settings.getSemaphoreMaxCost());
                 semaphore->basename = "semaphore";
                 reparent(node, semaphore);
                 node = semaphore;
             }
             if (settings.hasThrottler())
             {
-                throttler = std::make_shared<ThrottlerConstraint>(event_queue_, SchedulerNodeInfo{}, settings.max_speed, settings.max_burst);
+                throttler = std::make_shared<ThrottlerConstraint>(event_queue_, SchedulerNodeInfo{}, settings.getThrottlerMaxSpeed(), settings.getThrottlerMaxBurst());
                 throttler->basename = "throttler";
                 reparent(node, throttler);
                 node = throttler;
@@ -376,13 +376,13 @@ private:
 
         /// Updates constraint-related nodes.
         /// Returns root node if it has been changed to a different node, otherwise returns null.
-        [[nodiscard]] SchedulerNodePtr updateSchedulingSettings(EventQueue * event_queue_, const SchedulingSettings & new_settings)
+        [[nodiscard]] SchedulerNodePtr updateSchedulingSettings(EventQueue * event_queue_, const WorkloadSettings & new_settings)
         {
             SchedulerNodePtr node = branch.getRoot();
 
             if (!settings.hasSemaphore() && new_settings.hasSemaphore()) // Add semaphore
             {
-                semaphore = std::make_shared<SemaphoreConstraint>(event_queue_, SchedulerNodeInfo{}, new_settings.max_requests, new_settings.max_cost);
+                semaphore = std::make_shared<SemaphoreConstraint>(event_queue_, SchedulerNodeInfo{}, new_settings.getSemaphoreMaxRequests(), new_settings.getSemaphoreMaxCost());
                 semaphore->basename = "semaphore";
                 reparent(node, semaphore);
                 node = semaphore;
@@ -394,13 +394,13 @@ private:
             }
             else if (settings.hasSemaphore() && new_settings.hasSemaphore()) // Update semaphore
             {
-                static_cast<SemaphoreConstraint&>(*semaphore).updateConstraints(semaphore, new_settings.max_requests, new_settings.max_cost);
+                static_cast<SemaphoreConstraint&>(*semaphore).updateConstraints(semaphore, new_settings.getSemaphoreMaxRequests(), new_settings.getSemaphoreMaxCost());
                 node = semaphore;
             }
 
             if (!settings.hasThrottler() && new_settings.hasThrottler()) // Add throttler
             {
-                throttler = std::make_shared<ThrottlerConstraint>(event_queue_, SchedulerNodeInfo{}, new_settings.max_speed, new_settings.max_burst);
+                throttler = std::make_shared<ThrottlerConstraint>(event_queue_, SchedulerNodeInfo{}, new_settings.getThrottlerMaxSpeed(), new_settings.getThrottlerMaxBurst());
                 throttler->basename = "throttler";
                 reparent(node, throttler);
                 node = throttler;
@@ -412,7 +412,7 @@ private:
             }
             else if (settings.hasThrottler() && new_settings.hasThrottler()) // Update throttler
             {
-                static_cast<ThrottlerConstraint&>(*throttler).updateConstraints(new_settings.max_speed, new_settings.max_burst);
+                static_cast<ThrottlerConstraint&>(*throttler).updateConstraints(new_settings.getThrottlerMaxSpeed(), new_settings.getThrottlerMaxBurst());
                 node = throttler;
             }
 
@@ -422,7 +422,7 @@ private:
     };
 
 public:
-    explicit UnifiedSchedulerNode(EventQueue * event_queue_, const SchedulingSettings & settings)
+    explicit UnifiedSchedulerNode(EventQueue * event_queue_, const WorkloadSettings & settings)
         : ISchedulerNode(event_queue_, SchedulerNodeInfo(settings.weight, settings.priority))
     {
         immediate_child = impl.initialize(event_queue, settings);
@@ -453,14 +453,14 @@ public:
             reparent(new_child, this);
     }
 
-    static bool updateRequiresDetach(const String & old_parent, const String & new_parent, const SchedulingSettings & old_settings, const SchedulingSettings & new_settings)
+    static bool updateRequiresDetach(const String & old_parent, const String & new_parent, const WorkloadSettings & old_settings, const WorkloadSettings & new_settings)
     {
         return old_parent != new_parent || old_settings.priority != new_settings.priority;
     }
 
     /// Updates scheduling settings. Set of constraints might change.
     /// NOTE: Caller is responsible for detaching and attaching if `updateRequiresDetach` returns true
-    void updateSchedulingSettings(const SchedulingSettings & new_settings)
+    void updateSchedulingSettings(const WorkloadSettings & new_settings)
     {
         info.setPriority(new_settings.priority);
         info.setWeight(new_settings.weight);
@@ -468,7 +468,7 @@ public:
             reparent(new_child, this);
     }
 
-    const SchedulingSettings & getSettings() const
+    const WorkloadSettings & getSettings() const
     {
         return impl.settings;
     }
@@ -484,7 +484,7 @@ public:
     /// for that queue might change in future, and `request->constraints` might reference nodes not in
     /// the initial set of nodes returned by `addRawPointerNodes()`. To avoid destruction of such additional nodes
     /// classifier must (indirectly) hold nodes return by `addRawPointerNodes()` for all future versions of
-    /// all unified nodes. Such a version control is done by `IOResourceManager`.
+    /// all unified nodes. Such a version control is done by `WorkloadResourceManager`.
     void addRawPointerNodes(std::vector<SchedulerNodePtr> & nodes)
     {
         // NOTE: `impl.throttler` could be skipped, because ThrottlerConstraint does not call `request->addConstraint()`
@@ -567,15 +567,20 @@ protected: // Hide all the ISchedulerNode interface methods as an implementation
 
     std::pair<ResourceRequest *, bool> dequeueRequest() override
     {
+        // Dequeue request from the child
         auto [request, child_now_active] = immediate_child->dequeueRequest();
-        if (!request)
-            return {nullptr, false};
 
+        // Deactivate if necessary
         child_active = child_now_active;
         if (!child_active)
             busy_periods++;
-        incrementDequeued(request->cost);
-        return {request, child_active};
+
+        if (request)
+        {
+            incrementDequeued(request->cost);
+            return {request, child_active};
+        }
+        return {nullptr, false};
     }
 
     bool isActive() override

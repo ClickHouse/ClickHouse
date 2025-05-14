@@ -1,16 +1,16 @@
 ---
-slug: /sql-reference/table-functions/fuzzJSON
+description: 'Perturbs a JSON string with random variations.'
+sidebar_label: 'fuzzJSON'
 sidebar_position: 75
-sidebar_label: fuzzJSON
-title: "fuzzJSON"
-description: "Perturbs a JSON string with random variations."
+slug: /sql-reference/table-functions/fuzzJSON
+title: 'fuzzJSON'
 ---
 
 # fuzzJSON Table Function
 
 Perturbs a JSON string with random variations.
 
-``` sql
+```sql
 fuzzJSON({ named_collection [, option=value [,..]] | json_str[, random_seed] })
 ```
 
@@ -37,62 +37,62 @@ A table object with a a single column containing perturbed JSON strings.
 
 ## Usage Example {#usage-example}
 
-``` sql
+```sql
 CREATE NAMED COLLECTION json_fuzzer AS json_str='{}';
 SELECT * FROM fuzzJSON(json_fuzzer) LIMIT 3;
 ```
 
-``` text
+```text
 {"52Xz2Zd4vKNcuP2":true}
 {"UPbOhOQAdPKIg91":3405264103600403024}
 {"X0QUWu8yT":[]}
 ```
 
-``` sql
+```sql
 SELECT * FROM fuzzJSON(json_fuzzer, json_str='{"name" : "value"}', random_seed=1234) LIMIT 3;
 ```
 
-``` text
+```text
 {"key":"value", "mxPG0h1R5":"L-YQLv@9hcZbOIGrAn10%GA"}
 {"BRE3":true}
 {"key":"value", "SWzJdEJZ04nrpSfy":[{"3Q23y":[]}]}
 ```
 
-``` sql
+```sql
 SELECT * FROM fuzzJSON(json_fuzzer, json_str='{"students" : ["Alice", "Bob"]}', reuse_output=true) LIMIT 3;
 ```
 
-``` text
+```text
 {"students":["Alice", "Bob"], "nwALnRMc4pyKD9Krv":[]}
 {"students":["1rNY5ZNs0wU&82t_P", "Bob"], "wLNRGzwDiMKdw":[{}]}
 {"xeEk":["1rNY5ZNs0wU&82t_P", "Bob"], "wLNRGzwDiMKdw":[{}, {}]}
 ```
 
-``` sql
+```sql
 SELECT * FROM fuzzJSON(json_fuzzer, json_str='{"students" : ["Alice", "Bob"]}', max_output_length=512) LIMIT 3;
 ```
 
-``` text
+```text
 {"students":["Alice", "Bob"], "BREhhXj5":true}
 {"NyEsSWzJdeJZ04s":["Alice", 5737924650575683711, 5346334167565345826], "BjVO2X9L":true}
 {"NyEsSWzJdeJZ04s":["Alice", 5737924650575683711, 5346334167565345826], "BjVO2X9L":true, "k1SXzbSIz":[{}]}
 ```
 
-``` sql
+```sql
 SELECT * FROM fuzzJSON('{"id":1}', 1234) LIMIT 3;
 ```
 
-``` text
+```text
 {"id":1, "mxPG0h1R5":"L-YQLv@9hcZbOIGrAn10%GA"}
 {"BRjE":16137826149911306846}
 {"XjKE":15076727133550123563}
 ```
 
-``` sql
+```sql
 SELECT * FROM fuzzJSON(json_nc, json_str='{"name" : "FuzzJSON"}', random_seed=1337, malform_output=true) LIMIT 3;
 ```
 
-``` text
+```text
 U"name":"FuzzJSON*"SpByjZKtr2VAyHCO"falseh
 {"name"keFuzzJSON, "g6vVO7TCIk":jTt^
 {"DBhz":YFuzzJSON5}

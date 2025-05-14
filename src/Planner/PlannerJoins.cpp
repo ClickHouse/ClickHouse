@@ -26,15 +26,16 @@
 #include <Analyzer/Utils.h>
 
 #include <Dictionaries/IDictionary.h>
-#include <Interpreters/IKeyValueEntity.h>
-#include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/MergeJoin.h>
-#include <Interpreters/FullSortingMergeJoin.h>
-#include <Interpreters/ConcurrentHashJoin.h>
-#include <Interpreters/DirectJoin.h>
-#include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/ConcurrentHashJoin.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DirectJoin.h>
+#include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/GraceHashJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/IKeyValueEntity.h>
+#include <Interpreters/JoinSwitcher.h>
+#include <Interpreters/MergeJoin.h>
 #include <Interpreters/PasteJoin.h>
 
 #include <Planner/PlannerActionsVisitor.h>
@@ -60,6 +61,10 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool allow_general_join_planning;
     extern const SettingsJoinAlgorithm join_algorithm;
+    extern const SettingsUInt64 parallel_hash_join_threshold;
+    extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
+    extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
 }
 
 namespace ServerSetting
@@ -240,8 +245,10 @@ const ActionsDAG::Node * appendExpression(
     const PlannerContextPtr & planner_context,
     const JoinNode & join_node)
 {
-    PlannerActionsVisitor join_expression_visitor(planner_context);
-    auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(dag, expression);
+    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+    PlannerActionsVisitor join_expression_visitor(planner_context, empty_correlated_columns_set);
+    auto [join_expression_dag_node_raw_pointers, correlated_subtrees] = join_expression_visitor.visit(dag, expression);
+    correlated_subtrees.assertEmpty("in JOINs");
     if (join_expression_dag_node_raw_pointers.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "JOIN {} ON clause contains multiple expressions",
@@ -909,8 +916,10 @@ JoinClausesAndActions buildJoinClausesAndActions(
         if (result.join_clauses.size() > 1)
         {
             ActionsDAG residual_join_expressions_actions(result_relation_columns);
-            PlannerActionsVisitor join_expression_visitor(planner_context);
-            auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(residual_join_expressions_actions, join_expression);
+            ColumnNodePtrWithHashSet empty_correlated_columns_set;
+            PlannerActionsVisitor join_expression_visitor(planner_context, empty_correlated_columns_set);
+            auto [join_expression_dag_node_raw_pointers, correlated_subtrees] = join_expression_visitor.visit(residual_join_expressions_actions, join_expression);
+            correlated_subtrees.assertEmpty("in JOIN condition");
             if (join_expression_dag_node_raw_pointers.size() != 1)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR, "JOIN {} ON clause contains multiple expressions", join_node.formatASTForErrorMessage());
@@ -1092,8 +1101,9 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     const PreparedJoinStorage & right_table_expression,
     const Block & left_table_expression_header,
     const Block & right_table_expression_header,
-    ContextPtr query_context,
-    IQueryTreeNode::HashState hash_table_key_hash)
+    const JoinAlgorithmSettings & settings,
+    UInt64 hash_table_key_hash,
+    std::optional<UInt64> rhs_size_estimation)
 {
     if (table_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(table_join, right_table_expression_header);
@@ -1120,18 +1130,21 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     {
         if (table_join->allowParallelHashJoin())
         {
-            const auto & settings = query_context->getSettingsRef();
-            StatsCollectingParams params{
-                calculateCacheKey(table_join, hash_table_key_hash),
-                settings[Setting::collect_hash_table_stats_during_joins],
-                query_context->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
-                settings[Setting::max_size_to_preallocate_for_joins]};
-            return std::make_shared<ConcurrentHashJoin>(
-                table_join, query_context->getSettingsRef()[Setting::max_threads], right_table_expression_header, params);
+            const bool use_parallel_hash = !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) || !rhs_size_estimation
+                || (*rhs_size_estimation >= settings.parallel_hash_join_threshold);
+            if (use_parallel_hash)
+            {
+                StatsCollectingParams params{
+                    hash_table_key_hash,
+                    settings.collect_hash_table_stats_during_joins,
+                    settings.max_entries_for_hash_table_stats,
+                    settings.max_size_to_preallocate_for_joins};
+                return std::make_shared<ConcurrentHashJoin>(table_join, settings.max_threads, right_table_expression_header, params);
+            }
         }
 
         return std::make_shared<HashJoin>(
-            table_join, right_table_expression_header, query_context->getSettingsRef()[Setting::join_any_take_last_row]);
+            table_join, right_table_expression_header, settings.join_any_take_last_row);
     }
 
     if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE)
@@ -1145,11 +1158,12 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         if (GraceHashJoin::isSupported(table_join))
         {
             return std::make_shared<GraceHashJoin>(
-                query_context,
+                settings.grace_hash_join_initial_buckets,
+                settings.grace_hash_join_max_buckets,
                 table_join,
                 left_table_expression_header,
                 right_table_expression_header,
-                query_context->getTempDataOnDisk());
+                Context::getGlobalContextInstance()->getTempDataOnDisk());
         }
     }
 
@@ -1163,13 +1177,57 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     return nullptr;
 }
 
+JoinAlgorithmSettings::JoinAlgorithmSettings(const Context & context)
+{
+    const auto & settings = context.getSettingsRef();
+
+    join_any_take_last_row = settings[Setting::join_any_take_last_row];
+
+    collect_hash_table_stats_during_joins = settings[Setting::collect_hash_table_stats_during_joins];
+    max_entries_for_hash_table_stats = context.getServerSettings()[ServerSetting::max_entries_for_hash_table_stats];
+    parallel_hash_join_threshold = settings[Setting::parallel_hash_join_threshold];
+
+    grace_hash_join_initial_buckets = settings[Setting::grace_hash_join_initial_buckets];
+    grace_hash_join_max_buckets = settings[Setting::grace_hash_join_max_buckets];
+
+    max_size_to_preallocate_for_joins = settings[Setting::max_size_to_preallocate_for_joins];
+    max_threads = settings[Setting::max_threads];
+
+    initial_query_id = context.getInitialQueryId();
+    lock_acquire_timeout = settings[Setting::lock_acquire_timeout];
+}
+
+JoinAlgorithmSettings::JoinAlgorithmSettings(
+    const JoinSettings & join_settings,
+    UInt64 max_threads_,
+    UInt64 max_entries_for_hash_table_stats_,
+    String initial_query_id_,
+    std::chrono::milliseconds lock_acquire_timeout_)
+{
+    join_any_take_last_row = join_settings.join_any_take_last_row;
+
+    collect_hash_table_stats_during_joins = join_settings.collect_hash_table_stats_during_joins;
+    max_entries_for_hash_table_stats = max_entries_for_hash_table_stats_;
+    parallel_hash_join_threshold = join_settings.parallel_hash_join_threshold;
+
+    grace_hash_join_initial_buckets = join_settings.grace_hash_join_initial_buckets;
+    grace_hash_join_max_buckets = join_settings.grace_hash_join_max_buckets;
+
+    max_size_to_preallocate_for_joins = join_settings.max_size_to_preallocate_for_joins;
+    max_threads = max_threads_;
+
+    initial_query_id = std::move(initial_query_id_);
+    lock_acquire_timeout = lock_acquire_timeout_;
+}
+
 std::shared_ptr<IJoin> chooseJoinAlgorithm(
     std::shared_ptr<TableJoin> & table_join,
     const PreparedJoinStorage & right_table_expression,
     const Block & left_table_expression_header,
     const Block & right_table_expression_header,
-    ContextPtr query_context,
-    IQueryTreeNode::HashState hash_table_key_hash)
+    const JoinAlgorithmSettings & settings,
+    UInt64 hash_table_key_hash,
+    std::optional<UInt64> rhs_size_estimation)
 {
     if (table_join->getMixedJoinExpression()
         && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH)
@@ -1195,7 +1253,8 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
             table_join->setRename(source_column_name_it->second, result_column.name);
             required_column_names.push_back(source_column_name_it->second);
         }
-        return storage->getJoinLocked(table_join, query_context, required_column_names);
+
+        return storage->getJoinLocked(table_join, settings.initial_query_id, settings.lock_acquire_timeout, required_column_names);
     }
 
     /** JOIN with constant.
@@ -1228,8 +1287,9 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
             right_table_expression,
             left_table_expression_header,
             right_table_expression_header,
-            query_context,
-            hash_table_key_hash);
+            settings,
+            hash_table_key_hash,
+            rhs_size_estimation);
         if (join)
             return join;
     }

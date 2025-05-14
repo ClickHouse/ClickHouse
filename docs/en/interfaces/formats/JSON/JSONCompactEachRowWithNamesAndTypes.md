@@ -1,10 +1,11 @@
 ---
-title: JSONCompactEachRowWithNamesAndTypes
-slug: /interfaces/formats/JSONCompactEachRowWithNamesAndTypes
-keywords: [JSONCompactEachRowWithNamesAndTypes]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the JSONCompactEachRowWithNamesAndTypes format'
+input_format: true
+keywords: ['JSONCompactEachRowWithNamesAndTypes']
+output_format: true
+slug: /interfaces/formats/JSONCompactEachRowWithNamesAndTypes
+title: 'JSONCompactEachRowWithNamesAndTypes'
 ---
 
 | Input | Output | Alias |

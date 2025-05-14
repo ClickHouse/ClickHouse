@@ -6,7 +6,7 @@ drop table if exists rhs;
 create table lhs(a UInt64, b UInt64) Engine = MergeTree order by tuple();
 create table rhs(a UInt64, b UInt64) Engine = MergeTree order by tuple();
 
-insert into lhs select number, number from numbers_mt(1e5);
+insert into lhs select number, number from numbers_mt(2e5);
 -- rhs should be bigger to trigger tables swap (see `query_plan_join_swap_table`)
 insert into rhs select number, number from numbers_mt(1e6);
 
@@ -18,7 +18,7 @@ select * from lhs as t1 join rhs as t2 on t1.a = t2.a format Null;
 -- For the next run we will preallocate the space
 select * from lhs as t1 join rhs as t2 on t1.a = t2.a format Null settings log_comment = '03319_second_query';
 
-system flush logs;
+system flush logs query_log;
 
 select ProfileEvents['HashJoinPreallocatedElementsInHashTables']
 from system.query_log

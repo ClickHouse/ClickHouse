@@ -644,6 +644,7 @@ def test_long_disconnection_stops_backup():
             "CANNOT_READ_ALL_DATA",
             "NETWORK_ERROR",
             "TABLE_IS_READ_ONLY",
+            "NO_REPLICA_HAS_PART",
         ]
         no_trash_checker.check_zookeeper = False
 
@@ -720,6 +721,7 @@ def test_short_disconnection_doesnt_stop_backup():
             "CANNOT_READ_ALL_DATA",
             "NETWORK_ERROR",
             "TABLE_IS_READ_ONLY",
+            "NO_REPLICA_HAS_PART",
         ]
 
 
@@ -772,4 +774,5 @@ def test_short_disconnection_doesnt_stop_restore():
             "CANNOT_READ_ALL_DATA",
             "NETWORK_ERROR",
             "TABLE_IS_READ_ONLY",
+            "NO_REPLICA_HAS_PART",
         ]

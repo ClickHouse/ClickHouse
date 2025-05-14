@@ -1,7 +1,11 @@
 ---
+description: 'Documentation for Profile Guided Optimization'
+sidebar_label: 'Profile Guided Optimization (PGO)'
 sidebar_position: 54
-sidebar_label: Profile Guided Optimization (PGO)
+slug: /operations/optimizing-performance/profile-guided-optimization
+title: 'Profile Guided Optimization'
 ---
+
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
 
 # Profile Guided Optimization

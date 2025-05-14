@@ -1,8 +1,10 @@
 ---
-slug: /sql-reference/data-types/object-data-type
+description: 'Documentation for deprecated Object data type in ClickHouse'
+keywords: ['object', 'data type']
+sidebar_label: 'Object Data Type'
 sidebar_position: 26
-sidebar_label: Object Data Type
-keywords: [object, data type]
+slug: /sql-reference/data-types/object-data-type
+title: 'Object Data Type '
 ---
 
 import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
@@ -17,7 +19,7 @@ import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
 
 Stores JavaScript Object Notation (JSON) documents in a single column.
 
-`JSON` can be used as an alias to `Object('json')` when setting [use_json_alias_for_old_object_type](../../operations/settings/settings.md#usejsonaliasforoldobjecttype) is enabled.
+`JSON` can be used as an alias to `Object('json')` when setting [use_json_alias_for_old_object_type](/operations/settings/settings#use_json_alias_for_old_object_type) is enabled.
 
 ## Example {#example}
 
@@ -54,8 +56,8 @@ To be able to create an ordered `MergeTree` family table, the sorting key has to
 ```sql
 CREATE TABLE logs
 (
-	timestamp DateTime,
-	message JSON
+    timestamp DateTime,
+    message JSON
 )
 ENGINE = MergeTree
 ORDER BY timestamp

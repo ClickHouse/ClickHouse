@@ -1,10 +1,14 @@
 ---
-description: "System table containing metrics that are calculated periodically in the background. For example, the amount of RAM in use."
+description: 'System table containing metrics that are calculated periodically in
+  the background. For example, the amount of RAM in use.'
+keywords: ['system table', 'asynchronous_metrics']
 slug: /operations/system-tables/asynchronous_metrics
-title: "system.asynchronous_metrics"
-keywords: ["system table", "asynchronous_metrics"]
+title: 'system.asynchronous_metrics'
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.asynchronous_metrics
 
 <SystemTableCloud/>
 
@@ -18,11 +22,11 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.asynchronous_metrics LIMIT 10
 ```
 
-``` text
+```text
 ┌─metric──────────────────────────────────┬──────value─┬─description────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ AsynchronousMetricsCalculationTimeSpent │ 0.00179053 │ Time in seconds spent for calculation of asynchronous metrics (this is the overhead of asynchronous metrics).                                                                                                                                              │
 │ NumberOfDetachedByUserParts             │          0 │ The total number of parts detached from MergeTree tables by users with the `ALTER TABLE DETACH` query (as opposed to unexpected, broken or ignored parts). The server does not care about detached parts and they can be removed.                          │
@@ -651,6 +655,6 @@ An internal metric of the low-level memory allocator (jemalloc). See https://jem
 **See Also**
 
 - [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
-- [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) — Contains instantly calculated metrics.
-- [system.events](../../operations/system-tables/events.md#system_tables-events) — Contains a number of events that have occurred.
-- [system.metric_log](../../operations/system-tables/metric_log.md#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` and `system.events`.
+- [system.metrics](/operations/system-tables/metrics) — Contains instantly calculated metrics.
+- [system.events](/operations/system-tables/events) — Contains a number of events that have occurred.
+- [system.metric_log](/operations/system-tables/metric_log) — Contains a history of metrics values from tables `system.metrics` and `system.events`.

@@ -25,7 +25,6 @@
 #include <Parsers/ParserSelectWithUnionQuery.h>
 
 #include <Common/logger_useful.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 
@@ -2835,7 +2834,7 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         if (!ParserDataType().parse(pos, type_ast, expected))
             return Action::NONE;
 
-        layers.back()->pushOperand(std::make_shared<ASTLiteral>(queryToString(type_ast)));
+        layers.back()->pushOperand(std::make_shared<ASTLiteral>(type_ast->formatWithSecretsOneLine()));
         return Action::OPERATOR;
     }
 

@@ -1,9 +1,11 @@
 ---
-slug: /engines/table-engines/special/memory
+description: 'The Memory engine stores data in RAM, in uncompressed form. Data is
+  stored in exactly the same form as it is received when read. In other words, reading
+  from this table is completely free.'
+sidebar_label: 'Memory'
 sidebar_position: 110
-sidebar_label:  Memory
-title: "Memory Table Engine"
-description: "The Memory engine stores data in RAM, in uncompressed form. Data is stored in exactly the same form as it is received when read. In other words, reading from this table is completely free."
+slug: /engines/table-engines/special/memory
+title: 'Memory Table Engine'
 ---
 
 # Memory Table Engine
@@ -45,7 +47,7 @@ Upper and lower bounds can be specified to limit Memory engine table size, effec
 
 
 **Initialize settings**
-``` sql
+```sql
 CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_rows_to_keep = 100, max_rows_to_keep = 1000;
 ```
 
@@ -57,7 +59,7 @@ ALTER TABLE memory MODIFY SETTING min_rows_to_keep = 100, max_rows_to_keep = 100
 **Note:** Both `bytes` and `rows` capping parameters can be set at the same time, however, the lower bounds of `max` and `min` will be adhered to.
 
 ## Examples {#examples}
-``` sql
+```sql
 CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_bytes_to_keep = 4096, max_bytes_to_keep = 16384;
 
 /* 1. testing oldest block doesn't get deleted due to min-threshold - 3000 rows */
@@ -75,7 +77,7 @@ INSERT INTO memory SELECT * FROM numbers(9000, 10000); -- 65'536 bytes
 SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' and database = currentDatabase();
 ```
 
-``` text
+```text
 ┌─total_bytes─┬─total_rows─┐
 │       65536 │      10000 │
 └─────────────┴────────────┘
@@ -83,7 +85,7 @@ SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' and data
 
 also, for rows:
 
-``` sql
+```sql
 CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_rows_to_keep = 4000, max_rows_to_keep = 10000;
 
 /* 1. testing oldest block doesn't get deleted due to min-threshold - 3000 rows */
@@ -101,7 +103,7 @@ INSERT INTO memory SELECT * FROM numbers(9000, 10000); -- 10'000 rows
 SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' and database = currentDatabase();
 ```
 
-``` text
+```text
 ┌─total_bytes─┬─total_rows─┐
 │       65536 │      10000 │
 └─────────────┴────────────┘

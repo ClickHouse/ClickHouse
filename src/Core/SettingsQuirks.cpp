@@ -52,6 +52,14 @@ namespace Setting
 {
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
+    extern const SettingsUInt64 input_format_parquet_max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 min_insert_block_size_bytes_for_materialized_views;
+    extern const SettingsUInt64 min_external_table_block_size_rows;
+    extern const SettingsUInt64 max_joined_block_size_rows;
+    extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 query_profiler_cpu_time_period_ns;
     extern const SettingsUInt64 query_profiler_real_time_period_ns;
     extern const SettingsBool use_hedged_requests;
@@ -101,51 +109,43 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log)
 
 void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
 {
-    auto get_current_value = [&current_settings](const std::string_view name) -> Field
-    {
-        Field current_value;
-        bool has_current_value = current_settings.tryGet(name, current_value);
-        chassert(has_current_value);
-        return current_value;
-    };
-
-    UInt64 max_threads = get_current_value("max_threads").safeGet<UInt64>();
+    UInt64 max_threads = current_settings[Setting::max_threads];
     UInt64 max_threads_max_value = 256 * getNumberOfCPUCoresToUse();
     if (max_threads > max_threads_max_value)
     {
         if (log)
             LOG_WARNING(log, "Sanity check: Too many threads requested ({}). Reduced to {}", max_threads, max_threads_max_value);
-        current_settings.set("max_threads", max_threads_max_value);
+        current_settings[Setting::max_threads] = max_threads_max_value;
     }
 
     static constexpr UInt64 max_sane_block_rows_size = 4294967296; // 2^32
 
     using namespace std::literals;
-    static constexpr std::array block_rows_settings{
-        "max_block_size"sv,
-        "max_insert_block_size"sv,
-        "min_insert_block_size_rows"sv,
-        "min_insert_block_size_bytes_for_materialized_views"sv,
-        "min_external_table_block_size_rows"sv,
-        "max_joined_block_size_rows"sv,
-        "input_format_parquet_max_block_size"sv};
-
-    for (auto const setting : block_rows_settings)
-    {
-        if (auto block_size = get_current_value(setting).safeGet<UInt64>();
-            block_size > max_sane_block_rows_size)
-        {
-            if (log)
-                LOG_WARNING(log, "Sanity check: '{}' value is too high ({}). Reduced to {}", setting, block_size, max_sane_block_rows_size);
-            current_settings.set(setting, max_sane_block_rows_size);
-        }
+#define CHECK_MAX_VALUE(SETTING_VALUE) \
+    if (UInt64 block_size = current_settings[Setting::SETTING_VALUE]; block_size > max_sane_block_rows_size) \
+    { \
+        if (log) \
+            LOG_WARNING( \
+                log, "Sanity check: '{}' value is too high ({}). Reduced to {}", #SETTING_VALUE, block_size, max_sane_block_rows_size); \
+        current_settings[Setting::SETTING_VALUE] = max_sane_block_rows_size; \
     }
 
-    if (auto max_block_size = get_current_value("max_block_size").safeGet<UInt64>(); max_block_size == 0)
+    CHECK_MAX_VALUE(max_block_size)
+    CHECK_MAX_VALUE(max_insert_block_size)
+    CHECK_MAX_VALUE(min_insert_block_size_rows)
+    CHECK_MAX_VALUE(min_insert_block_size_bytes_for_materialized_views)
+    CHECK_MAX_VALUE(min_external_table_block_size_rows)
+    CHECK_MAX_VALUE(max_joined_block_size_rows)
+    CHECK_MAX_VALUE(input_format_parquet_max_block_size)
+
+#undef CHECK_MAX_VALUE
+
+
+    if (auto max_block_size = current_settings[Setting::max_block_size]; max_block_size == 0)
     {
         if (log)
             LOG_WARNING(log, "Sanity check: 'max_block_size' cannot be 0. Set to default value {}", DEFAULT_BLOCK_SIZE);
-        current_settings.set("max_block_size", DEFAULT_BLOCK_SIZE);
+        current_settings[Setting::max_block_size] = DEFAULT_BLOCK_SIZE;
     }
 }
 

@@ -1,6 +1,6 @@
 ## ClickHouse integration tests
 
-This directory contains tests that involve several ClickHouse instances, custom configs, ZooKeeper, etc.
+This directory contains tests that involve several ClickHouse instances, custom configs, ZooKeeper, etc. It is generally simpler to run tests with the [Runner](#running-with-runner-script) script.
 
 ### Running natively
 
@@ -80,7 +80,7 @@ Notes:
 
 You can run tests via `./runner` script and pass pytest arguments as last arg:
 ```bash
-$ ./runner --binary $HOME/ClickHouse/programs/clickhouse  --odbc-bridge-binary $HOME/ClickHouse/programs/clickhouse-odbc-bridge --base-configs-dir $HOME/ClickHouse/programs/server/ 'test_ssl_cert_authentication -ss'
+$ ./runner --binary $HOME/ClickHouse/programs/clickhouse --base-configs-dir $HOME/ClickHouse/programs/server/ -- test_ssl_cert_authentication -ss
 Start tests
 ====================================================================================================== test session starts ======================================================================================================
 platform linux -- Python 3.8.10, pytest-7.1.2, pluggy-1.0.0 -- /usr/bin/python3
@@ -191,7 +191,7 @@ It can be rebuild with
 
 ```
 cd docker/test/integration/runner
-docker build -t clickhouse/integration-test-runner .
+docker build -t clickhouse/integration-tests-runner .
 ```
 
 If your docker configuration doesn't allow access to public internet with docker build command you may also need to add option --network=host if you rebuild image for a local integration testsing.

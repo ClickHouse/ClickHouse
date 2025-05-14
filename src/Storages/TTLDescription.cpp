@@ -21,7 +21,6 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -176,7 +175,7 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
 static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndTypesList & columns, const ContextPtr & context)
 {
     ExpressionAndSets result;
-    auto ttl_string = queryToString(ast);
+    auto ttl_string = ast->formatWithSecretsOneLine();
     auto context_copy = Context::createCopy(context);
     /// FIXME All code here will work with old analyzer, however for TTL
     /// with subqueries it's possible that new analyzer will be enabled in ::read method

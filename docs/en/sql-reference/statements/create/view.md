@@ -1,8 +1,11 @@
 ---
-slug: /sql-reference/statements/create/view
+description: 'Documentation for CREATE VIEW'
+sidebar_label: 'VIEW'
 sidebar_position: 37
-sidebar_label: VIEW
+slug: /sql-reference/statements/create/view
+title: 'CREATE VIEW'
 ---
+
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -15,7 +18,7 @@ Creates a new view. Views can be [normal](#normal-view), [materialized](#materia
 
 Syntax:
 
-``` sql
+```sql
 CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [(alias1 [, alias2 ...])] [ON CLUSTER cluster_name]
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }]
 AS SELECT ...
@@ -26,40 +29,40 @@ Normal views do not store any data. They just perform a read from another table 
 
 As an example, assume you've created a view:
 
-``` sql
+```sql
 CREATE VIEW view AS SELECT ...
 ```
 
 and written a query:
 
-``` sql
+```sql
 SELECT a, b, c FROM view
 ```
 
 This query is fully equivalent to using the subquery:
 
-``` sql
+```sql
 SELECT a, b, c FROM (SELECT ...)
 ```
 
 ## Parameterized View {#parameterized-view}
 
-Parametrized views are similar to normal views, but can be created with parameters which are not resolved immediately. These views can be used with table functions, which specify the name of the view as function name and the parameter values as its arguments.
+Parameterized views are similar to normal views, but can be created with parameters which are not resolved immediately. These views can be used with table functions, which specify the name of the view as function name and the parameter values as its arguments.
 
-``` sql
+```sql
 CREATE VIEW view AS SELECT * FROM TABLE WHERE Column1={column1:datatype1} and Column2={column2:datatype2} ...
 ```
 The above creates a view for table which can be used as table function by substituting parameters as shown below.
 
-``` sql
+```sql
 SELECT * FROM view(column1=value1, column2=value2 ...)
 ```
 
 ## Materialized View {#materialized-view}
 
-``` sql
+```sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name [(columns)]] [ENGINE = engine] [POPULATE]
-[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }]
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
 AS SELECT ...
 [COMMENT 'comment']
 ```
@@ -102,7 +105,7 @@ A `SELECT` query can contain `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`. Note t
 
 The execution of [ALTER](/sql-reference/statements/alter/view.md) queries on materialized views has limitations, for example, you can not update the `SELECT` query, so this might be inconvenient. If the materialized view uses the construction `TO [db.]name`, you can `DETACH` the view, run `ALTER` for the target table, and then `ATTACH` the previously detached (`DETACH`) view.
 
-Note that materialized view is influenced by [optimize_on_insert](../../../operations/settings/settings.md#optimize-on-insert) setting. The data is merged before the insertion into a view.
+Note that materialized view is influenced by [optimize_on_insert](/operations/settings/settings#optimize_on_insert) setting. The data is merged before the insertion into a view.
 
 Views look the same as normal tables. For example, they are listed in the result of the `SHOW TABLES` query.
 
@@ -168,8 +171,9 @@ REFRESH EVERY|AFTER interval [OFFSET interval]
 [DEPENDS ON [db.]name [, [db.]name [, ...]]]
 [SETTINGS name = value [, name = value [, ...]]]
 [APPEND]
-[TO[db.]name] [(columns)] [ENGINE = engine] 
+[TO[db.]name] [(columns)] [ENGINE = engine]
 [EMPTY]
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
 AS SELECT ...
 [COMMENT 'comment']
 ```
@@ -301,10 +305,10 @@ Fun fact: the refresh query is allowed to read from the view that's being refres
 <CloudNotSupportedBadge/>
 
 :::info
-This is an experimental feature that may change in backwards-incompatible ways in the future releases. Enable usage of window views and `WATCH` query using [allow_experimental_window_view](../../../operations/settings/settings.md#allow-experimental-window-view) setting. Input the command `set allow_experimental_window_view = 1`.
+This is an experimental feature that may change in backwards-incompatible ways in the future releases. Enable usage of window views and `WATCH` query using [allow_experimental_window_view](/operations/settings/settings#allow_experimental_window_view) setting. Input the command `set allow_experimental_window_view = 1`.
 :::
 
-``` sql
+```sql
 CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [INNER ENGINE engine] [ENGINE engine] [WATERMARK strategy] [ALLOWED_LATENESS interval_function] [POPULATE]
 AS SELECT ...
 GROUP BY time_window_function
@@ -327,7 +331,7 @@ Window view supports **processing time** and **event time** process.
 
 **Processing time** allows window view to produce results based on the local machine's time and is used by default. It is the most straightforward notion of time but does not provide determinism. The processing time attribute can be defined by setting the `time_attr` of the time window function to a table column or using the function `now()`. The following query creates a window view with processing time.
 
-``` sql
+```sql
 CREATE WINDOW VIEW wv AS SELECT count(number), tumbleStart(w_id) as w_start from date GROUP BY tumble(now(), INTERVAL '5' SECOND) as w_id
 ```
 
@@ -341,7 +345,7 @@ Window view provides three watermark strategies:
 
 The following queries are examples of creating a window view with `WATERMARK`:
 
-``` sql
+```sql
 CREATE WINDOW VIEW wv WATERMARK=STRICTLY_ASCENDING AS SELECT count(number) FROM date GROUP BY tumble(timestamp, INTERVAL '5' SECOND);
 CREATE WINDOW VIEW wv WATERMARK=ASCENDING AS SELECT count(number) FROM date GROUP BY tumble(timestamp, INTERVAL '5' SECOND);
 CREATE WINDOW VIEW wv WATERMARK=INTERVAL '3' SECOND AS SELECT count(number) FROM date GROUP BY tumble(timestamp, INTERVAL '5' SECOND);
@@ -349,7 +353,7 @@ CREATE WINDOW VIEW wv WATERMARK=INTERVAL '3' SECOND AS SELECT count(number) FROM
 
 By default, the window will be fired when the watermark comes, and elements that arrived behind the watermark will be dropped. Window view supports late event processing by setting `ALLOWED_LATENESS=INTERVAL`. An example of lateness handling is:
 
-``` sql
+```sql
 CREATE WINDOW VIEW test.wv TO test.dst WATERMARK=ASCENDING ALLOWED_LATENESS=INTERVAL '2' SECOND AS SELECT count(a) AS count, tumbleEnd(wid) AS w_end FROM test.mt GROUP BY tumble(timestamp, INTERVAL '5' SECOND) AS wid;
 ```
 
@@ -361,7 +365,7 @@ You can modify `SELECT` query that was specified in the window view by using `AL
 
 Window view supports the [WATCH](../../../sql-reference/statements/watch.md) query to monitoring changes, or use `TO` syntax to output the results to a table.
 
-``` sql
+```sql
 WATCH [db.]window_view
 [EVENTS]
 [LIMIT n]
@@ -380,31 +384,31 @@ WATCH [db.]window_view
 
 Suppose we need to count the number of click logs per 10 seconds in a log table called `data`, and its table structure is:
 
-``` sql
+```sql
 CREATE TABLE data ( `id` UInt64, `timestamp` DateTime) ENGINE = Memory;
 ```
 
 First, we create a window view with tumble window of 10 seconds interval:
 
-``` sql
+```sql
 CREATE WINDOW VIEW wv as select count(id), tumbleStart(w_id) as window_start from data group by tumble(timestamp, INTERVAL '10' SECOND) as w_id
 ```
 
 Then, we use the `WATCH` query to get the results.
 
-``` sql
+```sql
 WATCH wv
 ```
 
 When logs are inserted into table `data`,
 
-``` sql
+```sql
 INSERT INTO data VALUES(1,now())
 ```
 
 The `WATCH` query should print the results as follows:
 
-``` text
+```text
 ┌─count(id)─┬────────window_start─┐
 │         1 │ 2020-01-14 16:56:40 │
 └───────────┴─────────────────────┘
@@ -412,7 +416,7 @@ The `WATCH` query should print the results as follows:
 
 Alternatively, we can attach the output to another table using `TO` syntax.
 
-``` sql
+```sql
 CREATE WINDOW VIEW wv TO dst AS SELECT count(id), tumbleStart(w_id) as window_start FROM data GROUP BY tumble(timestamp, INTERVAL '10' SECOND) as w_id
 ```
 

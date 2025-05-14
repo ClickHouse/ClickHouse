@@ -46,7 +46,7 @@ def test_merge():
     )
 
     instance.query("GRANT CREATE TEMPORARY TABLE ON *.* TO A")
-    assert "no tables in the database matches" in instance.query_and_get_error(
+    assert "no tables satisfied provided regexp" in instance.query_and_get_error(
         select_query, user="A"
     )
 
@@ -63,7 +63,7 @@ def test_merge():
     instance.query("GRANT SELECT ON default.table1 TO A")
     instance.query("GRANT INSERT ON default.table2 TO A")
     assert (
-        "it's necessary to have the grant SELECT ON default.table2"
+        "it's necessary to have the grant SELECT(x) ON default.table2"
         in instance.query_and_get_error(select_query, user="A")
     )
 

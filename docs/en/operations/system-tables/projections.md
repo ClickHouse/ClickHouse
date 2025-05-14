@@ -1,9 +1,12 @@
 ---
-description: "System table containing information about existing projections in all tables."
+description: 'System table containing information about existing projections in all
+  tables.'
+keywords: ['system table', 'projections']
 slug: /operations/system-tables/projections
-title: "system.processors_profile_log"
-keywords: ["system table", "projections"]
+title: 'system.projections'
 ---
+
+# system.projections
 
 Contains information about existing projections in all tables.
 

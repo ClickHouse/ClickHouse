@@ -11,6 +11,9 @@
 #    include <llvm/IR/IRBuilder.h>
 #endif
 
+#include <cstring>
+#include <type_traits>
+
 namespace DB
 {
 
@@ -286,7 +289,7 @@ void SingleValueDataFixed<T>::setSmallest(const IColumn & column, size_t row_beg
         return;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt = findExtremeMin(vec.getData().data(), row_begin, row_end);
         if (opt.has_value())
@@ -306,7 +309,7 @@ void SingleValueDataFixed<T>::setGreatest(const IColumn & column, size_t row_beg
         return;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt = findExtremeMax(vec.getData().data(), row_begin, row_end);
         if (opt.has_value())
@@ -331,7 +334,7 @@ void SingleValueDataFixed<T>::setSmallestNotNullIf(
     chassert(if_map || null_map);
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt;
         if (!if_map)
@@ -375,7 +378,7 @@ void SingleValueDataFixed<T>::setGreatestNotNullIf(
     chassert(if_map || null_map);
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt;
         if (!if_map)
@@ -414,7 +417,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndex(const IColumn & 
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         return findExtremeMinIndex(vec.getData().data(), row_begin, row_end);
     }
@@ -435,7 +438,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndex(const IColumn & 
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         return findExtremeMaxIndex(vec.getData().data(), row_begin, row_end);
     }
@@ -457,30 +460,52 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
+    const auto & vec_data = vec.getData();
 
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt;
         if (!if_map)
         {
             opt = findExtremeMinNotNull(vec.getData().data(), null_map, row_begin, row_end);
             if (!opt.has_value())
-                return opt;
+                return std::nullopt;
+            T smallest = *opt;
             for (size_t i = row_begin; i < row_end; i++)
             {
-                if (!null_map[i] && vec[i] == *opt)
-                    return {i};
+                if constexpr (is_floating_point<T>)
+                {
+                    /// We search for the exact byte representation, not the default floating point equal, otherwise we might not find the value (NaN)
+                    static_assert(std::is_pod_v<T>);
+                    if (!null_map[i] && std::memcmp(&vec_data[i], &smallest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
+                        return {i};
+                }
+                else
+                {
+                    if (!null_map[i] && vec_data[i] == smallest)
+                        return {i};
+                }
             }
         }
         else if (!null_map)
         {
             opt = findExtremeMinIf(vec.getData().data(), if_map, row_begin, row_end);
             if (!opt.has_value())
-                return opt;
+                return std::nullopt;
+            T smallest = *opt;
             for (size_t i = row_begin; i < row_end; i++)
             {
-                if (if_map[i] && vec[i] == *opt)
-                    return {i};
+                if constexpr (is_floating_point<T>)
+                {
+                    static_assert(std::is_pod_v<T>);
+                    if (if_map[i] && std::memcmp(&vec_data[i], &smallest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
+                        return {i};
+                }
+                else
+                {
+                    if (if_map[i] && vec_data[i] == smallest)
+                        return {i};
+                }
             }
         }
         else
@@ -489,13 +514,23 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
             opt = findExtremeMinIf(vec.getData().data(), final_flags.get(), row_begin, row_end);
             if (!opt.has_value())
                 return std::nullopt;
+            T smallest = *opt;
             for (size_t i = row_begin; i < row_end; i++)
             {
-                if (final_flags[i] && vec[i] == *opt)
-                    return {i};
+                if constexpr (is_floating_point<T>)
+                {
+                    static_assert(std::is_pod_v<T>);
+                    if (final_flags[i] && std::memcmp(&vec_data[i], &smallest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
+                        return {i};
+                }
+                else
+                {
+                    if (final_flags[i] && vec_data[i] == smallest)
+                        return {i};
+                }
             }
         }
-        UNREACHABLE();
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find index");
     }
     else
     {
@@ -506,7 +541,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
             return std::nullopt;
 
         for (size_t i = index + 1; i < row_end; i++)
-            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (vec[i] < vec[index]))
+            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (vec_data[i] < vec_data[index]))
                 index = i;
         return {index};
     }
@@ -520,46 +555,76 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
+    const auto & vec_data = vec.getData();
 
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt;
         if (!if_map)
         {
             opt = findExtremeMaxNotNull(vec.getData().data(), null_map, row_begin, row_end);
             if (!opt.has_value())
-                return opt;
+                return std::nullopt;
+            T greatest = *opt;
             for (size_t i = row_begin; i < row_end; i++)
             {
-                if (!null_map[i] && vec[i] == *opt)
-                    return {i};
+                if constexpr (is_floating_point<T>)
+                {
+                    static_assert(std::is_pod_v<T>);
+                    if (!null_map[i] && std::memcmp(&vec_data[i], &greatest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
+                        return {i};
+                }
+                else
+                {
+                    if (!null_map[i] && vec_data[i] == greatest)
+                        return {i};
+                }
             }
-            return opt;
         }
-        if (!null_map)
+        else if (!null_map)
         {
             opt = findExtremeMaxIf(vec.getData().data(), if_map, row_begin, row_end);
             if (!opt.has_value())
-                return opt;
+                return std::nullopt;
+            T greatest = *opt;
             for (size_t i = row_begin; i < row_end; i++)
             {
-                if (if_map[i] && vec[i] == *opt)
-                    return {i};
+                if constexpr (is_floating_point<T>)
+                {
+                    static_assert(std::is_pod_v<T>);
+                    if (if_map[i] && std::memcmp(&vec_data[i], &greatest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
+                        return {i};
+                }
+                else
+                {
+                    if (if_map[i] && vec_data[i] == greatest)
+                        return {i};
+                }
             }
-            return opt;
         }
-
-        auto final_flags = mergeIfAndNullFlags(null_map, if_map, row_begin, row_end);
-        opt = findExtremeMaxIf(vec.getData().data(), final_flags.get(), row_begin, row_end);
-        if (!opt.has_value())
-            return std::nullopt;
-        for (size_t i = row_begin; i < row_end; i++)
+        else
         {
-            if (final_flags[i] && vec[i] == *opt)
-                return {i};
+            auto final_flags = mergeIfAndNullFlags(null_map, if_map, row_begin, row_end);
+            opt = findExtremeMaxIf(vec.getData().data(), final_flags.get(), row_begin, row_end);
+            if (!opt.has_value())
+                return std::nullopt;
+            T greatest = *opt;
+            for (size_t i = row_begin; i < row_end; i++)
+            {
+                if constexpr (is_floating_point<T>)
+                {
+                    static_assert(std::is_pod_v<T>);
+                    if (final_flags[i] && std::memcmp(&vec_data[i], &greatest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
+                        return {i};
+                }
+                else
+                {
+                    if (final_flags[i] && vec_data[i] == greatest)
+                        return {i};
+                }
+            }
         }
-
-        UNREACHABLE();
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find index");
     }
     else
     {
@@ -570,7 +635,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
             return std::nullopt;
 
         for (size_t i = index + 1; i < row_end; i++)
-            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (vec[i] > vec[index]))
+            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (vec_data[i] > vec_data[index]))
                 index = i;
         return {index};
     }

@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -73,10 +74,29 @@ void RangesInDataPartsDescription::deserialize(ReadBuffer & in)
         desc.deserialize(in);
 }
 
-void RangesInDataPartsDescription::merge(RangesInDataPartsDescription & other)
+void RangesInDataPartsDescription::merge(const RangesInDataPartsDescription & other)
 {
     for (const auto & desc : other)
         this->emplace_back(desc);
+}
+
+RangesInDataPart::RangesInDataPart(
+    const DataPartPtr & data_part_, size_t part_index_in_query_, size_t part_starting_offset_in_query_, const MarkRanges & ranges_)
+    : data_part{data_part_}
+    , part_index_in_query{part_index_in_query_}
+    , part_starting_offset_in_query{part_starting_offset_in_query_}
+    , ranges{ranges_}
+{
+}
+
+RangesInDataPart::RangesInDataPart(const DataPartPtr & data_part_, size_t part_index_in_query_, size_t part_starting_offset_in_query_)
+    : data_part{data_part_}
+    , part_index_in_query{part_index_in_query_}
+    , part_starting_offset_in_query{part_starting_offset_in_query_}
+{
+    size_t total_marks_count = data_part->index_granularity->getMarksCountWithoutFinal();
+    if (total_marks_count)
+        ranges.emplace_back(0, total_marks_count);
 }
 
 RangesInDataPartDescription RangesInDataPart::getDescription() const
@@ -102,6 +122,17 @@ size_t RangesInDataPart::getRowsCount() const
     return data_part->index_granularity->getRowsCountInRanges(ranges);
 }
 
+RangesInDataParts::RangesInDataParts(const DataPartsVector & parts)
+{
+    size_t num_parts = parts.size();
+    reserve(num_parts);
+    size_t starting_offset = 0;
+    for (size_t i = 0; i < num_parts; ++i)
+    {
+        emplace_back(parts[i], i, starting_offset);
+        starting_offset += parts[i]->rows_count;
+    }
+}
 
 RangesInDataPartsDescription RangesInDataParts::getDescriptions() const
 {

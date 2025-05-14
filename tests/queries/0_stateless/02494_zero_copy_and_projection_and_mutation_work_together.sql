@@ -1,6 +1,8 @@
 DROP TABLE IF EXISTS wikistat1;
 DROP TABLE IF EXISTS wikistat2;
 
+SET apply_mutations_on_fly = 0;
+
 CREATE TABLE wikistat1
 (
     time DateTime,

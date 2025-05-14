@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/window-functions/
-sidebar_label: Window Functions
+description: 'Overview page for window functions'
+sidebar_label: 'Window Functions'
 sidebar_position: 1
+slug: /sql-reference/window-functions/
+title: 'Window Functions'
 ---
 
 # Window Functions 
@@ -26,7 +28,7 @@ ClickHouse supports the standard grammar for defining windows and window functio
 | `rank()`, `dense_rank()`, `row_number()`                                           | ✅ <br/>Alias: `denseRank()`                                                                                                                                                                                   |
 | `percent_rank()` | ✅  Efficiently computes the relative standing of a value within a partition in a dataset. This function effectively replaces the more verbose and computationally intensive manual SQL calculation expressed as `ifNull((rank() OVER(PARTITION BY x ORDER BY y) - 1) / nullif(count(1) OVER(PARTITION BY x) - 1, 0), 0)` <br/>Alias: `percentRank()`| 
 | `lag/lead(value, offset)`                                                          | ❌ <br/> You can use one of the following workarounds:<br/> 1) `any(value) over (.... rows between <offset> preceding and <offset> preceding)`, or `following` for `lead` <br/> 2) `lagInFrame/leadInFrame`, which are analogous, but respect the window frame. To get behavior identical to `lag/lead`, use `rows between unbounded preceding and unbounded following`                                                                 |
-| ntile(buckets) | ✅ <br/> Specify window like, (partition by x order by y rows between unbounded preceding and unrounded following). |
+| ntile(buckets) | ✅ <br/> Specify window like, (partition by x order by y rows between unbounded preceding and unbounded following). |
 
 ## ClickHouse-specific Window Functions {#clickhouse-specific-window-functions}
 
@@ -78,7 +80,7 @@ These functions can be used only as a window function.
 
 - [`row_number()`](./row_number.md) - Number the current row within its partition starting from 1.
 - [`first_value(x)`](./first_value.md) - Return the first value evaluated within its ordered frame.
-- [`last_value(x)`](./last_value.md) -	Return the last value evaluated within its ordered frame.
+- [`last_value(x)`](./last_value.md) -    Return the last value evaluated within its ordered frame.
 - [`nth_value(x, offset)`](./nth_value.md) - Return the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
 - [`rank()`](./rank.md) - Rank the current row within its partition with gaps.
 - [`dense_rank()`](./dense_rank.md) - Rank the current row within its partition without gaps.

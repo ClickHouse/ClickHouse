@@ -9,7 +9,7 @@
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/IFunction.h>
-#include <IO/WriteHelpers.h>
+
 
 namespace DB
 {

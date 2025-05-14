@@ -27,11 +27,8 @@ public:
         ReadBufferCreator && read_buffer_creator_,
         const StoredObjects & blobs_to_read_,
         const ReadSettings & settings_,
-        std::shared_ptr<FilesystemCacheLog> cache_log_,
         bool use_external_buffer_,
         size_t buffer_size);
-
-    ~ReadBufferFromRemoteFSGather() override;
 
     String getFileName() const override { return current_object.remote_path; }
 
@@ -64,14 +61,11 @@ private:
 
     bool moveToNextBuffer();
 
-    void appendUncachedReadInfo();
-
     void reset();
 
     const ReadSettings settings;
     const StoredObjects blobs_to_read;
     const ReadBufferCreator read_buffer_creator;
-    const std::shared_ptr<FilesystemCacheLog> cache_log;
     const String query_id;
     const bool use_external_buffer;
     const bool with_file_cache;

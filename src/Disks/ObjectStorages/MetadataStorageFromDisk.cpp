@@ -1,7 +1,9 @@
-#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <IO/WriteHelpers.h>
+#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Storages/PartitionCommands.h>
+
 #include <ranges>
 #include <shared_mutex>
 
@@ -42,6 +44,11 @@ Poco::Timestamp MetadataStorageFromDisk::getLastModified(const std::string & pat
 time_t MetadataStorageFromDisk::getLastChanged(const std::string & path) const
 {
     return disk->getLastChanged(path);
+}
+
+bool MetadataStorageFromDisk::supportsPartitionCommand(const PartitionCommand & /*command*/) const
+{
+    return true;
 }
 
 uint64_t MetadataStorageFromDisk::getFileSize(const String & path) const

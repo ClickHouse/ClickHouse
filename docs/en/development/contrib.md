@@ -1,7 +1,10 @@
 ---
-slug: /development/contrib
+description: 'Page describing ClickHouse third-party usage and how to add and maintain
+  third-party libraries.'
+sidebar_label: 'Third-Party Libraries'
 sidebar_position: 60
-sidebar_label: Third-Party Libraries
+slug: /development/contrib
+title: 'Third-Party Libraries'
 ---
 
 # Third-Party Libraries
@@ -10,7 +13,7 @@ ClickHouse utilizes third-party libraries for different purposes, e.g., to conne
 To be independent of the available libraries in the target system, each third-party library is imported as a Git submodule into ClickHouse's source tree and compiled and linked with ClickHouse.
 A list of third-party libraries and their licenses can be obtained by the following query:
 
-``` sql
+```sql
 SELECT library_name, license_type, license_path FROM system.licenses ORDER BY library_name COLLATE 'en';
 ```
 

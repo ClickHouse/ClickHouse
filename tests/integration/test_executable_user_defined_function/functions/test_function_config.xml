@@ -394,4 +394,30 @@
         <!-- default -->
         <!-- <check_exit_code>1</check_exit_code> -->
     </function>
+
+    <!-- The next two UDFs have an explicit 'deterministic' tag defined -->
+    <function>
+        <type>executable</type>
+        <name>test_function_bash_deterministic</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input.sh</command>
+        <deterministic>true</deterministic>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_bash_nondeterministic</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input.sh</command>
+        <deterministic>false</deterministic>
+    </function>
+
 </functions>

@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/sum
+description: 'Calculates the sum. Only works for numbers.'
 sidebar_position: 195
-title: "sum"
-description: "Calculates the sum. Only works for numbers."
+slug: /sql-reference/aggregate-functions/reference/sum
+title: 'sum'
 ---
 
 # sum

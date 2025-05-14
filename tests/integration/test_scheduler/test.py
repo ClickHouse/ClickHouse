@@ -610,7 +610,7 @@ def test_create_workload():
         f"""
         create resource io_write (write disk s3_no_resource);
         create resource io_read (read disk s3_no_resource);
-        create workload all settings max_cost = 1000000 for io_write, max_cost = 2000000 for io_read;
+        create workload all settings max_bytes_inflight = 1000000 for io_write, max_bytes_inflight = 2000000 for io_read;
         create workload admin in all settings priority = 0;
         create workload production in all settings priority = 1, weight = 9;
         create workload development in all settings priority = 1, weight = 1;
@@ -743,7 +743,7 @@ def test_resource_read_and_write():
         f"""
         create resource io_write (write disk s3_no_resource);
         create resource io_read (read disk s3_no_resource);
-        create workload all settings max_cost = 1000000;
+        create workload all settings max_bytes_inflight = 1000000;
         create workload admin in all settings priority = 0;
         create workload production in all settings priority = 1, weight = 9;
         create workload development in all settings priority = 1, weight = 1;
@@ -838,7 +838,7 @@ def test_resource_any_disk():
     node.query(
         f"""
         create resource io (write any disk, read any disk);
-        create workload all settings max_cost = 1000000;
+        create workload all settings max_bytes_inflight = 1000000;
     """
     )
 
@@ -979,7 +979,7 @@ def test_throw_on_unknown_workload():
     node.query(
         f"""
         create resource io (write any disk, read any disk);
-        create workload all settings max_cost = 1000000;
+        create workload all settings max_bytes_inflight = 1000000;
     """
     )
 

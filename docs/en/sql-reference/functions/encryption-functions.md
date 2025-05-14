@@ -1,8 +1,12 @@
 ---
-slug: /sql-reference/functions/encryption-functions
+description: 'Documentation for Encryption Functions'
+sidebar_label: 'Encryption'
 sidebar_position: 70
-sidebar_label: Encryption
+slug: /sql-reference/functions/encryption-functions
+title: 'Encryption Functions'
 ---
+
+# Encryption Functions
 
 These functions  implement encryption and decryption of data with AES (Advanced Encryption Standard) algorithm.
 
@@ -25,21 +29,21 @@ This function encrypts data using these modes:
 
 **Syntax**
 
-``` sql
+```sql
 encrypt('mode', 'plaintext', 'key' [, iv, aad])
 ```
 
 **Arguments**
 
-- `mode` — Encryption mode. [String](../data-types/string.md#string).
-- `plaintext` — Text that need to be encrypted. [String](../data-types/string.md#string).
-- `key` — Encryption key. [String](../data-types/string.md#string).
-- `iv` — Initialization vector. Required for `-gcm` modes, optional for others. [String](../data-types/string.md#string).
-- `aad` — Additional authenticated data. It isn't encrypted, but it affects decryption. Works only in `-gcm` modes, for others would throw an exception. [String](../data-types/string.md#string).
+- `mode` — Encryption mode. [String](/sql-reference/data-types/string).
+- `plaintext` — Text that need to be encrypted. [String](/sql-reference/data-types/string).
+- `key` — Encryption key. [String](/sql-reference/data-types/string).
+- `iv` — Initialization vector. Required for `-gcm` modes, optional for others. [String](/sql-reference/data-types/string).
+- `aad` — Additional authenticated data. It isn't encrypted, but it affects decryption. Works only in `-gcm` modes, for others would throw an exception. [String](/sql-reference/data-types/string).
 
 **Returned value**
 
-- Ciphertext binary string. [String](../data-types/string.md#string).
+- Ciphertext binary string. [String](/sql-reference/data-types/string).
 
 **Examples**
 
@@ -47,7 +51,7 @@ Create this table:
 
 Query:
 
-``` sql
+```sql
 CREATE TABLE encryption_test
 (
     `comment` String,
@@ -60,7 +64,7 @@ Insert some data (please avoid storing the keys/ivs in the database as this unde
 
 Query:
 
-``` sql
+```sql
 INSERT INTO encryption_test VALUES('aes-256-ofb no IV', encrypt('aes-256-ofb', 'Secret', '12345678910121314151617181920212')),\
 ('aes-256-ofb no IV, different key', encrypt('aes-256-ofb', 'Secret', 'keykeykeykeykeykeykeykeykeykeyke')),\
 ('aes-256-ofb with IV', encrypt('aes-256-ofb', 'Secret', '12345678910121314151617181920212', 'iviviviviviviviv')),\
@@ -69,13 +73,13 @@ INSERT INTO encryption_test VALUES('aes-256-ofb no IV', encrypt('aes-256-ofb', '
 
 Query:
 
-``` sql
+```sql
 SELECT comment, hex(secret) FROM encryption_test;
 ```
 
 Result:
 
-``` text
+```text
 ┌─comment──────────────────────────┬─hex(secret)──────────────────────┐
 │ aes-256-ofb no IV                │ B4972BDC4459                     │
 │ aes-256-ofb no IV, different key │ 2FF57C092DC9                     │
@@ -88,7 +92,7 @@ Example with `-gcm`:
 
 Query:
 
-``` sql
+```sql
 INSERT INTO encryption_test VALUES('aes-256-gcm', encrypt('aes-256-gcm', 'Secret', '12345678910121314151617181920212', 'iviviviviviviviv')), \
 ('aes-256-gcm with AAD', encrypt('aes-256-gcm', 'Secret', '12345678910121314151617181920212', 'iviviviviviviviv', 'aad'));
 
@@ -97,7 +101,7 @@ SELECT comment, hex(secret) FROM encryption_test WHERE comment LIKE '%gcm%';
 
 Result:
 
-``` text
+```text
 ┌─comment──────────────┬─hex(secret)──────────────────────────────────┐
 │ aes-256-gcm          │ A8A3CCBC6426CFEEB60E4EAE03D3E94204C1B09E0254 │
 │ aes-256-gcm with AAD │ A8A3CCBC6426D9A1017A0A932322F1852260A4AD6837 │
@@ -118,20 +122,20 @@ Supported encryption modes:
 
 **Syntax**
 
-``` sql
+```sql
 aes_encrypt_mysql('mode', 'plaintext', 'key' [, iv])
 ```
 
 **Arguments**
 
-- `mode` — Encryption mode. [String](../data-types/string.md#string).
-- `plaintext` — Text that needs to be encrypted. [String](../data-types/string.md#string).
-- `key` — Encryption key. If key is longer than required by mode, MySQL-specific key folding is performed. [String](../data-types/string.md#string).
-- `iv` — Initialization vector. Optional, only first 16 bytes are taken into account [String](../data-types/string.md#string).
+- `mode` — Encryption mode. [String](/sql-reference/data-types/string).
+- `plaintext` — Text that needs to be encrypted. [String](/sql-reference/data-types/string).
+- `key` — Encryption key. If key is longer than required by mode, MySQL-specific key folding is performed. [String](/sql-reference/data-types/string).
+- `iv` — Initialization vector. Optional, only first 16 bytes are taken into account [String](/sql-reference/data-types/string).
 
 **Returned value**
 
-- Ciphertext binary string. [String](../data-types/string.md#string).
+- Ciphertext binary string. [String](/sql-reference/data-types/string).
 
 **Examples**
 
@@ -139,7 +143,7 @@ Given equal input `encrypt` and `aes_encrypt_mysql` produce the same ciphertext:
 
 Query:
 
-``` sql
+```sql
 SELECT encrypt('aes-256-ofb', 'Secret', '12345678910121314151617181920212', 'iviviviviviviviv') = aes_encrypt_mysql('aes-256-ofb', 'Secret', '12345678910121314151617181920212', 'iviviviviviviviv') AS ciphertexts_equal;
 ```
 
@@ -155,13 +159,13 @@ But `encrypt` fails when `key` or `iv` is longer than expected:
 
 Query:
 
-``` sql
+```sql
 SELECT encrypt('aes-256-ofb', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123');
 ```
 
 Result:
 
-``` text
+```text
 Received exception from server (version 22.6.1):
 Code: 36. DB::Exception: Received from localhost:9000. DB::Exception: Invalid key size: 33 expected 32: While processing encrypt('aes-256-ofb', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123').
 ```
@@ -170,7 +174,7 @@ While `aes_encrypt_mysql` produces MySQL-compatible output:
 
 Query:
 
-``` sql
+```sql
 SELECT hex(aes_encrypt_mysql('aes-256-ofb', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123')) AS ciphertext;
 ```
 
@@ -186,13 +190,13 @@ Notice how supplying even longer `IV` produces the same result
 
 Query:
 
-``` sql
+```sql
 SELECT hex(aes_encrypt_mysql('aes-256-ofb', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123456')) AS ciphertext
 ```
 
 Result:
 
-``` text
+```text
 ┌─ciphertext───┐
 │ 24E9E4966469 │
 └──────────────┘
@@ -200,7 +204,7 @@ Result:
 
 Which is binary equal to what MySQL produces on same inputs:
 
-``` sql
+```sql
 mysql> SET  block_encryption_mode='aes-256-ofb';
 Query OK, 0 rows affected (0.00 sec)
 
@@ -226,21 +230,21 @@ This function decrypts ciphertext into a plaintext using these modes:
 
 **Syntax**
 
-``` sql
+```sql
 decrypt('mode', 'ciphertext', 'key' [, iv, aad])
 ```
 
 **Arguments**
 
-- `mode` — Decryption mode. [String](../data-types/string.md#string).
-- `ciphertext` — Encrypted text that needs to be decrypted. [String](../data-types/string.md#string).
-- `key` — Decryption key. [String](../data-types/string.md#string).
-- `iv` — Initialization vector. Required for `-gcm` modes, Optional for others. [String](../data-types/string.md#string).
-- `aad` — Additional authenticated data. Won't decrypt if this value is incorrect. Works only in `-gcm` modes, for others would throw an exception. [String](../data-types/string.md#string).
+- `mode` — Decryption mode. [String](/sql-reference/data-types/string).
+- `ciphertext` — Encrypted text that needs to be decrypted. [String](/sql-reference/data-types/string).
+- `key` — Decryption key. [String](/sql-reference/data-types/string).
+- `iv` — Initialization vector. Required for `-gcm` modes, Optional for others. [String](/sql-reference/data-types/string).
+- `aad` — Additional authenticated data. Won't decrypt if this value is incorrect. Works only in `-gcm` modes, for others would throw an exception. [String](/sql-reference/data-types/string).
 
 **Returned value**
 
-- Decrypted String. [String](../data-types/string.md#string).
+- Decrypted String. [String](/sql-reference/data-types/string).
 
 **Examples**
 
@@ -248,13 +252,13 @@ Re-using table from [encrypt](#encrypt).
 
 Query:
 
-``` sql
+```sql
 SELECT comment, hex(secret) FROM encryption_test;
 ```
 
 Result:
 
-``` text
+```text
 ┌─comment──────────────┬─hex(secret)──────────────────────────────────┐
 │ aes-256-gcm          │ A8A3CCBC6426CFEEB60E4EAE03D3E94204C1B09E0254 │
 │ aes-256-gcm with AAD │ A8A3CCBC6426D9A1017A0A932322F1852260A4AD6837 │
@@ -271,13 +275,13 @@ Now let's try to decrypt all that data.
 
 Query:
 
-``` sql
+```sql
 SELECT comment, decrypt('aes-256-cfb128', secret, '12345678910121314151617181920212') as plaintext FROM encryption_test
 ```
 
 Result:
 
-``` text
+```text
 ┌─comment──────────────┬─plaintext──┐
 │ aes-256-gcm          │ OQ�E
                              �t�7T�\���\�   │
@@ -357,26 +361,26 @@ Supported decryption modes:
 
 **Syntax**
 
-``` sql
+```sql
 aes_decrypt_mysql('mode', 'ciphertext', 'key' [, iv])
 ```
 
 **Arguments**
 
-- `mode` — Decryption mode. [String](../data-types/string.md#string).
-- `ciphertext` — Encrypted text that needs to be decrypted. [String](../data-types/string.md#string).
-- `key` — Decryption key. [String](../data-types/string.md#string).
-- `iv` — Initialization vector. Optional. [String](../data-types/string.md#string).
+- `mode` — Decryption mode. [String](/sql-reference/data-types/string).
+- `ciphertext` — Encrypted text that needs to be decrypted. [String](/sql-reference/data-types/string).
+- `key` — Decryption key. [String](/sql-reference/data-types/string).
+- `iv` — Initialization vector. Optional. [String](/sql-reference/data-types/string).
 
 **Returned value**
 
-- Decrypted String. [String](../data-types/string.md#string).
+- Decrypted String. [String](/sql-reference/data-types/string).
 
 **Examples**
 
 Let's decrypt data we've previously encrypted with MySQL:
 
-``` sql
+```sql
 mysql> SET  block_encryption_mode='aes-256-ofb';
 Query OK, 0 rows affected (0.00 sec)
 
@@ -391,13 +395,13 @@ mysql> SELECT aes_encrypt('Secret', '123456789101213141516171819202122', 'iviviv
 
 Query:
 
-``` sql
+```sql
 SELECT aes_decrypt_mysql('aes-256-ofb', unhex('24E9E4966469'), '123456789101213141516171819202122', 'iviviviviviviviv123456') AS plaintext
 ```
 
 Result:
 
-``` text
+```text
 ┌─plaintext─┐
 │ Secret    │
 └───────────┘

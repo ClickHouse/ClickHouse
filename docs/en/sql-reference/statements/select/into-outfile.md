@@ -1,6 +1,8 @@
 ---
+description: 'Documentation for INTO OUTFILE Clause'
+sidebar_label: 'INTO OUTFILE'
 slug: /sql-reference/statements/select/into-outfile
-sidebar_label: INTO OUTFILE
+title: 'INTO OUTFILE Clause'
 ---
 
 # INTO OUTFILE Clause

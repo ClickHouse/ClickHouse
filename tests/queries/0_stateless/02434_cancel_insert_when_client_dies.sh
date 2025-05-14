@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-asan, no-msan, no-tsan, no-debug, no-fasttest
+# Tags: no-random-settings, no-asan, no-msan, no-tsan, no-debug, no-fasttest, no-async-insert
 # no-fasttest: The test runs for 40 seconds
 # shellcheck disable=SC2009
 
@@ -93,7 +93,7 @@ wait
 
 $CLICKHOUSE_CLIENT -q 'select count() from dedup_test'
 
-$CLICKHOUSE_CLIENT -q 'system flush logs'
+$CLICKHOUSE_CLIENT -q 'system flush logs text_log'
 
 # Ensure that thread_cancel actually did something
 $CLICKHOUSE_CLIENT -q "select count() > 0 from system.text_log where event_date >= yesterday() and query_id like '$TEST_MARK%' and (
