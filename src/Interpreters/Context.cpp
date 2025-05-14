@@ -196,7 +196,6 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
     extern const SettingsBool azure_allow_parallel_part_upload;
-    extern const SettingsUInt64 backup_threads;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool enable_filesystem_cache;
     extern const SettingsBool enable_filesystem_cache_log;
@@ -244,7 +243,6 @@ namespace Setting
     extern const SettingsUInt64 page_cache_block_size;
     extern const SettingsUInt64 page_cache_lookahead_blocks;
     extern const SettingsInt64 read_priority;
-    extern const SettingsUInt64 restore_threads;
     extern const SettingsString remote_filesystem_read_method;
     extern const SettingsBool remote_filesystem_read_prefetch;
     extern const SettingsUInt64 remote_fs_read_max_backoff_ms;
@@ -3249,9 +3247,8 @@ BackupsWorker & Context::getBackupsWorker() const
 {
     callOnce(shared->backups_worker_initialized, [&] {
         const auto & config = getConfigRef();
-        const auto & settings_ref = getSettingsRef();
-        UInt64 backup_threads = config.getUInt64("backup_threads", settings_ref[Setting::backup_threads]);
-        UInt64 restore_threads = config.getUInt64("restore_threads", settings_ref[Setting::restore_threads]);
+        UInt64 backup_threads = std::max(UInt64{1}, config.getUInt64("backup_threads", 16));
+        UInt64 restore_threads = std::max(UInt64{1}, config.getUInt64("restore_threads", 16));
 
         shared->backups_worker.emplace(getGlobalContext(), backup_threads, restore_threads);
     });
