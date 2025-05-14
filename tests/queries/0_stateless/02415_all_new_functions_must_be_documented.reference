@@ -116,7 +116,6 @@ arrayJoin
 arrayLast
 arrayLastIndex
 arrayLastOrNull
-arrayMap
 arrayMax
 arrayMin
 arrayPopBack

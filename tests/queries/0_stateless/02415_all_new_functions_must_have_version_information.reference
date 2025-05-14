@@ -137,7 +137,6 @@ arrayLastIndex
 arrayLastOrNull
 arrayLevenshteinDistance
 arrayLevenshteinDistanceWeighted
-arrayMap
 arrayMax
 arrayMin
 arrayPartialReverseSort

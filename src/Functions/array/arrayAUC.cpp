@@ -502,7 +502,7 @@ For more details, please see [here](https://developers.google.com/machine-learni
 )";
     FunctionDocumentation::Syntax syntax_roc = "arrayROCAUC(scores, labels[, scale[, partial_offsets]])";
     FunctionDocumentation::Arguments arguments_roc = {
-        {"scores", "Scores prediction model gives. [Array](/sql-reference/data-types/array) of [Integers](../data-types/int-uint.md) or [Floats](../data-types/float.md)."},
+        {"scores", "Scores prediction model gives. [`Array(T)`](/sql-reference/data-types/array) of [Integers](../data-types/int-uint.md) or [Floats](../data-types/float.md)."},
         {"labels", "Labels of samples, usually 1 for positive sample and 0 for negative sample. [Array](/sql-reference/data-types/array) of [Integers](../data-types/int-uint.md) or [Enums](../data-types/enum.md)."},
         {"scale", "Decides whether to return the normalized area. If false, returns the area under the TP (true positives) x FP (false positives) curve instead. Default value: true. [Bool](../data-types/boolean.md). Optional."}
         {"partial_offsets", R"(
@@ -543,7 +543,7 @@ For more details, please see [here](https://developers.google.com/machine-learni
         {"cores", "Scores prediction model gives. [Array](/sql-reference/data-types/array) of [Integers](../data-types/int-uint.md) or [Floats](../data-types/float.md)."},
         {"labels", "Labels of samples, usually 1 for positive sample and 0 for negative sample. [Array](/sql-reference/data-types/array) of [Integers](../data-types/int-uint.md) or [Enums](../data-types/enum.md)."},
         {"partial_offsets", R"(
-- Optional. An [Array](/sql-reference/data-types/array) of three non-negative integers for calculating a partial area under the PR curve (equivalent to a vertical band of the PR space) instead of the whole AUC. This option is useful for distributed computation of the PR AUC. The array must contain the following elements [`higher_partitions_tp`, `higher_partitions_fp`, `total_positives`]. [Array](/sql-reference/data-types/array) of non-negative [Integers](../data-types/int-uint.md). Optional.
+- Optional. An [`Array(T)`](/sql-reference/data-types/array) of three non-negative integers for calculating a partial area under the PR curve (equivalent to a vertical band of the PR space) instead of the whole AUC. This option is useful for distributed computation of the PR AUC. The array must contain the following elements [`higher_partitions_tp`, `higher_partitions_fp`, `total_positives`]. [Array](/sql-reference/data-types/array) of non-negative [Integers](../data-types/int-uint.md). Optional.
     - `higher_partitions_tp`: The number of positive labels in the higher-scored partitions.
     - `higher_partitions_fp`: The number of negative labels in the higher-scored partitions.
     - `total_positives`: The total number of positive samples in the entire dataset.

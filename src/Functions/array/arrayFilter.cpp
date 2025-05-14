@@ -49,7 +49,30 @@ ColumnPtr ArrayFilterImpl::execute(const ColumnArray & array, ColumnPtr mapped)
 
 REGISTER_FUNCTION(ArrayFilter)
 {
-    factory.registerFunction<FunctionArrayFilter>();
+    FunctionDocumentation::Description description = "Returns an array containing only the elements in `arrN` for which `func(arr1[i], ..., arrN[i])` return something other than `0`.";
+    FunctionDocumentation::Syntax syntax = "arrayFilter(func, arr1 [, arr2, ... , arrN)]";
+    FunctionDocumentation::Arguments arguments = {
+        {"func", "Function to apply to each element of the array(s). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)"},
+        {"arr1 [, arr2, ... , arrN)]", "N arrays over which to operate. [`Array(T)`](/sql-reference/data-types/array)."},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = "Returns a filtered array. [`Array(T)`](/sql-reference/data-types/array).";
+    FunctionDocumentation::Examples examples = {
+        {"Example 1", "SELECT arrayFilter(x -> x LIKE '%World%', ['Hello', 'abc World']) AS res", "['abc World']"},
+        {"Example 2", R"(
+SELECT
+    arrayFilter(
+        (i, x) -> x LIKE '%World%',
+        arrayEnumerate(arr),
+        ['Hello', 'abc World'] AS arr)
+    AS res
+)",
+"[2]"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayFilter>(documentation);
 }
 
 }
