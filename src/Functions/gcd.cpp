@@ -44,8 +44,9 @@ REGISTER_FUNCTION(GCD)
     FunctionDocumentation::ReturnedValue returned_value = "The greatest common divisor of `x` and `y`.";
     FunctionDocumentation::Example example1 = {"", "SELECT gcd(12, 18)", "6"};
     FunctionDocumentation::Examples examples = {example1};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
 
     factory.registerFunction<FunctionGCD>(documentation);
 }

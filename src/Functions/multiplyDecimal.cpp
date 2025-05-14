@@ -101,8 +101,9 @@ Code: 407. DB::Exception: Received from localhost:9000. DB::Exception: Decimal m
 While processing toDecimal64(-12.647987876, 9) AS a, toDecimal64(123.967645643, 9) AS b, a * b. (DECIMAL_OVERFLOW)
     )"};
     FunctionDocumentation::Examples examples = {example1, example2, example3};
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 12};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, categories};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
 
     factory.registerFunction<FunctionsDecimalArithmetics<MultiplyDecimalsImpl>>(documentation);
 }
