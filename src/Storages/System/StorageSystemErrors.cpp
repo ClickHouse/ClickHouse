@@ -29,7 +29,7 @@ ColumnsDescription StorageSystemErrors::getColumnsDescription()
         { "last_error_message",      std::make_shared<DataTypeString>(), "Message for the last error."},
         { "last_error_trace",        std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "A stack trace that represents a list of physical addresses where the called methods are stored."},
         { "remote",                  std::make_shared<DataTypeUInt8>(), "Remote exception (i.e. received during one of the distributed queries)."},
-        { "last_error_query_id",     std::make_shared<DataTypeString>(), "Id of a query that caused the last error (if available)." },
+        { "query_id",                std::make_shared<DataTypeString>(), "Id of a query that caused the last error (if available)." },
         { "last_error_symbols",      symbolized_type, "Contains demangled symbol names, corresponding to the `trace`." },
         { "last_error_lines",        symbolized_type, "Contains strings with file names with line numbers, corresponding to the `trace`." },
     };
