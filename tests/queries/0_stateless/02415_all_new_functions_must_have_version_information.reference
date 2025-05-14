@@ -113,10 +113,13 @@ arrayConcat
 arrayCount
 arrayCumSum
 arrayCumSumNonNegative
+arrayDifference
 arrayDotProduct
 arrayElement
 arrayElementOrNull
 arrayEnumerate
+arrayEnumerateDense
+arrayEnumerateDenseRanked
 arrayEnumerateUniq
 arrayEnumerateUniqRanked
 arrayExists
