@@ -253,7 +253,7 @@ Reverses an array.
 Function `reverse(x)` performs the same functionality but works on other data-types
 in addition to Arrays.
 :::
-";
+)";
     FunctionDocumentation::Syntax syntax = "arrayReverse(x)";
     FunctionDocumentation::Arguments arguments = {
         {"x", "An array to reverse. [Array](/sql-reference/data-types/array)"}
