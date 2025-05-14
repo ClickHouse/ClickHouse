@@ -173,8 +173,6 @@ public:
     /// Returns true if asynchronous inserts are enabled for table.
     virtual bool areAsynchronousInsertsEnabled() const { return false; }
 
-    virtual bool isSharedStorage() const { return false; }
-
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;

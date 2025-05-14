@@ -15,7 +15,6 @@ class Secret:
     class Config:
         name: str
         type: str
-        region: str = ""
 
         def is_gh_secret(self):
             return self.type == Secret.Type.GH_SECRET
@@ -34,11 +33,8 @@ class Secret:
                 assert False, f"Not supported secret type, secret [{self}]"
 
         def get_aws_ssm_var(self):
-            region = ""
-            if self.region:
-                region = f" --region {self.region}"
             res = Shell.get_output(
-                f"aws ssm get-parameter --name {self.name} --with-decryption --output text --query Parameter.Value {region}",
+                f"aws ssm get-parameter --name {self.name} --with-decryption --output text --query Parameter.Value",
                 strict=True,
             )
             return res
@@ -47,13 +43,13 @@ class Secret:
             name, secret_key_name = self.name, ""
             if "." in self.name:
                 name, secret_key_name = self.name.split(".")
-            region = ""
-            if self.region:
-                region = f" --region {self.region}"
-            cmd = f"aws secretsmanager get-secret-value --secret-id  {name} --query SecretString --output text {region}"
+            cmd = f"aws secretsmanager get-secret-value --secret-id  {name} --query SecretString --output text"
             if secret_key_name:
                 cmd += f" | jq -r '.[\"{secret_key_name}\"]'"
-            res = Shell.get_output(cmd, verbose=True, strict=True)
+            res = Shell.get_output(cmd, verbose=True)
+            if not res:
+                print(f"ERROR: Failed to get secret [{self.name}]")
+                raise RuntimeError()
             return res
 
         def get_gh_secret(self):

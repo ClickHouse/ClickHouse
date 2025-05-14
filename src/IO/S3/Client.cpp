@@ -653,9 +653,6 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
         std::exception_ptr last_exception = nullptr;
         for (Int64 attempt_no = 0; attempt_no < max_attempts; ++attempt_no)
         {
-            /// Sometimes we need to slow down because other requests failed with network errors to free the S3 server a bit.
-            slowDownAfterNetworkError();
-
             try
             {
                 /// S3 does retries network errors actually.
@@ -698,7 +695,10 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                 if (!client_configuration.retryStrategy->ShouldRetry(error, attempt_no))
                     break;
 
-                sleepAfterNetworkError(error, attempt_no);
+                auto sleep_ms = client_configuration.retryStrategy->CalculateDelayBeforeNextRetry(error, attempt_no);
+                LOG_WARNING(log, "Request failed, now waiting {} ms before attempting again", sleep_ms);
+                sleepForMilliseconds(sleep_ms);
+
                 continue;
             }
         }
@@ -728,44 +728,6 @@ RequestResult Client::processRequestResult(RequestResult && outcome) const
     error.SetMessage(enriched_message);
 
     return RequestResult(error);
-}
-
-void Client::sleepAfterNetworkError(Aws::Client::AWSError<Aws::Client::CoreErrors> error, Int64 attempt_no) const
-{
-    auto sleep_ms = client_configuration.retryStrategy->CalculateDelayBeforeNextRetry(error, attempt_no);
-    if (!client_configuration.s3_slow_all_threads_after_network_error)
-    {
-        LOG_WARNING(log, "Request failed, now waiting {} ms before attempting again", sleep_ms);
-        sleepForMilliseconds(sleep_ms);
-        return;
-    }
-
-    /// Set the time other s3 requests must wait until.
-    UInt64 current_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-    UInt64 next_time_ms = current_time_ms + sleep_ms;
-    /// next_time_to_retry_after_network_error = std::max(next_time_to_retry_after_network_error, next_time_ms)
-    for (UInt64 stored_next_time = next_time_to_retry_after_network_error;
-         (stored_next_time < next_time_ms) && !next_time_to_retry_after_network_error.compare_exchange_weak(stored_next_time, next_time_ms);)
-    {
-    }
-}
-
-void Client::slowDownAfterNetworkError() const
-{
-    if (!client_configuration.s3_slow_all_threads_after_network_error)
-        return;
-
-    /// Wait until `next_time_to_retry_after_network_error`.
-    for (;;)
-    {
-        UInt64 current_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-        UInt64 next_time_ms = next_time_to_retry_after_network_error.load();
-        if (current_time_ms >= next_time_ms)
-            break;
-        UInt64 sleep_ms = next_time_ms - current_time_ms;
-        LOG_WARNING(log, "Some request failed, now waiting {} ms before executing a request", sleep_ms);
-        sleepForMilliseconds(sleep_ms);
-    }
 }
 
 bool Client::supportsMultiPartCopy() const
@@ -1028,7 +990,6 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     const RemoteHostFilter & remote_host_filter,
     unsigned int s3_max_redirects,
     unsigned int s3_retry_attempts,
-    bool s3_slow_all_threads_after_network_error,
     bool enable_s3_requests_logging,
     bool for_disk_s3,
     const ThrottlerPtr & get_request_throttler,
@@ -1048,7 +1009,6 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         remote_host_filter,
         s3_max_redirects,
         s3_retry_attempts,
-        s3_slow_all_threads_after_network_error,
         enable_s3_requests_logging,
         for_disk_s3,
         context->getGlobalContext()->getSettingsRef()[Setting::s3_use_adaptive_timeouts],

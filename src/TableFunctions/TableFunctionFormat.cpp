@@ -27,7 +27,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_block_size;
     extern const SettingsBool use_concurrency_control;
 }
 
@@ -217,7 +217,7 @@ Result:
 )", ""
         },
     },
-    .category = FunctionDocumentation::Category::TableFunction
+    .category{""}
 };
 
 }
