@@ -476,7 +476,6 @@ ngramSimHash
 ngramSimHashCaseInsensitive
 ngramSimHashCaseInsensitiveUTF8
 ngramSimHashUTF8
-ngrams
 normalizeQuery
 normalizeQueryKeepNames
 normalizedQueryHash
@@ -858,7 +857,6 @@ toYYYYMMDDhhmmss
 toYear
 toYearWeek
 today
-tokens
 transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot
