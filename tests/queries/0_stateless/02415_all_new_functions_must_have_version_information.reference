@@ -130,7 +130,6 @@ arrayFirst
 arrayFirstIndex
 arrayFirstOrNull
 arrayFlatten
-arrayFold
 arrayIntersect
 arrayJoin
 arrayLast
@@ -151,7 +150,6 @@ arrayPushBack
 arrayPushFront
 arrayROCAUC
 arrayRandomSample
-arrayReduceInRanges
 arrayResize
 arrayReverse
 arrayReverseFill

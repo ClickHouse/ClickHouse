@@ -289,9 +289,46 @@ private:
 
 REGISTER_FUNCTION(ArrayFold)
 {
-    factory.registerFunction<FunctionArrayFold>(FunctionDocumentation{.description=R"(
-        Function arrayFold(acc,a1,...,aN->expr, arr1, ..., arrN, acc_initial) applies a lambda function to each element
-        in each (equally-sized) array and collects the result in an accumulator.
-        )", .examples{{"sum", "SELECT arrayFold(acc,x->acc+x, [1,2,3,4], toInt64(1));", "11"}}, .category = FunctionDocumentation::Category::Array});
+    FunctionDocumentation::Description description = "Applies a lambda function to one or more equally-sized arrays and collects the result in an accumulator.";
+    FunctionDocumentation::Syntax syntax = "arrayFold(λ(acc, x1 [, x2, x3, ... xN]), x1 [, x2, x3, ... xN], acc)";
+    FunctionDocumentation::Arguments arguments = {
+        {"λ(acc, x1 [, x2, x3, ... xN])", "A lambda function `λ(acc, x1 [, x2, x3, ... xN]) → F(acc, x1 [, x2, x3, ... xN])` where `F` is an operation applied to `acc` and the values of one, or multiple arrays, with the result of `acc` re-used. [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)"},
+        {"x1 [, x2, x3, ... xN]", "N arrays over which to operate. [Array](/sql-reference/data-types/array)"},
+        {"acc", "Accumulator value with the same type as the return type of the Lambda function."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = "Returns the result of the lambda sequentially applied to each";
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT arrayFold( acc,x -> acc + x*2,  [1, 2, 3, 4], 3::Int64) AS res;", "23"},
+        {"Fibonacci sequence", R"(
+SELECT arrayFold( acc,x -> (acc.2, acc.2 + acc.1), range(number), (1::Int64, 0::Int64)).1 AS fibonacci
+FROM numbers(1,10);
+)", R"(
+┌─fibonacci─┐
+│         0 │
+│         1 │
+│         1 │
+│         2 │
+│         3 │
+│         5 │
+│         8 │
+│        13 │
+│        21 │
+│        34 │
+└───────────┘
+)"},
+      {"Example using multiple arrays", R"(
+SELECT arrayFold(
+    (acc, x, y) -> acc + (x * y),
+    [1, 2, 3, 4],
+    [10, 20, 30, 40],
+    0::Int64
+) AS res;
+)", "300"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayFold>(documentation);
 }
 }

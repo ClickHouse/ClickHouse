@@ -127,7 +127,6 @@ arrayPushBack
 arrayPushFront
 arrayROCAUC
 arrayRandomSample
-arrayReduceInRanges
 arrayResize
 arrayReverse
 arrayReverseFill
