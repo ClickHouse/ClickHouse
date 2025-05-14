@@ -216,7 +216,7 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
     )
     complex_data = (
         node1.query(
-            f"SELECT * FROM complex_schema.`{schema_name}.{table_name}`"
+            f"SELECT * FROM complex_schema.`{schema_name}.{table_name}`", settings={"allow_experimental_delta_kernel_rs": use_delta_kernel}
         )
         .strip()
         .split("\t")
