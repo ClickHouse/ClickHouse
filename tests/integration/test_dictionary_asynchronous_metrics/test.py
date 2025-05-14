@@ -29,6 +29,8 @@ def start_cluster():
         cluster.shutdown()
 
 def test_metrics(start_cluster):
+    node.query("DROP DICTIONARY IF EXISTS d1;")
+    node.query("DROP TABLE IF EXISTS t1;")
     node.query("CREATE TABLE t1 (key String, value String) ENGINE = MergeTree() PRIMARY KEY key;")
     node.query("CREATE DICTIONARY d1 (key String, value String) PRIMARY KEY key SOURCE(CLICKHOUSE(TABLE t1)) LAYOUT(FLAT()) LIFETIME(min 0 max 0);")
 
