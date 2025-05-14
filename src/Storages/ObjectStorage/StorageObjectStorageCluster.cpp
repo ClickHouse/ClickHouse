@@ -166,7 +166,8 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
         /* distributed_processing */false,
         partition_by,
         /* is_table_function */false,
-        /* lazy_init */lazy_init);
+        /* lazy_init */lazy_init,
+        sample_path);
 
     auto virtuals_ = getVirtualsPtr();
     if (virtuals_)
