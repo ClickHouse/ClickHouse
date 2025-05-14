@@ -9,12 +9,27 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeNullable.h>
-
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeDecimalBase.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <Common/Exception.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeVariant.h>
 namespace DB
 {
 
-/// https://ytsaurus.tech/docs/en/user-guide/storage/data-types
-DataTypePtr convertYTsaurusDataType(const String & data_type, bool required)
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_TYPE;
+    extern const int INCORRECT_DATA;
+}
+
+
+/// https://ytsaurus.tech/docs/ru/user-guide/storage/data-types#schema_primitive
+DataTypePtr converYTSimpleType(const String & data_type)
 {
     DataTypePtr data_type_ptr;
     if (data_type == "int64")
@@ -71,7 +86,7 @@ DataTypePtr convertYTsaurusDataType(const String & data_type, bool required)
     }
     else if (data_type == "json")
     {
-        // ?
+        // data_type_ptr = std::make_shared<DataTypeObject>();
     }
     else if (data_type == "uuid")
     {
@@ -83,35 +98,199 @@ DataTypePtr convertYTsaurusDataType(const String & data_type, bool required)
     }
     else if (data_type == "datetime64")
     {
-        // data_type_ptr = std::make_shared<DataTypeDateTime64>(); - ?
+        data_type_ptr = std::make_shared<DataTypeDateTime64>(0); // In seconds
     }
     else if (data_type == "timestamp64")
     {
-        // data_type_ptr = std::make_shared<DataTypeTime64>(); - ?
+        data_type_ptr = std::make_shared<DataTypeTime64>(6); // In microseconds
     }
     else if (data_type == "interval64")
     {
-        // data_type_ptr = std::make_shared<DataTypeInterval>(); - ?
+        data_type_ptr = std::make_shared<DataTypeInterval>(IntervalKind::Kind::Microsecond); // In YT all intervals are in microseconds
+    }
+    else if (data_type == "date")
+    {
+        data_type_ptr = std::make_shared<DataTypeDate>();
+    }
+    else if (data_type == "datetime")
+    {
+        data_type_ptr = std::make_shared<DataTypeDateTime>();
+    }
+    else if (data_type == "timestamp")
+    {
+        data_type_ptr = std::make_shared<DataTypeTime64>(6); // In microseconds
+    }
+    else if (data_type == "interval")
+    {
+        data_type_ptr = std::make_shared<DataTypeInterval>(IntervalKind::Kind::Microsecond); // In YT all intervals are in microseconds
     }
     else if (data_type == "any")
     {
-        // ?
+
     }
     else if (data_type == "null")
     {
-        // ?
+        data_type_ptr = std::make_shared<DataTypeNothing>();
     }
     else if (data_type == "void")
     {
         // ?
     }
 
-    if (required)
+    return data_type_ptr;
+}
+
+DataTypePtr convertYTItemType(const Poco::Dynamic::Var & item)
+{
+    if (item.isString())
     {
-        return data_type_ptr;
+        return converYTSimpleType(item.extract<String>());
+    }
+    return convertYTTypeV3(item.extract<Poco::JSON::Object::Ptr>());
+}
+
+DataTypePtr convertYTDecimal(const Poco::JSON::Object::Ptr & json)
+{
+    DataTypePtr data_type_ptr;
+    auto precision = json->getValue<size_t>("precision");
+    auto scale = json->getValue<size_t>("scale");
+    if (precision <=  DataTypeDecimalBase<Decimal32>::maxPrecision())
+        data_type_ptr = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);
+    else if (precision <= DataTypeDecimalBase<Decimal64>::maxPrecision())
+        data_type_ptr = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
+    else if (precision <= DataTypeDecimalBase<Decimal128>::maxPrecision())
+        data_type_ptr = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
+    else if (precision <= DataTypeDecimalBase<Decimal256>::maxPrecision())
+        data_type_ptr = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
+    return data_type_ptr;
+}
+
+DataTypePtr convertYTOptional(const Poco::JSON::Object::Ptr & json)
+{
+    if (!json->has("item"))
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse 'optional' type from YT('item' was not found)");
+    }
+    auto nested_type = convertYTItemType(json->get("item"));
+    if (!nested_type)
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse 'optional' type from YT(incorrect nested type)");
+    }
+    return std::make_shared<DataTypeNullable>(nested_type);
+}
+
+DataTypePtr convertYTList(const Poco::JSON::Object::Ptr & json)
+{
+    return std::make_shared<DataTypeArray>(convertYTItemType(json->get("item")));
+}
+
+DataTypePtr convertYTTuple(const Poco::JSON::Object::Ptr & json)
+{
+    DataTypes types;
+    auto tuple_types = json->getArray("elements");
+    types.reserve(tuple_types->size());
+    for (const auto & tuple_type : *tuple_types)
+    {
+        auto element_json = tuple_type.extract<Poco::JSON::Object::Ptr>();
+        types.push_back(convertYTItemType(element_json->get("type")));
+    }
+    return std::make_shared<DataTypeTuple>(types);
+}
+
+DataTypePtr convertYTDict(const Poco::JSON::Object::Ptr &json)
+{
+    auto key = convertYTItemType(json->get("key"));
+    auto value = convertYTItemType(json->get("value"));
+    return std::make_shared<DataTypeMap>(key, value);
+}
+
+DataTypePtr convertYTVariant(const Poco::JSON::Object::Ptr &json)
+{
+    if (!json->has("elements"))
+    {
+        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Couldn't 'variant' type from YTsaurus");
+    }
+    auto elements_json = json->getArray("elements");
+    DataTypes types;
+    types.reserve(elements_json->size());
+    for (const auto & element : *elements_json)
+    {
+        auto element_json = element.extract<Poco::JSON::Object::Ptr>();
+        types.push_back(convertYTItemType(element_json->get("type")));
+    }
+    return std::make_shared<DataTypeVariant>(types);
+}
+
+DataTypePtr convertYTTypeV3(const Poco::JSON::Object::Ptr & json)
+{
+    if (!json->has("type_name"))
+    {
+        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Coudn't parse the YT json schema('type_name' was not found)");
+    }
+    auto data_type = json->getValue<std::string>("type_name");
+    DataTypePtr data_type_ptr;
+    if (data_type == "decimal")
+    {
+        data_type_ptr = convertYTDecimal(json);
+    }
+    else if (data_type == "optional")
+    {
+        data_type_ptr = convertYTOptional(json);
+    }
+    else if (data_type == "list")
+    {
+        data_type_ptr = convertYTList(json);
+    }
+    else if (data_type == "struct")
+    {
+        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Couldn't convert 'struct' type from YTsaurus");
+    }
+    else if (data_type == "tuple")
+    {
+        data_type_ptr = convertYTTuple(json);
+    }
+    else if (data_type == "variant")
+    {
+        data_type_ptr = convertYTVariant(json);
+    }
+    else if (data_type == "dict")
+    {
+        data_type_ptr = convertYTDict(json);
+    }
+    else if (data_type == "tagged")
+    {
+        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Couldn't 'tagged' type from YTsaurus");
+    }
+    return data_type_ptr;
+}
+
+DataTypePtr convertYTSchema(const Poco::JSON::Object::Ptr & json)
+{
+    DataTypePtr data_type_ptr;
+    if (json->has("type"))
+    {
+        data_type_ptr = converYTSimpleType(json->getValue<String>("type"));
+        if (data_type_ptr)
+        {
+            if (!json->has("required"))
+            {
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Coudn't parse the YT json schema('required' was not found)");
+            }
+            bool required = json->getValue<bool>("required");
+            if (required)
+            {
+                return data_type_ptr;
+            }
+
+            auto nullable_data_type_ptr = std::make_shared<DataTypeNullable>(std::move(data_type_ptr));
+            return nullable_data_type_ptr;
+        }
     }
 
-    auto nullable_data_type_ptr = std::make_shared<DataTypeNullable>(std::move(data_type_ptr));
-    return nullable_data_type_ptr;
+    if (!json->has("type_v3"))
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Coudn't parse the YT schema json('type_v3' was not found)");
+    }
+    return convertYTTypeV3(json->getObject("type_v3"));
 }
 }

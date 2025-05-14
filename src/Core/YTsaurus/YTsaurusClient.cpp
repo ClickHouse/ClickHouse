@@ -189,9 +189,7 @@ bool YTsaurusClient::checkSchemaCompatibility(const String & table_path, const C
             {
                 return false;
             }
-            auto yt_column_type = yt_column_json->getValue<String>("type");
-            bool yt_column_required = yt_column_json->getValue<bool>("required");
-            auto data_type = convertYTsaurusDataType(yt_column_type, yt_column_required);
+            auto data_type = convertYTSchema(yt_column_json);
             if (column_ptr->type != data_type)
             {
                 return false;
