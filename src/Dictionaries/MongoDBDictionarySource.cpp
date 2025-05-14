@@ -35,7 +35,7 @@ namespace ErrorCodes
 void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 {
     #if USE_MONGODB
-    auto create_dictionary_source = [](
+    auto create_dictionary_source = [](const String & /*name*/,
         const DictionaryStructure & dict_struct,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & root_config_prefix,
