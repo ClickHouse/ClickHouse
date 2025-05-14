@@ -1965,7 +1965,7 @@ KeyCondition::RPNElement::RPNElement(Function function_, size_t key_column_, con
 {
 }
 
-static void castValueToType(const DataTypePtr & desired_type, Field & src_value, const DataTypePtr & src_type, const String & node_column_name)
+[[ maybe_unused ]]static void castValueToType(const DataTypePtr & desired_type, Field & src_value, const DataTypePtr & src_type, const String & node_column_name)
 {
     try
     {
@@ -2240,21 +2240,12 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
                     if (!const_type->equals(*common_type))
                     {
-                        if (!key_expr_type_not_null->equals(*common_type))
-                        {
-                            try
-                            {
-                                // Try using convertFieldToType which has more flexible type conversion rules
-                                const_value = convertFieldToType(const_value, *key_expr_type_not_null, const_type.get());
-                                if (const_value.isNull())
-                                    return false;
-                                is_constant_transformed = true;
-                            }
-                            catch (...)
-                            {
-                                castValueToType(common_type, const_value, const_type, node.getColumnName());
-                            }
-                        }
+                        // Replace direct call that throws exception with try version
+                        Field converted = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
+                        if (converted.isNull())
+                            return false;
+                        
+                        const_value = converted;
 
                         // Need to set is_constant_transformed unless we're doing exact conversion
                         if (!key_expr_type_not_null->equals(*common_type))
