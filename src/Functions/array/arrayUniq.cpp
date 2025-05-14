@@ -344,15 +344,15 @@ If you want to get a list of unique items in an array, you can use `arrayReduce(
             "Additional same-size arrays used to count the number of unique tuples of elements at corresponding positions in multiple arrays. [`Array`](/sql-reference/data-types/array)."
         }
     };
-	FunctionDocumentation::ReturnedValue returned_value = R"(
+    FunctionDocumentation::Examples examples =
+{{"Single argument", "SELECT arrayUniq([1,1,2,2])", "2"},
+{"Multiple argument", "SELECT arrayUniq([1,2,3], [4,5,6])", "3"}};
+    FunctionDocumentation::ReturnedValue returned_value = R"(
 For a single argument returns the number of unique
 elements. For multiple arguments returns the number of unique tuples made from
 elements at corresponding positions across the arrays.
 [`UInt32`](/sql-reference/data-types/int-uint).
 )";
-    FunctionDocumentation::Examples examples =
-{{"Single argument", "SELECT arrayUniq([1,1,2,2])", "2"},
-{"Multiple argument", "SELECT arrayUniq([1,2,3], [4,5,6])", "3"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
