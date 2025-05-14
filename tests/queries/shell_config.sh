@@ -32,7 +32,7 @@ export CLICKHOUSE_BINARY=${CLICKHOUSE_BINARY:="$(command -v clickhouse)"}
 [ -x "$CLICKHOUSE_BINARY" ] && CLICKHOUSE_CLIENT_BINARY=${CLICKHOUSE_CLIENT_BINARY:=$CLICKHOUSE_BINARY client}
 export CLICKHOUSE_CLIENT_BINARY=${CLICKHOUSE_CLIENT_BINARY:=$CLICKHOUSE_BINARY-client}
 export CLICKHOUSE_CLIENT_OPT="${CLICKHOUSE_CLIENT_OPT0:-} ${CLICKHOUSE_CLIENT_OPT:-}"
-export CLICKHOUSE_CLIENT_EXPECT_OPT="${CLICKHOUSE_CLIENT_OPT} --disable_suggestion --enable-progress-table-toggle 0 --progress no --output-format-pretty-color 0 --highlight 0"
+export CLICKHOUSE_CLIENT_EXPECT_OPT="${CLICKHOUSE_CLIENT_OPT} --disable_suggestion --no-warnings --enable-progress-table-toggle 0 --progress no --output-format-pretty-color 0 --highlight 0"
 export CLICKHOUSE_CLIENT=${CLICKHOUSE_CLIENT:="$CLICKHOUSE_CLIENT_BINARY ${CLICKHOUSE_CLIENT_OPT:-}"}
 # local
 [ -x "${CLICKHOUSE_BINARY}-local" ] && CLICKHOUSE_LOCAL=${CLICKHOUSE_LOCAL:="${CLICKHOUSE_BINARY}-local"}
@@ -160,7 +160,7 @@ function wait_for_queries_to_finish()
 {
     local max_tries="${1:-20}"
     # Wait for all queries to finish (query may still be running if a thread is killed by timeout)
-    num_tries=0
+    local num_tries=0
     while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database=currentDatabase() AND query NOT LIKE '%system.processes%'") -ne 0 ]]; do
         sleep 0.5;
         num_tries=$((num_tries+1))

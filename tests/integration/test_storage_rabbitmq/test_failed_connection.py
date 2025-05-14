@@ -1,6 +1,7 @@
 import logging
 import time
 import json
+import threading
 
 import pytest
 import pika
@@ -57,15 +58,17 @@ class RabbitMQMonitor:
     channel = None
     queue_name = None
     rabbitmq_cluster = None
-    expected_published = 0
-    expected_delivered = 0
+    expected_published = None
+    expected_delivered = None
+    consume_thread = None
+    stop_event = threading.Event()
 
     def _consume(self, timeout=180):
-        logging.debug("RabbitMQMonitor: Consuming trace RabbitMQ messages...")
+        logging.debug("RabbitMQMonitor: Consuming trace RabbitMQ messages in a working thread...")
         deadline = time.monotonic() + timeout
         _published = 0
         _delivered = 0
-        while time.monotonic() < deadline:
+        while time.monotonic() < deadline and not self.stop_event.is_set():
             method, properties, body = self.channel.basic_get(self.queue_name, auto_ack=True)
             if method and properties and body:
                 # logging.debug(f"Message received! method {method}, properties {properties}, body {body}")
@@ -81,33 +84,10 @@ class RabbitMQMonitor:
                     _published += 1
                     # logging.debug(f"Message published: {value}")
             else:
-                break
+                time.sleep(0.1)
         logging.debug(f"RabbitMQMonitor: Consumed {_published}/{len(self.published)} published messages and {_delivered}/{len(self.delivered)} delivered messages in this iteration")
 
-    def set_expectations(self, published, delivered):
-        self.expected_published = published
-        self.expected_delivered = delivered
-
-    def check(self):
-        self._consume()
-
-        def _get_non_present(my_set, amount):
-            non_present = list()
-            for i in range(amount):
-                if i not in my_set:
-                    non_present.append(i)
-                    if (len(non_present) >= 10):
-                        break
-            return non_present
-
-        if self.expected_published > 0 and self.expected_published != len(self.published):
-            logging.warning(f"RabbitMQMonitor: {len(self.published)}/{self.expected_published} (got/expected) messages published. Sample of not published: {_get_non_present(self.published, self.expected_published)}")
-        if self.expected_delivered > 0 and self.expected_delivered != len(self.delivered):
-            logging.warning(f"RabbitMQMonitor: {len(self.delivered)}/{self.expected_delivered} (got/expected) messages delivered. Sample of not delivered: {_get_non_present(self.delivered, self.expected_delivered)}")
-
-    def start(self, rabbitmq_cluster):
-        self.rabbitmq_cluster = rabbitmq_cluster
-
+    def _run(self):
         logging.debug("RabbitMQMonitor: Creating a new connection for RabbitMQ")
         credentials = pika.PlainCredentials("root", "clickhouse")
         parameters = pika.ConnectionParameters(
@@ -123,10 +103,42 @@ class RabbitMQMonitor:
 
         self.channel.queue_bind(exchange="amq.rabbitmq.trace", queue=self.queue_name, routing_key="publish.#")
         self.channel.queue_bind(exchange="amq.rabbitmq.trace", queue=self.queue_name, routing_key="deliver.#")
+        self._consume()
+
+    def set_expectations(self, published, delivered):
+        self.expected_published = published
+        self.expected_delivered = delivered
+
+    def check(self):
+        self.stop_event.set()
+        self.consume_thread.join()
+
+        def _get_non_present(my_set, amount):
+            non_present = list()
+            for i in range(amount):
+                if i not in my_set:
+                    non_present.append(i)
+                    if (len(non_present) >= 10):
+                        break
+            return non_present
+
+        if self.expected_published and self.expected_published != len(self.published):
+            logging.warning(f"RabbitMQMonitor: {len(self.published)}/{self.expected_published} (got/expected) messages published. Sample of not published: {_get_non_present(self.published, self.expected_published)}")
+        if self.expected_delivered and self.expected_delivered != len(self.delivered):
+            logging.warning(f"RabbitMQMonitor: {len(self.delivered)}/{self.expected_delivered} (got/expected) messages delivered. Sample of not delivered: {_get_non_present(self.delivered, self.expected_delivered)}")
+
+    def start(self, rabbitmq_cluster):
+        self.rabbitmq_cluster = rabbitmq_cluster
+        self.stop_event.clear()
+        self.consume_thread = threading.Thread(target=self._run)
+        logging.debug("RabbitMQMonitor: Starting consuming thread...")
+        self.consume_thread.start()
 
     def stop(self):
         if self.connection:
-            self._consume()
+            if not self.stop_event.is_set():
+                self.stop_event.set()
+                self.consume_thread.join()
             self.channel.close()
             self.channel = None
             self.connection.close()
@@ -214,8 +226,8 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, r
     """
     )
 
-    messages_num = 5000
-    rabbitmq_monitor.set_expectations(published=messages_num, delivered=messages_num)
+    messages_num = 10000
+    rabbitmq_monitor.set_expectations(published=None, delivered=messages_num)
     deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
     while time.monotonic() < deadline:
         try:
@@ -305,8 +317,8 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster, r
     """
     )
 
-    messages_num = 5000
-    rabbitmq_monitor.set_expectations(published=messages_num, delivered=messages_num)
+    messages_num = 10000
+    rabbitmq_monitor.set_expectations(published=None, delivered=messages_num)
     deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
     while time.monotonic() < deadline:
         try:

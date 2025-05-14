@@ -1,3 +1,4 @@
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
@@ -10,7 +11,6 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/isDiskFunction.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
@@ -599,6 +599,9 @@ namespace ErrorCodes
     Minimal amount of data parts which merge selector can pick to merge at once
     (expert level setting, don't change if you don't understand what it is doing).
     0 - disabled. Works for Simple and StochasticSimple merge selectors.
+    )", 0) \
+    DECLARE(Bool, apply_patches_on_merge, true, R"(
+    If true patch parts are applied on merges
     )", 0) \
     \
     /** Inserts settings. */ \
@@ -1448,6 +1451,9 @@ namespace ErrorCodes
     Remove empty parts after they were pruned by TTL, mutation, or collapsing
     merge algorithm.
     )", 0) \
+    DECLARE(Bool, remove_unused_patch_parts, true, R"(
+    Remove in background patch parts which are applied for all active parts.
+    )", 0) \
     DECLARE(Bool, assign_part_uuids, false, R"(
     When enabled, a unique part identifier will be assigned for every new part.
     Before enabling, check that all replicas support UUID version 4.
@@ -1703,10 +1709,10 @@ namespace ErrorCodes
     Compression encoding used by primary, primary key is small enough and cached,
     so the default compression is ZSTD(3).
     )", 0) \
-    DECLARE(UInt64, marks_compress_block_size, 65536, R"(
+    DECLARE(NonZeroUInt64, marks_compress_block_size, 65536, R"(
     Mark compress block size, the actual size of the block to compress.
     )", 0) \
-    DECLARE(UInt64, primary_key_compress_block_size, 65536, R"(
+    DECLARE(NonZeroUInt64, primary_key_compress_block_size, 65536, R"(
     Primary compress block size, the actual size of the block to compress.
     )", 0) \
     DECLARE(Bool, primary_key_lazy_load, true, R"(Load primary key in memory on
