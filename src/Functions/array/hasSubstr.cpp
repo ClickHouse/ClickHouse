@@ -17,21 +17,24 @@ public:
 REGISTER_FUNCTION(HasSubstr)
 {
     FunctionDocumentation::Description description = R"(
-Checks whether all the elements of array `x` appear in array `y` in the exact same order.
-i.e the function checks whether all the elements of `x` are contained in `y` like
-the `hasAll` function. In addition it checks that the elements are observed in the same order in
-both `x` and `y`.
+Checks whether all the elements of array2 appear in a array1 in the same exact order.
+Therefore, the function will return `1`, if and only if array1 = prefix + array2 + suffix.
 
-- The function will return `1` if array `y` is empty.
+In other words, the functions will check whether all the elements of array2 are contained in array1 like the `hasAll` function.
+In addition, it will check that the elements are observed in the same order in both array1 and array2.
+
+- The function will return `1` if array2 is empty.
 - `Null` is processed as a value. In other words `hasSubstr([1, 2, NULL, 3, 4], [2,3])` will return `0`. However, `hasSubstr([1, 2, NULL, 3, 4], [2,NULL,3])` will return `1`
 - The order of values in both the arrays does matter.
+
+Raises a `NO_COMMON_TYPE` exception if any of the elements of the two arrays do not share a common supertype.
 )";
-    FunctionDocumentation::Syntax syntax = "hasSubstr(x, y)";
+    FunctionDocumentation::Syntax syntax = "hasSubstr(arr1, arr2)";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "Array of any type with a set of elements. [`Array`](/sql-reference/data-types/array)."},
-        {"y", "Array of any type with a set of elements. [`Array`](/sql-reference/data-types/array)."},
+        {"arr1", "Array of any type with a set of elements. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"arr2", "Array of any type with a set of elements. [`Array(T)`](/sql-reference/data-types/array)."},
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns `1` if array `x` contains array `y`. Otherwise, returns `0`.";
+    FunctionDocumentation::ReturnedValue returned_value = "Returns `1` if array `arr1` contains array `arr2`. Otherwise, returns `0`.";
     FunctionDocumentation::Examples examples = {
         {"Both arrays are empty", "SELECT hasSubstr([], [])", "1"},
         {"Arrays containing NULL values", "SELECT hasSubstr([1, Null], [Null])", "1"},
@@ -40,13 +43,9 @@ both `x` and `y`.
         {"Arrays with valid ordering", "SELECT hasSubstr(['a', 'b' , 'c'], ['a', 'b'])", "1"},
         {"Arrays with invalid ordering", "SELECT hasSubstr(['a', 'b' , 'c'], ['a', 'c'])", "0"},
         {"Array of arrays", "SELECT hasSubstr([[1, 2], [3, 4], [5, 6]], [[1, 2], [3, 4]])", "1"},
-        {"Arrays without a common type", "SELECT hasSubstr([1, 2, NULL, 3, 4], ['a'])", R"(
-Received exception:
-Code: 386. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString/Enum and some of them are not:
-In scope SELECT hasSubstr([1, 2, NULL, 3, 4], ['a']). (NO_COMMON_TYPE)
-        )"},
+        {"Arrays without a common type", "SELECT hasSubstr([1, 2, NULL, 3, 4], ['a'])", "Raises a `NO_COMMON_TYPE` exception"},
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 

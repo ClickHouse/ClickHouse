@@ -20,12 +20,11 @@ If the array does not contain the searched-for value, the function returns `0`.
 :::note
 Unlike the `indexOf` function, this function assumes that the array is sorted in
 ascending order. If the array is not sorted, results are undefined.
-If the internal array is of type Nullable, then function `indexOf` will be called.
 :::
     )";
     FunctionDocumentation::Syntax syntax = "indexOfAssumeSorted(arr, x)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "A sorted array to search. [`Array`](/sql-reference/data-types/array)."},
+        {"arr", "A sorted array to search. [`Array(T)`](/sql-reference/data-types/array)."},
         {"x", "Value of the first matching element in sorted `arr` for which to return an index.UInt64"},
     };
     FunctionDocumentation::ReturnedValue returned_value = "Returns the index (numbered from one) of the first `x` in `arr` if it exists. Otherwise, returns `0`.";

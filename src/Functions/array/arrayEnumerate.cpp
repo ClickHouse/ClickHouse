@@ -83,9 +83,9 @@ This function is normally used with the [`ARRAY JOIN`](/sql-reference/statements
 once for each array after applying `ARRAY JOIN`.
 This function can also be used in higher-order functions. For example, you can use it to get array indexes for elements that match a condition.
 )";
-    FunctionDocumentation::Syntax syntax = "arrayEnumerate(x)";
+    FunctionDocumentation::Syntax syntax = "arrayEnumerate(arr)";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "The array to enumerate. [`Array`](/sql-reference/data-types/array)."}
+        {"arr", "The array to enumerate. [`Array`](/sql-reference/data-types/array)."}
     };
     FunctionDocumentation::ReturnedValue returned_value = "Returns the array `[1, 2, 3, ..., length (arr)]`. Array(UInt32)";
     FunctionDocumentation::Examples examples = {{"Basic example with ARRAY JOIN", R"(

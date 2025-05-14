@@ -32,19 +32,14 @@ Checks whether one array is a subset of another.
 - `1`, if `set` contains all of the elements from `subset`.
 - `0`, otherwise.
 
-Raises an exception `NO_COMMON_TYPE` if the set and subset elements do not share a common supertype.
+Raises a `NO_COMMON_TYPE` exception if the set and subset elements do not share a common supertype.
 )";
     FunctionDocumentation::Examples examples = {
         {"Empty arrays", "SELECT hasAll([], [])", "1"},
         {"Arrays containing NULL values", "SELECT hasAll([1, Null], [Null])", "1"},
         {"Arrays containing values of a different type", "SELECT hasAll([1.0, 2, 3, 4], [1, 3])", "1"},
         {"Arrays containing String values", "SELECT hasAll(['a', 'b'], ['a'])", "1"},
-        {"Arrays without a common type", "SELECT hasAll([1], ['a'])", R"(
-Received exception:
-Code: 386. DB::Exception:
-There is no supertype for types UInt8, String because some of them are String/FixedString/Enum and some of them are not:
-In scope SELECT hasAll([1], ['a']). (NO_COMMON_TYPE
-        )"},
+        {"Arrays without a common type", "SELECT hasAll([1], ['a'])", "Raises a NO_COMMON_TYPE exception"},
         {"Array of arrays", "SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [3, 5]])", "0"},
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};

@@ -85,16 +85,12 @@ REGISTER_FUNCTION(ArrayCount)
 Returns the number of elements for which `func(arr1[i], ..., arrN[i])` returns something other than `0`.
 If `func` is not specified, it returns the number of non-zero elements in the array.
 
-:::note
-Note that the `arrayCount` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions).
-You can pass a lambda function to it as the first argument.
-:::
-
+`arrayCount` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions).
     )";
-    FunctionDocumentation::Syntax syntax = "arrayCount([func,] arr1, ...)";
+    FunctionDocumentation::Syntax syntax = "arrayCount([func, ] arr1, ...)";
     FunctionDocumentation::Arguments arguments = {
-        {"func", "Function to apply to each element of the array(s). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)"},
-        {"arr1 ... arrN", "N arrays. [Array](/sql-reference/data-types/array)."},
+        {"func", "Function to apply to each element of the array(s). Optional. [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)"},
+        {"arr1, ..., arrN", "N arrays. [Array(T)](/sql-reference/data-types/array)."},
     };
     FunctionDocumentation::ReturnedValue returned_value = "Returns the number of elements for which `func` returns something other than `0`. Otherwise, returns the number of non-zero elements in the array.";
     FunctionDocumentation::Examples example = {{"Usage example", "SELECT arrayCount(x -> (x % 2), groupArray(number) FROM numbers(10)", "5"}};

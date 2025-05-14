@@ -22,7 +22,7 @@ Elements set to `NULL` are handled as normal values.
     };
     FunctionDocumentation::ReturnedValue returned_value = "Returns the index (numbered from one) of the first `x` in `arr` if it exists. Otherwise, returns `0`.";
     FunctionDocumentation::Examples examples = {
-        {"Basic example", "SELECT indexOf([1, 3, 3, 4], 3)", "2"},
+        {"Basic example", "SELECT indexOf([5, 4, 1, 3], 3)", "4"},
         {"Array with nulls", "SELECT indexOf([1, 3, NULL, NULL], NULL)", "3"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};

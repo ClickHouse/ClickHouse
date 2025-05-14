@@ -16,22 +16,22 @@ public:
 REGISTER_FUNCTION(ArrayPushBack)
 {
     FunctionDocumentation::Description description = "Adds one item to the end of the array.";
-    FunctionDocumentation::Syntax syntax = "arrayPushBack(x, y)";
+    FunctionDocumentation::Syntax syntax = "arrayPushBack(arr, x)";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "The array for which to add value `y` to the end of. [`Array`](/sql-reference/data-types/array)."},
-        {"y", R"(
-- Single value to add to the end of the array. [`Array`](/sql-reference/data-types/array).
+        {"arr", "The array for which to add value `x` to the end of. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"x", R"(
+- Single value to add to the end of the array. [`Array(T)`](/sql-reference/data-types/array).
 
 :::note
 - Only numbers can be added to an array with numbers, and only strings can be added to an array of strings.
-- When adding numbers, ClickHouse automatically sets the type of `y` for the data type of the array.
+- When adding numbers, ClickHouse automatically sets the type of `x` for the data type of the array.
 - Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
 
 For more information about the types of data in ClickHouse, see [Data types](/sql-reference/data-types).
 :::
     )"},
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns an array identical to `x` but with an additional value `y` at the end of the array. [`Array`](/sql-reference/data-types/array).";
+    FunctionDocumentation::ReturnedValue returned_value = "Returns an array identical to `arr` but with an additional value `x` at the end of the array. [`Array(T)`](/sql-reference/data-types/array).";
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayPushBack(['a'], 'b') AS res;", "['a','b']"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
