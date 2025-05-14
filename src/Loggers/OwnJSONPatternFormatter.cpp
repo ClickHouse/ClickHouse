@@ -66,7 +66,7 @@ void OwnJSONPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_
     DB::FormatSettings settings;
     bool print_comma = false;
 
-    const Poco::Message & msg = msg_ext.base;
+    const Poco::Message & msg = *msg_ext.base;
     DB::writeChar('{', wb);
 
     if (!date_time_utc.empty())

@@ -42,10 +42,7 @@ public:
     void setLevel(const std::string & name, int level);
 
     void logSplit(
-        const ExtendedLogMessage & msg_ext,
-        const std::shared_ptr<InternalTextLogsQueue> & logs_queue,
-        const std::string & thread_name,
-        bool check_masker = true);
+        const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, const std::string & thread_name);
 
     using ChannelPtr = Poco::AutoPtr<Poco::Channel>;
     /// Handler and its pointer cast to extended interface

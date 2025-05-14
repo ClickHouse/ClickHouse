@@ -13,9 +13,12 @@ namespace DB
 class ExtendedLogMessage
 {
 public:
-    explicit ExtendedLogMessage(const Poco::Message & base_) : base(base_) {}
+    explicit ExtendedLogMessage(const Poco::Message & base_)
+        : base(&base_)
+    {
+    }
     explicit ExtendedLogMessage(const Poco::Message & new_base_, const ExtendedLogMessage & other)
-        : base(new_base_)
+        : base(&new_base_)
         , time_seconds(other.time_seconds)
         , time_microseconds(other.time_microseconds)
         , time_in_microseconds(other.time_in_microseconds)
@@ -28,7 +31,7 @@ public:
     static ExtendedLogMessage getFrom(const Poco::Message & base);
 
     // Do not copy for efficiency reasons
-    const Poco::Message & base;
+    const Poco::Message * base;
 
     uint32_t time_seconds = 0;
     uint32_t time_microseconds = 0;

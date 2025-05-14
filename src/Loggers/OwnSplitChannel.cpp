@@ -24,36 +24,53 @@ void OwnSplitChannel::log(const Poco::Message & msg)
     if (channels.empty() && (logs_queue == nullptr && !logs_queue->isNeeded(msg.getPriority(), msg.getSource())))
         return;
 
+    if (const auto & masker = SensitiveDataMasker::getInstance())
+    {
+        auto message_text = msg.getText();
+        auto matches = masker->wipeSensitiveData(message_text);
+        if (matches > 0)
+        {
+            const Message masked_message{msg, message_text};
+            logSplit(ExtendedLogMessage::getFrom(masked_message), logs_queue, getThreadName());
+            return;
+        }
+    }
+
     logSplit(ExtendedLogMessage::getFrom(msg), logs_queue, getThreadName());
 }
 
+namespace
+{
+
+void pushExtendedMessageToInternalTextLogQueue(
+    const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue)
+{
+    const Poco::Message & msg = *msg_ext.base;
+    MutableColumns columns = InternalTextLogsQueue::getSampleColumns();
+
+    size_t i = 0;
+    columns[i++]->insert(msg_ext.time_seconds);
+    columns[i++]->insert(msg_ext.time_microseconds);
+    columns[i++]->insert(DNSResolver::instance().getHostName());
+    columns[i++]->insert(msg_ext.query_id);
+    columns[i++]->insert(msg_ext.thread_id);
+    columns[i++]->insert(static_cast<Int64>(msg.getPriority()));
+    columns[i++]->insert(msg.getSource());
+    columns[i++]->insert(msg.getText());
+
+    [[maybe_unused]] bool push_result = logs_queue->emplace(std::move(columns));
+}
+
+}
+
 void OwnSplitChannel::logSplit(
-    const ExtendedLogMessage & msg_ext,
-    const std::shared_ptr<InternalTextLogsQueue> & logs_queue,
-    const std::string & thread_name,
-    bool check_masker)
+    const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, const std::string & thread_name)
 {
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-    const Poco::Message & msg = msg_ext.base;
+    const Poco::Message & msg = *msg_ext.base;
 
     try
     {
-        if (check_masker)
-        {
-            if (const auto & masker = SensitiveDataMasker::getInstance())
-            {
-                auto message_text = msg.getText();
-                auto matches = masker->wipeSensitiveData(message_text);
-                if (matches > 0)
-                {
-                    const Message masked_message{
-                        msg, message_text}; // we will continue with the copy of original message with text modified
-                    logSplit(ExtendedLogMessage{masked_message, msg_ext}, logs_queue, thread_name, false);
-                    return;
-                }
-            }
-        }
-
         /// Log data to child channels
         for (auto & [name, channel] : channels)
         {
@@ -65,21 +82,7 @@ void OwnSplitChannel::logSplit(
 
         /// Log to "TCP queue" if message is not too noisy
         if (logs_queue && logs_queue->isNeeded(msg.getPriority(), msg.getSource()))
-        {
-            MutableColumns columns = InternalTextLogsQueue::getSampleColumns();
-
-            size_t i = 0;
-            columns[i++]->insert(msg_ext.time_seconds);
-            columns[i++]->insert(msg_ext.time_microseconds);
-            columns[i++]->insert(DNSResolver::instance().getHostName());
-            columns[i++]->insert(msg_ext.query_id);
-            columns[i++]->insert(msg_ext.thread_id);
-            columns[i++]->insert(static_cast<Int64>(msg.getPriority()));
-            columns[i++]->insert(msg.getSource());
-            columns[i++]->insert(msg.getText());
-
-            [[maybe_unused]] bool push_result = logs_queue->emplace(std::move(columns));
-        }
+            pushExtendedMessageToInternalTextLogQueue(msg_ext, logs_queue);
 
         auto text_log_locked = text_log.lock();
         if (!text_log_locked)
@@ -227,34 +230,52 @@ void OwnAsyncSplitChannel::close()
 class OwnMessageNotification : public Poco::Notification
 {
 public:
-    OwnMessageNotification(const Message & msg_, const std::shared_ptr<InternalTextLogsQueue> & logs_queue_)
+    OwnMessageNotification(const Message & msg_)
         : msg(msg_)
         , msg_ext(ExtendedLogMessage::getFrom(msg))
-        , logs_queue(logs_queue_)
         , thread_name(getThreadName())
     {
+        if (const auto & masker = SensitiveDataMasker::getInstance())
+        {
+            auto message_text = msg_.getText();
+            auto matches = masker->wipeSensitiveData(message_text);
+            if (matches > 0)
+            {
+                msg = Poco::Message(msg_, message_text);
+                msg_ext.base = &msg;
+            }
+        }
     }
 
-    Message msg; /// Need to keep a copy
+    Message msg; /// Need to keep a copy until we finish logging
     ExtendedLogMessage msg_ext;
-    std::shared_ptr<InternalTextLogsQueue> logs_queue;
     std::string thread_name;
 };
 
 void OwnAsyncSplitChannel::log(const Poco::Message & msg)
 {
-    /// TODO: Implement log(Message &&)
     if (!isLoggingEnabled())
-        return;
-
-    const auto & logs_queue = CurrentThread::getInternalTextLogsQueue();
-    if (sync_channel.channels.empty() && (logs_queue == nullptr && !logs_queue->isNeeded(msg.getPriority(), msg.getSource())))
         return;
 
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     try
     {
-        queue.enqueueNotification(new OwnMessageNotification(msg, logs_queue));
+        Poco::AutoPtr<OwnMessageNotification> notification;
+        if (const auto & logs_queue = CurrentThread::getInternalTextLogsQueue();
+            logs_queue && logs_queue->isNeeded(msg.getPriority(), msg.getSource()))
+        {
+            /// If we need to push to the TCP queue, due it now since it's expected to receive all messages synchronously
+            notification = new OwnMessageNotification(msg);
+            pushExtendedMessageToInternalTextLogQueue(notification->msg_ext, logs_queue);
+        }
+
+        if (sync_channel.channels.empty())
+            return;
+
+        if (!notification)
+            notification = new OwnMessageNotification(msg);
+
+        queue.enqueueNotification(notification);
     }
     catch (...)
     {
@@ -275,10 +296,11 @@ void OwnAsyncSplitChannel::run()
     Poco::AutoPtr<Poco::Notification> notification = queue.waitDequeueNotification();
     while (notification)
     {
-        OwnMessageNotification * own_notification = dynamic_cast<OwnMessageNotification *>(notification.get());
+        const OwnMessageNotification * own_notification = dynamic_cast<const OwnMessageNotification *>(notification.get());
         {
+            /// Empty logs_queue since it was already logged synchronously
             if (own_notification)
-                sync_channel.logSplit(own_notification->msg_ext, own_notification->logs_queue, own_notification->thread_name);
+                sync_channel.logSplit(own_notification->msg_ext, nullptr, own_notification->thread_name);
         }
         notification = queue.waitDequeueNotification();
     }
