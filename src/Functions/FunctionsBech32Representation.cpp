@@ -1,19 +1,10 @@
-#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnsNumber.h>
-#include <Core/UUID.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <IO/WriteHelpers.h>
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/castColumn.h>
-#include <Common/BinStringDecodeHelper.h>
-#include <Common/BitHelpers.h>
 
 #include "bech32.h"
 #include "segwit_addr.h"
