@@ -269,6 +269,13 @@ Aws::Auth::AWSCredentials Client::getCredentials() const
     return credentials_provider->GetAWSCredentials();
 }
 
+bool Client::checkIfCredentialsChanged(const Aws::S3::S3Error & error) const
+{
+    if (!credentials_provider)
+        return false;
+    return (error.GetExceptionName() == "AuthenticationRequired");
+}
+
 bool Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const
 {
     if (detect_region)
@@ -596,6 +603,13 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
             return result;
 
         const auto & error = result.GetError();
+
+        if (checkIfCredentialsChanged(error))
+        {
+            LOG_INFO(log, "Credentials changed, attempting again");
+            credentials_provider->SetNeedRefresh();
+            continue;
+        }
 
         std::string new_region;
         if (checkIfWrongRegionDefined(bucket, error, new_region))
