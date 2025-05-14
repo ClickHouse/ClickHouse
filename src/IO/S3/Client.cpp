@@ -1,10 +1,10 @@
 #include <IO/S3/Client.h>
-#include <aws/core/Aws.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 
 #if USE_AWS_S3
 
+#include <aws/core/Aws.h>
 #include <aws/core/client/CoreErrors.h>
 #include <aws/s3/model/HeadBucketRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
