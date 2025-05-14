@@ -21,6 +21,19 @@
 namespace
 {
 
+/* Max length of Bech32 or Bech32m encoding is 90 chars, this includes:
+ *
+ *      HRP: 1 - 83 human readable characters, 'bc' or 'tb' for a SegWit address
+ *      separator: always '1'
+ *      data: array of 5-bit bytes consisting of a 6 byte checksum, a witness byte, and the actual encoded data
+ *
+ * max_len = (90 - 1 (HRP) - 1 (sep) - 6 (checksum) - 1 (witness byte)) * 5 // 8
+ * max_len = 405 bits or 50 (8-bit) bytes // we must fit in an 8-bit array, so we throw away the last 5 bits
+ */
+static constexpr size_t max_address_len = 90;
+static constexpr size_t max_data_len = 50;
+static constexpr size_t max_hrp_len = 83; // Note: if we just support segwit addresses, this can be changed to 2
+
 typedef std::vector<uint8_t> bech32_data;
 
 /** Convert from one power-of-2 number base to another. */
@@ -64,25 +77,233 @@ namespace ErrorCodes
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int LOGICAL_ERROR;
 extern const int ILLEGAL_COLUMN;
+extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
-/// Decode original address from string containing Bech32 or Bech32m address
+// Encode string to Bech32 or Bech32m address
+class EncodeToBech32Representation : public IFunction
+{
+public:
+    static constexpr auto name = "bech32Encode";
+
+    // corresponds to the bech32 algo, not the newer bech32m. It seems that the original is the most widely used.
+    static constexpr int default_witver = 0;
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<EncodeToBech32Representation>(); }
+
+    String getName() const override { return name; }
+
+    bool isVariadic() const override { return true; }
+
+    size_t getNumberOfArguments() const override { return 0; }
+
+    // can return same val for different inputs, f.e. if bech32 and bech32m are applied to the same inputs
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (arguments.size() < 2)
+            throw Exception(
+                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+                "At least two string arguments (hrp, data) are required for function {}",
+                getName());
+
+        if (arguments.size() > 3)
+            throw Exception(
+                ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
+                "A maximum of 3 arguments (hrp, data, witness version) are allowed for function {}",
+                getName());
+
+        // check first two args, hrp and input string
+        for (size_t i = 0; i < 2; ++i)
+            if (!WhichDataType(arguments[i]).isStringOrFixedString())
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument {} of function {}, expected String or FixedString",
+                    arguments[i]->getName(),
+                    i + 1,
+                    getName());
+
+        // check 3rd (optional) arg, specifying witness version aka whether to use Bech32 or Bech32m algo
+        size_t argIdx = 2;
+        if (arguments.size() == 3 && !WhichDataType(arguments[argIdx]).isNativeUInt())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument 3 of function {}, expected unsigned integer",
+                arguments[argIdx]->getName(),
+                getName());
+
+        return std::make_shared<DataTypeString>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeString>(); }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        bool have_witver = arguments.size() == 3;
+        const ColumnPtr & hpr_column = arguments[0].column;
+        const ColumnPtr & data_column = arguments[1].column;
+        const ColumnPtr & witver_column = have_witver ? arguments[2].column : IColumn::Ptr();
+
+        if (const ColumnString * hpr_col = checkAndGetColumn<ColumnString>(hpr_column.get()))
+        {
+            const ColumnString::Chars & hrp_vec = hpr_col->getChars();
+            const ColumnString::Offsets & hrp_offsets = hpr_col->getOffsets();
+
+            return chooseDataColAndExecute(data_column, hrp_vec, hrp_offsets, witver_column, input_rows_count, have_witver);
+        }
+
+        if (const ColumnFixedString * hpr_col_fix_string = checkAndGetColumn<ColumnFixedString>(hpr_column.get()))
+        {
+            const ColumnString::Chars & hrp_vec = hpr_col_fix_string->getChars();
+            const ColumnString::Offsets & hrp_offsets = PaddedPODArray<IColumn::Offset>(); // dummy
+
+            return chooseDataColAndExecute(
+                data_column, hrp_vec, hrp_offsets, witver_column, input_rows_count, have_witver, hpr_col_fix_string->getN());
+        }
+
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
+    }
+
+private:
+    ColumnPtr chooseDataColAndExecute(
+        const ColumnPtr & data_column,
+        const ColumnString::Chars & hrp_vec,
+        const ColumnString::Offsets & hrp_offsets,
+        const ColumnPtr & witver_col,
+        const size_t input_rows_count,
+        const bool have_witver = false,
+        const size_t n1 = 0) const
+    {
+        if (const ColumnString * data_col = checkAndGetColumn<ColumnString>(data_column.get()))
+        {
+            const ColumnString::Chars & data_vec = data_col->getChars();
+            const ColumnString::Offsets & data_offsets = data_col->getOffsets();
+
+            return execute(hrp_vec, hrp_offsets, data_vec, data_offsets, witver_col, input_rows_count, have_witver, n1);
+        }
+
+        if (const ColumnFixedString * data_col_fix_string = checkAndGetColumn<ColumnFixedString>(data_column.get()))
+        {
+            const ColumnString::Chars & data_vec = data_col_fix_string->getChars();
+            const ColumnString::Offsets & data_offsets = PaddedPODArray<IColumn::Offset>(); // dummy
+
+            return execute(
+                hrp_vec, hrp_offsets, data_vec, data_offsets, witver_col, input_rows_count, have_witver, n1, data_col_fix_string->getN());
+        }
+
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", data_column->getName(), getName());
+    }
+
+    static ColumnPtr execute(
+        const ColumnString::Chars & hrp_vec,
+        const ColumnString::Offsets & hrp_offsets,
+        const ColumnString::Chars & data_vec,
+        const ColumnString::Offsets & data_offsets,
+        const ColumnPtr & witver_col,
+        const size_t input_rows_count,
+        const bool have_witver = false,
+        const size_t n1 = 0,
+        const size_t n2 = 0)
+    {
+        // outputs
+        auto out_col = ColumnString::create();
+        ColumnString::Chars & out_vec = out_col->getChars();
+        ColumnString::Offsets & out_offsets = out_col->getOffsets();
+
+        out_offsets.resize(input_rows_count);
+
+        // a ceiling, will resize again later
+        out_vec.resize((max_address_len + 1 /* trailing 0 */) * input_rows_count);
+
+        char * out_begin = reinterpret_cast<char *>(out_vec.data());
+        char * out_pos = out_begin;
+
+        size_t hrp_prev_offset = 0;
+        size_t data_prev_offset = 0;
+
+        // In ColumnString each value ends with a trailing 0, in ColumnFixedString there is no trailing 0
+        size_t hrp_zero_offset = n1 == 0 ? 1 : 0;
+        size_t data_zero_offset = n2 == 0 ? 1 : 0;
+
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            size_t hrp_new_offset = n1 == 0 ? hrp_offsets[i] : n1;
+            size_t data_new_offset = n2 == 0 ? data_offsets[i] : n2;
+
+            // max encodable data is 50 bytes to stay within 90-char limit on Bech32 output
+            // max hrp length is 83
+            if ((data_new_offset - data_prev_offset - data_zero_offset) > max_data_len
+                || (hrp_new_offset - data_prev_offset - hrp_zero_offset) > max_hrp_len)
+            {
+                // add empty string and continue
+                *out_pos = '\0';
+                ++out_pos;
+                out_offsets[i] = out_pos - out_begin;
+
+                hrp_prev_offset = hrp_new_offset;
+                data_prev_offset = data_new_offset;
+                continue;
+            }
+
+            std::string hrp(
+                reinterpret_cast<const char *>(&hrp_vec[hrp_prev_offset]),
+                reinterpret_cast<const char *>(&hrp_vec[hrp_new_offset - hrp_zero_offset]));
+
+            bech32_data input(
+                reinterpret_cast<const uint8_t *>(&data_vec[data_prev_offset]),
+                reinterpret_cast<const uint8_t *>(&data_vec[data_new_offset - data_zero_offset]));
+
+            auto witver = have_witver ? witver_col->getUInt(i) : default_witver;
+
+            auto address = segwit_addr::encode(hrp, witver, input);
+
+            if (address.empty())
+            {
+                // add empty string and continue
+                *out_pos = '\0';
+                ++out_pos;
+                out_offsets[i] = out_pos - out_begin;
+
+                hrp_prev_offset = hrp_new_offset;
+                data_prev_offset = data_new_offset;
+                continue;
+            }
+
+            // store address in out_pos
+            std::memcpy(out_pos, address.data(), address.size());
+            out_pos += address.size();
+            *out_pos = '\0';
+            ++out_pos;
+
+            out_offsets[i] = out_pos - out_begin;
+
+            hrp_prev_offset = hrp_new_offset;
+            data_prev_offset = data_new_offset;
+        }
+
+        chassert(
+            static_cast<size_t>(out_pos - out_begin) <= out_vec.size(),
+            fmt::format("too small amount of memory was preallocated: needed {}, but have only {}", out_pos - out_begin, out_vec.size()));
+
+        out_vec.resize(out_pos - out_begin);
+
+        return out_col;
+    }
+};
+
+// Decode original address from string containing Bech32 or Bech32m address
 class DecodeFromBech32Representation : public IFunction
 {
 public:
     static constexpr auto name = "bech32Decode";
     static constexpr size_t tuple_size = 2; // (hrp, data)
-
-    /* Max length of Bech32 or Bech32m encoding is 90 chars, this includes:
-     *      HRP: 1 - 83 human readable characters, 'bc' or 'tb' for a SegWit address
-     *      separator: always '1'
-     *      data: array of 5-bit bytes consisting of a 6 byte checksum, a witness byte, and the actual encoded data
-     *
-     * max_len = (90 - 1 (HRP) - 1 (sep) - 6 (checksum) - 1 (witness byte)) * 5 // 8
-     * max_len = 405 bits or 50 (8-bit) bytes // we must fit in an 8-bit array, so we throw away the last 5 bits
-     */
-    static constexpr size_t max_data_len = 50;
-    static constexpr size_t max_hrp_len = 83; // Note: if we just support segwit addresses, this can be changed to 2
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<DecodeFromBech32Representation>(); }
 
@@ -180,7 +401,7 @@ private:
             size_t new_offset = n == 0 ? in_offsets[i] : n;
 
             // enforce 90 char limit, 91 with trailing zero
-            if ((new_offset - prev_offset - trailing_zero_offset) > 90)
+            if ((new_offset - prev_offset - trailing_zero_offset) > max_address_len)
             {
                 // add empty strings and continue
                 *hrp_pos = '\0';
@@ -258,7 +479,7 @@ private:
 
 REGISTER_FUNCTION(Bech32Repr)
 {
-    //factory.registerFunction<EncodeToBech32Representation<HexImpl>>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<EncodeToBech32Representation>({}, FunctionFactory::Case::Insensitive);
     factory.registerFunction<DecodeFromBech32Representation>({}, FunctionFactory::Case::Insensitive);
 }
 
