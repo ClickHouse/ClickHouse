@@ -126,225 +126,133 @@ public:
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
-            auto col0_res = ColumnString::create();
-            auto col1_res = ColumnString::create();
-
-            ColumnString::Chars & hrp_vec = col0_res->getChars();
-            ColumnString::Offsets & hrp_offsets = col0_res->getOffsets();
-
-            ColumnString::Chars & data_vec = col1_res->getChars();
-            ColumnString::Offsets & data_offsets = col1_res->getOffsets();
-
             const ColumnString::Chars & in_vec = col->getChars();
             const ColumnString::Offsets & in_offsets = col->getOffsets();
 
-            hrp_offsets.resize(input_rows_count);
-            data_offsets.resize(input_rows_count);
-
-            // a ceiling, will resize again later
-            hrp_vec.resize((max_hrp_len + 1 /* trailing 0 */) * input_rows_count);
-            data_vec.resize((max_data_len + 1 /* trailing 0 */) * input_rows_count);
-
-            char * hrp_begin = reinterpret_cast<char *>(hrp_vec.data());
-            char * hrp_pos = hrp_begin;
-
-            char * data_begin = reinterpret_cast<char *>(data_vec.data());
-            char * data_pos = data_begin;
-
-            size_t prev_offset = 0;
-
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                size_t new_offset = in_offsets[i];
-
-                // enforce 90 char limit, 91 with trailing zero
-                if ((new_offset - prev_offset - 1) > 90)
-                {
-                    // add empty strings and continue
-                    *hrp_pos = '\0';
-                    ++hrp_pos;
-                    hrp_offsets[i] = hrp_pos - hrp_begin;
-
-                    *data_pos = '\0';
-                    ++data_pos;
-                    data_offsets[i] = data_pos - data_begin;
-
-                    prev_offset = new_offset;
-                    continue;
-                }
-
-                // `new_offset - 1` because in ColumnString each string is stored with trailing zero byte
-                std::string input(
-                    reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset - 1]));
-
-                const auto dec = bech32::decode(input);
-
-                bech32_data data_8bit;
-                if (dec.encoding == bech32::Encoding::INVALID
-                    || !convertbits<5, 8, false>(data_8bit, bech32_data(dec.data.begin(), dec.data.end())))
-                {
-                    // add empty strings and continue
-                    *hrp_pos = '\0';
-                    ++hrp_pos;
-                    hrp_offsets[i] = hrp_pos - hrp_begin;
-
-                    *data_pos = '\0';
-                    ++data_pos;
-                    data_offsets[i] = data_pos - data_begin;
-
-                    prev_offset = new_offset;
-                    continue;
-                }
-
-                // store hrp output in hrp_pos
-                std::memcpy(hrp_pos, dec.hrp.c_str(), dec.hrp.size());
-                hrp_pos += dec.hrp.size();
-                *hrp_pos = '\0';
-                ++hrp_pos;
-
-                hrp_offsets[i] = hrp_pos - hrp_begin;
-
-                // store data output in data_pos
-                std::memcpy(data_pos, data_8bit.data(), data_8bit.size());
-                data_pos += data_8bit.size();
-                *data_pos = '\0';
-                ++data_pos;
-
-                data_offsets[i] = data_pos - data_begin;
-
-                prev_offset = new_offset;
-            }
-
-            chassert(
-                static_cast<size_t>(hrp_pos - hrp_begin) <= hrp_vec.size(),
-                fmt::format(
-                    "too small amount of memory was preallocated: needed {}, but have only {}", hrp_pos - hrp_begin, hrp_vec.size()));
-            chassert(
-                static_cast<size_t>(data_pos - data_begin) <= data_vec.size(),
-                fmt::format(
-                    "too small amount of memory was preallocated: needed {}, but have only {}", data_pos - data_begin, data_vec.size()));
-
-            hrp_vec.resize(hrp_pos - hrp_begin);
-            data_vec.resize(data_pos - data_begin);
-
-            Columns tuple_columns(tuple_size);
-            tuple_columns[0] = std::move(col0_res);
-            tuple_columns[1] = std::move(col1_res);
-
-            return ColumnTuple::create(tuple_columns);
+            return execute(in_vec, in_offsets, input_rows_count);
         }
 
         if (const ColumnFixedString * col_fix_string = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
-            // TODO these can be collapsed into a function
-            auto col0_res = ColumnString::create();
-            auto col1_res = ColumnString::create();
-
-            ColumnString::Chars & hrp_vec = col0_res->getChars();
-            ColumnString::Offsets & hrp_offsets = col0_res->getOffsets();
-
-            ColumnString::Chars & data_vec = col1_res->getChars();
-            ColumnString::Offsets & data_offsets = col1_res->getOffsets();
-
             const ColumnString::Chars & in_vec = col_fix_string->getChars();
-            const size_t n = col_fix_string->getN();
+            const ColumnString::Offsets & in_offsets = PaddedPODArray<IColumn::Offset>(); // dummy
 
-            hrp_offsets.resize(input_rows_count);
-            data_offsets.resize(input_rows_count);
-
-            // a ceiling, will resize again later
-            hrp_vec.resize((max_hrp_len + 1 /* trailing 0 */) * input_rows_count);
-            data_vec.resize((max_data_len + 1 /* trailing 0 */) * input_rows_count);
-
-            char * hrp_begin = reinterpret_cast<char *>(hrp_vec.data());
-            char * hrp_pos = hrp_begin;
-
-            char * data_begin = reinterpret_cast<char *>(data_vec.data());
-            char * data_pos = data_begin;
-
-            size_t prev_offset = 0;
-
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                size_t new_offset = prev_offset + n;
-
-                // enforce 90 char limit
-                if ((new_offset - prev_offset) > 90)
-                {
-                    // add empty strings and continue
-                    *hrp_pos = '\0';
-                    ++hrp_pos;
-                    hrp_offsets[i] = hrp_pos - hrp_begin;
-
-                    *data_pos = '\0';
-                    ++data_pos;
-                    data_offsets[i] = data_pos - data_begin;
-
-                    prev_offset = new_offset;
-                    continue;
-                }
-
-                // Note: no trailing 0 in fixed string cols
-                std::string input(
-                    reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset]));
-
-                const auto dec = bech32::decode(input);
-
-                if (dec.encoding == bech32::Encoding::INVALID)
-                {
-                    // add empty strings and continue
-                    *hrp_pos = '\0';
-                    ++hrp_pos;
-                    hrp_offsets[i] = hrp_pos - hrp_begin;
-
-                    *data_pos = '\0';
-                    ++data_pos;
-                    data_offsets[i] = data_pos - data_begin;
-
-                    prev_offset = new_offset;
-                    continue;
-                }
-
-                // store hrp output in hrp_pos
-                std::memcpy(hrp_pos, dec.hrp.c_str(), dec.hrp.size());
-                hrp_pos += dec.hrp.size();
-                *hrp_pos = '\0';
-                ++hrp_pos;
-
-                hrp_offsets[i] = hrp_pos - hrp_begin;
-
-                // store data output in data_pos
-                std::memcpy(data_pos, dec.data.data(), dec.data.size());
-                data_pos += dec.data.size();
-                *data_pos = '\0';
-                ++data_pos;
-
-                data_offsets[i] = data_pos - data_begin;
-
-                prev_offset = new_offset;
-            }
-
-            chassert(
-                static_cast<size_t>(hrp_pos - hrp_begin) <= hrp_vec.size(),
-                fmt::format(
-                    "too small amount of memory was preallocated: needed {}, but have only {}", hrp_pos - hrp_begin, hrp_vec.size()));
-            chassert(
-                static_cast<size_t>(data_pos - data_begin) <= data_vec.size(),
-                fmt::format(
-                    "too small amount of memory was preallocated: needed {}, but have only {}", data_pos - data_begin, data_vec.size()));
-
-            hrp_vec.resize(hrp_pos - hrp_begin);
-            data_vec.resize(data_pos - data_begin);
-
-            Columns tuple_columns(tuple_size);
-            tuple_columns[0] = std::move(col0_res);
-            tuple_columns[1] = std::move(col1_res);
-
-            return ColumnTuple::create(tuple_columns);
+            return execute(in_vec, in_offsets, input_rows_count, col_fix_string->getN());
         }
 
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
+    }
+
+private:
+    static ColumnPtr
+    execute(const ColumnString::Chars & in_vec, const ColumnString::Offsets & in_offsets, size_t input_rows_count, size_t n = 0)
+    {
+        auto col0_res = ColumnString::create();
+        auto col1_res = ColumnString::create();
+
+        ColumnString::Chars & hrp_vec = col0_res->getChars();
+        ColumnString::Offsets & hrp_offsets = col0_res->getOffsets();
+
+        ColumnString::Chars & data_vec = col1_res->getChars();
+        ColumnString::Offsets & data_offsets = col1_res->getOffsets();
+
+        hrp_offsets.resize(input_rows_count);
+        data_offsets.resize(input_rows_count);
+
+        // a ceiling, will resize again later
+        hrp_vec.resize((max_hrp_len + 1 /* trailing 0 */) * input_rows_count);
+        data_vec.resize((max_data_len + 1 /* trailing 0 */) * input_rows_count);
+
+        char * hrp_begin = reinterpret_cast<char *>(hrp_vec.data());
+        char * hrp_pos = hrp_begin;
+
+        char * data_begin = reinterpret_cast<char *>(data_vec.data());
+        char * data_pos = data_begin;
+
+        size_t prev_offset = 0;
+
+        // In ColumnString each value ends with a trailing 0, in ColumnFixedString there is no trailing 0
+        size_t trailing_zero_offset = n == 0 ? 1 : 0;
+
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            size_t new_offset = n == 0 ? in_offsets[i] : n;
+
+            // enforce 90 char limit, 91 with trailing zero
+            if ((new_offset - prev_offset - trailing_zero_offset) > 90)
+            {
+                // add empty strings and continue
+                *hrp_pos = '\0';
+                ++hrp_pos;
+                hrp_offsets[i] = hrp_pos - hrp_begin;
+
+                *data_pos = '\0';
+                ++data_pos;
+                data_offsets[i] = data_pos - data_begin;
+
+                prev_offset = new_offset;
+                continue;
+            }
+
+            std::string input(
+                reinterpret_cast<const char *>(&in_vec[prev_offset]),
+                reinterpret_cast<const char *>(&in_vec[new_offset - trailing_zero_offset]));
+
+            const auto dec = bech32::decode(input);
+
+            bech32_data data_8bit;
+            if (dec.encoding == bech32::Encoding::INVALID
+                || !convertbits<5, 8, false>(data_8bit, bech32_data(dec.data.begin(), dec.data.end())))
+            {
+                // add empty strings and continue
+                *hrp_pos = '\0';
+                ++hrp_pos;
+                hrp_offsets[i] = hrp_pos - hrp_begin;
+
+                *data_pos = '\0';
+                ++data_pos;
+                data_offsets[i] = data_pos - data_begin;
+
+                prev_offset = new_offset;
+                continue;
+            }
+
+            // store hrp output in hrp_pos
+            std::memcpy(hrp_pos, dec.hrp.c_str(), dec.hrp.size());
+            hrp_pos += dec.hrp.size();
+            *hrp_pos = '\0';
+            ++hrp_pos;
+
+            hrp_offsets[i] = hrp_pos - hrp_begin;
+
+            // store data output in data_pos
+            std::memcpy(data_pos, data_8bit.data(), data_8bit.size());
+            data_pos += data_8bit.size();
+            *data_pos = '\0';
+            ++data_pos;
+
+            data_offsets[i] = data_pos - data_begin;
+
+            prev_offset = new_offset;
+        }
+
+        chassert(
+            static_cast<size_t>(hrp_pos - hrp_begin) <= hrp_vec.size(),
+            fmt::format("too small amount of memory was preallocated: needed {}, but have only {}", hrp_pos - hrp_begin, hrp_vec.size()));
+        chassert(
+            static_cast<size_t>(data_pos - data_begin) <= data_vec.size(),
+            fmt::format(
+                "too small amount of memory was preallocated: needed {}, but have only {}", data_pos - data_begin, data_vec.size()));
+
+        hrp_vec.resize(hrp_pos - hrp_begin);
+        data_vec.resize(data_pos - data_begin);
+
+        Columns tuple_columns(tuple_size);
+        tuple_columns[0] = std::move(col0_res);
+        tuple_columns[1] = std::move(col1_res);
+
+        return ColumnTuple::create(tuple_columns);
     }
 };
 
