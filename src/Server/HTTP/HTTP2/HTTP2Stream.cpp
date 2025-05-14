@@ -44,6 +44,10 @@ private:
         stream.input.pop_front();
         memory = std::move(t_memory);
         BufferBase::set(memory.data() + FRAME_HEADER_SIZE, len, 0);
+
+        HTTP2StreamEvent event{.type=HTTP2StreamEventType::DATA_CONSUMED, .stream_id=stream.id, .payload=static_cast<uint32_t>(len)};
+        stream.stream_event_pipe->writeBytes(&event, sizeof(event));
+
         return true;
     }
 

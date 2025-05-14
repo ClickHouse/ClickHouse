@@ -25,12 +25,14 @@ enum class HTTP2StreamEventType : uint32_t
 {
     OUTPUT_READY,
     SEND_100_CONTINUE,
+    DATA_CONSUMED,
 };
 
 struct HTTP2StreamEvent
 {
     HTTP2StreamEventType type;
     uint32_t stream_id;
+    uint32_t payload = 0;
 };
 
 class HTTP2Stream : public Poco::Runnable
