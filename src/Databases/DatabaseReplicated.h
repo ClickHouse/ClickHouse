@@ -162,9 +162,11 @@ private:
     void waitDatabaseStarted() const override;
     void stopLoading() override;
 
-    void initDdlWorker() TSA_REQUIRES(ddl_worker_mutex);
+    void initDDLWorkerUnlocked() TSA_REQUIRES(ddl_worker_mutex);
 
     void restoreTablesMetadataInKeeper();
+
+    void reinitializeDDLWorker();
 
     static BlockIO
     getQueryStatus(const String & node_path, const String & replicas_path, ContextPtr context, const Strings & hosts_to_wait);
