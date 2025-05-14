@@ -1671,10 +1671,10 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                         {
                             UInt32 tx_queue_size = unhexUInt<UInt32>(tx_queue.data()); // NOLINT
                             UInt32 rx_queue_size = unhexUInt<UInt32>(rx_queue.data()); // NOLINT
-                        }
 
-                        transmit_queue_size += tx_queue_size;
-                        receive_queue_size += rx_queue_size;
+                            transmit_queue_size += tx_queue_size;
+                            receive_queue_size += rx_queue_size;
+                        }
                     }
 
                     /// tr:when
