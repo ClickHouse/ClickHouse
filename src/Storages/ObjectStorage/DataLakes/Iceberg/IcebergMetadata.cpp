@@ -77,7 +77,7 @@ parseTableSchemaFromManifestFile(const AvroForIcebergDeserializer & deserializer
     Poco::JSON::Parser parser;
     Poco::Dynamic::Var json = parser.parse(*schema_json_string);
     const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
-    Int32 schema_object_id = schema_object->getValue<int>("schema-id");
+    Int32 schema_object_id = schema_object->getValue<int>(Fschema_id);
     return {schema_object_id, schema_object};
 }
 
@@ -140,22 +140,22 @@ IcebergMetadata::IcebergMetadata(
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object)
 {
     Poco::JSON::Object::Ptr schema;
-    if (!metadata_object->has("current-schema-id"))
+    if (!metadata_object->has(Fcurrent_schema_id))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: 'current-schema-id' field is missing in metadata");
-    auto current_schema_id = metadata_object->getValue<int>("current-schema-id");
-    if (!metadata_object->has("schemas"))
+    auto current_schema_id = metadata_object->getValue<int>(Fcurrent_schema_id);
+    if (!metadata_object->has(Fschemas))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: 'schemas' field is missing in metadata");
-    auto schemas = metadata_object->get("schemas").extract<Poco::JSON::Array::Ptr>();
+    auto schemas = metadata_object->get(Fschemas).extract<Poco::JSON::Array::Ptr>();
     if (schemas->size() == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: schemas field is empty");
     for (uint32_t i = 0; i != schemas->size(); ++i)
     {
         auto current_schema = schemas->getObject(i);
-        if (!current_schema->has("schema-id"))
+        if (!current_schema->has(Fschema_id))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: 'schema-id' field is missing in schema");
         }
-        if (current_schema->getValue<int>("schema-id") == current_schema_id)
+        if (current_schema->getValue<int>(Fschema_id) == current_schema_id)
         {
             schema = current_schema;
             break;
@@ -164,7 +164,7 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::J
 
     if (!schema)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, R"(There is no schema with "schema-id" that matches "current-schema-id" in metadata)");
-    if (schema->getValue<int>("schema-id") != current_schema_id)
+    if (schema->getValue<int>(Fschema_id) != current_schema_id)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, R"(Field "schema-id" of the schema doesn't match "current-schema-id" in metadata)");
     return {schema, current_schema_id};
 }
@@ -176,7 +176,7 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::J
     Poco::JSON::Object::Ptr schema = metadata_object->getObject("schema");
     if (!metadata_object->has("schema"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: 'schema-id' field is missing in schema");
-    auto current_schema_id = schema->getValue<int>("schema-id");
+    auto current_schema_id = schema->getValue<int>(Fschema_id);
     return {schema, current_schema_id};
 }
 
@@ -194,7 +194,7 @@ void IcebergMetadata::addTableSchemaById(Int32 schema_id)
     for (uint32_t i = 0; i != schemas->size(); ++i)
     {
         auto current_schema = schemas->getObject(i);
-        if (current_schema->has("schema-id") && current_schema->getValue<int>("schema-id") == schema_id)
+        if (current_schema->has("schema-id") && current_schema->getValue<int>(Fschema_id) == schema_id)
         {
             schema_processor.addIcebergTableSchema(current_schema);
             return;
@@ -323,7 +323,7 @@ static std::pair<Int32, String> getLatestMetadataFileAndVersion(
             {
                 if (metadata_file_object->has("table-uuid"))
                 {
-                    auto current_table_uuid = metadata_file_object->getValue<String>("table-uuid");
+                    auto current_table_uuid = metadata_file_object->getValue<String>(Ftable_uuid);
                     if (normalizeUuid(table_uuid.value()) == normalizeUuid(current_table_uuid))
                     {
                         metadata_files_with_versions.emplace_back(
@@ -488,10 +488,10 @@ void IcebergMetadata::updateSnapshot()
             {
                 auto summary_object = snapshot->get("summary").extract<Poco::JSON::Object::Ptr>();
                 if (summary_object->has("total-records"))
-                    total_rows = summary_object->getValue<Int64>("total-records");
+                    total_rows = summary_object->getValue<Int64>(Ftotal_records);
 
                 if (summary_object->has("total-files-size"))
-                    total_bytes = summary_object->getValue<Int64>("total-files-size");
+                    total_bytes = summary_object->getValue<Int64>(Ftotal_files_size);
             }
 
             relevant_snapshot = IcebergSnapshot{
@@ -505,7 +505,7 @@ void IcebergMetadata::updateSnapshot()
                     "No schema id found for snapshot id `{}` for iceberg table `{}`",
                     relevant_snapshot_id,
                     configuration_ptr->getPath());
-            relevant_snapshot_schema_id = snapshot->getValue<Int32>("schema-id");
+            relevant_snapshot_schema_id = snapshot->getValue<Int32>(Fschema_id);
             addTableSchemaById(relevant_snapshot_schema_id);
             return;
         }

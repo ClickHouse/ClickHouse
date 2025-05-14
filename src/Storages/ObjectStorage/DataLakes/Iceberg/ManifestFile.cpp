@@ -162,12 +162,12 @@ ManifestFileContent::ManifestFileContent(
     {
         auto partition_specification_field = partition_specification->getObject(static_cast<UInt32>(i));
 
-        auto source_id = partition_specification_field->getValue<Int32>("source-id");
+        auto source_id = partition_specification_field->getValue<Int32>(Fsource_id);
         /// NOTE: tricky part to support RENAME column in partition key. Instead of some name
         /// we use column internal number as it's name.
         auto numeric_column_name = DB::backQuote(DB::toString(source_id));
         DB::NameAndTypePair manifest_file_column_characteristics = schema_processor.getFieldCharacteristics(schema_id, source_id);
-        auto partition_ast = getASTFromTransform(partition_specification_field->getValue<String>("transform"), numeric_column_name);
+        auto partition_ast = getASTFromTransform(partition_specification_field->getValue<String>(Ftransform), numeric_column_name);
         /// Unsupported partition key expression
         if (partition_ast == nullptr)
             continue;
@@ -184,14 +184,14 @@ ManifestFileContent::ManifestFileContent(
         FileContentType content_type = FileContentType::DATA;
         if (format_version_ > 1)
         {
-            content_type = FileContentType(manifest_file_deserializer.getValueFromRowByName(i, Fdata_file_content, TypeIndex::Int32).safeGet<UInt64>());
+            content_type = FileContentType(manifest_file_deserializer.getValueFromRowByName(i, Fdata_file0content, TypeIndex::Int32).safeGet<UInt64>());
             if (content_type != FileContentType::DATA)
                 throw Exception(
                     ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: positional and equality deletes are not supported");
         }
         const auto status = ManifestEntryStatus(manifest_file_deserializer.getValueFromRowByName(i, Fstatus, TypeIndex::Int32).safeGet<UInt64>());
 
-        const auto file_path = getProperFilePathFromMetadataInfo(manifest_file_deserializer.getValueFromRowByName(i, Fdata_file_file_path, TypeIndex::String).safeGet<String>(), common_path, table_location);
+        const auto file_path = getProperFilePathFromMetadataInfo(manifest_file_deserializer.getValueFromRowByName(i, Fdata_file0file_path, TypeIndex::String).safeGet<String>(), common_path, table_location);
 
         /// NOTE: This is weird, because in manifest file partition looks like this:
         /// {
@@ -205,7 +205,7 @@ ManifestFileContent::ManifestFileContent(
         ///    ....
         /// However, somehow parser ignores all these nested keys like "total_amount_trunc" or "decimal_10_2" and
         /// directly returns tuple of partition values. However it's exactly what we need.
-        Field partition_value = manifest_file_deserializer.getValueFromRowByName(i, Fdata_file_partition);
+        Field partition_value = manifest_file_deserializer.getValueFromRowByName(i, Fdata_file0partition);
         auto tuple = partition_value.safeGet<Tuple>();
 
         DB::Row partition_key_value;
@@ -214,7 +214,7 @@ ManifestFileContent::ManifestFileContent(
 
         std::unordered_map<Int32, ColumnInfo> columns_infos;
 
-        for (const auto & path : {Fdata_file_value_counts, Fdata_file_column_sizes, Fdata_file_null_value_counts})
+        for (const auto & path : {Fdata_file0value_counts, Fdata_file0column_sizes, Fdata_file0null_value_counts})
         {
             if (manifest_file_deserializer.hasPath(path))
             {
@@ -224,9 +224,9 @@ ManifestFileContent::ManifestFileContent(
                     const auto & column_number_and_count = column_stats.safeGet<Tuple>();
                     Int32 number = column_number_and_count[0].safeGet<Int32>();
                     Int64 count = column_number_and_count[1].safeGet<Int64>();
-                    if (path == Fdata_file_value_counts)
+                    if (path == Fdata_file0value_counts)
                         columns_infos[number].rows_count = count;
-                    else if (path == Fdata_file_column_sizes)
+                    else if (path == Fdata_file0column_sizes)
                         columns_infos[number].bytes_size = count;
                     else
                         columns_infos[number].nulls_count = count;
@@ -235,7 +235,7 @@ ManifestFileContent::ManifestFileContent(
         }
 
         std::unordered_map<Int32, std::pair<Field, Field>> value_for_bounds;
-        for (const auto & path : {Fdata_file_lower_bounds, Fdata_file_upper_bounds})
+        for (const auto & path : {Fdata_file0lower_bounds, Fdata_file0upper_bounds})
         {
             if (manifest_file_deserializer.hasPath(path))
             {
@@ -246,7 +246,7 @@ ManifestFileContent::ManifestFileContent(
                     Int32 number = column_number_and_bound[0].safeGet<Int32>();
                     const Field & bound_value = column_number_and_bound[1];
 
-                    if (path == Fdata_file_lower_bounds)
+                    if (path == Fdata_file0lower_bounds)
                         value_for_bounds[number].first = bound_value;
                     else
                         value_for_bounds[number].second = bound_value;
