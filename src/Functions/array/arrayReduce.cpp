@@ -228,13 +228,16 @@ When using parametric aggregate functions, the parameter is indicated after the 
     };
     FunctionDocumentation::ReturnedValue returned_value = "Returns the result of the aggregate function";
     FunctionDocumentation::Examples examples = {
-		{"Usage example", "SELECT arrayReduce('max', [1, 2, 3]);", R"(
+		{
+            "Usage example",
+            "SELECT arrayReduce('max', [1, 2, 3]);", R"(
 ┌─arrayReduce('max', [1, 2, 3])─┐
 │                             3 │
 └───────────────────────────────┘
 )"
 		},
-		{"Example with aggregate function using multiple arguments", R"(
+		{
+            "Example with aggregate function using multiple arguments", R"(
 If an aggregate function takes multiple arguments, then this function must be applied to multiple arrays of the same size.
 
 ```sql
@@ -246,7 +249,8 @@ SELECT arrayReduce('maxIf', [3, 5], [1, 0]);
 └──────────────────────────────────────┘
 )"
 		},
-		{"Example with a parametric aggregate function", R"(
+		{
+            "Example with a parametric aggregate function", R"(
 SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 )", R"(
 ┌─arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])─┐
