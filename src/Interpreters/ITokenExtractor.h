@@ -219,8 +219,8 @@ struct SparseGramTokenExtractor final : public ITokenExtractorHelper<SparseGramT
 
 private:
     mutable SparseGramsImpl<true> sparse_grams_iterator;
-    mutable const char * previous_data;
-    mutable size_t previous_len;
+    mutable const char * previous_data = nullptr;
+    mutable size_t previous_len = 0;
 };
 
 }
