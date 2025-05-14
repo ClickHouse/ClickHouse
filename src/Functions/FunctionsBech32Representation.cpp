@@ -28,11 +28,11 @@ namespace
  *      data: array of 5-bit bytes consisting of a 6 byte checksum, a witness byte, and the actual encoded data
  *
  * max_len = (90 - 1 (HRP) - 1 (sep) - 6 (checksum) - 1 (witness byte)) * 5 // 8
- * max_len = 405 bits or 50 (8-bit) bytes // we must fit in an 8-bit array, so we throw away the last 5 bits
+ * max_len = 405 bits or 50 (8-bit) bytes // round up to 55 just in case
  */
 static constexpr size_t max_address_len = 90;
-static constexpr size_t max_data_len = 50;
-static constexpr size_t max_hrp_len = 83; // Note: if we just support segwit addresses, this can be changed to 2
+static constexpr size_t max_data_len = 55;
+static constexpr size_t max_hrp_len = 83; // Note: if we only support segwit addresses, this can be changed to 2
 
 typedef std::vector<uint8_t> bech32_data;
 
@@ -238,9 +238,10 @@ private:
             size_t data_new_offset = n2 == 0 ? data_offsets[i] : n2;
 
             // max encodable data is 50 bytes to stay within 90-char limit on Bech32 output
-            // max hrp length is 83
-            if ((data_new_offset - data_prev_offset - data_zero_offset) > max_data_len
-                || (hrp_new_offset - data_prev_offset - hrp_zero_offset) > max_hrp_len)
+            // hrp must be at least 1 character and no more than 83
+            auto data_len = data_new_offset - data_prev_offset - data_zero_offset;
+            auto hrp_len = hrp_new_offset - hrp_prev_offset - hrp_zero_offset;
+            if (data_len > max_data_len || hrp_len > max_hrp_len || hrp_len < 1)
             {
                 // add empty string and continue
                 *out_pos = '\0';
@@ -260,11 +261,13 @@ private:
                 reinterpret_cast<const uint8_t *>(&data_vec[data_prev_offset]),
                 reinterpret_cast<const uint8_t *>(&data_vec[data_new_offset - data_zero_offset]));
 
-            auto witver = have_witver ? witver_col->getUInt(i) : default_witver;
+            uint8_t witver = have_witver ? witver_col->getUInt(i) : default_witver;
 
-            auto address = segwit_addr::encode(hrp, witver, input);
+            bech32_data enc;
+            convertbits<8, 5, true>(enc, input);
+            std::string address = bech32::encode(hrp, enc, witver > 0 ? bech32::Encoding::BECH32M : bech32::Encoding::BECH32);
 
-            if (address.empty())
+            if (address.empty() || address.size() > max_address_len)
             {
                 // add empty string and continue
                 *out_pos = '\0';
