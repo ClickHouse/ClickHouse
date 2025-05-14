@@ -108,7 +108,6 @@ array
 arrayAUCPR
 arrayAll
 arrayAvg
-arrayCompact
 arrayConcat
 arrayCount
 arrayCumSum
@@ -129,7 +128,6 @@ arrayFilter
 arrayFirst
 arrayFirstIndex
 arrayFirstOrNull
-arrayFlatten
 arrayIntersect
 arrayJoin
 arrayLast
@@ -151,7 +149,6 @@ arrayPushFront
 arrayROCAUC
 arrayRandomSample
 arrayResize
-arrayReverse
 arrayReverseFill
 arrayReverseSort
 arrayReverseSplit
@@ -171,8 +168,6 @@ arraySymmetricDifference
 arrayUnion
 arrayUniq
 arrayWithConstant
-arrayZip
-arrayZipUnaligned
 ascii
 asin
 asinh

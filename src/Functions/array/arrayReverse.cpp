@@ -246,7 +246,25 @@ bool FunctionArrayReverse::executeString(const IColumn & src_data, const ColumnA
 
 REGISTER_FUNCTION(ArrayReverse)
 {
-    factory.registerFunction<FunctionArrayReverse>();
+    FunctionDocumentation::Description description = R"(
+Reverses an array.
+
+:::note
+Function `reverse(x)` performs the same functionality but works on other data-types
+in addition to Arrays.
+:::
+";
+    FunctionDocumentation::Syntax syntax = "arrayReverse(x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "An array to reverse. [Array](/sql-reference/data-types/array)"}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = "Returns an array of the same size as the original array containing the elements in reverse order. [Array](/sql-reference/data-types/array)";
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayReverse([1, 2, 3])", "[3,2,1]"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayReverse>(documentation);
 }
 
 }
