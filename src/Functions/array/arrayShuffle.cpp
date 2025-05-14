@@ -180,12 +180,12 @@ Elements are reordered in such a way that each possible permutation of those ele
 This function will not materialize constants.
 :::
     )";
-    FunctionDocumentation::Syntax syntax = "arrayShuffle(x[, seed])";
+    FunctionDocumentation::Syntax syntax = "arrayShuffle(arr [, seed])";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "The array to partially shuffle. [Array](/sql-reference/data-types/array)."},
-        {"seed (optional)", "The seed to be used with random number generation. If not provided a random one is used. [`UInt` or `Int`](../data-types/int-uint.md)."},
+        {"arr", "The array to shuffle. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"seed (optional)", "Optional. The seed to be used with random number generation. If not provided a random one is used. [`(U)Int*`](../data-types/int-uint.md)."},
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Array with elements shuffled. [Array](/sql-reference/data-types/array).";
+    FunctionDocumentation::ReturnedValue returned_value = "Array with elements shuffled. [`Array(T)`](/sql-reference/data-types/array).";
     FunctionDocumentation::Examples examples = {
         {"Example without seed (unstable results)", "SELECT arrayShuffle([1, 2, 3, 4]);", "[1,4,2,3]"},
         {"Example without seed (stable results)", "SELECT arrayShuffle([1, 2, 3, 4], 41);", "[3,2,1,4]"}
@@ -197,9 +197,9 @@ This function will not materialize constants.
     factory.registerFunction<FunctionArrayShuffleImpl<FunctionArrayShuffleTraits>>(documentation, FunctionFactory::Case::Insensitive);
 
     description = R"(
-Returns an array of the same size as the original array where elements in range [1..limit] are a random
-subset of the original array. Remaining (limit..n] shall contain the elements not in [1..limit] range in undefined order.
-Value of limit shall be in range [1..n]. Values outside of that range are equivalent to performing full arrayShuffle:
+Returns an array of the same size as the original array where elements in range `[1..limit]` are a random
+subset of the original array. Remaining `(limit..n]` shall contain the elements not in `[1..limit]` range in undefined order.
+Value of limit shall be in range `[1..n]`. Values outside of that range are equivalent to performing full `arrayShuffle`:
 
 :::note
 This function will not materialize constants.
@@ -207,13 +207,13 @@ This function will not materialize constants.
 The value of `limit` should be in the range `[1..N]`. Values outside of that range are equivalent to performing full [`arrayShuffle`](#arrayshuffle).
 :::
     )";
-    syntax = "arrayPartialShuffle(arr[, limit[, seed]])";
+    syntax = "arrayPartialShuffle(arr [, limit[, seed]])";
     arguments = {
-        {"x", "The array to partially shuffle. [Array](/sql-reference/data-types/array)."},
-        {"seed (optional)", "The seed to be used with random number generation. If not provided a random one is used. [`UInt` or `Int`](../data-types/int-uint.md)."},
-        {"limit (optional)", "The number to limit element swaps to, in the range `[1..N]`. [UInt or Int](../data-types/int-uint.md)."},
+        {"arr", "The array to shuffle. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"seed", "Optional. The seed to be used with random number generation. If not provided, a random one is used. [`(U)Int*`](../data-types/int-uint.md)."},
+        {"limit", "Optional. The number to limit element swaps to, in the range `[1..N]`. [`(U)Int*`](../data-types/int-uint.md)."},
     };
-    returned_value = "Array with elements partially shuffled.";
+    returned_value = "Array with elements partially shuffled. [`Array(T)`](/sql-reference/data-types/array)).";
     examples = {
         {"no_limit1", "SELECT arrayPartialShuffle([1, 2, 3, 4], 0)", "[2,4,3,1]"},
         {"no_limit2", "SELECT arrayPartialShuffle([1, 2, 3, 4])", "[4,1,3,2]"},

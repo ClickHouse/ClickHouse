@@ -87,13 +87,13 @@ public:
 
 REGISTER_FUNCTION(ArrayShingles)
 {
-    FunctionDocumentation::Description description = "Generates an array of ""shingles"", i.e. consecutive sub-arrays with a specified length of the input array.";
-    FunctionDocumentation::Syntax syntax = "arrayShingles(x, l)";
+    FunctionDocumentation::Description description = "Generates an array of ""shingles"" (similar to ngrams for strings), i.e. consecutive sub-arrays with a specified length of the input array.";
+    FunctionDocumentation::Syntax syntax = "arrayShingles(arr, l)";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "Array for which to generate an array of shingles. [Array](/sql-reference/data-types/array)."},
-        {"l", "The length of each shingle. `(U)Int8/16/32/64/128/256.`"},
+        {"arr", "Array for which to generate an array of shingles. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"l", "The length of each shingle. [`(U)Int*`](/sql-reference/data-types/int-uint)"},
     };
-    FunctionDocumentation::ReturnedValue returned_value = "An array of generated shingles. [Array](/sql-reference/data-types/array)";
+    FunctionDocumentation::ReturnedValue returned_value = "An array of generated shingles. [`Array(T)`](/sql-reference/data-types/array)";
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayShingles([1,2,3,4], 3) as res;", "[[1,2,3],[2,3,4]]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {24, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
