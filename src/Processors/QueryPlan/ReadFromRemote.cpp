@@ -43,6 +43,7 @@
 #include <Functions/FunctionsMiscellaneous.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 #include <fmt/format.h>
 
@@ -897,6 +898,7 @@ Pipes ReadFromParallelRemoteReplicasStep::addPipes(ASTPtr ast, const Header & ou
     }
     LOG_DEBUG(getLogger("ReadFromParallelRemoteReplicasStep"), "Addresses to use: {}", fmt::join(addresses, ", "));
 
+    std::unordered_map<size_t, ProcessorPtr> remote_sources;
     for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
     {
         if (exclude_pool_index.has_value() && i == exclude_pool_index)
@@ -907,14 +909,34 @@ Pipes ReadFromParallelRemoteReplicasStep::addPipes(ASTPtr ast, const Header & ou
             .number_of_current_replica = i,
         };
 
-        addPipeForSingeReplica(pipes, pools_to_use[i], ast, replica_info, out_header);
+        LOG_DEBUG(
+            getLogger("ReadFromParallelRemoteReplicasStep"),
+            "Replica number {} assigned to address {}",
+            replica_info.number_of_current_replica,
+            pools_to_use[i]->getAddress());
+
+        Pipe pipe = createPipeForSingeReplica(pools_to_use[i], ast, replica_info, out_header);
+        remote_sources.emplace(replica_info.number_of_current_replica, pipe.getProcessors().front());
+        pipes.emplace_back(std::move(pipe));
     }
+
+    coordinator->setReadCompletedCallback(
+        [sources = std::move(remote_sources)](std::set<size_t> used_replicas)
+        {
+            for (const auto & [replica_num, processor] : sources)
+            {
+                if (used_replicas.contains(replica_num))
+                    continue;
+
+                processor->cancel();
+            }
+        });
 
     return pipes;
 }
 
-void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(
-    Pipes & pipes, const ConnectionPoolPtr & pool, ASTPtr ast, IConnections::ReplicaInfo replica_info, const Header & out_header)
+Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
+    const ConnectionPoolPtr & pool, ASTPtr ast, IConnections::ReplicaInfo replica_info, const Header & out_header)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
@@ -944,8 +966,10 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(
     remote_query_executor->setLogger(log);
     remote_query_executor->setMainTable(storage_id);
 
-    pipes.emplace_back(createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
-    addConvertingActions(pipes.back(), out_header);
+    Pipe pipe
+        = createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read, async_query_sending);
+    addConvertingActions(pipe, out_header);
+    return pipe;
 }
 
 void ReadFromParallelRemoteReplicasStep::describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options)

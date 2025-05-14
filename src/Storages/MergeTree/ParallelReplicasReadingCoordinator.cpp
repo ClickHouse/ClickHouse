@@ -185,6 +185,7 @@ public:
     virtual ParallelReadResponse handleRequest(ParallelReadRequest request) = 0;
     virtual void doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) = 0;
     virtual void markReplicaAsUnavailable(size_t replica_number) = 0;
+    virtual bool isReadingCompleted() const { return false; }
 
     void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
     {
@@ -230,6 +231,8 @@ public:
     void doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) override;
 
     void markReplicaAsUnavailable(size_t replica_number) override;
+
+    bool isReadingCompleted() const override;
 
 private:
     /// This many granules will represent a single segment of marks that will be assigned to a replica
@@ -655,9 +658,12 @@ void DefaultCoordinator::processPartsFurther(
 
         RangesInDataPartDescription result{.info = part.description.info};
 
-        while (!part.description.ranges.empty() && current_marks_amount < min_number_of_marks)
+        auto & part_ranges = part.description.ranges;
+        const auto & part_info = part.description.info;
+
+        while (!part_ranges.empty() && current_marks_amount < min_number_of_marks)
         {
-            auto & range = part.description.ranges.front();
+            auto & range = part_ranges.front();
 
             /// Parts are divided into segments of `mark_segment_size` granules staring from 0-th granule
             for (size_t segment_begin = roundDownToMultiple(range.begin, mark_segment_size);
@@ -667,13 +673,13 @@ void DefaultCoordinator::processPartsFurther(
                 const auto cur_segment
                     = MarkRange{std::max(range.begin, segment_begin), std::min(range.end, segment_begin + mark_segment_size)};
 
-                const auto owner = computeConsistentHash(part.description.info.getPartNameV1(), segment_begin, scan_mode);
-                if (owner == replica_num && replica_can_read_part(replica_num, part.description.info))
+                const auto owner = computeConsistentHash(part_info.getPartNameV1(), segment_begin, scan_mode);
+                if (owner == replica_num && replica_can_read_part(replica_num, part_info))
                 {
                     const auto taken = takeFromRange(cur_segment, min_number_of_marks, current_marks_amount, result);
                     if (taken == range.getNumberOfMarks())
                     {
-                        part.description.ranges.pop_front();
+                        part_ranges.pop_front();
                         /// Range is taken fully. Proceed further to the next one.
                         break;
                     }
@@ -686,11 +692,11 @@ void DefaultCoordinator::processPartsFurther(
                 else
                 {
                     chassert(scan_mode == ScanMode::TakeWhatsMineByHash);
-                    enqueueSegment(part.description.info, cur_segment, owner);
+                    enqueueSegment(part_info, cur_segment, owner);
                     range.begin += cur_segment.getNumberOfMarks();
                     if (range.getNumberOfMarks() == 0)
                     {
-                        part.description.ranges.pop_front();
+                        part_ranges.pop_front();
                         /// Range is taken fully. Proceed further to the next one.
                         break;
                     }
@@ -844,6 +850,25 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
         stolen_unassigned);
 
     return response;
+}
+
+bool DefaultCoordinator::isReadingCompleted() const
+{
+    for (const auto & part : all_parts_to_read)
+    {
+        auto & part_ranges = part.description.ranges;
+        if (!part_ranges.empty())
+            return false;
+    }
+
+    for (const auto & r : distribution_by_hash_queue)
+        if (!r.empty())
+            return false;
+
+    if (!ranges_for_stealing_queue.empty())
+        return false;
+
+    return true;
 }
 
 
@@ -1099,6 +1124,10 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
         if (replicas_used.insert(replica_num).second)
             ProfileEvents::increment(ProfileEvents::ParallelReplicasUsedCount);
     }
+    else {
+        if (isReadingCompleted())
+            read_completed_callback(replicas_used);
+    }
 
     return response;
 }
@@ -1157,6 +1186,16 @@ void ParallelReplicasReadingCoordinator::setProgressCallback(ProgressCallback ca
     progress_callback = std::move(callback);
     if (pimpl)
         pimpl->setProgressCallback(std::move(progress_callback));
+}
+
+void ParallelReplicasReadingCoordinator::setReadCompletedCallback(ReadCompletedCallback callback)
+{
+    read_completed_callback = std::move(callback);
+}
+
+bool ParallelReplicasReadingCoordinator::isReadingCompleted() const
+{
+    return pimpl->isReadingCompleted();
 }
 
 }
