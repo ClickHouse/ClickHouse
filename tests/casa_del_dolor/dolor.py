@@ -22,25 +22,28 @@ def ordered_pair(value):
     except ValueError:
         raise argparse.ArgumentTypeError("Must be two comma-separated integers (e.g., '1,10')")
 
-def list_of_paths(arg):
+def list_of_values(arg):
     return arg.split(',')
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--server-settings-prob", type = int, default = 80, choices=range(0, 101), help = 'Probability to set server properties')
 parser.add_argument("--change-server-version-prob", type = int, default = 80, choices=range(0, 101), help = 'Probability to change server version after restart')
 parser.add_argument("--client-binary", type = pathlib.Path, required = True, help = 'Path to client binary')
-parser.add_argument("--server-binaries", type = list_of_paths, required = True, help = 'Path of server binaries to test')
+parser.add_argument("--server-binaries", type = list_of_values, required = True, help = 'Path of server binaries to test')
 parser.add_argument("-c", "--client-config", type = pathlib.Path, help = 'Path to client configuration file')
 parser.add_argument("-g", "--generator", choices =['buzzhouse'], type = str.lower, required = True, help = 'What generator to use')
-#parser.add_argument("--number-instances", type = int, default = 2, help = 'Number of default instances')
 parser.add_argument("-l", "--log-path", type = pathlib.Path, default=tempfile.NamedTemporaryFile(), help = 'Log path')
-parser.add_argument("--number-nodes", type = int, default = 1, choices=range(1, 101), help = 'Number of nodes')
+parser.add_argument("--replica-values", type = list_of_values, default = "1", help = 'Comma separated list for replica values')
+parser.add_argument("--shard-values", type = list_of_values, default = "1", help = 'Comma separated list for shard values')
 parser.add_argument("--server-config", type = pathlib.Path, help = 'Path to config.xml file')
 parser.add_argument("-s", "--seed", type = int, default = 0, help = 'Server fuzzer seed')
 parser.add_argument("-u", "--user-config", type = pathlib.Path, help = 'Path to users.xml file')
 parser.add_argument("--kill-server-prob", type = int, default = 50, choices=range(0, 101), help = 'Probability to kill the server instead of shutting it down')
 parser.add_argument('--time-between-shutdowns', type=ordered_pair, default=(20, 30), help="Two ordered integers separated by comma (e.g., 30,60)")
 args = parser.parse_args()
+
+if len(args.replica_values) != len(args.shard_values):
+    raise f"The length of replica values {len(args.replica_values)} is not the same as shard values {len(args.shard_values)}"
 
 logging.basicConfig(filename=args.log_path, filemode='w',
                     level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', force=True)
@@ -78,14 +81,16 @@ os.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = server_path
 
 cluster = ClickHouseCluster(__file__)
 servers = []
-for i in range(1, args.number_nodes + 1):
+for i in range(0, len(args.replica_values)):
     servers.append(cluster.add_instance(f"node{i}",
                                         with_zookeeper = True,
                                         with_minio = True,
                                         stay_alive = True,
                                         with_dolor = True,
+                                        keeper_required_feature_flags=["multi_read"],
                                         main_configs = [server_settings] if server_settings is not None else [],
-                                        user_configs = [args.user_config] if args.user_config is not None else []))
+                                        user_configs = [args.user_config] if args.user_config is not None else [],
+                                        macros={"replica": args.replica_values[i], "shard": args.shard_values[i]}))
 cluster.start()
 logger.info(f"Starting cluster with {len(servers)} server(s)")
 servers[len(servers) - 1].wait_start(8)
