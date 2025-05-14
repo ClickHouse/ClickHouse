@@ -314,11 +314,7 @@ public:
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
 
-        DataTypes types(tuple_size);
-        for (size_t i = 0; i < tuple_size; ++i)
-            types[i] = std::make_shared<DataTypeString>();
-
-        return std::make_shared<DataTypeTuple>(types);
+        return getReturnTypeForDefaultImplementationForDynamic();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -358,7 +354,7 @@ public:
 
 private:
     static ColumnPtr
-    execute(const ColumnString::Chars & in_vec, const ColumnString::Offsets & in_offsets, size_t input_rows_count, size_t n = 0)
+    execute(const ColumnString::Chars & in_vec, const ColumnString::Offsets & in_offsets, size_t input_rows_count, size_t col_width = 0)
     {
         auto col0_res = ColumnString::create();
         auto col1_res = ColumnString::create();
@@ -372,7 +368,6 @@ private:
         hrp_offsets.resize(input_rows_count);
         data_offsets.resize(input_rows_count);
 
-        // a ceiling, will resize again later
         hrp_vec.resize((max_hrp_len + 1 /* trailing 0 */) * input_rows_count);
         data_vec.resize((max_data_len + 1 /* trailing 0 */) * input_rows_count);
 
@@ -385,13 +380,13 @@ private:
         size_t prev_offset = 0;
 
         // In ColumnString each value ends with a trailing 0, in ColumnFixedString there is no trailing 0
-        size_t trailing_zero_offset = n == 0 ? 1 : 0;
+        size_t trailing_zero_offset = col_width == 0 ? 1 : 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            size_t new_offset = n == 0 ? in_offsets[i] : n;
+            size_t new_offset = col_width == 0 ? in_offsets[i] : col_width;
 
-            // enforce 90 char limit, 91 with trailing zero
+            // enforce char limit
             if ((new_offset - prev_offset - trailing_zero_offset) > max_address_len)
             {
                 // add empty strings and continue
