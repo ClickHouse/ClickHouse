@@ -4,6 +4,8 @@ select bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'));
 select bech32Encode('tb', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'));
 -- exactly the max amount of characters (50) should work
 select bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6751e76e8199196d454941c45d1b3a323f1433bd6751e76e8199196d45494'));
+-- strange, but valid
+select bech32Encode('bcrt', unhex(''));
 
 -- test other hrps
 select bech32Encode('bcrt', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'));
@@ -15,7 +17,6 @@ select bech32Encode('tltssdfsdvjnasdfnjkbhksdfasnbdfkljhaksdjfnakjsdhasdfnasdkfa
 -- negative tests
 -- empty hrp
 select bech32Encode('', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'));
-select bech32Encode('bcrt', unhex(''));
 -- 51 chars should return nothing
 select bech32Encode('', unhex('751e76e8199196d454941c45d1b3a323f1433bd6751e76e8199196d454941c45d1b3a323f1433bd6751e76e8199196d45494a'));
 

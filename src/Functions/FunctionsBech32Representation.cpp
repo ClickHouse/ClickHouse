@@ -88,8 +88,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    // can return same val for different inputs, f.e. if bech32 and bech32m are applied to the same inputs
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -122,8 +121,9 @@ public:
         if (arguments.size() == 3 && !WhichDataType(arguments[argIdx]).isNativeUInt())
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument 3 of function {}, expected unsigned integer",
+                "Illegal type {} of argument {} of function {}, expected unsigned integer",
                 arguments[argIdx]->getName(),
+                argIdx + 1,
                 getName());
 
         return std::make_shared<DataTypeString>();
@@ -136,25 +136,24 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         bool have_witver = arguments.size() == 3;
-        const ColumnPtr & hrp_column = arguments[0].column;
-        const ColumnPtr & data_column = arguments[1].column;
-        const ColumnPtr & witver_column = have_witver ? arguments[2].column : IColumn::Ptr();
+        const ColumnPtr & col0 = arguments[0].column;
+        const ColumnPtr & col1 = arguments[1].column;
+        const ColumnPtr & col2 = have_witver ? arguments[2].column : IColumn::Ptr() /* dummy */;
 
-        if (const ColumnString * hrp_col = checkAndGetColumn<ColumnString>(hrp_column.get()))
+        if (const ColumnString * col0_str_ptr = checkAndGetColumn<ColumnString>(col0.get()))
         {
-            const ColumnString::Chars & hrp_vec = hrp_col->getChars();
-            const ColumnString::Offsets & hrp_offsets = hrp_col->getOffsets();
+            const ColumnString::Chars & col0_vec = col0_str_ptr->getChars();
+            const ColumnString::Offsets & col0_offsets = col0_str_ptr->getOffsets();
 
-            return chooseDataColAndExecute(data_column, hrp_vec, hrp_offsets, witver_column, input_rows_count, have_witver);
+            return chooseCol1AndExecute(col0_vec, col0_offsets, col1, col2, input_rows_count, have_witver);
         }
 
-        if (const ColumnFixedString * hrp_col_fix_string = checkAndGetColumn<ColumnFixedString>(hrp_column.get()))
+        if (const ColumnFixedString * col0_fstr_ptr = checkAndGetColumn<ColumnFixedString>(col0.get()))
         {
-            const ColumnString::Chars & hrp_vec = hrp_col_fix_string->getChars();
-            const ColumnString::Offsets & hrp_offsets = PaddedPODArray<IColumn::Offset>(); // dummy
+            const ColumnString::Chars & col0_vec = col0_fstr_ptr->getChars();
+            const ColumnString::Offsets & col0_offsets = PaddedPODArray<IColumn::Offset>(); // dummy
 
-            return chooseDataColAndExecute(
-                data_column, hrp_vec, hrp_offsets, witver_column, input_rows_count, have_witver, hrp_col_fix_string->getN());
+            return chooseCol1AndExecute(col0_vec, col0_offsets, col1, col2, input_rows_count, have_witver, col0_fstr_ptr->getN());
         }
 
         throw Exception(
@@ -162,33 +161,33 @@ public:
     }
 
 private:
-    ColumnPtr chooseDataColAndExecute(
-        const ColumnPtr & data_column,
-        const ColumnString::Chars & hrp_vec,
-        const ColumnString::Offsets & hrp_offsets,
-        const ColumnPtr & witver_col,
+    ColumnPtr chooseCol1AndExecute(
+        const ColumnString::Chars & col0_vec,
+        const ColumnString::Offsets & col0_offsets,
+        const ColumnPtr & col1,
+        const ColumnPtr & col2,
         const size_t input_rows_count,
         const bool have_witver = false,
-        const size_t n1 = 0) const
+        const size_t col0_width = 0) const
     {
-        if (const ColumnString * data_col = checkAndGetColumn<ColumnString>(data_column.get()))
+        if (const ColumnString * col1_str_ptr = checkAndGetColumn<ColumnString>(col1.get()))
         {
-            const ColumnString::Chars & data_vec = data_col->getChars();
-            const ColumnString::Offsets & data_offsets = data_col->getOffsets();
+            const ColumnString::Chars & col1_vec = col1_str_ptr->getChars();
+            const ColumnString::Offsets & col1_offsets = col1_str_ptr->getOffsets();
 
-            return execute(hrp_vec, hrp_offsets, data_vec, data_offsets, witver_col, input_rows_count, have_witver, n1);
+            return execute(col0_vec, col0_offsets, col1_vec, col1_offsets, col2, input_rows_count, have_witver, col0_width);
         }
 
-        if (const ColumnFixedString * data_col_fix_string = checkAndGetColumn<ColumnFixedString>(data_column.get()))
+        if (const ColumnFixedString * col1_fstr_ptr = checkAndGetColumn<ColumnFixedString>(col1.get()))
         {
-            const ColumnString::Chars & data_vec = data_col_fix_string->getChars();
-            const ColumnString::Offsets & data_offsets = PaddedPODArray<IColumn::Offset>(); // dummy
+            const ColumnString::Chars & col1_vec = col1_fstr_ptr->getChars();
+            const ColumnString::Offsets & col1_offsets = PaddedPODArray<IColumn::Offset>(); // dummy
 
             return execute(
-                hrp_vec, hrp_offsets, data_vec, data_offsets, witver_col, input_rows_count, have_witver, n1, data_col_fix_string->getN());
+                col0_vec, col0_offsets, col1_vec, col1_offsets, col2, input_rows_count, have_witver, col0_width, col1_fstr_ptr->getN());
         }
 
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", data_column->getName(), getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", col1->getName(), getName());
     }
 
     static ColumnPtr execute(
@@ -199,8 +198,8 @@ private:
         const ColumnPtr & witver_col,
         const size_t input_rows_count,
         const bool have_witver = false,
-        const size_t n1 = 0,
-        const size_t n2 = 0)
+        const size_t hrp_width = 0,
+        const size_t data_width = 0)
     {
         // outputs
         auto out_col = ColumnString::create();
@@ -208,8 +207,6 @@ private:
         ColumnString::Offsets & out_offsets = out_col->getOffsets();
 
         out_offsets.resize(input_rows_count);
-
-        // a ceiling, will resize again later
         out_vec.resize((max_address_len + 1 /* trailing 0 */) * input_rows_count);
 
         char * out_begin = reinterpret_cast<char *>(out_vec.data());
@@ -219,13 +216,13 @@ private:
         size_t data_prev_offset = 0;
 
         // In ColumnString each value ends with a trailing 0, in ColumnFixedString there is no trailing 0
-        size_t hrp_zero_offset = n1 == 0 ? 1 : 0;
-        size_t data_zero_offset = n2 == 0 ? 1 : 0;
+        size_t hrp_zero_offset = hrp_width == 0 ? 1 : 0;
+        size_t data_zero_offset = data_width == 0 ? 1 : 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            size_t hrp_new_offset = n1 == 0 ? hrp_offsets[i] : n1;
-            size_t data_new_offset = n2 == 0 ? data_offsets[i] : n2;
+            size_t hrp_new_offset = hrp_width == 0 ? hrp_offsets[i] : hrp_width;
+            size_t data_new_offset = data_width == 0 ? data_offsets[i] : data_width;
 
             // max encodable data to stay within 90-char limit on Bech32 output
             // hrp must be at least 1 character and no more than 83
@@ -253,9 +250,9 @@ private:
 
             uint8_t witver = have_witver ? witver_col->getUInt(i) : default_witver;
 
-            bech32_data enc;
-            convertbits<8, 5, true>(enc, input);
-            std::string address = bech32::encode(hrp, enc, witver > 0 ? bech32::Encoding::BECH32M : bech32::Encoding::BECH32);
+            bech32_data input_5bit;
+            convertbits<8, 5, true>(input_5bit, input); // squash input from 8-bit -> 5-bit bytes
+            std::string address = bech32::encode(hrp, input_5bit, witver > 0 ? bech32::Encoding::BECH32M : bech32::Encoding::BECH32);
 
             if (address.empty() || address.size() > max_address_len)
             {
@@ -304,15 +301,16 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    // can return same val for different inputs, f.e. if bech32 and bech32m are applied to the same inputs
+    // Bech32 and Bech32m are each bijective, but since our decode function accepts either of them,
+    // then decode(bech32(input)) == decode(bech32m(input))
     bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        WhichDataType dType(arguments[0]);
-        if (!dType.isStringOrFixedString())
+        WhichDataType dtype(arguments[0]);
+        if (!dtype.isStringOrFixedString())
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
 
