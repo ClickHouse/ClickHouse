@@ -30,6 +30,7 @@
 #include <Analyzer/Resolve/TypoCorrection.h>
 
 #include <Core/Settings.h>
+#include <iostream>
 
 namespace DB
 {
@@ -966,7 +967,11 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         {
             auto resolved_column_clone = std::static_pointer_cast<ColumnNode>(resolved_column.clone());
             resolved_column_clone->setColumnType(using_column_node_it->second->getColumnType());
-            projection_name_mapping[resolved_column_clone] = projection_name_mapping.at(resolved_identifier_candidate);
+
+            auto projection_name_it = projection_name_mapping.find(resolved_identifier_candidate);
+            if (projection_name_it != projection_name_mapping.end())
+                projection_name_mapping[resolved_column_clone] = projection_name_it->second;
+
             resolve_result = std::move(resolved_column_clone);
 
             if (!resolve_result->isEqual(*using_column_node_it->second))
