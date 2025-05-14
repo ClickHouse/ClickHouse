@@ -106,6 +106,13 @@ struct VectorSearchParameters
 
     /// Other metadata
     bool additional_filters_present; /// SELECT contains a WHERE or PREWHERE clause
+    bool return_distances;
+};
+
+struct NearestNeighbours
+{
+    std::vector<UInt64> rows;
+    std::optional<std::vector<float>> distances;
 };
 
 /// Stores some info about a single block of data.
@@ -186,9 +193,9 @@ public:
     }
 
     /// Special method for vector similarity indexes:
-    /// Returns the row positions of the N nearest neighbors in the index granule
+    /// Returns the row positions(and optional distances) of the N nearest neighbors in the index granule
     /// The returned row numbers are guaranteed to be sorted and unique.
-    virtual std::vector<UInt64> calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr /*granule*/) const
+    virtual NearestNeighbours calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr /*granule*/) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
     }
