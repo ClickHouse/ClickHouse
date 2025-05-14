@@ -1,3 +1,10 @@
+# option(ENABLE_LIBPNG "Enable libpng" ${ENABLE_LIBRARIES})
+
+# if (NOT ENABLE_LIBPNG)
+#     message(STATUS "Not using libpng")
+#     return()
+# endif()
+
 set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/libpng")
 set(SCRIPTS_DIR "${LIBRARY_DIR}/scripts")
 
@@ -22,7 +29,6 @@ add_library(_libpng ${SRCS})
 add_dependencies(_libpng copy_pnglibconf_h)
 
 target_link_libraries(_libpng PRIVATE ch_contrib::zlib)
-
 
 target_include_directories(_libpng SYSTEM BEFORE PUBLIC
     "${LIBRARY_DIR}"
