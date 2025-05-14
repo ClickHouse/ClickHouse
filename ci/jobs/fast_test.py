@@ -52,6 +52,7 @@ def clone_submodules():
         "contrib/simdjson",
         "contrib/liburing",
         "contrib/libfiu",
+        "contrib/libpng"
         "contrib/incbin",
         "contrib/yaml-cpp",
         "contrib/corrosion",
