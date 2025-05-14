@@ -48,15 +48,13 @@ struct ColumnInfo
     std::optional<DB::Range> hyperrectangle;
 };
 
-using FileEntry = std::variant<DataFileEntry>; // In the future we will add PositionalDeleteFileEntry and EqualityDeleteFileEntry here
-
 /// Description of Data file in manifest file
 struct ManifestFileEntry
 {
     ManifestEntryStatus status;
     Int64 added_sequence_number;
 
-    FileEntry file;
+    DataFileEntry file;
     DB::Row partition_key_value;
     std::unordered_map<Int32, ColumnInfo> columns_infos;
 };

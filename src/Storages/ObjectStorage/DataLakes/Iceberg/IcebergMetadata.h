@@ -30,7 +30,7 @@ struct IcebergDataObjectInfo : public RelativePathWithMetadata
         Iceberg::ManifestFileEntry data_object_,
         std::optional<ObjectMetadata> metadata_ = std::nullopt,
         std::vector<Iceberg::ManifestFileEntry> position_deletes_objects_ = {})
-        : RelativePathWithMetadata(std::get<Iceberg::DataFileEntry>(data_object_.file).file_name, std::move(metadata_))
+        : RelativePathWithMetadata(data_object_.file.file_name, std::move(metadata_))
         , data_object(data_object_)
         , position_deletes_objects(std::move(position_deletes_objects_))
     {
@@ -40,7 +40,7 @@ struct IcebergDataObjectInfo : public RelativePathWithMetadata
     std::vector<Iceberg::ManifestFileEntry> position_deletes_objects;
 
     // Return the path in the Iceberg metadata
-    std::string getIcebergDataPath() const { return std::get<Iceberg::DataFileEntry>(data_object.file).file_path_key; }
+    std::string getIcebergDataPath() const { return data_object.file.file_path_key; }
 };
 using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;
 

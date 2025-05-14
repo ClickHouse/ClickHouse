@@ -297,7 +297,7 @@ ManifestFileContent::ManifestFileContent(
             }
         }
 
-        FileEntry file = FileEntry{DataFileEntry{file_path_key, file_path}};
+        DataFileEntry file = DataFileEntry{file_path_key, file_path};
 
         Int64 added_sequence_number = 0;
         if (format_version_ > 1)
