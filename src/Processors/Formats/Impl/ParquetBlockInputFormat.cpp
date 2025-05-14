@@ -1095,7 +1095,7 @@ Chunk ParquetBlockInputFormat::read()
             total_rows_before += row_group_batches[i].total_rows + row_group_batches_skipped_rows[i+1];
 
         row_group_batches_completed++;
-        chunk.getChunkInfos().add(std::make_shared<ChunkInfoReadRowsBefore>(total_rows_before));
+        chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumBase>(total_rows_before));
         return chunk;
     }
 
@@ -1131,12 +1131,12 @@ Chunk ParquetBlockInputFormat::read()
             previous_approx_bytes_read_for_chunk = chunk.approx_original_chunk_size;
 
             int total_rows_before = row_group_batches_skipped_rows[0];
-            for (size_t i = 0; i < row_group_batches_completed; ++i)
+            for (size_t i = 0; i < chunk.row_group_batch_idx; ++i)
                 total_rows_before += row_group_batches[i].total_rows + row_group_batches_skipped_rows[i+1];
             for (size_t i = 0; i < chunk.chunk_idx; ++i)
                 total_rows_before += row_group.chunk_sizes[i];
 
-            chunk.chunk.getChunkInfos().add(std::make_shared<ChunkInfoReadRowsBefore>(total_rows_before));
+            chunk.chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumBase>(total_rows_before));
 
             return std::move(chunk.chunk);
         }
@@ -1161,6 +1161,7 @@ void ParquetBlockInputFormat::resetParser()
     metadata.reset();
     column_indices.clear();
     row_group_batches.clear();
+    row_group_batches_skipped_rows.clear();
     while (!pending_chunks.empty())
         pending_chunks.pop();
     row_group_batches_completed = 0;
