@@ -384,6 +384,11 @@ Aws::Auth::AWSCredentials AWSInstanceProfileCredentialsProvider::GetAWSCredentia
 {
     refreshIfExpired();
     Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
+    return GetAWSCredentialsImpl();
+}
+
+Aws::Auth::AWSCredentials AWSInstanceProfileCredentialsProvider::GetAWSCredentialsImpl()
+{
     auto profile_it = ec2_metadata_config_loader->GetProfiles().find(Aws::Config::INSTANCE_PROFILE_KEY);
 
     if (profile_it != ec2_metadata_config_loader->GetProfiles().end())
@@ -396,9 +401,15 @@ Aws::Auth::AWSCredentials AWSInstanceProfileCredentialsProvider::GetAWSCredentia
 
 void AWSInstanceProfileCredentialsProvider::Reload()
 {
-    LOG_INFO(logger, "Credentials have expired attempting to repull from EC2 Metadata Service.");
+    LOG_INFO(logger, "Credentials have expired, attempting to repull from EC2 Metadata Service.");
+    auto old_credentials = GetAWSCredentialsImpl();
+
     ec2_metadata_config_loader->Load();
     AWSCredentialsProvider::Reload();
+
+    auto new_credentials = GetAWSCredentialsImpl();
+    LOG_INFO(logger, "Got {}credentials from EC2 Metadata Service",
+             new_credentials.IsEmpty() ? "empty " : ((new_credentials == old_credentials) ? "same " : ""));
 }
 
 void AWSInstanceProfileCredentialsProvider::refreshIfExpired()
@@ -530,7 +541,9 @@ void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::Reload()
     auto result = client->GetAssumeRoleWithWebIdentityCredentials(request);
     AWSCredentialsProvider::Reload();
 
-    LOG_TRACE(logger, "Successfully retrieved credentials.");
+    LOG_INFO(logger, "Got {}credentials from STS",
+             result.creds.IsEmpty() ? "empty " : ((result.creds == credentials) ? "same " : ""));
+
     credentials = result.creds;
 }
 
@@ -617,7 +630,10 @@ void SSOCredentialsProvider::Reload()
     auto result = client->GetSSOCredentials(request);
     AWSCredentialsProvider::Reload();
 
-    LOG_TRACE(logger, "Successfully retrieved credentials with AWS_ACCESS_KEY: {}", result.creds.GetAWSAccessKeyId());
+    LOG_INFO(logger, "Got {}credentials with AWS_ACCESS_KEY: {}",
+             result.creds.IsEmpty() ? "empty " : ((credentials == result.creds) ? "same " : ""),
+             result.creds.GetAWSAccessKeyId());
+
     credentials = result.creds;
 }
 
