@@ -97,8 +97,11 @@ arrayConcat
 arrayCount
 arrayCumSum
 arrayCumSumNonNegative
+arrayDifference
 arrayDotProduct
 arrayEnumerate
+arrayEnumerateDense
+arrayEnumerateDenseRanked
 arrayEnumerateUniq
 arrayEnumerateUniqRanked
 arrayExists
