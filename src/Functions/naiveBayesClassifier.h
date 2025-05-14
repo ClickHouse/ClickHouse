@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <concepts>
 #include <cstring>
 #include <filesystem>
@@ -19,13 +20,8 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int FILE_DOESNT_EXIST;
-extern const int LOGICAL_ERROR;
 extern const int RECEIVED_EMPTY_DATA;
 }
-
-using ClassCountMap = HashMap<UInt32, UInt32, HashCRC32<UInt32>>;
-using NGramMap = HashMap<StringRef, ClassCountMap, StringRefHash>;
-using ProbabilityMap = HashMap<UInt32, double, HashCRC32<UInt32>>;
 
 
 template <class T>
@@ -142,6 +138,12 @@ struct TokenPolicy
     }
 };
 
+using ClassCountMap = HashMap<UInt32, UInt32, HashCRC32<UInt32>>;
+using ClassCountMaps = std::vector<ClassCountMap>;
+
+using NGramIndexMap = HashMap<StringRef, UInt32, StringRefHash>;
+using ProbabilityMap = HashMap<UInt32, double, HashCRC32<UInt32>>;
+using LogProbabilityMap = HashMap<UInt32, double, HashCRC32<UInt32>>;
 
 template <Tokenizer Tok>
 class NaiveBayesClassifier
@@ -159,11 +161,17 @@ private:
 
     Tok tokenizer;
 
-    NGramMap ngram_counts;
+    /// Index -> single ngram's class count map
+    ClassCountMaps all_ngram_class_counts;
+
+    /// Ngram -> index of the class count map in all_ngram_class_counts
+    NGramIndexMap ngram_to_class_count_index;
+
+    /// Class -> total count over all ngrams
     ClassCountMap class_totals;
 
-    /// Precomputed prior ratios for each class
-    ProbabilityMap class_priors;
+    /// Class -> prior probability
+    LogProbabilityMap log_class_priors;
 
     /// Vocabulary size is the number of distinct tokens in the model across all classes
     size_t vocabulary_size = 0;
@@ -171,21 +179,7 @@ private:
     /// Arena to own all the key strings
     Arena pool;
 
-    inline StringRef allocateString(const String & s)
-    {
-        char * pos = pool.alloc(s.size());
-        memcpy(pos, s.data(), s.size());
-        return StringRef(pos, s.size());
-    }
-
 public:
-    NaiveBayesClassifier() = delete;
-    NaiveBayesClassifier(const NaiveBayesClassifier &) = delete;
-    NaiveBayesClassifier & operator=(const NaiveBayesClassifier &) = delete;
-
-    NaiveBayesClassifier(NaiveBayesClassifier &&) noexcept = default;
-    NaiveBayesClassifier & operator=(NaiveBayesClassifier &&) noexcept = default;
-
     ~NaiveBayesClassifier() = default;
 
     /// The model at model_path is expected to be serialized lines of: <class_id> <ngram> <count>
@@ -209,46 +203,39 @@ public:
 
         DB::ReadBufferFromFile in(model_path);
 
+        String ngram; /// Avoid reallocation
         while (!in.eof())
         {
             UInt32 class_id = 0;
+            UInt32 ngram_length = 0;
+            UInt32 count = 0;
+
             DB::readBinary(class_id, in); // read the 4-byte class id
 
-            UInt32 ngram_length = 0;
             DB::readBinary(ngram_length, in); // read the 4-byte length of the ngram string
 
-            String ngram;
             ngram.resize(ngram_length);
             in.readStrict(ngram.data(), ngram_length); // read the ngram bytes
 
-            UInt32 count = 0;
             DB::readBinary(count, in); // read the 4-byte count
 
-            StringRef temp(ngram.data(), ngram.size());
-            auto * it = ngram_counts.find(temp);
+            ArenaKeyHolder key_holder{StringRef(ngram.data(), ngram_length), pool};
+            NGramIndexMap::LookupResult it;
+            bool inserted = false;
 
-            if (it == ngram_counts.end())
+            ngram_to_class_count_index.emplace(key_holder, it, inserted);
+
+            if (inserted)
             {
-                /// The key is not present: allocate the string in the arena
-                StringRef key = allocateString(ngram);
-                typename NGramMap::LookupResult insert_it;
-                bool inserted;
-                ngram_counts.emplace(key, insert_it, inserted);
-                if (inserted)
-                {
-                    it = insert_it;
-                }
-                else
-                {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to insert ngram {} into the map for model {}", ngram, model_name);
-                }
+                it->getMapped() = static_cast<UInt32>(all_ngram_class_counts.size());
+                all_ngram_class_counts.emplace_back();
             }
 
-            it->getMapped()[class_id] += count;
+            all_ngram_class_counts[it->getMapped()][class_id] += count;
             class_totals[class_id] += count;
         }
 
-        if (ngram_counts.empty())
+        if (ngram_to_class_count_index.empty())
         {
             throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "No ngrams found in the model at {} of model {}", model_path, model_name);
         }
@@ -257,11 +244,10 @@ public:
         /// If prior is empty, then we assign equal probability to all classes.
         if (priors.empty())
         {
-            for (const auto & class_entry : class_totals)
-            {
-                UInt32 class_id = class_entry.getKey();
-                class_priors[class_id] = 1.0 / class_totals.size();
-            }
+            const double uniform_prob = 1.0 / static_cast<double>(class_totals.size());
+            const double uniform_log_prob = std::log(uniform_prob);
+            for (const auto & [class_id, _] : class_totals)
+                log_class_priors[class_id] = uniform_log_prob;
         }
         else /// Priors are provided
         {
@@ -294,15 +280,12 @@ public:
                 }
             }
 
-            for (const auto & prior : priors)
-            {
-                const UInt32 class_id = prior.getKey();
-                class_priors[class_id] = prior.getMapped();
-            }
+            for (const auto & [class_id, prior] : priors)
+                log_class_priors[class_id] = std::log(prior);
         }
 
         /// Vocabulary size is the number of distinct tokens
-        vocabulary_size = ngram_counts.size();
+        vocabulary_size = ngram_to_class_count_index.size();
     }
 
     /// Classify an input string. The function splits the input into tokens (by space)
@@ -311,11 +294,9 @@ public:
     /// Finally, it returns the class with the highest log probability.
     UInt32 classify(const String & input) const
     {
-        ProbabilityMap class_log_probabilities;
-        for (const auto & entry : class_priors)
-        {
-            class_log_probabilities[entry.getKey()] = std::log(entry.getMapped());
-        }
+        LogProbabilityMap class_log_probabilities;
+        for (const auto & [class_id, prior] : log_class_priors)
+            class_log_probabilities[class_id] = prior;
 
         std::vector<std::string_view> tokens;
         tokenizer.tokenize(input, tokens);
@@ -336,9 +317,11 @@ public:
                 tokenizer.join(&tokens[i], n, ngram);
 
                 StringRef ngram_ref(ngram);
-                const auto * ref_it = ngram_counts.find(ngram_ref);
-                bool token_exists = (ref_it != ngram_counts.end());
-                const auto * token_class_map = token_exists ? &ref_it->getMapped() : nullptr;
+                const auto ref_it = ngram_to_class_count_index.find(ngram_ref);
+                const bool token_exists = (ref_it != ngram_to_class_count_index.end());
+
+                const auto * token_class_map = token_exists ? &all_ngram_class_counts[ref_it->getMapped()] : nullptr;
+
                 for (const auto & class_entry : class_totals)
                 {
                     UInt32 class_id = class_entry.getKey();
@@ -373,14 +356,22 @@ public:
 
     UInt64 getAllocatedBytes() const
     {
-        UInt64 total = pool.allocatedBytes();
-        total += ngram_counts.getBufferSizeInBytes();
+        UInt64 total = 0;
+
+        total += pool.allocatedBytes();
+
+        total += ngram_to_class_count_index.getBufferSizeInBytes();
         total += class_totals.getBufferSizeInBytes();
-        for (const auto & entry : ngram_counts)
-        {
-            total += entry.getMapped().getBufferSizeInBytes();
-        }
+        total += log_class_priors.getBufferSizeInBytes();
+
+        total += sizeof(all_ngram_class_counts);
+        total += all_ngram_class_counts.capacity() * sizeof(ClassCountMap);
+
+        for (const auto & m : all_ngram_class_counts)
+            total += m.getBufferSizeInBytes();
+
         total += sizeof(*this);
+
         return total;
     }
 };
