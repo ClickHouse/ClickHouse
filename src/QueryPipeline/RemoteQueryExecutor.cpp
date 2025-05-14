@@ -49,7 +49,6 @@ namespace Setting
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsBool use_hedged_requests;
     extern const SettingsBool push_external_roles_in_interserver_queries;
-    extern const SettingsMilliseconds parallel_replicas_connect_timeout_ms;
 }
 
 namespace ErrorCodes
