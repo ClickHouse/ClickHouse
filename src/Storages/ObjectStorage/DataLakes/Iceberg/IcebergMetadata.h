@@ -29,14 +29,18 @@ struct IcebergDataObjectInfo : public RelativePathWithMetadata
     explicit IcebergDataObjectInfo(
         Iceberg::ManifestFileEntry data_object_,
         std::optional<ObjectMetadata> metadata_ = std::nullopt,
-        std::vector<Iceberg::ManifestFileEntry> position_deletes_objects_ = {})
+        const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_ = {})
         : RelativePathWithMetadata(data_object_.file.file_name, std::move(metadata_))
         , data_object(data_object_)
-        , position_deletes_objects(std::move(position_deletes_objects_))
     {
+        for (auto & position_deletes_object : position_deletes_objects_)
+        {
+            if (position_deletes_object.partition_key_value == data_object.partition_key_value)
+                position_deletes_objects.push_back(position_deletes_object);
+        }
     }
 
-    Iceberg::ManifestFileEntry data_object;
+    const Iceberg::ManifestFileEntry data_object;
     std::vector<Iceberg::ManifestFileEntry> position_deletes_objects;
 
     // Return the path in the Iceberg metadata
