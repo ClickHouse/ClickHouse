@@ -135,11 +135,6 @@ private:
         TopicPartitionLocks permanent_locks{};
         TopicPartitionLocks tmp_locks{};
 
-        // tells us “the set of permanent assignments shifted”.
-        // We use this flag to trigger an immediate refresh of temporary locks
-        // so that no stale partitions linger when the “stable” assignment changes under us.
-        bool permanent_locks_changed = false;
-
         // Quota, how many temporary locks can be taken in current round
         size_t tmp_locks_quota = 1;
 
@@ -153,7 +148,7 @@ private:
             locks_it = tmp_locks.find(topic_partition);
             if (locks_it != tmp_locks.end())
                 return &locks_it->second;
-            return nullptr;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find locks for topic partition {}:{}", topic_partition.topic, topic_partition.partition_id);
         }
     };
 
@@ -264,7 +259,7 @@ private:
 
     // Takes lock over topic partitions and sets the committed offset in topic_partitions
     void updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & tmp_locks, size_t & tmp_locks_quota);
-    void updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & permanent_locks, bool & permanent_locks_changed);
+    bool updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & permanent_locks);
 
     // To save commit and intent nodes
     void saveTopicPartitionInfo(zkutil::ZooKeeper & keeper_to_use, const std::filesystem::path & keeper_path_to_data, const String & data);

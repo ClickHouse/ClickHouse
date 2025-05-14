@@ -45,6 +45,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
 
 #include <boost/algorithm/string/join.hpp>
@@ -52,6 +53,7 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <librdkafka/rdkafka.h>
+#include <pcg-random/pcg_random.hpp>
 
 #include <filesystem>
 #include <string>
@@ -861,7 +863,9 @@ std::optional<StorageKafka2::LockedTopicPartitionInfo> StorageKafka2::createLock
 void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & tmp_locks, size_t & tmp_locks_quota)
 {
     LOG_TRACE(log, "Starting to update temporary locks");
-    const auto available_topic_partitions_res = getAvailableTopicPartitions(keeper_to_use, topic_partitions);
+    auto available_topic_partitions_res = getAvailableTopicPartitions(keeper_to_use, topic_partitions);
+    pcg64 generator(randomSeed());
+    std::shuffle(available_topic_partitions_res.first.begin(), available_topic_partitions_res.first.end(), generator);
     const auto & available_topic_partitions = available_topic_partitions_res.first;
 
     tmp_locks.clear(); // to maintain order: looked at the old state, updated the state, committed the new state
@@ -895,7 +899,7 @@ void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, cons
 
 // If the number of locks on a replica is greater than it can hold, then we first release the partitions that we can no longer hold.
 // Otherwise, we try to lock free partitions one by one.
-void StorageKafka2::updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & permanent_locks, bool & permanent_locks_changed)
+bool StorageKafka2::updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & permanent_locks)
 {
     LOG_TRACE(log, "Starting to update permanent locks");
     const auto available_topic_partitions_res = getAvailableTopicPartitions(keeper_to_use, topic_partitions);
@@ -905,14 +909,17 @@ void StorageKafka2::updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, cons
         topic_partitions.size() / static_cast<size_t>(active_replica_count) : LOCKS_QUOTA_MIN,
         LOCKS_QUOTA_MIN);
 
+    // tells us “the set of permanent assignments shifted”.
+    // We use this flag to trigger an immediate refresh of temporary locks
+    // so that no stale partitions linger when the “stable” assignment changes under us.
+    bool permanent_locks_changed = false;
     if (can_lock_partitions < permanent_locks.size())
     {
         size_t need_to_unlock = permanent_locks.size() - can_lock_partitions;
         auto permanent_locks_it = permanent_locks.begin();
         for (size_t i = 0; i < need_to_unlock && permanent_locks_it != permanent_locks.end(); ++i)
         {
-            if (!permanent_locks_changed)
-                permanent_locks_changed = true;
+            permanent_locks_changed = true;
             permanent_locks_it = permanent_locks.erase(permanent_locks_it);
         }
     }
@@ -927,12 +934,13 @@ void StorageKafka2::updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, cons
             auto maybe_lock = createLocksInfoIfFree(keeper_to_use, tp);
             if (!maybe_lock.has_value())
                 continue;
-            if (!permanent_locks_changed)
-                permanent_locks_changed = true;
+            permanent_locks_changed = true;
             permanent_locks.emplace(TopicPartition(tp), std::move(*maybe_lock));
             ++i;
         }
     }
+
+    return permanent_locks_changed;
 }
 
 void StorageKafka2::saveTopicPartitionInfo(zkutil::ZooKeeper & keeper_to_use, const std::filesystem::path & keeper_path_to_data, const String & data)
@@ -1265,18 +1273,11 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
                 return StallReason::NoMetadata;
             }
 
-            updatePermanentLocks(*consumer_info.keeper, all_topic_partitions, consumer_info.permanent_locks, consumer_info.permanent_locks_changed);
-            if (consumer_info.poll_count >= TMP_LOCKS_REFRESH_POLLS)
+            const auto permanent_locks_changed = updatePermanentLocks(*consumer_info.keeper, all_topic_partitions, consumer_info.permanent_locks);
+            if (permanent_locks_changed || consumer_info.poll_count >= TMP_LOCKS_REFRESH_POLLS)
             {
                 updateTemporaryLocks(*consumer_info.keeper, all_topic_partitions, consumer_info.tmp_locks, consumer_info.tmp_locks_quota);
                 consumer_info.poll_count = 0;
-            }
-            else if (consumer_info.permanent_locks_changed)
-            {
-                // If our permanent locks just changed, we clear and re-acquire temporary locks immediately
-                // so we never mix old temporary work with the new permanent locks set.
-                updateTemporaryLocks(*consumer_info.keeper, all_topic_partitions, consumer_info.tmp_locks, consumer_info.tmp_locks_quota);
-                consumer_info.permanent_locks_changed = false;
             }
 
             // Now we always have some assignment
