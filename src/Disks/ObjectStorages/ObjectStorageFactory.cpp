@@ -296,7 +296,7 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
-        auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context);
+        auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
 
         AzureBlobStorage::ConnectionParams params
         {
@@ -307,7 +307,7 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
 
         return createObjectStorage<AzureObjectStorage>(
             ObjectStorageType::Azure, config, config_prefix, name,
-            AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
+            params.auth_method, AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
             params.endpoint.prefix.empty() ? params.endpoint.container_name : params.endpoint.container_name + "/" + params.endpoint.prefix,
             params.endpoint.getServiceEndpoint());
     };
