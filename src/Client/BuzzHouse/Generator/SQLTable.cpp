@@ -1137,7 +1137,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
                     sv2->set_value(rg.nextBool() ? "'ordered'" : "'unordered'");
                 }
             }
-            else if (b.toption.has_value() && b.toption.value() == TableEngineOption::TShared)
+            else if (b.toption.has_value() && b.toption.value() == TableEngineOption::TShared && !fc.storage_policies.empty())
             {
                 /// Requires keeper storage
                 bool found = false;
@@ -1148,7 +1148,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
                     if (it->property() == "storage_policy")
                     {
                         auto & prop = const_cast<SetValue &>(*it);
-                        prop.set_value("'s3_with_keeper'");
+                        prop.set_value("'" + rg.pickRandomly(fc.storage_policies) + "'");
                         found = true;
                     }
                 }
@@ -1157,7 +1157,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
                     SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
                     sv->set_property("storage_policy");
-                    sv->set_value("'s3_with_keeper'");
+                    sv->set_value("'" + rg.pickRandomly(fc.storage_policies) + "'");
                 }
             }
         }
