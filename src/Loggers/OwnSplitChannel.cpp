@@ -230,7 +230,7 @@ void OwnAsyncSplitChannel::close()
 class OwnMessageNotification : public Poco::Notification
 {
 public:
-    OwnMessageNotification(const Message & msg_)
+    explicit OwnMessageNotification(const Message & msg_)
         : msg(msg_)
         , msg_ext(ExtendedLogMessage::getFrom(msg))
         , thread_name(getThreadName())
