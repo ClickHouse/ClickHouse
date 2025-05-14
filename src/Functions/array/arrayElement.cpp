@@ -2217,7 +2217,7 @@ Operator `[n]` provides the same functionality.
     )";
     FunctionDocumentation::Syntax syntax = "arrayElement(arr, n)";
     FunctionDocumentation::Arguments arguments = {
-        {"arrays", "Arbitrary number of arguments of [`Array`](/sql-reference/data-types/array) type."},
+        {"arrays", "Arbitrary number of arguments of [`Array`](/sql-reference/data-types/array) type."}
     };
     FunctionDocumentation::ReturnedValue returned_value = "Returns a single combined array from the provided array arguments.";
     FunctionDocumentation::Examples examples = {
@@ -2244,7 +2244,7 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
 )";
     FunctionDocumentation::Syntax syntax_null = "arrayElementOrNull(arrays)";
     FunctionDocumentation::Arguments arguments_null = {
-        {"arrays", "Arbitrary number of arguments of [`Array`](/sql-reference/data-types/array) type."},
+        {"arrays", "Arbitrary number of arguments of [`Array`](/sql-reference/data-types/array) type."}
     };
     FunctionDocumentation::ReturnedValue returned_value_null = "Returns a single combined array from the provided array arguments.";
     FunctionDocumentation::Examples examples_null = {
