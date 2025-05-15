@@ -115,7 +115,7 @@ static void collectLazilyReadColumnNames(
     auto storage_snapshot = read_from_merge_tree->getStorageSnapshot();
     NameSet lazily_read_column_name_set;
 
-    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+    const auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
         .withExtendedObjects()
         .withSubcolumns(storage_snapshot->storage.supportsSubcolumns());
 
@@ -262,6 +262,11 @@ void optimizeLazyMaterialization(QueryPlan::Node & root, Stack & stack, QueryPla
     collectLazilyReadColumnNames(steps_to_update, lazily_read_info->lazily_read_columns, alias_index);
 
     if (lazily_read_info->lazily_read_columns.empty())
+        return;
+
+    /// avoid applying this optimization on impractical queries for sake of implementation simplicity
+    /// i.e. when no column used in query until projection, for example, select * from t order by rand() limit 10
+    if (reading_step->getAllColumnNames().size() == lazily_read_info->lazily_read_columns.size())
         return;
 
     lazily_read_info->data_part_infos = std::make_shared<DataPartInfoByIndex>();
