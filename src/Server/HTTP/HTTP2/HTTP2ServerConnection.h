@@ -76,6 +76,10 @@ private:
         uint8_t * buf, size_t length, uint32_t * data_flags,
         nghttp2_data_source * source, void * user_data);
 
+    static int sendDataCallback(nghttp2_session * session, nghttp2_frame * frame,
+        const uint8_t * framehd, size_t length,
+        nghttp2_data_source * source, void * user_data);
+
     static int onBeginHeadersCallback(nghttp2_session * session,
         const nghttp2_frame * frame, void * user_data);
 

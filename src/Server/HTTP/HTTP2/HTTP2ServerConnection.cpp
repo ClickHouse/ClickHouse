@@ -37,6 +37,8 @@ const std::string HTTP2_ALPN = "h2";
 
 uint8_t STATUS_PSEUDOHEADER[] = {':', 's', 't', 'a', 't', 'u', 's'};
 
+const char ZEROS[256] = {0};
+
 }
 
 bool isHTTP2Connection(const Poco::Net::StreamSocket & socket, HTTP2ServerParams::Ptr http2_params)
@@ -317,7 +319,7 @@ void HTTP2ServerConnection::onOutputReady(uint32_t stream_id)
         prepareHeaders(stream, nva);
         const nghttp2_data_source source{.ptr=&stream};
         const nghttp2_data_provider2 data_prd{.source=source, .read_callback=dataSourceReadCallback};
-        const nghttp2_data_provider2 * data_prd_ptr = (stream.end_stream && stream.output_len == 0) ? nullptr : &data_prd;
+        const nghttp2_data_provider2 * data_prd_ptr = (stream.end_stream && stream.output.empty()) ? nullptr : &data_prd;
         nghttp2_submit_response2(session, stream.id, nva.data(), nva.size(), data_prd_ptr);
         LOG_INFO(log, "Submitting response for stream {} in connection with {}", stream_id, peer_address);
         stream.response_submitted = true;
@@ -362,6 +364,7 @@ void HTTP2ServerConnection::initSession()
     nghttp2_session_callbacks_set_on_frame_recv_callback(callbacks, onFrameRecvCallback);
     nghttp2_session_callbacks_set_on_stream_close_callback(callbacks, onStreamCloseCallback);
     nghttp2_session_callbacks_set_on_data_chunk_recv_callback(callbacks, onDataChunkRecvCallback);
+    nghttp2_session_callbacks_set_send_data_callback(callbacks, sendDataCallback);
 
     nghttp2_session_server_new(&session, callbacks, this);
 
@@ -384,31 +387,57 @@ void HTTP2ServerConnection::initSession()
 }
 
 ssize_t HTTP2ServerConnection::dataSourceReadCallback(nghttp2_session * /*session*/, int32_t /*stream_id*/,
-    uint8_t * buf, size_t length, uint32_t * data_flags,
+    uint8_t * /*buf*/, size_t length, uint32_t * data_flags,
     nghttp2_data_source * source, void * /*user_data*/)
 {
     HTTP2Stream & stream = *reinterpret_cast<HTTP2Stream *>(source->ptr);
     std::lock_guard lock(stream.output_mutex);
-    if (stream.output == nullptr)
+    if (stream.cur_output_consumed == stream.cur_output.second)
     {
-        if (stream.end_stream)
+        if (stream.output.empty())
         {
-            *data_flags = NGHTTP2_FLAG_END_STREAM;
-            return 0;
+            if (stream.end_stream)
+            {
+                *data_flags = NGHTTP2_DATA_FLAG_EOF;
+                return 0;
+            }
+            stream.output_deferred = true;
+            return NGHTTP2_ERR_DEFERRED;
         }
-        stream.output_deferred = true;
-        return NGHTTP2_ERR_DEFERRED;
+        stream.cur_output = std::move(stream.output.front());
+        stream.output.pop_front();
+        stream.output_cv.notify_one();
+        stream.cur_output_consumed = 0;
     }
-    size_t to_copy = std::min(length, stream.output_len - stream.output_consumed);
-    /// FIXME: avoid copying using NGHTTP2_DATA_FLAG_NO_COPY
-    memcpy(buf, stream.output->data() + stream.output_consumed, to_copy);
-    stream.output_consumed += to_copy;
-    if (stream.output_consumed < stream.output_len)
-        return to_copy;
-    if (stream.end_stream)
-        *data_flags = NGHTTP2_FLAG_END_STREAM;
-    stream.output_cv.notify_one();
+    size_t to_copy = std::min(length, stream.cur_output.second - stream.cur_output_consumed);
+    *data_flags = NGHTTP2_DATA_FLAG_NO_COPY;
+    if (stream.end_stream && stream.output.empty() && stream.cur_output_consumed + to_copy == stream.cur_output.second)
+        *data_flags |= NGHTTP2_DATA_FLAG_EOF;
     return to_copy;
+}
+
+int HTTP2ServerConnection::sendDataCallback(nghttp2_session * /*session*/, nghttp2_frame * frame,
+    const uint8_t * framehd, size_t length,
+    nghttp2_data_source * source, void * user_data)
+{
+    HTTP2ServerConnection * self = reinterpret_cast<HTTP2ServerConnection *>(user_data);
+    HTTP2Stream & stream = *reinterpret_cast<HTTP2Stream *>(source->ptr);
+
+    self->socket_out->socketSendBytes(reinterpret_cast<const char *>(framehd), FRAME_HEADER_SIZE);
+    if (frame->data.padlen > 0)
+    {
+        unsigned char padding_value = frame->data.padlen - 1;
+        self->socket_out->socketSendBytes(reinterpret_cast<const char *>(&padding_value), 1);
+    }
+    {
+        std::lock_guard lock(stream.output_mutex);
+        self->socket_out->socketSendBytes(stream.cur_output.first.data() + stream.cur_output_consumed, length);
+        stream.cur_output_consumed += length;
+    }
+    if (frame->data.padlen > 1)
+        self->socket_out->socketSendBytes(&ZEROS[0], frame->data.padlen - 1);
+
+    return 0;
 }
 
 int HTTP2ServerConnection::onBeginHeadersCallback(nghttp2_session * /*session*/,
