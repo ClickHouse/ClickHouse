@@ -371,6 +371,7 @@ public:
             columns = rhs.columns;
             partitions = rhs.partitions;
             projections = rhs.projections;
+            skip_indexes = rhs.skip_indexes;
             views = rhs.views;
         }
 
@@ -391,6 +392,7 @@ public:
             std::swap(columns, rhs.columns);
             std::swap(partitions, rhs.partitions);
             std::swap(projections, rhs.projections);
+            std::swap(skip_indexes, rhs.skip_indexes);
             std::swap(views, rhs.views);
         }
 
@@ -401,6 +403,7 @@ public:
         std::set<std::string> columns TSA_GUARDED_BY(mutex){};
         std::set<std::string> partitions TSA_GUARDED_BY(mutex){};
         std::set<std::string> projections TSA_GUARDED_BY(mutex){};
+        std::set<std::string> skip_indexes TSA_GUARDED_BY(mutex){};
         std::set<std::string> views TSA_GUARDED_BY(mutex){};
     };
     using QueryAccessInfoPtr = std::shared_ptr<QueryAccessInfo>;
@@ -843,13 +846,17 @@ public:
     QueryAccessInfoPtr getQueryAccessInfoPtr() const { return query_access_info; }
     void setQueryAccessInfo(QueryAccessInfoPtr other) { query_access_info = other; }
 
-    void addQueryAccessInfo(
-        const String & quoted_database_name,
-        const String & full_quoted_table_name,
-        const Names & column_names);
+    enum class TableAccessInfoType : uint8_t
+    {
+        COLUMN,
+        PARTITION,
+        SKIP_INDEX
+    };
 
-    void addQueryAccessInfo(const Names & partition_names);
+    void addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name);
+    void addQueryAccessInfo(const String & full_quoted_table_name, const TableAccessInfoType & entity_type, const Names & table_entity_names);
     void addViewAccessInfo(const String & view_name);
+
 
     struct QualifiedProjectionName
     {

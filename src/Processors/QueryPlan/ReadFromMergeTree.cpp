@@ -2324,16 +2324,25 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         result.selected_marks,
         result.selected_ranges);
 
-    // Adding partition info to QueryAccessInfo.
+    // Add partition info and skipping index info to QueryAccessInfo.
     if (context->hasQueryContext() && !query_info.is_internal)
     {
         Names partition_names;
         for (const auto & part : result.parts_with_ranges)
         {
-            partition_names.emplace_back(
-                fmt::format("{}.{}", data.getStorageID().getFullNameNotQuoted(), part.data_part->info.getPartitionId()));
+            partition_names.emplace_back(part.data_part->info.getPartitionId());
         }
-        context->getQueryContext()->addQueryAccessInfo(partition_names);
+        context->getQueryContext()->addQueryAccessInfo(
+            data.getStorageID().getFullTableName(), Context::TableAccessInfoType::PARTITION, partition_names);
+
+        Names skip_index_names;
+        for (const auto & index_stat : result.index_stats)
+        {
+            if (index_stat.type == IndexType::Skip)
+                skip_index_names.emplace_back(index_stat.name);
+        }
+        context->getQueryContext()->addQueryAccessInfo(
+            data.getStorageID().getFullTableName(), Context::TableAccessInfoType::SKIP_INDEX, skip_index_names);
     }
 
     ProfileEvents::increment(ProfileEvents::SelectedParts, result.selected_parts);
