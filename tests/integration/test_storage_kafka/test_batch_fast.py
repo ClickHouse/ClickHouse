@@ -2284,7 +2284,7 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_gen
         with PartitionManager() as pm:
             pm.drop_instance_zk_connections(instance)
             instance.wait_for_log_line(
-                "Error.*(Connection loss|Coordination::Exception).*while pushing to view",
+                "Error.*(Connection loss|Coordination::Exception|DB::Exception: Coordination error: Operation timeout).*while pushing to view",
                 timeout=60,
                 look_behind_lines=500
             )
