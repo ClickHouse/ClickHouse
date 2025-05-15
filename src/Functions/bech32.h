@@ -61,4 +61,4 @@ struct DecodeResult
 /** Decode a Bech32 or Bech32m string. */
 DecodeResult decode(const std::string & str);
 
-} // namespace bech32
+}

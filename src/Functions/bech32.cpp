@@ -179,7 +179,7 @@ data create_checksum(const std::string & hrp, const data & values, Encoding enco
     return ret;
 }
 
-} // namespace
+}
 
 /** Encode a Bech32 or Bech32m string. */
 std::string encode(const std::string & hrp, const data & values, Encoding encoding)
@@ -245,4 +245,4 @@ DecodeResult decode(const std::string & str)
     return {result, std::move(hrp), data(values.begin(), values.end() - 6)};
 }
 
-} // namespace bech32
+}
