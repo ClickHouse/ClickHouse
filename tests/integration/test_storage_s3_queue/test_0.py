@@ -619,12 +619,12 @@ def test_multiple_tables_meta_mismatch(started_cluster):
     )
 
 
-def test_virtual_colums(started_cluster):
+def test_virtual_columns(started_cluster):
     start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     node = started_cluster.instances["instance"]
-    table_name = f"test_s3queue_virtual_colums"
+    table_name = f"test_s3queue_virtual_columns_{generate_random_string()}"
     # A unique path is necessary for repeatable tests
-    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}"
     dst_table_name = f"{table_name}_dst"
     files_path = f"{table_name}_data"
 
