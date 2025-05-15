@@ -395,7 +395,7 @@ The default tokenizer uses non-alphanumeric ASCII characters as separators.
 - `value` — The input string. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 - `tokenizer` — The tokenizer to use. Valid arguments are `default`, `ngram`, `string`, and `noop`. Optional, if not set explicitly, defaults to `default`. [const String](../data-types/string.md)
 - `ngrams` — Only relevant if argument `tokenizer` is `ngram`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`. [UInt8](../data-types/int-uint.md).
-- `separators` — Only relevant if argument `tokenizer` is `string`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`. [Array(Styring)](../data-types/array.md).
+- `separators` — Only relevant if argument `tokenizer` is `string`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`. [Array(String)](../data-types/array.md).
 
 :::note
 In case of the `string` tokenizer: if the tokens do not form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), you likely want that the matching prefers longer separators first.
