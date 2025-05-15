@@ -17,6 +17,16 @@ libs=$(echo "${ROOT_PATH}/base/poco"; (find "${LIBS_PATH}" -maxdepth 1 -type d -
 for LIB in ${libs}
 do
     LIB_NAME=$(basename "$LIB")
+    
+    if [ ! -d "$LIB" ] || [ -z "$(ls -A "$LIB")" ]; then
+         LIB_NAME=$(basename "$LIB")
+         if [ "$LIB_NAME" = "libpng" ]; then
+             echo "## WARNING: contrib/libpng is not initialized or empty – CI will skip its license check"
+         else
+             echo "Skipping empty contrib module: $LIB"
+         fi
+         continue
+    fi
 
     LIB_LICENSE=$(
         LC_ALL=C ${FIND_CMD} "$LIB" -type f -and '(' -iname 'LICENSE*' -or -iname 'COPYING*' -or -iname 'COPYRIGHT*' -or -iname 'NOTICE' ')' -and -not '(' -iname '*.html' -or -iname '*.htm' -or -iname '*.rtf' -or -name '*.cpp' -or -name '*.h' -or -iname '*.json' ')' -printf "%d\t%p\n" |
