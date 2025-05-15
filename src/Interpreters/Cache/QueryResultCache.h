@@ -1,7 +1,16 @@
 #pragma once
 
+#include <Formats/NativeWriter.h>
+#include <Formats/NativeReader.h>
+
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteHelpers.h>
+
 #include <Common/CacheBase.h>
 #include <Common/logger_useful.h>
+#include "base/defines.h"
 #include <Interpreters/Cache/QueryResultCacheUsage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Block.h>
@@ -11,6 +20,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <base/UUID.h>
 
+#include <filesystem>
 #include <optional>
 
 namespace DB
@@ -112,6 +122,17 @@ public:
             const Settings & settings,
             const String & query_id_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
+        
+        /// Ctor to construct a Key from entry stored on disk.
+        Key(IASTHash ast_hash_,
+            const Block & header_,
+            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+            bool is_shared_, 
+            const std::chrono::time_point<std::chrono::system_clock> & expires_at_,
+            bool is_compressed_,
+            const String & query_string_,
+            const String & query_id,
+            const String & tag);
 
         bool operator==(const Key & other) const;
     };
@@ -143,9 +164,65 @@ public:
     /// query --> query result
     using Cache = CacheBase<Key, Entry, KeyHasher, QueryResultCacheEntryWeight>;
 
-    QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
+    class OnDiskCache {
+        using Key = QueryResultCache::Key;
+        using Mapped = QueryResultCache::Entry;
+        using MappedPtr = std::shared_ptr<Mapped>;
+        using KeyMapped = QueryResultCache::Cache::KeyMapped;
 
-    void updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
+        struct DiskEntryMetadata
+        {
+            size_t size_in_bytes;
+            std::filesystem::path path;
+        };
+
+        struct DiskEntryWeight
+        {
+            size_t operator()(const DiskEntryMetadata & entry) const {
+                return entry.size_in_bytes;
+            }
+        };
+
+        using CachePolicy = ICachePolicy<Key, DiskEntryMetadata, KeyHasher, DiskEntryWeight>;
+
+    public:
+        explicit OnDiskCache(const std::filesystem::path& path_, size_t max_size_in_bytes_, size_t max_entries_, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
+
+        std::optional<KeyMapped> getWithKey(const Key & key);
+
+        void set(const Key & key, const MappedPtr & mapped);
+
+        void setMaxSizeInBytes(size_t max_size_in_bytes);
+
+        void setMaxCount(size_t max_count);
+
+    private:
+        std::optional<KeyMapped> readCacheEntry(String ast_hash_str);
+
+        void writeCacheEntry(const Key & key, const MappedPtr & mapped);
+
+        void readCacheEntriesMetaData();
+
+        void checkFormatVersion();
+
+        void onEvictFunction(CachePolicy::MappedPtr mapped);
+
+        LoggerPtr logger = getLogger("QueryResultCache");
+
+        std::mutex mutex;
+
+        std::unique_ptr<CachePolicy> cache_policy; /// LRU by default
+
+        std::filesystem::path query_cache_path; /// directory containing persisted query cache entries which are loaded/stored on
+                                                /// database startup/shutdown (only set if query cache persistence is configured)
+        size_t max_entry_size_in_bytes;
+
+        size_t max_entry_size_in_rows;
+    };
+
+    QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows, size_t disk_cache_max_size_in_bytes, size_t disk_cache_max_entries, size_t disk_cache_max_entry_size_in_bytes, size_t disk_cache_max_entry_size_in_rows, const std::optional<std::filesystem::path> & disk_cache_path_);
+
+    void updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows, size_t disk_cache_max_size_in_bytes, size_t disk_cache_max_entries, size_t disk_cache_max_entry_size_in_bytes, size_t disk_cache_max_entry_size_in_rows);
 
     QueryResultCacheReader createReader(const Key & key);
     QueryResultCacheWriter createWriter(
@@ -170,6 +247,8 @@ public:
 private:
     Cache cache; /// has its own locking --> not protected by mutex
 
+    std::optional<OnDiskCache> disk_cache; /// has its own locking --> not protected by mutex
+
     mutable std::mutex mutex;
 
     /// query --> query execution count
@@ -179,6 +258,10 @@ private:
     /// Cache configuration
     size_t max_entry_size_in_bytes TSA_GUARDED_BY(mutex) = 0;
     size_t max_entry_size_in_rows TSA_GUARDED_BY(mutex) = 0;
+
+    /// On disk cache configuration
+    size_t disk_cache_max_entry_size_in_bytes TSA_GUARDED_BY(mutex) = 0;
+    size_t disk_cache_max_entry_size_in_rows TSA_GUARDED_BY(mutex) = 0;
 
     friend class StorageSystemQueryResultCache;
     friend class QueryResultCacheWriter;
@@ -212,9 +295,11 @@ public:
     void finalizeWrite();
 private:
     using Cache = QueryResultCache::Cache;
+    using OnDiskCache = QueryResultCache::OnDiskCache;
 
     std::mutex mutex;
     Cache & cache;
+    std::optional<OnDiskCache> & disk_cache;
     const QueryResultCache::Key key;
     const size_t max_entry_size_in_bytes;
     const size_t max_entry_size_in_rows;
@@ -229,6 +314,7 @@ private:
 
     QueryResultCacheWriter(
         Cache & cache_,
+        std::optional<OnDiskCache> & disk_cache_,
         const Cache::Key & key_,
         size_t max_entry_size_in_bytes_,
         size_t max_entry_size_in_rows_,
@@ -251,8 +337,9 @@ public:
     std::unique_ptr<SourceFromChunks> getSourceExtremes();
 private:
     using Cache = QueryResultCache::Cache;
+    using OnDiskCache = QueryResultCache::OnDiskCache;
 
-    QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &);
+    QueryResultCacheReader(Cache & cache_, std::optional<OnDiskCache> & disk_cache_, const Cache::Key & key, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows, const std::lock_guard<std::mutex> &);
     void buildSourceFromChunks(Block header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
     std::unique_ptr<SourceFromChunks> source_from_chunks;
     std::unique_ptr<SourceFromChunks> source_from_chunks_totals;
@@ -260,7 +347,6 @@ private:
     LoggerPtr logger = getLogger("QueryResultCache");
     friend class QueryResultCache; /// for createReader()
 };
-
 
 using QueryResultCachePtr = std::shared_ptr<QueryResultCache>;
 
