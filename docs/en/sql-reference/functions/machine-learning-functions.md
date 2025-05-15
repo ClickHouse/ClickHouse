@@ -108,8 +108,8 @@ Here is an example configuration for a Naive Bayes model in ClickHouse:
 | ---------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ------------------ |
 | **name**   | Unique model identifier                                                                                         | `language_detection`                                     | *Required*         |
 | **path**   | Full path to model binary                                                                                       | `/etc/clickhouse-server/config.d/language_detection.bin` | *Required*         |
-| **mode**   | Tokenization method:<br>- `byte`: Byte sequences<br>- `codepoint`: Unicode characters<br>- `token`: Word tokens | `token`                                                  | *Required*         |
-| **n**      | Ngram size (`token` mode):<br>- `1`=single word<br>- `2`=word pairs<br>- `3`=word triplets                     | `2`                                                      | *Required*         |
+| **mode**   | Tokenization method:<br/>- `byte`: Byte sequences<br/>- `codepoint`: Unicode characters<br/>- `token`: Word tokens | `token`                                                  | *Required*         |
+| **n**      | Ngram size (`token` mode):<br/>- `1`=single word<br/>- `2`=word pairs<br/>- `3`=word triplets                     | `2`                                                      | *Required*         |
 | **alpha**  | Laplace smoothing factor used during classification to address n-grams that do not appear in the model          | `0.5`                                                    | `1.0`              |
 | **priors** | Class probabilities (% of the documents belonging to a class)                                                                             | 60% class 0, 40% class 1                                 | Equal distribution |
 
