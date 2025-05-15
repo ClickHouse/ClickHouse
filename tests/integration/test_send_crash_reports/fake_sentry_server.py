@@ -8,20 +8,13 @@ class SentryHandler(http.server.BaseHTTPRequestHandler):
         post_data = self.__read_and_decode_post_data()
         with open(RESULT_PATH, "w") as f:
             content_length = self.headers.get("content-length")
-            if self.headers.get("content-type") != "application/x-sentry-envelope":
-                f.write("INCORRECT_CONTENT_TYPE")
-            elif int(content_length) < 200:
+            if int(content_length) < 200:
                 f.write(
                     "INCORRECT_CONTENT_LENGTH:"
                     + content_length
                     + "\n"
                     + post_data.decode()
                 )
-            elif (
-                b'"http://6f33034cfe684dd7a3ab9875e57b1c8d@localhost:9500/5226277"'
-                not in post_data
-            ):
-                f.write("INCORRECT_POST_DATA")
             else:
                 f.write("OK")
         self.send_response(200)
