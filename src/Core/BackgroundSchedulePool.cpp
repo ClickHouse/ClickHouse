@@ -247,7 +247,10 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
 
 BackgroundSchedulePool::TaskHolder BackgroundSchedulePool::createTask(const std::string & name, const TaskFunc & function)
 {
-    return TaskHolder(std::make_shared<TaskInfo>(*this, name, function));
+    std::shared_ptr<TaskInfo> task_info = std::make_shared<TaskInfo>(*this, name, function);
+    LOG_INFO(getLogger("BackgroundSchedulePool"),
+             "Task created with name {}, task_info use count: {}", name, task_info.use_count());
+    return TaskHolder(task_info);
 }
 
 void BackgroundSchedulePool::scheduleTask(TaskInfo & task_info)

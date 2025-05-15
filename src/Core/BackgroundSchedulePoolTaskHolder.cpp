@@ -1,5 +1,6 @@
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -11,6 +12,13 @@ BackgroundSchedulePoolTaskHolder & BackgroundSchedulePoolTaskHolder::operator=(B
 BackgroundSchedulePoolTaskHolder::BackgroundSchedulePoolTaskHolder(const BackgroundSchedulePoolTaskInfoPtr & task_info_) :
     task_info(task_info_)
 {
+    auto locked_task_info = lock();
+    bool is_expired = task_info.expired();
+    bool is_null = locked_task_info == nullptr;
+
+    LOG_INFO(getLogger("BackgroundSchedulePoolTaskInfo"),
+             "Constructing BackgroundSchedulePoolTaskHolder: task_info is expired? {}, use count: {}, is null: {}",
+             is_expired, is_null ? 0 : locked_task_info.use_count(), is_null);
 }
 
 /**
@@ -23,6 +31,13 @@ BackgroundSchedulePoolTaskHolder::BackgroundSchedulePoolTaskHolder(const Backgro
  */
 BackgroundSchedulePoolTaskHolder::~BackgroundSchedulePoolTaskHolder()
 {
+    auto locked_task_info = lock();
+    bool is_expired = task_info.expired();
+    bool is_null = locked_task_info == nullptr;
+
+    LOG_INFO(getLogger("BackgroundSchedulePoolTaskInfo"),
+             "Deconstructing BackgroundSchedulePoolTaskHolder: task_info is expired? {}, use count: {}, is null: {}",
+             is_expired, is_null ? 0 : locked_task_info.use_count(), is_null);
     if (auto task = lock())
         task->deactivate();
 }
@@ -34,6 +49,14 @@ BackgroundSchedulePoolTaskHolder::operator bool() const
 
 BackgroundSchedulePoolTaskInfo * BackgroundSchedulePoolTaskHolder::operator->()
 {
+    auto locked_task_info = lock();
+    bool is_expired = task_info.expired();
+    bool is_null = locked_task_info == nullptr;
+
+    LOG_INFO(getLogger("BackgroundSchedulePoolTaskInfo"),
+             "BackgroundSchedulePoolTaskHolder operator operator->(): task_info is expired? {}, use count: {}, is null: {}",
+             is_expired, is_null ? 0 : locked_task_info.use_count(), is_null);
+
     /**
      * Assert that task_info is not expired because:
      * - The BackgroundSchedulePool owns the TaskInfo with a strong shared_ptr.
@@ -51,6 +74,14 @@ BackgroundSchedulePoolTaskInfo * BackgroundSchedulePoolTaskHolder::operator->()
 
 const BackgroundSchedulePoolTaskInfo * BackgroundSchedulePoolTaskHolder::operator->() const
 {
+    auto locked_task_info = lock();
+    bool is_expired = task_info.expired();
+    bool is_null = locked_task_info == nullptr;
+
+    LOG_INFO(getLogger("BackgroundSchedulePoolTaskInfo"),
+             "BackgroundSchedulePoolTaskHolder operator operator->() const: task_info is expired? {}, use count: {}, is null: {}",
+             is_expired, is_null ? 0 : locked_task_info.use_count(), is_null);
+
     assert(!task_info.expired());
     return lock().get();
 }
