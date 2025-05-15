@@ -15,51 +15,9 @@ cargo generate-lockfile
 Note that we use both commands to vendor both registry and crates. No idea why both are necessary.
 
   * First we need to install the tool if you don't already have it:
-```bash
-cargo install --version 0.2.7 cargo-local-registry
-```
 
-  * Now add the local packages:
+    ```bash
+    cargo install --version 0.2.7 cargo-local-registry
+    ```
 
-```bash
-export CH_TOP_DIR=$(git rev-parse --show-toplevel)
-export RUSTC_ROOT=$(rustc --print=sysroot)
-# Currently delta-lake is built outside the workspace (TODO)
-export DELTA_LAKE_DIR="$CH_TOP_DIR"/contrib/delta-kernel-rs
-
-# Clean the vendor repo
-rm -rf "$CH_TOP_DIR"/contrib/rust_vendor/*
-
-cd "$CH_TOP_DIR"/rust/workspace
-cargo local-registry --git --sync Cargo.lock "$CH_TOP_DIR"/contrib/rust_vendor
-
-# Now handle delta-lake
-cd "$DELTA_LAKE_DIR"
-cargo local-registry --no-delete --git --sync "$DELTA_LAKE_DIR/Cargo.lock" "$CH_TOP_DIR"/contrib/rust_vendor
-
-# Standard library deps
-cp "$RUSTC_ROOT"/lib/rustlib/src/rust/library/Cargo.lock "$RUSTC_ROOT"/lib/rustlib/src/rust/library/std/
-cargo local-registry --no-delete --git --sync "$RUSTC_ROOT"/lib/rustlib/src/rust/library/std/Cargo.lock "$CH_TOP_DIR"/contrib/rust_vendor
-cp "$RUSTC_ROOT"/lib/rustlib/src/rust/library/Cargo.lock "$RUSTC_ROOT"/lib/rustlib/src/rust/library/test/
-cargo local-registry --no-delete --git --sync "$RUSTC_ROOT"/lib/rustlib/src/rust/library/test/Cargo.lock "$CH_TOP_DIR"/contrib/rust_vendor
-
-# Now we vendor the modules themselves
-cd "$CH_TOP_DIR"/rust/workspace
-cargo vendor --no-delete --locked "$CH_TOP_DIR"/contrib/rust_vendor
-cd "$DELTA_LAKE_DIR"
-cargo vendor --no-delete --locked "$CH_TOP_DIR"/contrib/rust_vendor
-cd "$RUSTC_ROOT"/lib/rustlib/src/rust/library/std/
-cargo vendor --no-delete "$CH_TOP_DIR"/contrib/rust_vendor
-cd "$RUSTC_ROOT"/lib/rustlib/src/rust/library/test/
-cargo vendor --no-delete "$CH_TOP_DIR"/contrib/rust_vendor
-
-# Remove windows only dependencies (which are really heavy and we don't want in the repo)
-rm -rf "$CH_TOP_DIR"/contrib/rust_vendor/winapi* "$CH_TOP_DIR"/contrib/rust_vendor/windows*
-
-# Cleanup the lock files we copied
-rm "$RUSTC_ROOT"/lib/rustlib/src/rust/library/std/Cargo.lock "$RUSTC_ROOT"/lib/rustlib/src/rust/library/test/Cargo.lock
-cd "$CH_TOP_DIR"/rust/workspace
-```
-
-The `rustc --print=sysroot` part includes `std` dependencies, required to build with sanitizer flags. It must be kept
-in sync with the rustc version used in CI.
+  * Now add local packages with `vendor.sh`
