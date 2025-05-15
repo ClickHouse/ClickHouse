@@ -673,8 +673,8 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     }
 
     auto new_name_escaped = escapeForFileName(new_name);
-    auto old_database_metadata_path = root_path / "metadata" / (escapeForFileName(getDatabaseName()) + ".sql");
-    auto new_database_metadata_path = root_path / "metadata" / (new_name_escaped + ".sql");
+    auto old_database_metadata_path = fs::path("metadata") / (escapeForFileName(getDatabaseName()) + ".sql");
+    auto new_database_metadata_path = fs::path("metadata") / (new_name_escaped + ".sql");
     db_disk->moveFile(old_database_metadata_path, new_database_metadata_path);
 
     String old_path_to_table_symlinks;

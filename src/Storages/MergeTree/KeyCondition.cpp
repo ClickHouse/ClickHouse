@@ -742,6 +742,13 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                     }
                 }
             }
+            break;
+        }
+        case ActionsDAG::ActionType::PLACEHOLDER:
+        {
+            /// I guess it should work as INPUT.
+            res = &inverted_dag.addPlaceholder(node.result_name, node.result_type);
+            break;
         }
     }
 
@@ -1752,6 +1759,8 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
 static std::set<std::string_view> date_time_parsing_functions = {
     "toDate",
     "toDate32",
+    "toTime",
+    "toTime64",
     "toDateTime",
     "toDateTime64",
     "parseDateTimeBestEffort",

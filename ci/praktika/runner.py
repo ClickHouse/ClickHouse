@@ -36,7 +36,7 @@ class Runner:
             BRANCH="branch_name",
             SHA=sha or Shell.get_output("git rev-parse HEAD"),
             PR_NUMBER=pr or -1,
-            EVENT_TYPE="",
+            EVENT_TYPE=workflow.event,
             JOB_OUTPUT_STREAM="",
             EVENT_FILE_PATH="",
             CHANGE_URL="",
@@ -249,6 +249,10 @@ class Runner:
                 )
             docker = docker or f"{docker_name}:{docker_tag}"
             current_dir = os.getcwd()
+            Shell.check(
+                "docker ps -a --format '{{.Names}}' | grep -q praktika && docker rm -f praktika",
+                verbose=True,
+            )
             cmd = f"docker run --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='.:./ci' --volume ./:{current_dir} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
@@ -373,9 +377,7 @@ class Runner:
                     name = check.__name__
                 else:
                     name = str(check)
-                results_.append(
-                    Result.from_commands_run(name=name, command=check, with_info=True)
-                )
+                results_.append(Result.from_commands_run(name=name, command=check))
             result.results.append(
                 Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
             )

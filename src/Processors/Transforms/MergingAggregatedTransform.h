@@ -29,7 +29,6 @@ protected:
 
 private:
     LoggerPtr log = getLogger("MergingAggregatedTransform");
-    size_t max_threads;
 
     struct GroupingSet
     {

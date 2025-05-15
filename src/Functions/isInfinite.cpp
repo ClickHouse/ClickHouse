@@ -36,7 +36,20 @@ using FunctionIsInfinite = FunctionNumericPredicate<IsInfiniteImpl>;
 
 REGISTER_FUNCTION(IsInfinite)
 {
-    factory.registerFunction<FunctionIsInfinite>();
+    FunctionDocumentation::Description description = R"(
+    Returns `1` if the Float32 or Float64 argument is infinite, otherwise this function returns `0`.
+    Note that `0` is returned for a `NaN`.
+    )";
+    FunctionDocumentation::Syntax syntax = "isInfinite(x)";
+    FunctionDocumentation::Argument argument1 = {"x", "Number to check for infiniteness. Float32 or Float64."};
+    FunctionDocumentation::Arguments arguments = {argument1};
+    FunctionDocumentation::ReturnedValue returned_value = "`1` if x is infinite, otherwise `0` (including for `NaN`).";
+    FunctionDocumentation::Examples examples = {{"Test if a number is infinite", "SELECT isInfinite(inf), isInfinite(NaN), isInfinite(10))", "1 0 0"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+
+    factory.registerFunction<FunctionIsInfinite>(documentation);
 }
 
 }

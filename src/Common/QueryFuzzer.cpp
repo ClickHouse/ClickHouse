@@ -146,6 +146,8 @@ Field QueryFuzzer::getRandomField(int type)
 
 Field QueryFuzzer::fuzzField(Field field)
 {
+    checkIterationLimit();
+
     const auto type = field.getType();
 
     int type_index = -1;
@@ -363,6 +365,8 @@ void QueryFuzzer::fuzzOrderByList(IAST * ast, const size_t nproj)
         return;
     }
 
+    checkIterationLimit();
+
     auto * list = assert_cast<ASTExpressionList *>(ast);
 
     /// Permute list
@@ -413,6 +417,8 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
     {
         return;
     }
+
+    checkIterationLimit();
 
     auto * impl = assert_cast<ASTExpressionList *>(ast);
 
@@ -477,6 +483,8 @@ void QueryFuzzer::fuzzNullsAction(NullsAction & action)
 
 void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
 {
+    checkIterationLimit();
+
     switch (fuzz_rand() % 40)
     {
         case 0: {
@@ -624,6 +632,8 @@ void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
 
 DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
 {
+    checkIterationLimit();
+
     /// Do not replace Array/Tuple/etc. with not Array/Tuple too often.
     const auto * type_array = typeid_cast<const DataTypeArray *>(type.get());
     if (type_array && fuzz_rand() % 4 != 0)
@@ -699,6 +709,8 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
 
 DataTypePtr QueryFuzzer::getRandomType()
 {
+    checkIterationLimit();
+
     static const std::vector<TypeIndex> & random_types
         = {TypeIndex::UInt8,       TypeIndex::UInt16,         TypeIndex::UInt32,   TypeIndex::UInt64,     TypeIndex::UInt128,
            TypeIndex::UInt256,     TypeIndex::Int8,           TypeIndex::Int16,    TypeIndex::Int32,      TypeIndex::Int64,
@@ -935,6 +947,8 @@ void QueryFuzzer::notifyQueryFailed(ASTPtr ast)
 
 ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
 {
+    checkIterationLimit();
+
     const auto * l = child->as<ASTLiteral>();
     chassert(l);
     const auto type = l->value.getType();
@@ -1072,6 +1086,13 @@ struct ScopedIncrement
     }
     ~ScopedIncrement() { --counter; }
 };
+
+void QueryFuzzer::checkIterationLimit()
+{
+    if (++iteration_count > iteration_limit)
+        throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
+            "AST complexity limit exceeded while fuzzing ({})", iteration_count);
+}
 
 static const Strings comparison_comparators
     = {"equals", "notEquals", "greater", "greaterOrEquals", "less", "lessOrEquals", "isNotDistinctFrom"};
@@ -1504,6 +1525,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     if (!ast)
         return;
 
+    checkIterationLimit();
+
     // Check for exceeding max depth.
     ScopedIncrement depth_increment(current_ast_depth);
     if (current_ast_depth > 500)
@@ -1528,7 +1551,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             current_ast_depth,
             debug_visited_nodes.size(),
             (*debug_top_ast)->dumpTree());
-        assert(false);
+        std::abort();
     }
 
     // The fuzzing.
@@ -2169,6 +2192,7 @@ void QueryFuzzer::collectFuzzInfoRecurse(ASTPtr ast)
 void QueryFuzzer::fuzzMain(ASTPtr & ast)
 {
     current_ast_depth = 0;
+    iteration_count = 0;
     debug_visited_nodes.clear();
     debug_top_ast = &ast;
 
