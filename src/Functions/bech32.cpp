@@ -23,13 +23,9 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "bech32.h"
-
-#include <tuple>
-#include <vector>
-
 #include <cassert>
-#include <cstdint>
+
+#include "bech32.h"
 
 namespace bech32
 {

@@ -19,14 +19,11 @@
  * THE SOFTWARE.
  */
 
-#ifndef BECH32_H_
-#define BECH32_H_ 1
+#pragma once
 
+#include <cstdint>
 #include <string>
-#include <tuple>
 #include <vector>
-
-#include <stdint.h>
 
 namespace bech32
 {
@@ -66,5 +63,3 @@ struct DecodeResult
 DecodeResult decode(const std::string & str);
 
 } // namespace bech32
-
-#endif // BECH32_H_
