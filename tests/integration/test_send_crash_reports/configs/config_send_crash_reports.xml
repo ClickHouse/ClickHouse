@@ -1,6 +1,0 @@
-<clickhouse>
-    <send_crash_reports>
-        <enabled>true</enabled>
-        <endpoint>http://localhost:9500/</endpoint>
-    </send_crash_reports>
-</clickhouse>

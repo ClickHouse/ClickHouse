@@ -69,128 +69,135 @@ void CrashWriter::sendError(Type type, int sig_or_error, const std::string & err
         return;
     }
 
-    LOG_INFO(logger, "Sending crash report");
-
-    auto out = BuilderWriteBufferFromHTTP(Poco::URI{endpoint})
-        .withBufferSize(4096).withConnectionGroup(HTTPConnectionGroupType::HTTP).create();
-    auto & json = *out;
-
-    FormatSettings settings;
-
-    writeChar('{', json);
-    writeCString("\"message\":", json);
-    writeJSONString(error_message, json, settings);
-
-    switch (type)
+    try
     {
-        case SIGNAL:
+        LOG_INFO(logger, "Sending crash report");
+
+        auto out = BuilderWriteBufferFromHTTP(Poco::URI{endpoint})
+            .withBufferSize(4096).withConnectionGroup(HTTPConnectionGroupType::HTTP).create();
+        auto & json = *out;
+
+        FormatSettings settings;
+
+        writeChar('{', json);
+        writeCString("\"message\":", json);
+        writeJSONString(error_message, json, settings);
+
+        switch (type)
         {
-            writeCString(",\"type\":\"signal\"", json);
-            writeCString(",\"signal_number\":", json);
-            writeIntText(sig_or_error, json);
-            break;
+            case SIGNAL:
+            {
+                writeCString(",\"type\":\"signal\"", json);
+                writeCString(",\"signal_number\":", json);
+                writeIntText(sig_or_error, json);
+                break;
+            }
+            case EXCEPTION:
+            {
+                writeCString(",\"type\":\"exception\"", json);
+                writeCString(",\"exception_code\":", json);
+                writeIntText(sig_or_error, json);
+                writeCString(",\"exception_message\":", json);
+                writeJSONString(ErrorCodes::getName(sig_or_error), json, settings);
+                break;
+            }
         }
-        case EXCEPTION:
+
+        #if defined(__ELF__) && !defined(OS_FREEBSD)
+            const String & build_id_hex = SymbolIndex::instance().getBuildIDHex();
+            writeCString(",\"build_id\":", json);
+            writeJSONString(build_id_hex, json, settings);
+        #endif
+
+        UUID server_uuid = ServerUUID::get();
+        if (server_uuid != UUIDHelpers::Nil)
         {
-            writeCString(",\"type\":\"exception\"", json);
-            writeCString(",\"exception_code\":", json);
-            writeIntText(sig_or_error, json);
-            writeCString(",\"exception_message\":", json);
-            writeJSONString(ErrorCodes::getName(sig_or_error), json, settings);
-            break;
+            std::string server_uuid_str = toString(server_uuid);
+            writeCString(",\"server_uuid\":", json);
+            writeJSONString(server_uuid_str, json, settings);
         }
-    }
 
-    #if defined(__ELF__) && !defined(OS_FREEBSD)
-        const String & build_id_hex = SymbolIndex::instance().getBuildIDHex();
-        writeCString(",\"build_id\":", json);
-        writeJSONString(build_id_hex, json, settings);
-    #endif
+        writeCString(",\"version\":", json);
+        writeJSONString(VERSION_STRING, json, settings);
+        writeCString(",\"git_hash\":", json);
+        writeJSONString(VERSION_GITHASH, json, settings);
+        writeCString(",\"git_version\":", json);
+        writeJSONString(VERSION_DESCRIBE, json, settings);
+        writeCString(",\"revision\":", json);
+        writeIntText(VERSION_REVISION, json);
+        writeCString(",\"official\":", json);
+        writeJSONString(VERSION_OFFICIAL, json, settings);
 
-    UUID server_uuid = ServerUUID::get();
-    if (server_uuid != UUIDHelpers::Nil)
-    {
-        std::string server_uuid_str = toString(server_uuid);
-        writeCString(",\"server_uuid\":", json);
-        writeJSONString(server_uuid_str, json, settings);
-    }
+        writeCString(",\"os\":", json);
+        writeJSONString(Poco::Environment::osName(), json, settings);
+        writeCString(",\"os_version\":", json);
+        writeJSONString(Poco::Environment::osVersion(), json, settings);
+        writeCString(",\"architecture\":", json);
+        writeJSONString(Poco::Environment::osArchitecture(), json, settings);
 
-    writeCString(",\"version\":", json);
-    writeJSONString(VERSION_STRING, json, settings);
-    writeCString(",\"git_hash\":", json);
-    writeJSONString(VERSION_GITHASH, json, settings);
-    writeCString(",\"git_version\":", json);
-    writeJSONString(VERSION_DESCRIBE, json, settings);
-    writeCString(",\"revision\":", json);
-    writeIntText(VERSION_REVISION, json);
-    writeCString(",\"official\":", json);
-    writeJSONString(VERSION_OFFICIAL, json, settings);
+        writeCString(",\"total_ram\":", json);
+        writeIntText(getMemoryAmountOrZero(), json);
+        writeCString(",\"cpu_cores\":", json);
+        writeIntText(getNumberOfCPUCoresToUse(), json);
 
-    writeCString(",\"os\":", json);
-    writeJSONString(Poco::Environment::osName(), json, settings);
-    writeCString(",\"os_version\":", json);
-    writeJSONString(Poco::Environment::osVersion(), json, settings);
-    writeCString(",\"architecture\":", json);
-    writeJSONString(Poco::Environment::osArchitecture(), json, settings);
-
-    writeCString(",\"total_ram\":", json);
-    writeIntText(getMemoryAmountOrZero(), json);
-    writeCString(",\"cpu_cores\":", json);
-    writeIntText(getNumberOfCPUCoresToUse(), json);
-
-    if (!server_data_path.empty())
-    {
-        writeCString(",\"disk_free_space\":", json);
-        writeIntText(std::filesystem::space(server_data_path).free, json);
-    }
-
-    /// Prepare data for the stack trace.
-    if (size > 0)
-    {
-        char instruction_addr[19]
+        if (!server_data_path.empty())
         {
-            '0', 'x',
-            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
-            '\0'
-        };
+            writeCString(",\"disk_free_space\":", json);
+            writeIntText(std::filesystem::space(server_data_path).free, json);
+        }
 
-        bool first = true;
-        auto add_frame = [&](const StackTrace::Frame & current_frame)
+        /// Prepare data for the stack trace.
+        if (size > 0)
         {
-            UInt64 frame_ptr = reinterpret_cast<UInt64>(current_frame.physical_addr);
-            writeHexUIntLowercase(frame_ptr, instruction_addr + 2);
-
-            if (!first)
-                writeChar(',', json);
-            first = false;
-
-            writeCString("{\"addr\":", json);
-            writeJSONString(instruction_addr, json, settings);
-            if (current_frame.symbol)
+            char instruction_addr[19]
             {
-                writeCString(",\"function\":", json);
-                writeJSONString(current_frame.symbol.value(), json, settings);
-            }
-            if (current_frame.file)
-            {
-                writeCString(",\"file\":", json);
-                writeJSONString(current_frame.file.value(), json, settings);
-            }
-            if (current_frame.line)
-            {
-                writeCString(",\"line\":", json);
-                writeIntText(current_frame.line.value(), json);
-            }
-            writeChar('}', json);
-        };
+                '0', 'x',
+                '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+                '\0'
+            };
 
-        writeCString(",\"trace\":[", json);
-        StackTrace::forEachFrame(frame_pointers, offset, size, add_frame, /* fatal= */ true);
-        writeChar(']', json);
+            bool first = true;
+            auto add_frame = [&](const StackTrace::Frame & current_frame)
+            {
+                UInt64 frame_ptr = reinterpret_cast<UInt64>(current_frame.physical_addr);
+                writeHexUIntLowercase(frame_ptr, instruction_addr + 2);
+
+                if (!first)
+                    writeChar(',', json);
+                first = false;
+
+                writeCString("{\"addr\":", json);
+                writeJSONString(instruction_addr, json, settings);
+                if (current_frame.symbol)
+                {
+                    writeCString(",\"function\":", json);
+                    writeJSONString(current_frame.symbol.value(), json, settings);
+                }
+                if (current_frame.file)
+                {
+                    writeCString(",\"file\":", json);
+                    writeJSONString(current_frame.file.value(), json, settings);
+                }
+                if (current_frame.line)
+                {
+                    writeCString(",\"line\":", json);
+                    writeIntText(current_frame.line.value(), json);
+                }
+                writeChar('}', json);
+            };
+
+            writeCString(",\"trace\":[", json);
+            StackTrace::forEachFrame(frame_pointers, offset, size, add_frame, /* fatal= */ true);
+            writeChar(']', json);
+        }
+
+        writeChar('}', json);
+
+        json.next();
+        json.finalize();
     }
-
-    writeChar('}', json);
-
-    json.next();
-    json.finalize();
+    catch (...)
+    {
+        LOG_INFO(logger, "Cannot send a crash report: {}", getCurrentExceptionMessage(__PRETTY_FUNCTION__ ));
+    }
 }

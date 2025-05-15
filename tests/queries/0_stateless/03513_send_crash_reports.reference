@@ -1,0 +1,6 @@
+Starting a crash receiver
+Starting clickhouse-server
+Waiting for clickhouse-server to start
+Server started
+Sending a signal
+"signal_number":11
