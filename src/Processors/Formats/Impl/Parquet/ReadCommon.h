@@ -11,21 +11,30 @@ namespace DB::Parquet
 
 struct ReadOptions
 {
+    //TODO: make sure all of these are randomized in tests, and also writer settings
     bool use_row_group_min_max = true;
     bool use_bloom_filter = true;
     bool use_page_min_max = true;
-    bool use_prewhere = true;
+    bool always_use_offset_index = true;
+
     bool seekable_read = true;
+
     bool case_insensitive_column_matching = false;
     bool schema_inference_force_nullable = false;
     bool schema_inference_force_not_nullable = false;
     bool null_as_default = true;
-    bool fuzz = false;
+
+    bool fuzz = false;//TODO: randomize lots of things when enabled
+
+    /// Use dictionary filter if dictionary page is smaller than this (and all values in the column
+    /// chunk are dictionary-encoded). This takes precedence over bloom filter. 0 to disable.
+    size_t dictionary_filter_limit_bytes = 0;
+
     size_t min_bytes_for_seek = 64 << 10;
     size_t bytes_per_read_task = 4 << 20;
-    /// Currently only affects the case where dictionary encoding has very high compression ratio.
-    /// Outside that case, we always decode and deliver whole row groups at once.
-    size_t preferred_block_size_bytes = 256 << 20;
+
+    size_t preferred_block_size_bytes = DEFAULT_BLOCK_SIZE * 256;
+    size_t max_block_size = DEFAULT_BLOCK_SIZE;
 };
 
 
@@ -48,41 +57,71 @@ struct SharedParsingThreadPool
 using SharedParsingThreadPoolPtr = std::shared_ptr<SharedParsingThreadPool>;
 
 
-/// Each row group goes through these processing stages in sequence, possibly skipping some.
-/// Each stage may involve some prefetch tasks (on IO threads) and some per-column tasks for a subset of
-/// columns (e.g. decoding page min/max statistics and evaluating single-column filters on them),
-/// followed by some per-row-group work (e.g. merging filtering results from all columns).
-/// Different row groups advance through stages independently.
+/// Each column chunk goes through some subsequence of these stages, in order.
 ///
-/// In theory, this design is suboptimal: for large row groups read from local storage it would be
-/// more efficient to do reading+parsing in small chunks to stay within CPU cache. But that would
-/// add a lot of complexity, so I'm not attempting it yet.
-enum class ParsingStage
+/// The scheduling of all this work (in ReadManager) is pretty complicated.
+/// Some of the tasks apply to column chunk (e.g. reading bloom filter), some apply to part of
+/// a column chunk ("column subchunk" we call it). Some stages need some per-row-group work after
+/// finishing all per-column tasks (e.g. apply KeyCondition after reading bloom filters for all
+/// columns).
+///
+/// Here's a slightly simplified dependency graph:
+/// https://github.com/user-attachments/assets/57213f9c-1588-406c-980e-ff0a9ab56e95
+/// (if you need to edit this diagram, load this into excalidraw:
+///  https://pastila.nl/?cafebabe/5f32c6546f4797c537707535c515f2c3#Fp02Ps7p2hRahC0B5cK+TQ== )
+///
+/// An important role of this enum is to separately control parallelism of different stages.
+/// E.g. typically column index is small, and we can read it in lots of columns and row groups
+/// in parallel (especially useful if we're reading over network and are latency-bound).
+/// But main data is often big enough that we can't afford enough memory to read many row groups in
+/// parallel. We'd like the parallelism to automatically scale based on memory usage.
+/// But also we don't want to get into a situation where e.g. most of the memory budget is used by
+/// column indexes and there's not enough left to read main data for a few row groups in parallel.
+/// To solve these two problems at once, we do memory accounting separately for each stage, with
+/// separate memory budget for each stage (see ReadManager::Stage).
+/// Memory is attributed to the stage that allocated it. E.g. ReadManager::read() (Deliver stage)
+/// may release a column that was allocated by PrewhereData stage, reducing PrewhereData's memory
+/// usage and potentially kicking off more PrewhereData read tasks.
+enum class ReadStage
 {
     NotStarted = 0,
-    // TODO: Maybe add separate stage for reading `BloomFilterHeader`s, then read only the needed
-    //       bloom filter blocks instead of the whole bloom filter.
-    /// Read bloom filters for some columns, apply KeyCondition to skip row groups.
-    ApplyingBloomFilters,
-    /// Read column index and offset index for some columns, check per-column conditions on
-    /// min/max values of each page. Produce a set of row indices.
-    ApplyingColumnIndex,
-    ApplyingOffsetIndexForPrewhereColumns,
-    /// Read data for PREWHERE columns, apply PREWHERE expression. Produce a set of row indices.
-    ParsingPrewhereColumns,
-    /// Read offest index for all columns to know where pages are located.
-    ApplyingOffsetIndexForRemainingColumns,
-    /// Read data for non-PREWHERE columns.
-    ParsingRemainingColumns,
-    /// Wait for the chunk to be picked up by IInputFormat::read().
-    Delivering,
+    BloomFilterHeader,
+    BloomFilterBlocksOrDictionary,
+    ColumnIndexAndOffsetIndex,
+    PrewhereOffsetIndex,
+    PrewhereData,
+    MainOffsetIndex, // "main" means columns that are not in prewhere
+    MainData,
+    Deliver,
     Deallocated,
+};
 
-    COUNT, // (not a stage)
+/// Subsequence of ReadStage-s relevant to a whole RowGroup.
+/// Each such stage transition is a barrier synchronizing all columns of the row group.
+/// E.g. bloom filters have two stages in ReadStage but one stage here because the two stages
+/// (read header, then read blocks) need to happen sequentially within each column; then, after all
+/// columns finish both stages, some row-group-level work needs to happen (applying KeyCondition
+/// using all columns' bloom filters at once) before any column can proceed to the next stage.
+enum class RowGroupReadStage
+{
+    NotStarted = 0,
+    BloomAndDictionaryFilters,
+    ColumnIndex,
+    Subgroups,
+    Deallocated,
+};
+
+enum class RowSubgroupReadStage
+{
+    NotStarted = 0,
+    Prewhere,
+    MainColumns,
+    Deliver,
+    Deallocated,
 };
 
 
-/// We track approximate current memory usage per ParsingStage that allocated the memory (*).
+/// We track approximate current memory usage per ReadStage that allocated the memory (*).
 /// This struct aggregates how much memory was allocated by some operation.
 /// ReadManager then uses it to update per-stage memory usage std::atomic counters.
 /// (We do this instead of updating the std::atomics directly to reduce contention on the atomics.
@@ -91,24 +130,41 @@ enum class ParsingStage
 /// (*) This is to have a separate memory limit on each stage to automatically get higher parallelism
 /// for stages that use little memory (e.g. prefetch small bloom filters and indexes for lots of row
 /// groups in parallel, but read large column data for few row groups to not run out of memory).
+//TODO: Try using thread-locals instead of manually error-pronely passing this everywhere.
 struct MemoryUsageDiff
 {
-    explicit MemoryUsageDiff(ParsingStage cur_stage_) : cur_stage(cur_stage_) {}
+    ReadStage cur_stage;
+    std::array<ssize_t, size_t(ReadStage::Deallocated)> by_stage {};
+    bool finalized = false;
+    /// True if we may have unblocked some tasks by means other then freeing memory
+    /// (specifically, we advanced first_incomplete_row_group or delivery_ptr).
+    bool retry_scheduling = false;
 
-    ParsingStage cur_stage;
-    std::array<ssize_t, size_t(ParsingStage::COUNT)> by_stage {};
+    explicit MemoryUsageDiff(ReadStage cur_stage_) : cur_stage(cur_stage_) {}
+    MemoryUsageDiff() = delete;
+    MemoryUsageDiff(const MemoryUsageDiff &) = delete;
+    MemoryUsageDiff & operator=(const MemoryUsageDiff &) = delete;
+
+    ~MemoryUsageDiff()
+    {
+        chassert(finalized || std::uncaught_exceptions() > 0);
+    }
 
     void allocated(size_t amount)
     {
+        chassert(cur_stage > ReadStage::NotStarted);
+        chassert(cur_stage < ReadStage::Deliver);
+        chassert(!finalized);
         by_stage.at(size_t(cur_stage)) += ssize_t(amount);
     }
-    void deallocated(size_t amount, ParsingStage stage)
+    void deallocated(size_t amount, ReadStage stage)
     {
+        chassert(!finalized);
         by_stage.at(size_t(stage)) -= ssize_t(amount);
     }
 };
 
-/// Remembers the ParsingStage and size of a memory allocation.
+/// Remembers the ReadStage and size of a memory allocation.
 /// Not RAII, you have to call reset to update the stat.
 class MemoryUsageToken
 {
@@ -126,19 +182,19 @@ public:
     MemoryUsageToken & operator=(MemoryUsageToken && rhs) noexcept
     {
         chassert(!val);
-        alloc_stage = std::exchange(rhs.alloc_stage, ParsingStage::COUNT);
+        alloc_stage = std::exchange(rhs.alloc_stage, ReadStage::Deallocated);
         val = std::exchange(rhs.val, 0);
         return *this;
     }
 
-    operator bool() const { return alloc_stage != ParsingStage::COUNT; }
+    operator bool() const { return alloc_stage != ReadStage::Deallocated; }
 
     void reset(MemoryUsageDiff * diff)
     {
         if (val)
             diff->deallocated(val, alloc_stage);
         val = 0;
-        alloc_stage = ParsingStage::COUNT;
+        alloc_stage = ReadStage::Deallocated;
     }
     void add(size_t amount, MemoryUsageDiff * diff)
     {
@@ -148,7 +204,7 @@ public:
     }
 
 private:
-    ParsingStage alloc_stage = ParsingStage::COUNT;
+    ReadStage alloc_stage = ReadStage::Deallocated;
     size_t val = 0;
 };
 

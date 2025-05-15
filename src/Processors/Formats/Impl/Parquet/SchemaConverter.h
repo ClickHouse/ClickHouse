@@ -51,7 +51,7 @@ private:
 
     void processPrimitiveColumn(
         const parq::SchemaElement & element, const IDataType * type_hint,
-        std::unique_ptr<ValueDecoder> & out_decoder, DataTypePtr & out_decoded_type,
+        PageDecoderInfo & out_decoder, DataTypePtr & out_decoded_type,
         DataTypePtr & out_inferred_type);
 };
 

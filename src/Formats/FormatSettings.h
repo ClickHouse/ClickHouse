@@ -276,42 +276,49 @@ struct FormatSettings
 
     struct
     {
-        UInt64 row_group_rows = 1000000;
-        UInt64 row_group_bytes = 512 * 1024 * 1024;
+        /// Read.
         bool allow_missing_columns = false;
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
         bool filter_push_down = true;
         bool bloom_filter_push_down = true;
+        bool page_filter_push_down = true;
+        bool use_offset_index = true;
+        bool fuzz = false;
         bool use_native_reader = false;
         bool use_native_reader_with_filter_push_down = false;
         bool use_native_reader_v3 = false;
         bool enable_json_parsing = true;
+        bool preserve_order = false;
+        bool enable_row_group_prefetch = true;
+        std::unordered_set<int> skip_row_groups = {};
+        UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
+        size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
+        size_t dictionary_filter_limit_bytes = 4 << 10;
+        size_t local_read_min_bytes_for_seek = 8192;
+        size_t memory_target = 4ul << 30;
+
+        /// Write.
+        UInt64 row_group_rows = 1000000;
+        UInt64 row_group_bytes = 512 * 1024 * 1024;
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
         bool output_datetime_as_uint32 = false;
-        bool preserve_order = false;
         bool use_custom_encoder = true;
         bool parallel_encoding = true;
         bool output_compliant_nested_types = true;
         bool write_page_index = false;
         bool write_bloom_filter = false;
-        bool enable_row_group_prefetch = true;
-        std::unordered_set<int> skip_row_groups = {};
-        UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
-        size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
         ParquetVersion output_version = ParquetVersion::V2_LATEST;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
         uint64_t output_compression_level;
         size_t data_page_size = 1024 * 1024;
         size_t write_batch_size = 1024;
-        size_t local_read_min_bytes_for_seek = 8192;
         double bloom_filter_bits_per_value = 10.5;
         size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
         bool allow_geoparquet_parser = true;
         bool write_geometadata = true;
         size_t max_dictionary_size = 1024 * 1024;
-        size_t memory_target = 4ul << 30;
     } parquet{};
 
     struct Pretty

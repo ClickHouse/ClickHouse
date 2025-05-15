@@ -7,7 +7,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 
-//TODO: move implementations to .cpp, including templates
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -19,128 +18,166 @@ namespace DB::ErrorCodes
 namespace DB::Parquet
 {
 
-//TODO:
-// * BIT_PACKED for rep/def levels
-// * PLAIN BOOLEAN
-// * RLE BOOLEAN
-// * DELTA_BINARY_PACKED (INT32, INT64)
-// * DELTA_LENGTH_BYTE_ARRAY
-// * DELTA_BYTE_ARRAY
-// * BYTE_STREAM_SPLIT
-struct ValueDecoder
+//TODO: move implementations to .cpp, including templates
+
+struct PageDecoderInfo;
+
+struct Dictionary
 {
-    /// If canReadDirectlyIntoColumn returns true, decodePage is not called.
-    virtual bool canReadDirectlyIntoColumn(parq::Encoding::type, size_t /*num_values*/, IColumn &, char ** /*out_ptr*/, size_t * /*out_bytes*/) const { return false; }
-    /// Caller ensures that `data` and `filter` are padded, i.e. have at least PADDING_FOR_SIMD bytes
-    /// of readable memory before start and after end.
-    /// `num_values_out` is the number of ones in filter[0..num_values_in]. If filter is nullptr,
-    /// num_values_out == num_values_in.
-    virtual void decodePage(parq::Encoding::type, const char * /*data*/, size_t /*bytes*/, size_t /*num_values_in*/, size_t /*num_values_out*/, IColumn &, const UInt8 * /*filter*/) const { chassert(false); }
-
-    virtual ~ValueDecoder() = default;
-};
-
-
-/// ClickHouse's in-memory column data format matches Parquet's PLAIN encoding format.
-/// We can directly memcpy/decompress into the column if Encoding == PLAIN.
-struct FixedSizeValueDecoder : public ValueDecoder
-{
-    size_t value_size;
-
-    explicit FixedSizeValueDecoder(size_t value_size_) : value_size(value_size_) {}
-
-    bool canReadDirectlyIntoColumn(parq::Encoding::type encoding, size_t num_values, IColumn & col, char ** out_ptr, size_t * out_bytes) const override
+    enum class Mode
     {
-        chassert(col.sizeOfValueIfFixed() == value_size);
-        if (encoding == parq::Encoding::PLAIN)
+        Uninitialized,
+
+        FixedSize,
+        /// `data` strings with 4-byte length prefixes, `offsets` points to the end of each string.
+        StringPlain,
+    };
+
+    Mode mode = Mode::Uninitialized;
+    size_t value_size = 0; // if fixed_size
+    PaddedPODArray<UInt32> offsets; // if !fixed_size
+    size_t count = 0;
+
+    /// Points into `col`, or `decompressed_buf`, or into Prefetcher's memory (kept alive by dictionary_page_prefetch).
+    std::span<const char> data;
+
+    PaddedPODArray<char> decompressed_buf;
+    ColumnPtr col;
+
+    void reset()
+    {
+        mode = Mode::Uninitialized;
+        data = {};
+        col.reset();
+        offsets.clear();
+        offsets.shrink_to_fit();
+        decompressed_buf.clear();
+        decompressed_buf.shrink_to_fit();
+    }
+
+    bool isInitialized() const
+    {
+        return mode != Mode::Uninitialized;
+    }
+
+    double getAverageValueSize() const
+    {
+        switch (mode)
         {
-            const auto span = col.insertRawUninitialized(num_values);
-            *out_ptr = span.data();
-            *out_bytes = span.size();
-            return true;
+            case Mode::FixedSize: return value_size;
+            case Mode::StringPlain: return std::max(0., double(data.size()) / std::max(offsets.size(), 1ul) - 4);
+            case Mode::Uninitialized: break;
         }
-        return false;
+        chassert(false);
+        return 0;
     }
 
-    void decodePage(parq::Encoding::type encoding, const char * /*data*/, size_t /*bytes*/, size_t /*num_values_in*/, size_t /*num_values_out*/, IColumn &, const UInt8 * /*filter*/) const override
+    void index(const PaddedPODArray<UInt32> & indexes, IColumn & out);
+
+    void decode(parq::Encoding::type encoding, const PageDecoderInfo & info, size_t num_values, std::span<const char> data_, const IDataType & raw_decoded_type);
+};
+
+struct PageDecoder
+{
+    virtual void skip(size_t num_values) = 0;
+    virtual void decode(size_t num_values, IColumn &) = 0;
+
+    explicit PageDecoder(std::span<const char> data_) : data(data_.data()), end(data_.data() + data_.size()) {}
+    virtual ~PageDecoder() = default;
+
+    const char * data = nullptr;
+    const char * end = nullptr;
+
+    void requireRemainingBytes(size_t n)
     {
-        //TODO (PLAIN, DELTA_BINARY_PACKED, BYTE_STREAM_SPLIT)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Encoding {} for fixed-size types not implemented", thriftToString(encoding));
+        if (size_t(end - data) < n)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpectd end of page data");
     }
 };
 
-/// Reads INT32 and converts to INT16/INT8. Signed vs unsigned makes no difference.
+/// We choose PageDecoder implementation in two steps:
+///  1. during schema conversion we create PageDecoderInfo (this should be in schema conversion because
+///    that's where column type and data type are decided, and they should match the decoder type);
+///  2. after reading page header, the Encoding becomes known, and we create a PageDecoder.
+struct PageDecoderInfo
+{
+    enum class Kind
+    {
+        FixedSize,
+        String,
+        ShortInt, // convert Int32 to UInt8 or UInt16
+        Boolean,
+    };
+
+    Kind kind = Kind::FixedSize;
+    size_t value_size = 0; // if FixedSize or ShortInt
+
+    /// True if we can decompress the whole page directly into IColumn's memory.
+    bool canReadDirectlyIntoColumn(parq::Encoding::type, size_t /*num_values*/, IColumn &, std::span<char> & out) const;
+
+    /// [data, end) must be padded, i.e. have at least PADDING_FOR_SIMD bytes of readable memory
+    /// before `data` and after `end`.
+    std::unique_ptr<PageDecoder> makeDecoder(parq::Encoding::type, std::span<const char> data) const;
+};
+
+void decodeRepOrDefLevels(parq::Encoding::type encoding, UInt8 max, size_t num_values, std::span<const char> data, PaddedPODArray<UInt8> & out);
+
+std::unique_ptr<PageDecoder> makeDictionaryIndicesDecoder(parq::Encoding::type encoding, size_t dictionary_size, std::span<const char> data);
+
+
+/// Used for dictionary indices and repetition/definition levels.
+/// Throws if any decoded value is >= `limit`.
 template <typename T>
-struct ShortIntDecoder : public ValueDecoder
+struct BitPackedRLEDecoder : public PageDecoder
 {
-    void decodePage(parq::Encoding::type encoding, const char * data, size_t bytes, size_t num_values_in, size_t num_values_out, IColumn & col, const UInt8 * filter) const override
+    size_t limit = 0;
+    size_t bit_width = 0;
+    size_t run_length = 0;
+    size_t run_bytes = 0; // if bit-packed run
+    size_t bit_idx = 0; // if bit-packed run
+    T val = 0; // if RLE run
+    bool run_is_rle = false; // otherwise bit-packed
+
+    BitPackedRLEDecoder(std::span<const char> data_, size_t limit_, bool has_header_byte)
+        : PageDecoder(data_), limit(limit_)
     {
-        if (encoding == parq::Encoding::PLAIN)
+        static_assert(sizeof(T) <= 4, "");
+        chassert(limit <= std::numeric_limits<T>::max());
+
+        if (has_header_byte)
         {
-            if (num_values_in * 4 > bytes)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Page data too short");
-            const auto span = col.insertRawUninitialized(num_values_out);
-            /// `col` may be signed or unsigned, but we cast it to unsigned here (to avoid pointless
-            /// extra template instantiations). AFAIU, this is not UB because we go through char*.
-            T * out = reinterpret_cast<T *>(span.data());
-            chassert(span.size() == num_values_out * sizeof(T));
-            if (!filter)
-            {
-                chassert(num_values_in == num_values_out);
-                for (size_t i = 0; i < num_values_in; ++i)
-                {
-                    /// Read the low bytes of an unaligned 4-byte value.
-                    T x;
-                    memcpy(&x, data + i * 4, sizeof(T));
-                    out[i] = x;
-                }
-            }
-            else
-            {
-                size_t out_i = 0;
-                for (size_t i = 0; i < num_values_in; ++i)
-                {
-                    if (filter[i])
-                    {
-                        T x;
-                        memcpy(&x, data + i * 4, sizeof(T));
-                        out[out_i++] = x;
-                    }
-                }
-            }
-        }
-        else if (encoding == parq::Encoding::DELTA_BINARY_PACKED)
-        {
-            //TODO
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DELTA_BINARY_PACKED for 16/8-bit ints is not implemented");
+            requireRemainingBytes(1);
+            bit_width = *data;
+            data += 1;
+            if (bit_width < 1 || bit_width > 8 * sizeof(T))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid dict indices bit width: {}", bit_width);
         }
         else
         {
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected integer encoding: {}", thriftToString(encoding));
+            chassert(limit > 0);
+            bit_width = 32 - __builtin_clz(UInt32(limit - 1));
         }
-    }
-};
 
-/// Used for dictionary indices and repetition/definition levels.
-/// For dictionary indices, we add 2 to each value to make it compatible with ColumnLowCardinality,
-/// which reserves the first two dictionary slots for NULL and default value.
-/// Input, output, and filter must all be padded - we may read/write up to 7 elements past the end.
-/// Throws if any decoded value is >= `limit`.
-template <typename T, UInt8 ADD, bool FILTERED>
-void decodeBitPackedRLE(size_t limit, const size_t bit_width, size_t num_values_in, const char * data, size_t bytes, const UInt8 * filter, T * out)
-{
-    static_assert(sizeof(T) <= 4, "");
-    chassert(bit_width > 0 && bit_width <= 32);
-    chassert(limit + ADD <= size_t(std::numeric_limits<T>::max()) + 1);
-    const size_t byte_width = (bit_width + 7) / 8;
-    const UInt32 value_mask = (1ul << bit_width) - 1;
-    const char * end = data + bytes;
-    size_t idx = 0;
-    size_t filter_idx = 0;
-    /// (Some stats from hits.parquet, in case it helps with optimization:
-    ///  bit-packed runs: 64879089, total 2548822304 values (~39 values/run),
-    ///  RLE runs: 81177527, total 7373423915 values (~91 values/run).)
-    while (data < end)
+        chassert(bit_width > 0 && bit_width <= 32);
+    }
+
+    void skip(size_t num_values) override
+    {
+        skipOrDecode<true>(num_values, nullptr);
+    }
+    void decode(size_t num_values, IColumn & col) override
+    {
+        auto & out = assert_cast<ColumnVector<T> &>(col).getData();
+        decodeArray(num_values, out);
+    }
+    void decodeArray(size_t num_values, PaddedPODArray<T> & out)
+    {
+        size_t start = out.size();
+        out.resize(start + num_values);
+        skipOrDecode<false>(num_values, &out[start]);
+    }
+
+    void startRun()
     {
         UInt64 len;
         data = readVarUInt(len, data, end - data);
@@ -148,138 +185,166 @@ void decodeBitPackedRLE(size_t limit, const size_t bit_width, size_t num_values_
         {
             /// Bit-packed run.
             size_t groups = len >> 1;
-            len = groups << 3;
-            size_t nbytes = groups * bit_width;
-            if (len > num_values_in - idx + 7 || nbytes > size_t(end - data))
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many RLE-encoded values (bp)");
-
-            /// TODO: For bit_width <= 8, this can probably be made much faster by unrolling 8
-            ///       iterations of the loop and using pdep instruction (on x86).
-            /// TODO: May make sense to have specialized versions of this loop for some specific
-            ///       values of bit_width. E.g. bit_width=1 is very common as def levels for nullables.
-            for (size_t bit_idx = 0; bit_idx < (nbytes << 3); bit_idx += bit_width)
-            {
-                if constexpr (FILTERED)
-                {
-                    if (!filter[filter_idx++])
-                        continue;
-                }
-
-                size_t x;
-                memcpy(&x, data + (bit_idx >> 3), 8);
-                x = (x >> (bit_idx & 7)) & value_mask;
-
-                if (x >= limit)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Dict index or rep/def level out of bounds (bp)");
-                x += ADD;
-                out[idx++] = x;
-            }
-            data += nbytes;
+            run_bytes = groups * bit_width;
+            requireRemainingBytes(run_bytes > size_t(end - data));
+            run_is_rle = false;
+            run_length = groups << 3;
+            bit_idx = 0;
         }
         else
         {
-            len >>= 1;
-            if (len > num_values_in - idx || byte_width > size_t(end - data))
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many RLE-encoded values (rle)");
+            const size_t byte_width = (bit_width + 7) / 8;
+            chassert(byte_width <= sizeof(T));
+            const T value_mask = T((1ul << bit_width) - 1);
 
-            UInt32 x;
-            memcpy(&x, data, 4);
-            x &= value_mask;
+            run_length = len >> 1;
+            requireRemainingBytes(byte_width);
 
-            if (x >= limit)
+            memcpy(&val, data, sizeof(T));
+            val &= value_mask;
+
+            if (val >= limit)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Dict index or rep/def level out of bounds (rle)");
-            x += ADD;
-
-            for (size_t i = 0; i < len; ++i)
-            {
-                if constexpr (FILTERED)
-                {
-                    if (!filter[filter_idx++])
-                        continue;
-                }
-
-                out[idx++] = x;
-            }
-
+            run_is_rle = true;
             data += byte_width;
         }
     }
-    if constexpr (!FILTERED)
-        filter_idx = idx;
-    if (filter_idx < num_values_in || filter_idx > num_values_in + 7)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected number of RLE-encoded values");
-}
 
-template <typename T>
-struct DictionaryIndexDecoder : public ValueDecoder
-{
-    size_t limit = 0; // throw if any value is >= limit
-
-    explicit DictionaryIndexDecoder(size_t limit_) : limit(limit_) {}
-
-    void decodePage(parq::Encoding::type encoding, const char * data, size_t bytes, size_t num_values_in, size_t num_values_out, IColumn & col, const UInt8 * filter) const override
+    template <bool SKIP>
+    void skipOrDecode(size_t num_values, T * out)
     {
-        if (encoding != parq::Encoding::RLE && encoding != parq::Encoding::RLE_DICTIONARY)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected non-RLE encoding: {}", thriftToString(encoding));
+        const T value_mask = T((1ul << bit_width) - 1);
+        /// TODO: May make sense to have specialized version of this loop for bit_width=1, which is
+        ///       very common as def levels for nullables.
+        /// (Some stats from hits.parquet, in case it helps with optimization:
+        ///  bit-packed runs: 64879089, total 2548822304 values (~39 values/run),
+        ///  RLE runs: 81177527, total 7373423915 values (~91 values/run).)
+        while (num_values)
+        {
+            if (run_length == 0)
+                startRun();
 
-        if (bytes < 1)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Page too short (dict indices bit width)");
-        size_t bit_width = *data;
-        data += 1;
-        bytes -= 1;
-        if (bit_width < 1 || bit_width > 32)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid dict indices bit width: {}", bit_width);
+            size_t n = std::min(run_length, num_values);
+            run_length -= n;
+            num_values -= n;
 
-        auto & array = assert_cast<ColumnVector<T> &>(col).getData();
-        size_t start = array.size();
-        array.resize(start + num_values_out);
-        if (filter)
-            decodeBitPackedRLE<T, /*ADD*/ 2, /*FILTERED*/ true>(
-                limit, bit_width, num_values_in, data, bytes, filter, array.data() + start);
-        else
-            decodeBitPackedRLE<T, /*ADD*/ 2, /*FILTERED*/ false>(
-                limit, bit_width, num_values_in, data, bytes, nullptr, array.data() + start);
+            if (run_is_rle)
+            {
+                if constexpr (!SKIP)
+                {
+                    std::fill(out, out + n, val);
+                    out += n;
+                }
+            }
+            else
+            {
+                if constexpr (!SKIP)
+                {
+                    for (size_t i = 0; i < n; ++i)
+                    {
+                        size_t x;
+                        memcpy(&x, data + (bit_idx >> 3), 8);
+                        x = (x >> (bit_idx & 7)) & value_mask;
+
+                        if (x >= limit)
+                            throw Exception(ErrorCodes::INCORRECT_DATA, "Dict index or rep/def level out of bounds (bp)");
+                        *out = x;
+                        ++out;
+                        bit_idx += bit_width;
+                    }
+                }
+
+                if (!run_length)
+                    data += run_bytes;
+            }
+        }
     }
 };
 
-struct StringDecoder : public ValueDecoder
+struct PlainFixedSizeDecoder : public PageDecoder
 {
-    void decodePage(parq::Encoding::type encoding, const char * data, size_t bytes, size_t num_values_in, size_t /*num_values_out*/, IColumn & col, const UInt8 * filter) const override
+    size_t value_size;
+
+    explicit PlainFixedSizeDecoder(std::span<const char> data_, size_t value_size_) : PageDecoder(data_), value_size(value_size_) {}
+
+    void skip(size_t num_values) override
     {
-        const char * end = data + bytes;
-        /// Keep in mind that ColumnString stores a '\0' after each string.
+        size_t bytes = num_values * value_size;
+        requireRemainingBytes(bytes);
+        data += bytes;
+    }
+
+    void decode(size_t num_values, IColumn & col) override
+    {
+        const char * from = data;
+        skip(num_values);
+        auto to = col.insertRawUninitialized(num_values);
+        chassert(to.size() == size_t(data - from));
+        memcpy(to.data(), from, to.size());
+    }
+};
+
+template <typename From, typename To>
+struct PlainCastDecoder : public PageDecoder
+{
+    using PageDecoder::PageDecoder;
+
+    void skip(size_t num_values) override
+    {
+        size_t bytes = num_values * sizeof(From);
+        requireRemainingBytes(bytes);
+        data += bytes;
+    }
+
+    void decode(size_t num_values, IColumn & col) override
+    {
+        const char * from_bytes = data;
+        skip(num_values);
+        /// Note that `col` element type may be different from To, e.g. different signedness, so
+        /// we can't assert_cast to ColumnVector<To>, and need to be careful about aliasing rules.
+        /// (We use To = UInt16 for Int16 columns to reduce the number of template instantiations,
+        ///  since a To = Int16 instantiation should compile to identical machine code anyway.)
+        auto to_bytes = col.insertRawUninitialized(num_values);
+        chassert(to_bytes.size() == num_values * sizeof(To));
+        To * to = reinterpret_cast<To *>(to_bytes.data());
+        for (size_t i = 0; i < num_values; ++i)
+        {
+            From x;
+            memcpy(&x, from_bytes + i * sizeof(From), sizeof(From));
+            to[i] = static_cast<To>(x);
+        }
+    }
+};
+
+struct PlainStringDecoder : public PageDecoder
+{
+    using PageDecoder::PageDecoder;
+
+    void skip(size_t num_values) override
+    {
+        for (size_t i = 0; i < num_values; ++i)
+        {
+            UInt32 x;
+            memcpy(&x, data, 4); /// omitting range check because input is padded
+            size_t len = 4 + size_t(x);
+            requireRemainingBytes(len);
+            data += len;
+        }
+    }
+
+    void decode(size_t num_values, IColumn & col) override
+    {
         auto & col_str = assert_cast<ColumnString &>(col);
-        if (encoding == parq::Encoding::PLAIN)
+        col_str.reserve(col_str.size() + num_values);
+        for (size_t i = 0; i < num_values; ++i)
         {
-            // 4 byte length stored as little endian, followed by bytes.
-            //TODO: Find a way to reserve for multiple pages at once, profiler shows the memcpy on
-            // this line taking 13% of total query time when reading lots of long strings.
-            col_str.getChars().reserve(col_str.getChars().size() + (bytes - num_values_in * (4 - 1)));
-            for (size_t idx = 0; idx < num_values_in; ++idx)
-            {
-                UInt32 x;
-                memcpy(&x, data, 4); /// omitting range check because input is padded
-                size_t len = x;
-                if (4 + len > size_t(end - data))
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Encoded string is out of bounds");
-                /// TODO: Try optimizing short memcpy by taking advantage of padding.
-                if (!filter || filter[idx])
-                    col_str.insertData(data + 4, len);
-                data += 4 + len;
-            }
+            UInt32 x;
+            memcpy(&x, data, 4); /// omitting range check because input is padded
+            size_t len = 4 + size_t(x);
+            requireRemainingBytes(len);
+            col_str.insertData(data + 4, size_t(x));
+            data += len;
         }
-        else if (encoding == parq::Encoding::DELTA_LENGTH_BYTE_ARRAY)
-        {
-            //TODO
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DELTA_LENGTH_BYTE_ARRAY not implemented");
-        }
-        else if (encoding == parq::Encoding::DELTA_BYTE_ARRAY)
-        {
-            //TODO
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DELTA_BYTE_ARRAY not implemented");
-        }
-        else
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected BYTE_ARRAY encoding: {}", thriftToString(encoding));
     }
 };
 

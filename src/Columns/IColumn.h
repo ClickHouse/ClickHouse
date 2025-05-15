@@ -653,7 +653,7 @@ public:
 
     /// Appends n elements with unspecified values and returns a pointer to their memory range.
     /// Can be used to decompress or deserialize data directly into the column.
-    /// Supported only for the simplest column types like ColumnVector and ColumnFixedString.
+    /// Supported only for simple column types like ColumnVector and ColumnFixedString.
     [[nodiscard]] virtual std::span<char> insertRawUninitialized(size_t count);
 
     /// Column is ColumnVector of numbers or ColumnConst of it. Note that Nullable columns are not numeric.

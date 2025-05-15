@@ -159,28 +159,8 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
     return file_metadata;
 }
 
-size_t Reader::estimateColumnMemoryUsage(const ColumnChunk & column) const
-{
-    //TODO: estimate better, the encoded size may be considerably smaller because of fancy encodings
-    //TODO: include arrays_offsets
-    if (column.pages.empty())
-    {
-        return column.meta->meta_data.total_uncompressed_size;
-    }
-    else
-    {
-        size_t pages_compressed_size = 0;
-        for (const auto & page : column.pages)
-            pages_compressed_size += page.meta->compressed_page_size;
-        return size_t(1. * column.meta->meta_data.total_uncompressed_size / column.meta->meta_data.total_compressed_size * pages_compressed_size);
-    }
-}
-
 void Reader::prefilterAndInitRowGroups()
 {
-    if (file_metadata.row_groups.empty())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet file has no row groups");
-
     extended_sample_block = *sample_block;
     if (prewhere_info)
     {
@@ -207,18 +187,14 @@ void Reader::prefilterAndInitRowGroups()
 
     if (key_condition)
     {
-        //TODO: assign PrimitiveColumnInfo:: use_bloom and use_column_index; possibly:
+        //TODO: assign PrimitiveColumnInfo:: use_bloom_filter and use_column_index; possibly:
         /// Expect that either all or none of the column chunks have indexes written.
         /// (If that's not the case, nothing breaks, we may just pick suboptimal options here.)
     }
 
-    //TODO: fill out use_prewhere in PrimitiveColumnInfo based on SelectQueryInfo;
-    //      check that prewhere involves at least one column (otherwise manager won't run it)
-    /// Note that we can't disable use_prewhere here, even if there's no performance benefit to it.
-    /// If the query pipeline relies on us to do PREWHERE, we must do it, otherwise the unfiltered
-    /// results will be shown to the user.
-
-    bool have_row_filtering = std::any_of(primitive_columns.begin(), primitive_columns.end(), [](const auto & c) { return c.use_column_index || c.use_prewhere; });
+    bool use_offset_index = options.always_use_offset_index || prewhere_info
+        || std::any_of(primitive_columns.begin(), primitive_columns.end(), [](const auto & c) { return c.use_column_index; });
+    bool need_to_find_bloom_filter_lengths_the_hard_way = false;
 
     for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
     {
@@ -232,56 +208,139 @@ void Reader::prefilterAndInitRowGroups()
         RowGroup & row_group = row_groups.emplace_back();
         row_group.meta = meta;
         row_group.row_group_idx = row_group_idx;
-        row_group.filter.rows_total = meta->num_rows;
-        row_group.filter.rows_pass = meta->num_rows;
         row_group.columns.resize(primitive_columns.size());
-        row_group.output.resize(extended_sample_block.columns());
 
+        /// Initialize column chunks, mostly prefetches.
         for (size_t column_idx = 0; column_idx < primitive_columns.size(); ++column_idx)
         {
             ColumnChunk & column = row_group.columns[column_idx];
             size_t parquet_column_idx = primitive_columns[column_idx].column_idx;
             column.meta = &meta->columns.at(parquet_column_idx);
 
-            if (have_row_filtering &&
-                column.meta->__isset.offset_index_offset && column.meta->__isset.offset_index_length &&
-                column.meta->offset_index_offset >= 0 && column.meta->offset_index_length > 0)
+            /// Dictionary page.
+            size_t dict_page_length = 0;
+            if (column.meta->meta_data.__isset.dictionary_page_offset)
+            {
+                /// We assume that the dictionary page is immediately followed by the first data page.
+                size_t start = size_t(column.meta->meta_data.dictionary_page_offset);
+                dict_page_length = size_t(column.meta->meta_data.data_page_offset) - start;
+                column.dictionary_page_prefetch = prefetcher.registerRange(
+                    start, dict_page_length, /*likely_to_be_used=*/ true);
+
+                /// Dictionary filter.
+                if (dict_page_length < options.dictionary_filter_limit_bytes &&
+                    column.meta->meta_data.__isset.encoding_stats)
+                {
+                    bool all_pages_are_dictionary_encoded = true;
+                    for (const parq::PageEncodingStats & s : column.meta->meta_data.encoding_stats)
+                        all_pages_are_dictionary_encoded &=
+                            (s.page_type != parq::PageType::DATA_PAGE && s.page_type != parq::PageType::DATA_PAGE_V2) ||
+                            s.encoding == parq::Encoding::PLAIN_DICTIONARY ||
+                            s.encoding == parq::Encoding::RLE_DICTIONARY ||
+                            s.count == 0;
+                    column.use_dictionary_filter = all_pages_are_dictionary_encoded;
+                }
+            }
+
+            /// Bloom filter.
+            if (!column.use_dictionary_filter &&
+                primitive_columns[column_idx].use_bloom_filter &&
+                column.meta->meta_data.__isset.bloom_filter_offset)
+            {
+                /// Have to guess the header size upper bound.
+                size_t max_header_length = 256;
+                if (!column.meta->meta_data.__isset.bloom_filter_length)
+                    need_to_find_bloom_filter_lengths_the_hard_way = true;
+                else
+                {
+                    size_t len = size_t(column.meta->meta_data.bloom_filter_length);
+                    max_header_length = std::min(max_header_length, len);
+                    column.bloom_filter_data_prefetch = prefetcher.registerRange(
+                        size_t(column.meta->meta_data.bloom_filter_offset),
+                        len, /*likely_to_be_used=*/ false);
+                }
+                /// bloom_filter_header_prefetch and bloom_filter_data_prefetch overlap, that's ok.
+                column.bloom_filter_header_prefetch = prefetcher.registerRange(
+                    size_t(column.meta->meta_data.bloom_filter_offset),
+                    max_header_length, /*likely_to_be_used=*/ true);
+            }
+
+            /// Offset index.
+            if (use_offset_index &&
+                column.meta->__isset.offset_index_offset && column.meta->__isset.offset_index_length)
             {
                 column.offset_index_prefetch = prefetcher.registerRange(
                     size_t(column.meta->offset_index_offset),
                     size_t(column.meta->offset_index_length), /*likely_to_be_used*/ true);
             }
 
-            if (primitive_columns[column_idx].use_bloom_filter &&
-                column.meta->meta_data.__isset.bloom_filter_offset &&
-                column.meta->meta_data.bloom_filter_offset >= 0)
-            {
-                //TODO: support missing length
-                if (column.meta->meta_data.__isset.bloom_filter_length &&
-                    column.meta->meta_data.bloom_filter_length > 0)
-                {
-                    column.bloom_filter_prefetch = prefetcher.registerRange(
-                        size_t(column.meta->meta_data.bloom_filter_offset),
-                        size_t(column.meta->meta_data.bloom_filter_length),
-                        /*likely_to_be_used*/ true);
-                }
-            }
-
-            if (primitive_columns[column_idx].use_column_index &&
-                column.meta->__isset.column_index_offset && column.meta->__isset.column_index_length &&
-                column.meta->column_index_offset >= 0 && column.meta->column_index_length > 0)
-            {
+            /// Column index.
+            column.use_column_index = primitive_columns[column_idx].use_column_index
+                && column.offset_index_prefetch
+                && column.meta->__isset.column_index_offset && column.meta->__isset.column_index_length;
+            if (column.use_column_index)
                 column.column_index_prefetch = prefetcher.registerRange(
                     size_t(column.meta->column_index_offset),
-                    size_t(column.meta->column_index_length), /*likely_to_be_used*/ true);
-            }
+                    size_t(column.meta->column_index_length), /*likely_to_be_used=*/ true);
 
-            column.data_prefetch = prefetcher.registerRange(
-                column.meta->meta_data.__isset.dictionary_page_offset
-                    ? column.meta->meta_data.dictionary_page_offset
-                    : column.meta->meta_data.data_page_offset,
-                column.meta->meta_data.total_compressed_size,
-                /*likely_to_be_used*/ true);
+            /// Data pages.
+            column.data_pages_prefetch = prefetcher.registerRange(
+                size_t(column.meta->meta_data.data_page_offset),
+                size_t(column.meta->meta_data.total_compressed_size) - dict_page_length,
+                /*likely_to_be_used=*/ true);
+
+            /// Whether the innermost array element type is nullable.
+            /// E.g. Nullable(String) or Array(Nullable(String)).
+            /// Does not apply to nullable arrays, e.g. Nullable(Array(String)), because clickhouse
+            /// doesn't support them; we convert null arrays to empty arrays, no null map.
+            bool is_nullable = !primitive_columns[column_idx].levels.back().is_array;
+            /// If column is declared as nullable, but statistics say there are no nulls, don't
+            /// waste time converting definition levels into null map.
+            bool null_count_is_known_to_be_zero =
+                column.meta->meta_data.statistics.__isset.null_count &&
+                column.meta->meta_data.statistics.null_count == 0;
+            column.need_null_map = is_nullable && !null_count_is_known_to_be_zero;
+        }
+    }
+
+    if (need_to_find_bloom_filter_lengths_the_hard_way)
+    {
+        /// Parquet metadata doesn't have bloom filter sizes, but we want to know them (at least an
+        /// upper bound) in advance, so that Prefetcher can coalesce it with other reads if it's small.
+        /// Bloom filter ends when something else starts (or earlier). So we list all possible
+        /// "something else" offsets and do binary search for each bloom filter to find where it ends.
+        std::vector<size_t> all_offsets;
+        for (const auto & rg : file_metadata.row_groups)
+        {
+            for (const auto & col : rg.columns)
+            {
+                all_offsets.push_back(col.file_offset);
+                if (col.__isset.offset_index_offset)
+                    all_offsets.push_back(col.offset_index_offset);
+                if (col.__isset.column_index_offset)
+                    all_offsets.push_back(col.column_index_offset);
+                if (col.meta_data.__isset.dictionary_page_offset)
+                    all_offsets.push_back(col.meta_data.dictionary_page_offset);
+                all_offsets.push_back(col.meta_data.data_page_offset);
+                if (col.meta_data.__isset.bloom_filter_offset)
+                    all_offsets.push_back(col.meta_data.bloom_filter_offset);
+            }
+        }
+        std::sort(all_offsets.begin(), all_offsets.end());
+        for (RowGroup & row_group : row_groups)
+        {
+            for (ColumnChunk & column : row_group.columns)
+            {
+                if (!column.bloom_filter_header_prefetch)
+                    continue;
+                chassert(column.meta->meta_data.__isset.bloom_filter_offset);
+                size_t offset = size_t(column.meta->meta_data.bloom_filter_offset);
+                auto it = std::upper_bound(all_offsets.begin(), all_offsets.end(), offset);
+                size_t end = it == all_offsets.end() ? prefetcher.getFileSize() : *it;
+
+                column.bloom_filter_data_prefetch = prefetcher.registerRange(
+                    offset, end - offset, /*likely_to_be_used=*/ false);
+            }
         }
     }
 
@@ -318,7 +377,7 @@ void Reader::preparePrewhere()
             .need_filter = prewhere_info->need_filter,
         });
     if (!prewhere_info->remove_prewhere_column)
-        prewhere_steps.back().column_idx_in_output_block = sample_block->getPositionByName(prewhere_info->prewhere_column_name);
+        prewhere_steps.back().idx_in_output_block = sample_block->getPositionByName(prewhere_info->prewhere_column_name);
 
     /// Look up expression inputs in extended_sample_block.
     std::unordered_multimap</*idx in extended_sample_block*/ size_t, /*idx in prewhere_steps*/ size_t> required_columns;
@@ -356,6 +415,653 @@ void Reader::preparePrewhere()
     }
 }
 
+void Reader::processBloomFilterHeader(ColumnChunk & /*column*/, const PrimitiveColumnInfo & /*column_info*/)
+{
+    volatile bool f = true;
+    if (f)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Bloom filters not implemented");
+}
+
+void Reader::decodeBloomFilterBlocks(ColumnChunk & /*column*/, const PrimitiveColumnInfo & /*column_info*/)
+{
+    volatile bool f = true;
+    if (f)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Bloom filters not implemented");
+}
+
+void Reader::decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInfo & column_info)
+{
+    auto data = prefetcher.getRangeData(column.dictionary_page_prefetch);
+    parq::PageHeader header;
+    size_t header_size = deserializeThriftStruct(header, data.data(), data.size());
+    data = data.subspan(header_size);
+    /// TODO: Check checksum.
+    size_t compressed_page_size = size_t(header.compressed_page_size);
+    if (header.compressed_page_size < 0 || compressed_page_size > data.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Dictionary page size out of bounds: {} > {}", header.compressed_page_size, data.size());
+    data = data.subspan(0, size_t(header.compressed_page_size));
+
+    if (header.type != parq::PageType::DICTIONARY_PAGE)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected dictionary page type: {}", thriftToString(header.type));
+
+    auto codec = column.meta->meta_data.codec;
+    if (codec != parq::CompressionCodec::UNCOMPRESSED)
+    {
+        size_t uncompressed_size = size_t(header.uncompressed_page_size);
+        auto & buf = column.dictionary.decompressed_buf;
+        buf.resize(uncompressed_size);
+        decompress(data.data(), data.size(), buf.size(), codec, buf.data());
+        data = std::span(buf.data(), buf.size());
+    }
+
+    column.dictionary.decode(header.dictionary_page_header.encoding, column_info.decoder, size_t(header.dictionary_page_header.num_values), data, *column_info.raw_decoded_type);
+}
+
+bool Reader::applyBloomAndDictionaryFilters(RowGroup & /*row_group*/)
+{
+    volatile bool f = true;
+    if (f)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Bloom filters not implemented");
+    return true;
+}
+
+void Reader::applyColumnIndex(ColumnChunk & /*column*/, const PrimitiveColumnInfo & /*column_info*/)
+{
+    volatile bool f = true;
+    if (f)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Column index not implemented");
+}
+
+void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
+{
+    std::vector<std::pair<size_t, size_t>> row_ranges;
+    size_t num_rows = 0;
+    {
+        /// Do a sweep to find the intersection of all per-column row sets.
+        std::vector<std::pair<size_t, /*sign*/ int>> events;
+
+        /// Add an extra row set representing the whole row group so that we don't need a separate
+        /// code path for when column index is not used.
+        int num_range_sets = 1;
+        events.emplace_back(0, +1);
+        events.emplace_back(size_t(row_group.meta->num_rows), -1);
+
+        for (const auto & col : row_group.columns)
+        {
+            if (!col.use_column_index)
+                continue;
+            if (col.row_ranges_after_column_index.empty())
+                /// Whole row group was filtered out, leave `subgroups` empty.
+                return;
+
+            num_range_sets += 1;
+            size_t prev_end = 0;
+            for (size_t i = 0; i < col.row_ranges_after_column_index.size(); ++i)
+            {
+                const auto [start, end] = col.row_ranges_after_column_index[i];
+                chassert(start < end);
+                chassert(!i || start > prev_end);
+                prev_end = end;
+
+                events.emplace_back(start, +1);
+                events.emplace_back(end, -1);
+            }
+        }
+
+        /// (Important that -1 comes before +1, otherwise we'd get empty ranges in the output.)
+        std::sort(events.begin(), events.end());
+        int coverage = 0;
+        for (size_t i = 0; i < events.size(); ++i)
+        {
+            coverage += events[i].second;
+            chassert(coverage >= 0 && coverage <= num_range_sets);
+            if (coverage == num_range_sets)
+            {
+                row_ranges.emplace_back(events[i].first, events.at(i + 1).first);
+
+                chassert(row_ranges.back().second > row_ranges.back().first);
+                chassert(row_ranges.size() == 1 || row_ranges.back().first > row_ranges[row_ranges.size() - 2].second);
+                num_rows += row_ranges.back().second - row_ranges.back().first;
+            }
+        }
+    }
+    if (num_rows == 0)
+        return;
+
+    size_t rows_per_subgroup = num_rows;
+    if (options.max_block_size > 0)
+        rows_per_subgroup = std::min(rows_per_subgroup, options.max_block_size);
+
+    if (options.preferred_block_size_bytes > 0)
+    {
+        double bytes_per_row = 0;
+        for (size_t i = 0; i < primitive_columns.size(); ++i)
+            bytes_per_row += estimateColumnMemoryBytesPerRow(row_group.columns.at(i), row_group, primitive_columns.at(i));
+
+        size_t n = size_t(options.preferred_block_size_bytes / bytes_per_row);
+        rows_per_subgroup = std::min(rows_per_subgroup, std::max(n, 1ul));
+    }
+    chassert(rows_per_subgroup > 0);
+
+    /// (Currently we turn each element of row_ranges into at least one row subgroup. If column index
+    ///  filtering produced lots of short row ranges, we'll end up with lots of short row subgroups.
+    ///  It seems that this would be very rare in practice. If it turns out to be a problem, it's easy
+    ///  to add coalescing of nearby short ranges here, similar to coalescing read ranges, initializing
+    ///  `filter` to keep only the rows covered by ranges.)
+    for (const auto [start, end] : row_ranges)
+    {
+        for (size_t substart = start; substart < end; substart += rows_per_subgroup)
+        {
+            size_t subend = std::min(end, substart + rows_per_subgroup);
+
+            RowSubgroup & row_subgroup = row_group.subgroups.emplace_back();
+            row_subgroup.start_row_idx = substart;
+            row_subgroup.filter.rows_pass = subend - substart;
+            row_subgroup.filter.rows_total = row_subgroup.filter.rows_pass;
+
+            row_subgroup.columns.resize(primitive_columns.size());
+            row_subgroup.output.resize(extended_sample_block.columns());
+        }
+    }
+}
+
+void Reader::decodeOffsetIndex(ColumnChunk & /*column*/)
+{
+    volatile bool f = true;
+    if (f)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Offset index not implemented");
+}
+
+void Reader::determinePagesToRead(ColumnSubchunk & /*subchunk*/, RowSubgroup & /*row_subgroup*/, RowGroup & /*row_group*/)
+{
+    //TODO: use offset index and filter
+}
+
+double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const
+{
+    double column_chunk_bytes;
+    if (column.meta->meta_data.__isset.size_statistics &&
+        column.meta->meta_data.size_statistics.__isset.unencoded_byte_array_data_bytes)
+    {
+        /// The writer of the parquet file has helpfully put the total length of the
+        /// strings into file metadata. Thanks writer!
+        column_chunk_bytes = column.meta->meta_data.size_statistics.unencoded_byte_array_data_bytes;
+    }
+    else if (column.meta->meta_data.__isset.dictionary_page_offset)
+    {
+        /// Dictionary-encoded strings. No way to know the decoded length in advance.
+        double avg_string_length;
+        if (column.dictionary.isInitialized())
+        {
+            /// We've read the dictionary. Use the average string length in the dictionary as a guess
+            /// at average string length in the column chunk.
+            avg_string_length = column.dictionary.getAverageValueSize();
+        }
+        else
+        {
+            /// We have no idea how long the strings are.
+            avg_string_length = 64;
+        }
+        column_chunk_bytes = avg_string_length * column.meta->meta_data.num_values;
+    }
+    else
+    {
+        /// Non-dictionary-encoded strings.
+        column_chunk_bytes = column.meta->meta_data.total_uncompressed_size;
+    }
+
+    return column_chunk_bytes / row_group.meta->num_rows;
+}
+
+double Reader::estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info) const
+{
+    double res;
+    if (column_info.final_type->haveMaximumSizeOfValue())
+        /// Fixed-size values, e.g. numbers or FixedString.
+        res = 1. * column_info.final_type->getMaximumSizeOfValueInMemory() * column.meta->meta_data.num_values / row_group.meta->num_rows;
+    else
+        res = estimateAverageStringLengthPerRow(column, row_group);
+
+    /// Outer array offsets.
+    if (column_info.levels.back().rep > 0)
+        res += 8;
+
+    /// Nested array offsets (assume the worst case where the outer arrays are long and inner arrays
+    /// are short, so inner arrays have ~num_values total elements rather than ~num_rows).
+    if (column_info.levels.back().rep > 1)
+        res += (column_info.levels.back().rep - 1) * 8. * column.meta->meta_data.num_values / row_group.meta->num_rows;
+
+    return res;
+}
+
+void Reader::decodePrimitiveColumn(ColumnChunk & column_chunk, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, const RowGroup & row_group, const RowSubgroup & row_subgroup)
+{
+    /// Allocate columns for values, null map, and array offsets.
+
+    size_t output_num_values_estimate;
+    if (column_info.levels.back().rep == 0)
+        output_num_values_estimate = row_subgroup.filter.rows_pass; // no arrays, rows == values
+    else if (row_subgroup.filter.rows_pass == size_t(row_group.meta->num_rows))
+        output_num_values_estimate = column_chunk.meta->meta_data.num_values; // whole column chunk
+    else
+        /// There are arrays, so we can't know exactly how many primitive values there are in
+        /// rows that pass the filter. Make a guess using average array length.
+        output_num_values_estimate = size_t(1.2 * row_subgroup.filter.rows_pass / row_group.meta->num_rows * column_chunk.meta->meta_data.num_values);
+
+    subchunk.arrays_offsets.resize(column_info.levels.back().rep);
+    for (size_t i = 0; i < subchunk.arrays_offsets.size(); ++i)
+    {
+        subchunk.arrays_offsets[i] = ColumnArray::ColumnOffsets::create();
+        subchunk.arrays_offsets[i]->reserve(i ? output_num_values_estimate : row_subgroup.filter.rows_total);
+    }
+
+    if (column_chunk.need_null_map)
+    {
+        subchunk.null_map = ColumnUInt8::create();
+        subchunk.null_map->reserve(output_num_values_estimate);
+    }
+
+    subchunk.column = column_info.raw_decoded_type->createColumn();
+    subchunk.column->reserve(output_num_values_estimate);
+    if (auto * string_column = typeid_cast<ColumnString *>(subchunk.column.get()))
+    {
+        double avg_len = estimateAverageStringLengthPerRow(column_chunk, row_group);
+        size_t bytes_to_reserve = size_t(1.2 * (avg_len + 1) * row_subgroup.filter.rows_pass);
+        string_column->getChars().reserve(bytes_to_reserve);
+    }
+
+    /// Find ranges of rows that pass filter and decode them.
+
+    size_t row_subidx = 0;
+    while (true) // loop over row ranges that pass the filter
+    {
+        /// Find a range of rows that pass filter.
+        /// TODO: We call decoder for each such range separately, with a bunch of overhead per call.
+        ///       This will probably be slow on something like `PREWHERE idx%2=0`.
+        ///       If it's too slow and/or comes up in practice or benchmarks, make decoders accept
+        ///       a (optional) filter mask, like e.g. in commit c1a361d176507a19c2fdc49f0f1d6dc7e2cd539e.
+        size_t num_rows = row_subgroup.filter.rows_total - row_subidx;
+        if (!row_subgroup.filter.filter.empty())
+        {
+            /// TODO: simd or something
+            while (row_subidx < row_subgroup.filter.rows_total && !row_subgroup.filter.filter[row_subidx])
+                row_subidx += 1;
+            num_rows = 0;
+            while (row_subidx + num_rows < row_subgroup.filter.rows_total && row_subgroup.filter.filter[row_subidx + num_rows])
+                num_rows += 1;
+        }
+        if (!num_rows)
+            break;
+        size_t start_row_idx = row_subgroup.start_row_idx + row_subidx;
+        size_t end_row_idx = start_row_idx + num_rows;
+        row_subidx += num_rows;
+
+        skipToRow(start_row_idx, column_chunk, column_info);
+
+        while (true) // loop over pages
+        {
+            readRowsInPage(end_row_idx, subchunk, column_chunk, column_info);
+
+            /// We're done if we've reached end_row_idx and we're at a row boundary.
+            auto & page = column_chunk.page;
+            if (page.next_row_idx == end_row_idx &&
+                (page.value_idx < page.num_values ||
+                 page.end_row_idx.has_value() || // page ends on row boundary
+                 column_chunk.next_page_offset == prefetcher.getRangeData(column_chunk.data_pages_prefetch).size()))
+                break;
+
+            /// Advance to next page.
+            chassert(page.value_idx == page.num_values);
+            skipToRow(page.next_row_idx, column_chunk, column_info);
+            chassert(page.value_idx == 0);
+        }
+    }
+
+    for (const auto & offsets : subchunk.arrays_offsets)
+    {
+        /// If repetition levels say that the column chunk starts in the middle of an array
+        /// (e.g. first rep level is not 0; there are other cases with nested arrays),
+        /// processRepDefLevelsForArray will correspondingly reassign the offset of the start of the
+        /// first array. That wouldn't be a valid ColumnArray.
+        /// This may also indicate a bug where we stopped reading previous column subchunk in the
+        /// middle of an array.
+        const auto & data = assert_cast<const ColumnArray::ColumnOffsets &>(*offsets).getData();
+        if (data[-1] != 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid repetition/definition levels for arrays in column {}", column_info.name);
+    }
+
+    if (subchunk.null_map && !column_info.output_nullable && !options.null_as_default)
+    {
+        const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
+        if (memchr(null_map.data(), 0, null_map.size()) != nullptr)
+            throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, "Cannot convert NULL value to non-Nullable type for column {}", column_info.name);
+        subchunk.null_map = nullptr;
+    }
+
+    if (subchunk.null_map)
+    {
+        const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
+        subchunk.column->expand(null_map, /*inverted*/ true);
+    }
+
+    if (subchunk.column->size() != row_subgroup.filter.rows_pass)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of rows in column subchunk");
+
+    if (column_info.output_nullable)
+    {
+        if (!subchunk.null_map)
+            subchunk.null_map = ColumnUInt8::create(subchunk.column->size(), 0);
+        subchunk.column = ColumnNullable::create(std::move(subchunk.column), std::move(subchunk.null_map));
+    }
+    else
+    {
+        //TODO: Turn null_map into BlockMissingValues.
+    }
+    subchunk.null_map.reset();
+
+    chassert(subchunk.column->getDataType() == column_info.intermediate_type->getColumnType());
+
+    if (column_info.needs_cast)
+    {
+        auto col = castColumn(
+            {std::move(subchunk.column), column_info.intermediate_type, column_info.name},
+             column_info.final_type);
+        chassert(col->use_count() == 1);
+        subchunk.column = IColumn::mutate(std::move(col));
+    }
+}
+
+void Reader::skipToRow(size_t row_idx, ColumnChunk & column_chunk, const PrimitiveColumnInfo & column_info)
+{
+    /// True if column_chunk.page is initialized and contains the requested row_idx.
+    bool found_page = false;
+    auto & page = column_chunk.page;
+
+    if (page.initialized && page.value_idx < page.num_values && page.end_row_idx.has_value() && *page.end_row_idx > row_idx)
+        /// Fast path: we're just continuing reading the same page as before.
+        found_page = true;
+
+    if (!found_page && !column_chunk.data_pages.empty())
+    {
+        /// If we have offset index, find the row index there and jump to the correct page.
+        while (column_chunk.data_pages_idx < column_chunk.data_pages.size() &&
+            column_chunk.data_pages[column_chunk.data_pages_idx].end_row_idx <= row_idx)
+            ++column_chunk.data_pages_idx;
+        if (column_chunk.data_pages_idx == column_chunk.data_pages.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet offset index covers too few rows");
+        const auto & page_info = column_chunk.data_pages[column_chunk.data_pages_idx];
+        size_t first_row_idx = size_t(page_info.meta->first_row_index);
+        //TODO: remember to check that row ranges don't overlap when loading offset index
+        if (first_row_idx > row_idx)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Row passes filters but its page was not selected for reading. This is a bug.");
+
+        auto data = prefetcher.getRangeData(page_info.prefetch);
+        const char * ptr = data.data();
+        if (!initializePage(ptr, ptr + data.size(), first_row_idx, page_info.end_row_idx, row_idx, column_chunk, column_info))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Page doesn't contain requested row");
+        found_page = true;
+    }
+
+    while (true)
+    {
+        /// Skip rows inside the page.
+        if (page.initialized && page.value_idx < page.num_values &&
+            skipRowsInPage(row_idx, page, column_chunk, column_info))
+            return;
+
+        if (found_page)
+            /// This was supposed to be the correct page.
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of page");
+
+        /// Advance to the next page.
+        chassert(column_chunk.data_pages.empty());
+        auto all_pages = prefetcher.getRangeData(column_chunk.data_pages_prefetch);
+        chassert(column_chunk.next_page_offset <= all_pages.size());
+        const char * ptr = all_pages.data() + column_chunk.next_page_offset;
+        const char * end = all_pages.data() + all_pages.size();
+        initializePage(ptr, end, page.next_row_idx, /*end_row_idx=*/ std::nullopt, row_idx, column_chunk, column_info);
+        column_chunk.next_page_offset = ptr - all_pages.data();
+    }
+}
+
+bool Reader::initializePage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, size_t target_row_idx, ColumnChunk & column_chunk, const PrimitiveColumnInfo & column_info)
+{
+    PageState & page = column_chunk.page;
+    /// We reuse PageState instance across pages to reuse memory in buffers like decompressed_buf.
+    page.initialized = false;
+    page.decoder.reset();
+    page.decompressed_buf.clear();
+    page.rep.clear();
+    page.def.clear();
+    page.value_idx = 0;
+
+    page.next_row_idx = next_row_idx;
+    page.end_row_idx = end_row_idx;
+
+    /// Decode page header.
+
+    parq::PageHeader header;
+    data_ptr += deserializeThriftStruct(header, data_ptr, data_end - data_ptr);
+    /// TODO: Check checksum.
+    size_t compressed_page_size = size_t(header.compressed_page_size);
+    if (header.compressed_page_size < 0 || compressed_page_size > size_t(data_end - data_ptr))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Page size out of bounds: {} > {}", header.compressed_page_size, data_end - data_ptr);
+    page.data = std::span(data_ptr, compressed_page_size);
+    data_ptr += compressed_page_size;
+
+    /// Check if all rows of the page are filtered out, if we have enough information.
+
+    std::optional<size_t> num_rows_in_page;
+    if (header.type == parq::PageType::DATA_PAGE_V2)
+        num_rows_in_page = header.data_page_header_v2.num_rows;
+    else if (header.type == parq::PageType::DATA_PAGE &&
+             column_info.levels.back().rep == 0) // no arrays => num_values == num_rows
+        num_rows_in_page = header.data_page_header.num_values;
+
+    if (num_rows_in_page.has_value())
+    {
+        if (end_row_idx.has_value() && *end_row_idx - next_row_idx != *num_rows_in_page)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Number of rows in page header doesn't match offset index: {} != {}", *num_rows_in_page, *end_row_idx - next_row_idx);
+
+        if (next_row_idx + *num_rows_in_page <= target_row_idx)
+            return false;
+
+        page.end_row_idx = next_row_idx + *num_rows_in_page;
+    }
+
+    /// Get information about page layout and encoding out of page header.
+
+    page.codec = column_chunk.meta->meta_data.codec;
+    page.values_uncompressed_size = header.uncompressed_page_size;
+
+    if (page.codec == parq::CompressionCodec::UNCOMPRESSED && header.uncompressed_page_size != header.compressed_page_size)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "No compression, but compressed and uncompressed page size are different");
+
+    const char * encoded_rep = nullptr; // uncompressed
+    const char * encoded_def = nullptr; // uncompressed
+    size_t encoded_rep_size = 0;
+    size_t encoded_def_size = 0;
+    parq::Encoding::type def_encoding = parq::Encoding::RLE;
+    parq::Encoding::type rep_encoding = parq::Encoding::RLE;
+
+    if (header.type == parq::PageType::DATA_PAGE)
+    {
+        page.num_values = header.data_page_header.num_values;
+        page.encoding = header.data_page_header.encoding;
+        def_encoding = header.data_page_header.definition_level_encoding;
+        rep_encoding = header.data_page_header.repetition_level_encoding;
+
+        if (column_info.levels.size() == 1)
+        {
+            /// No rep/def levels, the whole page is values.
+        }
+        else
+        {
+            /// Rep/def levels and values are compressed together. Decompress and split.
+            /// Format (lengths are 4 bytes):
+            /// <def length> <def> [<rep length> <rep>] <values>
+            decompressPageIfCompressed(page);
+
+            UInt32 n;
+            if (column_info.levels.back().rep > 0)
+            {
+                if (page.data.size() < 4)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Decompressed data is too short (rep size)");
+                memcpy(&n, page.data.data(), 4);
+                if (n > page.data.size() - 4)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Decompressed data is too short (rep)");
+                encoded_rep = page.data.data() + 4;
+                encoded_rep_size = n;
+                page.data = page.data.subspan(4 + n);
+            }
+
+            if (page.data.size() < 4)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Decompressed data is too short (def size)");
+            memcpy(&n, page.data.data(), 4);
+            if (n > page.data.size() - 4)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Decompressed data is too short (def)");
+            encoded_def = page.data.data() + 4;
+            encoded_def_size = n;
+            page.data = page.data.subspan(4 + n);
+        }
+    }
+    else if (header.type == parq::PageType::DATA_PAGE_V2)
+    {
+        page.num_values = header.data_page_header_v2.num_values;
+        page.encoding = header.data_page_header_v2.encoding;
+        encoded_def_size = header.data_page_header_v2.definition_levels_byte_length;
+        encoded_rep_size = header.data_page_header_v2.repetition_levels_byte_length;
+
+        if (header.data_page_header_v2.__isset.is_compressed &&
+            !header.data_page_header_v2.is_compressed)
+        {
+            page.codec = parq::CompressionCodec::UNCOMPRESSED;
+        }
+
+        if (encoded_def_size + encoded_rep_size > compressed_page_size)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Page data is too short (def+rep)");
+        encoded_rep = page.data.data();
+        encoded_def = page.data.data() + encoded_rep_size;
+        size_t uncompressed_part = encoded_def_size + encoded_rep_size;
+        page.data = page.data.subspan(uncompressed_part);
+        page.values_uncompressed_size -= uncompressed_part;
+    }
+    else if (header.type == parq::PageType::DICTIONARY_PAGE)
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected dictionary page");
+    }
+    else if (header.type == parq::PageType::INDEX_PAGE)
+    {
+        /// Skip index page quietly, although it's probably not expected amid data pages.
+        /// (This page type is currently unused in parquet.)
+        return false;
+    }
+    else
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected page type: {}", thriftToString(header));
+    }
+
+    if (page.encoding == parq::Encoding::PLAIN_DICTIONARY)
+        page.encoding = parq::Encoding::RLE_DICTIONARY;
+
+    page.is_dictionary_encoded = page.encoding == parq::Encoding::RLE_DICTIONARY;
+    if (page.is_dictionary_encoded && !column_chunk.dictionary.isInitialized())
+    {
+        if (column_chunk.meta->meta_data.__isset.dictionary_page_offset)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary not initialized");
+        else
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected dictionary-encoded page in column chunk with no dictionary");
+    }
+
+    /// Decode rep/def levels.
+
+    /// TODO: Maybe skip decoding def if column statistics say there are not nulls, and max_rep == 0.
+    UInt8 max_def = column_info.levels.back().def;
+    UInt8 max_rep = column_info.levels.back().rep;
+
+    decodeRepOrDefLevels(rep_encoding, max_rep, page.num_values, std::span(encoded_rep, encoded_rep_size), page.rep);
+
+    /// Don't decode def levels in the common case of non-array column that's declared nullable but
+    /// contains no nulls.
+    if (max_rep > 0 || column_chunk.need_null_map)
+        decodeRepOrDefLevels(def_encoding, max_def, page.num_values, std::span(encoded_def, encoded_def_size), page.def);
+
+    page.initialized = true;
+    return true;
+}
+
+/// Advances page.{value_idx, next_row_idx}. The caller must advance page.data (encoded values).
+static void advanceValueIdxUntilRow(size_t end_row_idx, Reader::PageState & page)
+{
+    size_t new_value_idx = page.value_idx;
+    if (page.rep.empty())
+    {
+        new_value_idx = std::min(page.num_values, page.value_idx + (end_row_idx - page.next_row_idx));
+        page.next_row_idx += new_value_idx - page.value_idx;
+    }
+    else
+    {
+        while (new_value_idx < page.num_values)
+        {
+            if (page.rep[new_value_idx] == 0)
+            {
+                if (page.next_row_idx == end_row_idx)
+                    break;
+                page.next_row_idx += 1;
+            }
+            new_value_idx += 1;
+        }
+    }
+    page.value_idx = new_value_idx;
+}
+
+void Reader::createPageDecoder(PageState & page, ColumnChunk & column_chunk, const PrimitiveColumnInfo & column_info)
+{
+    if (page.is_dictionary_encoded)
+        page.decoder = makeDictionaryIndicesDecoder(page.encoding, column_chunk.dictionary.count, page.data);
+    else
+        page.decoder = column_info.decoder.makeDecoder(page.encoding, page.data);
+}
+
+/// Returns true if this row is found in this page, and value_idx is at the first value of this row.
+/// False if we reached the end of the page without reaching this row index; next_row_idx is set
+/// accordingly.
+bool Reader::skipRowsInPage(size_t target_row_idx, PageState & page, ColumnChunk & column_chunk, const PrimitiveColumnInfo & column_info)
+{
+    chassert(target_row_idx >= page.next_row_idx);
+
+    size_t prev_value_idx = page.value_idx;
+    advanceValueIdxUntilRow(target_row_idx, page);
+
+    if (page.value_idx == page.num_values)
+    {
+        page.decoder.reset();
+        return false;
+    }
+
+    size_t encoded_values_to_skip = 0;
+    if (page.def.empty())
+    {
+        encoded_values_to_skip = page.value_idx - prev_value_idx;
+    }
+    else
+    {
+        UInt8 max_def = column_info.levels.back().def;
+        for (size_t i = prev_value_idx; i < page.value_idx; ++i)
+            encoded_values_to_skip += page.def[i] == max_def;
+    }
+
+    if (encoded_values_to_skip > 0)
+    {
+        decompressPageIfCompressed(page);
+        if (!page.decoder)
+            createPageDecoder(page, column_chunk, column_info);
+        page.decoder->skip(encoded_values_to_skip);
+    }
+
+    return true;
+}
+
 /// *** Rep/def level explanation ***
 ///
 /// Functions for interpreting repetition and definition levels. This is tricky.
@@ -365,7 +1071,7 @@ void Reader::preparePrewhere()
 /// (Things like tuples and maps are assembled out of such columns separately.)
 ///
 /// ClickHouse type looks like e.g. Array(Array(Nullable(String)),
-/// i.e. 0+ Array-s, then 0-1 Nullable-s, then primitive column.
+/// i.e. 0+ Array-s, then maybe Nullable, then primitive column.
 /// Represented as a primitive IColumn + null mask + array offsets for each Array level.
 ///
 /// Parquet type looks like e.g. Array(Nullable(Nullable(Array(Nullable(Nullable(String)))))),
@@ -376,11 +1082,11 @@ void Reader::preparePrewhere()
 /// places clickhouse doesn't support (nullable arrays and nullable nullables).
 ///
 /// Concepts:
-///  * "Value" is an element in rep/def levels arrays (the two arrays are parallel).
+///  * "Value" is an element in logical rep/def levels arrays (the two arrays are parallel).
 ///    (If max_def or max_rep is 0, the corresponding array is not stored, but logically it's
 ///     an array of zeroes.)
 ///    See below for what values can represent.
-///  * "Encoded value" is a non-null primitive value occupying some bytes in the parquet file.
+///  * "Encoded value" is a non-null primitive value actually stored in the parquet file.
 ///    Corresponds to non-null element of innermost array.
 ///  * "Row" is a row in the table. Corresponds to a range of values.
 ///    (If not array, exactly one value.)
@@ -398,73 +1104,35 @@ void Reader::preparePrewhere()
 /// rep[i] == k indicates start of a new array element for the array at level k (<= max_rep).
 /// rep[i] == 0 indicates first value of a new row (column chunk can be seen as array of rows).
 ///
-/// A row may have values in multiple pages (unless DataPage V2 is used).
+/// A row may have values in multiple pages (unless DataPage V2 is used or offset index is present).
 ///
 /// With all of that in mind, for a given page we have to produce:
-///  * page_value_filter, based on page_row_filter.
-///    page_row_filter elements correspond to *rows*, while page_value_filter elements correspond
-///    to *encoded values* (def[i] == max_def). So, each element needs to be repeated some
-///    number of times (possibly 0, if empty array).
 ///  * null_map, as described above.
 ///  * num_encoded_values - just count def[i] == max_def.
 ///  * Array offsets for each array level (rep = 1..max_rep).
 ///    (Array may have elements in multiple pages.)
-///  * Advance row_idx from last value of previous page to last value of current page.
-///    (Row may have values in multiple pages.)
-
-/// Hot inner loop that does all rep/def stuff except array offsets.
-/// The template lets us avoid doing unnecessary checks in common special cases.
-/// TODO: Try simdifying, maybe the whole thing, maybe some special cases.
-/// TODO: Try replacing push_back-s with direct writes by pointer, to avoid a dereference.
-template <bool HAS_FILTER, bool HAS_ARRAYS, bool HAS_NULLS>
-static void processRepDefLevelsForInnermostColumn(
-    size_t num_values, const UInt8 * def, const UInt8 * rep, UInt8 max_def, UInt8 max_array_def,
-    size_t page_num_rows, const UInt8 * page_row_filter,
-    size_t & out_num_encoded_values, size_t & out_num_filtered_values,
-    PaddedPODArray<UInt8> & out_page_value_filter, ColumnUInt8::Container * out_null_map)
+///  * Advance value_idx and next_row_idx by correct amounts, keeping them in sync.
+template <bool HAS_ARRAYS, bool HAS_NULLS>
+static void processDefLevelsForInnermostColumn(
+    size_t num_values, const UInt8 * def, UInt8 max_def, UInt8 max_array_def, size_t & out_num_encoded_values, ColumnUInt8::Container * out_null_map)
 {
-    size_t rows_seen = 0;
     size_t num_encoded_values = 0;
-    size_t num_filtered_values = 0;
     for (size_t i = 0; i < num_values; ++i)
     {
         if constexpr (HAS_ARRAYS)
-            rows_seen += rep[i] == 0;
-        else
-            rows_seen = i + 1;
-
-        if constexpr (HAS_ARRAYS)
             if (def[i] < max_array_def)
-                continue;
+                continue; // empty array
 
-        UInt8 passes_filter = 1;
-        if constexpr (HAS_FILTER)
-        passes_filter = page_row_filter[rows_seen];
-
-        UInt8 not_null = 1;
+        bool is_null = false;
         if constexpr (HAS_NULLS)
         {
-            not_null = def[i] == max_def;
-
-            /// (We hope that the compiler will optimize out the `if` in HAS_FILTER = 0 instantiation.
-            ///  Similarly for the `if (not_null)` below.)
-            if (passes_filter)
-                out_null_map->push_back(!not_null);
+            is_null = def[i] != max_def;
+            out_null_map->push_back(is_null);
         }
 
-        if (not_null)
-        {
-            if constexpr (HAS_FILTER)
-            {
-                out_page_value_filter.push_back(passes_filter);
-                num_filtered_values += passes_filter;
-            }
-            num_encoded_values += 1;
-        }
+        num_encoded_values += !is_null;
     }
-    chassert(rows_seen == page_num_rows);
     out_num_encoded_values = num_encoded_values;
-    out_num_filtered_values = HAS_FILTER ? num_filtered_values : num_encoded_values;
 }
 
 /// Produces array offsets at a given level of nested arrays.
@@ -474,29 +1142,20 @@ static void processRepDefLevelsForInnermostColumn(
 /// in one loop over rep/def levels (doing something like arrays_offsets[rep[i]].push_back(...)).
 /// But I expect it would be slower because (a) simd would be less effective (especially after we
 /// simdify this implementation), (b) usually there's only one level of arrays.
-template <bool HAS_FILTER>
 static void processRepDefLevelsForArray(
     size_t num_values, const UInt8 * def, const UInt8 * rep, UInt8 array_rep, UInt8 array_def,
-    UInt8 parent_array_def, size_t page_num_rows, const UInt8 * page_row_filter,
-    PaddedPODArray<UInt64> & out_offsets)
+    UInt8 parent_array_def, PaddedPODArray<UInt64> & out_offsets)
 {
     UInt64 offset = out_offsets.back(); // may take -1-st element, PaddedPODArray allows that
-    size_t rows_seen = 0;
     for (size_t i = 0; i < num_values; ++i)
     {
-        if constexpr (HAS_FILTER)
-        {
-            rows_seen += rep[i] == 0;
-            if (!page_row_filter[rows_seen])
-                continue;
-        }
-
         if (def[i] < parent_array_def)
             /// Some ancestor is null or empty array.
             /// In particular:
             ///  * `def[i] == array_def - 1` means this array is empty,
             ///  * `parent_array_def <= def[i] < array_def - 1` means this array is null,
             ///    which we convert to empty array because clickhouse doesn't support nullable arrays.
+            ///    TODO: Should we throw an error in this case if !options.null_as_default?
             continue;
 
         if (rep[i] < array_rep)
@@ -514,659 +1173,203 @@ static void processRepDefLevelsForArray(
     /// Note that the array may continue in the next page. In that case the next call to this
     /// function will read this offset back, add to it, and assign it again.
     out_offsets.back() = offset;
-
-    if constexpr (HAS_FILTER)
-        chassert(rows_seen == page_num_rows);
 }
 
-void Reader::parsePrimitiveColumn(ColumnChunk & column_chunk, const PrimitiveColumnInfo & column_info, const RowSet & filter)
+void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column_chunk, const PrimitiveColumnInfo & column_info)
 {
-    //TODO: handle selective page reading
+    PageState & page = column_chunk.page;
+    chassert(page.initialized && page.value_idx < page.num_values);
 
-    MutableColumnPtr dictionary_column;
-    MutableColumnPtr index_column;
-    MutableColumnPtr full_column;
-    std::unique_ptr<ValueDecoder> index_decoder;
+    /// Note: end_row_idx == page.next_row_idx doesn't necessarily mean we're done. E.g. suppose the
+    /// row end_row_idx-1 contains an array that starts in page 0 and ends inside page 1.
+    /// readRowsInPage in page 0 will reach end of page, with next_row_idx == end_row_idx. Then
+    /// readRowsInPage in page 1 will continue until it sees the end of the array, i.e. the start of
+    /// the next row (rep == 0), still with next_row_idx == end_row_idx.
+    chassert(end_row_idx >= page.next_row_idx);
 
-    /// We use ColumnLowCardinality for dictionary-decoding. Originally the idea was that this
-    /// automatically takes care of the case when LowCardinality type was requested - we can just
-    /// output this ColumnLowCardinality without converting to full column. But this doesn't quite
-    /// work because some operations on ColumnLowCardinality require that the dictionary has no
-    /// duplicates and starts with a default value, while parquet has no such requirement. So we'd
-    /// need to do an extra pass to fix it up. Currently we don't have such pass. We construct this
-    /// half-valid ColumnLowCardinality, then always convert it to full column.
-    /// TODO: Instead of using ColumnLowCardinality for dictionary-encoded data, at least for strings
-    ///       add a custom dictionary type to avoid a memcpy: instead of copying strings from
-    ///       plain-encoded dictionary page into ColumnString, make an array of ranges pointing into
-    ///       the decompressed page buffer.
-    /// TODO: Instead of reading all indices into an array, have a fast path that does dictionary
-    ///       lookup right in the middle of decodeBitPackedRLE (through template callback). This
-    ///       would avoid repeated dictionary lookups in RLE runs and memory bandwidth of scanning
-    ///       the indices array if page doesn't fit in cache.
-    ///       But then have a fallback where we switch from that to LowCardinality if the column
-    ///       grows too big; chunk delivery would have to concatenate the 2 columns (or 3).
-    auto make_low_cardinality_column = [&]
+    /// Convert number of rows to number of values.
+    size_t prev_value_idx = page.value_idx;
+    advanceValueIdxUntilRow(end_row_idx, page);
+
+    /// Produce array offsets.
+    if (!page.rep.empty())
     {
-        chassert(!full_column);
-        DataTypePtr type = column_info.raw_decoded_type;
-        auto uniq = DataTypeLowCardinality::createColumnUnique(*type, std::move(dictionary_column));
-        auto lc = ColumnLowCardinality::create(std::move(uniq), std::move(index_column), /*is_shared*/ false);
-        dictionary_column.reset();
-        index_column.reset();
-        return lc;
-    };
-
-    size_t output_num_values_estimate = column_chunk.meta->meta_data.num_values;
-    if (filter.rows_pass < filter.rows_total)
-    {
-        if (column_info.levels.back().rep == 0)
-            output_num_values_estimate = filter.rows_pass;
-        else
-            /// There are arrays, so we can't know exactly how many primitive values there are in
-            /// rows that pass the filter. Make a guess using average array length.
-            output_num_values_estimate = size_t(1.2 * filter.rows_pass / filter.rows_total * output_num_values_estimate);
-    }
-
-    PaddedPODArray<char> decompressed_buffer;
-    PaddedPODArray<UInt8> rep;
-    PaddedPODArray<UInt8> def;
-    PaddedPODArray<UInt8> page_value_filter_buf;
-    MutableColumnPtr null_map_column;
-    ColumnUInt8::Container * null_map = nullptr;
-
-    /// Whether the innermost array element type is nullable. Nullable arrays don't count because
-    /// clickhouse doesn't support that; we convert null arrays to empty arrays.
-    bool is_nullable = !column_info.levels.back().is_array;
-    /// If false, there's no distinction between "rows" and "values".
-    bool has_arrays = column_info.levels.back().rep > 0;
-    bool null_count_is_known_to_be_zero =
-        column_chunk.meta->meta_data.statistics.__isset.null_count &&
-        column_chunk.meta->meta_data.statistics.null_count == 0;
-    /// If false, there's no distinction between "rows", "values", and "encoded values".
-    /// In particular covers the common case where the column is declared as nullable, but there are
-    /// no nulls (and the writer wrote column statistics that say that).
-    /// (In presence of arrays, parquet's concept of "null" probably includes empty arrays.)
-    bool has_nulls_or_arrays = has_arrays || (is_nullable && !null_count_is_known_to_be_zero);
-
-    if (is_nullable && has_nulls_or_arrays)
-    {
-        null_map_column = ColumnUInt8::create();
-        null_map = &assert_cast<ColumnUInt8 &>(*null_map_column).getData();
-        null_map->reserve(output_num_values_estimate);
-    }
-
-    std::vector<ColumnUInt64::Container *> arrays_offsets(column_info.levels.back().rep);
-    column_chunk.arrays_offsets.resize(arrays_offsets.size());
-    for (size_t i = 0; i < arrays_offsets.size(); ++i)
-    {
-        column_chunk.arrays_offsets[i] = ColumnArray::ColumnOffsets::create();
-        arrays_offsets[i] = &assert_cast<ColumnUInt64 &>(*column_chunk.arrays_offsets[i]).getData();
-        arrays_offsets[i]->reserve(i ? output_num_values_estimate : filter.rows_total);
-    }
-
-    const auto data = prefetcher.getRangeData(column_chunk.data_prefetch);
-    /// Last row in the previous page. (Repetition levels indicate the first value of each row, but
-    /// not the last one. So we can't always tell whether the first value of the next page belongs
-    /// to the same row as last value of current page.)
-    size_t row_idx = size_t(-1);
-    size_t pos = 0;
-    while (pos < data.size())
-    {
-        decompressed_buffer.clear();
-        parq::PageHeader header;
-        pos += deserializeThriftStruct(header, data.data() + pos, data.size() - pos);
-        /// TODO: Check checksum.
-        size_t compressed_page_size = size_t(header.compressed_page_size);
-        if (pos + compressed_page_size > data.size() || header.compressed_page_size < 0)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Page size out of bounds: offset {} + size {} > column chunk size {}", pos, compressed_page_size, data.size());
-
-        const char * compressed_page_data = data.data() + pos;
-        pos += compressed_page_size;
-
-        if (header.type == parq::PageType::INDEX_PAGE)
-            continue;
-
-        /// (On first iteration of the loop row_idx is -1. It's ok because filter is padded on both sides.)
-        const UInt8 * page_row_filter = filter.filter.empty() ? nullptr : filter.filter.data() + row_idx;
-        std::optional<size_t> page_row_filter_count_ones;
-
-        if (page_row_filter && (header.type == parq::PageType::DATA_PAGE_V2 || !has_arrays))
+        UInt8 parent_array_def = 0;
+        for (size_t level_idx = 1; level_idx < column_info.levels.size(); ++level_idx)
         {
-            /// Check if all rows of the page are filtered out.
-            /// (Can't do this in case of DataPage v1 with arrays because row may cross page bounaries.)
-            size_t page_num_rows = size_t(header.type == parq::PageType::DATA_PAGE_V2 ? header.data_page_header_v2.num_rows : header.data_page_header.num_values);
-            if (row_idx + 1 + page_num_rows > filter.rows_total)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Pages of column chunk have unexpectedly many rows in total: {} + {} > {}", row_idx + 1, page_num_rows, filter.rows_total);
-
-            page_row_filter_count_ones = countBytesInFilter(page_row_filter + 1, 0, page_num_rows);
-            if (page_row_filter_count_ones.value() == 0)
-            {
-                /// All filtered out, skip the page.
-                row_idx += page_num_rows;
+            const LevelInfo & level = column_info.levels[level_idx];
+            if (!level.is_array)
                 continue;
-            }
 
-            if (page_row_filter_count_ones.value() == page_num_rows)
-            {
-                /// All 1, no need to filter.
-                page_row_filter = nullptr;
-            }
-        }
+            auto & offsets = assert_cast<ColumnArray::ColumnOffsets &>(*subchunk.arrays_offsets.at(level.rep - 1)).getData();
+            processRepDefLevelsForArray(
+                page.value_idx - prev_value_idx, page.def.data() + prev_value_idx,
+                page.rep.data() + prev_value_idx, level.rep, level.def, parent_array_def, offsets);
 
-        /// Pages of all 3 types boil down to encoded values + optional rep/def levels.
-        /// Extract that information.
-
-        parq::CompressionCodec::type codec = column_chunk.meta->meta_data.codec;
-        const char * encoded_values = compressed_page_data; // compressed with `codec`
-        size_t encoded_values_compressed_size = compressed_page_size;
-        size_t encoded_values_uncompressed_size = header.uncompressed_page_size;
-        const char * encoded_rep = nullptr; // uncompressed
-        const char * encoded_def = nullptr; // uncompressed
-        /// num_values is "Number of values, including NULLs". Aka number of definition levels.
-        /// Number of actually encoded values is `num_values - num_nulls`, where num_nulls is count
-        /// of def[i] < max_def. (Parquet "NULLs" include empty arrays.)
-        size_t num_values = 0;
-        size_t encoded_rep_size = 0;
-        size_t encoded_def_size = 0;
-        parq::Encoding::type values_encoding = parq::Encoding::PLAIN;
-        parq::Encoding::type def_encoding = parq::Encoding::RLE;
-        parq::Encoding::type rep_encoding = parq::Encoding::RLE;
-
-        if (header.type == parq::PageType::DATA_PAGE)
-        {
-            num_values = header.data_page_header.num_values;
-            values_encoding = header.data_page_header.encoding;
-            def_encoding = header.data_page_header.definition_level_encoding;
-            rep_encoding = header.data_page_header.repetition_level_encoding;
-
-            if (column_info.levels.size() == 1)
-            {
-                /// No rep/def levels, the whole page is values.
-            }
-            else
-            {
-                /// Rep/def levels and values are compressed together. Decompress and split.
-                /// Format (lengths are 4 bytes):
-                /// <def length> <def> [<rep length> <rep>] <values>
-                const char * ptr;
-                size_t size = size_t(header.uncompressed_page_size);
-                if (codec == parq::CompressionCodec::UNCOMPRESSED)
-                {
-                    if (size != compressed_page_size)
-                        throw Exception(ErrorCodes::INCORRECT_DATA, "No compression, but compressed and uncompressed page size are different");
-                    ptr = compressed_page_data;
-                }
-                else
-                {
-                    decompressed_buffer.resize(size);
-                    decompress(compressed_page_data, compressed_page_size, size, codec, decompressed_buffer.data());
-                    ptr = decompressed_buffer.data();
-                    codec = parq::CompressionCodec::UNCOMPRESSED;
-                }
-
-                UInt32 n;
-                if (column_info.levels.back().rep > 0)
-                {
-                    if (size < 4)
-                        throw Exception(ErrorCodes::INCORRECT_DATA, "Decompressed data is too short (rep size)");
-                    memcpy(&n, ptr, 4);
-                    if (n > size - 4)
-                        throw Exception(ErrorCodes::INCORRECT_DATA, "Decompressed data is too short (rep)");
-                    encoded_rep = ptr + 4;
-                    encoded_rep_size = n;
-                    ptr += 4 + encoded_rep_size;
-                    size -= 4 + encoded_rep_size;
-                }
-
-                if (size < 4)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Decompressed data is too short (def size)");
-                memcpy(&n, ptr, 4);
-                if (n > size - 4)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Decompressed data is too short (def)");
-                encoded_def = ptr + 4;
-                encoded_def_size = n;
-                ptr += 4 + encoded_def_size;
-                size -= 4 + encoded_def_size;
-
-                encoded_values = ptr;
-                encoded_values_compressed_size = size;
-                encoded_values_uncompressed_size = size;
-            }
-        }
-        else if (header.type == parq::PageType::DATA_PAGE_V2)
-        {
-            num_values = header.data_page_header_v2.num_values;
-            values_encoding = header.data_page_header_v2.encoding;
-            encoded_def_size = header.data_page_header_v2.definition_levels_byte_length;
-            encoded_rep_size = header.data_page_header_v2.repetition_levels_byte_length;
-
-            if (header.data_page_header_v2.__isset.is_compressed &&
-                !header.data_page_header_v2.is_compressed)
-            {
-                codec = parq::CompressionCodec::UNCOMPRESSED;
-            }
-
-            if (encoded_def_size + encoded_rep_size > compressed_page_size)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Page data is too short (def+rep)");
-            encoded_rep = compressed_page_data;
-            encoded_def = compressed_page_data + encoded_rep_size;
-            size_t uncompressed_part = encoded_def_size + encoded_rep_size;
-            encoded_values = compressed_page_data + uncompressed_part;
-            encoded_values_compressed_size = compressed_page_size - uncompressed_part;
-            encoded_values_uncompressed_size = size_t(header.uncompressed_page_size) - uncompressed_part;
-        }
-        else if (header.type == parq::PageType::DICTIONARY_PAGE)
-        {
-            num_values = header.dictionary_page_header.num_values;
-            values_encoding = header.dictionary_page_header.encoding;
-        }
-        else
-        {
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected page type: {}", thriftToString(header));
-        }
-
-        if (values_encoding == parq::Encoding::PLAIN_DICTIONARY)
-            values_encoding = header.type == parq::PageType::DICTIONARY_PAGE
-                ? parq::Encoding::PLAIN : parq::Encoding::RLE_DICTIONARY;
-
-        /// Determine what we're decoding: dictionary, indices into dictionary, or full column.
-        IColumn * destination = nullptr;
-        const ValueDecoder * decoder = column_info.decoder.get();
-        if (header.type == parq::PageType::DICTIONARY_PAGE)
-        {
-            if (dictionary_column || full_column)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected extra dictionary page");
-            dictionary_column = column_info.raw_decoded_type->createColumn();
-            dictionary_column->reserve(num_values + 2);
-            dictionary_column->insertManyDefaults(2);
-            destination = dictionary_column.get();
-        }
-        else if (values_encoding == parq::Encoding::RLE_DICTIONARY)
-        {
-            if (!dictionary_column)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected dictionary-encoded page without dictionary");
-            if (full_column)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected dictionary-encoded page after non-dictionary-encoded pages");
-
-            if (!index_column)
-            {
-                size_t dict_size = dictionary_column->size();
-                chassert(dict_size >= 2);
-                if (dict_size <= (1 << 8))
-                {
-                    index_column = ColumnUInt8::create();
-                    index_decoder = std::make_unique<DictionaryIndexDecoder<UInt8>>(dict_size - 2);
-                }
-                else if (dict_size <= (1 << 16))
-                {
-                    index_column = ColumnUInt16::create();
-                    index_decoder = std::make_unique<DictionaryIndexDecoder<UInt16>>(dict_size - 2);
-                }
-                else if (dict_size <= (1ul << 32))
-                {
-                    index_column = ColumnUInt32::create();
-                    index_decoder = std::make_unique<DictionaryIndexDecoder<UInt32>>(dict_size - 2);
-                }
-                else
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpectedly large dictionary");
-
-                index_column->reserve(output_num_values_estimate);
-            }
-
-            destination = index_column.get();
-            decoder = index_decoder.get();
-        }
-        else
-        {
-            if (index_column)
-            {
-                /// Switching from dictionary to non-dictionary encoding.
-                /// Convert the dictionary-encoded data to full column.
-                //TODO: test this code path
-                auto lc = make_low_cardinality_column();
-                full_column = IColumn::mutate(lc->convertToFullColumn());
-
-                full_column->reserve(output_num_values_estimate);
-
-                dictionary_column.reset();
-                index_column.reset();
-            }
-
-            if (!full_column)
-            {
-                full_column = column_info.raw_decoded_type->createColumn();
-                full_column->reserve(output_num_values_estimate);
-            }
-
-            destination = full_column.get();
-        }
-
-        const UInt8 * page_value_filter = nullptr;
-        size_t num_encoded_values = num_values;
-        size_t num_filtered_values = num_values;
-
-        if (header.type != parq::PageType::DICTIONARY_PAGE)
-        {
-            /// Decode rep/def levels.
-
-            auto decode_rep_or_def = [&](UInt8 max, parq::Encoding::type encoding, const char * encoded, size_t bytes, PaddedPODArray<UInt8> & out)
-            {
-                if (max == 0)
-                    return;
-                out.resize(num_values);
-                size_t bits = 32 - __builtin_clz(UInt32(max));
-                if (encoding == parq::Encoding::RLE)
-                {
-                    decodeBitPackedRLE<UInt8, /*ADD*/ 0, /*FILTERED*/ false>(
-                        size_t(max) + 1, bits, num_values, encoded, bytes, /*filter*/ nullptr, out.data());
-                }
-                else if (encoding == parq::Encoding::BIT_PACKED)
-                {
-                    //TODO
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BIT_PACKED levels not implemented");
-                }
-                else
-                {
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected repetition/definition levels encoding: {}", thriftToString(encoding));
-                }
-            };
-
-            UInt8 max_def = column_info.levels.back().def;
-            UInt8 max_rep = column_info.levels.back().rep;
-
-            decode_rep_or_def(max_rep, rep_encoding, encoded_rep, encoded_rep_size, rep);
-            decode_rep_or_def(max_def, def_encoding, encoded_def, encoded_def_size, def);
-
-            /// Process rep/def levels. See "Rep/def level explanation" comment.
-
-            /// Handle arrays.
-            size_t page_num_rows = num_values;
-            if (has_arrays)
-            {
-                /// Count rows.
-                /// (What does "page_num_rows" mean when arrays cross page boundaries? The number of
-                ///  values with rep == 0 in the page. Each such value is the first one in its row.)
-                /// TODO: Try combining it with outer array offsets if no filter (would need bounds check
-                ///       on each iteration).
-                page_num_rows = 0;
-                for (size_t i = 0; i < num_values; ++i)
-                    page_num_rows += rep[i] == 0;
-
-                if (row_idx + page_num_rows >= filter.rows_total)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Page has too many rows");
-
-                /// Produce array offsets.
-                UInt8 parent_array_def = 0;
-                for (size_t level_idx = 1; level_idx < column_info.levels.size(); ++level_idx)
-                {
-                    const LevelInfo & level = column_info.levels[level_idx];
-                    if (!level.is_array)
-                    {
-                        /// TODO: If !options.null_as_default, check that there are no null arrays.
-                        continue;
-                    }
-
-                    if (page_row_filter)
-                        processRepDefLevelsForArray</*HAS_FILTER*/ true>(
-                            num_values, def.data(), rep.data(), level.rep, level.def, parent_array_def,
-                            page_num_rows, page_row_filter, *arrays_offsets.at(level.rep - 1));
-                    else
-                        processRepDefLevelsForArray</*HAS_FILTER*/ false>(
-                            num_values, def.data(), rep.data(), level.rep, level.def, parent_array_def,
-                            page_num_rows, page_row_filter, *arrays_offsets.at(level.rep - 1));
-
-                    parent_array_def = level.def;
-                }
-
-                chassert(arrays_offsets.at(0)->size() == page_num_rows);
-            }
-
-            UInt8 max_array_def = 0;
-            for (size_t i = column_info.levels.size() - 1; i > 0; --i)
-            {
-                if (column_info.levels[i].is_array)
-                {
-                    max_array_def = column_info.levels[i].def;
-                    break;
-                }
-            }
-
-            /// Handle the inner primitive+nullable column: value filter, null_map, etc.
-            if (!has_nulls_or_arrays)
-            {
-                /// Special fast path where we can use row filter directly as value filter.
-                /// Row == value == encoded value.
-                if (page_row_filter)
-                {
-                    page_value_filter = page_row_filter + 1;
-                    num_filtered_values = page_row_filter_count_ones.has_value()
-                        ? page_row_filter_count_ones.value()
-                        : countBytesInFilter(page_value_filter, 0, num_values);
-                }
-            }
-            else
-            {
-                if (page_row_filter)
-                {
-                    page_value_filter_buf.clear();
-                    page_value_filter_buf.reserve(num_values);
-                }
-
-                /// Dispatch to a version of the hot loop with unneeded features disabled.
-    #define X(has_filter, has_arrays, has_nulls) \
-                    processRepDefLevelsForInnermostColumn<has_filter, has_arrays, has_nulls>( \
-                        num_values, def.data(), rep.data(), max_def, max_array_def, \
-                        page_num_rows, page_row_filter, num_encoded_values, num_filtered_values, \
-                        page_value_filter_buf, null_map)
-
-                if (page_row_filter)
-                    if (has_arrays)
-                        if (null_map)
-                            X(true, true, true);
-                        else
-                            X(true, true, false);
-                    else
-                        if (null_map)
-                            X(true, false, true);
-                        else
-                            X(true, false, false);
-                else
-                    if (has_arrays)
-                        if (null_map)
-                            X(false, true, true);
-                        else
-                            X(false, true, false);
-                    else
-                        if (null_map)
-                            X(false, false, true);
-                        else
-                            X(false, false, false);
-    #undef X
-
-                if (page_row_filter)
-                    page_value_filter = page_value_filter_buf.data();
-            }
-
-            row_idx += page_num_rows;
-        }
-
-        if (num_filtered_values > num_encoded_values)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Something is wrong in value filtering");
-
-        /// Finally decode the values.
-
-        char * dest_ptr;
-        size_t dest_size;
-        size_t prev_destination_size = destination->size();
-        if (num_filtered_values > 0)
-        {
-            if (!page_value_filter && decoder->canReadDirectlyIntoColumn(values_encoding, num_encoded_values, *destination, &dest_ptr, &dest_size))
-            {
-                if (dest_size > encoded_values_uncompressed_size)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Page data is too short (values)");
-                if (codec == parq::CompressionCodec::UNCOMPRESSED)
-                    memcpy(dest_ptr, encoded_values, dest_size);
-                else
-                    /// Decompress directly into IColumn, avoid memcpy, yay.
-                    decompress(encoded_values, encoded_values_compressed_size, encoded_values_uncompressed_size, codec, dest_ptr);
-            }
-            else
-            {
-                if (codec != parq::CompressionCodec::UNCOMPRESSED)
-                {
-                    chassert(decompressed_buffer.empty());
-                    decompressed_buffer.resize(encoded_values_uncompressed_size);
-                    decompress(encoded_values, encoded_values_compressed_size, encoded_values_uncompressed_size, codec, decompressed_buffer.data());
-                    encoded_values = decompressed_buffer.data();
-                }
-
-                decoder->decodePage(values_encoding, encoded_values, encoded_values_uncompressed_size, num_encoded_values, num_filtered_values, *destination, page_value_filter);
-            }
-        }
-
-        if (destination->size() - prev_destination_size != num_filtered_values)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of decoded values");
-    }
-
-    for (size_t i = 0; i < arrays_offsets.size(); ++i)
-    {
-        /// If repetition levels say that the column chunk starts in the middle of an array
-        /// (e.g. first rep level is not 0; there are other cases with nested arrays),
-        /// processRepDefLevelsForArray will correspondingly reassign the offset of the start of the
-        /// first array. That wouldn't be a valid ColumnArray.
-        if ((*arrays_offsets[i])[-1] != 0)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid repetition/definition levels for arrays in column {}", column_info.name);
-    }
-
-    if (null_map && !column_info.output_nullable && !options.null_as_default)
-    {
-        if (memchr(null_map->data(), 0, null_map->size()) != nullptr)
-            throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, "Cannot convert NULL value to non-Nullable type for column {}", column_info.name);
-        null_map = nullptr;
-        null_map_column.reset();
-    }
-
-    if (index_column)
-    {
-        if (null_map)
-            /// TODO: Consider expanding after each page to reduce cache misses (same for the other expand below).
-            index_column->expand(*null_map, /*inverted*/ true);
-
-        auto lc = make_low_cardinality_column();
-
-        //TODO: assign zip_bombness and defer_conversion; use SizeStatistics.unencoded_byte_array_data_bytes when available
-
-        if (options.fuzz && thread_local_rng() % 16 == 0)
-        {
-            column_chunk.defer_conversion = true;
-            column_chunk.zip_bombness = thread_local_rng() % 8 + 1;
-        }
-
-        if (column_chunk.defer_conversion)
-        {
-            /// Keep LowCardinality.
-
-            if (column_info.output_nullable)
-                assert_cast<ColumnLowCardinality &>(*lc).nestedToNullable();
-
-            column_chunk.column = std::move(lc);
-        }
-        else
-        {
-            auto col = lc->convertToFullColumn();
-            chassert(col->use_count() == 1);
-            column_chunk.column = IColumn::mutate(std::move(col));
+            parent_array_def = level.def;
         }
     }
-    else if (full_column)
-    {
-        if (null_map)
-            full_column->expand(*null_map, /*inverted*/ true);
 
-        column_chunk.column = std::move(full_column);
+    /// Populate null map and find how many encoded values to read.
+    size_t encoded_values_to_read = 0;
+    if (page.def.empty())
+    {
+        /// No nulls or arrays in this page.
+        encoded_values_to_read = page.value_idx - prev_value_idx;
     }
     else
     {
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Column chunk has no data pages");
+        /// Dispatch to a version of the hot loop with unneeded features disabled.
+#define X(HAS_ARRAYS, HAS_NULLS, null_map) \
+            processDefLevelsForInnermostColumn<HAS_ARRAYS, HAS_NULLS>( \
+                page.value_idx - prev_value_idx, page.def.data() + prev_value_idx, \
+                column_info.levels.back().def, column_info.max_array_def, encoded_values_to_read, \
+                null_map)
+        if (subchunk.null_map)
+        {
+            auto & null_map = assert_cast<ColumnUInt8 &>(*subchunk.null_map).getData();
+            if (column_info.max_array_def)
+                X(true, true, &null_map);
+            else
+                X(false, true, &null_map);
+        }
+        else
+        {
+            if (column_info.max_array_def)
+                X(true, false, nullptr);
+            else
+                X(false, false, nullptr);
+        }
     }
 
-    if (!column_chunk.defer_conversion)
+    /// Decode values.
+
+    /// See if we can decompress the whole page directly into IColumn's memory.
+    if (!page.is_dictionary_encoded && prev_value_idx == 0 && page.value_idx == page.num_values &&
+        page.codec != parq::CompressionCodec::UNCOMPRESSED)
     {
-        if (column_info.output_nullable)
+        std::span<char> span;
+        if (column_info.decoder.canReadDirectlyIntoColumn(page.encoding, encoded_values_to_read, *subchunk.column, span))
         {
-            if (!null_map)
-                null_map_column = ColumnUInt8::create(column_chunk.column->size(), 0);
-            column_chunk.column = ColumnNullable::create(std::move(column_chunk.column), std::move(null_map_column));
-        }
-
-        chassert(column_chunk.column->getDataType() == column_info.intermediate_type->getColumnType());
-
-        if (column_info.needs_cast)
-        {
-            auto col = castColumn(
-                {std::move(column_chunk.column), column_info.intermediate_type, column_info.name},
-                column_info.final_type);
-            chassert(col->use_count() == 1);
-            column_chunk.column = IColumn::mutate(std::move(col));
+            if (span.size() != page.values_uncompressed_size)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected uncompressed page size");
+            decompress(page.data.data(), page.data.size(), span.size(), page.codec, span.data());
+            return;
         }
     }
 
-    //TODO: Turn null_map into BlockMissingValues if !output_nullable.
+    decompressPageIfCompressed(page);
+    if (!page.decoder)
+        createPageDecoder(page, column_chunk, column_info);
+
+    if (page.is_dictionary_encoded)
+    {
+        if (!page.indices_column)
+            page.indices_column = ColumnUInt32::create();
+        auto & data = assert_cast<ColumnUInt32 &>(*page.indices_column).getData();
+        chassert(data.empty());
+        page.decoder->decode(encoded_values_to_read, *page.indices_column);
+        column_chunk.dictionary.index(data, *subchunk.column);
+        data.clear();
+    }
+    else
+    {
+        page.decoder->decode(encoded_values_to_read, *subchunk.column);
+    }
+
+    if (page.value_idx == page.num_values)
+        page.decoder.reset();
 }
 
-size_t Reader::decideNumRowsPerChunk(RowGroup & row_group)
+void Reader::decompressPageIfCompressed(PageState & page)
 {
-    size_t num_chunks = 1;
-    for (auto & c : row_group.columns)
-        num_chunks = std::max(num_chunks, c.zip_bombness);
-    return (row_group.filter.rows_pass + num_chunks - 1) / num_chunks;
+    if (page.codec == parq::CompressionCodec::UNCOMPRESSED)
+        return;
+    page.decompressed_buf.resize(page.values_uncompressed_size);
+    decompress(page.data.data(), page.data.size(), page.decompressed_buf.size(), page.codec, page.decompressed_buf.data());
+    page.data = std::span(page.decompressed_buf.data(), page.decompressed_buf.size());
+    page.codec = parq::CompressionCodec::UNCOMPRESSED;
 }
 
-void Reader::applyPrewhere(RowGroup & row_group)
+MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx)
 {
-    size_t rows_per_chunk = decideNumRowsPerChunk(row_group); // may be different from final value
+    const OutputColumnInfo & output_info = output_columns.at(output_column_idx);
+    chassert(output_info.primitive_start < output_info.primitive_end);
+    TypeIndex kind = output_info.type->getColumnType();
+    MutableColumnPtr res;
+
+    if (output_info.is_primitive)
+    {
+        /// Primitive column.
+        chassert(output_info.primitive_start + 1 == output_info.primitive_end);
+        size_t primitive_idx = output_info.primitive_start;
+        ColumnSubchunk & subchunk = row_subgroup.columns.at(primitive_idx);
+        res = std::move(subchunk.column);
+    }
+    else if (kind == TypeIndex::Array)
+    {
+        chassert(output_info.nested_columns.size() == 1);
+        auto offsets_column = std::move(row_subgroup.columns.at(output_info.primitive_start).arrays_offsets.at(output_info.rep - 1));
+        const auto & offsets = assert_cast<const ColumnUInt64 &>(*offsets_column).getData();
+
+        /// If it's an array of tuples, every tuple element should have the same array offsets.
+        for (size_t i = output_info.primitive_start + 1; i < output_info.primitive_end; ++i)
+        {
+            const auto other_offsets_column = std::move(row_subgroup.columns.at(i).arrays_offsets.at(output_info.rep - 1));
+            const auto & other_offsets = assert_cast<const ColumnUInt64 &>(*other_offsets_column).getData();
+            if (offsets != other_offsets)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid array of tuples: tuple elements {} and {} have different array lengths", primitive_columns.at(output_info.primitive_start).name, primitive_columns.at(i).name);
+        }
+
+        MutableColumnPtr nested = formOutputColumn(row_subgroup, output_info.nested_columns.at(0));
+        res = ColumnArray::create(std::move(nested), std::move(offsets_column));
+    }
+    else if (kind == TypeIndex::Tuple)
+    {
+        MutableColumns columns;
+        for (size_t idx : output_info.nested_columns)
+            columns.push_back(formOutputColumn(row_subgroup, idx));
+        res = ColumnTuple::create(std::move(columns));
+    }
+    else
+    {
+        chassert(kind == TypeIndex::Map);
+        chassert(output_info.nested_columns.size() == 1);
+        MutableColumnPtr nested = formOutputColumn(row_subgroup, output_info.nested_columns.at(0));
+        res = ColumnMap::create(std::move(nested));
+    }
+
+    chassert(res->getDataType() == output_info.type->getColumnType());
+    return res;
+}
+
+void Reader::applyPrewhere(RowSubgroup & row_subgroup)
+{
     for (size_t step_idx = 0; step_idx < prewhere_steps.size(); ++step_idx)
     {
         const PrewhereStep & step = prewhere_steps.at(step_idx);
 
-        /// Evaluate the expression.
-        ColumnPtr filter_column;
-        for (size_t start_row = 0; start_row < row_group.filter.rows_pass; start_row += rows_per_chunk)
+        Block block;
+        for (size_t output_idx : step.input_column_idxs)
         {
-            size_t num_rows = std::min(rows_per_chunk, row_group.filter.rows_pass - start_row);
-            Block block;
-            for (size_t output_idx : step.input_column_idxs)
-            {
-                auto col = formOutputColumn(row_group, output_idx, start_row, num_rows);
-                const auto & output_info = output_columns.at(output_idx);
-                block.insert({col, output_info.type, output_info.name});
-            }
-            addDummyColumnWithRowCount(block, num_rows);
-
-            step.actions.execute(block);
-
-            auto filter_column_range = block.getByName(step.result_column_name).column;
-            if (start_row)
-            {
-                auto mut = IColumn::mutate(std::move(filter_column));
-                mut->insertRangeFrom(*filter_column_range, 0, num_rows);
-                filter_column = std::move(mut);
-            }
-            else
-                filter_column = filter_column_range;
+            const auto & output_info = output_columns.at(output_idx);
+            auto & col = row_subgroup.output.at(output_info.idx_in_output_block.value());
+            if (!col)
+                col = formOutputColumn(row_subgroup, output_idx);
+            block.insert({col, output_info.type, output_info.name});
         }
+        addDummyColumnWithRowCount(block, row_subgroup.filter.rows_total);
 
-        if (step.column_idx_in_output_block.has_value())
-            row_group.output.at(step.column_idx_in_output_block.value()) = filter_column;
+        step.actions.execute(block);
 
-        /// If it's the last prewhere step, discard columns that were only needed for prewhere.
+        ColumnPtr filter_column = block.getByName(step.result_column_name).column;
+
+        if (step.idx_in_output_block.has_value())
+            row_subgroup.output.at(step.idx_in_output_block.value()) = filter_column;
+
+        /// If it's the last prewhere step, deallocate the columns that were only needed for prewhere.
         if (step_idx == prewhere_steps.size() - 1)
-        {
-            row_group.output.resize(sample_block->columns());
-            for (size_t i = 0; i < primitive_columns.size(); ++i)
-                if (primitive_columns[i].only_for_prewhere)
-                    row_group.columns.at(i).column.reset();
-        }
+            row_subgroup.output.resize(sample_block->columns());
 
         if (!step.need_filter)
             continue;
@@ -1188,13 +1391,13 @@ void Reader::applyPrewhere(RowGroup & row_group)
         }
 
         const IColumnFilter & filter = typeid_cast<const ColumnUInt8 &>(*filter_column).getData();
-        chassert(filter.size() == row_group.filter.rows_pass);
+        chassert(filter.size() == row_subgroup.filter.rows_pass);
 
         size_t rows_pass = countBytesInFilter(filter.data(), 0, filter.size());
         if (rows_pass == 0)
         {
             /// Whole row group was filtered out.
-            row_group.filter.rows_pass = 0;
+            row_subgroup.filter.rows_pass = 0;
             return;
         }
         if (rows_pass == filter.size())
@@ -1202,184 +1405,22 @@ void Reader::applyPrewhere(RowGroup & row_group)
             continue;
 
         /// Filter columns that were already read.
-        /// Two cases: columns were formed and stored in RowGroup::outputs, or they're still in
-        /// ColumnChunk::column (if `rows_per_chunk` is less than the whole row group).
 
-        for (auto & col : row_group.output)
+        for (auto & col : row_subgroup.output)
             if (col)
                 col = col->filter(filter, /*result_size_hint=*/ rows_pass);
-        for (size_t i = 0; i < primitive_columns.size(); ++i)
-        {
-            auto & column_chunk = row_group.columns.at(i);
-            if (!column_chunk.column)
-                continue;
 
-            ColumnPtr expanded_filter_column = filter_column;
-            for (auto & offsets : column_chunk.arrays_offsets)
-                expanded_filter_column = expanded_filter_column->replicate(typeid_cast<const ColumnUInt64 &>(*offsets).getData());
-
-            size_t size_hint = rows_pass;
-            if (!column_chunk.arrays_offsets.empty())
-                size_hint = size_t(1.2 * rows_pass / filter.size() * expanded_filter_column->size());
-
-            auto col = column_chunk.column->filter(typeid_cast<const ColumnUInt8 &>(*expanded_filter_column).getData(), ssize_t(size_hint));
-            column_chunk.column = IColumn::mutate(std::move(col));
-        }
-
-        /// Expand the filter to correspond to all column chunk rows, rather than only rows that
-        /// passed previous filters (e.g. page min/max).
+        /// Expand the filter to correspond to all column subchunk rows, rather than only rows that
+        /// passed previous filters (previous prewhere steps).
 
         auto mut_col = IColumn::mutate(std::move(filter_column));
         auto & mut_filter = typeid_cast<ColumnUInt8 &>(*mut_col);
-        if (row_group.filter.rows_pass != row_group.filter.rows_total)
-            mut_filter.expand(row_group.filter.filter, /*inverted*/ false);
+        if (row_subgroup.filter.rows_pass != row_subgroup.filter.rows_total)
+            mut_filter.expand(row_subgroup.filter.filter, /*inverted*/ false);
 
-        row_group.filter.filter = std::move(mut_filter.getData());
-        row_group.filter.rows_pass = rows_pass;
+        row_subgroup.filter.filter = std::move(mut_filter.getData());
+        row_subgroup.filter.rows_pass = rows_pass;
     }
-}
-
-ColumnPtr Reader::formOutputColumn(RowGroup & row_group, size_t output_column_idx, size_t start_row, size_t num_rows)
-{
-    const OutputColumnInfo & output_info = output_columns[output_column_idx];
-    size_t idx_in_output_block = output_info.idx_in_output_block.value();
-
-    /// (Why explicitly pass this bool to formOutputColumnImpl instead of having it check if the
-    ///  range covers all values? Because of empty arrays: a subrange of top-level rows may cover
-    ///  all values in the nested column. In such case we must not clear the primitive columns.)
-    bool whole_column_chunk = start_row == 0 && num_rows == row_group.filter.rows_total;
-
-    auto & preformed = row_group.output.at(idx_in_output_block);
-    if (preformed)
-    {
-        if (whole_column_chunk)
-            return preformed;
-        auto res = preformed->cloneEmpty();
-        res->insertRangeFrom(*preformed, start_row, num_rows);
-        return res;
-    }
-
-    auto res = formOutputColumnImpl(row_group, output_column_idx, start_row, num_rows, whole_column_chunk);
-    if (whole_column_chunk)
-    {
-        /// It's possible that prewhere stage forms a full output column (this code path), but later
-        /// when delivering the row group we'll want it in smaller chunks (code path above) because
-        /// other columns turned out to be heavy.
-        preformed = std::move(res);
-        return preformed;
-    }
-    return res;
-}
-
-MutableColumnPtr Reader::formOutputColumnImpl(RowGroup & row_group, size_t output_column_idx, size_t start_row, size_t num_rows, bool whole_column_chunk)
-{
-    const OutputColumnInfo & output_info = output_columns[output_column_idx];
-    chassert(output_info.primitive_start < output_info.primitive_end);
-    TypeIndex kind = output_info.type->getColumnType();
-    MutableColumnPtr res;
-
-    if (output_info.is_primitive)
-    {
-        /// Primitive column.
-        chassert(output_info.primitive_start + 1 == output_info.primitive_end);
-        size_t primitive_idx = output_info.primitive_start;
-        const PrimitiveColumnInfo & primitive_info = primitive_columns.at(primitive_idx);
-
-        ColumnChunk & column_chunk = row_group.columns.at(primitive_idx);
-
-        if (column_chunk.defer_conversion)
-        {
-            const auto & lc = assert_cast<const ColumnLowCardinality &>(*column_chunk.column);
-            ColumnPtr indexes = lc.getIndexesPtr();
-            auto indexes_range = indexes->cloneEmpty();
-            indexes_range->insertRangeFrom(*indexes, start_row, num_rows);
-            auto col = lc.getDictionary().getNestedColumn()->index(*indexes_range, 0);
-            chassert(col->use_count() == 1);
-            res = IColumn::mutate(std::move(col));
-            chassert(res->getDataType() == primitive_info.intermediate_type->getColumnType());
-
-            if (primitive_info.needs_cast)
-            {
-                auto cast = castColumn(
-                    {std::move(res), primitive_info.intermediate_type, primitive_info.name},
-                    primitive_info.final_type);
-                chassert(cast->use_count() == 1);
-                res = IColumn::mutate(std::move(cast));
-            }
-        }
-        else if (whole_column_chunk)
-        {
-            res = std::move(column_chunk.column);
-        }
-        else
-        {
-            res = column_chunk.column->cloneEmpty();
-            res->insertRangeFrom(*column_chunk.column, start_row, num_rows);
-        }
-
-        if (whole_column_chunk)
-            /// (Avoid having the same data both in ColumnChunk::column and RowGroup::output,
-            ///  because that may make prewhere waste time filtering both copies.)
-            column_chunk.column = nullptr;
-    }
-    else if (kind == TypeIndex::Array)
-    {
-        auto & offsets_column = row_group.columns.at(output_info.primitive_start).arrays_offsets.at(output_info.rep - 1);
-        const auto & offsets = assert_cast<const ColumnUInt64 &>(*offsets_column).getData();
-
-        if (start_row + num_rows > offsets_column->size())
-            /// (Nested offsets should be consistent with each other by construction.)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Array row index out of bounds");
-
-        size_t nested_start_row = offsets[start_row - 1];
-        size_t nested_end_row = offsets[start_row + num_rows - 1];
-        chassert(nested_end_row >= nested_start_row);
-
-        /// If it's an array of tuples, every tuple element should have the same array offsets.
-        /// Check this for the whole column chunk at once, when processing the first value.
-        if (start_row == 0 && num_rows > 0)
-        {
-            for (size_t i = output_info.primitive_start + 1; i < output_info.primitive_end; ++i)
-            {
-                const auto & other_offsets_column = row_group.columns.at(i).arrays_offsets.at(output_info.rep - 1);
-                const auto & other_offsets = assert_cast<const ColumnUInt64 &>(*other_offsets_column).getData();
-                if (offsets != other_offsets)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid array of tuples: tuple elements {} and {} have different array lengths", primitive_columns.at(output_info.primitive_start).name, primitive_columns.at(i).name);
-            }
-        }
-
-        MutableColumnPtr nested = formOutputColumnImpl(
-            row_group, output_info.nested_columns.at(0), nested_start_row, nested_end_row - nested_start_row, whole_column_chunk);
-
-        MutableColumnPtr offsets_column_range;
-        if (whole_column_chunk)
-        {
-            offsets_column_range = std::move(offsets_column);
-        }
-        else
-        {
-            offsets_column_range = ColumnUInt64::create();
-            offsets_column_range->insertRangeFrom(*offsets_column, start_row, num_rows);
-        }
-
-        res = ColumnArray::create(std::move(nested), std::move(offsets_column_range));
-    }
-    else if (kind == TypeIndex::Tuple)
-    {
-        MutableColumns columns;
-        for (size_t idx : output_info.nested_columns)
-            columns.push_back(formOutputColumnImpl(row_group, idx, start_row, num_rows, whole_column_chunk));
-        res = ColumnTuple::create(std::move(columns));
-    }
-    else
-    {
-        chassert(kind == TypeIndex::Map);
-        MutableColumnPtr nested = formOutputColumnImpl(row_group, output_info.nested_columns.at(0), start_row, num_rows, whole_column_chunk);
-        res = ColumnMap::create(std::move(nested));
-    }
-
-    chassert(res->getDataType() == output_info.type->getColumnType());
-    return res;
 }
 
 Reader::PrimitiveColumnInfo::~PrimitiveColumnInfo() = default;

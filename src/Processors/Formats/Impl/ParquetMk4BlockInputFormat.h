@@ -47,10 +47,7 @@ public:
 private:
     Chunk read() override;
 
-    void onCancel() noexcept override
-    {
-        //TODO
-    }
+    void onCancel() noexcept override;
 
     const FormatSettings format_settings;
     Parquet::ReadOptions read_options;

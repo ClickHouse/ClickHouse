@@ -176,17 +176,26 @@ When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE ex
     DECLARE(Bool, input_format_parquet_bloom_filter_push_down, true, R"(
 When reading Parquet files, skip whole row groups based on the WHERE expressions and bloom filter in the Parquet metadata.
 )", 0) \
+    DECLARE(Bool, input_format_parquet_enable_json_parsing, true, R"(
+When reading Parquet files, parse JSON columns as ClickHouse JSON Column.
+)", 0) \
     DECLARE(Bool, input_format_parquet_use_native_reader, false, R"(
 Use native parquet reader v1. It's relatively fast but unfinished.
 )", 0) \
-DECLARE(Bool, input_format_parquet_enable_json_parsing, true, R"(
-  When reading Parquet files, parse JSON columns as ClickHouse JSON Column.
-  )", 0) \
-DECLARE(Bool, input_format_parquet_use_native_reader_v3, false, R"(
+    DECLARE(Bool, input_format_parquet_use_native_reader_v3, false, R"(
 Use Parquet reader v3.
 )", 0) \
     DECLARE(UInt64, input_format_parquet_memory_usage_target, 4ul << 30, R"(
 Approximate memory usage limit for Parquet reader v3. Determines how many row groups or columns can be read in parallel. Memory usage doesn't get smaller than one row group. When reading multiple files in one query, the limit is on total memory usage across those files.
+)", 0) \
+    DECLARE(Bool, input_format_parquet_page_filter_push_down, true, R"(
+Skip pages using min/max values from column index.
+)", 0) \
+    DECLARE(Bool, input_format_parquet_use_offset_index, true, R"(
+Minor tweak to how pages are read from parquet file when no page filtering is used.
+)", 0) \
+    DECLARE(Bool, input_format_parquet_fuzz, false, R"(
+Randomize various decisions in parquet reader, for testing.
 )", 0) \
     DECLARE(Bool, input_format_allow_seeks, true, R"(
 Allow seeks while reading in ORC/Parquet/Arrow input formats.

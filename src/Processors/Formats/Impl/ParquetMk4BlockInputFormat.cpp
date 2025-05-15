@@ -32,12 +32,16 @@ Parquet::ReadOptions convertReadOptions(const FormatSettings & format_settings)
     Parquet::ReadOptions options;
     options.use_bloom_filter = format_settings.parquet.bloom_filter_push_down;
     options.use_row_group_min_max = format_settings.parquet.filter_push_down;
+    options.use_page_min_max = format_settings.parquet.page_filter_push_down;
+    options.always_use_offset_index = format_settings.parquet.use_offset_index;
+    options.case_insensitive_column_matching = format_settings.parquet.case_insensitive_column_matching;
     options.schema_inference_force_nullable = format_settings.schema_inference_make_columns_nullable == 1;
     options.schema_inference_force_not_nullable = format_settings.schema_inference_make_columns_nullable == 0;
     options.null_as_default = format_settings.null_as_default;
-    //TODO: take these and other options from settings
-    options.use_page_min_max = false;
-    options.use_prewhere = false;
+    options.max_block_size = format_settings.parquet.max_block_size;
+    options.preferred_block_size_bytes = format_settings.parquet.prefer_block_bytes;
+    options.dictionary_filter_limit_bytes = format_settings.parquet.dictionary_filter_limit_bytes;
+    options.fuzz = format_settings.parquet.fuzz;
     return options;
 }
 
@@ -77,6 +81,12 @@ Chunk ParquetMk4BlockInputFormat::read()
 {
     initializeIfNeeded();
     return reader->read();
+}
+
+void ParquetMk4BlockInputFormat::onCancel() noexcept
+{
+    if (reader)
+        reader->cancel();
 }
 
 void ParquetMk4BlockInputFormat::resetParser()
