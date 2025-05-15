@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/SettingsEnums.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -87,6 +88,7 @@ struct QueryPlanOptimizationSettings
     bool optimize_lazy_materialization = false;
     size_t max_limit_for_lazy_materialization = 0;
 
+    VectorSearchFilterStrategy vector_search_filter_strategy;
     size_t max_limit_for_vector_search_queries;
 
     /// Setting needed for Sets (JOIN -> IN optimization)
