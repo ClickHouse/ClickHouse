@@ -1965,19 +1965,6 @@ KeyCondition::RPNElement::RPNElement(Function function_, size_t key_column_, con
 {
 }
 
-[[ maybe_unused ]]static void castValueToType(const DataTypePtr & desired_type, Field & src_value, const DataTypePtr & src_type, const String & node_column_name)
-{
-    try
-    {
-        src_value = convertFieldToType(src_value, *desired_type, src_type.get());
-    }
-    catch (...)
-    {
-        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Key expression contains comparison between inconvertible types: "
-            "{} and {} inside {}", desired_type->getName(), src_type->getName(), node_column_name);
-    }
-}
-
 
 bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out)
 {
