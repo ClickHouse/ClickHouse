@@ -94,7 +94,7 @@ namespace Setting
     extern const SettingsBool enable_unaligned_array_join;
     extern const SettingsBool join_use_nulls;
     extern const SettingsBool query_plan_use_new_logical_join_step;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_columns_to_read;
     extern const SettingsUInt64 max_distributed_connections;
     extern const SettingsUInt64 max_rows_in_set_to_optimize_join;
