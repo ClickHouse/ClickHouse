@@ -1124,7 +1124,8 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
         if (replicas_used.insert(replica_num).second)
             ProfileEvents::increment(ProfileEvents::ParallelReplicasUsedCount);
     }
-    else {
+    else
+    {
         if (isReadingCompleted())
             read_completed_callback(replicas_used);
     }
