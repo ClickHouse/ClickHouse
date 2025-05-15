@@ -47,6 +47,17 @@ bool BackgroundSchedulePoolTaskInfo::scheduleAfter(size_t milliseconds, bool ove
     return true;
 }
 
+/**
+ * Invariant: The lifetime of a TaskInfo instance is strictly bounded by the lifetime of its owning pool.
+ * This means `deactivate()` will only be called during:
+ *   - the destruction of the task, or
+ *   - the destruction of the pool.
+ *
+ * In both cases, it is guaranteed that the pool still exists when `deactivate()` is invoked.
+ *
+ * Note: It's only necessary to cancel delayed tasks if the pool is not being destroyed,
+ * because pool destruction will handle cancellation anyway.
+ */
 void BackgroundSchedulePoolTaskInfo::deactivate()
 {
     std::lock_guard lock_exec(exec_mutex);
@@ -59,7 +70,7 @@ void BackgroundSchedulePoolTaskInfo::deactivate()
     scheduled = false;
 
     /// Only necessary to cancel the task before the pool is being destroyed
-    if (delayed && !pool_shutdown)
+    if (delayed)
         pool.cancelDelayedTask(*this, lock_schedule);
 }
 
@@ -215,11 +226,6 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
             std::lock_guard lock_tasks(tasks_mutex);
             std::lock_guard lock_delayed_tasks(delayed_tasks_mutex);
 
-            // Notify all delayed tasks that the owning BackgroundSchedulePool is being destroyed.
-            // This prevents any further use of the pool (e.g., cancelDelayedTask) from within
-            // BackgroundSchedulePoolTaskInfo::deactivate(), avoiding use-after-free errors.
-            for (auto & task : delayed_tasks)
-                task.second->pool_shutdown = true;
             shutdown = true;
         }
 

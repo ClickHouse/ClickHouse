@@ -8,6 +8,8 @@ namespace DB
 class BackgroundSchedulePoolTaskInfo;
 
 using BackgroundSchedulePoolTaskInfoPtr = std::shared_ptr<BackgroundSchedulePoolTaskInfo>;
+using BackgroundSchedulePoolTaskInfoWeakPtr = std::weak_ptr<BackgroundSchedulePoolTaskInfo>;
+
 
 class BackgroundSchedulePoolTaskHolder
 {
@@ -27,7 +29,11 @@ public:
     const BackgroundSchedulePoolTaskInfo * operator->() const;
 
 private:
-    BackgroundSchedulePoolTaskInfoPtr task_info;
+    // The task is exclusively owned by the BackgroundSchedulePool via strong references (shared_ptr).
+    // Task holders hold only weak references (weak_ptr) to avoid extending the task's lifetime.
+    BackgroundSchedulePoolTaskInfoWeakPtr task_info;
+
+    std::shared_ptr<BackgroundSchedulePoolTaskInfo> lock() const;
 };
 
 }
