@@ -1,10 +1,12 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/UserDefinedTypeFactory.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
 #include <Common/StringUtils.h>
@@ -13,6 +15,8 @@
 #include <Core/Settings.h>
 #include <Common/CurrentThread.h>
 #include <Interpreters/Context.h>
+#include <unordered_map>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -28,6 +32,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 DataTypePtr DataTypeFactory::get(const String & full_name) const
@@ -117,10 +122,171 @@ DataTypePtr DataTypeFactory::tryGet(const String & family_name_param, const ASTP
     return getImpl<true>(family_name_param, parameters);
 }
 
+class ASTIdentifierSubstituter
+{
+public:
+    static ASTPtr substitute(const ASTPtr & ast_node, const std::unordered_map<String, ASTPtr> & substitutions)
+    {
+        if (!ast_node)
+            return nullptr;
+
+        auto * logger = &Poco::Logger::get("ASTIdentifierSubstituter");
+        LOG_TRACE(logger, "Processing AST node ID: {}, Children: {}", ast_node->getID(), ast_node->children.size());
+
+        if (const auto * identifier_node = ast_node->as<ASTIdentifier>())
+        {
+            LOG_TRACE(logger, "Node is ASTIdentifier: {}", identifier_node->name());
+            auto it = substitutions.find(identifier_node->name());
+            if (it != substitutions.end())
+            {
+                LOG_DEBUG(logger, "Substituted ASTIdentifier '{}' with AST {}", identifier_node->name(), it->second->getID());
+                return it->second->clone(); 
+            }
+        }
+        else if (const auto * data_type_node = ast_node->as<ASTDataType>())
+        {
+            LOG_TRACE(logger, "Node is ASTDataType: {}", data_type_node->name);
+            // Only substitute if it's a simple type name without its own arguments, acting as a placeholder
+            if (!data_type_node->name.empty() && (!data_type_node->arguments || data_type_node->arguments->children.empty()))
+            {
+                auto it = substitutions.find(data_type_node->name);
+                if (it != substitutions.end())
+                {
+                    LOG_DEBUG(logger, "Substituted ASTDataType '{}' with AST {}", data_type_node->name, it->second->getID());
+                    return it->second->clone(); 
+                }
+            }
+        }
+        
+        ASTPtr new_node = ast_node->clone();
+        for (auto & child : new_node->children)
+        {
+            child = substitute(child, substitutions); 
+        }
+
+        // Дополнительный шаг для синхронизации arguments в ASTDataType
+        if (auto * new_data_type_node = new_node->as<ASTDataType>())
+        {
+            if (!new_data_type_node->children.empty()) // Если есть обработанные аргументы
+            {
+                // Предполагая, что аргументы всегда являются первым (и единственным) ребенком для ASTDataType
+                new_data_type_node->arguments = new_data_type_node->children.at(0);
+            }
+            else if (new_data_type_node->arguments && new_data_type_node->arguments->children.empty())
+            {
+                if (new_data_type_node->children.empty())
+                     new_data_type_node->arguments = nullptr;
+            }
+        }
+
+        return new_node;
+    }
+};
+
 template <bool nullptr_on_error>
 DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const ASTPtr & parameters) const
 {
     String family_name = getAliasToOrName(family_name_param);
+    auto * log = &Poco::Logger::get("DataTypeFactory");
+
+    if (UserDefinedTypeFactory::instance().isTypeRegistered(family_name))
+    {
+        LOG_DEBUG(log, "Processing user-defined type: {}", family_name);
+        auto udt_type_info = UserDefinedTypeFactory::instance().getTypeInfo(family_name);
+        ASTPtr udt_formal_params_ast = udt_type_info.type_parameters;
+        ASTPtr udt_base_type_definition_ast = udt_type_info.base_type_ast;
+
+        if (!udt_base_type_definition_ast)
+        {
+            LOG_ERROR(log, "User-defined type '{}' has no base type definition AST.", family_name);
+            if constexpr (nullptr_on_error) return nullptr;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "User-defined type '{}' has no base type definition AST.", family_name);
+        }
+
+        const auto * actual_args_list_node = parameters ? parameters->as<ASTExpressionList>() : nullptr;
+        size_t num_actual_args = actual_args_list_node ? actual_args_list_node->children.size() : 0;
+
+        const auto * formal_params_list_node = udt_formal_params_ast ? udt_formal_params_ast->as<ASTExpressionList>() : nullptr;
+        size_t num_formal_params = formal_params_list_node ? formal_params_list_node->children.size() : 0;
+
+        if (num_formal_params != num_actual_args)
+        {
+            LOG_WARNING(log, "Argument number mismatch for UDT '{}': expects {}, got {}", family_name, num_formal_params, num_actual_args);
+            if constexpr (nullptr_on_error) return nullptr;
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "User-defined type '{}' expects {} argument(s), but {} provided",
+                            family_name, num_formal_params, num_actual_args);
+        }
+
+        if (num_formal_params == 0) // No parameters defined or provided
+        {
+            LOG_DEBUG(log, "Resolving non-parameterized UDT '{}' using its base AST.", family_name);
+            return getImpl<nullptr_on_error>(udt_base_type_definition_ast);
+        }
+        else // Parameters are present and counts match
+        {
+            LOG_DEBUG(log, "Resolving parameterized UDT '{}' with {} arguments.", family_name, num_actual_args);
+            std::unordered_map<String, ASTPtr> substitutions;
+            for (size_t i = 0; i < num_formal_params; ++i)
+            {
+                const auto * formal_param_ident_node = formal_params_list_node->children[i]->as<ASTIdentifier>();
+                if (!formal_param_ident_node)
+                {
+                    LOG_ERROR(log, "Formal parameter #{} for UDT '{}' is not an identifier.", i + 1, family_name);
+                    if constexpr (nullptr_on_error) return nullptr;
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Formal parameter for user-defined type '{}' at position {} is not an identifier.", family_name, i + 1);
+                }
+                substitutions[formal_param_ident_node->name()] = actual_args_list_node->children[i];
+                WriteBufferFromOwnString actual_arg_ast_str_buf;
+                IAST::FormatSettings log_fmt_settings(true);
+                log_fmt_settings.show_secrets = false;
+                actual_args_list_node->children[i]->format(actual_arg_ast_str_buf, log_fmt_settings);
+                LOG_DEBUG(log, "Substitution map for UDT '{}': formal param '{}' -> actual arg AST: {}", 
+                          family_name, formal_param_ident_node->name(), actual_arg_ast_str_buf.str());
+            }
+
+            WriteBufferFromOwnString base_ast_before_str_buf;
+            IAST::FormatSettings format_settings_before(true);
+            format_settings_before.show_secrets = false;
+            udt_base_type_definition_ast->format(base_ast_before_str_buf, format_settings_before);
+            LOG_DEBUG(log, "UDT '{}': Base AST before substitution: {}", family_name, base_ast_before_str_buf.str());
+
+            ASTPtr substituted_ast = ASTIdentifierSubstituter::substitute(udt_base_type_definition_ast, substitutions);
+            
+            WriteBufferFromOwnString substituted_ast_str_buf;
+            IAST::FormatSettings log_substituted_fmt_settings(true);
+            log_substituted_fmt_settings.show_secrets = false;
+            
+            if (substituted_ast)
+            {
+                // Лог для отладки структуры substituted_ast
+                LOG_DEBUG(log, "UDT '{}': substituted_ast ID: {}, Children count: {}", family_name, substituted_ast->getID(), substituted_ast->children.size());
+                if (const auto * s_ast_data_type = substituted_ast->as<ASTDataType>())
+                {
+                    if (s_ast_data_type->arguments)
+                    {
+                        WriteBufferFromOwnString args_buf;
+                        s_ast_data_type->arguments->format(args_buf, log_substituted_fmt_settings);
+                        LOG_DEBUG(log, "UDT '{}': substituted_ast arguments formatted: {}", family_name, args_buf.str());
+                    }
+                    else
+                    {
+                        LOG_DEBUG(log, "UDT '{}': substituted_ast has no arguments field.", family_name);
+                    }
+                }
+
+                substituted_ast->format(substituted_ast_str_buf, log_substituted_fmt_settings);
+            }
+            else
+            {
+                substituted_ast_str_buf.write("nullptr", 7);
+            }
+            LOG_DEBUG(log, "UDT '{}': Substituted AST (overall format): {}", family_name, substituted_ast_str_buf.str());
+
+            LOG_DEBUG(log, "Substituted AST for UDT '{}' created, resolving it.", family_name);
+            return getImpl<nullptr_on_error>(substituted_ast);
+        }
+    }
 
     const auto * creator = findCreatorByName<nullptr_on_error>(family_name);
     DataTypePtr data_type;
@@ -227,10 +393,14 @@ void DataTypeFactory::registerSimpleDataTypeCustom(const String & name, SimpleCr
 template <bool nullptr_on_error>
 const DataTypeFactory::Value * DataTypeFactory::findCreatorByName(const String & family_name) const
 {
+    auto * const log = &Poco::Logger::get("DataTypeFactory");
+    LOG_DEBUG(log, "Finding creator for type: {}", family_name);
+    
     {
         DataTypesDictionary::const_iterator it = data_types.find(family_name);
         if (data_types.end() != it)
         {
+            LOG_DEBUG(log, "Found in data_types dictionary");
             return &it->second;
         }
     }
@@ -241,16 +411,25 @@ const DataTypeFactory::Value * DataTypeFactory::findCreatorByName(const String &
         DataTypesDictionary::const_iterator it = case_insensitive_data_types.find(family_name_lowercase);
         if (case_insensitive_data_types.end() != it)
         {
+            LOG_DEBUG(log, "Found in case_insensitive_data_types dictionary");
             return &it->second;
         }
     }
 
     if constexpr (nullptr_on_error)
+    {
+        LOG_DEBUG(log, "Type {} not found, returning nullptr", family_name);
         return nullptr;
+    }
 
+    LOG_DEBUG(log, "Type {} not found, looking for hints", family_name);
     auto hints = this->getHints(family_name);
     if (!hints.empty())
+    {
+        LOG_DEBUG(log, "Found hints for {}: {}", family_name, toString(hints));
         throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown data type family: {}. Maybe you meant: {}", family_name, toString(hints));
+    }
+    LOG_DEBUG(log, "No hints found for {}", family_name);
     throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown data type family: {}", family_name);
 }
 

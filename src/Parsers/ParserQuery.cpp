@@ -2,6 +2,7 @@
 #include <Parsers/ParserCreateFunctionQuery.h>
 #include <Parsers/ParserCreateWorkloadQuery.h>
 #include <Parsers/ParserCreateResourceQuery.h>
+#include <Parsers/ParserCreateTypeQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserCreateIndexQuery.h>
 #include <Parsers/ParserDropFunctionQuery.h>
@@ -55,6 +56,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserCreateRowPolicyQuery create_row_policy_p;
     ParserCreateSettingsProfileQuery create_settings_profile_p;
     ParserCreateFunctionQuery create_function_p;
+    ParserCreateTypeQuery create_type_p;
     ParserDropFunctionQuery drop_function_p;
     ParserCreateWorkloadQuery create_workload_p;
     ParserDropWorkloadQuery drop_workload_p;
@@ -86,6 +88,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || create_row_policy_p.parse(pos, node, expected)
         || create_settings_profile_p.parse(pos, node, expected)
         || create_function_p.parse(pos, node, expected)
+        || create_type_p.parse(pos, node, expected)
         || drop_function_p.parse(pos, node, expected)
         || create_workload_p.parse(pos, node, expected)
         || drop_workload_p.parse(pos, node, expected)
