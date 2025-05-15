@@ -115,13 +115,29 @@ public:
     void protect() override;
     size_t allocatedBytes() const override;
 
-    void forEachSubcolumn(IColumn::ColumnCallback callback) const override { callback(data_column); }
+    void forEachSubcolumn(IColumn::ColumnCallback callback) const override
+    { 
+        callback(data_column); 
+        callback(common_prefix_lengths);
+    }
 
-    void forEachMutableSubcolumn(IColumn::MutableColumnCallback callback) override { callback(data_column); }
+    void forEachMutableSubcolumn(IColumn::MutableColumnCallback callback) override 
+    { 
+        callback(data_column);
+        callback(common_prefix_lengths);
+    }
 
-    void forEachSubcolumnRecursively(IColumn::RecursiveColumnCallback callback) const override { callback(*data_column); }
+    void forEachSubcolumnRecursively(IColumn::RecursiveColumnCallback callback) const override
+    { 
+        callback(*data_column);
+        callback(*common_prefix_lengths); 
+    }
 
-    void forEachMutableSubcolumnRecursively(IColumn::RecursiveMutableColumnCallback callback) override { callback(*data_column); }
+    void forEachMutableSubcolumnRecursively(IColumn::RecursiveMutableColumnCallback callback) override
+    {
+        callback(*data_column);
+        callback(*common_prefix_lengths);
+    }
 
     bool structureEquals(const IColumn & rhs) const override
     {
