@@ -1,3 +1,4 @@
+-- Tag: log-engine
 SET output_format_write_statistics = 0;
 SET output_format_json_pretty_print = 0;
 
