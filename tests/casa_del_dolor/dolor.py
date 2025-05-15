@@ -39,7 +39,7 @@ parser.add_argument("--server-config", type = pathlib.Path, help = 'Path to conf
 parser.add_argument("-s", "--seed", type = int, default = 0, help = 'Server fuzzer seed')
 parser.add_argument("-u", "--user-config", type = pathlib.Path, help = 'Path to users.xml file')
 parser.add_argument("--kill-server-prob", type = int, default = 50, choices=range(0, 101), help = 'Probability to kill the server instead of shutting it down')
-parser.add_argument('--time-between-shutdowns', type=ordered_pair, default=(20, 30), help="Two ordered integers separated by comma (e.g., 30,60)")
+parser.add_argument('--time-between-shutdowns', type=ordered_pair, default=(20, 30), help="In seconds. Two ordered integers separated by comma (e.g., 30,60)")
 args = parser.parse_args()
 
 if len(args.replica_values) != len(args.shard_values):
