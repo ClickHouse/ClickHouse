@@ -124,13 +124,9 @@ arrayROCAUC
 arrayRandomSample
 arrayReduce
 arrayReduceInRanges
-arrayResize
 arrayReverse
 arrayReverseFill
-arrayReverseSort
 arrayReverseSplit
-arraySlice
-arraySort
 arraySplit
 arrayStringConcat
 arraySum
