@@ -23,7 +23,7 @@
 #    include <jemalloc/jemalloc.h>
 #endif
 
-#if OS_LINUX
+#if defined(OS_LINUX)
 #    include <netinet/tcp.h>
 #endif
 
