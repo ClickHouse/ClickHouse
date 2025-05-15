@@ -102,9 +102,12 @@ void registerStorageFileLog(StorageFactory & factory);
 void registerStorageSQLite(StorageFactory & factory);
 #endif
 
+void registerStorageLance(StorageFactory & factory);
+
 void registerStorageKeeperMap(StorageFactory & factory);
 
 void registerStorageObjectStorage(StorageFactory & factory);
+
 
 void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
 {
@@ -204,6 +207,10 @@ void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
 
     #if USE_SQLITE
     registerStorageSQLite(factory);
+    #endif
+
+    #if USE_LANCE
+    registerStorageLance(factory);
     #endif
 
     registerStorageKeeperMap(factory);

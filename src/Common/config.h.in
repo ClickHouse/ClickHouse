@@ -62,6 +62,7 @@
 #cmakedefine01 USE_USEARCH
 #cmakedefine01 USE_SKIM
 #cmakedefine01 USE_PRQL
+#cmakedefine01 USE_LANCE
 #cmakedefine01 USE_ULID
 #cmakedefine01 USE_LIBFIU
 #cmakedefine01 USE_BCRYPT

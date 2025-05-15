@@ -123,6 +123,10 @@ if (TARGET ch_contrib::nats_io)
     add_headers_and_sources(dbms Storages/NATS)
 endif()
 
+if (TARGET ch_rust::lance)
+    add_headers_and_sources(dbms Storages/Lance)
+endif()
+
 add_headers_and_sources(dbms Storages/ObjectStorage)
 add_headers_and_sources(dbms Storages/ObjectStorage/Azure)
 add_headers_and_sources(dbms Storages/ObjectStorage/S3)
@@ -177,7 +181,7 @@ if (ENABLE_BUZZHOUSE)
 
     add_headers_and_sources(dbms Client/BuzzHouse/AST)
     add_headers_and_sources(dbms Client/BuzzHouse/Generator)
-    add_headers_and_sources(dbms Client/BuzzHouse/Utils)
+    add_headers_and_sources(dbms Client/BuzzHouse/atils)
 endif()
 
 if (OS_LINUX)
@@ -658,6 +662,10 @@ endif()
 
 if (TARGET ch_contrib::google_cloud_cpp)
     dbms_target_link_libraries(PUBLIC ch_contrib::google_cloud_cpp)
+endif()
+
+if (TARGET ch_rust::lance)
+    dbms_target_link_libraries(PUBLIC ch_rust::lance)
 endif()
 
 if (ENABLE_BUZZHOUSE)

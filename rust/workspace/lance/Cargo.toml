@@ -1,0 +1,15 @@
+[package]
+name = "_ch_rust_lance"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+arrow-array = "54.0.1"
+arrow-schema = "54.0.1"
+futures = "0.3.31"
+lance = "0.25.2"
+lancedb = "0.19.0"
+tokio = "1.44.2"
+
+[lib]
+crate-type = ["staticlib"]

@@ -40,3 +40,7 @@ add_library(ch_rust::prql ALIAS _ch_rust_prql)
 target_include_directories(_ch_rust_skim_rust INTERFACE skim/include)
 add_library(ch_rust::skim ALIAS _ch_rust_skim_rust)
 
+set(AWS_LC_SYS_CFLAGS "-std=c17 -O2")
+
+target_include_directories(_ch_rust_lance INTERFACE lance/include)
+add_library(ch_rust::lance ALIAS _ch_rust_lance)
