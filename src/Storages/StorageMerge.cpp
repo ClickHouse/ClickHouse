@@ -84,7 +84,6 @@ extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 extern const int STORAGE_REQUIRES_PARAMETER;
 extern const int UNKNOWN_TABLE;
-extern const int ACCESS_DENIED;
 extern const int TABLE_IS_READ_ONLY;
 }
 
@@ -1790,7 +1789,9 @@ SinkToStoragePtr StorageMerge::write(
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Can't find any table to write for storage {}", getName());
 
         access->checkAccess(AccessType::INSERT, database, table_storage.value()->getName());
-    } else {
+    }
+    else
+    {
         if (!table_to_write)
             throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Method write is not allowed in storage {} without described table to write", getName());
 
