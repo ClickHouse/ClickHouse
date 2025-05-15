@@ -1,4 +1,4 @@
-SET distributed_ddl_output_mode = 'none';
+SET distributed_ddl_output_mode = 'none', enable_analyzer = true;
 
 drop table if exists source, mview;
 
