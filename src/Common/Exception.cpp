@@ -274,12 +274,7 @@ bool Exception::isErrorCodeImportant() const
 {
     const int error_code = code();
     return error_code == ErrorCodes::LOGICAL_ERROR
-        || error_code == ErrorCodes::POTENTIALLY_BROKEN_DATA_PART
-        || error_code == ErrorCodes::REPLICA_ALREADY_EXISTS
-        || error_code == ErrorCodes::NOT_ENOUGH_SPACE
-        || error_code == ErrorCodes::CORRUPTED_DATA
-        || error_code == ErrorCodes::CHECKSUM_DOESNT_MATCH
-        || error_code == ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR;
+        || error_code == ErrorCodes::POTENTIALLY_BROKEN_DATA_PART;
 }
 
 Exception::~Exception()
