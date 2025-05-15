@@ -17,6 +17,7 @@ select bech32Encode('tltssdfsdvjnasdfnjkbhksdfasnbdfkljhaksdjfnakjsdhasdfnasdkfa
 -- negative tests
 -- empty hrp
 select bech32Encode('', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'));
+select bech32Encode('bc', unhex('751E76E8199196D454941C45D1B3A323F1433BD6'));
 -- 51 chars should return nothing
 select bech32Encode('', unhex('751e76e8199196d454941c45d1b3a323f1433bd6751e76e8199196d454941c45d1b3a323f1433bd6751e76e8199196d45494a'));
 
@@ -32,12 +33,68 @@ select bech32Encode('tb', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 2);
 select bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 1) == 
        bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 10);
 
+-- roundtrip
 select tup.1 as hrp, hex(tup.2) as data from (select bech32Decode(bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'))) as tup);
+
+CREATE TABLE hex_data
+(
+	hrp String,
+    data String,
+	witver UInt8
+)
+ENGINE = Memory;
+
+INSERT INTO hex_data VALUES
+('bc', '6687112a6eadb4d88d29c7a45da56eff0c23b0e14e757d408e', 0),
+('tb', '8f8cdd4364bb7dca11c49743da2c4b54062fa0388bbf924078', 1),
+('bc', '50b80d45cc275f36eb5fb2c22a93f6a4e83ba9380e55c67f6a', 15),
+('tb', 'b103a1937c6e2fb9de707a4be02d5d39e217b4bca7ce3c9c12', 0),
+('bcrt', '95eb334ff82ef8ad76151c29094abdae6c9e8bb8244523e347', 2);
+
+-- for encoding, if using a FixedString column for the data it is crucial that there is no padding
+-- since the input is binary, there is no way to check for it
+CREATE TABLE bech32_test
+(
+	hrp String,
+    data String,
+	hrp_fixed FixedString(4),
+    data_fixed FixedString(50),
+	witver UInt8
+)
+ENGINE = Memory;
+
+INSERT INTO bech32_test 
+SELECT hrp, data, CAST(hrp, 'FixedString(4)'), CAST(data, 'FixedString(50)'), witver
+FROM hex_data;
+
+SELECT
+    bech32Encode(hrp, unhex(data)) AS enc,
+    bech32Encode(hrp, unhex(data), witver) AS enc_witver,
+    bech32Encode(hrp, unhex(data), witver) = bech32Encode(hrp_fixed, unhex(data_fixed), witver) AS match1,
+    bech32Encode(hrp, unhex(data), witver) = bech32Encode(hrp, unhex(data_fixed), witver) AS match2,
+    bech32Encode(hrp, unhex(data), witver) = bech32Encode(hrp_fixed, unhex(data), witver) AS match3
+FROM bech32_test;
+
+SELECT
+    hrp,
+    data,
+    hrp = tup.1 AS match_hrp,
+    data = lower(hex(tup.2)) AS match_data
+FROM
+(
+    SELECT
+        hrp,
+        data,
+		bech32Decode(bech32Encode(hrp, unhex(data), witver)) as tup
+    FROM bech32_test
+) AS round_trip;
+
+DROP TABLE hex_data;
+DROP TABLE bech32_test;
 
 -- negative tests
 select bech32Decode('');
 select bech32Decode('foo');
-select bech32Decode('751E76E8199196D454941C45D1B3A323F1433BD6');
 
 -- decode valid string, witver 0, hrp=bc
 select tup.1 as hrp, hex(tup.2) as data from (select bech32Decode('bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z') as tup);

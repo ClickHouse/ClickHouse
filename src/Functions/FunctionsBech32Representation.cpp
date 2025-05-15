@@ -242,12 +242,6 @@ private:
                 --hrp_new_offset;
             }
 
-            // NUL chars are used to pad fixed width strings, so we remove them here since they are not valid inputs anyway
-            while (data_width > 0 && data_vec[data_new_offset - 1] == 0 && data_new_offset > data_prev_offset)
-            {
-                --data_new_offset;
-            }
-
             // max encodable data to stay within 90-char limit on Bech32 output
             // hrp must be at least 1 character and no more than 83
             auto data_len = data_new_offset - data_prev_offset - data_zero_offset;

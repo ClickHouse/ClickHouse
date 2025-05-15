@@ -179,7 +179,9 @@ std::string encode(const std::string& hrp, const data& values, Encoding encoding
     // First ensure that the HRP is all lowercase. BIP-173 requires an encoder
     // to return a lowercase Bech32 string, but if given an uppercase HRP, the
     // result will always be invalid.
-    for (const char& c : hrp) assert(c < 'A' || c > 'Z');
+    for (const char& c : hrp)
+        if (c >= 'A' && c <= 'Z')
+            return "";
     data checksum = create_checksum(hrp, values, encoding);
     data combined = cat(values, checksum);
     std::string ret = hrp + '1';
