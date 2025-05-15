@@ -206,7 +206,7 @@ namespace ErrorCodes
     it is recommended to set it below the maximum filename length (usually 255
     bytes) with some gap to avoid filesystem errors.
     )", 0) \
-    DECLARE(UInt64, min_bytes_for_full_part_storage, 0, R"(
+    DECLARE(UInt64, min_bytes_for_full_part_storage, 134217728, R"(
     Only available in ClickHouse Cloud. Minimal uncompressed size in bytes to
     use full type of storage for data part instead of packed
     )", 0) \
