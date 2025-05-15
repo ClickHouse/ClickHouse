@@ -19,7 +19,7 @@ SELECT '2st argument (max_rows_per_postings_list) must be bigger than MIN_ROWS_P
 CREATE TABLE tab (key UInt64, str String, INDEX inv_idx str TYPE gin(1, 1)) ENGINE = MergeTree ORDER BY key SETTINGS min_bytes_for_full_part_storage = 0; -- { serverError INCORRECT_QUERY }
 
 SELECT 'Must be created on single column';
-CREATE TABLE tab (key UInt64, str1 String, str2 String, INDEX inv_idx (str1, str2) TYPE gin(1, 9999)) ENGINE = MergeTree ORDER BY key SETTINGS min_bytes_for_full_part_storage = 0; -- { serverError INCORRECT_NUMBER_OF_COLUMNS }
+CREATE TABLE tab (key UInt64, str1 String, str2 String, INDEX inv_idx (str1, str2) TYPE gin(2, 9999)) ENGINE = MergeTree ORDER BY key SETTINGS min_bytes_for_full_part_storage = 0; -- { serverError INCORRECT_NUMBER_OF_COLUMNS }
 
 SELECT 'Must be created on String or FixedString or Array(String) or Array(FixedString) or LowCardinality(String) or LowCardinality(FixedString) columns';
 CREATE TABLE tab (key UInt64, str UInt64, INDEX inv_idx str TYPE gin(1, 9999)) ENGINE = MergeTree ORDER BY key SETTINGS min_bytes_for_full_part_storage = 0; -- { serverError INCORRECT_QUERY }

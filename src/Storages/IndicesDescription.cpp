@@ -28,6 +28,45 @@ namespace ErrorCodes
 namespace
 {
 using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+
+
+[[nodiscard]] inline Tuple parseGinIndexArgumentFromAST(const auto & arguments)
+{
+    const auto & idenfitier = arguments->children[0]->template as<ASTIdentifier>();
+    if (idenfitier == nullptr)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Expected identifier");
+
+    const auto & literal = arguments->children[1]->template as<ASTLiteral>();
+    if (literal == nullptr)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Expected literal");
+
+    Tuple key_value_pair{};
+    key_value_pair.emplace_back(idenfitier->name());
+    key_value_pair.emplace_back(literal->value);
+    return key_value_pair;
+}
+
+[[nodiscard]] bool parseGinIndexArgumentsFromAST(const auto & arguments, FieldVector & parsed_arguments)
+{
+    parsed_arguments.reserve(arguments->children.size());
+
+    for (const auto & argument : arguments->children)
+    {
+        if (const auto * ast_function = argument->template as<ASTFunction>();
+            ast_function && ast_function->name == "equals" && ast_function->arguments->children.size() == 2)
+        {
+            parsed_arguments.emplace_back(parseGinIndexArgumentFromAST(ast_function->arguments));
+        }
+        else
+        {
+            if (!parsed_arguments.empty())
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot mix key-value pair and single argument as GIN index arguments");
+            return false;
+        }
+    }
+
+    return true;
+}
 }
 
 IndexDescription::IndexDescription(const IndexDescription & other)
@@ -129,6 +168,11 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
 
     if (index_type && index_type->arguments)
     {
+        if (index_type->name == "gin" && parseGinIndexArgumentsFromAST(index_type->arguments, result.arguments))
+        {
+            return result;
+        }
+        // we still support previous GIN index description syntax for the backward compatibility.
         for (size_t i = 0; i < index_type->arguments->children.size(); ++i)
         {
             const auto & child = index_type->arguments->children[i];
