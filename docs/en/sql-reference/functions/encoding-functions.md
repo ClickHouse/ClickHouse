@@ -975,7 +975,7 @@ Encodes a binary data string, along with a human-readable part (HRP), using the 
 **Syntax**
 
 ```sql
-Bech32Encode(hrp, data, witver (optional))
+Bech32Encode(hrp, data, witver(optional))
 ```
 
 **Parameters**
@@ -985,18 +985,18 @@ Bech32Encode(hrp, data, witver (optional))
 - `witver` (optional, default = 0): An [unsigned integer](../../sql-reference/data-types/int-uint.md) specifying the version of the algorithm to run. 0 for Bech32 and 1 or greater for Bech32m.
 
 :::note
-When using the [FixedString](../data-types/fixedstring.md) data type, if a value does not fully fill the row it is padded with null characters. While the `Bech32Encode` function will handle this automatically for the hrp argument, the data values must not be padded. For this reason it is not recommended to use the [FixedString](../data-types/fixedstring.md) data type for your data values unless you are certain that they are all the same length and ensure that your [FixedString](../data-types/fixedstring.md) column is set to that length as well.
+When using the [FixedString](../data-types/fixedstring.md) data type, if a value does not fully fill the row it is padded with null characters. While the `Bech32Encode` function will handle this automatically for the hrp argument, for the data argument the values must not be padded. For this reason it is not recommended to use the [FixedString](../data-types/fixedstring.md) data type for your data values unless you are certain that they are all the same length and ensure that your [FixedString](../data-types/fixedstring.md) column is set to that length as well.
 :::
 
 **Returned value**
 
-- A Bech32 address string, consisting of the human-readable part, a separator character which is always '1', and a data part. The length of the string will never exceed 90 characters. If algorithm cannot generate a valid address from the input, it will return an empty string.
+- A Bech32 address string, consisting of the human-readable part, a separator character which is always '1', and a data part. The length of the string will never exceed 90 characters. If the algorithm cannot generate a valid address from the input, it will return an empty string 
 
-- Type: [String](../data-types/string.md).
+Type: [String](../data-types/string.md).
 
 **Example**
 
-When no witness version is supplied, the default is 0, aka the original Bech32 algorithm.
+When no witness version is supplied, the default is 0, the original Bech32 algorithm.
 
 Query:
 
@@ -1031,7 +1031,7 @@ While 'bc' (Mainnet) and 'tb' (Testnet) are the only allowed hrp values for the 
 Query:
 
 ```sql
-SELECT bech32Encode('abcdefg', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 1);
+SELECT bech32Encode('abcdefg', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 10);
 ```
 Result:
 
@@ -1051,13 +1051,15 @@ Bech32Decode(address)
 
 **Parameters**
 
-- `address` — Bech32 string to decode. [String](../data-types/string.md), [FixedString](../data-types/fixedstring.md). Unlike the encode function, `Bech32Decode` will automatically handle padded [FixedStrings](../data-types/fixedstring.md).
+- `address` — Bech32 string to decode. [String](../data-types/string.md), [FixedString](../data-types/fixedstring.md).
+
+Unlike the encode function, `Bech32Decode` will automatically handle padded [FixedStrings](../data-types/fixedstring.md).
 
 **Returned value**
 
 - A tuple consisting of the (hrp, data) that was used to encode the string. The data is in binary format.
 
-- Type: ([String](../data-types/string.md), [String](../data-types/string.md)).
+Type: ([String](../data-types/string.md), [String](../data-types/string.md)).
 
 **Example**
 
