@@ -62,7 +62,7 @@ def cleanup():
     global test_idx
     test_idx += 1
 
-def test_refreshable_mv_in_replicated_db(started_cluster):
+def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
     for node in nodes:
         node.query(
             "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
@@ -228,9 +228,6 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
         assert node.query("show tables from re") == ""
 
 def test_refreshable_mv_in_system_db(started_cluster, cleanup):
-    node1.query("drop database re sync")
-    node2.query("drop database re sync")
-
     node1.query(
         "create materialized view system.a refresh every 1 second (x Int64) engine Memory as select number+1 as x from numbers(2);"
         "system refresh view system.a;"
@@ -242,7 +239,7 @@ def test_refreshable_mv_in_system_db(started_cluster, cleanup):
 
     node1.query("drop table system.a")
 
-def test_refreshable_mv_in_read_only_node(started_cluster):
+def test_refreshable_mv_in_read_only_node(started_cluster, cleanup):
     # writable node
     node1.query(
         "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
@@ -294,10 +291,7 @@ def test_refreshable_mv_in_read_only_node(started_cluster):
         "1\n",
     )
 
-    reading_node.query("drop database re sync")
-    node1.query("drop database re sync")
-
-def test_refresh_vs_shutdown_smoke(started_cluster):
+def test_refresh_vs_shutdown_smoke(started_cluster, cleanup):
     for node in nodes:
         node.query(
             "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
@@ -345,8 +339,6 @@ def test_refresh_vs_shutdown_smoke(started_cluster):
     )
 
     node1.start_clickhouse()
-    node1.query("drop database re sync")
-    node2.query("drop database re sync")
 
 def test_pause(started_cluster, cleanup):
     for node in nodes:
@@ -462,10 +454,7 @@ def test_adding_replica(started_cluster, cleanup):
         "select last_refresh_replica from system.view_refreshes")
     assert r == "2\n"
 
-    node1.query("drop database re sync")
-    node2.query("drop database re sync")
-
-def test_replicated_db_startup_race(started_cluster):
+def test_replicated_db_startup_race(started_cluster, cleanup):
     for node in nodes:
         node.query(
             "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
@@ -485,5 +474,3 @@ def test_replicated_db_startup_race(started_cluster):
     node1.query("system disable failpoint database_replicated_startup_pause")
     _, err = drop_query_handle.get_answer_and_error()
     assert err == ""
-
-    node2.query("drop database re sync")
