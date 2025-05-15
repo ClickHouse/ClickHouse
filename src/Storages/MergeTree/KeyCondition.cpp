@@ -2244,7 +2244,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                         Field converted = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
                         if (converted.isNull())
                             return false;
-                        
+
                         const_value = converted;
 
                         // Need to set is_constant_transformed unless we're doing exact conversion
