@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+-- ^ due to the usage of ON CLUSTER queries
+
 SET distributed_ddl_output_mode = 'none', enable_analyzer = true;
 
 drop table if exists source, mview;
