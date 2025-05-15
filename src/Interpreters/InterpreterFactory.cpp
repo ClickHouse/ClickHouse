@@ -342,6 +342,14 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterDropFunctionQuery";
     }
+    else if (query->as<ASTCreateAggregateFunctionQuery>())
+    {
+        interpreter_name = "InterpreterCreateAggregateFunctionQuery";
+    }
+    else if (query->as<ASTDropAggregateFunctionQuery>())
+    {
+        interpreter_name = "InterpreterDropAggregateFunctionQuery";
+    }
     else if (query->as<ASTCreateWorkloadQuery>())
     {
         interpreter_name = "InterpreterCreateWorkloadQuery";
