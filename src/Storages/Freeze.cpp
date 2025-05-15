@@ -2,6 +2,7 @@
 
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Storages/PartitionCommands.h>
+#include <Interpreters/Context.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 

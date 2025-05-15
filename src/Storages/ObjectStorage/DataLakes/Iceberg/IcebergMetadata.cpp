@@ -9,6 +9,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <Interpreters/Context.h>
 
 #include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -129,7 +130,7 @@ readJSON(const String & metadata_file_path, ObjectStoragePtr object_storage, con
 IcebergMetadata::IcebergMetadata(
     ObjectStoragePtr object_storage_,
     ConfigurationObserverPtr configuration_,
-    const DB::ContextPtr & context_,
+    const ContextPtr & context_,
     Int32 metadata_version_,
     Int32 format_version_,
     const Poco::JSON::Object::Ptr & metadata_object_,

@@ -15,6 +15,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
+#include <Interpreters/Context.h>
 
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
