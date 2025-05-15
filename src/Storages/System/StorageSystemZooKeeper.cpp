@@ -11,6 +11,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
@@ -298,7 +299,7 @@ ColumnsDescription StorageSystemZooKeeper::getColumnsDescription()
     {
         {"name",           std::make_shared<DataTypeString>(), "The name of the node."},
         {"value",          std::make_shared<DataTypeString>(), "Node value."},
-        {"zookeeperName",  std::make_shared<DataTypeString>(), "The ZooKeeper name of the node."},
+        {"zookeeperName",  std::make_shared<DataTypeString>(), "The name of default or one of auxiliary ZooKeeper cluster."},
         {"czxid",          std::make_shared<DataTypeInt64>(), "ID of the transaction that created the node."},
         {"mzxid",          std::make_shared<DataTypeInt64>(), "ID of the transaction that last changed the node."},
         {"ctime",          std::make_shared<DataTypeDateTime>(), "Time of node creation."},
@@ -360,7 +361,8 @@ static void extractNameImpl(const ActionsDAG::Node & node, String & res, Context
 {
     /// Only one name is allowed
     if (!res.empty())
-        return;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "SELECT from system.zookeeper table cannot have multiple different filters by zookeeperName.");
 
     if (node.type != ActionsDAG::ActionType::FUNCTION)
         return;
@@ -575,12 +577,7 @@ Chunk SystemZooKeeperSource::generate()
     if (name.empty())
     {
         chassert(0); // In fact, it must always have a default value.
-        if (!started)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "SELECT from system.zookeeper table must contain condition like zookeeperName = 'name'.");
-
-        /// No more work
-        return {};
+        name = zkutil::DEFAULT_ZOOKEEPER_NAME;
     }
 
     if (paths.empty())
