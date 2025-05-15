@@ -3,9 +3,9 @@
 #if USE_SQLITE
 
 #include <Common/Exception.h>
-#include <Common/TableNameOrQuery.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Storages/StorageSQLite.h>
+#include <Storages/TableNameOrQuery.h>
 
 #include <Databases/SQLite/SQLiteUtils.h>
 #include "registerTableFunctions.h"

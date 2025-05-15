@@ -3,8 +3,8 @@
 #include "config.h"
 
 #if USE_SQLITE
-#include <Common/TableNameOrQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/TableNameOrQuery.h>
 
 #include <sqlite3.h>
 
