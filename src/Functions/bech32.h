@@ -1,3 +1,4 @@
+#pragma once
 /* Copyright (c) 2017, 2021 Pieter Wuille
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -18,7 +19,6 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#pragma once
 
 #include <cstdint>
 #include <string>
