@@ -992,6 +992,22 @@ The server successfully detected this situation and will download merged part fr
     M(ConcurrencyControlQueriesDelayed, "Total number of CPU slot allocations (queries) that were required to wait for slots to upscale", ValueType::Number) \
     M(ConcurrencyControlWaitMicroseconds, "Total time a query was waiting on resource requests for CPU slots.", ValueType::Microseconds) \
     \
+    M(CoordinatedMergesMergeCoordinatorUpdateCount, "Total number of merge coordinator updates", ValueType::Number) \
+    M(CoordinatedMergesMergeCoordinatorUpdateMicroseconds, "Total time spend on updating merge coordinator state", ValueType::Microseconds) \
+    M(CoordinatedMergesMergeCoordinatorFetchMetadataMicroseconds, "Total time spend on fetching fresh metadata inside merge coordinator", ValueType::Microseconds) \
+    M(CoordinatedMergesMergeCoordinatorFilterMicroseconds, "Total time spend on filtering prepared merges inside merge coordinator", ValueType::Microseconds) \
+    M(CoordinatedMergesMergeCoordinatorSelectMergesMicroseconds, "Total time spend on finding merge using merge selectors inside merge coordinator", ValueType::Microseconds) \
+    M(CoordinatedMergesMergeCoordinatorLockStateForShareCount, "Total number of for share captures of coordinator state lock", ValueType::Number) \
+    M(CoordinatedMergesMergeCoordinatorLockStateExclusivelyCount, "Total number of exclusive captures of coordinator state lock", ValueType::Number) \
+    M(CoordinatedMergesMergeCoordinatorLockStateForShareMicroseconds, "Total time spend on locking coordinator state mutex for share", ValueType::Microseconds) \
+    M(CoordinatedMergesMergeCoordinatorLockStateExclusivelyMicroseconds, "Total time spend on locking coordinator state mutex exclusively", ValueType::Microseconds) \
+    M(CoordinatedMergesMergeWorkerUpdateCount, "Total number merge worker updates", ValueType::Number) \
+    M(CoordinatedMergesMergeWorkerUpdateMicroseconds, "Total time spend on updating local state of assigned merges on worker", ValueType::Microseconds) \
+    M(CoordinatedMergesMergeAssignmentRequest, "Total number of merge assignment requests", ValueType::Number) \
+    M(CoordinatedMergesMergeAssignmentResponse, "Total number of merge assignment requests", ValueType::Number) \
+    M(CoordinatedMergesMergeAssignmentRequestMicroseconds, "Total time spend in merge assignment client", ValueType::Microseconds) \
+    M(CoordinatedMergesMergeAssignmentResponseMicroseconds, "Total time spend in merge assignment handler", ValueType::Microseconds) \
+    \
     M(SharedDatabaseCatalogFailedToApplyState, "Number of failures to apply new state in SharedDatabaseCatalog", ValueType::Number) \
     M(SharedDatabaseCatalogStateApplicationMicroseconds, "Total time spend on application of new state in SharedDatabaseCatalog", ValueType::Microseconds) \
     \
