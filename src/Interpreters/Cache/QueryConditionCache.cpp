@@ -18,6 +18,34 @@ QueryConditionCache::QueryConditionCache(const String & cache_policy, size_t max
 {
 }
 
+inline bool QueryConditionCache::needUpdate(const std::shared_ptr<Entry> & entry, const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark) const
+{
+    // If no marks to process, we may only need to update the final mark
+    if (mark_ranges.empty()) {
+        // Only acquire the lock and check final mark when has_final_mark is true
+        std::shared_lock read_lock(entry->mutex);
+        // Return true (update needed) only if final mark needs to be set to false
+        return has_final_mark && entry->matching_marks[marks_count - 1];
+    }
+    else {
+        // Acquire shared lock for read access to the matching_marks vector
+        std::shared_lock read_lock(entry->mutex);
+
+        // Check if any mark within the ranges is still true
+        for (const auto & mark_range : mark_ranges) {
+            if (std::find(
+                entry->matching_marks.begin() + mark_range.begin,
+                entry->matching_marks.begin() + mark_range.end,
+                true) != (entry->matching_marks.begin() + mark_range.end)) {
+                    return true;  // Found at least one true mark in range, need update
+                }
+        }
+
+        // If all marks in ranges are already false, check if final mark needs update
+        return has_final_mark && entry->matching_marks[marks_count - 1];
+    }
+}
+
 void QueryConditionCache::write(
     const UUID & table_id, const String & part_name, size_t condition_hash,
     const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark)
@@ -26,6 +54,10 @@ void QueryConditionCache::write(
 
     auto load_func = [&](){ return std::make_shared<Entry>(marks_count); };
     auto [entry, inserted] = cache.getOrSet(key, load_func);
+
+    // Skip update if not needed - optimization to avoid unnecessary locks and updates
+    if (!needUpdate(entry, mark_ranges, marks_count, has_final_mark))
+        return;
 
     std::lock_guard lock(entry->mutex);
 

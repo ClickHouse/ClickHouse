@@ -60,6 +60,21 @@ private:
         size_t operator()(const Entry & entry) const;
     };
 
+    /**
+     * Check if we need to update the cache entry.
+     * This function determines whether a cache update is necessary by examining:
+     * 1. Whether the mark ranges are empty
+     * 2. Whether marks in specified ranges are already set to false
+     * 3. Whether the final mark (if applicable) is already set correctly
+     *
+     * @param entry The cache entry to check
+     * @param mark_ranges The ranges of marks to potentially update
+     * @param marks_count Total number of marks in the entry
+     * @param has_final_mark Flag indicating if the final mark needs special handling
+     * @return true if an update is needed, false if we can skip the update
+     */
+    inline bool needUpdate(const std::shared_ptr<Entry> & entry, const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark) const;
+
 public:
     using Cache = CacheBase<Key, Entry, KeyHasher, QueryConditionCacheEntryWeight>;
 
