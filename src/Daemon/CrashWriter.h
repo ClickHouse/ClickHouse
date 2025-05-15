@@ -22,6 +22,7 @@ public:
     static void initialize(Poco::Util::LayeredConfiguration & config);
     static bool initialized();
 
+    /// Can't be called from a signal handler. Call from a separate thread when a signal happens.
     static void onSignal(
         int sig,
         const std::string & error_message,
@@ -50,8 +51,6 @@ private:
         EXCEPTION,
     };
 
-    /// Not signal safe and can't be called from a signal handler
-    /// sig_or_error - signal if >= 0, otherwise exception code
     void sendError(
         Type type,
         int sig_or_error,
