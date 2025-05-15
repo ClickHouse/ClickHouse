@@ -349,6 +349,20 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
         }
     };
 
+    auto equals_or_cannot_compare = [=](const Field & left, const Field & right)
+    {
+        if (reaction == THROW_ON_VIOLATION)
+            return accurateEquals(left, right);
+        try
+        {
+            return accurateEquals(left, right);
+        }
+        catch (...)
+        {
+            return true;
+        }
+    };
+
 
     if (constraint.writability == SettingConstraintWritability::CONST)
     {
@@ -395,7 +409,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
 
     for (const auto & value : disallowed_values)
     {
-        bool equals = !(less_or_cannot_compare(value, new_value) || less_or_cannot_compare(new_value, value));
+        bool equals = equals_or_cannot_compare(value, new_value);
         if (equals)
             throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} shouldn't be {}",
                 setting_name, applyVisitor(FieldVisitorToString(), value));
