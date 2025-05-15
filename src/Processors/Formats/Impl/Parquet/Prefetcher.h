@@ -14,6 +14,8 @@ class SeekableReadBuffer;
 namespace DB::Parquet
 {
 
+class PrefetchHandle;
+
 class Prefetcher
 {
 private:
@@ -21,33 +23,6 @@ private:
     struct Task;
 
 public:
-    /// Pins a pre-registered range that we may want to read.
-    /// Call reset to mark the range as no longer needed and subtract its memory usage from MemoryUsageDiff.
-    /// All handles must be destroyed before Prefetcher is destroyed.
-    class RequestHandle
-    {
-    public:
-        RequestHandle() = default;
-        RequestHandle(RequestHandle &&) noexcept;
-        RequestHandle & operator=(RequestHandle &&) noexcept;
-
-        /// Doesn't record deallocated memory in MemoryUsageDiff. Should only be called on shutdown,
-        /// otherwise use reset(diff).
-        ~RequestHandle();
-
-        operator bool() const { return request != nullptr; }
-
-        void reset(MemoryUsageDiff * diff);
-
-    private:
-        friend class Prefetcher;
-
-        RequestState * request = nullptr;
-        MemoryUsageToken memory;
-
-        RequestHandle(RequestState * request_, MemoryUsageToken memory_);
-    };
-
     void init(ReadBuffer * reader_, const ReadOptions & options, SharedParsingThreadPoolPtr thread_pool_);
 
     /// Waits for in-progress reads to complete, cancels queued reads that haven't started yet.
@@ -57,32 +32,30 @@ public:
     /// All ranges must be registered before any reading happens (except direct readSync).
     /// Ranges are allowed to overlap a little, but this decreases the effectiveness of range
     /// coalescing, and the overlap might be read from file multiple times.
+    /// (We use overlap to simplify bloom filter header reading a little.)
     /// If likely_to_be_used is true, Prefetcher will be more eager to piggy-back this range when
     /// reading other ranges.
-    RequestHandle registerRange(size_t offset, size_t length, bool likely_to_be_used);
+    PrefetchHandle registerRange(size_t offset, size_t length, bool likely_to_be_used);
 
     /// Called at most once, after all registerRange calls and before all enqueue/getRangeData calls.
     void finalizeRanges();
 
-    /// Kicks off background tasks to prefetch these range, if needed (if not already started, and
-    /// prefetching is enabled, and handles are nonempty).
-    /// Adds the range's memory usage to MemoryUsageDiff. Remembers memory_usage->stage so that
-    /// RequestHandle::reset can later subtract from MemoryUsageDiff correctly.
-    /// The memory usage may be higher than RequestHandle::length() if we took on some read
-    /// amplification to avoid seeks.
-    void startPrefetch(const std::vector<RequestHandle *> & requests_to_start, MemoryUsageDiff * diff);
-
-    /// The input `request` must come from registerRange, not from another splitAndEnqueueRange.
-    /// I.e. ranges can't be split more than once.
+    /// Replace a requested range with a set of disjoint smaller ranges contained within it.
     /// `subranges` must be sorted.
-    void splitAndPrefetchRange(
-        RequestHandle request, const std::vector<std::pair</*global_offset*/ size_t, /*length*/ size_t>> & subranges, std::vector<RequestHandle> & out_handles, MemoryUsageDiff * diff);
+    std::vector<PrefetchHandle> splitRange(
+        PrefetchHandle request, const std::vector<std::pair</*global_offset*/ size_t, /*length*/ size_t>> & subranges, bool likely_to_be_used);
+
+    /// Kicks off background tasks to prefetch these range, if needed (if not already started, and
+    /// prefetching is enabled, and handle is valid).
+    /// Adds the range's memory usage to MemoryUsageDiff. Remembers memory_usage->stage so that
+    /// PrefetchHandle::reset can later subtract from MemoryUsageDiff correctly.
+    void startPrefetch(const std::vector<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff);
 
     /// If prefetched, returns prefetched data.
     /// If prefetch in progress, waits for it to complete.
     /// If prefetch not started, reads the data right here.
-    /// The returned pointer is valid as long as the RequestHandle is alive.
-    std::span<const char> getRangeData(const RequestHandle & request);
+    /// The returned pointer is valid as long as the PrefetchHandle is alive.
+    std::span<const char> getRangeData(const PrefetchHandle & request);
 
     /// Pass-through read from the underlying ReadBuffer.
     void readSync(char * to, size_t n, size_t offset);
@@ -90,7 +63,9 @@ public:
     size_t getFileSize() const { return file_size; }
 
 private:
-    /// Corresponds to RequestHandle.
+    friend class PrefetchHandle;
+
+    /// Corresponds to PrefetchHandle.
     struct RequestState
     {
         /// State transitions:
@@ -105,7 +80,7 @@ private:
         {
             HasRange,
             HasTask,
-            Cancelled, // RequestHandle was reset
+            Cancelled, // PrefetchHandle was reset
         };
 
         std::atomic<State> state {State::HasRange};
@@ -113,12 +88,9 @@ private:
         /// Whether this range can be piggy-backed to nearby other reads.
         std::atomic<bool> allow_incidental_read {true};
 
-        union
-        {
-            size_t range_idx = UINT64_MAX; // if HasRange; read with locked `mutex`
-            Task * task; // if HasTask
-        } range_or_task;
-
+        Task * task = nullptr; // if HasTask
+        size_t range_set_idx = 0;
+        size_t range_idx = UINT64_MAX;
         size_t length = 0;
         size_t task_offset = 0;
     };
@@ -174,6 +146,12 @@ private:
         EntireFileIsInMemory,
     };
 
+    struct RangeSet
+    {
+        /// Pre-registered ranges. Sorted and immutable after finalizeRanges().
+        std::vector<RangeState> ranges;
+    };
+
     SharedParsingThreadPoolPtr thread_pool;
 
     std::mutex read_mutex;
@@ -190,12 +168,10 @@ private:
     /// Locked when creating a Task.
     std::mutex mutex;
 
-    /// Arena for user requests.
+    /// Arenas.
     std::deque<RequestState> requests;
-    /// Arena for read tasks.
     std::deque<Task> tasks;
-    /// Pre-registered ranges. Sorted and immutable after finalizeRanges().
-    std::vector<RangeState> ranges;
+    std::deque<RangeSet> range_sets;
 
     std::atomic<bool> ranges_finalized {false};
 
@@ -207,14 +183,39 @@ private:
     ///
     /// If splitting, the request is being cancelled and replaced by a smaller range
     /// (splitAndPrefetchRange), and only subrange [subrange_start, subrange_end) needs to be read.
-    /// In this case, the RequestState will not transition to HasTask state, and the returned task
-    /// will have refcount incremented (to prevent Task from being deallocated before the caller
-    /// has a chance to create RequestState-s pointing to it).
-    Task * pickRangesAndCreateTask(RequestState *, const RequestHandle &, bool splitting, size_t subrange_start, size_t subrange_end);
+    void pickRangesAndCreateTaskIfNotExists(RequestState *, const PrefetchHandle &, bool splitting, size_t start_offset, size_t end_offset, std::unique_lock<std::mutex> lock);
     static void decreaseTaskRefcount(Task * task, size_t amount);
     void scheduleTask(Task * task);
     Task::State runTask(Task * task);
     [[noreturn]] void rethrowException(Task * task);
+};
+
+/// Pins a pre-registered range that we may want to read.
+/// Call reset to mark the range as no longer needed and subtract its memory usage from MemoryUsageDiff.
+/// All handles must be destroyed before Prefetcher is destroyed.
+class PrefetchHandle
+{
+public:
+    PrefetchHandle() = default;
+    PrefetchHandle(PrefetchHandle &&) noexcept;
+    PrefetchHandle & operator=(PrefetchHandle &&) noexcept;
+
+    /// Doesn't record deallocated memory in MemoryUsageDiff. Should only be called on shutdown,
+    /// otherwise use reset(diff).
+    ~PrefetchHandle();
+
+    operator bool() const { return request != nullptr; }
+
+    void reset(MemoryUsageDiff * diff);
+
+private:
+    friend class Prefetcher;
+    using RequestState = Prefetcher::RequestState;
+
+    RequestState * request = nullptr;
+    MemoryUsageToken memory;
+
+    explicit PrefetchHandle(RequestState * request_);
 };
 
 }

@@ -378,7 +378,7 @@ bool Block::has(const std::string & name, bool case_insensitive) const
 }
 
 
-std::optional<size_t> Block::findPositionByName(const std::string & name, bool case_insensitive) const
+std::optional<size_t> Block::findPositionByName(std::string_view name, bool case_insensitive) const
 {
     if (case_insensitive)
     {

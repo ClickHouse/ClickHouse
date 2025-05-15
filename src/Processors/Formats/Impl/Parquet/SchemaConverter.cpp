@@ -243,6 +243,9 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
         primitive.column_idx = primitive_column_idx - 1;
         primitive.name = name;
         primitive.levels = levels;
+        for (size_t i = 0; i < levels.size(); ++i)
+            if (levels[i].is_array)
+                primitive.max_array_def = levels[i].def;
 
         output_idx = output_columns.size();
         OutputColumnInfo & output = output_columns.emplace_back();
@@ -487,7 +490,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
 
 void SchemaConverter::processPrimitiveColumn(
     const parq::SchemaElement & element, const IDataType * /*type_hint*/,
-    std::unique_ptr<ValueDecoder> & out_decoder, DataTypePtr & out_decoded_type,
+    PageDecoderInfo & out_decoder, DataTypePtr & out_decoded_type,
     DataTypePtr & out_inferred_type)
 {
     /// Inputs:
@@ -498,7 +501,7 @@ void SchemaConverter::processPrimitiveColumn(
     ///
     /// Outputs:
     ///  * out_decoder - how to decode the column (it then separately further dispatches to
-    ///    different code paths depending on page encoding and nullability),
+    ///    different code paths depending on page encoding),
     ///  * out_inferred_type - data type most closely matching the parquet logical type, used for
     ///    schema inference.
     ///  * out_decoded_type - data type of decoding result, chosen for decoding convenience or speed
@@ -513,6 +516,7 @@ void SchemaConverter::processPrimitiveColumn(
     const parq::LogicalType & logical = element.logicalType;
     using CONV = parq::ConvertedType;
     chassert(!out_inferred_type && !out_decoded_type);
+    out_decoder.kind = PageDecoderInfo::Kind::FixedSize;
 
     if (logical.__isset.STRING || logical.__isset.JSON || logical.__isset.BSON ||
         logical.__isset.ENUM || converted == CONV::UTF8 || converted == CONV::JSON ||
@@ -568,15 +572,21 @@ void SchemaConverter::processPrimitiveColumn(
         if (type == parq::Type::INT32)
         {
             if (bits == 8)
-                out_decoder = std::make_unique<ShortIntDecoder<UInt8>>();
+            {
+                out_decoder.kind = PageDecoderInfo::Kind::ShortInt;
+                out_decoder.value_size = 1;
+            }
             else if (bits == 16)
-                out_decoder = std::make_unique<ShortIntDecoder<UInt16>>();
+            {
+                out_decoder.kind = PageDecoderInfo::Kind::ShortInt;
+                out_decoder.value_size = 2;
+            }
             else
-                out_decoder = std::make_unique<FixedSizeValueDecoder>(4);
+                out_decoder.value_size = 4;
         }
         else if (type == parq::Type::INT64)
         {
-            out_decoder = std::make_unique<FixedSizeValueDecoder>(8);
+            out_decoder.value_size = 8;
             out_decoded_type = is_signed
                 ? std::static_pointer_cast<IDataType>(std::make_shared<DataTypeInt64>())
                 : std::static_pointer_cast<IDataType>(std::make_shared<DataTypeUInt64>());
@@ -609,7 +619,7 @@ void SchemaConverter::processPrimitiveColumn(
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for timestamp logical type: {}", thriftToString(element));
 
         /// Can't leave int -> DateTime64 conversion to castColumn as it interprets the integer as seconds.
-        out_decoder = std::make_unique<FixedSizeValueDecoder>(8);
+        out_decoder.value_size = 8;
         out_inferred_type = std::make_shared<DataTypeDateTime64>(scale);
 
         return;
@@ -619,7 +629,7 @@ void SchemaConverter::processPrimitiveColumn(
         if (type != parq::Type::INT32)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for date logical type: {}", thriftToString(element));
 
-        out_decoder = std::make_unique<FixedSizeValueDecoder>(4);
+        out_decoder.value_size = 4;
         out_inferred_type = std::make_shared<DataTypeDate32>();
 
         return;
@@ -658,7 +668,7 @@ void SchemaConverter::processPrimitiveColumn(
         if (type != parq::Type::FIXED_LEN_BYTE_ARRAY || element.type_length != 16)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for UUID column: {}", thriftToString(element));
         //TODO: check if byte order is correct
-        out_decoder = std::make_unique<FixedSizeValueDecoder>(16);
+        out_decoder.value_size = 16;
         out_inferred_type = std::make_shared<DataTypeUUID>();
     }
     else if (logical.__isset.FLOAT16)
@@ -682,11 +692,11 @@ void SchemaConverter::processPrimitiveColumn(
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BOOLEAN not implemented");
             //return;
         case parq::Type::INT32:
-            out_decoder = std::make_unique<FixedSizeValueDecoder>(4);
+            out_decoder.value_size = 4;
             out_inferred_type = std::make_shared<DataTypeInt32>();
             return;
         case parq::Type::INT64:
-            out_decoder = std::make_unique<FixedSizeValueDecoder>(8);
+            out_decoder.value_size = 8;
             out_inferred_type = std::make_shared<DataTypeInt64>();
             return;
         case parq::Type::INT96:
@@ -694,19 +704,19 @@ void SchemaConverter::processPrimitiveColumn(
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "INT96 not implemented");
             //return;
         case parq::Type::FLOAT:
-            out_decoder = std::make_unique<FixedSizeValueDecoder>(4);
+            out_decoder.value_size = 4;
             out_inferred_type = std::make_shared<DataTypeFloat32>();
             return;
         case parq::Type::DOUBLE:
-            out_decoder = std::make_unique<FixedSizeValueDecoder>(8);
+            out_decoder.value_size = 8;
             out_inferred_type = std::make_shared<DataTypeFloat64>();
             return;
         case parq::Type::BYTE_ARRAY:
-            out_decoder = std::make_unique<StringDecoder>();
+            out_decoder.kind = PageDecoderInfo::Kind::String;
             out_inferred_type = std::make_shared<DataTypeString>();
             return;
         case parq::Type::FIXED_LEN_BYTE_ARRAY:
-            out_decoder = std::make_unique<FixedSizeValueDecoder>(size_t(element.type_length));
+            out_decoder.value_size = size_t(element.type_length);
             out_inferred_type = std::make_shared<DataTypeFixedString>(size_t(element.type_length));
             return;
     }

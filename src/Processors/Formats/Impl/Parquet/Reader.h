@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Formats/Impl/Parquet/ReadCommon.h>
+#include <Processors/Formats/Impl/Parquet/Decoding.h>
 #include <Processors/Formats/Impl/Parquet/Prefetcher.h>
 
 #include <queue>
@@ -31,9 +32,9 @@ namespace DB::Parquet
 //  * check fields for false sharing, add cacheline padding as needed
 //  * make sure userspace page cache read buffer supports readBigAt
 //  * assert that memory usage is zero at the end, the reset()s are easy to miss
-//  * make sure to not convert to full column if requested type is LowCardinality
 //  * make writer write DataPageV2
 //  * make writer write SizeStatistics
+//  * make writer write PageEncodingStats
 //  * try adding [[unlikely]] to all ifs
 //  * try adding __restrict to pointers on hot paths
 //  * support or deprecate the preserve-order setting
@@ -47,6 +48,7 @@ namespace DB::Parquet
 //  * TSA
 //  * research reading only requested tuple elements automatically (supportsSubcolumns, supportsDynamicSubcolumns, supportsOptimizationToSubcolumns?)
 //  * use dictionary page instead of bloom filter when possible
+//  * test performance with prewhere i%2=0, to have lots of range skips
 //  * remember to test these:
 //     - expression appearing both in prewhere and in select list (presumably remove_prewhere_column = false)
 //     - prewhere with all 3 storages (maybe have the main big test pick random storage)
@@ -65,6 +67,14 @@ namespace DB::Parquet
 //     - IN with subqueries with and without prewhere
 //     - compare performance to MergeTree (full scan, prewhere, skipping granules)
 //     - `insert into function file('t.parquet') select number as k, toString(number)||':'||randomPrintableASCII(1000) as v from numbers(1000000) settings engine_file_truncate_on_insert=1; select count(), sum(length(v)) from file('t.parquet')` - new reader is slower than default
+//     - array touching >2 pages
+//  * write a comment explaining the advantage of the weird complicated two-step scheduling
+//    (tasks_to_schedule -> task queue -> run) and per-stage memory accounting - maximizing prefetch
+//    parallelism; contrast with a simpler strategy of having no queues, and worker threads e.g.
+//    choosing the column with least <row group idx, subgroup idx> among runnable ones, with one total
+//    memory budget; but also think about memory locality - is it worse than for simple solution?
+//    is there a way to make it better or to support simple solution as special case?
+//  * lazy materialization (not feasible because of unaligned pages?)
 
 /// Components of this parquet reader implementation:
 ///  * Prefetcher is responsible for coalescing nearby short reads into bigger reads.
@@ -83,8 +93,6 @@ namespace DB::Parquet
 ///    TODO: If it ends up split up, update this comment.
 ///  * ReadManager drives the Reader. Responsible for scheduling work to threads, thread safety,
 ///    limiting memory usage, and delivering output.
-
-struct ValueDecoder;
 
 struct Reader
 {
@@ -130,7 +138,7 @@ struct Reader
         /// Column index in parquet file. NOT index in primitive_columns array.
         size_t column_idx;
         String name;
-        std::unique_ptr<ValueDecoder> decoder;
+        PageDecoderInfo decoder;
 
         DataTypePtr raw_decoded_type; // not Nullable
         DataTypePtr intermediate_type; // maybe Nullable
@@ -139,14 +147,15 @@ struct Reader
         /// TODO: Consider also adding output_low_cardinality to allow producing LowCardinality
         ///       column directly from parquet dictionary+indices. This is not straightforward
         ///       because ColumnLowCardinality requires values to be unique and the first value to
-        ///       be default. So we'd need to validate uniqueness and possibly adjust indices and
-        ///       dictionary to move the default value to the start.
+        ///       be default. So we'd need to validate uniqueness and add/move default value
+        ///       (adjusting indices and dictionary).
         bool needs_cast = false; // if final_type is different from intermediate_type
 
         /// How to interpret repetition/definition levels.
         std::vector<LevelInfo> levels;
+        /// Definition level of innermost array. I.e. max levels[i].def where levels[i].is_array.
+        UInt8 max_array_def = 0;
 
-        /// Which stages involve this column.
         bool use_bloom_filter = false;
         bool use_column_index = false;
         bool use_prewhere = false;
@@ -191,46 +200,126 @@ struct Reader
         }
     };
 
-    struct Page
+    struct BloomFilterBlock
+    {
+        size_t block_idx;
+        PrefetchHandle prefetch;
+    };
+
+    struct DataPage
     {
         const parq::PageLocation * meta;
+        size_t end_row_idx = 0;
+        PrefetchHandle prefetch;
+    };
 
-        size_t num_rows = 0;
-        bool is_dictionary = false;
+    struct PageState
+    {
+        bool initialized = false;
 
-        /// Unlike other prefetch requests, this one is created late and using splitAndEnqueueRange,
-        /// when scheduling the column read task on the thread pool.
-        Prefetcher::RequestHandle prefetch;
+        /// Due to the nature of rep/def levels, row numbering is a little weird here.
+        /// Value at `value_idx - 1` has row index `next_row_idx - 1`.
+        /// (That value may be in previous page.)
+        /// (If we're at the start of the first page, next_row_idx = 0.)
+        /// If value_idx is the start of a row (i.e. rep[value_idx] == 0) then value at value_idx
+        /// has row index next_row_idx.
+        /// In particular, if there are no arrays (max_rep == 0) then "row" and "value" mean the
+        /// same thing, and `next_row_idx` is just the row index (numbered from the start of
+        /// column chunk) corresponding to `value_idx` (numbered from the start of page).
+        /// (Why not just have row_idx corresponding to value at value_idx? Because when we reach the
+        ///  end of a page we don't know whether the first value of next page starts a new row or not.
+        ///  At the end of a page we end up with value_idx == num_values, next_row_idx - last row of
+        ///  this page. Then we start the next page with the same next_row_idx, and value_idx == 0.)
+        size_t next_row_idx = 0;
+        std::optional<size_t> end_row_idx;
+
+        /// Points either into `decompressed` or into Prefetcher's memory (kept alive by
+        /// PrefetchHandle in ColumnChunk::data_pages or data_pages_prefetch).
+        /// Either way the data is padded for simd.
+        std::span<const char> data;
+        parq::Encoding::type encoding;
+
+        std::unique_ptr<PageDecoder> decoder;
+        bool is_dictionary_encoded = false;
+
+        /// If data_state is still compressed. We always decompress it before calling the decoder.
+        /// Decompression is deferred a little to see if we can decompress directly into IColumn.
+        parq::CompressionCodec::type codec;
+        size_t values_uncompressed_size = 0;
+
+        /// Empty if the corresponding max rep/def level is 0.
+        /// `def` can also be empty if there are no nulls, i.e. def[i] == max_def should be assumed.
+        PaddedPODArray<UInt8> def;
+        PaddedPODArray<UInt8> rep;
+
+        size_t value_idx = 0;
+        /// num_values is "Number of values, including NULLs". Aka number of definition levels.
+        /// Number of actually encoded values is `num_values - num_nulls`, where num_nulls is count
+        /// of def[i] < max_def. (Parquet "NULLs" include empty arrays.)
+        size_t num_values = 0;
+
+        PaddedPODArray<char> decompressed_buf;
+        MutableColumnPtr indices_column; // if is_dictionary_encoded; ColumnUInt32
     };
 
     struct ColumnChunk
     {
         const parq::ColumnChunk * meta;
 
-        Prefetcher::RequestHandle bloom_filter_prefetch;
-        Prefetcher::RequestHandle offset_index_prefetch;
-        Prefetcher::RequestHandle column_index_prefetch;
-        Prefetcher::RequestHandle data_prefetch; // covers all pages
+        bool use_dictionary_filter = false;
+        bool use_column_index = false;
+        bool need_null_map = false;
 
-        parq::OffsetIndex offset_index;
+        /// Prefetches. //TODO: check that all are reset, and other memory tokens
+        PrefetchHandle bloom_filter_header_prefetch; // indicates if bloom filter should be used
+        PrefetchHandle bloom_filter_data_prefetch;
+        PrefetchHandle dictionary_page_prefetch;
+        PrefetchHandle column_index_prefetch;
+        PrefetchHandle offset_index_prefetch;
+        PrefetchHandle data_pages_prefetch;
 
-        /// More fine-grained prefetch, if we decided to skip some pages based on filter.
-        /// Empty if we're not skipping pages, and data_prefetch should be used instead.
-        /// We preregister data_prefetch in Prefetch before we know page byte ranges
-        /// (which come from offset_index_prefetch data), then split the range into smaller ranges
-        /// if needed. If the whole data_prefetch is small and very close to other ranges (e.g. if
-        /// column data is right next to offset index), Prefetcher may read it incidentally;
-        /// then the `pages` prefetch ranges won't do any additional reading and will just point
-        /// into the already-read bigger range.
-        std::vector<Page> pages;
+        /// Smaller prefetches for parts of bloom_filter_data_prefetch that we actually need.
+        std::vector<BloomFilterBlock> bloom_filter_blocks;
 
-        /// Result of filtering this column alone. Should be ANDed across all filter columns to
-        /// produce RowGroup::filter.
-        RowSet partial_filter;
+        /// Smaller prefetches for pages inside data_pages_prefetch that we actually need.
+        /// Based on offset index.
+        /// Empty if we're not using offset index and should use data_pages_prefetch instead.
+        /// We preregister data_pages_prefetch in Prefetcher before we know page byte ranges,
+        /// then split the range into smaller ranges if needed. If the whole data_pages_prefetch
+        /// is small and very close to other ranges (e.g. if column data is right next to offset
+        /// index), Prefetcher may read it incidentally; then the `pages` prefetch ranges won't
+        /// do any additional reading and will just point into the already-read bigger range.
+        std::vector<DataPage> data_pages;
+
+        parq::BloomFilterHeader bloom_filter_header;
+        parq::OffsetIndex offset_index;//TODO: throw if page_locations.empty() after deserialization
+        /// Dictionary page contents.
+        /// May be loaded early if we decide to use it for filtering (instead of bloom filter).
+        /// Otherwise, loaded just before the first dictionary-encoded data page (so if we end up
+        /// skipping all dictionary-encoded data pages, we never read the dictionary).
+        Dictionary dictionary;
+
+        std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> row_ranges_after_column_index;
+
+        PageState page;//TODO: deallocate when column chunk is done (and check other fields too)
+        /// Offset from the start of `data_pages_prefetch`, if not using offset index (`data_pages` is empty).
+        size_t next_page_offset = 0;
+        size_t data_pages_idx = 0;
+
+        ReadStage stage;
+    };
+
+    struct ColumnSubchunk
+    {
+        /// Indices in ColumnChunk::data_pages of pages that overlap this subchunk and are not fully
+        /// filtered out. A page may be shared among multiple subchunk.
+        /// Empty if not using offset index (data_pages is empty).
+        std::vector<size_t> page_idxs;
 
         /// Primitive column.
-        /// If `defer_conversion`, LowCardinality of intermediate_type. Otherwise, final_type.
         MutableColumnPtr column;
+
+        MutableColumnPtr null_map;
 
         /// If this primitive column is inside an array, this is the offsets for `ColumnArray`s at
         /// all nesting levels, from outer to inner. Index is repetition level - 1.
@@ -239,27 +328,30 @@ struct Reader
         ///  list of lists.)
         std::vector<MutableColumnPtr> arrays_offsets;
 
+        /// Covers `column`, `arrays_offsets`, and also RowSubgroup::output (data can be moved from
+        /// the former to the latter).
         MemoryUsageToken column_and_offsets_memory;
+    };
 
-        /// If parquet data is dictionary-encoded, we parse it to a LowCardinality column, then
-        /// convert it to full column (unless LowCardinality data type was requested), then cast to
-        /// final type if needed.
-        /// Normally this conversion happens right after parsing, so ColumnChunk::column is full.
-        /// But if the full column would use lots of memory, we don't want to convert it all at once.
-        /// In that case, we leave `column` as LowCardinality and set zip_bombness > 1.
-        /// We then deliver the row group in smaller chunks (at least `zip_bombness` of them),
-        /// doing conversion to full column one chunk at a time.
-        ///
-        /// This is pretty important as extreme dictionary compression ratios (like 1000x) are
-        /// encountered in practice.
-        ///
-        /// (In contrast, we currently don't split row group if its encoded uncompressed size
-        /// is very big, either because it's actually big on disk or because of high compression
-        /// ratio. This is probably ok because parquet writers usually have to have the whole
-        /// uncompressed row group in memory. If the writer could afford to keep it in memory then
-        /// it's probably not crazy big. Not a very solid assumption, maybe we'll have to rethink it.)
-        size_t zip_bombness = 1;
-        bool defer_conversion = false;
+    struct RowSubgroup
+    {
+        /// Subgroup corresponds to range of rows [start_row_idx, start_row_idx + filter.rows_total)
+        /// within the row group.
+        /// Rows are numbered before any filtering, i.e. these row numbers are comparable to row
+        /// numbers in offset index (PageLocation::first_row_index in DataPage).
+        /// Subgroup row ranges are decided after inspecting column index but before prewhere.
+        /// Subgroups don't necessarily cover all rows.
+        size_t start_row_idx = 0;
+
+        /// Initially `filter` is based only on column index, then it's updated after running prewhere.
+        RowSet filter;
+
+        std::vector<ColumnSubchunk> columns;
+
+        Columns output; // parallel to extended_sample_block
+
+        std::atomic<RowSubgroupReadStage> stage {RowSubgroupReadStage::NotStarted};
+        std::atomic<size_t> stage_tasks_remaining {0};
     };
 
     struct RowGroup
@@ -272,21 +364,20 @@ struct Reader
         /// NOT parallel to `meta.columns` (it's a subset of parquet colums).
         std::vector<ColumnChunk> columns;
 
-        RowSet filter;
+        std::deque<RowSubgroup> subgroups;
 
-        Columns output; // parallel to extended_sample_block
 
         /// Fields below are used only by ReadManager.
 
-        size_t rows_per_chunk = 0;
-        size_t rows_delivered = 0;
+        /// Indexes of the first subgroup that didn't finish
+        /// {prewhere, reading remainig columns, delivering final chunk}.
+        /// delivery_ptr <= read_ptr <= prewhere_ptr <= subgroups.size()
+        std::atomic<size_t> prewhere_ptr {0};
+        std::atomic<size_t> read_ptr {0};
+        std::atomic<size_t> delivery_ptr {0};
 
-        /// Assigned only in finishRowGroupStage. Read also when delivering chunks.
-        std::atomic<ParsingStage> stage {ParsingStage::NotStarted};
-        /// When this changes from nonzero to zero, the whole RowGroup experiences a synchronization
-        /// point. Whoever makes such change is free to read and mutate any fields here without
-        /// locking any mutexes.
-        std::atomic<size_t> stage_tasks_remaining {};
+        std::atomic<RowGroupReadStage> stage {RowGroupReadStage::NotStarted};
+        std::atomic<size_t> stage_tasks_remaining {0};
     };
 
     struct PrewhereStep
@@ -294,8 +385,8 @@ struct Reader
         ExpressionActions actions;
         String result_column_name;
         std::vector<size_t> input_column_idxs {}; // indices in output_columns
+        std::optional<size_t> idx_in_output_block = std::nullopt;
         bool need_filter = true;
-        std::optional<size_t> column_idx_in_output_block = std::nullopt;
     };
 
     ReadOptions options;
@@ -317,33 +408,52 @@ struct Reader
     Block extended_sample_block;
     std::vector<PrewhereStep> prewhere_steps;
 
+    /// These methods are listed in the order in which they're used, matching ReadStage order.
+
     void init(const ReadOptions & options_, const Block & sample_block_, std::shared_ptr<const KeyCondition> key_condition_, PrewhereInfoPtr prewhere_info_);
 
     static parq::FileMetaData readFileMetaData(Prefetcher & prefetcher);
     void prefilterAndInitRowGroups();
     void preparePrewhere();
 
+    /// Deserialize bf header and determine which bf blocks to read.
+    void processBloomFilterHeader(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+    void decodeBloomFilterBlocks(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+    void decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+
     /// Returns false if the row group was filtered out and should be skipped.
-    bool applyBloomFilters(RowGroup & row_group);
-    RowSet applyPageIndex(ColumnChunk & column, PrimitiveColumnInfo & column_info);
-    /// Assigns `pages` if only a subset of pages need to be read.
-    void determinePagesToRead(ColumnChunk & column, const RowSet & rows);
-    void parsePrimitiveColumn(ColumnChunk & column_chunk, const PrimitiveColumnInfo & column_info, const RowSet & filter);
+    bool applyBloomAndDictionaryFilters(RowGroup & row_group);
+
+    void applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+    void intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group);
+
+    void decodeOffsetIndex(ColumnChunk & column);
+    /// Assigns start_page and end_page based on offset index, if present.
+    /// (We do this one subgroup at a time because later subgroups may not have run prewhere yet.)
+    void determinePagesToRead(ColumnSubchunk & subchunk, RowSubgroup & row_subgroup, RowGroup & row_group);
+
+    /// Guess how much memory ColumnSubchunk::{column, arrays_offsets} will use, per row.
+    double estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info) const;
+
+    void decodePrimitiveColumn(ColumnChunk & column_chunk, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, const RowGroup & row_group, const RowSubgroup & row_subgroup);
+
     /// Returns mutable column because some of the recursive calls require it,
     /// e.g. ColumnArray::create does assumeMutable() on the nested columns.
-    /// Two modes:
-    ///  * If !whole_column_chunk, copies a range out of the column chunk, leaving
-    ///    ColumnChunk::column-s intact. Can be called again later for the same rows.
-    ///  * If whole_column_chunk, moves the whole column chunk, leaving nullptrs in
-    ///    ColumnChunk::column. The caller is responsible for caching the result
-    ///    (in RowGroup::output) to make sure this is not called again for the moved-out columns.
-    MutableColumnPtr formOutputColumnImpl(RowGroup & row_group, size_t output_column_idx, size_t start_row, size_t num_rows, bool whole_column_chunk);
-    ColumnPtr formOutputColumn(RowGroup & row_group, size_t output_column_idx, size_t start_row, size_t num_rows);
-    void applyPrewhere(RowGroup & row_group);
-    /// How much memory ColumnChunk::column and arrays_offsets will use.
-    size_t estimateColumnMemoryUsage(const ColumnChunk & column) const;
+    /// Moves the column out of ColumnSubchunk-s, leaving nullptrs in ColumnSubchunk::column.
+    /// The caller is responsible for caching the result (in RowSubGroup::output) to make sure this
+    /// is not called again for the moved-out columns.
+    MutableColumnPtr formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx);
 
-    size_t decideNumRowsPerChunk(RowGroup & row_group);
+    void applyPrewhere(RowSubgroup & row_subgroup);
+
+private:
+    double estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const;
+    void skipToRow(size_t row_idx, ColumnChunk & column_chunk, const PrimitiveColumnInfo & column_info);
+    bool initializePage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, size_t target_row_idx, ColumnChunk & column_chunk, const PrimitiveColumnInfo & column_info);
+    void decompressPageIfCompressed(PageState & page);
+    void createPageDecoder(PageState & page, ColumnChunk & column_chunk, const PrimitiveColumnInfo & column_info);
+    bool skipRowsInPage(size_t target_row_idx, PageState & page, ColumnChunk & column_chunk, const PrimitiveColumnInfo & column_info);
+    void readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column_chunk, const PrimitiveColumnInfo & column_info);
 };
 
 }
