@@ -57,6 +57,18 @@ bool convertbits(bech32_data & out, const bech32_data & in)
     return true;
 }
 
+void finalizeRow(DB::ColumnString::Offsets & offsets, char *& pos, const char * const begin, const size_t i)
+{
+    *pos = '\0';
+    ++pos;
+    offsets[i] = pos - begin;
+}
+
+void updatePrevOffset(size_t & prev_offset, const size_t next_offset, const size_t row_width)
+{
+    prev_offset = row_width == 0 ? next_offset : prev_offset + row_width;
+}
+
 }
 
 namespace DB
@@ -224,19 +236,28 @@ private:
             size_t hrp_new_offset = hrp_width == 0 ? hrp_offsets[i] : hrp_prev_offset + hrp_width;
             size_t data_new_offset = data_width == 0 ? data_offsets[i] : data_prev_offset + data_width;
 
+            // NUL chars are used to pad fixed width strings, so we remove them here since they are not valid inputs anyway
+            while (hrp_width > 0 && hrp_vec[hrp_new_offset - 1] == 0 && hrp_new_offset > hrp_prev_offset)
+            {
+                --hrp_new_offset;
+            }
+
+            // NUL chars are used to pad fixed width strings, so we remove them here since they are not valid inputs anyway
+            while (data_width > 0 && data_vec[data_new_offset - 1] == 0 && data_new_offset > data_prev_offset)
+            {
+                --data_new_offset;
+            }
+
             // max encodable data to stay within 90-char limit on Bech32 output
             // hrp must be at least 1 character and no more than 83
             auto data_len = data_new_offset - data_prev_offset - data_zero_offset;
             auto hrp_len = hrp_new_offset - hrp_prev_offset - hrp_zero_offset;
             if (data_len > max_data_len || hrp_len > max_hrp_len || hrp_len < 1)
             {
-                // add empty string and continue
-                *out_pos = '\0';
-                ++out_pos;
-                out_offsets[i] = out_pos - out_begin;
+                finalizeRow(out_offsets, out_pos, out_begin, i);
 
-                hrp_prev_offset = hrp_new_offset;
-                data_prev_offset = data_new_offset;
+                updatePrevOffset(hrp_prev_offset, hrp_new_offset, hrp_width);
+                updatePrevOffset(data_prev_offset, data_new_offset, data_width);
                 continue;
             }
 
@@ -256,26 +277,21 @@ private:
 
             if (address.empty() || address.size() > max_address_len)
             {
-                // add empty string and continue
-                *out_pos = '\0';
-                ++out_pos;
-                out_offsets[i] = out_pos - out_begin;
+                finalizeRow(out_offsets, out_pos, out_begin, i);
 
-                hrp_prev_offset = hrp_new_offset;
-                data_prev_offset = data_new_offset;
+                updatePrevOffset(hrp_prev_offset, hrp_new_offset, hrp_width);
+                updatePrevOffset(data_prev_offset, data_new_offset, data_width);
                 continue;
             }
 
             // store address in out_pos
             std::memcpy(out_pos, address.data(), address.size());
             out_pos += address.size();
-            *out_pos = '\0';
-            ++out_pos;
 
-            out_offsets[i] = out_pos - out_begin;
+            finalizeRow(out_offsets, out_pos, out_begin, i);
 
-            hrp_prev_offset = hrp_new_offset;
-            data_prev_offset = data_new_offset;
+            updatePrevOffset(hrp_prev_offset, hrp_new_offset, hrp_width);
+            updatePrevOffset(data_prev_offset, data_new_offset, data_width);
         }
 
         chassert(
@@ -395,16 +411,10 @@ private:
             // enforce char limit
             if ((new_offset - prev_offset - trailing_zero_offset) > max_address_len)
             {
-                // add empty strings and continue
-                *hrp_pos = '\0';
-                ++hrp_pos;
-                hrp_offsets[i] = hrp_pos - hrp_begin;
+                finalizeRow(hrp_offsets, hrp_pos, hrp_begin, i);
+                finalizeRow(data_offsets, data_pos, data_begin, i);
 
-                *data_pos = '\0';
-                ++data_pos;
-                data_offsets[i] = data_pos - data_begin;
-
-                prev_offset = new_offset;
+                updatePrevOffset(prev_offset, new_offset, col_width);
                 continue;
             }
 
@@ -418,37 +428,26 @@ private:
             if (dec.encoding == bech32::Encoding::INVALID
                 || !convertbits<5, 8, false>(data_8bit, bech32_data(dec.data.begin(), dec.data.end())))
             {
-                // add empty strings and continue
-                *hrp_pos = '\0';
-                ++hrp_pos;
-                hrp_offsets[i] = hrp_pos - hrp_begin;
+                finalizeRow(hrp_offsets, hrp_pos, hrp_begin, i);
+                finalizeRow(data_offsets, data_pos, data_begin, i);
 
-                *data_pos = '\0';
-                ++data_pos;
-                data_offsets[i] = data_pos - data_begin;
-
-                prev_offset = new_offset;
+                updatePrevOffset(prev_offset, new_offset, col_width);
                 continue;
             }
 
             // store hrp output in hrp_pos
             std::memcpy(hrp_pos, dec.hrp.c_str(), dec.hrp.size());
             hrp_pos += dec.hrp.size();
-            *hrp_pos = '\0';
-            ++hrp_pos;
 
-            hrp_offsets[i] = hrp_pos - hrp_begin;
+            finalizeRow(hrp_offsets, hrp_pos, hrp_begin, i);
 
             // store data output in data_pos
             std::memcpy(data_pos, data_8bit.data(), data_8bit.size());
             data_pos += data_8bit.size();
-            *data_pos = '\0';
-            ++data_pos;
 
-            data_offsets[i] = data_pos - data_begin;
+            finalizeRow(data_offsets, data_pos, data_begin, i);
 
-            // if we decremented new_offset to get rid of \0, we must deal with that here
-            prev_offset = col_width == 0 ? new_offset : prev_offset + col_width;
+            updatePrevOffset(prev_offset, new_offset, col_width);
         }
 
         chassert(
