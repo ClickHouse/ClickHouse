@@ -44,6 +44,8 @@ public:
     String window_name;
     ASTPtr window_definition;
 
+    size_t placeholder_count = 0;
+
     NullsAction nulls_action = NullsAction::EMPTY;
 
     /// do not print empty parentheses if there are no args - compatibility with engine names.
@@ -89,6 +91,9 @@ private:
 };
 
 
+/// Renumerates placeholder arguments in function for future convertion to lambda
+void renumeratePlaceholders(ASTFunction & ast);
+
 template <typename... Args>
 std::shared_ptr<ASTFunction> makeASTFunction(const String & name, Args &&... args)
 {
@@ -100,6 +105,7 @@ std::shared_ptr<ASTFunction> makeASTFunction(const String & name, Args &&... arg
 
     function->arguments->children = { std::forward<Args>(args)... };
 
+    renumeratePlaceholders(*function);
     return function;
 }
 

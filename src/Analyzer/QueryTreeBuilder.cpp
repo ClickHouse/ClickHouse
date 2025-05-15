@@ -709,7 +709,16 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                         function_node->getWindowNode() = std::make_shared<IdentifierNode>(Identifier(function->window_name));
                 }
 
-                result = std::move(function_node);
+                if (function->placeholder_count > 0) {
+                    Names lambda_arguments;
+                    for (size_t i = 1; i <= function->placeholder_count; ++i) {
+                        lambda_arguments.push_back("_" + std::to_string(i));
+                    }
+
+                    result = std::make_shared<LambdaNode>(std::move(lambda_arguments), function_node);
+                } else {
+                    result = std::move(function_node);
+                }
             }
         }
     }
