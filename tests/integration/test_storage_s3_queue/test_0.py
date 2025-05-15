@@ -639,7 +639,7 @@ def test_virtual_colums(started_cluster):
     )
     create_mv(node, table_name, dst_table_name, virtual_columns="_path String, _file String, _size UInt64, _time DateTime")
     expected_values = set([tuple(i) for i in total_values])
-    for i in range(10):
+    for i in range(20):
         selected_values = {
             tuple(map(int, l.split()))
             for l in node.query(
