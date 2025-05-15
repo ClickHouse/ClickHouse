@@ -88,6 +88,9 @@ static struct InitFiu
     REGULAR(plain_rewritable_object_storage_azure_not_found_on_init) \
     PAUSEABLE(storage_merge_tree_background_clear_old_parts_pause) \
     PAUSEABLE(database_replicated_startup_pause) \
+    REGULAR(plain_object_storage_copy_fail_on_file_move) \
+    REGULAR(plain_object_storage_copy_temp_source_file_fail_on_file_move) \
+    REGULAR(plain_object_storage_copy_temp_target_file_fail_on_file_move)
 
 
 namespace FailPoints
