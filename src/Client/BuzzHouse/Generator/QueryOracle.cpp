@@ -340,7 +340,9 @@ void QueryOracle::generateImportQuery(
         gen.columnPathRef(entry, nins->add_cols());
     }
     gen.entries.clear();
-    iff->set_path(ff.path());
+    const std::string & base_filename = ff.path().substr(ff.path().find_last_of(std::filesystem::path::preferred_separator) + 1);
+    const std::filesystem::path & ifile = fc.client_file_path / base_filename;
+    iff->set_path(ifile.generic_string());
     iff->set_format(inf);
     if (ff.has_fcomp())
     {
