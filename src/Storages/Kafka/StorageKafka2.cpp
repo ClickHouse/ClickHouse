@@ -860,13 +860,26 @@ std::optional<StorageKafka2::LockedTopicPartitionInfo> StorageKafka2::createLock
 
 // First we delete all current temporary locks,
 // then we create new locks from free partitions
-void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & tmp_locks, size_t & tmp_locks_quota)
+void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & tmp_locks, std::optional<size_t> & tmp_locks_quota)
 {
     LOG_TRACE(log, "Starting to update temporary locks");
     auto available_topic_partitions_res = getAvailableTopicPartitions(keeper_to_use, topic_partitions);
     pcg64 generator(randomSeed());
     std::shuffle(available_topic_partitions_res.first.begin(), available_topic_partitions_res.first.end(), generator);
     const auto & available_topic_partitions = available_topic_partitions_res.first;
+
+    /// tmp_locks_quota is increased by TMP_LOCKS_QUOTA_STEP
+    /// but always stays within [LOCKS_QUOTA_MIN, free_partitions - TMP_LOCKS_QUOTA_STEP].
+    if (!tmp_locks_quota.has_value())
+        tmp_locks_quota = LOCKS_QUOTA_MIN;
+    else
+    {
+        using quota_t = std::make_signed_t<size_t>;
+        quota_t q = static_cast<quota_t>(tmp_locks_quota.value());
+        quota_t fp = static_cast<quota_t>(available_topic_partitions.size());
+        tmp_locks_quota = static_cast<size_t>(std::clamp(q + TMP_LOCKS_QUOTA_STEP, static_cast<quota_t>(LOCKS_QUOTA_MIN), fp - TMP_LOCKS_QUOTA_STEP));
+    }
+    LOG_INFO(log, "The replica can take {} locks in the current round", tmp_locks_quota.value());
 
     tmp_locks.clear(); // to maintain order: looked at the old state, updated the state, committed the new state
     for (const auto & tp : available_topic_partitions)
@@ -878,23 +891,6 @@ void StorageKafka2::updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, cons
             continue;
         tmp_locks.emplace(TopicPartition(tp), std::move(*maybe_lock));
     }
-
-    /// Adjust tmp_locks_quota based on quota boundaries:
-    /// - Increase by TMP_LOCKS_QUOTA_STEP if under the maximum allowed value (tmp_locks_quota_max);
-    /// - Decrease by TMP_LOCKS_QUOTA_STEP if increment would exceed or reach the maximum;
-    /// - Never allow tmp_locks_quota to go below TMP_LOCKS_QUOTA_MIN.
-    size_t tmp_locks_quota_max = available_topic_partitions.size();
-    if (tmp_locks_quota + TMP_LOCKS_QUOTA_STEP >= tmp_locks_quota_max)
-    {
-        tmp_locks_quota = std::max<size_t>(tmp_locks_quota > TMP_LOCKS_QUOTA_STEP ?
-                               tmp_locks_quota - TMP_LOCKS_QUOTA_STEP : LOCKS_QUOTA_MIN,
-                               LOCKS_QUOTA_MIN);
-    }
-    else
-    {
-        tmp_locks_quota = std::min(tmp_locks_quota + TMP_LOCKS_QUOTA_STEP, tmp_locks_quota_max);
-    }
-    LOG_INFO(log, "The replica can take {} locks in the next round", tmp_locks_quota);
 }
 
 // If the number of locks on a replica is greater than it can hold, then we first release the partitions that we can no longer hold.

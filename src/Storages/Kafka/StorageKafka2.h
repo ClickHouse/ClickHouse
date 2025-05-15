@@ -30,7 +30,10 @@ class Configuration;
 
 namespace DB
 {
-
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 struct KafkaSettings;
 template <typename TStorageKafka>
 struct KafkaInterceptors;
@@ -136,7 +139,7 @@ private:
         TopicPartitionLocks tmp_locks{};
 
         // Quota, how many temporary locks can be taken in current round
-        size_t tmp_locks_quota = 1;
+        std::optional<size_t> tmp_locks_quota = std::nullopt;
 
         // Searches first in permanent_locks, then in tmp_locks.
         // Returns a pointer to the lock if found; otherwise, returns nullptr.
@@ -258,7 +261,7 @@ private:
     std::optional<LockedTopicPartitionInfo> createLocksInfoIfFree(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & partition_to_lock);
 
     // Takes lock over topic partitions and sets the committed offset in topic_partitions
-    void updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & tmp_locks, size_t & tmp_locks_quota);
+    void updateTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & tmp_locks, std::optional<size_t> & tmp_locks_quota);
     bool updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions, TopicPartitionLocks & permanent_locks);
 
     // To save commit and intent nodes
