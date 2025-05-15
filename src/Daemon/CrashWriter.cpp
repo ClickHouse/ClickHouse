@@ -198,6 +198,6 @@ void CrashWriter::sendError(Type type, int sig_or_error, const std::string & err
     }
     catch (...)
     {
-        LOG_INFO(logger, "Cannot send a crash report: {}", getCurrentExceptionMessage(__PRETTY_FUNCTION__ ));
+        LOG_INFO(logger, "Cannot send a crash report: {}", getCurrentExceptionMessage(__PRETTY_FUNCTION__));
     }
 }
