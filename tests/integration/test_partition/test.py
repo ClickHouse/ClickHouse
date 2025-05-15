@@ -58,7 +58,9 @@ def test_partition_simple(partition_table_simple):
 
 
 def partition_complex_assert_columns_txt():
-    path_to_parts = path_to_data + "data/test/partition_complex/"
+    data_path = instance.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='test' AND name='partition_complex'"
+    ).strip()
     parts = TSV(
         q(
             "SELECT name FROM system.parts WHERE database='test' AND table='partition_complex'"
@@ -66,7 +68,7 @@ def partition_complex_assert_columns_txt():
     )
     assert len(parts) > 0
     for part_name in parts.lines:
-        path_to_columns = path_to_parts + part_name + "/columns.txt"
+        path_to_columns = data_path + part_name + "/columns.txt"
         # 2 header lines + 3 columns
         assert (
             instance.exec_in_container(["wc", "-l", path_to_columns]).split()[0] == "5"
@@ -241,7 +243,11 @@ def test_attach_check_all_parts(attach_check_all_parts_table):
     wait_for_delete_empty_parts(instance, "test.attach_partition")
     wait_for_delete_inactive_parts(instance, "test.attach_partition")
 
-    path_to_detached = path_to_data + "data/test/attach_partition/detached/"
+    data_path = instance.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='test' AND name='attach_partition'"
+    ).strip()
+
+    path_to_detached = f"{data_path}/detached/"
     instance.exec_in_container(["mkdir", "{}".format(path_to_detached + "0_5_5_0")])
     instance.exec_in_container(
         [
@@ -322,7 +328,11 @@ def test_drop_detached_parts(drop_detached_parts_table):
     q("ALTER TABLE test.drop_detached DETACH PARTITION 0")
     q("ALTER TABLE test.drop_detached DETACH PARTITION 1")
 
-    path_to_detached = path_to_data + "data/test/drop_detached/detached/"
+    data_path = instance.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='test' AND name='drop_detached'"
+    ).strip()
+
+    path_to_detached = f"{data_path}/detached/"
     instance.exec_in_container(
         ["mkdir", "{}".format(path_to_detached + "attaching_0_6_6_0")]
     )
@@ -401,38 +411,39 @@ def test_system_detached_parts(drop_detached_parts_table):
         )[:-1].split("\n"):
             q("alter table sdp_{} detach partition id '{}'".format(i, p))
 
-    path_to_detached = path_to_data + "data/default/sdp_{}/detached/{}"
     for i in range(0, 4):
+        table_name = f"sdp_{i}"
+        data_path = instance.query(
+            f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='{table_name}'"
+        ).strip()
+        path_to_detached = data_path + "detached/{}"
         instance.exec_in_container(
-            ["mkdir", path_to_detached.format(i, "attaching_0_6_6_0")]
+            ["mkdir", path_to_detached.format("attaching_0_6_6_0")]
         )
         instance.exec_in_container(
-            ["mkdir", path_to_detached.format(i, "deleting_0_7_7_0")]
+            ["mkdir", path_to_detached.format("deleting_0_7_7_0")]
         )
+        instance.exec_in_container(["mkdir", path_to_detached.format("any_other_name")])
         instance.exec_in_container(
-            ["mkdir", path_to_detached.format(i, "any_other_name")]
-        )
-        instance.exec_in_container(
-            ["mkdir", path_to_detached.format(i, "prefix_1_2_2_0_0")]
+            ["mkdir", path_to_detached.format("prefix_1_2_2_0_0")]
         )
 
         instance.exec_in_container(
-            ["mkdir", path_to_detached.format(i, "ignored_202107_714380_714380_0")]
+            ["mkdir", path_to_detached.format("ignored_202107_714380_714380_0")]
         )
         instance.exec_in_container(
-            ["mkdir", path_to_detached.format(i, "broken_202107_714380_714380_123")]
+            ["mkdir", path_to_detached.format("broken_202107_714380_714380_123")]
         )
         instance.exec_in_container(
-            ["mkdir", path_to_detached.format(i, "clone_all_714380_714380_42")]
+            ["mkdir", path_to_detached.format("clone_all_714380_714380_42")]
         )
         instance.exec_in_container(
-            ["mkdir", path_to_detached.format(i, "clone_all_714380_714380_42_123")]
+            ["mkdir", path_to_detached.format("clone_all_714380_714380_42_123")]
         )
         instance.exec_in_container(
             [
                 "mkdir",
                 path_to_detached.format(
-                    i,
                     "broken-on-start_6711e2b2592d86d18fc0f260cf33ef2b_714380_714380_42_123",
                 ),
             ]
@@ -508,6 +519,10 @@ def test_detached_part_dir_exists(started_cluster):
         "create table detached_part_dir_exists (n int) engine=MergeTree order by n "
         "SETTINGS compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1, old_parts_lifetime=0"
     )
+    data_path = q(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='detached_part_dir_exists'"
+    ).strip()
+     
     q("insert into detached_part_dir_exists select 1")  # will create all_1_1_0
     q(
         "alter table detached_part_dir_exists detach partition id 'all'"
@@ -527,12 +542,11 @@ def test_detached_part_dir_exists(started_cluster):
         )
         == "all_1_1_0\nall_2_2_0\n"
     )
-
     instance.exec_in_container(
         [
             "bash",
             "-c",
-            "mkdir /var/lib/clickhouse/data/default/detached_part_dir_exists/detached/all_2_2_0",
+            f"mkdir {data_path}detached/all_2_2_0",
         ],
         privileged=True,
     )
@@ -540,7 +554,7 @@ def test_detached_part_dir_exists(started_cluster):
         [
             "bash",
             "-c",
-            "touch /var/lib/clickhouse/data/default/detached_part_dir_exists/detached/all_2_2_0/file",
+            f"touch {data_path}detached/all_2_2_0/file",
         ],
         privileged=True,
     )
@@ -562,7 +576,9 @@ def test_make_clone_in_detached(started_cluster):
         "create table clone_in_detached (n int, m String) engine=ReplicatedMergeTree('/clone_in_detached', '1') order by n SETTINGS compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1"
     )
 
-    path = path_to_data + "data/default/clone_in_detached/"
+    path = instance.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='clone_in_detached'"
+    ).strip()
 
     # broken part already detached
     q("insert into clone_in_detached values (42, '¯-_(ツ)_-¯')")

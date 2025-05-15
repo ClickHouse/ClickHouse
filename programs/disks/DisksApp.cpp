@@ -1,9 +1,10 @@
 #include "DisksApp.h"
 #include <Client/ClientBase.h>
 #include <Client/ReplxxLineReader.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 #include "Common/filesystemHelpers.h"
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/Macros.h>
 #include "DisksClient.h"
 #include "ICommand.h"
 #include "ICommand_fwd.h"
@@ -525,6 +526,9 @@ int DisksApp::main(const std::vector<String> & /*args*/)
 
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::DISKS);
+
+    if (config().has("macros"))
+        global_context->setMacros(std::make_unique<Macros>(config(), "macros", &logger()));
 
     String path = config().getString("path", DBMS_DEFAULT_PATH);
 

@@ -22,7 +22,7 @@ SELECT
     count(),
     arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
 FROM system.trace_log
-WHERE (query_id = 'ebca3574-ad0a-400a-9cbc-dca382f5998c') AND (event_date = today())
+WHERE query_id = 'ebca3574-ad0a-400a-9cbc-dca382f5998c' AND trace_type = 'CPU' AND event_date = today()
 GROUP BY trace
 ORDER BY count() DESC
 LIMIT 10

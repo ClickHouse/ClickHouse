@@ -68,8 +68,6 @@ Before using cache, add it to `config.xml`
 - limit_size: Required. The maximum size(in bytes) of local cache files.
 - bytes_read_before_flush: Control bytes before flush to local filesystem when downloading file from remote filesystem. The default value is 1MB.
 
-When ClickHouse is started up with local cache for remote filesystem enabled, users can still choose not to use cache with `settings use_local_cache_for_remote_storage = 0` in their query. `use_local_cache_for_remote_storage` is `1` by default.
-
 ### Query Hive Table with ORC Input Format  {#query-hive-table-with-orc-input-format}
 
 #### Create Table in Hive {#create-table-in-hive}

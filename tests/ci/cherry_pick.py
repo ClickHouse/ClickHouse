@@ -38,6 +38,7 @@ from env_helper import IS_CI, TEMP_PATH
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, git_runner, is_shallow, stash
 from github_helper import GitHub, PullRequest, PullRequests, Repository
+from report import GITHUB_JOB_URL
 from ssh import SSHKey
 
 
@@ -83,7 +84,24 @@ Treat it as a standard pull-request: look at the checks and resolve conflicts.
 Merge it only if you intend to backport changes to the target branch, otherwise just \
 close it.
 """
+    PR_SOURCE_DESCRIPTION = ""
     REMOTE = ""
+
+    @property
+    def pr_source(self) -> str:
+        if self.PR_SOURCE_DESCRIPTION:
+            return self.PR_SOURCE_DESCRIPTION
+        header = "\n\n### The PR source\n"
+        if not IS_CI:
+            self.PR_SOURCE_DESCRIPTION = (
+                f"{header}The PR is created manually outside of the CI"
+            )
+        else:
+            self.PR_SOURCE_DESCRIPTION = (
+                f"{header}The PR is created in the [CI job]({GITHUB_JOB_URL()})"
+            )
+
+        return self.PR_SOURCE_DESCRIPTION
 
     def __init__(
         self,
@@ -237,7 +255,8 @@ close it.
                 pr_url=self.pr.html_url,
                 backport_created_label=self.backport_created_label,
                 label_cherrypick=Labels.PR_CHERRYPICK,
-            ),
+            )
+            + self.pr_source,
             base=self.backport_branch,
             head=self.cherrypick_branch,
         )
@@ -275,7 +294,8 @@ close it.
             title=title,
             body=f"Original pull-request {self.pr.html_url}\n"
             f"Cherry-pick pull-request #{self.cherrypick_pr.number}\n\n"
-            f"{self.BACKPORT_DESCRIPTION}",
+            f"{self.BACKPORT_DESCRIPTION}"
+            f"{self.pr_source}",
             base=self.name,
             head=self.backport_branch,
         )

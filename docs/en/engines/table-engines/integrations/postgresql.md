@@ -148,7 +148,7 @@ CREATE TABLE default.postgresql_table
     `str` String,
     `int_id` Int32
 )
-ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postges_user', 'postgres_password');
+ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
 ```
 
 ### Inserting initial data from PostgreSQL table into ClickHouse table, using a SELECT query {#inserting-initial-data-from-postgresql-table-into-clickhouse-table-using-a-select-query}
@@ -168,7 +168,7 @@ ORDER BY (int_id);
 
 ```sql
 INSERT INTO default.postgresql_copy
-SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postges_user', 'postgres_password');
+SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
 ```
 
 ### Inserting incremental data from PostgreSQL table into ClickHouse table {#inserting-incremental-data-from-postgresql-table-into-clickhouse-table}

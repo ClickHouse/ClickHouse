@@ -5,6 +5,7 @@
 #include <Storages/MaterializedView/RefreshSettings.h>
 #include <Common/StopToken.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <IO/Progress.h>
 
 #include <random>
 
@@ -39,7 +40,7 @@ public:
     struct Info;
 
     /// Never call it manually, public for shared_ptr construction only
-    RefreshTask(StorageMaterializedView * view_, ContextPtr context, const ASTRefreshStrategy & strategy, bool attach, bool coordinated, bool empty);
+    RefreshTask(StorageMaterializedView * view_, ContextPtr context, const ASTRefreshStrategy & strategy, bool attach, bool coordinated, bool empty, bool is_restore_from_backup);
 
     /// If !attach, creates coordination znodes if needed.
     static OwnedRefreshTask create(
@@ -48,10 +49,12 @@ public:
         const DB::ASTRefreshStrategy & strategy,
         bool attach,
         bool coordinated,
-        bool empty);
+        bool empty,
+        bool is_restore_from_backup);
 
     /// Called at most once.
     void startup();
+    void finalizeRestoreFromBackup();
     /// Permanently disable task scheduling and remove this table from RefreshSet.
     /// Ok to call multiple times, including in parallel.
     /// Ok to call even if startup() wasn't called or failed.
@@ -68,10 +71,14 @@ public:
 
     bool canCreateOrDropOtherTables() const;
 
-    /// Enable task scheduling
+    /// Methods to pause/unpause refreshing on this replica or all replicas.
+    /// The per-replica pause and global pause are two separate flags; if either of them is set,
+    /// no refreshes will run.
     void start();
-    /// Disable task scheduling
     void stop();
+    void startReplicated();
+    void stopReplicated(const String & reason);
+
     /// Schedule task immediately
     void run();
     /// Cancel task execution
@@ -171,7 +178,8 @@ private:
         /// │   ├── name1
         /// │   ├── name2
         /// │   └── name3
-        /// └── ["running"] (RunningZnode, ephemeral)
+        /// ├── ["running"] (ephemeral)
+        /// └── ["paused"]
 
         struct WatchState
         {
@@ -182,6 +190,7 @@ private:
 
         CoordinationZnode root_znode;
         bool running_znode_exists = false;
+        bool paused_znode_exists = false;
         std::shared_ptr<WatchState> watches = std::make_shared<WatchState>();
 
         /// Whether we use Keeper to coordinate refresh across replicas. If false, we don't write to Keeper,

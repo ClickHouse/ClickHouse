@@ -16,6 +16,7 @@ SETTINGS min_bytes_for_wide_part = 10485760,
          compress_primary_key=false,
          disk = disk(
             type = cache,
+            name = '02240_filesystem_query_cache',
             max_size = '128Mi',
             path = 'filesystem_query_cache/',
             cache_on_write_operations= 1,
@@ -24,10 +25,10 @@ SETTINGS min_bytes_for_wide_part = 10485760,
 SYSTEM DROP FILESYSTEM CACHE;
 INSERT INTO test SELECT number, toString(number) FROM numbers(100);
 SELECT  * FROM test FORMAT Null;
-SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache ORDER BY file_segment_range_end, size;
+SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache WHERE cache_name = '02240_filesystem_query_cache' ORDER BY file_segment_range_end, size;
 SYSTEM DROP FILESYSTEM CACHE;
-SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache;
+SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache WHERE cache_name = '02240_filesystem_query_cache';
 SELECT * FROM test FORMAT Null;
-SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache;
+SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache WHERE cache_name = '02240_filesystem_query_cache';
 SYSTEM DROP FILESYSTEM CACHE;
-SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache;
+SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache WHERE cache_name = '02240_filesystem_query_cache';

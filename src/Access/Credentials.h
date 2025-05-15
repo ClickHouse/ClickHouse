@@ -1,12 +1,14 @@
 #pragma once
 
-#include <memory>
-#include <Access/Common/SSLCertificateSubjects.h>
+#include "config.h"
+
 #include <Common/SSHWrapper.h>
 
-#include <base/types.h>
+#if USE_SSL
+#    include <Common/Crypto/X509Certificate.h>
+#endif
 
-#include "config.h"
+#include <base/types.h>
 
 namespace Poco::Net
 {
@@ -51,16 +53,18 @@ public:
     void setUserName(const String & user_name_);
 };
 
+#if USE_SSL
 class SSLCertificateCredentials
     : public Credentials
 {
 public:
-    explicit SSLCertificateCredentials(const String & user_name_, SSLCertificateSubjects && subjects_);
-    const SSLCertificateSubjects & getSSLCertificateSubjects() const;
+    explicit SSLCertificateCredentials(const String & user_name_, X509Certificate::Subjects && subjects_);
+    const X509Certificate::Subjects & getSSLCertificateSubjects() const;
 
 private:
-    SSLCertificateSubjects certificate_subjects;
+    X509Certificate::Subjects certificate_subjects;
 };
+#endif
 
 class BasicCredentials
     : public Credentials
@@ -96,6 +100,36 @@ public:
 private:
     String scramble;
     String scrambled_password;
+};
+
+class ScramSHA256Credentials : public Credentials
+{
+public:
+    explicit ScramSHA256Credentials(const String& user_name_, const String& client_proof_, const String& auth_message_, int iterations_)
+        : Credentials(user_name_), client_proof(client_proof_), auth_message(auth_message_), iterations(iterations_)
+    {
+        is_ready = true;
+    }
+
+    const String& getClientProof() const
+    {
+        return client_proof;
+    }
+
+    const String& getAuthMessage() const
+    {
+        return auth_message;
+    }
+
+    int getIterations() const
+    {
+        return iterations;
+    }
+
+private:
+    String client_proof;
+    String auth_message;
+    int iterations;
 };
 
 class MySQLNative41Credentials : public CredentialsWithScramble

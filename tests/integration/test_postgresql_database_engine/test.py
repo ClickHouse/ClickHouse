@@ -465,6 +465,29 @@ def test_inaccessible_postgresql_database_engine_filterable_on_system_tables(
     node1.query("DROP DATABASE postgres_database")
     assert "postgres_database" not in node1.query("SHOW DATABASES")
 
+def test_postgresql_database_engine_comment(started_cluster):
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
+    cursor = conn.cursor()
+
+    node1.query(
+        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword') \
+        comment 'test postgres database with comment'"
+    )
+
+    node1.query(
+        "ALTER DATABASE postgres_database MODIFY COMMENT 'new comment on postgres database engine'"
+    )
+
+    assert (
+        node1.query("SELECT comment FROM system.databases WHERE name = 'postgres_database'").rstrip()
+        == "new comment on postgres database engine"
+    )
+
+    node1.query("DROP DATABASE postgres_database")
+    assert "postgres_database" not in node1.query("SHOW DATABASES")
+
 
 if __name__ == "__main__":
     cluster.start()

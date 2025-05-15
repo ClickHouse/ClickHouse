@@ -49,24 +49,6 @@ DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & sett
 {
 }
 
-static bool allowedInDataTypeLowCardinality(const IDataType & data_type)
-{
-    WhichDataType which(data_type);
-    if (which.isStringOrFixedString())
-        return true;
-    /// It is allowed having LowCardinality(UUID) because often times UUIDs are highly repetitive in tables,
-    /// and their relatively large size provides opportunity for better performance.
-    if (which.isUUID())
-        return true;
-
-    if (which.isDecimal128())
-        return true;
-
-    if (which.isDecimal256())
-        return true;
-
-    return false;
-}
 
 void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidationSettings & settings)
 {
@@ -77,7 +59,11 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
             if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(&data_type))
             {
                 auto unwrapped = removeNullable(lc_type->getDictionaryType());
-                if (!allowedInDataTypeLowCardinality(*unwrapped))
+
+                /// It is allowed having LowCardinality(UUID) because often times UUIDs are highly repetitive in tables,
+                /// and their relatively large size provides opportunity for better performance.
+
+                if (!isStringOrFixedString(unwrapped) && !isUUID(unwrapped))
                     throw Exception(
                         ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY,
                         "Creating columns of type {} is prohibited by default due to expected negative impact on performance. "

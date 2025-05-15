@@ -74,6 +74,10 @@ public:
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
+    void renameExchange(const std::string & old_path, const std::string & new_path) override;
+
+    bool renameExchangeIfSupported(const std::string & old_path, const std::string & new_path) override;
+
     void removeFile(const String & path) override { removeSharedFile(path, false); }
 
     void removeFileIfExists(const String & path) override { removeSharedFileIfExists(path, false); }
@@ -124,6 +128,8 @@ public:
 
     void removeDirectory(const String & path) override;
 
+    void removeDirectoryIfExists(const String & path) override;
+
     DirectoryIteratorPtr iterateDirectory(const String & path) const override;
 
     bool isDirectoryEmpty(const String & path) const override;
@@ -140,9 +146,9 @@ public:
 
     void startupImpl(ContextPtr context) override;
 
-    void refresh() override
+    void refresh(UInt64 not_sooner_than_milliseconds) override
     {
-        metadata_storage->refresh();
+        metadata_storage->refresh(not_sooner_than_milliseconds);
     }
 
     ReservationPtr reserve(UInt64 bytes) override;
@@ -199,7 +205,7 @@ public:
     /// with static files, so only read-only operations are allowed for this storage.
     bool isReadOnly() const override;
 
-    bool isPlain() const;
+    bool isPlain() const override;
 
     /// Is object write-once?
     /// For example: S3PlainObjectStorage is write once, this means that it
@@ -208,6 +214,8 @@ public:
     bool isWriteOnce() const override;
 
     bool supportsHardLinks() const override;
+
+    bool supportsPartitionCommand(const PartitionCommand & command) const override;
 
     /// Get structure of object storage this disk works with. Examples:
     /// DiskObjectStorage(S3ObjectStorage)

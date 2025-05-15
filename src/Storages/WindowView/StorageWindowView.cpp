@@ -6,6 +6,7 @@
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InterpreterAlterQuery.h>
@@ -497,8 +498,6 @@ void StorageWindowView::alter(
     InterpreterCreateQuery create_interpreter(inner_create_query, create_context);
     create_interpreter.setInternal(true);
     create_interpreter.execute();
-
-    DatabaseCatalog::instance().addViewDependency(select_table_id, table_id);
 
     shutdown_called = false;
 
@@ -1701,8 +1700,6 @@ void StorageWindowView::startup()
 {
     if (disabled_due_to_analyzer)
         return;
-
-    DatabaseCatalog::instance().addViewDependency(select_table_id, getStorageID());
 
     fire_task->activate();
     clean_cache_task->activate();

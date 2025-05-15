@@ -80,7 +80,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
 
             newd.set_if_not_exists(true);
             deng->set_engine(t.db->deng);
-            newd.mutable_database()->set_database("d" + std::to_string(t.db->dname));
+            t.db->setName(newd.mutable_database());
             t.db->finishDatabaseSpecification(deng);
             CreateDatabaseToString(buf, newd);
             res &= performQuery(buf + ";");
@@ -95,7 +95,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             ExprSchemaTable & est = const_cast<ExprSchemaTable &>(newt.est());
             if (t.db)
             {
-                est.mutable_database()->set_database("d" + std::to_string(t.db->dname));
+                t.db->setName(est.mutable_database());
             }
 
             CreateTableToString(buf, newt);
@@ -206,8 +206,8 @@ bool MySQLIntegration::optimizeTableForOracle(const PeerTableDatabase pt, const 
     if (is_clickhouse && t.isMergeTreeFamily())
     {
         /// Sometimes the optimize step doesn't have to do anything, then throws error. Ignore it
-        auto u = performQueryOnServerOrRemote(pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK;", getTableName(t.db, t.tname)));
-        auto v = performQueryOnServerOrRemote(
+        const auto u = performQueryOnServerOrRemote(pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK;", getTableName(t.db, t.tname)));
+        const auto v = performQueryOnServerOrRemote(
             pt, fmt::format("OPTIMIZE TABLE {}{};", getTableName(t.db, t.tname), t.supportsFinal() ? " FINAL" : ""));
         UNUSED(u);
         UNUSED(v);
@@ -274,7 +274,7 @@ PostgreSQLIntegration::testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, c
     }
     if (scc.port)
     {
-        connection_str += fmt::format("{}port='{}'", has_something ? " " : "", std::to_string(scc.port));
+        connection_str += fmt::format("{}port='{}'", has_something ? " " : "", scc.port);
         has_something = true;
     }
     if (!scc.user.empty())
@@ -345,7 +345,7 @@ bool PostgreSQLIntegration::performQuery(const String & query)
 
         out_file << query << std::endl;
         /// Ignore the query result set
-        auto u = w.exec(query);
+        const auto u = w.exec(query);
         UNUSED(u);
         w.commit();
         return true;
@@ -475,7 +475,7 @@ std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegra
     {
         connection_str += fmt::format("{}{}@", scc.user, scc.password.empty() ? "" : (":" + scc.password));
     }
-    connection_str += fmt::format("{}={}", scc.hostname, std::to_string(scc.port));
+    connection_str += fmt::format("{}={}", scc.hostname, scc.port);
 
     try
     {
@@ -629,7 +629,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else if ((dttp = dynamic_cast<DateTimeType *>(tp)))
     {
-        String buf = dttp->extended ? rg.nextDateTime64() : rg.nextDateTime();
+        String buf = dttp->extended ? rg.nextDateTime64(rg.nextBool()) : rg.nextDateTime(rg.nextBool());
 
         if constexpr (is_document<T>)
         {
@@ -1387,7 +1387,7 @@ void ExternalIntegrations::setDefaultSettings(const PeerTableDatabase pt, const 
     for (const auto & entry : settings)
     {
         /// Some settings may not exist in earlier ClickHouse versions, so we can ignore the errors here
-        auto u = clickhouse->performQueryOnServerOrRemote(pt, fmt::format("SET {} = 1;", entry));
+        const auto u = clickhouse->performQueryOnServerOrRemote(pt, fmt::format("SET {} = 1;", entry));
         UNUSED(u);
     }
 }

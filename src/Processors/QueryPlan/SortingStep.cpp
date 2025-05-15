@@ -30,7 +30,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 min_external_sort_block_bytes;
     extern const SettingsUInt64 max_bytes_before_external_sort;
     extern const SettingsDouble max_bytes_ratio_before_external_sort;
@@ -48,6 +48,7 @@ namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_sort;
+    extern const QueryPlanSerializationSettingsUInt64 min_external_sort_block_bytes;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_remerge_sort;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_to_sort;
     extern const QueryPlanSerializationSettingsUInt64 max_rows_to_sort;
@@ -78,7 +79,7 @@ size_t getMaxBytesBeforeExternalSort(size_t max_bytes_before_external_sort, doub
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_sort should be >= 0 and < 1 ({})", ratio);
 
         auto available_system_memory = getMostStrictAvailableSystemMemory();
-        if (available_system_memory.has_value() && !std::isnan(ratio))
+        if (available_system_memory.has_value())
         {
             size_t ratio_in_bytes = static_cast<size_t>(*available_system_memory * ratio);
             if (threshold)
@@ -125,6 +126,7 @@ SortingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
     max_bytes_before_remerge = settings[QueryPlanSerializationSetting::max_bytes_before_remerge_sort];
     remerge_lowered_memory_bytes_ratio = settings[QueryPlanSerializationSetting::remerge_sort_lowered_memory_bytes_ratio];
     max_bytes_before_external_sort = settings[QueryPlanSerializationSetting::max_bytes_before_external_sort];
+    min_external_sort_block_bytes = settings[QueryPlanSerializationSetting::min_external_sort_block_bytes];
     min_free_disk_space = settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data];
     max_block_bytes = settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes];
     read_in_order_use_buffering = false; //settings.read_in_order_use_buffering;
@@ -140,6 +142,7 @@ void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & 
     settings[QueryPlanSerializationSetting::max_bytes_before_remerge_sort] = max_bytes_before_remerge;
     settings[QueryPlanSerializationSetting::remerge_sort_lowered_memory_bytes_ratio] = remerge_lowered_memory_bytes_ratio;
     settings[QueryPlanSerializationSetting::max_bytes_before_external_sort] = max_bytes_before_external_sort;
+    settings[QueryPlanSerializationSetting::min_external_sort_block_bytes] = min_external_sort_block_bytes;
     settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data] = min_free_disk_space;
     settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes] = max_block_bytes;
 }
@@ -462,6 +465,15 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         bool need_finish_sorting = (prefix_description.size() < result_description.size());
         mergingSorted(pipeline, prefix_description, (need_finish_sorting ? 0 : limit));
 
+        if (need_finish_sorting)
+            finishSorting(pipeline, prefix_description, result_description, limit);
+
+        return;
+    }
+
+    if (type == Type::PartitionedFinishSorting)
+    {
+        bool need_finish_sorting = (prefix_description.size() < result_description.size());
         if (need_finish_sorting)
             finishSorting(pipeline, prefix_description, result_description, limit);
 

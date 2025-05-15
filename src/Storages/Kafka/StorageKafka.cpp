@@ -2,6 +2,7 @@
 
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -60,7 +61,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_insert_block_size;
     extern const SettingsUInt64 output_format_avro_rows_in_file;
     extern const SettingsMilliseconds stream_flush_interval_ms;
@@ -182,7 +183,7 @@ StorageKafka::StorageKafka(
     , max_rows_per_message((*kafka_settings)[KafkaSetting::kafka_max_rows_per_message].value)
     , schema_name(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_schema].value, macros_info))
     , num_consumers((*kafka_settings)[KafkaSetting::kafka_num_consumers].value)
-    , log(getLogger("StorageKafka (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageKafka (" + table_id_.getFullTableName() + ")"))
     , intermediate_commit((*kafka_settings)[KafkaSetting::kafka_commit_every_batch].value)
     , settings_adjustments(StorageKafkaUtils::createSettingsAdjustments(*kafka_settings, schema_name))
     , thread_per_consumer((*kafka_settings)[KafkaSetting::kafka_thread_per_consumer].value)
@@ -383,7 +384,7 @@ KafkaConsumerPtr StorageKafka::popConsumer(std::chrono::milliseconds timeout)
     {
         ret_consumer_ptr = consumers[*closed_consumer_index];
 
-        cppkafka::Configuration consumer_config = getConsumerConfiguration(*closed_consumer_index);
+        cppkafka::Configuration consumer_config = getConsumerConfiguration(*closed_consumer_index, ret_consumer_ptr);
         /// It should be OK to create consumer under lock, since it should be fast (without subscribing).
         ret_consumer_ptr->createConsumer(consumer_config);
         LOG_TRACE(log, "Created #{} consumer", *closed_consumer_index);
@@ -434,7 +435,7 @@ KafkaConsumerPtr StorageKafka::createKafkaConsumer(size_t consumer_number)
         topics);
     return kafka_consumer_ptr;
 }
-cppkafka::Configuration StorageKafka::getConsumerConfiguration(size_t consumer_number)
+cppkafka::Configuration StorageKafka::getConsumerConfiguration(size_t consumer_number, IKafkaExceptionInfoSinkPtr exception_info_sink_ptr)
 {
     KafkaConfigLoader::ConsumerConfigParams params{
         {getContext()->getConfigRef(), collection_name, topics, log},
@@ -444,7 +445,7 @@ cppkafka::Configuration StorageKafka::getConsumerConfiguration(size_t consumer_n
         consumer_number,
         client_id,
         getMaxBlockSize()};
-    return KafkaConfigLoader::getConsumerConfiguration(*this, params);
+    return KafkaConfigLoader::getConsumerConfiguration(*this, params, exception_info_sink_ptr);
 }
 
 cppkafka::Configuration StorageKafka::getProducerConfiguration()
@@ -570,6 +571,9 @@ void StorageKafka::threadFunc(size_t idx)
                 }
             }
         }
+        else
+            LOG_DEBUG(log, "No attached views");
+
     }
     catch (...)
     {

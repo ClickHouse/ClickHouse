@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <numeric>
 
 #ifndef NDEBUG
 #include <sys/mman.h>
@@ -67,7 +68,7 @@ namespace DB
   * TODO Allow greater alignment than alignof(T). Example: array of char aligned to page size.
   */
 static constexpr size_t empty_pod_array_size = 1024;
-extern const char empty_pod_array[empty_pod_array_size];
+alignas(std::max_align_t) extern const char empty_pod_array[empty_pod_array_size];
 
 namespace PODArrayDetails
 {
@@ -92,11 +93,12 @@ protected:
     /// Round padding up to an whole number of elements to simplify arithmetic.
     static constexpr size_t pad_right = integerRoundUp(pad_right_, ELEMENT_SIZE);
     /// pad_left is also rounded up to 16 bytes to maintain alignment of allocated memory.
-    static constexpr size_t pad_left = integerRoundUp(integerRoundUp(pad_left_, ELEMENT_SIZE), 16);
+    static constexpr size_t pad_left = integerRoundUp(pad_left_, std::lcm(ELEMENT_SIZE, 16));
     /// Empty array will point to this static memory as padding and begin/end.
     static constexpr char * null = const_cast<char *>(empty_pod_array) + pad_left;
 
     static_assert(pad_left <= empty_pod_array_size && "Left Padding exceeds empty_pod_array_size. Is the element size too large?");
+    static_assert(pad_left % ELEMENT_SIZE == 0, "pad_left must be multiple of element alignment");
 
     // If we are using allocator with inline memory, the minimal size of
     // array must be in sync with the size of this memory.
@@ -135,8 +137,8 @@ protected:
         TAllocator::free(c_start - pad_left, allocated_bytes());
     }
 
-    template <typename... TAllocatorParams>
-    void PRESERVE_MOST realloc(size_t bytes, TAllocatorParams &&... allocator_params)
+    template <typename ... TAllocatorParams>
+    void realloc(size_t bytes, TAllocatorParams &&... allocator_params)
     {
         if (c_start == null)
         {
@@ -167,8 +169,8 @@ protected:
         return (stack_threshold > 0) && (allocated_bytes() <= stack_threshold);
     }
 
-    template <typename... TAllocatorParams>
-    void PRESERVE_MOST reserveForNextSize(TAllocatorParams &&... allocator_params)
+    template <typename ... TAllocatorParams>
+    void reserveForNextSize(TAllocatorParams &&... allocator_params)
     {
         if (empty())
         {

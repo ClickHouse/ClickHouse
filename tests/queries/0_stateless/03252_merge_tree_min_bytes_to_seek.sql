@@ -16,7 +16,7 @@ SELECT count() FROM t_min_bytes_to_seek WHERE id IN (10, 1000, 5000, 9000) SETTI
 SELECT count() FROM t_min_bytes_to_seek WHERE id IN (10, 1000, 5000, 9000) SETTINGS merge_tree_min_rows_for_seek = 0;
 SELECT count() FROM t_min_bytes_to_seek WHERE id IN (10, 1000, 5000, 9000) SETTINGS merge_tree_min_rows_for_seek = 1000000000;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT ProfileEvents['SelectedRanges']
 FROM system.query_log
