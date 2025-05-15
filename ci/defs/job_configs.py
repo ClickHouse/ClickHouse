@@ -330,6 +330,8 @@ class JobConfigs:
         ),
     ).parametrize(
         parameter=[
+            "asan, 1/2",
+            "asan, 2/2",
             "asan, distributed plan, 1/2",
             "asan, distributed plan, 2/2",
             "release",
@@ -346,8 +348,12 @@ class JobConfigs:
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
+            ["Build (amd_asan)"],
+            ["Build (amd_asan)"],
             ["Build (amd_asan)"],
             ["Build (amd_asan)"],
             ["Build (amd_release)"],

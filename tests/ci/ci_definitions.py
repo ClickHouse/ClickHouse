@@ -144,6 +144,7 @@ class JobNames(metaclass=WithIter):
     STATELESS_TEST_RELEASE_COVERAGE = "Stateless tests (coverage)"
     STATELESS_TEST_AARCH64 = "Stateless tests (aarch64)"
     STATELESS_TEST_ASAN_DISTRIBUTED_PLAN = "Stateless tests (asan, distributed plan)"
+    STATELESS_TEST_ASAN = "Stateless tests (asan)"
     STATELESS_TEST_AARCH64_ASAN = "Stateless tests (aarch64, asan)"
     STATELESS_TEST_TSAN = "Stateless tests (tsan)"
     STATELESS_TEST_MSAN = "Stateless tests (msan)"
