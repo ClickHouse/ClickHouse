@@ -55,5 +55,39 @@ select tup.1 as hrp, hex(tup.2) as data from (select bech32Decode('b1w508d6qejxt
 -- testing max length, this should returun nothing
 select tup.1 as hrp, hex(tup.2) as data from (select bech32Decode('b1w508dfqejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5xgqsaanm') as tup);
 
--- TODO test fixed strings
+-- test decode from table
+CREATE TABLE addresses
+(
+    address String
+)
+ENGINE = Memory;
+
+INSERT INTO addresses VALUES
+('bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z'),
+('tb1w508d6qejxtdg4y5r3zarvary0c5xw7kzp034v'),
+('tb1w508d6qejxtdg4y5r3zarvary0c5xw7khalasw'),
+('bc1w508d6qejxtdg4y5r3zarvary0c5xw7k8zcwmq');
+
+-- test that fixed strings give same result as regular string column
+CREATE TABLE bech32_test
+(
+    address String,
+    address_fixed FixedString(45)
+)
+ENGINE = Memory;
+
+INSERT INTO bech32_test 
+SELECT address, CAST(address, 'FixedString(45)')
+FROM addresses;
+
+SELECT
+    address,
+    bech32Decode(address).1 AS hrp,
+    hex(bech32Decode(address).2) AS decoded,
+    hex(bech32Decode(address_fixed).2) AS decoded_fixed,
+    hex(bech32Decode(address).2) = hex(bech32Decode(address_fixed).2) AS match
+FROM bech32_test;
+
+DROP TABLE addresses;
+DROP TABLE bech32_test
 

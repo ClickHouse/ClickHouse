@@ -221,8 +221,8 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            size_t hrp_new_offset = hrp_width == 0 ? hrp_offsets[i] : hrp_width;
-            size_t data_new_offset = data_width == 0 ? data_offsets[i] : data_width;
+            size_t hrp_new_offset = hrp_width == 0 ? hrp_offsets[i] : hrp_prev_offset + hrp_width;
+            size_t data_new_offset = data_width == 0 ? data_offsets[i] : data_prev_offset + data_width;
 
             // max encodable data to stay within 90-char limit on Bech32 output
             // hrp must be at least 1 character and no more than 83
@@ -384,7 +384,13 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            size_t new_offset = col_width == 0 ? in_offsets[i] : col_width;
+            size_t new_offset = col_width == 0 ? in_offsets[i] : prev_offset + col_width;
+
+            // NUL chars are used to pad fixed width strings, so we remove them here since they are not valid inputs anyway
+            while (col_width > 0 && in_vec[new_offset - 1] == 0 && new_offset > prev_offset)
+            {
+                --new_offset;
+            }
 
             // enforce char limit
             if ((new_offset - prev_offset - trailing_zero_offset) > max_address_len)
@@ -441,7 +447,8 @@ private:
 
             data_offsets[i] = data_pos - data_begin;
 
-            prev_offset = new_offset;
+            // if we decremented new_offset to get rid of \0, we must deal with that here
+            prev_offset = col_width == 0 ? new_offset : prev_offset + col_width;
         }
 
         chassert(
