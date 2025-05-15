@@ -921,7 +921,7 @@ Pipes ReadFromParallelRemoteReplicasStep::addPipes(ASTPtr ast, const Header & ou
     }
 
     coordinator->setReadCompletedCallback(
-        [sources = std::move(remote_sources)](std::set<size_t> used_replicas)
+        [sources = std::move(remote_sources)](const std::set<size_t> & used_replicas)
         {
             for (const auto & [replica_num, processor] : sources)
             {
