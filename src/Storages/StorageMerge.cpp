@@ -1771,39 +1771,34 @@ SinkToStoragePtr StorageMerge::write(
     bool async_insert)
 {
     const auto & access = context_->getAccess();
-
+    std::optional<StoragePtr> table_storage{};
     if (table_to_write_auto)
     {
-        table_to_write = std::nullopt;
-        bool any_table_found = false;
-        forEachTableName([&](const auto & table_name)
+        chassert(!database_name_or_regexp.database_is_regexp);
+        const auto & database = database_name_or_regexp.source_database_name_or_regexp;
+        auto allShowGranted = access->isGranted(AccessType::SHOW, database);
+        forEachTable([&](const StoragePtr & table)
         {
-            any_table_found = true;
-            if (!table_to_write.has_value() || table_to_write->getFullName() < table_name.getFullName())
-            {
-                if (access->isGranted(AccessType::INSERT, table_name.database, table_name.table))
-                    table_to_write = table_name;
-            }
+            if (!allShowGranted && !access->isGranted(AccessType::SHOW_TABLES, database, table->getName()))
+                return;
+
+            if (!table_storage || table->getName() > table_storage.value()->getName())
+                table_storage = table;
         });
-        if (!table_to_write.has_value())
-        {
-            if (any_table_found)
-                throw Exception(ErrorCodes::ACCESS_DENIED, "Not allowed to write in any suitable table for storage {}", getName());
-            else
-                throw Exception(ErrorCodes::UNKNOWN_TABLE, "Can't find any table to write for storage {}", getName());
-        }
-    }
-    else
-    {
-        if (!table_to_write.has_value())
+
+        if (!table_storage)
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Can't find any table to write for storage {}", getName());
+
+        access->checkAccess(AccessType::INSERT, database, table_storage.value()->getName());
+    } else {
+        if (!table_to_write)
             throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Method write is not allowed in storage {} without described table to write", getName());
 
-        access->checkAccess(AccessType::INSERT, table_to_write->database, table_to_write->table);
+        access->checkAccess(AccessType::INSERT, table_to_write.value().database, table_to_write.value().table);
+        table_storage = DatabaseCatalog::instance().getTable(StorageID(table_to_write.value()), context_);
     }
 
-    auto database = DatabaseCatalog::instance().getDatabase(table_to_write->database);
-    auto table = database->getTable(table_to_write->table, context_);
-    return table->write(query, metadata_snapshot, context_, async_insert);
+    return table_storage.value()->write(query, metadata_snapshot, context_, async_insert);
 }
 
 void registerStorageMerge(StorageFactory & factory)
