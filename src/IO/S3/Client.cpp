@@ -271,8 +271,6 @@ Aws::Auth::AWSCredentials Client::getCredentials() const
 
 bool Client::checkIfCredentialsChanged(const Aws::S3::S3Error & error) const
 {
-    if (!credentials_provider)
-        return false;
     return (error.GetExceptionName() == "AuthenticationRequired");
 }
 
