@@ -121,7 +121,6 @@ arrayEnumerateDense
 arrayEnumerateDenseRanked
 arrayEnumerateUniq
 arrayExists
-arrayFill
 arrayFilter
 arrayFirst
 arrayFirstIndex
@@ -145,7 +144,6 @@ arrayRandomSample
 arrayReduceInRanges
 arrayResize
 arrayReverse
-arrayReverseFill
 arrayReverseSort
 arrayReverseSplit
 arrayRotateLeft
