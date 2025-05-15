@@ -39,11 +39,6 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_MREMAP;
     extern const int POTENTIALLY_BROKEN_DATA_PART;
-    extern const int REPLICA_ALREADY_EXISTS;
-    extern const int NOT_ENOUGH_SPACE;
-    extern const int CORRUPTED_DATA;
-    extern const int CHECKSUM_DOESNT_MATCH;
-    extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
 }
 
 void abortOnFailedAssertion(const String & description, void * const * trace, size_t trace_offset, size_t trace_size)
@@ -279,9 +274,9 @@ bool Exception::isErrorCodeImportant() const
 
 Exception::~Exception()
 {
-    if (logged != nullptr && !logged->load(std::memory_order_relaxed) && isErrorCodeImportant())
+    if (logged != nullptr && !logged->load(std::memory_order_relaxed) && isErrorCodeImportant() && isLoggingEnabled())
     {
-        LOG_ERROR(getLogger("~Exception"), "An important exception was likely ignored, here it is: {}", getExceptionMessage(*this, /*with_stacktrace=*/ true));
+        LOG_ERROR(getLogger("~Exception"), "{}", getExceptionMessage(*this, /*with_stacktrace=*/ true));
     }
 }
 
