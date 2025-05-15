@@ -24,7 +24,6 @@ public:
     BackupCoordinationOnCluster(
         const UUID & backup_uuid_,
         bool is_plain_backup_,
-        bool is_lightweight_snapshot_,
         const String & root_zookeeper_path_,
         zkutil::GetZooKeeper get_zookeeper_,
         const BackupKeeperSettings & keeper_settings_,
@@ -108,7 +107,6 @@ private:
     const String current_host;
     const size_t current_host_index;
     const bool plain_backup;
-    const bool lightweight_snapshot;
     const QueryStatusPtr process_list_element;
     const LoggerPtr log;
 
