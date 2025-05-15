@@ -114,7 +114,6 @@ arrayCount
 arrayCumSum
 arrayCumSumNonNegative
 arrayDifference
-arrayDistinct
 arrayDotProduct
 arrayElement
 arrayElementOrNull
@@ -129,9 +128,7 @@ arrayFirstIndex
 arrayFirstOrNull
 arrayFlatten
 arrayFold
-arrayIntersect
 arrayJaccardIndex
-arrayJoin
 arrayLast
 arrayLastIndex
 arrayLastOrNull
@@ -156,9 +153,6 @@ arraySimilarity
 arraySplit
 arrayStringConcat
 arraySum
-arraySymmetricDifference
-arrayUnion
-arrayUniq
 arrayWithConstant
 arrayZip
 arrayZipUnaligned
