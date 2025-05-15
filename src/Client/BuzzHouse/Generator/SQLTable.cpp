@@ -801,7 +801,7 @@ void StatementGenerator::generateMergeTreeEngineDetails(RandomGenerator & rg, co
     }
 }
 
-void StatementGenerator::setClusterInfo(RandomGenerator & rg, SQLBase & b)
+void StatementGenerator::setClusterInfo(RandomGenerator & rg, SQLBase & b) const
 {
     /// Shared and Replicated MergeTree are to be used with cluster
     if (!fc.clusters.empty() && rg.nextSmallNumber() < (b.toption.has_value() ? 9 : 5))

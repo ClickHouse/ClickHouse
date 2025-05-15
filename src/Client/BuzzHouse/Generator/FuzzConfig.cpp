@@ -249,26 +249,29 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
 
 bool FuzzConfig::processServerQuery(const bool outlog, const String & query)
 {
+    bool res = true;
+
     try
     {
         if (outlog)
         {
             outf << query << std::endl;
         }
-        if (this->cb->processTextAsSingleQuery(query))
-        {
-            return true;
-        }
+        res &= this->cb->processTextAsSingleQuery(query);
     }
     catch (...)
     {
+        res = false;
     }
-    fmt::print(stderr, "Error on processing query '{}'\n", query);
-    if (!this->cb->tryToReconnect(max_reconnection_attempts, time_to_sleep_between_reconnects))
+    if (!res)
     {
-        throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Couldn't not reconnect to the server");
+        fmt::print(stderr, "Error on processing query '{}'\n", query);
+        if (!this->cb->tryToReconnect(max_reconnection_attempts, time_to_sleep_between_reconnects))
+        {
+            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Couldn't not reconnect to the server");
+        }
     }
-    return false;
+    return res;
 }
 
 void FuzzConfig::loadServerSettings(DB::Strings & out, const bool distinct, const String & table, const String & col)
