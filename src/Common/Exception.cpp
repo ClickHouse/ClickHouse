@@ -280,7 +280,7 @@ try
         LOG_ERROR(getLogger("~Exception"), "{}", getExceptionMessage(*this, /*with_stacktrace=*/ true));
     }
 }
-catch (...)
+catch (...) // NOLINT(bugprone-empty-catch)
 {
 }
 
