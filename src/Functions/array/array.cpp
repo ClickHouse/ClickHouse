@@ -296,10 +296,10 @@ This means that you can't use this function to create an empty array. To do so, 
 
 Use the `[ ]` operator for the same functionality.
     )";
-    FunctionDocumentation::Syntax syntax = "array(x1 [, ...optional])";
+    FunctionDocumentation::Syntax syntax = "array(x1 [, x2, ..., xN])";
     FunctionDocumentation::Arguments arguments = {
         {"x1", "Constant value of any type T. If only this argument is provided, the array will be of type T."},
-        {"...optional", "Additional N constant values sharing a common supertype with `x1`"},
+        {"[, x2, ..., xN]", "Additional N constant values sharing a common supertype with `x1`"},
     };
     FunctionDocumentation::ReturnedValue returned_value = "Returns an 'Array(T)' type result, where 'T' is the smallest common type out of the passed arguments.";
     FunctionDocumentation::Examples examples = {{"Valid usage", R"(

@@ -89,11 +89,11 @@ public:
 REGISTER_FUNCTION(ArrayWithConstant)
 {
     FunctionDocumentation::Description description = R"(
-Creates an array of length `length` filled with the constant `elem`.
+Creates an array of length `length` filled with the constant `x`.
     )";
     FunctionDocumentation::Syntax syntax = "arrayWithConstant(N, x)";
     FunctionDocumentation::Arguments arguments = {
-        {"N", "Number of elements in the array. `Int8/16/32/64`/`UInt8/16/32/64.`"},
+        {"length", "Number of elements in the array. [`(U)Int*`](/sql-reference/data-types/int-uint)."},
         {"x", "The value of the `N` elements in the array, of any type."},
     };
     FunctionDocumentation::ReturnedValue returned_value = "Returns an Array with `N` elements of value `x`.";

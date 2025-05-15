@@ -395,8 +395,8 @@ REGISTER_FUNCTION(EmptyArrayToSingle)
     FunctionDocumentation::Description description = R"(
 Accepts an empty array and returns a one-element array that is equal to the default value.
     )";
-    FunctionDocumentation::Syntax syntax = "emptyArrayToSingle(x)";
-    FunctionDocumentation::Arguments arguments = {{"x", "An empty array. [Array](/sql-reference/data-types/array)"}};
+    FunctionDocumentation::Syntax syntax = "emptyArrayToSingle(arr)";
+    FunctionDocumentation::Arguments arguments = {{"arr", "An empty array. [`Array(T)`](/sql-reference/data-types/array)"}};
     FunctionDocumentation::ReturnedValue returned_value = "An array with a single value of the Array's default type.";
     FunctionDocumentation::Examples examples = {{"Basic example", R"(
 CREATE TABLE test (
