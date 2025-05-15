@@ -43,7 +43,7 @@ public:
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & /* path */) const { return {}; }
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String & /* path */) const { return {}; }
 
-    virtual bool hasDataTransformer() const { return false; }
+    virtual bool hasDataTransformer(const ObjectInfoPtr & /*object_info*/) const { return false; }
     virtual std::shared_ptr<ISimpleTransform> getDataTransformer(
         const ObjectInfoPtr & /* object_info */,
         const Block & /* header */,

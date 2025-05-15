@@ -998,23 +998,47 @@ ObjectIterator IcebergMetadata::iterate(
     return std::make_shared<IcebergKeysIterator>(getDataFiles(filter_dag), getPositionDeletesFiles(), object_storage, callback);
 }
 
+bool IcebergMetadata::hasDataTransformer(const ObjectInfoPtr & object_info) const
+{
+    auto iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info);
+    if (!iceberg_object_info)
+        return false;
+
+    return !iceberg_object_info->position_deletes_objects.empty();
+}
+
 std::shared_ptr<ISimpleTransform> IcebergMetadata::getDataTransformer(
     const ObjectInfoPtr & object_info,
     const Block & header,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context_) const
 {
-    auto configuration_ptr = configuration.lock();
-
     auto iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info);
+    if (!iceberg_object_info)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The object info is not IcebergDataObjectInfo");
+
+    String delete_object_format;
+    String delete_object_compression_method;
+    {
+        auto configuration_ptr = configuration.lock();
+        if (!configuration_ptr)
+        {
+            delete_object_format = "parquet";
+            delete_object_compression_method = "auto";
+
+            LOG_WARNING(
+                log,
+                "Configuration is expired. Will use {} as the format and {} as the compression method for the delete objects",
+                delete_object_format,
+                delete_object_compression_method);
+        }
+
+        delete_object_format = configuration_ptr->format;
+        delete_object_compression_method = configuration_ptr->compression_method;
+    }
+
     return std::make_shared<IcebergBitmapPositionDeleteTransform>(
-        header,
-        iceberg_object_info,
-        object_storage,
-        format_settings,
-        context_,
-        configuration_ptr->format,
-        configuration_ptr->compression_method);
+        header, iceberg_object_info, object_storage, format_settings, context_, delete_object_format, delete_object_compression_method);
 }
 
 }

@@ -101,11 +101,11 @@ public:
         return current_metadata->getSchemaTransformer(data_path);
     }
 
-    bool hasDataTransformer() const override
+    bool hasDataTransformer(const ObjectInfoPtr & object_info) const override
     {
         if (!current_metadata)
             return false;
-        return current_metadata->hasDataTransformer();
+        return current_metadata->hasDataTransformer(object_info);
     }
 
     std::shared_ptr<ISimpleTransform> getDataTransformer(

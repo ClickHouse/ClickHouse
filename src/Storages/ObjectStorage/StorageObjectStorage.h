@@ -246,7 +246,7 @@ public:
 
     virtual void modifyFormatSettings(FormatSettings &) const {}
 
-    virtual bool hasDataTransformer() const { return false; }
+    virtual bool hasDataTransformer(const ObjectInfoPtr & /*object_info*/) const { return false; }
     virtual std::shared_ptr<ISimpleTransform> getDataTransformer(
         const ObjectInfoPtr & /*object_info*/,
         const Block & /*header*/,

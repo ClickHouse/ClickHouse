@@ -97,7 +97,7 @@ public:
             : nullptr;
     }
 
-    bool hasDataTransformer() const override { return !getPositionDeletesFiles().empty(); }
+    bool hasDataTransformer(const ObjectInfoPtr & object_info) const override;
 
     std::shared_ptr<ISimpleTransform> getDataTransformer(
         const ObjectInfoPtr & /* object_info */,

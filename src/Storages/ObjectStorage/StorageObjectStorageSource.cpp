@@ -545,7 +545,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         return std::make_shared<ExtractColumnsTransform>(header, read_from_format_info.requested_columns);
     });
 
-    if (configuration->hasDataTransformer())
+    if (configuration->hasDataTransformer(object_info))
     {
         builder.addSimpleTransform([&](const Block & header)
         {
