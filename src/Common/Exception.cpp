@@ -273,11 +273,15 @@ bool Exception::isErrorCodeImportant() const
 }
 
 Exception::~Exception()
+try
 {
     if (logged != nullptr && !logged->load(std::memory_order_relaxed) && isErrorCodeImportant() && isLoggingEnabled())
     {
         LOG_ERROR(getLogger("~Exception"), "{}", getExceptionMessage(*this, /*with_stacktrace=*/ true));
     }
+}
+catch (...)
+{
 }
 
 static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message, LogsLevel level)
