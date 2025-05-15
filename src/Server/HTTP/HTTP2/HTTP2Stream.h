@@ -80,9 +80,9 @@ public:
     bool response_submitted = false;
     bool output_deferred = false;
     bool end_stream = false;
-    Memory<> * output = nullptr;
-    size_t output_len = 0;
-    size_t output_consumed = 0;
+    std::deque<std::pair<Memory<>, size_t>> output;
+    std::pair<Memory<>, size_t> cur_output;
+    size_t cur_output_consumed = 0;
     std::mutex output_mutex;
     std::condition_variable output_cv;
 

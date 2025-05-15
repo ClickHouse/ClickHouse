@@ -21,10 +21,16 @@ namespace ErrorCodes
 namespace
 {
 
+const size_t MAX_OUTPUT_CHUNKS = 8;
+const size_t BUF_SIZE = DBMS_DEFAULT_BUFFER_SIZE / MAX_OUTPUT_CHUNKS;
+
 class WriteBufferFromHTTP2ServerResponse : public WriteBufferFromHTTPServerResponseBase
 {
 public:
-    explicit WriteBufferFromHTTP2ServerResponse(HTTP2Stream & stream_, bool is_http_method_head_) : stream(stream_), is_http_method_head(is_http_method_head_) {}
+    explicit WriteBufferFromHTTP2ServerResponse(HTTP2Stream & stream_, bool is_http_method_head_)
+        : WriteBufferFromHTTPServerResponseBase(BUF_SIZE), stream(stream_), is_http_method_head(is_http_method_head_)
+    {
+    }
 
     void sendBufferAndFinalize(const char * ptr, size_t size) override
     {
@@ -114,6 +120,7 @@ private:
 
         if (stream.end_stream)
             throw Exception(ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER, "Cannot call next() or finalize() on finalized WriteBufferFromHTTP2ServerResponse");
+        stream.end_stream = end_stream;
 
         if (!stream.response_submitted)
         {
@@ -123,21 +130,19 @@ private:
                 stream.response.set("Content-Encoding", toContentEncodingName(compression_method));
         }
 
-        stream.end_stream = end_stream;
-        stream.output = is_http_method_head ? nullptr : &memory;
-        stream.output_len = is_http_method_head ? 0 : offset();
-        stream.output_consumed = 0;
-
-        HTTP2StreamEvent event{.type=HTTP2StreamEventType::OUTPUT_READY, .stream_id=stream.id};
-        stream.stream_event_pipe->writeBytes(&event, sizeof(event));
-
-        while (stream.output_consumed != stream.output_len && !stream.closed)
+        while (stream.output.size() == MAX_OUTPUT_CHUNKS && !stream.closed)
             stream.output_cv.wait(lock);
 
         if (stream.closed)
             throw Exception(ErrorCodes::NETWORK_ERROR, "HTTP/2 stream has been closed");
 
-        stream.output = nullptr;
+        if (!is_http_method_head && available() > 0)
+            stream.output.emplace_back(std::move(memory), available());
+
+        HTTP2StreamEvent event{.type=HTTP2StreamEventType::OUTPUT_READY, .stream_id=stream.id};
+        stream.stream_event_pipe->writeBytes(&event, sizeof(event));
+
+        memory = Memory(BUF_SIZE);
         set(memory.data(), memory.size());
     }
 
