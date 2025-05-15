@@ -335,7 +335,7 @@ SELECT arrayFold(
 "300"
 }
 };
-    FunctionDocumentation::IntroducedIn introduced_in = {21, 5};
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
