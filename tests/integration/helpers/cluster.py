@@ -1,4 +1,5 @@
 import base64
+import concurrent
 import errno
 import http.client
 import logging
@@ -3407,14 +3408,37 @@ class ClickHouseCluster:
 
     # Faster than waiting for clean stop
     def kill_zookeeper_nodes(self, zk_nodes):
-        for n in zk_nodes:
-            logging.info("Killing zookeeper node: %s", n)
-            subprocess_check_call(self.base_zookeeper_cmd + ["kill", n])
+
+        def kill_keeper(node):
+            logging.info("Killing zookeeper node: %s", node)
+            subprocess_check_call(self.base_zookeeper_cmd + ["kill", node])
+            logging.info("Killed zookeeper node: %s", node)
+
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=len(zk_nodes)
+        ) as executor:
+            futures = []
+            for n in zk_nodes:
+                futures += [executor.submit(kill_keeper, n)]
+
+            for future in concurrent.futures.as_completed(futures):
+                future.result()
 
     def start_zookeeper_nodes(self, zk_nodes):
-        for n in zk_nodes:
-            logging.info("Starting zookeeper node: %s", n)
-            subprocess_check_call(self.base_zookeeper_cmd + ["start", n])
+        def start_keeper(node):
+            logging.info("Starting zookeeper node: %s", node)
+            subprocess_check_call(self.base_zookeeper_cmd + ["start", node])
+            logging.info("Started zookeeper node: %s", node)
+
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=len(zk_nodes)
+        ) as executor:
+            futures = []
+            for n in zk_nodes:
+                futures += [executor.submit(start_keeper, n)]
+
+            for future in concurrent.futures.as_completed(futures):
+                future.result()
 
     def query_all_nodes(self, sql, *args, **kwargs):
         return {
