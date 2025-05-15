@@ -1196,7 +1196,10 @@ void ParallelReplicasReadingCoordinator::setReadCompletedCallback(ReadCompletedC
 
 bool ParallelReplicasReadingCoordinator::isReadingCompleted() const
 {
-    return pimpl->isReadingCompleted();
+    if (pimpl)
+        return pimpl->isReadingCompleted();
+
+    return false;
 }
 
 }
