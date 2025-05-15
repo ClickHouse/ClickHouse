@@ -1004,9 +1004,17 @@ std::shared_ptr<ISimpleTransform> IcebergMetadata::getDataTransformer(
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context_) const
 {
+    auto configuration_ptr = configuration.lock();
+
     auto iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info);
     return std::make_shared<IcebergBitmapPositionDeleteTransform>(
-        header, iceberg_object_info, object_storage, format_settings, context_);
+        header,
+        iceberg_object_info,
+        object_storage,
+        format_settings,
+        context_,
+        configuration_ptr->format,
+        configuration_ptr->compression_method);
 }
 
 }
