@@ -18,34 +18,6 @@ QueryConditionCache::QueryConditionCache(const String & cache_policy, size_t max
 {
 }
 
-inline bool QueryConditionCache::needUpdate(const std::shared_ptr<Entry> & entry, const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark) const
-{
-    // If no marks to process, we may only need to update the final mark
-    if (mark_ranges.empty()) {
-        // Only acquire the lock and check final mark when has_final_mark is true
-        std::shared_lock read_lock(entry->mutex);
-        // Return true (update needed) only if final mark needs to be set to false
-        return has_final_mark && entry->matching_marks[marks_count - 1];
-    }
-    else {
-        // Acquire shared lock for read access to the matching_marks vector
-        std::shared_lock read_lock(entry->mutex);
-
-        // Check if any mark within the ranges is still true
-        for (const auto & mark_range : mark_ranges) {
-            if (std::find(
-                entry->matching_marks.begin() + mark_range.begin,
-                entry->matching_marks.begin() + mark_range.end,
-                true) != (entry->matching_marks.begin() + mark_range.end)) {
-                    return true;  // Found at least one true mark in range, need update
-                }
-        }
-
-        // If all marks in ranges are already false, check if final mark needs update
-        return has_final_mark && entry->matching_marks[marks_count - 1];
-    }
-}
-
 void QueryConditionCache::write(
     const UUID & table_id, const String & part_name, size_t condition_hash,
     const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark)
@@ -55,11 +27,29 @@ void QueryConditionCache::write(
     auto load_func = [&](){ return std::make_shared<Entry>(marks_count); };
     auto [entry, inserted] = cache.getOrSet(key, load_func);
 
-    // Skip update if not needed - optimization to avoid unnecessary locks and updates
-    if (!needUpdate(entry, mark_ranges, marks_count, has_final_mark))
-        return;
+    /// Try to avoid acquiring the RW lock below (*) by early-ing out. Matters for systems with lots of cores.
+    {
+        std::shared_lock shared_lock(entry->mutex); /// cheap
 
-    std::lock_guard lock(entry->mutex);
+        bool need_not_update_marks = true;
+        for (const auto & mark_range : mark_ranges)
+        {
+            /// If the bits are already in the desired state (false), we don't need to update them.
+            need_not_update_marks = std::all_of(entry->matching_marks.begin() + mark_range.begin,
+                                                entry->matching_marks.begin() + mark_range.end,
+                                                [](auto b) { return b == false; });
+            if (!need_not_update_marks)
+                break;
+        }
+
+        /// Do we either have no final mark or final mark is already in the desired state?
+        bool need_not_update_final_mark = !has_final_mark || entry->matching_marks[marks_count - 1] == false;
+
+        if (need_not_update_marks && need_not_update_final_mark)
+            return;
+    }
+
+    std::lock_guard lock(entry->mutex); /// (*)
 
     chassert(marks_count == entry->matching_marks.size());
 
@@ -165,4 +155,5 @@ size_t QueryConditionCache::QueryConditionCacheEntryWeight::operator()(const Ent
     size_t dynamic_memory = (entry.matching_marks.capacity() + 7) / 8; /// round up to bytes.
     return dynamic_memory + sizeof(decltype(entry.matching_marks));
 }
+
 }

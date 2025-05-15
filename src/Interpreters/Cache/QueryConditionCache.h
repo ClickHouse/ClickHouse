@@ -13,6 +13,13 @@ namespace DB
 /// match the predicate and which marks may match the predicate. This allows to skip the scan if the
 /// same predicate is evaluated on the same data again. Note that this doesn't work the other way
 /// round: we can't tell if _all_ rows in the mark match the predicate.
+///
+/// Note: The cache may store more than the minimal number of matching marks.
+/// For example, assume a very selective predicate that matches just a single row in a single mark.
+/// One would expect that the cache records just a single mark as potentially matching:
+///     000000010000000000000000000
+/// But it is equally correct for the cache to store this: (it is just less efficient for pruning)
+///     000001111111110000000000000
 class QueryConditionCache
 {
 public:
@@ -40,14 +47,13 @@ private:
 
         /// (*) You might wonder why Entry has its own mutex considering that CacheBase locks internally already.
         ///     The reason is that ClickHouse scans ranges within the same part in parallel. The first scan creates
-        ///     and inserts a new Key + Entry into the cache, the 2nd ... Nth scan find the existing Key and update
+        ///     and inserts a new Key + Entry into the cache, the 2nd ... Nth scans find the existing Key and update
         ///     its Entry for the new ranges. This can only be done safely in a synchronized fashion.
 
         /// (**) About error handling: There could be an exception after the i-th scan and cache entries could
         ///     (theoretically) be left in a corrupt state. If we are not careful, future scans queries could then
         ///     skip too many ranges. To prevent this, it is important to initialize all marks of each entry as
         ///     non-matching. In case of an exception, future scans will then not skip them.
-
     };
 
     struct KeyHasher
@@ -60,20 +66,6 @@ private:
         size_t operator()(const Entry & entry) const;
     };
 
-    /**
-     * Check if we need to update the cache entry.
-     * This function determines whether a cache update is necessary by examining:
-     * 1. Whether the mark ranges are empty
-     * 2. Whether marks in specified ranges are already set to false
-     * 3. Whether the final mark (if applicable) is already set correctly
-     *
-     * @param entry The cache entry to check
-     * @param mark_ranges The ranges of marks to potentially update
-     * @param marks_count Total number of marks in the entry
-     * @param has_final_mark Flag indicating if the final mark needs special handling
-     * @return true if an update is needed, false if we can skip the update
-     */
-    inline bool needUpdate(const std::shared_ptr<Entry> & entry, const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark) const;
 
 public:
     using Cache = CacheBase<Key, Entry, KeyHasher, QueryConditionCacheEntryWeight>;
