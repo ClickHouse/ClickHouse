@@ -20,11 +20,11 @@ namespace
  * max_len = (90 - 1 (HRP) - 1 (sep) - 6 (checksum) - 1 (witness byte)) * 5 // 8
  * max_len = 405 bits or 50 (8-bit) bytes // round up to 55 just in case
  */
-static constexpr size_t max_address_len = 90;
-static constexpr size_t max_data_len = 55;
-static constexpr size_t max_hrp_len = 83; // Note: if we only support segwit addresses, this can be changed to 2
+constexpr size_t max_address_len = 90;
+constexpr size_t max_data_len = 55;
+constexpr size_t max_hrp_len = 83; // Note: if we only support segwit addresses, this can be changed to 2
 
-typedef std::vector<uint8_t> bech32_data;
+using bech32_data = std::vector<uint8_t>;
 
 /** Convert from one power-of-2 number base to another. */
 template <int frombits, int tobits, bool pad>
@@ -34,9 +34,8 @@ bool convertbits(bech32_data & out, const bech32_data & in)
     int bits = 0;
     const int maxv = (1 << tobits) - 1;
     const int max_acc = (1 << (frombits + tobits - 1)) - 1;
-    for (size_t i = 0; i < in.size(); ++i)
+    for (int value : in)
     {
-        int value = in[i];
         acc = ((acc << frombits) | value) & max_acc;
         bits += frombits;
         while (bits >= tobits)
