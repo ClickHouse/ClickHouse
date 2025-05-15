@@ -5215,37 +5215,53 @@ void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, Identif
 static NameSet getColumnsFromTableExpression(const QueryTreeNodePtr & table_expression)
 {
     NameSet existing_columns;
+    switch (table_expression->getNodeType())
+    {
+        case QueryTreeNodeType::TABLE: {
+            const auto * table_node = table_expression->as<TableNode>();
+            chassert(table_node);
 
-    if (const auto * table_node = table_expression->as<TableNode>())
-    {
-        auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
-        for (const auto & column : table_node->getStorageSnapshot()->getColumns(get_column_options))
-            existing_columns.insert(column.name);
+            auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+            for (const auto & column : table_node->getStorageSnapshot()->getColumns(get_column_options))
+                existing_columns.insert(column.name);
+
+            return existing_columns;
+        }
+        case QueryTreeNodeType::TABLE_FUNCTION: {
+            const auto * table_function_node = table_expression->as<TableFunctionNode>();
+            chassert(table_function_node);
+
+            auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+            for (const auto & column : table_function_node->getStorageSnapshot()->getColumns(get_column_options))
+                existing_columns.insert(column.name);
+
+            return existing_columns;
+        }
+        case QueryTreeNodeType::QUERY: {
+            const auto * query_node = table_expression->as<QueryNode>();
+            chassert(query_node);
+
+            for (const auto & column : query_node->getProjectionColumns())
+                existing_columns.insert(column.name);
+
+            return existing_columns;
+        }
+        case QueryTreeNodeType::UNION: {
+            const auto * union_node = table_expression->as<UnionNode>();
+            chassert(union_node);
+
+            for (const auto & column : union_node->computeProjectionColumns())
+                existing_columns.insert(column.name);
+
+            return existing_columns;
+        }
+        default:
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Expected TableNode, TableFunctionNode, QueryNode or UnionNode, got {}: {}",
+                table_expression->getNodeTypeName(),
+                table_expression->formatASTForErrorMessage());
     }
-    else if (const auto * table_function_node = table_expression->as<TableFunctionNode>())
-    {
-        auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
-        for (const auto & column : table_function_node->getStorageSnapshot()->getColumns(get_column_options))
-            existing_columns.insert(column.name);
-    }
-    else if (const auto * query_node = table_expression->as<QueryNode>())
-    {
-        for (const auto & column : query_node->getProjectionColumns())
-            existing_columns.insert(column.name);
-    }
-    else if (const auto * union_node = table_expression->as<UnionNode>())
-    {
-        for (const auto & column : union_node->computeProjectionColumns())
-            existing_columns.insert(column.name);
-    }
-    else
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Expected TableNode, TableFunctionNode, QueryNode or UnionNode, got {}: {}",
-            table_expression->getNodeTypeName(),
-            table_expression->formatASTForErrorMessage());
-    }
-    return existing_columns;
 }
 
 /// Resolve join node in scope
