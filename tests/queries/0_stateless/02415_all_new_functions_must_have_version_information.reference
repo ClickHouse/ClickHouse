@@ -118,11 +118,9 @@ arrayDistinct
 arrayDotProduct
 arrayElement
 arrayElementOrNull
-arrayEnumerate
 arrayEnumerateDense
 arrayEnumerateDenseRanked
 arrayEnumerateUniq
-arrayEnumerateUniqRanked
 arrayExists
 arrayFill
 arrayFilter
@@ -145,11 +143,7 @@ arrayMin
 arrayPartialReverseSort
 arrayPartialShuffle
 arrayPartialSort
-arrayPopBack
-arrayPopFront
 arrayProduct
-arrayPushBack
-arrayPushFront
 arrayROCAUC
 arrayRandomSample
 arrayReduce
@@ -185,6 +179,8 @@ atan
 atan2
 atanh
 bar
+base32Decode
+base32Encode
 base58Decode
 base58Encode
 basename
@@ -255,7 +251,6 @@ cos
 cosh
 cosineDistance
 countDigits
-countEqual
 countMatches
 countMatchesCaseInsensitive
 countSubstrings
@@ -468,14 +463,11 @@ greater
 greaterOrEquals
 greatest
 has
-hasAll
-hasAny
 hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
 hasSubsequenceCaseInsensitiveUTF8
 hasSubsequenceUTF8
-hasSubstr
 hasThreadFuzzer
 hasToken
 hasTokenCaseInsensitive
@@ -498,8 +490,6 @@ ilike
 in
 inIgnoreSet
 indexHint
-indexOf
-indexOfAssumeSorted
 initcap
 initcapUTF8
 initialQueryID
@@ -1092,6 +1082,7 @@ trimBoth
 trimLeft
 trimRight
 trunc
+tryBase32Decode
 tryBase58Decode
 tumble
 tumbleEnd
