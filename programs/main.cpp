@@ -307,5 +307,7 @@ int main(int argc_, char ** argv_)
     dumpCoverage();
 #endif
 
+    DB::OpenSSLInitializer::cleanup();
+
     return exit_code;
 }
