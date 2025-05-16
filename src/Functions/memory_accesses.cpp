@@ -20,6 +20,7 @@ namespace DB
 
 namespace
 {
+// TODO: make only one counter value
 
 /** If ClickHouse is build with memory access tracing, returns information about memory accesses
   * in form of a tuple (access_type, thread_id, address, return_address)
