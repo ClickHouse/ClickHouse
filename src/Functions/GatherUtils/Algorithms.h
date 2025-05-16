@@ -72,13 +72,22 @@ inline ALWAYS_INLINE void writeSlice(const StringSource::Slice & slice, FixedStr
 /// Assuming same types of underlying columns for slice and sink if (ArraySlice, ArraySink) is (GenericArraySlice, GenericArraySink).
 inline ALWAYS_INLINE void writeSlice(const GenericArraySlice & slice, GenericArraySink & sink)
 {
-    if (slice.elements->structureEquals(sink.elements))
+    const bool can_insert =
+        // Check same type
+        slice.elements->structureEquals(sink.elements)
+        // insertRangeFrom casts numeric types if they are different, so it can insert them.
+        || (sink.elements.lowCardinality() && slice.elements->lowCardinality() && sink.elements.isNumeric() && slice.elements->isNumeric()
+            && slice.elements->isNumeric());
+
+    if (can_insert)
     {
         sink.elements.insertRangeFrom(*slice.elements, slice.begin, slice.size);
         sink.current_offset += slice.size;
+        return;
     }
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Function writeSlice expects same column types for GenericArraySlice and GenericArraySink.");
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "Function writeSlice expects same column types or numeric lowCardinality for GenericArraySlice and GenericArraySink.");
 }
 
 template <typename T>
