@@ -21,7 +21,7 @@ INSERT INTO 03409_users VALUES (8888, 'Alice', 50, 50, 1);
 
 OPTIMIZE TABLE 03409_users;
 
-SELECT * FROM 03409_users;
+SELECT * FROM 03409_users ORDER BY ALL;
 
 SELECT 'Test with parameters';
 
@@ -46,4 +46,4 @@ INSERT INTO 03409_users VALUES (8888, 'Alice', 50, 50, 1);
 
 OPTIMIZE TABLE 03409_users;
 
-SELECT * FROM 03409_users;
+SELECT * FROM 03409_users ORDER BY ALL;
