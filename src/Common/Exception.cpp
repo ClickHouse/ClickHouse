@@ -321,6 +321,9 @@ static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string 
     {
         e.markAsLogged();
     }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+    }
 }
 
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message, LogsLevel level)
