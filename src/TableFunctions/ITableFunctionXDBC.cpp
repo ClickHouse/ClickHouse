@@ -121,7 +121,7 @@ void ITableFunctionXDBC::parseArguments(const ASTPtr & ast_function, ContextPtr 
 
     ASTs & args = args_func.arguments->children;
 
-    if (args.size() < 1 && args.size() > 3)
+    if (args.empty() || args.size() > 3)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Table function '{0}' requires 1, 2 or 3 arguments: {0}(named_collection) or {0}('DSN', table) or {0}('DSN', schema, table)", getName());
 
