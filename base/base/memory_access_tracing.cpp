@@ -5,6 +5,8 @@
 #include <pthread.h>
 #include <cstdio>
 #include <iostream>
+#include <mutex>
+#include <sstream>
 #include <vector>
 #include <unistd.h>
 
@@ -13,19 +15,24 @@
 #if defined(MEMORY_ACCESS_TRACING)
 
 
-int ENABLE_TRACE = 0; // by default 0. bug with unlink
+int ENABLE_TRACE = 0; // by default 0. If want 1, need to disbale tracing in DiskLocal::removeFileIfExists and reopen file.
 int FAULT = 0;
-static int trace_fd = -1;
+
+std::vector<int> v;
+
+int trace_fd = -1;
 
 namespace
 {
-    uint64_t memory_access_counter = 0;
+    std::atomic<uint64_t> memory_access_counter = 0;
 }
 
 
 
 #define NO_SANITIZE __attribute__((no_sanitize("all")))
 
+
+// For case with ENABLE_TRACE = 1 by default
 
 // NO_SANITIZE
 // __attribute__((constructor))
@@ -58,6 +65,9 @@ void resetMemoryAccessCount()
     memory_access_counter = 0;
 }
 
+std::atomic<int> atomic = 0;
+std::mutex mutex1;
+
 extern "C"
 {
 
@@ -71,7 +81,8 @@ extern "C"
     void __sanitizer_cov_load1(uint8_t* addr) // нет проблем
     {
         if (ENABLE_TRACE == 1) {
-            ++memory_access_counter;
+            // ++memory_access_counter;
+            memory_access_counter.fetch_add(1);
             char buffer[128];
             int len = snprintf(buffer, sizeof(buffer), "l1\t%lu\t%lu\t%lu\n", 
                             reinterpret_cast<uintptr_t>(addr), pthread_self(), reinterpret_cast<uintptr_t>(__builtin_return_address(0)));
@@ -83,7 +94,8 @@ extern "C"
     void __sanitizer_cov_load2(uint16_t * addr) // нет проблем
     {
         if (ENABLE_TRACE == 1) {
-            ++memory_access_counter;
+            // ++memory_access_counter;
+            memory_access_counter.fetch_add(1);
             char buffer[128];
             int len = snprintf(buffer, sizeof(buffer), "l2\t%lu\t%lu\t%lu\n", 
                             reinterpret_cast<uintptr_t>(addr), pthread_self(), reinterpret_cast<uintptr_t>(__builtin_return_address(0)));
@@ -95,7 +107,8 @@ extern "C"
     void __sanitizer_cov_load4(uint32_t * addr) // проблема
     {
         if (ENABLE_TRACE == 1) {
-            ++memory_access_counter;
+            // ++memory_access_counter;
+            memory_access_counter.fetch_add(1);
             char buffer[64];
             // experimental
             if (FAULT) {
@@ -104,6 +117,7 @@ extern "C"
             int len = snprintf(buffer, sizeof(buffer), "l4\t%lu\t%lu\t%lu\n", 
                             reinterpret_cast<uintptr_t>(addr), pthread_self(), reinterpret_cast<uintptr_t>(__builtin_return_address(0)));
             write(trace_fd, buffer, len);
+            atomic.fetch_add(1);
         }
     }
 
@@ -111,7 +125,8 @@ extern "C"
     void __sanitizer_cov_load8(uint64_t * addr)
     {
         if (ENABLE_TRACE == 1) {
-            ++memory_access_counter;
+            // ++memory_access_counter;
+            memory_access_counter.fetch_add(1);
             char buffer[128];
             int len = snprintf(buffer, sizeof(buffer), "l8\t%lu\t%lu\t%lu\n", 
                             reinterpret_cast<uintptr_t>(addr), pthread_self(), reinterpret_cast<uintptr_t>(__builtin_return_address(0)));
@@ -123,7 +138,8 @@ extern "C"
     void __sanitizer_cov_load16(__int128 * addr)
     {
         if (ENABLE_TRACE == 1) {
-            ++memory_access_counter;
+            // ++memory_access_counter;
+            memory_access_counter.fetch_add(1);
             char buffer[128];
             int len = snprintf(buffer, sizeof(buffer), "l16\t%lu\t%lu\t%lu\n", 
                             reinterpret_cast<uintptr_t>(addr), pthread_self(), reinterpret_cast<uintptr_t>(__builtin_return_address(0)));
@@ -135,7 +151,8 @@ extern "C"
     void __sanitizer_cov_store1(uint8_t * addr) // нет проблем
     {
         if (ENABLE_TRACE == 1) {
-            ++memory_access_counter;
+            // ++memory_access_counter;
+            memory_access_counter.fetch_add(1);
             char buffer[128];
             int len = snprintf(buffer, sizeof(buffer), "s1\t%lu\t%lu\t%lu\n", 
                             reinterpret_cast<uintptr_t>(addr), pthread_self(), reinterpret_cast<uintptr_t>(__builtin_return_address(0)));
@@ -147,7 +164,8 @@ extern "C"
     void __sanitizer_cov_store2(uint16_t * addr) // нет проблем
     {
         if (ENABLE_TRACE == 1) {
-            ++memory_access_counter;
+            // ++memory_access_counter;
+            memory_access_counter.fetch_add(1);
             char buffer[128];
             int len = snprintf(buffer, sizeof(buffer), "s2\t%lu\t%lu\t%lu\n", 
                             reinterpret_cast<uintptr_t>(addr), pthread_self(), reinterpret_cast<uintptr_t>(__builtin_return_address(0)));
@@ -159,7 +177,8 @@ extern "C"
     void __sanitizer_cov_store4(uint32_t * addr) // нет проблем
     {
         if (ENABLE_TRACE == 1) {
-            ++memory_access_counter;
+            // ++memory_access_counter;
+            memory_access_counter.fetch_add(1);
             char buffer[128];
             int len = snprintf(buffer, sizeof(buffer), "s4\t%lu\t%lu\t%lu\n", 
                             reinterpret_cast<uintptr_t>(addr), pthread_self(), reinterpret_cast<uintptr_t>(__builtin_return_address(0)));
@@ -171,7 +190,8 @@ extern "C"
     void __sanitizer_cov_store8(uint64_t * addr) // нет проблем
     {
         if (ENABLE_TRACE == 1) {
-            ++memory_access_counter;
+            // ++memory_access_counter;
+            memory_access_counter.fetch_add(1);
             char buffer[128];
             int len = snprintf(buffer, sizeof(buffer), "s8\t%lu\t%lu\t%lu\n", 
                             reinterpret_cast<uintptr_t>(addr), pthread_self(), reinterpret_cast<uintptr_t>(__builtin_return_address(0)));
@@ -183,7 +203,8 @@ extern "C"
     void __sanitizer_cov_store16(__int128 * addr) // нет проблем
     {
         if (ENABLE_TRACE == 1) {
-            ++memory_access_counter;
+            // ++memory_access_counter;
+            memory_access_counter.fetch_add(1);
             char buffer[128];
             int len = snprintf(buffer, sizeof(buffer), "s16\t%lu\t%lu\t%lu\n", 
                             reinterpret_cast<uintptr_t>(addr), pthread_self(), reinterpret_cast<uintptr_t>(__builtin_return_address(0)));
