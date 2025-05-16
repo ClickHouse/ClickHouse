@@ -119,7 +119,7 @@ def dolor_cleanup():
         client.process.kill()
     if modified_server_settings:
         try:
-            os.unlink(server_settings)
+            os.unlink(server_settings.name)
         except FileNotFoundError:
             pass
     try:
