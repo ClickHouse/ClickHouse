@@ -34,6 +34,8 @@
 
 #include <Poco/Logger.h>
 
+#include "AggregateFunctions/AggregateFunctionGroupBitmapData.h"
+
 namespace DB
 {
 namespace Setting
@@ -49,6 +51,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
@@ -163,24 +166,6 @@ StorageObjectStorage::StorageObjectStorage(
 
     if (columns_in_table_or_function_definition.empty())
     {
-        /// What does this mean?
-        /// It means it is not create table and it is not a table function with schema specified
-        /// Therefore, we need to infer the schema from existing files in the storage
-        /// If we are using hive path style, we also need to extract the partition columns from the path
-        ///
-        /// It can be one of the following:
-        ///     1. Table function
-        ///
-        ///     What to do for each?
-        ///
-        ///     1. If `use_hive_partitioning=1`, virtual.
-        ///
-        /// Metadata.columns shall include all columns (file and path ones)
-        /// File_columns shall include:
-        ///     1. All columns in case `partition_columns_in_data_file=1`
-        ///     2. All columns except partition columns otherwise
-        ///
-        ///
         if (context->getSettingsRef()[Setting::use_hive_partitioning])
         {
             hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(columns, sample_path, format_settings, context);
@@ -191,58 +176,54 @@ StorageObjectStorage::StorageObjectStorage(
                     columns.add({name, type});
                 }
             }
-
-            // todo arthur what about file_columns? Should we respect the setting or infer from the file? For now, let's assume it is in the file
             file_columns = columns;
         }
     }
     else
     {
-        /// Schema is specified, no need to infer it.
-        /// It can be one of the following:
-        ///     1. Table engine with partition by
-        ///     2. Insert table function with partition by
-        ///     3. Table engine without partition by
-        ///     4. Table function
-        ///
-        ///
-        ///     What to do for each?
-        ///
-        ///     1/2. Parse pcolumns  from expression, file_columns depends on partition_columns_in_data_file
-        ///     3/4. If `use_hive_partitioning=1`, parse from the path, file columns will depend on partition_columns_in_data_file?
-
-        // 1/2
-        if (configuration->partition_strategy && configuration->partition_strategy_name == "hive")
+        if (configuration->partition_strategy)
         {
             hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
         }
-        // 3/4
         else if (context->getSettingsRef()[Setting::use_hive_partitioning])
         {
+            // todo arthur if it is insert or create table, we shouldn't do this, it makes no sense.
+
             hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(columns, sample_path, format_settings, context);
             // todo arthur perhaps an assertion that `input_columns` contain all columns found in `hive_partition_columns_to_read_from_file_path`?
         }
+    }
 
-        if (configuration->partition_columns_in_data_file)
+    if (configuration->partition_columns_in_data_file)
+    {
+        file_columns = columns;
+    }
+    else
+    {
+        std::unordered_set<String> hive_partition_columns_to_read_from_file_path_set;
+
+        for (const auto & [name, type] : hive_partition_columns_to_read_from_file_path)
         {
-            file_columns = columns;
+            hive_partition_columns_to_read_from_file_path_set.insert(name);
         }
-        else
+
+        for (const auto & [name, type] : columns.getAllPhysical())
         {
-            std::unordered_set<String> hive_partition_columns_to_read_from_file_path_set;
-
-            for (const auto & [name, type] : hive_partition_columns_to_read_from_file_path)
+            if (!hive_partition_columns_to_read_from_file_path_set.contains(name))
             {
-                hive_partition_columns_to_read_from_file_path_set.insert(name);
+                file_columns.add({name, type});
             }
+        }
+    }
 
-            for (const auto & [name, type] : columns.getAllPhysical())
-            {
-                if (!hive_partition_columns_to_read_from_file_path_set.contains(name))
-                {
-                    file_columns.add({name, type});
-                }
-            }
+    // todo arthur in theory, I wouldn't need to check for empty
+    if (!columns.empty())
+    {
+        if (file_columns.empty())
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "File without physical columns is not supported. Give it a try with `use_hive_partitioning=0` and or `partition_strategy=wildcard`. File {}",
+                sample_path);
         }
     }
 

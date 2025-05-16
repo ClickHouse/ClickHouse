@@ -199,11 +199,12 @@ IStorageURLBase::IStorageURLBase(
 
     auto & storage_columns = storage_metadata.columns;
 
-    if (columns_.empty())
+    if (context_->getSettingsRef()[Setting::use_hive_partitioning])
     {
-        if (context_->getSettingsRef()[Setting::use_hive_partitioning])
+        hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(storage_columns, getSampleURI(uri, context_), format_settings, context_);
+
+        if (columns_.empty())
         {
-            hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(storage_columns, getSampleURI(uri, context_), format_settings, context_);
             for (const auto & [name, type]: hive_partition_columns_to_read_from_file_path)
             {
                 if (!storage_columns.has(name))
@@ -211,39 +212,11 @@ IStorageURLBase::IStorageURLBase(
                     storage_columns.add({name, type});
                 }
             }
-
-            // todo arthur what about file_columns? Should we respect the setting or infer from the file? For now, let's assume it is in the file
-            file_columns = storage_columns;
         }
     }
-    else if (context_->getSettingsRef()[Setting::use_hive_partitioning])
-    {
-        hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(storage_columns, getSampleURI(uri, context_), format_settings, context_);
-        // todo arthur perhaps an assertion that `input_columns` contain all columns found in `hive_partition_columns_to_read_from_file_path`?
 
-        file_columns = storage_columns;
-        // if (true)
-        // {
-        //     file_columns = storage_columns;
-        // }
-        // else
-        // {
-        //     std::unordered_set<String> hive_partition_columns_to_read_from_file_path_set;
-        //
-        //     for (const auto & [name, type] : hive_partition_columns_to_read_from_file_path)
-        //     {
-        //         hive_partition_columns_to_read_from_file_path_set.insert(name);
-        //     }
-        //
-        //     for (const auto & [name, type] : storage_columns.getAllPhysical())
-        //     {
-        //         if (!hive_partition_columns_to_read_from_file_path_set.contains(name))
-        //         {
-        //             file_columns.add({name, type});
-        //         }
-        //     }
-        // }
-    }
+    // todo arthur change once argument is properly implemented
+    file_columns = storage_columns;
 
     // todo arthur it is needed
     auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns);
