@@ -106,7 +106,6 @@ and
 appendTrailingCharIfAbsent
 array
 arrayAUCPR
-arrayAll
 arrayAvg
 arrayConcat
 arrayCount
@@ -119,7 +118,6 @@ arrayElementOrNull
 arrayEnumerateDense
 arrayEnumerateDenseRanked
 arrayEnumerateUniq
-arrayExists
 arrayFill
 arrayFilter
 arrayFirst
@@ -137,13 +135,11 @@ arrayProduct
 arrayROCAUC
 arrayRandomSample
 arrayReverseFill
-arrayReverseSplit
 arrayRotateLeft
 arrayRotateRight
 arrayShiftLeft
 arrayShiftRight
 arraySimilarity
-arraySplit
 arrayStringConcat
 arraySum
 arrayWithConstant

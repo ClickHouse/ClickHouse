@@ -90,7 +90,6 @@ and
 appendTrailingCharIfAbsent
 array
 arrayAUCPR
-arrayAll
 arrayAvg
 arrayConcat
 arrayCount
@@ -101,15 +100,10 @@ arrayDotProduct
 arrayEnumerateDense
 arrayEnumerateDenseRanked
 arrayEnumerateUniq
-arrayExists
 arrayFill
 arrayFilter
-arrayFirst
 arrayFirstIndex
-arrayFirstOrNull
-arrayLast
 arrayLastIndex
-arrayLastOrNull
 arrayMap
 arrayMax
 arrayMin
@@ -117,8 +111,6 @@ arrayProduct
 arrayROCAUC
 arrayRandomSample
 arrayReverseFill
-arrayReverseSplit
-arraySplit
 arrayStringConcat
 arraySum
 arrayWithConstant
