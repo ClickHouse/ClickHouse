@@ -421,8 +421,7 @@ struct ConverterJSON
         stash.clear();
         stash.reserve(count);
 
-        auto internal_type = data_type ? data_type : std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
-        auto serialization = internal_type->getDefaultSerialization();
+        auto serialization = data_type->getDefaultSerialization();
 
         for (size_t i = 0; i < count; ++i)
         {
