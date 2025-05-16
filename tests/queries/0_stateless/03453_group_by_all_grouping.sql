@@ -1,3 +1,5 @@
+SET allow_experimental_analyzer = 1;
+
 -- Basic functionality with GROUPING and GROUP BY ALL WITH ROLLUP
 SELECT l.number, sum(r.number), grouping(l.number)
 FROM numbers(1) l JOIN numbers(2) r ON l.number < r.number
