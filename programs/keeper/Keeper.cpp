@@ -579,18 +579,22 @@ try
         getKeeperPath(config()),
         std::move(unused_cache),
         unused_event,
-        [&](ConfigurationPtr config, bool /* initial_loading */)
+        [&](ConfigurationPtr loaded_config, bool /* initial_loading */)
         {
-            updateLevels(*config, logger());
+            auto previous_config = config().find("default");
+            chassert(previous_config);
+            config().removeConfiguration(previous_config);
+            config().add(loaded_config, "default", PRIO_DEFAULT, false);
 
-            updateMemorySoftLimitInConfig(*config);
+            updateLevels(config(), logger());
+            updateMemorySoftLimitInConfig(config());
 
-            if (config->has("keeper_server"))
-                global_context->updateKeeperConfiguration(*config);
+            if (config().has("keeper_server"))
+                global_context->updateKeeperConfiguration(config());
 
 #if USE_SSL
-            CertificateReloader::instance().tryLoad(*config);
-            CertificateReloader::instance().tryLoadClient(*config);
+            CertificateReloader::instance().tryLoad(config());
+            CertificateReloader::instance().tryLoadClient(config());
 #endif
         });
 
