@@ -277,7 +277,7 @@ try
 {
     if (logged != nullptr && !logged->load(std::memory_order_relaxed) && isErrorCodeImportant() && isLoggingEnabled())
     {
-        LOG_ERROR(getLogger("~Exception"), "{}", getExceptionMessage(*this, /*with_stacktrace=*/ true));
+        LOG_ERROR(getLogger("ForcedCriticalErrorsLogger"), "{}", getExceptionMessage(*this, /*with_stacktrace=*/ true));
     }
 }
 catch (...) // NOLINT(bugprone-empty-catch)
