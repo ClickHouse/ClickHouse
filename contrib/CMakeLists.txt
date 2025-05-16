@@ -249,8 +249,11 @@ add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf,
 
 add_contrib (jwt-cpp-cmake jwt-cpp)
 
-add_contrib (sha3iuf-cmake SHA3IUF)
+add_contrib (wasmedge-cmake wasmedge)
 
+add_contrib (wasmtime-cpp-cmake wasmtime wasmtime-cpp)
+
+add_contrib (sha3iuf-cmake SHA3IUF)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

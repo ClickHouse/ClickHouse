@@ -33,3 +33,6 @@ target_link_libraries (two_level_hash_map PRIVATE dbms clickhouse_common_io clic
 
 clickhouse_add_executable (jit_example jit_example.cpp)
 target_link_libraries (jit_example PRIVATE dbms clickhouse_functions)
+
+clickhouse_add_executable (wasm_play wasm_play.cpp)
+target_link_libraries (wasm_play PRIVATE dbms clickhouse_common_io clickhouse_new_delete clickhouse_malloc clickhouse_functions)
