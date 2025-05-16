@@ -95,7 +95,7 @@ for i in range(0, len(args.replica_values)):
                                         user_configs = [args.user_config] if args.user_config is not None else [],
                                         macros={"replica": args.replica_values[i], "shard": args.shard_values[i]}))
 cluster.start()
-logger.info(f"Starting cluster with {len(servers)} server(s)")
+logger.info(f"Starting cluster with {len(servers)} server(s) and server binary {current_server} ")
 servers[len(servers) - 1].wait_start(8)
 logger.info(f"First server running on host {servers[0].ip_address}, port 9000")
 
@@ -157,7 +157,7 @@ while True:
     next_pick.stop_clickhouse(stop_wait_sec = 10, kill = kill_server)
     # Replace server binary, using a new temporary symlink, then replace the old one
     if len(args.server_binaries) > 1 and random.randint(1, 100) <= args.change_server_version_prob:
-        if len(args.server_binaries) == 2:
+        if len(servers) == 1 and len(args.server_binaries) == 2:
             current_server = args.server_binaries[0] if current_server == args.server_binaries[1] else args.server_binaries[1]
         else:
             current_server = random.choice(args.server_binaries)
