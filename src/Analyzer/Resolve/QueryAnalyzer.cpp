@@ -151,7 +151,6 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int UNEXPECTED_EXPRESSION;
     extern const int INVALID_IDENTIFIER;
-    extern const int UNKNOWN_TYPE;
     extern const int BAD_TYPE_OF_FIELD;
 }
 
@@ -2795,7 +2794,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
     auto function_name = function_node_ptr->getFunctionName();
 
-    if (function_name == "compose" && !resolve_compose_function) {
+    if (function_name == "compose" && !resolve_compose_function)
+    {
         return {PROJECTION_NAME_PLACEHOLDER};
     }
 
@@ -2982,7 +2982,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     /// Convert identifiers inside compose function into lambda functions
-    if (function_name == "compose") {
+    if (function_name == "compose")
+    {
         auto& subnodes = function_node_ptr->getArguments().getNodes();
         if (subnodes.size() != 2)
         {
@@ -2992,7 +2993,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 scope.scope_node->formatASTForErrorMessage());
         }
 
-        for (size_t i = 0; i < 2; ++i) {
+        for (size_t i = 0; i < 2; ++i)
+        {
             if (auto* identifier_argument = subnodes[i]->as<IdentifierNode>())
             {
                 const auto & subfunction_name = identifier_argument->getIdentifier().getFullName();
@@ -3009,7 +3011,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 size_t subargument_count = subfunction->getNumberOfArguments();
                 Names subfunction_args;
                 auto subfunction_node = std::make_shared<FunctionNode>(subfunction_name);
-                for (size_t j = 1; j <= subargument_count; ++j) {
+                for (size_t j = 1; j <= subargument_count; ++j)
+                {
                     const std::string subidentifier_name = "_" + std::to_string(j);
                     auto subidentifier = Identifier(subidentifier_name);
                     subfunction_node->getArguments().getNodes().push_back(
@@ -3568,7 +3571,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         {
             auto & argument = function_arguments[compose_function_index];
             auto compose_argument_type = argument->getNodeType();
-            switch (compose_argument_type) {
+            switch (compose_argument_type)
+            {
                 case QueryTreeNodeType::LAMBDA:
                 {
                     ProjectionNames lambda_projection_names;
@@ -3677,7 +3681,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
                     const auto compose_resolved_type = compose_to_resolve_typed.getResultType();
                     const auto * compose_resolved_type_ptr = typeid_cast<const DataTypeFunction *>(compose_resolved_type.get());
-                    if (!compose_resolved_type_ptr) {
+                    if (!compose_resolved_type_ptr)
+                    {
                         throw Exception(
                             ErrorCodes::LOGICAL_ERROR,
                             "Result type of compose function should be DataTypeFunction, got {}",

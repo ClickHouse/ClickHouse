@@ -91,7 +91,7 @@ private:
 };
 
 
-/// Renumerates placeholder arguments in function for future convertion to lambda
+/// Renumerates placeholder arguments in function for future conversion to lambda
 void renumeratePlaceholders(ASTFunction & ast);
 
 template <typename... Args>

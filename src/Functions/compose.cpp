@@ -19,7 +19,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TYPE_MISMATCH;
-    extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -37,7 +36,7 @@ public:
 
     String getName() const override { return "compose"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type */, size_t /*input_rows_count*/ ) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         ColumnWithTypeAndName lambda_res;
         {
@@ -124,7 +123,7 @@ public:
         {
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "compose function accepts 2 arguments, got {}!",
+                "compose function accepts 2 arguments, got {}",
                 arguments.size());
         }
 
@@ -135,7 +134,7 @@ public:
         {
             throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Both arguments in compose function should be lambdas or compose functions!"
+                    "Both arguments in compose function should be lambdas or compose functions"
             );
         }
 
@@ -143,11 +142,12 @@ public:
         {
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Expected 1 argument in the right function inside compose, got {}!",
+                "Expected 1 argument in the right function inside compose, got {}",
                 g_type->getArgumentTypes().size());
         }
 
-        if (!f_type->getReturnType()->equals(*g_type->getArgumentTypes()[0])) {
+        if (!f_type->getReturnType()->equals(*g_type->getArgumentTypes()[0]))
+        {
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Output type of first function must be compatible with input type of second function");
         }
 
@@ -169,7 +169,7 @@ public:
         {
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "compose function accepts 2 arguments, got {}!",
+                "compose function accepts 2 arguments, got {}",
                 arguments.size());
         }
 

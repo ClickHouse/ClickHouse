@@ -879,7 +879,7 @@ void renumeratePlaceholders(ASTFunction & ast)
         {
             throw Exception(
                 ErrorCodes::UNKNOWN_IDENTIFIER,
-                "Placeholder with too big number ({}) occured in expression.",
+                "Placeholder with too big number ({}) occurred in expression.",
                 *named_placeholders.begin()
             );
         }
