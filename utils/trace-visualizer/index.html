@@ -7,6 +7,23 @@
     <title>Trace Gantt</title>
     <link rel="stylesheet" href="css/bootstrap.min.css">
     <link rel="stylesheet" href="css/d3-gantt.css">
+    <style>
+        #hourglass
+        {
+            display: none;
+            font-size: 110%;
+            color: #888;
+            animation: hourglass-animation 2s linear infinite;
+        }
+
+        @keyframes hourglass-animation {
+            0% { transform: none; }
+            25% { transform: rotate(180deg); }
+            50% { transform: rotate(180deg); }
+            75% { transform: rotate(360deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
 </head>
 <body>
     <script language="javascript" type="text/javascript" src="js/jquery.min.js"></script>
@@ -14,6 +31,7 @@
     <script language="javascript" type="text/javascript" src="js/d3.v4.min.js"></script>
     <script language="javascript" type="text/javascript" src="js/d3-tip-0.8.0-alpha.1.js"></script>
     <script language="javascript" type="text/javascript" src="js/d3-gantt.js"></script>
+    <script language="javascript" type="text/javascript" src="js/query-clickhouse.js"></script>
 
     <nav class="navbar navbar-default">
         <div class="container-fluid">
@@ -36,16 +54,77 @@
         <div class="modal-dialog" role="document">
             <div class="modal-content">
                 <div class="modal-header">
-                    <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span
-                            aria-hidden="true">&times;</span></button>
-                    <h4 class="modal-title" id="loadModalLabel">Load Trace JSON</h4>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                    <h4 class="modal-title" id="loadModalLabel">Load Data</h4>
                 </div>
                 <div class="modal-body">
-                    <input type="file" id="loadFiles" value="Load" /><br />
+                    <!-- Nav tabs -->
+                    <ul class="nav nav-tabs" role="tablist">
+                        <li class="active">
+                            <a href="#tabFileUpload" role="tab" data-toggle="tab">Upload JSON</a>
+                        </li>
+                        <li>
+                            <a href="#tabClickhouse" role="tab" data-toggle="tab">From ClickHouse</a>
+                        </li>
+                    </ul>
+    
+                    <!-- Tab panes -->
+                    <div class="tab-content" style="margin-top: 15px;">
+                        <!-- File Upload Tab -->
+                        <div class="tab-pane active" id="tabFileUpload">
+                            <input type="file" id="loadFiles" value="Load" />
+                        </div>
+    
+                        <!-- ClickHouse Query Tab -->
+                        <div class="tab-pane" id="tabClickhouse">
+                            <form id="params">
+                                <div id="connection-params" style="margin-bottom: 10px;">
+                                    <input spellcheck="false" id="url" type="text" value="http://localhost:8123" placeholder="URL" class="form-control" style="margin-bottom: 5px;" />
+                                    <input spellcheck="false" id="user" type="text" value="" placeholder="user" class="form-control" style="margin-bottom: 5px;" />
+                                    <input spellcheck="false" id="password" type="password" placeholder="password" value="" class="form-control" style="margin-bottom: 5px;" />
+                                </div>
+                                <textarea spellcheck="false" id="query" rows="26" class="form-control" placeholder="SQL Query">WITH '__PUT_YOUR_QUERY_ID_HERE__' AS my_query_id
+SELECT
+    ('thread #' || leftPad(attribute['clickhouse.thread_id'], 6, '0')) AS group,
+    replaceRegexpOne(operation_name, '(.*)_.*', '\\1') AS operation_name,
+    start_time_us,
+    finish_time_us,
+    sipHash64(operation_name) AS color,
+    attribute
+FROM system.opentelemetry_span_log
+WHERE 1
+    AND trace_id IN (
+        SELECT trace_id
+        FROM system.opentelemetry_span_log
+        WHERE (attribute['clickhouse.query_id']) IN (SELECT query_id FROM system.query_log WHERE initial_query_id = my_query_id)
+    )
+    AND operation_name !='query'
+    AND operation_name NOT LIKE '%Pipeline%'
+    AND operation_name NOT LIKE 'TCPHandler%'
+    AND operation_name NOT LIKE 'Query%'
+ORDER BY
+    group ASC,
+    parent_span_id ASC,
+    start_time_us ASC
+SETTINGS output_format_json_named_tuples_as_objects = 1, skip_unavailable_shards = 1</textarea>
+                                <div class="checkbox" style="margin-top: 10px;">
+                                    <label>
+                                        <input type="checkbox" id="flushLogsCheckbox" checked> Run SYSTEM FLUSH LOGS
+                                    </label>
+                                </div>
+                                <div id="query-error" style="color: red; margin-top: 10px; display: none;"></div>
+                            </form>
+                        </div>
+                    </div>
                 </div>
+    
                 <div class="modal-footer">
                     <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
                     <button type="button" class="btn btn-primary" id="btnDoLoad">Load</button>
+                    <button type="button" class="btn btn-success" id="btnQueryClickhouse" style="display: none;">Query</button>
+                    <div id="hourglass">⧗</div>
                 </div>
             </div>
         </div>
@@ -163,6 +242,71 @@
         }
     }
 
+    // Show correct button depending on tab
+    $('#loadModal').on('shown.bs.modal', function () {
+        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+            if ($(e.target).attr('href') === '#tabClickhouse') {
+                $('#btnDoLoad').hide();
+                $('#btnQueryClickhouse').show();
+            } else {
+                $('#btnDoLoad').show();
+                $('#btnQueryClickhouse').hide();
+            }
+        });
+    });
+
+    // Handle ClickHouse query
+    let query_controller = null;
+    $('#btnQueryClickhouse').on('click', async function () {
+        if (query_controller == null) {
+            let rows = [];
+            let error = '';
+            const errorDiv = document.getElementById('query-error');
+            errorDiv.style.display = 'none';
+            errorDiv.textContent = '';
+            document.getElementById('hourglass').style.display = 'inline-block';
+            $('#btnQueryClickhouse').text("Stop");
+            if ($('#flushLogsCheckbox').is(':checked')) {
+                query_controller = new AbortController();
+                await queryClickHouse({
+                    host: $('#url').val(),
+                    user: $('#user').val(),
+                    password: $('#password').val(),
+                    query: "SYSTEM FLUSH LOGS",
+                    for_each_row: (data) => {},
+                    on_error: (errorMsg) => error = errorMsg,
+                    controller: query_controller
+                });
+            }
+            if (error == '') {
+                query_controller = new AbortController();
+                await queryClickHouse({
+                    host: $('#url').val(),
+                    user: $('#user').val(),
+                    password: $('#password').val(),
+                    query: $('#query').val(),
+                    for_each_row: (data) => rows.push(data),
+                    on_error: (errorMsg) => error = errorMsg,
+                    controller: query_controller
+                });
+            }
+            query_controller = null;
+            $('#btnQueryClickhouse').text("Query");
+            document.getElementById('hourglass').style.display = 'none';
+
+            if (error != '') {
+                errorDiv.textContent = error;
+                errorDiv.style.display = 'block';
+            } else {
+                renderChart(parseClickHouseTrace(rows));
+                $('#loadModal').modal('hide');
+            }
+        } else { // Cancel query
+            query_controller.abort();
+        }
+    });
+
+    // Handle uploaded JSON
     $("#btnDoLoad").click(function(){
         let element = document.getElementById('loadFiles');
         let files = element.files;
@@ -172,7 +316,7 @@
         let fr = new FileReader();
         fr.onload = function(e) {
             $("#errmsg").hide();
-            renderChart(parseClickHouseTrace(JSON.parse(e.target.result)));
+            renderChart(parseClickHouseTrace(JSON.parse(e.target.result).data));
         }
         fr.readAsText(files.item(0));
         element.value = '';
@@ -197,10 +341,10 @@
         doFindPattern();
     });
 
-    function parseClickHouseTrace(json) {
+    function parseClickHouseTrace(rows) {
         let min_time_us = Number.MAX_VALUE;
-        for (let i = 0; i < json.data.length; i++) {
-            let span = json.data[i];
+        for (let i = 0; i < rows.length; i++) {
+            let span = rows[i];
             min_time_us = Math.min(min_time_us, +span.start_time_us);
         }
 
@@ -226,8 +370,8 @@
 
         let result = [];
         let bands = new Set();
-        for (let i = 0; i < json.data.length; i++) {
-            let span = json.data[i];
+        for (let i = 0; i < rows.length; i++) {
+            let span = rows[i];
             let band = Object.values(span.group).join(' ');
             bands.add(band);
             result.push({

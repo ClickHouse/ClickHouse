@@ -40,5 +40,5 @@ factory.registerFunction(
              "    b\n"
              "FROM tab\n"
              "WHERE (a > 3) AND (b < 3)"}},
-        .category{"Other"}});
+        .category = FunctionDocumentation::Category::Other);
 ```

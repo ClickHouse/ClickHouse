@@ -6,6 +6,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/ThreadStatus.h>
+#include <QueryPipeline/QueryPipeline.h>
 
 namespace DB
 {
@@ -16,6 +17,9 @@ class ReadBuffer;
 
 struct ThreadStatusesHolder;
 using ThreadStatusesHolderPtr = std::shared_ptr<ThreadStatusesHolder>;
+
+class ParallelReplicasReadingCoordinator;
+using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
 
 /** Interprets the INSERT query.
   */
@@ -91,7 +95,11 @@ private:
         const Block & query_sample_block);
 
     QueryPipeline buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table);
+    QueryPipeline addInsertToSelectPipeline(ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline_builder);
     QueryPipeline buildInsertPipeline(ASTInsertQuery & query, StoragePtr table);
+    std::optional<QueryPipeline> buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table);
+    std::pair<QueryPipeline, ParallelReplicasReadingCoordinatorPtr>
+    buildLocalInsertSelectPipelineForParallelReplicas(ASTInsertQuery & query, const StoragePtr & table);
 
     Chain buildSink(
         const StoragePtr & table,
