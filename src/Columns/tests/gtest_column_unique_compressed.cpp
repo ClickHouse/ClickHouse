@@ -369,3 +369,17 @@ TEST(ColumnUniqueCompressed, ReindexNullableFCBlockDF)
     }
     EXPECT_EQ(mapping->getUInt(0), 0);
 }
+
+TEST(ColumnUniqueCompressed, UsesPrefixLengthOptimizationFCBlockDF)
+{
+    const auto unique_compressed_column = getNotEmptyColumnUniqueCompressedFCBlockDF();
+    const size_t byte_size1 = unique_compressed_column->byteSize();
+    size_t byte_size2 = 0;
+    for (size_t i = 0; i < unique_compressed_column->size(); ++i)
+    {
+        byte_size2 += unique_compressed_column->byteSizeAt(i);
+    }
+    
+
+    EXPECT_EQ(byte_size1, byte_size2);
+}
