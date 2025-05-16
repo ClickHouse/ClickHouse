@@ -331,6 +331,6 @@ REGISTER_FUNCTION(ArrayScan)
     factory.registerFunction<FunctionArrayScan>(FunctionDocumentation{.description=R"(
         Function arrayScan(acc,a1,...,aN->expr, arr1, ..., arrN, acc_initial) applies a lambda function to each element
         in each (equally-sized) array and returns an array containing all intermediate accumulator values
-        )", .examples{{"intermediate sums", "SELECT arrayScan(acc,x->acc+x, [1,2,3,4], toInt64(0));", "[1,3,6,10]"}}, .category{"Array"}});
+        )", .examples{{"intermediate sums", "SELECT arrayScan(acc,x->acc+x, [1,2,3,4], toInt64(0));", "[1,3,6,10]"}}, .category = FunctionDocumentation::Category::Array});
 }
 }
