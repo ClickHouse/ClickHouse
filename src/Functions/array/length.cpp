@@ -42,10 +42,10 @@ FROM numbers(3)
 │ ёлка │            8 │                4 │ ёлка │           10 │                5 │
 └──────┴──────────────┴──────────────────┴──────┴──────────────┴──────────────────┘
         )"},
-        {"null", "SELECT 'abc\0\0\0' AS str, length(str)", R"(
-┌─str─┬─length(str)─┐
-│ abc │           6 │
-└─────┴─────────────┘
+        {"ascii_vs_utf8", "SELECT 'ábc' AS str, length(str), lengthUTF8(str)", R"(
+┌─str─┬─length(str)──┬─lengthUTF8(str)─┐
+│ ábc │            4 │               3 │
+└─────┴──────────────┴─────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
