@@ -380,7 +380,7 @@ struct ContextSharedPart : boost::noncopyable
     ConfigurationPtr config TSA_GUARDED_BY(mutex);           /// Global configuration settings.
     String tmp_path TSA_GUARDED_BY(mutex);                   /// Path to the temporary files that occur when processing the request.
 
-    std::shared_ptr<IDisk> db_disk TSA_GUARDED_BY(mutex);
+    std::shared_ptr<IDisk> global_db_disk TSA_GUARDED_BY(mutex);
 
     /// All temporary files that occur when processing the requests accounted here.
     /// Child scopes for more fine-grained accounting are created per user/query/etc.
@@ -1194,8 +1194,8 @@ std::shared_ptr<IDisk> Context::getDatabaseDisk() const
 {
     {
         SharedLockGuard lock(shared->mutex);
-        if (shared->db_disk)
-            return shared->db_disk;
+        if (shared->global_db_disk)
+            return shared->global_db_disk;
     }
 
     // This is called first time early during the initialization.
@@ -1220,10 +1220,10 @@ std::shared_ptr<IDisk> Context::getDatabaseDisk() const
     }();
 
     std::lock_guard lock(shared->mutex);
-    if (shared->db_disk)
-        return shared->db_disk;
+    if (shared->global_db_disk)
+        return shared->global_db_disk;
 
-    return shared->db_disk = target_db_disk;
+    return shared->global_db_disk = target_db_disk;
 }
 
 String Context::getFilesystemCacheUser() const
@@ -5312,16 +5312,14 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
     if (!max_size_to_drop || size <= max_size_to_drop)
         return;
 
-    auto db_disk = getDatabaseDisk();
-
     fs::path force_file(getFlagsPath() + "force_drop_table");
-    bool force_file_exists = db_disk->existsFile(force_file);
+    bool force_file_exists = fs::exists(force_file);
 
     if (force_file_exists)
     {
         try
         {
-            db_disk->removeFileIfExists(force_file);
+            fs::remove(force_file);
             return;
         }
         catch (...)
