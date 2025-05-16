@@ -13,6 +13,7 @@
 #include <Parsers/ASTDropResourceQuery.h>
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTDropTypeQuery.h>
 #include <Parsers/ASTUndropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTParallelWithQuery.h>
@@ -386,6 +387,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTCreateTypeQuery>())
     {
         interpreter_name = "InterpreterCreateTypeQuery";
+    }
+    else if (query->as<ASTDropTypeQuery>())
+    {
+        interpreter_name = "InterpreterDropTypeQuery";
     }
 
     if (!interpreters.contains(interpreter_name))

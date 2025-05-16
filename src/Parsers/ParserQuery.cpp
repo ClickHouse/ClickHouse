@@ -12,6 +12,7 @@
 #include <Parsers/ParserDropNamedCollectionQuery.h>
 #include <Parsers/ParserAlterNamedCollectionQuery.h>
 #include <Parsers/ParserDropQuery.h>
+#include <Parsers/ParserDropTypeQuery.h>
 #include <Parsers/ParserParallelWithQuery.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
@@ -68,6 +69,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserCreateIndexQuery create_index_p;
     ParserDropIndexQuery drop_index_p;
     ParserDropAccessEntityQuery drop_access_entity_p;
+    ParserDropTypeQuery drop_type_p;
     ParserMoveAccessEntityQuery move_access_entity_p;
     ParserGrantQuery grant_p;
     ParserCheckGrantQuery check_grant_p;
@@ -100,6 +102,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || create_index_p.parse(pos, node, expected)
         || drop_index_p.parse(pos, node, expected)
         || drop_access_entity_p.parse(pos, node, expected)
+        || drop_type_p.parse(pos, node, expected)
         || move_access_entity_p.parse(pos, node, expected)
         || grant_p.parse(pos, node, expected)
         || check_grant_p.parse(pos, node, expected)

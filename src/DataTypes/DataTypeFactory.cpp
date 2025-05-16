@@ -1,7 +1,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/UserDefinedTypeFactory.h>
-#include <DataTypes/Serializations/SerializationUserDefined.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTDataType.h>
@@ -16,7 +15,6 @@
 #include <Core/Settings.h>
 #include <Common/CurrentThread.h>
 #include <Interpreters/Context.h>
-#include <cstddef>
 #include <unordered_map>
 #include <Common/logger_useful.h>
 
@@ -190,11 +188,12 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
 {
     String family_name = getAliasToOrName(family_name_param);
     auto * log = &Poco::Logger::get("DataTypeFactory");
+    auto query_context = CurrentThread::getQueryContext();
 
-    if (UserDefinedTypeFactory::instance().isTypeRegistered(family_name))
+    if (UserDefinedTypeFactory::instance().isTypeRegistered(family_name, query_context))
     {
         LOG_DEBUG(log, "Processing user-defined type: {}", family_name);
-        auto udt_type_info = UserDefinedTypeFactory::instance().getTypeInfo(family_name);
+        auto udt_type_info = UserDefinedTypeFactory::instance().getTypeInfo(family_name, query_context);
         ASTPtr udt_formal_params_ast = udt_type_info.type_parameters;
         ASTPtr udt_base_type_definition_ast = udt_type_info.base_type_ast;
 
@@ -220,12 +219,10 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
                             family_name, num_formal_params, num_actual_args);
         }
 
-        DataTypePtr resolved_base_type;
-
         if (num_formal_params == 0) // No parameters defined or provided
         {
             LOG_DEBUG(log, "Resolving non-parameterized UDT '{}' using its base AST.", family_name);
-            resolved_base_type = getImpl<nullptr_on_error>(udt_base_type_definition_ast);
+            return getImpl<nullptr_on_error>(udt_base_type_definition_ast);
         }
         else // Parameters are present and counts match
         {
@@ -245,7 +242,7 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
                 IAST::FormatSettings log_fmt_settings(true);
                 log_fmt_settings.show_secrets = false;
                 actual_args_list_node->children[i]->format(actual_arg_ast_str_buf, log_fmt_settings);
-                LOG_DEBUG(log, "Substitution map for UDT '{}': formal param '{}' -> actual arg AST: {}",
+                LOG_DEBUG(log, "Substitution map for UDT '{}': formal param '{}' -> actual arg AST: {}", 
                           family_name, formal_param_ident_node->name(), actual_arg_ast_str_buf.str());
             }
 
@@ -263,6 +260,7 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
             
             if (substituted_ast)
             {
+                // Лог для отладки структуры substituted_ast
                 LOG_DEBUG(log, "UDT '{}': substituted_ast ID: {}, Children count: {}", family_name, substituted_ast->getID(), substituted_ast->children.size());
                 if (const auto * s_ast_data_type = substituted_ast->as<ASTDataType>())
                 {
@@ -277,6 +275,7 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
                         LOG_DEBUG(log, "UDT '{}': substituted_ast has no arguments field.", family_name);
                     }
                 }
+
                 substituted_ast->format(substituted_ast_str_buf, log_substituted_fmt_settings);
             }
             else
@@ -286,56 +285,8 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
             LOG_DEBUG(log, "UDT '{}': Substituted AST (overall format): {}", family_name, substituted_ast_str_buf.str());
 
             LOG_DEBUG(log, "Substituted AST for UDT '{}' created, resolving it.", family_name);
-            resolved_base_type = getImpl<nullptr_on_error>(substituted_ast);
+            return getImpl<nullptr_on_error>(substituted_ast);
         }
-
-        if (resolved_base_type)
-        {
-            if (!udt_type_info.input_expression.empty() || !udt_type_info.output_expression.empty())
-            {
-                LOG_DEBUG(log, "UDT '{}' has input/output functions. Attempting to apply custom serialization.", family_name);
-                auto nested_serialization = resolved_base_type->getDefaultSerialization();
-                auto query_context = CurrentThread::getQueryContext();
-
-                if (!query_context)
-                {
-                    if constexpr (nullptr_on_error)
-                    {
-                        LOG_WARNING(log, "Cannot apply custom serialization for UDT '{}': Query context is not available. Returning base type without custom serialization.", family_name);
-                        // Fall-through to return resolved_base_type without customization
-                    }
-                    else
-                    {
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create SerializationUserDefined for UDT '{}': Query context is not available. UDT has INPUT/OUTPUT functions.", family_name);
-                    }
-                }
-                
-                if (query_context) // Proceed only if context is available
-                {
-                    auto udt_serialization = std::make_shared<SerializationUserDefined>(
-                        nested_serialization,
-                        resolved_base_type,
-                        udt_type_info.input_expression,
-                        udt_type_info.output_expression,
-                        query_context);
-
-                    auto custom_desc = std::make_unique<DataTypeCustomDesc>(nullptr, udt_serialization);
-
-                    resolved_base_type->setCustomization(std::move(custom_desc));
-                    LOG_DEBUG(log, "Successfully applied custom serialization for UDT '{}'. Name for client will be UDT name.", family_name);
-                }
-            }
-            else
-            {
-                LOG_DEBUG(log, "UDT '{}' has no input/output functions. Using default serialization of the base type.", family_name);
-            }
-        }
-        else
-        {
-             LOG_DEBUG(log, "Base type for UDT '{}' could not be resolved. Returning as is (nullptr if tryGet).", family_name);
-        }
-        
-        return resolved_base_type;
     }
 
     const auto * creator = findCreatorByName<nullptr_on_error>(family_name);
@@ -360,7 +311,6 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
         data_type = (*creator)(parameters);
     }
 
-    auto query_context = CurrentThread::getQueryContext();
     if (query_context && query_context->getSettingsRef()[Setting::log_queries])
     {
         query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, data_type->getName());

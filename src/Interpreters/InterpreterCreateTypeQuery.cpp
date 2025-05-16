@@ -6,15 +6,21 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
+#include <Parsers/IAST.h>
 #include <Interpreters/Context.h>
 #include <Access/Common/AccessType.h>
 #include <Access/ContextAccess.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/UserDefinedTypeFactory.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/executeQuery.h>
+#include <Interpreters/QueryFlags.h>
+#include <Core/QueryProcessingStage.h>
+#include <IO/WriteBufferFromString.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <unordered_set>
 
 namespace DB
@@ -38,6 +44,7 @@ void validateBaseTypeRecursive(
     const String & udt_name,
     const std::unordered_set<String> & formal_param_names,
     const DataTypeFactory & factory_instance,
+    ContextPtr validation_context,
     const std::unordered_set<String> & known_families)
 {
     if (!ast_node)
@@ -65,6 +72,9 @@ void validateBaseTypeRecursive(
         {
             if (formal_param_names.contains(type_name_str))
                 return; 
+            
+            if (UserDefinedTypeFactory::instance().isTypeRegistered(type_name_str, validation_context))
+                return;
 
             ASTPtr ast_ptr_dt = std::const_pointer_cast<IAST>(data_type_node->shared_from_this());
             if (factory_instance.tryGet(ast_ptr_dt))
@@ -77,7 +87,7 @@ void validateBaseTypeRecursive(
         else 
         {
             bool is_family_known = known_families.contains(type_name_str) ||
-                                   UserDefinedTypeFactory::instance().isTypeRegistered(type_name_str);
+                                   UserDefinedTypeFactory::instance().isTypeRegistered(type_name_str, validation_context);
 
             if (!is_family_known)
             {
@@ -104,7 +114,7 @@ void validateBaseTypeRecursive(
             {
                 for (const auto & arg_child : data_type_node->arguments->children)
                 {
-                    validateBaseTypeRecursive(arg_child, udt_name, formal_param_names, factory_instance, known_families);
+                    validateBaseTypeRecursive(arg_child, udt_name, formal_param_names, factory_instance, validation_context, known_families);
                 }
             }
         }
@@ -115,7 +125,7 @@ void validateBaseTypeRecursive(
         {
             for (const auto & child : func_node->arguments->children)
             {
-                validateBaseTypeRecursive(child, udt_name, formal_param_names, factory_instance, known_families);
+                validateBaseTypeRecursive(child, udt_name, formal_param_names, factory_instance, validation_context, known_families);
             }
         }
     }
@@ -123,7 +133,7 @@ void validateBaseTypeRecursive(
     {
         for (const auto & child : ast_node->children)
         {
-            validateBaseTypeRecursive(child, udt_name, formal_param_names, factory_instance, known_families);
+            validateBaseTypeRecursive(child, udt_name, formal_param_names, factory_instance, validation_context, known_families);
         }
     }
 }
@@ -135,44 +145,44 @@ BlockIO InterpreterCreateTypeQuery::execute()
 {
     const auto & create = query_ptr->as<ASTCreateTypeQuery &>();
     auto * log = &Poco::Logger::get("InterpreterCreateTypeQuery");
-    LOG_DEBUG(log, "Executing CREATE TYPE query");
+    LOG_DEBUG(log, "Executing CREATE TYPE query for type '{}'", create.name);
     
-    getContext()->checkAccess(AccessType::CREATE_TYPE);
+    auto current_context = getContext();
+    current_context->checkAccess(AccessType::CREATE_TYPE);
     
     String type_name = create.name;
-    LOG_DEBUG(log, "Type name: {}", type_name);
     
-    if (UserDefinedTypeFactory::instance().isTypeRegistered(type_name))
+    bool is_replace = create.or_replace;
+    bool type_existed_before_replace = false;
+
+    if (UserDefinedTypeFactory::instance().isTypeRegistered(type_name, current_context))
     {
-        LOG_DEBUG(log, "Type {} already exists", type_name);
-        
-        if (create.if_not_exists)
+        type_existed_before_replace = true;
+        LOG_DEBUG(log, "Type '{}' already exists in UserDefinedTypeFactory", type_name);
+        if (create.if_not_exists && !is_replace)
         {
-            LOG_DEBUG(log, "IF NOT EXISTS specified, skipping");
+            LOG_DEBUG(log, "IF NOT EXISTS specified, skipping for type '{}'", type_name);
             return {};
         }
-        
-        if (create.or_replace)
+        if (is_replace)
         {
-            LOG_DEBUG(log, "OR REPLACE specified, removing old type");
-            UserDefinedTypeFactory::instance().removeType(type_name);
+            LOG_DEBUG(log, "OR REPLACE specified, will attempt to remove old type '{}' before registration", type_name);
         }
         else
         {
-            LOG_WARNING(log, "Type {} already exists, throwing exception", type_name);
-            throw Exception(ErrorCodes::TYPE_ALREADY_EXISTS, "Type {} already exists", type_name);
+            LOG_WARNING(log, "Type '{}' already exists and no OR REPLACE/IF NOT EXISTS, throwing exception", type_name);
+            throw Exception(ErrorCodes::TYPE_ALREADY_EXISTS, "Type '{}' already exists", type_name);
         }
     }
 
     if (!create.base_type)
     {
-        LOG_WARNING(log, "Base type not specified, throwing exception");
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Base type not specified for user-defined type {}", type_name);
+        LOG_WARNING(log, "Base type not specified for UDT '{}', throwing exception", type_name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Base type not specified for user-defined type '{}'", type_name);
     }
 
-    LOG_DEBUG(log, "Base type AST provided for user-defined type {}", type_name);
+    LOG_DEBUG(log, "Base type AST provided for UDT '{}'", type_name);
 
-    // Validate base type definition
     try
     {
         std::unordered_set<String> formal_param_names_set;
@@ -196,7 +206,7 @@ BlockIO InterpreterCreateTypeQuery::execute()
             "DateTime64", "Decimal", "Enum", "Enum8", "Enum16"
         };
 
-        validateBaseTypeRecursive(create.base_type, type_name, formal_param_names_set, DataTypeFactory::instance(), known_type_families_set);
+        validateBaseTypeRecursive(create.base_type, type_name, formal_param_names_set, DataTypeFactory::instance(), current_context, known_type_families_set);
         LOG_DEBUG(log, "Base type validation successful for UDT '{}'", type_name);
     }
     catch (const Exception & e)
@@ -205,59 +215,97 @@ BlockIO InterpreterCreateTypeQuery::execute()
         throw; 
     }
 
-
-    ASTPtr type_parameters;
-    if (create.type_parameters)
+    if (is_replace && type_existed_before_replace)
     {
-        LOG_DEBUG(log, "Type parameters provided");
-        type_parameters = create.type_parameters;
+        try
+        {
+            String delete_query_str = fmt::format("DELETE FROM system.user_defined_types WHERE name = {}", quoteString(type_name));
+            ContextMutablePtr delete_query_context = Context::createCopy(current_context);
+            executeQuery(delete_query_str, delete_query_context, QueryFlags{ .internal = true }, QueryProcessingStage::Complete);
+            LOG_DEBUG(log, "Successfully deleted old type '{}' from system.user_defined_types due to OR REPLACE", type_name);
+        }
+        catch (const Exception & e)
+        {
+            LOG_WARNING(log, "Failed to delete type '{}' from system.user_defined_types during OR REPLACE. Error: {}. Proceeding with registration.", type_name, e.what());
+        }
     }
 
-    String input_function_name;
-    String output_function_name;
-    String default_value_str;
+    if (is_replace && type_existed_before_replace)
+    {
+        try
+        {
+            UserDefinedTypeFactory::instance().removeType(type_name);
+            LOG_DEBUG(log, "Removed existing type '{}' from in-memory factory due to OR REPLACE.", type_name);
+        }
+        catch (const DB::Exception & e)
+        {
+            LOG_WARNING(log, "Problem removing type '{}' from in-memory factory during OR REPLACE: {}. This might happen if it was only in DB.", type_name, e.what());
+        }
+    }
+
+    ASTPtr type_parameters_ast = create.type_parameters;
+
+    String input_expression_str;
+    String output_expression_str;
+    String default_expression_str;
     
     if (create.input_expression)
-    {
-        LOG_DEBUG(log, "Input function AST provided");
-        const auto * input_ident = create.input_expression->as<ASTIdentifier>();
-        if (!input_ident)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "INPUT clause for CREATE TYPE expects a function name (identifier)");
-        input_function_name = input_ident->name();
-        LOG_DEBUG(log, "Input function name: {}", input_function_name);
-    }
-    
+        input_expression_str = create.input_expression->as<ASTLiteral &>().value.safeGet<String>();
     if (create.output_expression)
-    {
-        LOG_DEBUG(log, "Output function AST provided");
-        const auto * output_ident = create.output_expression->as<ASTIdentifier>();
-        if (!output_ident)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "OUTPUT clause for CREATE TYPE expects a function name (identifier)");
-        output_function_name = output_ident->name();
-        LOG_DEBUG(log, "Output function name: {}", output_function_name);
-    }
-    
+        output_expression_str = create.output_expression->as<ASTLiteral &>().value.safeGet<String>();
     if (create.default_expression)
-    {
-        LOG_DEBUG(log, "Default expression provided");
-        const auto* default_literal = create.default_expression->as<ASTLiteral>();
-        if (!default_literal)
-             throw Exception(ErrorCodes::BAD_ARGUMENTS, "DEFAULT clause for CREATE TYPE expects a literal value");
-        default_value_str = default_literal->value.dump();
-        LOG_DEBUG(log, "Default value string: {}", default_value_str);
-    }
+        default_expression_str = create.default_expression->as<ASTLiteral &>().value.safeGet<String>();
     
-    LOG_DEBUG(log, "Registering type {} with base type AST, input func: '{}', output func: '{}', default: '{}'", 
-        type_name, input_function_name, output_function_name, default_value_str);
     UserDefinedTypeFactory::instance().registerType(
         type_name,
         create.base_type,
-        type_parameters,
-        input_function_name, 
-        output_function_name,
-        default_value_str);
+        type_parameters_ast,
+        input_expression_str,
+        output_expression_str,
+        default_expression_str);
     
-    LOG_DEBUG(log, "Type {} successfully registered", type_name);
+    LOG_DEBUG(log, "Type '{}' successfully registered in-memory.", type_name);
+
+    try
+    {
+        String base_type_ast_string = UserDefinedTypeFactory::astToString(create.base_type);
+        String type_parameters_ast_string = type_parameters_ast ? UserDefinedTypeFactory::astToString(type_parameters_ast) : "";
+        
+        WriteBufferFromOwnString query_text_buf;
+        IAST::FormatSettings format_settings(true /*one_line*/, false /*hilite*/);
+        query_ptr->format(query_text_buf, format_settings);
+        String create_query_string = query_text_buf.str();
+
+        String insert_query_str = fmt::format(
+            "INSERT INTO system.user_defined_types (name, base_type_ast_string, type_parameters_ast_string, input_expression, output_expression, default_expression, create_query_string) VALUES ({}, {}, {}, {}, {}, {}, {})",
+            quoteString(type_name),
+            quoteString(base_type_ast_string),
+            type_parameters_ast_string.empty() ? "NULL" : quoteString(type_parameters_ast_string),
+            input_expression_str.empty() ? "NULL" : quoteString(input_expression_str),
+            output_expression_str.empty() ? "NULL" : quoteString(output_expression_str),
+            default_expression_str.empty() ? "NULL" : quoteString(default_expression_str),
+            quoteString(create_query_string)
+        );
+        
+        LOG_DEBUG(log, "Persisting UDT '{}'. Executing query: {}", type_name, insert_query_str);
+        ContextMutablePtr insert_query_context = Context::createCopy(current_context);
+        executeQuery(insert_query_str, insert_query_context, QueryFlags{ .internal = true }, QueryProcessingStage::Complete);
+        LOG_INFO(log, "Successfully persisted user-defined type '{}' to system.user_defined_types", type_name);
+    }
+    catch (const Exception & e)
+    {
+        LOG_ERROR(log, "Failed to persist user-defined type '{}' to system table. Error: {}. Rolling back in-memory registration.", type_name, e.what());
+        try
+        {
+            UserDefinedTypeFactory::instance().removeType(type_name);
+        }
+        catch (const Exception & remove_e)
+        {
+            LOG_ERROR(log, "Failed to rollback in-memory registration for type '{}' after persistence error. Double error: {}", type_name, remove_e.what());
+        }
+        throw;
+    }
+
     return {};
 }
 
