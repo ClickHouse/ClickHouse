@@ -171,7 +171,7 @@ regardless of any condition.
         {"source", "The source array to process [`Array(T)`](/sql-reference/data-types/array)."},
         {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."},
     };
-    FunctionDocumentation::ReturnedValue returned_value_reverse = "";
+    FunctionDocumentation::ReturnedValue returned_value_reverse = "Returns an array with replaced elements. [`Array(T)`](/sql-reference/data-types/array).";
     FunctionDocumentation::Examples examples_reverse = {
         {"Example with a single array", "SELECT arrayReverseFill(x -> not isNull(x), [1, null, 2, null]) AS res", "[1,2,2,NULL]"},
         {"Example with two arrays", "SELECT arrayReverseFill(x, y, z -> x > y AND x < z, [5, 3, 6, 2], [4, 7, 1, 3], [10, 2, 8, 5]) AS res;", "[5,6,6,2]"}
