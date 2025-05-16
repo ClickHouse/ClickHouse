@@ -199,7 +199,7 @@ public:
 
 REGISTER_FUNCTION(Compose)
 {
-    factory.registerFunction<ComposeFunction>();
+    factory.registerFunction<ComposeFunction>({}, FunctionFactory::Case::Sensitive);
 }
 
 }
