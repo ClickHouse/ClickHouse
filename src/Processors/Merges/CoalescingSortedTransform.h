@@ -5,7 +5,7 @@
 
 namespace ProfileEvents
 {
-    extern const Event CoalescingSortedAlgorithm;
+    extern const Event CoalescingSortedMilliseconds;
 }
 
 namespace DB
@@ -40,7 +40,7 @@ public:
 
     void onFinish() override
     {
-        logMergedStats(ProfileEvents::CoalescingSortedAlgorithm, "Coalescing sorted", getLogger("CoalescingSortedTransform"));
+        logMergedStats(ProfileEvents::CoalescingSortedMilliseconds, "Coalescing sorted", getLogger("CoalescingSortedTransform"));
     }
 };
 

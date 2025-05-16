@@ -1,3 +1,5 @@
+-- Tags: replica
+
 SELECT 'Test without parameters';
 
 DROP TABLE IF EXISTS 03409_users;
@@ -10,7 +12,7 @@ CREATE TABLE 03409_users
     `age2` Nullable(Int16),
     `version` Nullable(UInt8)
 )
-ENGINE = CoalescingMergeTree()
+ENGINE = ReplicatedCoalescingMergeTree('/clickhouse/tables/{database}/test_00754/summing', 'r1')
 ORDER BY (uid, name);
 
 INSERT INTO 03409_users VALUES (111, 'John', 23, 12, 1);
@@ -35,7 +37,7 @@ CREATE TABLE 03409_users
     `age2` Nullable(Int16),
     `version` Nullable(UInt8)
 )
-ENGINE = CoalescingMergeTree(version)
+ENGINE = ReplicatedCoalescingMergeTree('/clickhouse/tables/{database}/test_00754/summing', 'r1', version)
 ORDER BY (uid, name);
 
 INSERT INTO 03409_users VALUES (111, 'John', 23, 12, 1);

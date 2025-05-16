@@ -216,7 +216,6 @@ enum class DefaultTableEngine : uint8_t
     SharedMergeTree,
     SharedReplacingMergeTree,
     Memory,
-    CoalescingMergeTree,
 };
 
 DECLARE_SETTING_ENUM(DefaultTableEngine)
