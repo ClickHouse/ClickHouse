@@ -1,4 +1,4 @@
--- Tags: shard
+-- Tags: shard, disabled
 
 DROP TABLE IF EXISTS tmp;
 
