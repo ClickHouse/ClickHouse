@@ -482,8 +482,10 @@ static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::
         {
             auto * raw_data = buffer->mutable_data() + chunk.value_offset(offset_i);
             if (chunk.IsNull(offset_i))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Geometry nullable columns are not supported");
-
+            {
+                column_builder.appendDefault();
+                continue;
+            }
             ReadBuffer in_buffer(reinterpret_cast<char*>(raw_data), chunk.value_length(offset_i), 0);
             ArrowGeometricObject result_object;
             switch (geo_metadata.encoding)
@@ -789,6 +791,7 @@ struct ReadColumnFromArrowColumnSettings
     bool skip_columns_with_unsupported_types;
     bool allow_inferring_nullable_columns;
     bool case_insensitive_matching;
+    bool allow_geoparquet_parser;
 };
 
 static ColumnWithTypeAndName readColumnFromArrowColumn(
@@ -846,7 +849,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                         break;
                 }
             }
-            if (geo_metadata)
+            if (geo_metadata && settings.allow_geoparquet_parser)
             {
                 return readColumnWithGeoData(arrow_column, column_name, *geo_metadata);
             }
@@ -1324,7 +1327,8 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
     const std::string & format_name,
     bool skip_columns_with_unsupported_types,
     bool allow_inferring_nullable_columns,
-    bool case_insensitive_matching)
+    bool case_insensitive_matching,
+    bool allow_geoparquet_parser)
 {
     ReadColumnFromArrowColumnSettings settings
     {
@@ -1333,7 +1337,8 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         .allow_arrow_null_type = false,
         .skip_columns_with_unsupported_types = skip_columns_with_unsupported_types,
         .allow_inferring_nullable_columns = allow_inferring_nullable_columns,
-        .case_insensitive_matching = case_insensitive_matching
+        .case_insensitive_matching = case_insensitive_matching,
+        .allow_geoparquet_parser = allow_geoparquet_parser
     };
 
     ColumnsWithTypeAndName sample_columns;
@@ -1371,6 +1376,7 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
     bool allow_missing_columns_,
     bool null_as_default_,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
+    bool allow_geoparquet_parser_,
     bool case_insensitive_matching_,
     bool is_stream_)
     : header(header_)
@@ -1378,6 +1384,7 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
     , allow_missing_columns(allow_missing_columns_)
     , null_as_default(null_as_default_)
     , date_time_overflow_behavior(date_time_overflow_behavior_)
+    , allow_geoparquet_parser(allow_geoparquet_parser_)
     , case_insensitive_matching(case_insensitive_matching_)
     , is_stream(is_stream_)
 {
@@ -1421,7 +1428,8 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
         .allow_arrow_null_type = true,
         .skip_columns_with_unsupported_types = false,
         .allow_inferring_nullable_columns = true,
-        .case_insensitive_matching = case_insensitive_matching
+        .case_insensitive_matching = case_insensitive_matching,
+        .allow_geoparquet_parser = allow_geoparquet_parser
     };
 
     Columns columns;
