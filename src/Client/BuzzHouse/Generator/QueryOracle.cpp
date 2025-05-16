@@ -566,7 +566,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     }
 }
 
-void QueryOracle::findTablesWithPeersAndReplace(
+bool QueryOracle::findTablesWithPeersAndReplace(
     RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen, const bool replace)
 {
     checkStackSize();
@@ -577,23 +577,28 @@ void QueryOracle::findTablesWithPeersAndReplace(
 
         if (sel.has_select_core())
         {
-            findTablesWithPeersAndReplace(rg, const_cast<SelectStatementCore &>(sel.select_core()), gen, replace);
+            const auto u = findTablesWithPeersAndReplace(rg, const_cast<SelectStatementCore &>(sel.select_core()), gen, replace);
+            UNUSED(u);
         }
         else if (sel.has_set_query())
         {
-            findTablesWithPeersAndReplace(rg, const_cast<SetQuery &>(sel.set_query()), gen, replace);
+            const auto u = findTablesWithPeersAndReplace(rg, const_cast<SetQuery &>(sel.set_query()), gen, replace);
+            UNUSED(u);
         }
         if (sel.has_ctes())
         {
             if (sel.ctes().cte().has_cte_query())
             {
-                findTablesWithPeersAndReplace(rg, const_cast<Select &>(sel.ctes().cte().cte_query().query()), gen, replace);
+                const auto u = findTablesWithPeersAndReplace(rg, const_cast<Select &>(sel.ctes().cte().cte_query().query()), gen, replace);
+                UNUSED(u);
             }
             for (int i = 0; i < sel.ctes().other_ctes_size(); i++)
             {
                 if (sel.ctes().other_ctes(i).has_cte_query())
                 {
-                    findTablesWithPeersAndReplace(rg, const_cast<Select &>(sel.ctes().other_ctes(i).cte_query().query()), gen, replace);
+                    const auto u = findTablesWithPeersAndReplace(
+                        rg, const_cast<Select &>(sel.ctes().other_ctes(i).cte_query().query()), gen, replace);
+                    UNUSED(u);
                 }
             }
         }
@@ -602,8 +607,11 @@ void QueryOracle::findTablesWithPeersAndReplace(
     {
         auto & setq = static_cast<SetQuery &>(mes);
 
-        findTablesWithPeersAndReplace(rg, const_cast<Select &>(setq.sel1().inner_query().select().sel()), gen, replace);
-        findTablesWithPeersAndReplace(rg, const_cast<Select &>(setq.sel2().inner_query().select().sel()), gen, replace);
+        const auto u = findTablesWithPeersAndReplace(rg, const_cast<Select &>(setq.sel1().inner_query().select().sel()), gen, replace);
+        const auto w = findTablesWithPeersAndReplace(rg, const_cast<Select &>(setq.sel2().inner_query().select().sel()), gen, replace);
+
+        UNUSED(u);
+        UNUSED(w);
     }
     else if (mes.GetTypeName() == "BuzzHouse.SelectStatementCore")
     {
@@ -611,7 +619,8 @@ void QueryOracle::findTablesWithPeersAndReplace(
 
         if (ssc.has_from())
         {
-            findTablesWithPeersAndReplace(rg, const_cast<JoinedQuery &>(ssc.from().tos()), gen, replace);
+            const auto u = findTablesWithPeersAndReplace(rg, const_cast<JoinedQuery &>(ssc.from().tos()), gen, replace);
+            UNUSED(u);
         }
     }
     else if (mes.GetTypeName() == "BuzzHouse.JoinedQuery")
@@ -620,9 +629,11 @@ void QueryOracle::findTablesWithPeersAndReplace(
 
         for (int i = 0; i < jquery.tos_list_size(); i++)
         {
-            findTablesWithPeersAndReplace(rg, const_cast<TableOrSubquery &>(jquery.tos_list(i)), gen, replace);
+            const auto u = findTablesWithPeersAndReplace(rg, const_cast<TableOrSubquery &>(jquery.tos_list(i)), gen, replace);
+            UNUSED(u);
         }
-        findTablesWithPeersAndReplace(rg, const_cast<JoinClause &>(jquery.join_clause()), gen, replace);
+        const auto u = findTablesWithPeersAndReplace(rg, const_cast<JoinClause &>(jquery.join_clause()), gen, replace);
+        UNUSED(u);
     }
     else if (mes.GetTypeName() == "BuzzHouse.JoinClause")
     {
@@ -632,10 +643,13 @@ void QueryOracle::findTablesWithPeersAndReplace(
         {
             if (jclause.clauses(i).has_core())
             {
-                findTablesWithPeersAndReplace(rg, const_cast<TableOrSubquery &>(jclause.clauses(i).core().tos()), gen, replace);
+                const auto u
+                    = findTablesWithPeersAndReplace(rg, const_cast<TableOrSubquery &>(jclause.clauses(i).core().tos()), gen, replace);
+                UNUSED(u);
             }
         }
-        findTablesWithPeersAndReplace(rg, const_cast<TableOrSubquery &>(jclause.tos()), gen, replace);
+        const auto u = findTablesWithPeersAndReplace(rg, const_cast<TableOrSubquery &>(jclause.tos()), gen, replace);
+        UNUSED(u);
     }
     else if (mes.GetTypeName() == "BuzzHouse.TableOrSubquery")
     {
@@ -643,11 +657,15 @@ void QueryOracle::findTablesWithPeersAndReplace(
 
         if (tos.has_joined_table())
         {
-            findTablesWithPeersAndReplace(rg, const_cast<TableOrFunction &>(tos.joined_table().tof()), gen, replace);
+            auto & jtf = const_cast<JoinedTableOrFunction &>(tos.joined_table());
+
+            const auto has_external_peer = findTablesWithPeersAndReplace(rg, const_cast<TableOrFunction &>(jtf.tof()), gen, replace);
+            /// Remove final for MySQL and PostgreSQL calls
+            jtf.set_final(jtf.final() && !has_external_peer);
         }
         else if (tos.has_joined_query())
         {
-            findTablesWithPeersAndReplace(rg, const_cast<JoinedQuery &>(tos.joined_query()), gen, replace);
+            return findTablesWithPeersAndReplace(rg, const_cast<JoinedQuery &>(tos.joined_query()), gen, replace);
         }
     }
     else if (mes.GetTypeName() == "BuzzHouse.TableFunction")
@@ -656,11 +674,11 @@ void QueryOracle::findTablesWithPeersAndReplace(
 
         if (tfunc.has_loop())
         {
-            findTablesWithPeersAndReplace(rg, const_cast<TableOrFunction &>(tfunc.loop()), gen, replace);
+            return findTablesWithPeersAndReplace(rg, const_cast<TableOrFunction &>(tfunc.loop()), gen, replace);
         }
         else if (tfunc.has_remote() || tfunc.has_cluster())
         {
-            findTablesWithPeersAndReplace(
+            return findTablesWithPeersAndReplace(
                 rg, const_cast<TableOrFunction &>(tfunc.has_remote() ? tfunc.remote().tof() : tfunc.cluster().tof()), gen, replace);
         }
     }
@@ -685,6 +703,7 @@ void QueryOracle::findTablesWithPeersAndReplace(
                         if (replace)
                         {
                             insertOnTableOrCluster(rg, gen, t, true, &torfunc);
+                            return !t.hasClickHousePeer();
                         }
                         found_tables.insert(tname);
                         can_test_query_success &= t.hasClickHousePeer();
@@ -694,13 +713,14 @@ void QueryOracle::findTablesWithPeersAndReplace(
         }
         else if (torfunc.has_tfunc())
         {
-            findTablesWithPeersAndReplace(rg, const_cast<TableFunction &>(torfunc.tfunc()), gen, replace);
+            return findTablesWithPeersAndReplace(rg, const_cast<TableFunction &>(torfunc.tfunc()), gen, replace);
         }
         else if (torfunc.has_select())
         {
-            findTablesWithPeersAndReplace(rg, const_cast<Select &>(torfunc.select().inner_query().select().sel()), gen, replace);
+            return findTablesWithPeersAndReplace(rg, const_cast<Select &>(torfunc.select().inner_query().select().sel()), gen, replace);
         }
     }
+    return false;
 }
 
 void QueryOracle::truncatePeerTables(const StatementGenerator & gen)
@@ -737,7 +757,8 @@ void QueryOracle::replaceQueryWithTablePeers(
     const SQLQueryInner & sq2inner = sq2.single_query().explain().inner_query();
     Select & nsel = const_cast<Select &>(measure_performance ? sq2inner.select().sel() : sq2inner.insert().select());
     /// Replace references
-    findTablesWithPeersAndReplace(rg, nsel, gen, peer_query != PeerQuery::ClickHouseOnly);
+    const auto u = findTablesWithPeersAndReplace(rg, nsel, gen, peer_query != PeerQuery::ClickHouseOnly);
+    UNUSED(u);
     if (peer_query == PeerQuery::ClickHouseOnly && !measure_performance)
     {
         /// Use a different file for the peer database

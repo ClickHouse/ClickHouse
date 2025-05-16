@@ -23,7 +23,7 @@ private:
     std::unordered_set<uint32_t> found_tables;
     DB::Strings nsettings;
 
-    void findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen, bool replace);
+    bool findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen, bool replace);
     void addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, uint32_t ncols, SelectStatementCore * ssc) const;
     void
     insertOnTableOrCluster(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, bool remote, TableOrFunction * tof) const;
