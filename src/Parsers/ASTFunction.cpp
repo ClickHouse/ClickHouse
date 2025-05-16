@@ -833,7 +833,8 @@ void renumeratePlaceholders(ASTFunction & ast)
                     }
                     catch (const std::exception &)
                     {
-                        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Placeholder '{}' has invalid number after '_' sign. Function: {}", id_name, ast.formatForErrorMessage());
+                        placeholders_in_list.push_back(-1);
+                        continue;
                     }
 
                     if (pos < 0)
