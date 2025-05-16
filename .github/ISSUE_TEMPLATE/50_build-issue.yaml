@@ -44,7 +44,7 @@ body:
       required: false
   - type: textarea
     attributes:
-      label: Full error message
-      description: Please include everything!
+      label: Full cmake and/or ninja output with the error
+      description: Please include everything (use https://pastila.nl/ for large output)!
     validations:
       required: true
