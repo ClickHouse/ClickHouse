@@ -275,11 +275,39 @@ static void throwTableMetadataMismatch(
     }
 };
 
+static void logTableMetadataMismatch(
+    const std::string & table_name_for_error_message,
+    std::string_view differs_in,
+    const auto & stored_in_zk,
+    const std::string & parsed_from_zk,
+    const auto & local,
+    const LoggerPtr & logger)
+{
+    if (logger == nullptr)
+        return;
+
+    if (parsed_from_zk.empty())
+    {
+        LOG_WARNING(logger,
+            "Metadata of table {} in ZooKeeper differs in {}. "
+            "Stored in ZooKeeper: {}, local: {}",
+            table_name_for_error_message, differs_in, stored_in_zk, local);
+    }
+    else
+    {
+        LOG_WARNING(logger,
+            "Metadata of table {} in ZooKeeper differs in {}. "
+            "Stored in ZooKeeper: {}, parsed from ZooKeeper: {}, local: {}",
+            table_name_for_error_message, differs_in, stored_in_zk, parsed_from_zk, local);
+    }
+};
+
 void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(
     const ReplicatedMergeTreeTableMetadata & from_zk,
     const ColumnsDescription & columns,
     const std::string & table_name_for_error_message,
-    ContextPtr context) const
+    ContextPtr context,
+    bool check_index_granularity) const
 {
 
     if (data_format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
@@ -292,7 +320,7 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(
         throwTableMetadataMismatch(table_name_for_error_message, "date index column", from_zk.date_column, "", "custom-partitioned");
     }
 
-    if (index_granularity != from_zk.index_granularity)
+    if (check_index_granularity && index_granularity != from_zk.index_granularity)
         throwTableMetadataMismatch(table_name_for_error_message, "index granularity", DB::toString(from_zk.index_granularity), "", DB::toString(index_granularity));
 
     if (merging_params_mode != from_zk.merging_params_mode)
@@ -334,21 +362,30 @@ void ReplicatedMergeTreeTableMetadata::checkEquals(
     const ReplicatedMergeTreeTableMetadata & from_zk,
     const ColumnsDescription & columns,
     const std::string & table_name_for_error_message,
-    ContextPtr context) const
+    ContextPtr context,
+    bool check_index_granularity,
+    bool strict_check,
+    LoggerPtr logger) const
 {
 
-    checkImmutableFieldsEquals(from_zk, columns, table_name_for_error_message, context);
+    checkImmutableFieldsEquals(from_zk, columns, table_name_for_error_message, context, check_index_granularity);
 
     String parsed_zk_sampling_expression = formattedAST(KeyDescription::parse(from_zk.sampling_expression, columns, context, false).definition_ast);
     if (sampling_expression != parsed_zk_sampling_expression)
     {
-        throwTableMetadataMismatch(table_name_for_error_message, "sample expression", from_zk.sampling_expression, parsed_zk_sampling_expression, sampling_expression);
+        if (strict_check)
+            throwTableMetadataMismatch(table_name_for_error_message, "sampling expression", from_zk.sampling_expression, parsed_zk_sampling_expression, sampling_expression);
+        else
+            logTableMetadataMismatch(table_name_for_error_message, "sampling expression", from_zk.sampling_expression, parsed_zk_sampling_expression, sampling_expression, logger);
     }
 
     String parsed_zk_sorting_key = formattedAST(extractKeyExpressionList(KeyDescription::parse(from_zk.sorting_key, columns, context, true).definition_ast));
     if (sorting_key != parsed_zk_sorting_key)
     {
-        throwTableMetadataMismatch(table_name_for_error_message, "sorting key expression", from_zk.sorting_key, parsed_zk_sorting_key, sorting_key);
+        if (strict_check)
+            throwTableMetadataMismatch(table_name_for_error_message, "sorting key expression", from_zk.sorting_key, parsed_zk_sorting_key, sorting_key);
+        else
+            logTableMetadataMismatch(table_name_for_error_message, "sorting key expression", from_zk.sorting_key, parsed_zk_sorting_key, sorting_key, logger);
     }
 
     auto parsed_primary_key = KeyDescription::parse(primary_key, columns, context, true);
@@ -357,30 +394,45 @@ void ReplicatedMergeTreeTableMetadata::checkEquals(
         TTLTableDescription::parse(from_zk.ttl_table, columns, context, parsed_primary_key, /* is_attach = */ true).definition_ast);
     if (ttl_table != parsed_zk_ttl_table)
     {
-        throwTableMetadataMismatch(table_name_for_error_message, "TTL", from_zk.ttl_table, parsed_zk_ttl_table, ttl_table);
+        if (strict_check)
+            throwTableMetadataMismatch(table_name_for_error_message, "TTL", from_zk.ttl_table, parsed_zk_ttl_table, ttl_table);
+        else
+            logTableMetadataMismatch(table_name_for_error_message, "TTL", from_zk.ttl_table, parsed_zk_ttl_table, ttl_table, logger);
     }
 
     String parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, context).toString();
     if (skip_indices != parsed_zk_skip_indices)
     {
-        throwTableMetadataMismatch(table_name_for_error_message, "skip indexes", from_zk.skip_indices, parsed_zk_skip_indices, skip_indices);
+        if (strict_check)
+            throwTableMetadataMismatch(table_name_for_error_message, "skip indexes", from_zk.skip_indices, parsed_zk_skip_indices, skip_indices);
+        else
+            logTableMetadataMismatch(table_name_for_error_message, "skip indexes", from_zk.skip_indices, parsed_zk_skip_indices, skip_indices, logger);
     }
 
     String parsed_zk_projections = ProjectionsDescription::parse(from_zk.projections, columns, context).toString();
     if (projections != parsed_zk_projections)
     {
-        throwTableMetadataMismatch(table_name_for_error_message, "projections", from_zk.projections, parsed_zk_projections, projections);
+        if (strict_check)
+            throwTableMetadataMismatch(table_name_for_error_message, "projections", from_zk.projections, parsed_zk_projections, projections);
+        else
+            logTableMetadataMismatch(table_name_for_error_message, "projections", from_zk.projections, parsed_zk_projections, projections, logger);
     }
 
     String parsed_zk_constraints = ConstraintsDescription::parse(from_zk.constraints).toString();
     if (constraints != parsed_zk_constraints)
     {
-        throwTableMetadataMismatch(table_name_for_error_message, "constraints", from_zk.constraints, parsed_zk_constraints, constraints);
+        if (strict_check)
+            throwTableMetadataMismatch(table_name_for_error_message, "constraints", from_zk.constraints, parsed_zk_constraints, constraints);
+        else
+            logTableMetadataMismatch(table_name_for_error_message, "constraints", from_zk.constraints, parsed_zk_constraints, constraints, logger);
     }
 
-    if (from_zk.index_granularity_bytes_found_in_zk && index_granularity_bytes != from_zk.index_granularity_bytes)
+    if (check_index_granularity && from_zk.index_granularity_bytes_found_in_zk && index_granularity_bytes != from_zk.index_granularity_bytes)
     {
-        throwTableMetadataMismatch(table_name_for_error_message, "index granularity bytes", from_zk.index_granularity_bytes, "", index_granularity_bytes);
+        if (strict_check)
+            throwTableMetadataMismatch(table_name_for_error_message, "index granularity bytes", from_zk.index_granularity_bytes, "", index_granularity_bytes);
+        else
+            logTableMetadataMismatch(table_name_for_error_message, "index granularity bytes", from_zk.index_granularity_bytes, "", index_granularity_bytes, logger);
     }
 }
 
@@ -389,9 +441,10 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(
     const ReplicatedMergeTreeTableMetadata & from_zk,
     const ColumnsDescription & columns,
     const std::string & table_name_for_error_message,
-    ContextPtr context) const
+    ContextPtr context,
+    bool check_index_granularity) const
 {
-    checkImmutableFieldsEquals(from_zk, columns, table_name_for_error_message, context);
+    checkImmutableFieldsEquals(from_zk, columns, table_name_for_error_message, context, check_index_granularity);
 
     Diff diff;
 
