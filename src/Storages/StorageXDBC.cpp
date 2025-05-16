@@ -185,13 +185,15 @@ namespace
         {
             ASTs & engine_args = args.engine_args;
 
-            StorageXDBC::Configuration configuration;
+            String connection_string;
+            String database_or_schema;
+            String table;
 
             if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.getLocalContext()))
             {
-                configuration.connection_string = named_collection->get<String>("connection_string");
-                configuration.database_or_schema = named_collection->get<String>("database_or_schema");
-                configuration.table = named_collection->get<String>("table_name");
+                connection_string = named_collection->get<String>("connection_string");
+                database_or_schema = named_collection->get<String>("database_or_schema");
+                table = named_collection->get<String>("table_name");
             }
             else
             {
@@ -205,20 +207,20 @@ namespace
                 for (size_t i = 0; i < 3; ++i)
                     engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.getLocalContext());
 
-                configuration.connection_string = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string");
-                configuration.database_or_schema = checkAndGetLiteralArgument<String>(engine_args[1], "database_name");
-                configuration.table = checkAndGetLiteralArgument<String>(engine_args[2], "table_name");
+                connection_string = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string");
+                database_or_schema = checkAndGetLiteralArgument<String>(engine_args[1], "database_name");
+                table = checkAndGetLiteralArgument<String>(engine_args[2], "table_name");
             }
 
             BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(
                 args.getContext(),
                 args.getContext()->getSettingsRef()[Setting::http_receive_timeout].value,
-                configuration.connection_string,
+                connection_string,
                 args.getContext()->getSettingsRef()[Setting::odbc_bridge_use_connection_pooling].value);
             return std::make_shared<StorageXDBC>(
                 args.table_id,
-                configuration.database_or_schema,
-                configuration.table,
+                database_or_schema,
+                table,
                 args.columns,
                 args.constraints,
                 args.comment,
