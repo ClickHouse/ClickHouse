@@ -50,6 +50,12 @@ inline std::vector<InstructionPtr> getInstructionsFromAST(ASTPtr query_ptr)
                 tag_matchers.emplace_back(
                     CaseInsensitiveStringView(last_requeted_tag), std::move(attribute_matchers), last_tag_can_skip_ancestors);
                 attribute_matchers = std::vector<AttributeMatcher>{};
+
+                if (member_access_ast->skip_ancestors)
+                {
+                    instructions.push_back(std::make_shared<InstructionSelectTagsWithAttributes>(std::move(tag_matchers)));
+                    tag_matchers = std::vector<TagMatcher>{};
+                }
             }
 
             last_requeted_tag = member_access_ast->member_name;
@@ -110,7 +116,7 @@ inline std::vector<InstructionPtr> getInstructionsFromAST(ASTPtr query_ptr)
 
     if (need_add_member_access_instruction)
     {
-        tag_matchers.emplace_back(CaseInsensitiveStringView(last_requeted_tag), std::move(attribute_matchers));
+        tag_matchers.emplace_back(CaseInsensitiveStringView(last_requeted_tag), std::move(attribute_matchers), last_tag_can_skip_ancestors);
         instructions.push_back(std::make_shared<InstructionSelectTagsWithAttributes>(std::move(tag_matchers)));
     }
 

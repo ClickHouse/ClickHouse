@@ -76,26 +76,32 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to parse XPath");
         }
 
-
-        String xml_document = xml_column.column->getDataAt(0).toString();
-
         const auto instructions = getInstructionsFromAST(res);
 
         auto col_res = ColumnArray::create(ColumnString::create());
+
         ColumnString & res_strings = typeid_cast<ColumnString &>(col_res->getData());
         ColumnArray::Offsets & res_offsets = col_res->getOffsets();
+        ColumnArray::Offset current_offset = 0;
 
         TagScannerPtr tag_scanner = std::make_shared<XMLTagScanner>();
-        std::vector<Document> result
-            = applyInstructions(xml_document.data(), xml_document.data() + xml_document.size(), instructions, tag_scanner);
 
-        for (const auto & doc : result)
+        for (size_t i = 0; i < rows; ++i)
         {
-            res_strings.insertData(doc.begin, doc.end - doc.begin);
+            std::string_view xml_document = xml_column.column->getDataAt(i).toView();
+            std::vector<Document> result
+                = applyInstructions(xml_document.data(), xml_document.data() + xml_document.size(), instructions, tag_scanner);
+
+            for (const auto & doc : result)
+            {
+                res_strings.insertData(doc.begin, doc.end - doc.begin);
+            }
+
+            current_offset += result.size();
+            res_offsets.push_back(current_offset);
         }
 
-        res_offsets.push_back(res_strings.size());
-        return ColumnConst::create(std::move(col_res), rows);
+        return col_res;
     }
 };
 

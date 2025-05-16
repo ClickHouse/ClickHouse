@@ -102,7 +102,6 @@ class InstructionSelectTagsWithAttributes : public IInstruction
 
             matching_progress_by_depth[current_depth] = match_result;
         }
-
     }
 
     void handleClosingTag(
@@ -119,6 +118,11 @@ class InstructionSelectTagsWithAttributes : public IInstruction
 
         for (auto & [depth, match_result] : matching_progress_by_depth)
         {
+            if (depth > current_depth)
+            {
+                continue;
+            }
+
             if (match_result.matchedOnDepth(current_depth))
             {
                 match_result.is_matched = false;
