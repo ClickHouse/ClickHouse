@@ -92,7 +92,6 @@ array
 arrayAUCPR
 arrayAll
 arrayAvg
-arrayCompact
 arrayConcat
 arrayCount
 arrayCumSum
@@ -108,8 +107,6 @@ arrayFilter
 arrayFirst
 arrayFirstIndex
 arrayFirstOrNull
-arrayFlatten
-arrayJaccardIndex
 arrayLast
 arrayLastIndex
 arrayLastOrNull
@@ -119,9 +116,6 @@ arrayMin
 arrayProduct
 arrayROCAUC
 arrayRandomSample
-arrayReduce
-arrayReduceInRanges
-arrayReverse
 arrayReverseFill
 arrayReverseSplit
 arraySplit
