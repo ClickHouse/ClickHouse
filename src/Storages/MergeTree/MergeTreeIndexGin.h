@@ -8,10 +8,6 @@
 namespace DB
 {
 
-static inline const String GIN_INDEX_ARGUMENT_TOKENIZER = "tokenizer";
-static inline const String GIN_INDEX_ARGUMENT_NGRAM_SIZE = "ngram_size";
-static inline const String GIN_INDEX_ARGUMENT_MAX_ROWS = "max_rows_per_postings_list";
-
 struct MergeTreeIndexGranuleGin final : public IMergeTreeIndexGranule
 {
     MergeTreeIndexGranuleGin(

@@ -54,7 +54,7 @@ CREATE TABLE tab
 (
     `key` UInt64,
     `str` String,
-    INDEX inv_idx(str) TYPE gin(tokenizer = 'default/ngram/noop' [, ngram_size = N] [, max_rows_per_postings_list = M]) GRANULARITY 1
+    INDEX inv_idx(str) TYPE gin(tokenizer = 'default|ngram|noop' [, ngram_size = N] [, max_rows_per_postings_list = M]) GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY key
@@ -62,7 +62,7 @@ ORDER BY key
 
 where `tokenizer` specifies the tokenizer:
 
-- `default` set the tokenizer to "tokens('default')", i.e. split strings along non alphanumeric characters.
+- `default` set the tokenizer to "tokens('default')", i.e. split strings along non-alphanumeric characters.
 - `ngram` set the tokenizer to "tokens('ngram')". i.e. splits strings to equal size terms.
 - `noop` set the tokenizer to "tokens('noop')", i.e. every value itself is a term.
 

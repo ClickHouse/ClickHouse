@@ -24,7 +24,7 @@ SELECT * from tab WHERE s = 'bc'; -- { serverError ILLEGAL_INDEX }
 -- The exception recommends to drop the index and create a GIN index instead. Let's try.
 ALTER TABLE tab DROP INDEX idx;
 SET allow_experimental_full_text_index = 1; -- the new setting
-ALTER TABLE tab ADD INDEX idx(s) TYPE gin(2);
+ALTER TABLE tab ADD INDEX idx(s) TYPE gin(tokenizer = 'ngram', ngram_size = 2);
 
 SELECT * from tab WHERE s = 'bc';
 
@@ -55,7 +55,7 @@ SELECT * from tab WHERE s = 'bc'; -- { serverError ILLEGAL_INDEX }
 
 -- The exception recommends to drop the index and create a GIN index instead. Let's try.
 ALTER TABLE tab DROP INDEX idx;
-ALTER TABLE tab ADD INDEX idx(s) TYPE gin(2);
+ALTER TABLE tab ADD INDEX idx(s) TYPE gin(tokenizer = 'ngram', ngram_size = 2);
 
 SELECT * from tab WHERE s = 'bc';
 

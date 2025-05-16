@@ -56,7 +56,7 @@ CREATE TABLE tab
 (
     id UInt64,
     str String,
-    INDEX idx str TYPE gin(  tokenizer = 'ngram', ngram_size = 4, max_rows_per_postings_list = 9999 )
+    INDEX idx str TYPE gin( tokenizer = 'ngram', ngram_size = 4, max_rows_per_postings_list = 9999 )
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -116,7 +116,7 @@ CREATE TABLE tab
 (
     id UInt64,
     str String,
-    INDEX idx str TYPE gin(  max_rows_per_postings_list = 8192, ngram_size = 4, tokenizer = 'ngram' )
+    INDEX idx str TYPE gin( max_rows_per_postings_list = 8192, ngram_size = 4, tokenizer = 'ngram' )
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -127,7 +127,7 @@ CREATE TABLE tab
 (
     id UInt64,
     str String,
-    INDEX idx str TYPE gin(  tokenizer = 1 )
+    INDEX idx str TYPE gin( tokenizer = 1 )
 )
 ENGINE = MergeTree
 ORDER BY id; -- { serverError INCORRECT_QUERY }
@@ -136,7 +136,7 @@ CREATE TABLE tab
 (
     id UInt64,
     str String,
-    INDEX idx str TYPE gin(  ngram_size = '4' )
+    INDEX idx str TYPE gin( ngram_size = '4' )
 )
 ENGINE = MergeTree
 ORDER BY id; -- { serverError INCORRECT_QUERY }
@@ -145,7 +145,73 @@ CREATE TABLE tab
 (
     id UInt64,
     str String,
-    INDEX idx str TYPE gin(  max_rows_per_postings_list = '9999' )
+    INDEX idx str TYPE gin( max_rows_per_postings_list = '9999' )
 )
 ENGINE = MergeTree
 ORDER BY id; -- { serverError INCORRECT_QUERY }
+
+SELECT 'multiple definitions of the same argument.';
+CREATE TABLE tab
+(
+    id UInt64,
+    str String,
+    INDEX idx str TYPE gin( tokenizer = 'default', tokenizer = 'ngram', ngram_size = 3 )
+)
+ENGINE = MergeTree
+ORDER BY id; -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    id UInt64,
+    str String,
+    INDEX idx str TYPE gin( tokenizer = 'ngram', ngram_size = 3, ngram_size = 4 )
+)
+ENGINE = MergeTree
+ORDER BY id; -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    id UInt64,
+    str String,
+    INDEX idx str TYPE gin( tokenizer = 'default', max_rows_per_postings_list = 9999, max_rows_per_postings_list = 8888 )
+)
+ENGINE = MergeTree
+ORDER BY id; -- { serverError INCORRECT_QUERY }
+
+SELECT 'Must be created on single column.';
+CREATE TABLE tab
+(
+    key UInt64,
+    str1 String,
+    str2 String,
+    INDEX inv_idx (str1, str2) TYPE gin( tokenizer = 'default' )
+)
+ENGINE = MergeTree ORDER BY key; -- { serverError INCORRECT_NUMBER_OF_COLUMNS }
+
+SELECT 'Must be created on String or FixedString or Array(String) or Array(FixedString) or LowCardinality(String) or LowCardinality(FixedString) columns.';
+CREATE TABLE tab
+(
+    key UInt64,
+    str UInt64,
+    INDEX inv_idx str TYPE gin( tokenizer = 'default' )
+)
+ENGINE = MergeTree
+ORDER BY key; -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    key UInt64,
+    str Float32,
+    INDEX inv_idx str TYPE gin( tokenizer = 'default' )
+)
+ENGINE = MergeTree
+ORDER BY key; -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    key UInt64,
+    str Nullable(String),
+    INDEX inv_idx str TYPE gin( tokenizer = 'default' )
+)
+ENGINE = MergeTree
+ORDER BY key; -- { serverError INCORRECT_QUERY }
