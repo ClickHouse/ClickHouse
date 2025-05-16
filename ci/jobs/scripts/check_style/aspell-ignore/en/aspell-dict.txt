@@ -2282,6 +2282,7 @@ mortonEncode
 moscow
 msgpack
 msgpk
+mTLS
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
 multiFuzzyMatchAnyIndex

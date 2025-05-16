@@ -539,6 +539,13 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             configuration.database = safeGetLiteralValue<String>(engine_args[1], engine_name);
             configuration.username = safeGetLiteralValue<String>(engine_args[2], engine_name);
             configuration.password = safeGetLiteralValue<String>(engine_args[3], engine_name);
+
+            if (engine_args.size() == 7)
+            {
+                configuration.sslcert = safeGetLiteralValue<String>(engine_args[4], engine_name);
+                configuration.sslkey = safeGetLiteralValue<String>(engine_args[5], engine_name);
+                configuration.sslrootcert = safeGetLiteralValue<String>(engine_args[6], engine_name);
+            }
         }
 
         auto connection_info = postgres::formatConnectionString(
@@ -547,6 +554,9 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             configuration.port,
             configuration.username,
             configuration.password,
+            configuration.sslcert,
+            configuration.sslkey,
+            configuration.sslrootcert,
             args.context->getSettingsRef()[Setting::postgresql_connection_attempt_timeout]);
 
         auto postgresql_replica_settings = std::make_unique<MaterializedPostgreSQLSettings>();
