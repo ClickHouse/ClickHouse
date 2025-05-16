@@ -450,7 +450,7 @@ REGISTER_FUNCTION(ArrayAggregation)
 Returns the minimum element in the source array.
 
 `arrayMin` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
-If function `λ` is specified, returns the mininum element of the lambda results.
+If function `λ` is specified, returns the minimum element of the lambda results.
     )";
     FunctionDocumentation::Syntax syntax_min = "arrayMin([λ(x [, y1, ..., yN])], source [, cond1, ... , condN])";
     FunctionDocumentation::Arguments arguments_min = {

@@ -118,7 +118,9 @@ REGISTER_FUNCTION(ArraySplit)
     FunctionDocumentation::Description description = "Split a source array into multiple arrays. When `λ(x [, y1, ..., yN])` returns something other than zero, the array will be split on the left hand side of the element. The array will not be split before the first element.";
     FunctionDocumentation::Syntax syntax = "arraySplit(λ(x [, y1, ..., yN]), source [, cond1, ... , condN])";
     FunctionDocumentation::Arguments arguments = {
-    	{"λ(x [, y1, ..., yN])", "A lambda function `λ(x [, y1, y2, ... yN]) → F(x [, y1, y2, ... yN])` which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+    	{
+            "λ(x [, y1, ..., yN])", "A lambda function `λ(x [, y1, y2, ... yN]) → F(x [, y1, y2, ... yN])` which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."
+        },
         {"source", "The source array to split [`Array(T)`](/sql-reference/data-types/array)."},
         {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."},
     };
@@ -133,7 +135,9 @@ REGISTER_FUNCTION(ArraySplit)
     FunctionDocumentation::Description description_split = "Split a source array into multiple arrays. When `λ(x [, y1, ..., yN])` returns something other than zero, the array will be split on the right hand side of the element. The array will not be split after the last element.";
     FunctionDocumentation::Syntax syntax_split = "arrayReverseSplit(λ(x [, y1, ..., yN]), source [, cond1, ... , condN])";
     FunctionDocumentation::Arguments arguments_split = {
-    	{"λ(x [, y1, ..., yN])", "A lambda function `λ(x [, y1, y2, ... yN]) → F(x [, y1, y2, ... yN])` which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+    	{
+            "λ(x [, y1, ..., yN])", "A lambda function `λ(x [, y1, y2, ... yN]) → F(x [, y1, y2, ... yN])` which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."
+        },
         {"source", "The source array to split [`Array(T)`](/sql-reference/data-types/array)."},
         {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."},
     };
