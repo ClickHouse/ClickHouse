@@ -73,4 +73,30 @@ CREATE TABLE t_03363_s3_sink (year UInt16, country String, counter UInt8)
 ENGINE = S3(s3_conn, filename = 't_03363_parquet', format = Parquet)
 PARTITION BY (year, country); -- {serverError BAD_ARGUMENTS};
 
+-- hive partition strategy can't be used without partition by clause
+CREATE TABLE t_03363_s3_err (year UInt16, country String, counter UInt8)
+ENGINE = S3(s3_conn, filename = 't_03363_parquet', partition_strategy='hive', format=Parquet); -- {serverError BAD_ARGUMENTS}
+
+-- hive partition strategy can't be used without partition by clause
+INSERT INTO FUNCTION s3(s3_conn, filename = 't_03363_parquet', partition_strategy='hive', format=Parquet) VALUES 1; -- {serverError BAD_ARGUMENTS}
+
+-- hive partition strategy can't be used with globbed path
+CREATE TABLE t_03363_s3_err (year UInt16, country String, counter UInt8)
+ENGINE = S3(s3_conn, filename = 't_03363_parquet/**', partition_strategy='hive', format=Parquet); -- {serverError BAD_ARGUMENTS}
+
+-- hive partition strategy can't be used with globbed path
+INSERT INTO FUNCTION s3(s3_conn, filename = 't_03363_parquet/**', partition_strategy='hive', format=Parquet) VALUES 1; -- {serverError BAD_ARGUMENTS}
+
+-- partition_columns_in_data_file can't be zero for non hive
+CREATE TABLE t_03363_s3_err (year UInt16, country String, counter UInt8)
+ENGINE = S3(s3_conn, filename = 't_03363_parquet{_partition_id}', partition_strategy='wildcard', format=Parquet, partition_columns_in_data_file=0)
+PARTITION BY (year, country); -- {serverError BAD_ARGUMENTS}
+
+-- partition_columns_in_data_file can't be zero for non hive strategy
+CREATE TABLE t_03363_s3_err (year UInt16, country String, counter UInt8)
+ENGINE = S3(s3_conn, filename = 't_03363_parquet', format=Parquet, partition_columns_in_data_file=0) PARTITION BY (year, country); -- {serverError BAD_ARGUMENTS}
+
+-- hive partition strategy can't be set in select statement?
+select * from s3(s3_conn, filename='t_03363_function_write_down_partition_columns/**.parquet', format=Parquet, partition_strategy='hive'); -- {serverError BAD_ARGUMENTS}
+
 DROP TABLE IF EXISTS t_03363_parquet, t_03363_csv;

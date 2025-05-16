@@ -70,6 +70,7 @@ public:
         std::optional<FormatSettings> format_settings_,
         LoadingStrictnessLevel mode,
         bool distributed_processing_ = false,
+        ASTPtr partition_by_ = nullptr,
         bool is_table_function_ = false,
         bool lazy_init = false);
 
@@ -181,9 +182,7 @@ public:
         ASTs & engine_args,
         ContextPtr local_context,
         bool with_table_structure,
-        StorageObjectStorageSettingsPtr settings,
-        const ColumnsDescription & columns = {},
-        const ASTPtr & partition_by = nullptr);
+        StorageObjectStorageSettingsPtr settings);
 
     /// Storage type: s3, hdfs, azure, local.
     virtual ObjectStorageType getType() const = 0;

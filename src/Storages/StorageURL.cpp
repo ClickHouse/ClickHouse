@@ -1173,7 +1173,7 @@ void IStorageURLBase::read(
     size_t num_streams)
 {
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
-    auto read_from_format_info = prepareReadingFromFormatArthur(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context), file_columns.getAll(), hive_partition_columns_to_read_from_file_path);
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context), file_columns.getAll(), hive_partition_columns_to_read_from_file_path);
 
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];

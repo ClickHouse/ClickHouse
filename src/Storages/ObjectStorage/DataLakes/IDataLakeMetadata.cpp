@@ -68,7 +68,7 @@ DB::ReadFromFormatInfo IDataLakeMetadata::prepareReadingFromFormat(
     const NamesAndTypesList & file_columns,
     const NamesAndTypesList & columns_to_read_from_file_path)
 {
-    return DB::prepareReadingFromFormatArthur(requested_columns, storage_snapshot, context, supports_subset_of_columns, file_columns, columns_to_read_from_file_path);
+    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, context, supports_subset_of_columns, file_columns, columns_to_read_from_file_path);
 }
 
 }

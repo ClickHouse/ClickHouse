@@ -1685,7 +1685,7 @@ void StorageFile::read(
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
-    auto read_from_format_info = prepareReadingFromFormatArthur(column_names, storage_snapshot, context, supportsSubsetOfColumns(context), file_columns.getAll(), hive_partition_columns_to_read_from_file_path);
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, context, supportsSubsetOfColumns(context), file_columns.getAll(), hive_partition_columns_to_read_from_file_path);
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && context->getSettingsRef()[Setting::optimize_count_from_files];
 

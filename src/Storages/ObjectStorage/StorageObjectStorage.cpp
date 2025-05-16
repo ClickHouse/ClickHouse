@@ -98,6 +98,7 @@ StorageObjectStorage::StorageObjectStorage(
     std::optional<FormatSettings> format_settings_,
     LoadingStrictnessLevel mode,
     bool distributed_processing_,
+    ASTPtr partition_by_,
     bool is_table_function_,
     bool lazy_init)
     : IStorage(table_id_)
@@ -118,6 +119,7 @@ StorageObjectStorage::StorageObjectStorage(
                 configuration->updateAndGetCurrentSchema(object_storage, context);
             else
                 configuration->update(object_storage, context);
+            configuration->updatePartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
         }
         catch (...)
         {
@@ -143,6 +145,7 @@ StorageObjectStorage::StorageObjectStorage(
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
     configuration->check(context);
 
+    // todo arthur thing about below if statement
     /// FIXME: We need to call getPathSample() lazily on select
     /// in case it failed to be initialized in constructor.
     if (!failed_init
@@ -265,6 +268,27 @@ void StorageObjectStorage::Configuration::update(ObjectStoragePtr object_storage
 
 void StorageObjectStorage::Configuration::updatePartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context)
 {
+    // todo arthur move this inside the factory
+    if (partition_strategy_name == "hive")
+    {
+        if (!partition_by)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy {} can not be used without a PARTITION BY expression", partition_strategy_name);
+        }
+
+        if (withGlobs())
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy {} can not be used with a globbed path", partition_strategy_name);
+        }
+    }
+    else
+    {
+        if (!partition_columns_in_data_file)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy {} can not be used with partition_columns_in_data_file=0", partition_strategy_name);
+        }
+    }
+
     if (!partition_by)
     {
         return;
@@ -433,7 +457,7 @@ ReadFromFormatInfo StorageObjectStorage::Configuration::prepareReadingFromFormat
     const NamesAndTypesList & file_columns_,
     const NamesAndTypesList & hive_partition_columns_to_read_from_file_path_)
 {
-    return prepareReadingFromFormatArthur(
+    return DB::prepareReadingFromFormat(
         requested_columns,
         storage_snapshot,
         local_context,
@@ -708,9 +732,7 @@ void StorageObjectStorage::Configuration::initialize(
     ASTs & engine_args,
     ContextPtr local_context,
     bool with_table_structure,
-    StorageObjectStorageSettingsPtr settings,
-    const ColumnsDescription & columns,
-    const ASTPtr & partition_by)
+    StorageObjectStorageSettingsPtr settings)
 {
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
@@ -737,8 +759,6 @@ void StorageObjectStorage::Configuration::initialize(
     }
     else
         FormatFactory::instance().checkFormatName(configuration_to_initialize.format);
-
-    configuration_to_initialize.updatePartitionStrategy(partition_by, columns, local_context);
 
     configuration_to_initialize.storage_settings = settings;
     configuration_to_initialize.initialized = true;

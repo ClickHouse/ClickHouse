@@ -167,11 +167,12 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
         return storage;
     }
 
+    ASTPtr partition_by;
     if (insert_query)
     {
         if (const auto * insert_query_class = insert_query->as<ASTInsertQuery>())
         {
-            configuration->updatePartitionStrategy(insert_query_class->partition_by, columns, context);
+            partition_by = insert_query_class->partition_by;
         }
     }
 
@@ -186,6 +187,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
         /* format_settings */ std::nullopt,
         /* mode */ LoadingStrictnessLevel::CREATE,
         /* distributed_processing */ is_secondary_query,
+        /* partition_by */ partition_by,
         /* is_table_function */true);
 
     storage->startup();
