@@ -122,7 +122,7 @@ private:
     void checkTableEngine(const ASTCreateQuery & query, ASTStorage & storage, ContextPtr query_context) const;
 
 
-    void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr);
+    void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr, bool lost_according_to_digest = false);
 
     std::map<String, String> tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr) const;
 

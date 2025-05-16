@@ -1167,7 +1167,7 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
     return create.uuid;
 }
 
-void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr)
+void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr, bool lost_according_to_digest)
 {
     waitDatabaseStarted();
 
@@ -1465,6 +1465,13 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                 }
 
                 auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_query_string);
+                
+                if (lost_according_to_digest)
+                {
+                    auto & create = query_ast->as<ASTCreateQuery &>();
+                    create.attach = true;
+                }
+
                 auto create_query_context = make_query_context();
 
                 NormalizeSelectWithUnionQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::union_default_mode]};
