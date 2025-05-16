@@ -5,12 +5,12 @@ namespace DB
 
 NullModel::~NullModel() = default;
 
-void NullModel::fit(const FeatureMatrix&, Targets)
+void NullModel::fit(const FeatureMatrix&, const Targets&)
 {
     // Nothing to do.
 }
 
-void NullModel::fit(const Features&, Target)
+void NullModel::fit(const Features&, const Target&)
 {
     // Nothing to do.
 }

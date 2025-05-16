@@ -31,11 +31,10 @@ private:
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
 
-    const char * getStorageTypeName() const override { return "Memory"; }
+    const char * getStorageTypeName() const override { return "Values"; }
 
-    String source;
-    std::optional<UInt64> random_seed;
-    MemorySettings settings;
+    String model_name;
+    String table_name;
 };
 
 }
