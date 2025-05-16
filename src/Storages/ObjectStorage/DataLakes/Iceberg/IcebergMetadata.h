@@ -20,7 +20,6 @@
 
 #include <tuple>
 
-
 namespace DB
 {
 
@@ -33,7 +32,7 @@ struct IcebergDataObjectInfo : public RelativePathWithMetadata
         : RelativePathWithMetadata(data_object_.file.file_name, std::move(metadata_))
         , data_object(data_object_)
     {
-        for (auto & position_deletes_object : position_deletes_objects_)
+        for (const auto & position_deletes_object : position_deletes_objects_)
         {
             if (position_deletes_object.partition_key_value == data_object.partition_key_value)
                 position_deletes_objects.push_back(position_deletes_object);

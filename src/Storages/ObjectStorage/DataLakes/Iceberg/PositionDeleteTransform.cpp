@@ -1,3 +1,7 @@
+#include "config.h"
+
+#if USE_AVRO
+
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 
 #include <Core/Settings.h>
@@ -17,7 +21,12 @@ namespace DB
 
 namespace Setting
 {
-extern const SettingsUInt64 max_block_size;
+extern const SettingsNonZeroUInt64 max_block_size;
+}
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
 }
 
 void IcebergPositionDeleteTransform::initializeDeleteSources()
@@ -135,7 +144,7 @@ void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
 void IcebergBitmapPositionDeleteTransform::initialize()
 {
     auto iceberg_data_path = iceberg_object_info->getIcebergDataPath();
-    for(auto & delete_source : delete_sources)
+    for (auto & delete_source : delete_sources)
     {
         while (true)
         {
@@ -163,3 +172,5 @@ void IcebergBitmapPositionDeleteTransform::initialize()
 }
 
 }
+
+#endif

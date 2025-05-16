@@ -1,4 +1,7 @@
 #pragma once
+#include "config.h"
+
+#if USE_AVRO
 
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Processors/ISimpleTransform.h>
@@ -33,7 +36,7 @@ public:
         initializeDeleteSources();
     }
 
-    virtual String getName() const override { return "IcebergPositionDeleteTransform"; }
+    String getName() const override { return "IcebergPositionDeleteTransform"; }
 
     static size_t getDeleteFilenameColumnIndex(const std::shared_ptr<IInputFormat> & delete_source);
     static size_t getDeletePositionColumnIndex(const std::shared_ptr<IInputFormat> & delete_source);
@@ -91,3 +94,5 @@ private:
 };
 
 }
+
+#endif
