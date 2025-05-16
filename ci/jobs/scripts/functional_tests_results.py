@@ -179,6 +179,7 @@ class FTResultsProcessor:
         if s.failed != 0 or s.unknown != 0:
             state = Result.Status.FAILED
 
+        info = ""
         if s.hung:
             state = Result.Status.FAILED
             test_results.append(
@@ -193,10 +194,8 @@ class FTResultsProcessor:
                     result.status = "SERVER_DIED"
             test_results.append(Result("Server died", "FAIL", info="Server died"))
         elif not s.success_finish:
-            state = Result.Status.FAILED
-            test_results.append(
-                Result("Tests are not finished", "FAIL", info="Tests are not finished")
-            )
+            state = Result.Status.ERROR
+            info = "The test runner was terminated unexpectedly"
         elif s.retries:
             test_results.append(
                 Result("Some tests restarted", "SKIPPED", info="Some tests restarted")
@@ -204,7 +203,8 @@ class FTResultsProcessor:
         else:
             pass
 
-        info = f"Failed: {s.failed}, Passed: {s.success}, Skipped: {s.skipped}"
+        if not info:
+            info = f"Failed: {s.failed}, Passed: {s.success}, Skipped: {s.skipped}"
 
         # TODO: !!!
         # def test_result_comparator(item):
