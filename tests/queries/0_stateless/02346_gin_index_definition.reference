@@ -1,7 +1,6 @@
-GIN index only literals. (backward compatibility)
-max_rows_per_posting_list should be at least 8192.
-ngram size must be between 2 and 8.
 GIN index key-value support.
 tokenizer should be default, ngram or noop.
 ngram size must be between 2 and 8.
 max_rows_per_posting_list should be at least 8192.
+shuffled parameters.
+incorrect types.
