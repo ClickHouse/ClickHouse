@@ -31,7 +31,7 @@ public:
         bool allow_geoparquet_parser_,
         bool case_insensitive_matching_ = false,
         bool is_stream_ = false,
-        bool enable_json_parsing_ = false);
+        bool enable_json_parsing_ = true);
 
     Chunk arrowTableToCHChunk(
         const std::shared_ptr<arrow::Table> & table,
@@ -49,7 +49,7 @@ public:
         bool allow_inferring_nullable_columns = true,
         bool case_insensitive_matching = false,
         bool allow_geoparquet_parser = true,
-        bool enable_json_parsing = false);
+        bool enable_json_parsing = true);
 
     struct DictionaryInfo
     {

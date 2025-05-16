@@ -69,7 +69,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.6",
         {
-            {"input_format_parquet_enable_json_parsing", false, false, "When reading Parquet files, parse JSON columns as ClickHouse JSON Column."},
+            {"input_format_parquet_enable_json_parsing", true, true, "When reading Parquet files, parse JSON columns as ClickHouse JSON Column."},
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {
