@@ -6,8 +6,6 @@
 
 extern int ENABLE_TRACE;
 
-extern int FAULT;
-
 uint64_t getMemoryAccessCount();
 
 void resetMemoryAccessCount();

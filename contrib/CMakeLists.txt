@@ -2,7 +2,6 @@
 
 set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w -ffunction-sections -fdata-sections")
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w -ffunction-sections -fdata-sections")
-# НАДО ЛИ тут писать add_compile_options ?? Я думаю, что нет
 
 if (SANITIZE STREQUAL "undefined")
     # 3rd-party libraries usually not intended to work with UBSan.

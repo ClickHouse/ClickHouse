@@ -1766,7 +1766,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::WAIT_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::RESET_COVERAGE:
-        case Type::ENABLE_MEMORY_ACCESS_COVERAGE: // TODO: think about it
+        case Type::ENABLE_MEMORY_ACCESS_COVERAGE:
         case Type::DISABLE_MEMORY_ACCESS_COVERAGE:
         case Type::UNKNOWN:
         case Type::END: break;

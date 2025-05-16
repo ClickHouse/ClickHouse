@@ -15,8 +15,6 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <boost/algorithm/string/join.hpp>
 
-#include <base/memory_access_tracing.h>
-
 using namespace DB;
 
 constexpr auto kHeaderSize = FileEncryption::Header::kSize;
@@ -145,7 +143,6 @@ TEST_F(DiskEncryptedTest, WriteAndRead)
 
 TEST_F(DiskEncryptedTest, Append)
 {
-    enableMemoryAccessesCoverage();
     makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", local_disk);
 
     /// Write a file (we use the append mode).
@@ -169,7 +166,6 @@ TEST_F(DiskEncryptedTest, Append)
     EXPECT_EQ(encrypted_disk->getFileSize("a.txt"), 22);
     EXPECT_EQ(getFileContents("a.txt"), "Some text Another text");
     checkBinaryRepresentation(getDirectory() + "a.txt", kHeaderSize + 22);
-    disableMemoryAccessesCoverage();
 }
 
 
