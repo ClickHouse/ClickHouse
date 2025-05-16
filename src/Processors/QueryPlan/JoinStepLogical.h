@@ -70,6 +70,7 @@ public:
     const Names & getRequiredOutpurColumns() const { return required_output_columns; }
 
     std::optional<ActionsDAG> getFilterActions(JoinTableSide side, String & filter_column_name);
+    void pushDownColumns(JoinTableSide side, ActionsDAG & previous);
 
     void setSwapInputs() { swap_inputs = true; }
     bool areInputsSwapped() const { return swap_inputs; }
