@@ -16,9 +16,9 @@ select j from t where j > 3 and i = 20 order by j settings max_threads = 1, use_
 7
 8
 9
-select part_name, condition from system.query_condition_cache order by condition;
-all_1_1_0:p	and(equals(__table1.i, 20_UInt8), greater(__table1.j, 3_UInt8))
-all_2_2_0:p	and(equals(__table1.i, 20_UInt8), greater(__table1.j, 3_UInt8))
+select part_name, condition from system.query_condition_cache order by part_name;
+all_1_1_0:p	and(greater(__table1.j, 3_UInt8), equals(__table1.i, 20_UInt8))
+all_2_2_0:p	and(greater(__table1.j, 3_UInt8), equals(__table1.i, 20_UInt8))
 select j from t where j > 3 and i = 20 order by j settings max_threads = 1, use_query_condition_cache = 1, query_condition_cache_store_conditions_as_plaintext = 1;
 4
 5

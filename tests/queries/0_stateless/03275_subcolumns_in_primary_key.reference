@@ -90,7 +90,7 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/2
@@ -102,7 +102,7 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 a.b.d
 Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
@@ -117,13 +117,13 @@ Filter ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/2
 Granules: 2/8
 Search algorithm: binary search
-ReadFromPreparedSource (_minmax_count_projection)
+ReadFromPreparedSource (_exact_count_projection)
 1
 Expression ((Project names + Projection))
 Aggregating
@@ -132,7 +132,7 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 a.b.d
 Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
@@ -257,7 +257,7 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/1
@@ -269,7 +269,7 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 a.b.d
 Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
@@ -284,13 +284,13 @@ Filter ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/1
 Granules: 2/8
 Search algorithm: binary search
-ReadFromPreparedSource (_minmax_count_projection)
+ReadFromPreparedSource (_exact_count_projection)
 1
 Expression ((Project names + Projection))
 Aggregating
@@ -299,7 +299,7 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 a.b.d
 Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
@@ -398,7 +398,7 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/2
@@ -410,7 +410,7 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 a.b.d
 Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
@@ -425,13 +425,13 @@ Filter ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/2
 Granules: 2/8
 Search algorithm: binary search
-ReadFromPreparedSource (_minmax_count_projection)
+ReadFromPreparedSource (_exact_count_projection)
 1
 Expression ((Project names + Projection))
 Aggregating
@@ -440,7 +440,7 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 a.b.d
 Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
@@ -565,7 +565,7 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/1
@@ -577,7 +577,7 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 a.b.d
 Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
@@ -592,13 +592,13 @@ Filter ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/1
 Granules: 2/8
 Search algorithm: binary search
-ReadFromPreparedSource (_minmax_count_projection)
+ReadFromPreparedSource (_exact_count_projection)
 1
 Expression ((Project names + Projection))
 Aggregating
@@ -607,7 +607,7 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 a.b.d
 Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
@@ -706,7 +706,7 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/2
@@ -718,7 +718,7 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 a.b.d
 Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
@@ -733,13 +733,13 @@ Filter ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/2
 Granules: 2/8
 Search algorithm: binary search
-ReadFromPreparedSource (_minmax_count_projection)
+ReadFromPreparedSource (_exact_count_projection)
 1
 Expression ((Project names + Projection))
 Aggregating
@@ -748,7 +748,7 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 a.b.d
 Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
@@ -873,7 +873,7 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/1
@@ -885,7 +885,7 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 a.b.d
 Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
@@ -900,13 +900,13 @@ Filter ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/1
 Granules: 2/8
 Search algorithm: binary search
-ReadFromPreparedSource (_minmax_count_projection)
+ReadFromPreparedSource (_exact_count_projection)
 1
 Expression ((Project names + Projection))
 Aggregating
@@ -915,7 +915,7 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 a.b.d
 Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
