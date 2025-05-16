@@ -21,11 +21,11 @@ namespace
         { 1.533, 2.132, 2.776, 3.747, 4.604, 7.173 },
         { 1.476, 2.015, 2.571, 3.365, 4.032, 5.893 },
         { 1.440, 1.943, 2.447, 3.143, 3.707, 5.208 },
-        { 1.415, 1.895, 2.365, 2.998, 3.499, 4.782 },
+        { 1.415, 1.895, 2.365, 2.998, 3.499, 4.782 }, // NOLINT
         { 1.397, 1.860, 2.306, 2.896, 3.355, 4.499 },
         { 1.383, 1.833, 2.262, 2.821, 3.250, 4.296 },
         { 1.372, 1.812, 2.228, 2.764, 3.169, 4.143 },
-        { 1.363, 1.796, 2.201, 2.718, 3.106, 4.024 },
+        { 1.363, 1.796, 2.201, 2.718, 3.106, 4.024 }, // NOLINT
         { 1.356, 1.782, 2.179, 2.681, 3.055, 3.929 },
         { 1.350, 1.771, 2.160, 2.650, 3.012, 3.852 },
         { 1.345, 1.761, 2.145, 2.624, 2.977, 3.787 },
@@ -50,7 +50,7 @@ namespace
         { 1.308, 1.692, 2.035, 2.445, 2.733, 3.356 },
         { 1.307, 1.691, 2.032, 2.441, 2.728, 3.348 },
         { 1.306, 1.690, 2.030, 2.438, 2.724, 3.340 },
-        { 1.306, 1.688, 2.028, 2.434, 2.719, 3.333 },
+        { 1.306, 1.688, 2.028, 2.434, 2.719, 3.333 }, // NOLINT
         { 1.305, 1.687, 2.026, 2.431, 2.715, 3.326 },
         { 1.304, 1.686, 2.024, 2.429, 2.712, 3.319 },
         { 1.304, 1.685, 2.023, 2.426, 2.708, 3.313 },
@@ -137,8 +137,7 @@ void StudentTTest::add(size_t distribution, double value)
 /// Confidence_level_index can be set in range [0, 5]. Corresponding values can be found above.
 std::pair<bool, std::string> StudentTTest::compareAndReport(size_t confidence_level_index) const
 {
-    if (confidence_level_index > 5)
-        confidence_level_index = 5;
+    confidence_level_index = std::min<size_t>(confidence_level_index, 5);
 
     if (data[0].size == 0 || data[1].size == 0)
         return {true, ""};
@@ -163,9 +162,7 @@ std::pair<bool, std::string> StudentTTest::compareAndReport(size_t confidence_le
         out << "mean difference is " << mean_difference << ", but confidence interval is " << mean_confidence_interval;
         return {false, out.str()};
     }
-    else
-    {
-        out << "No difference proven at " << confidence_level[confidence_level_index] <<  "% confidence";
-        return {true, out.str()};
-    }
+
+    out << "No difference proven at " << confidence_level[confidence_level_index] << "% confidence";
+    return {true, out.str()};
 }

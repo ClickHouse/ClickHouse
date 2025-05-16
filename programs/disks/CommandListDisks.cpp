@@ -1,47 +1,51 @@
-#include "ICommand.h"
+#include <algorithm>
 #include <Interpreters/Context.h>
+#include <Common/TerminalSize.h>
+#include "DisksClient.h"
+#include "ICommand.h"
+
+#include <fmt/ranges.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 class CommandListDisks final : public ICommand
 {
 public:
-    CommandListDisks()
+    explicit CommandListDisks() : ICommand("CommandListDisks")
     {
         command_name = "list-disks";
-        description = "List disks names";
-        usage = "list-disks [OPTION]";
+        description = "Lists all available disks";
     }
 
-    void processOptions(
-        Poco::Util::LayeredConfiguration &,
-        po::variables_map &) const override
-    {}
-
-    void execute(
-        const std::vector<String> & command_arguments,
-        DB::ContextMutablePtr & global_context,
-        Poco::Util::LayeredConfiguration &) override
+    void executeImpl(const CommandLineOptions &, DisksClient & client) override
     {
-        if (!command_arguments.empty())
+        const std::vector<String> initialized_disks = client.getInitializedDiskNames();
+        std::set<String> sorted_and_selected_disk_state;
+
+
+        for (const auto & disk_name : initialized_disks)
         {
-            printHelpMessage();
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
+            sorted_and_selected_disk_state.insert(disk_name + ":" + client.getDiskWithPath(disk_name).getAbsolutePath(""));
+        }
+        if (!sorted_and_selected_disk_state.empty())
+        {
+            std::cout << "Initialized disks:\n" << fmt::format("{}", fmt::join(sorted_and_selected_disk_state, "\n")) << "\n";
         }
 
-        for (const auto & [disk_name, _] : global_context->getDisksMap())
-            std::cout << disk_name << '\n';
+        std::vector<String> uninitialized_disks = client.getUninitializedDiskNames();
+        if (!uninitialized_disks.empty())
+        {
+            std::set<String> sorted_uninitialized_disks(uninitialized_disks.begin(), uninitialized_disks.end());
+            std::cout << "Uninitialized disks:\n" << fmt::format("{}", fmt::join(sorted_uninitialized_disks, "\n")) << "\n";
+        }
     }
-};
-}
 
-std::unique_ptr <DB::ICommand> makeCommandListDisks()
+private:
+};
+
+CommandPtr makeCommandListDisks()
 {
-    return std::make_unique<DB::CommandListDisks>();
+    return std::make_shared<DB::CommandListDisks>();
+}
 }

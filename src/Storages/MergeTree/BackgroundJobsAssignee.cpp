@@ -2,20 +2,32 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/randomSeed.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
-#include <pcg_random.hpp>
 #include <random>
+
 
 namespace DB
 {
 
 BackgroundJobsAssignee::BackgroundJobsAssignee(MergeTreeData & data_, BackgroundJobsAssignee::Type type_, ContextPtr global_context_)
     : WithContext(global_context_)
-    , data(data_)
-    , sleep_settings(global_context_->getBackgroundMoveTaskSchedulingSettings())
-    , rng(randomSeed())
     , type(type_)
+    , data(data_)
+    , rng(randomSeed())
+    , sleep_settings(getSettings())
 {
+}
+
+BackgroundTaskSchedulingSettings BackgroundJobsAssignee::getSettings() const
+{
+    switch (type)
+    {
+        case Type::DataProcessing:
+            return getContext()->getBackgroundProcessingTaskSchedulingSettings();
+        case Type::Moving:
+            return getContext()->getBackgroundMoveTaskSchedulingSettings();
+    }
 }
 
 void BackgroundJobsAssignee::trigger()
@@ -60,10 +72,11 @@ bool BackgroundJobsAssignee::scheduleMergeMutateTask(ExecutableTaskPtr merge_tas
 }
 
 
-void BackgroundJobsAssignee::scheduleFetchTask(ExecutableTaskPtr fetch_task)
+bool BackgroundJobsAssignee::scheduleFetchTask(ExecutableTaskPtr fetch_task)
 {
     bool res = getContext()->getFetchesExecutor()->trySchedule(fetch_task);
     res ? trigger() : postpone();
+    return res;
 }
 
 
@@ -75,10 +88,11 @@ bool BackgroundJobsAssignee::scheduleMoveTask(ExecutableTaskPtr move_task)
 }
 
 
-void BackgroundJobsAssignee::scheduleCommonTask(ExecutableTaskPtr common_task, bool need_trigger)
+bool BackgroundJobsAssignee::scheduleCommonTask(ExecutableTaskPtr common_task, bool need_trigger)
 {
-    bool res = getContext()->getCommonExecutor()->trySchedule(common_task) && need_trigger;
-    res ? trigger() : postpone();
+    bool schedule_res = getContext()->getCommonExecutor()->trySchedule(common_task);
+    schedule_res && need_trigger ? trigger() : postpone();
+    return schedule_res;
 }
 
 
@@ -91,7 +105,6 @@ String BackgroundJobsAssignee::toString(Type type)
         case Type::Moving:
             return "Moving";
     }
-    UNREACHABLE();
 }
 
 void BackgroundJobsAssignee::start()

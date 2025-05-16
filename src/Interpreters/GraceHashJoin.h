@@ -5,6 +5,7 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Core/Block.h>
+#include <Core/Block_fwd.h>
 
 #include <Common/MultiVersion.h>
 #include <Common/SharedMutex.h>
@@ -44,16 +45,17 @@ class GraceHashJoin final : public IJoin
 {
     class FileBucket;
     class DelayedBlocks;
-    using InMemoryJoin = HashJoin;
 
-    using InMemoryJoinPtr = std::shared_ptr<InMemoryJoin>;
+    using InMemoryJoinPtr = std::shared_ptr<HashJoin>;
 
 public:
     using BucketPtr = std::shared_ptr<FileBucket>;
     using Buckets = std::vector<BucketPtr>;
 
     GraceHashJoin(
-        ContextPtr context_, std::shared_ptr<TableJoin> table_join_,
+        size_t initial_num_buckets_,
+        size_t max_num_buckets_,
+        std::shared_ptr<TableJoin> table_join_,
         const Block & left_sample_block_, const Block & right_sample_block_,
         TemporaryDataOnDiskScopePtr tmp_data_,
         bool any_take_last_row_ = false);
@@ -85,13 +87,19 @@ public:
     /// Must be called after all @joinBlock calls.
     IBlocksStreamPtr getDelayedBlocks() override;
     bool hasDelayedBlocks() const override { return true; }
+    bool rightTableCanBeReranged() const override;
+    void tryRerangeRightTableData() override;
+
+    void onBuildPhaseFinish() override;
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
+
+    void forceSpill() { force_spill = true; }
 
 private:
     void initBuckets();
     /// Create empty join for in-memory processing.
-    InMemoryJoinPtr makeInMemoryJoin(size_t reserve_num = 0);
+    InMemoryJoinPtr makeInMemoryJoin(const String & bucket_id, size_t reserve_num = 0);
 
     /// Add right table block to the @join. Calls @rehash on overflow.
     void addBlockToJoinImpl(Block block);
@@ -121,20 +129,19 @@ private:
     /// Structure block to store in the HashJoin according to sample_block.
     Block prepareRightBlock(const Block & block);
 
-    Poco::Logger * log;
-    ContextPtr context;
+    LoggerPtr log;
     std::shared_ptr<TableJoin> table_join;
     Block left_sample_block;
     Block right_sample_block;
     Block output_sample_block;
     bool any_take_last_row;
+    const size_t initial_num_buckets;
     const size_t max_num_buckets;
-    size_t max_block_size;
 
     Names left_key_names;
     Names right_key_names;
 
-    TemporaryDataOnDiskPtr tmp_data;
+    TemporaryDataOnDiskScopePtr tmp_data;
 
     Buckets buckets;
     mutable SharedMutex rehash_mutex;
@@ -146,6 +153,7 @@ private:
     InMemoryJoinPtr hash_join;
     Block hash_join_sample_block;
     mutable std::mutex hash_join_mutex;
+    std::atomic<bool> force_spill = false;
 };
 
 }

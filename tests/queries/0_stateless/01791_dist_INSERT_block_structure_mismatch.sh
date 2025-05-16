@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-
+# Tags: no-async-insert
+# no-async-insert: no warning
 # NOTE: this is a partial copy of the 01683_dist_INSERT_block_structure_mismatch,
 # but this test also checks the log messages
 
@@ -7,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --prefer_localhost_replica=0 -nm -q "
+$CLICKHOUSE_CLIENT --prefer_localhost_replica=0 -m -q "
     DROP TABLE IF EXISTS tmp_01683;
     DROP TABLE IF EXISTS dist_01683;
 

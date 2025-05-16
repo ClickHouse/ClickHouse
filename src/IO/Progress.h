@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <cstddef>
 #include <functional>
 #include <base/types.h>
 
@@ -125,6 +124,8 @@ struct Progress
     bool incrementPiecewiseAtomically(const Progress & rhs);
 
     void incrementElapsedNs(UInt64 elapsed_ns_);
+
+    bool empty() const;
 
     void reset();
 

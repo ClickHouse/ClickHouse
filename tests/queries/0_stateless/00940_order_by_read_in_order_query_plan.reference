@@ -293,8 +293,8 @@ select * from (select * from tab where (a + b) * c = 8 union all select * from t
 select * from (explain plan actions = 1 select * from (select * from tab where (a + b) * c = 8 union all select * from tab3 where (a + b) * c = 18) order by sin(a / b)) where explain like '%sort description%' or explain like '%ReadType%';
   Prefix sort description: sin(divide(a, b)) ASC
   Result sort description: sin(divide(a, b)) ASC
-        ReadType: InOrder
-        ReadType: InOrder
+          ReadType: InOrder
+          ReadType: InOrder
 select * from (select * from tab where (a + b) * c = 8 union all select * from tab4) order by sin(a / b);
 2	2	2	2
 2	2	2	2
@@ -311,7 +311,7 @@ select * from (select * from tab where (a + b) * c = 8 union all select * from t
 select * from (explain plan actions = 1 select * from (select * from tab where (a + b) * c = 8 union all select * from tab4) order by sin(a / b)) where explain like '%sort description%' or explain like '%ReadType%';
   Prefix sort description: sin(divide(a, b)) ASC
   Result sort description: sin(divide(a, b)) ASC
-        ReadType: InOrder
+          ReadType: InOrder
         ReadType: InOrder
 select * from (select * from tab union all select * from tab5) order by (a + b) * c;
 0	0	0	0

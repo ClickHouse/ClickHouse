@@ -4,6 +4,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnFixedString.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
@@ -16,10 +17,11 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/Pipe.h>
+#include <Processors/Chunk.h>
 #include <Processors/LimitTransform.h>
 #include <Common/SipHash.h>
 #include <Common/UTF8Helpers.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
@@ -37,6 +39,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <memory>
 #include <cmath>
@@ -136,7 +139,7 @@ using ModelPtr = std::unique_ptr<IModel>;
 
 
 template <typename... Ts>
-UInt64 hash(Ts... xs)
+static UInt64 hash(Ts... xs)
 {
     SipHash hash;
     (hash.update(xs), ...);
@@ -231,8 +234,8 @@ static Int64 transformSigned(Int64 x, UInt64 seed)
 {
     if (x >= 0)
         return transform(x, seed);
-    else
-        return -transform(-x, seed);    /// It works Ok even for minimum signed number.
+
+    return -transform(-x, seed);    /// It works Ok even for minimum signed number.
 }
 
 
@@ -271,7 +274,7 @@ public:
 
 /// Pseudorandom permutation of mantissa.
 template <typename Float>
-Float transformFloatMantissa(Float x, UInt64 seed)
+static Float transformFloatMantissa(Float x, UInt64 seed)
 {
     using UInt = std::conditional_t<std::is_same_v<Float, Float32>, UInt32, UInt64>;
     constexpr size_t mantissa_num_bits = std::is_same_v<Float, Float32> ? 23 : 52;
@@ -674,8 +677,7 @@ private:
 
         if (pos + length > end)
             length = end - pos;
-        if (length > sizeof(CodePoint))
-            length = sizeof(CodePoint);
+        length = std::min(length, sizeof(CodePoint));
 
         CodePoint res = 0;
         memcpy(&res, pos, length);
@@ -883,9 +885,7 @@ public:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in markov model");
 
             size_t offset_from_begin_of_string = pos - data;
-            size_t determinator_sliding_window_size = params.determinator_sliding_window_size;
-            if (determinator_sliding_window_size > determinator_size)
-                determinator_sliding_window_size = determinator_size;
+            size_t determinator_sliding_window_size = std::min(params.determinator_sliding_window_size, determinator_size);
 
             size_t determinator_sliding_window_overflow = offset_from_begin_of_string + determinator_sliding_window_size > determinator_size
                 ? offset_from_begin_of_string + determinator_sliding_window_size - determinator_size : 0;
@@ -1108,8 +1108,8 @@ public:
         {
             if (isUInt(data_type))
                 return std::make_unique<UnsignedIntegerModel>(seed);
-            else
-                return std::make_unique<SignedIntegerModel>(seed);
+
+            return std::make_unique<SignedIntegerModel>(seed);
         }
 
         if (typeid_cast<const DataTypeFloat32 *>(&data_type))
@@ -1204,8 +1204,8 @@ public:
 
 }
 
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wmissing-declarations"
+#pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseObfuscator(int argc, char ** argv)
 try
@@ -1307,10 +1307,11 @@ try
         /// stdin must be seekable
         auto res = lseek(file->getFD(), 0, SEEK_SET);
         if (-1 == res)
-            throwFromErrno("Input must be seekable file (it will be read twice).", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+            throw ErrnoException(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Input must be seekable file (it will be read twice)");
 
         SingleReadBufferIterator read_buffer_iterator(std::move(file));
-        schema_columns = readSchemaFromFormat(input_format, {}, read_buffer_iterator, false, context_const);
+
+        schema_columns = readSchemaFromFormat(input_format, {}, read_buffer_iterator, context_const);
     }
     else
     {
@@ -1336,7 +1337,7 @@ try
         /// stdin must be seekable
         auto res = lseek(file_in.getFD(), 0, SEEK_SET);
         if (-1 == res)
-            throwFromErrno("Input must be seekable file (it will be read twice).", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+            throw ErrnoException(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Input must be seekable file (it will be read twice)");
     }
 
     Obfuscator obfuscator(header, seed, markov_model_params);
@@ -1476,11 +1477,13 @@ try
         rewind_needed = true;
     }
 
+    file_out.finalize();
+
     return 0;
 }
 catch (...)
 {
     std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
     auto code = DB::getCurrentExceptionCode();
-    return code ? code : 1;
+    return static_cast<UInt8>(code) ? code : 1;
 }

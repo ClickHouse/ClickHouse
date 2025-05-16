@@ -1,14 +1,15 @@
 #pragma once
 
-#include <atomic>
-#include <memory>
 #include <Server/IServer.h>
 #include <Server/TCPServerConnectionFactory.h>
+#include <Common/ProfileEvents.h>
 
 #include "config.h"
 
+#include <atomic>
+
 #if USE_SSL
-#    include <openssl/rsa.h>
+#    include <Common/Crypto/KeyPair.h>
 #endif
 
 namespace DB
@@ -19,17 +20,10 @@ class MySQLHandlerFactory : public TCPServerConnectionFactory
 {
 private:
     IServer & server;
-    Poco::Logger * log;
+    LoggerPtr log;
 
 #if USE_SSL
-    struct RSADeleter
-    {
-        void operator()(RSA * ptr) { RSA_free(ptr); }
-    };
-    using RSAPtr = std::unique_ptr<RSA, RSADeleter>;
-
-    RSAPtr public_key;
-    RSAPtr private_key;
+    KeyPair keypair;
 
     bool ssl_enabled = true;
 #else
@@ -37,8 +31,11 @@ private:
 #endif
 
     std::atomic<unsigned> last_connection_id = 0;
+
+    ProfileEvents::Event read_event;
+    ProfileEvents::Event write_event;
 public:
-    explicit MySQLHandlerFactory(IServer & server_);
+    explicit MySQLHandlerFactory(IServer & server_, const ProfileEvents::Event & read_event_ = ProfileEvents::end(), const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
     void readRSAKeys();
 

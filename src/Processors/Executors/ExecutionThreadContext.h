@@ -12,10 +12,6 @@ class ReadProgressCallback;
 class ExecutionThreadContext
 {
 private:
-    /// A queue of async tasks. Task is added to queue when waited.
-    std::queue<ExecutingGraph::Node *> async_tasks;
-    std::atomic_bool has_async_tasks = false;
-
     /// This objects are used to wait for next available task.
     std::condition_variable condvar;
     std::mutex mutex;
@@ -43,6 +39,14 @@ public:
     const bool profile_processors;
     const bool trace_processors;
 
+    /// There is a performance optimization that schedules a task to the current thread, avoiding global task queue.
+    /// Optimization decreases contention on global task queue but may cause starvation.
+    /// See 01104_distributed_numbers_test.sql
+    /// This constant tells us that we should skip the optimization
+    /// if it was applied more than `max_scheduled_local_tasks` in a row.
+    constexpr static size_t max_scheduled_local_tasks = 128;
+    size_t num_scheduled_local_tasks = 0;
+
     void wait(std::atomic_bool & finished);
     void wakeUp();
 
@@ -51,11 +55,6 @@ public:
     void setTask(ExecutingGraph::Node * task) { node = task; }
     bool executeTask();
     uint64_t getProcessorID() const { return node->processors_id; }
-
-    /// Methods to manage async tasks.
-    ExecutingGraph::Node * tryPopAsyncTask();
-    void pushAsyncTask(ExecutingGraph::Node * async_task);
-    bool hasAsyncTasks() const { return has_async_tasks; }
 
     std::unique_lock<std::mutex> lockStatus() const { return std::unique_lock(node->status_mutex); }
 

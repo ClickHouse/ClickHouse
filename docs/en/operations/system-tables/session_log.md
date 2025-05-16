@@ -1,12 +1,22 @@
 ---
-slug: /en/operations/system-tables/session_log
+description: 'System table containing information about all successful and failed
+  login and logout events.'
+keywords: ['system table', 'session_log']
+slug: /operations/system-tables/session_log
+title: 'system.session_log'
 ---
-# session_log
+
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.session_log
+
+<SystemTableCloud/>
 
 Contains information about all successful and failed login and logout events.
 
 Columns:
 
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `type` ([Enum8](../../sql-reference/data-types/enum.md)) — Login/logout result. Possible values:
     - `LoginFailure` — Login error.
     - `LoginSuccess` — Successful login.
@@ -48,15 +58,16 @@ Columns:
 
 Query:
 
-``` sql
+```sql
 SELECT * FROM system.session_log LIMIT 1 FORMAT Vertical;
 ```
 
 Result:
 
-``` text
+```text
 Row 1:
 ──────
+hostname:                clickhouse.eu-central1.internal
 type:                    LoginSuccess
 auth_id:                 45e6bd83-b4aa-4a23-85e6-bd83b4aa1a23
 session_id:

@@ -4,22 +4,22 @@
 #include <IO/ReadBuffer.h>
 #include <Server/HTTP/HTTPRequest.h>
 #include <Server/HTTP/HTTPContext.h>
+#include <Common/ProfileEvents.h>
 #include "config.h"
 
 #include <Poco/Net/HTTPServerSession.h>
 
-namespace Poco::Net { class X509Certificate; }
-
 namespace DB
 {
 
+class X509Certificate;
 class HTTPServerResponse;
 class ReadBufferFromPocoSocket;
 
 class HTTPServerRequest : public HTTPRequest
 {
 public:
-    HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session);
+    HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session, const ProfileEvents::Event & read_event = ProfileEvents::end());
 
     /// FIXME: it's a little bit inconvenient interface. The rationale is that all other ReadBuffer's wrap each other
     ///        via unique_ptr - but we can't inherit HTTPServerRequest from ReadBuffer and pass it around,
@@ -44,7 +44,7 @@ public:
 
 #if USE_SSL
     bool havePeerCertificate() const;
-    Poco::Net::X509Certificate peerCertificate() const;
+    X509Certificate peerCertificate() const;
 #endif
 
 private:

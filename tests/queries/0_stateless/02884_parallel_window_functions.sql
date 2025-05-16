@@ -1,9 +1,11 @@
-CREATE TABLE window_funtion_threading
+-- Tags: long, no-tsan, no-asan, no-ubsan, no-msan, no-debug
+
+CREATE TABLE window_function_threading
 Engine = MergeTree
 ORDER BY (ac, nw)
 AS SELECT
         toUInt64(toFloat32(number % 2) % 20000000) as ac,
-        toFloat32(1) as wg,        
+        toFloat32(1) as wg,
         toUInt16(toFloat32(number % 3) % 400) as nw
 FROM numbers_mt(10000000);
 
@@ -18,7 +20,7 @@ FROM
         AVG(wg) AS WR,
         ac,
         nw
-    FROM window_funtion_threading
+    FROM window_function_threading
     GROUP BY ac, nw
 )
 GROUP BY nw
@@ -38,7 +40,7 @@ FROM
         AVG(wg) AS WR,
         ac,
         nw
-    FROM window_funtion_threading
+    FROM window_function_threading
     GROUP BY ac, nw
 )
 GROUP BY nw
@@ -56,13 +58,15 @@ FROM
         AVG(wg) AS WR,
         ac,
         nw
-    FROM window_funtion_threading
+    FROM window_function_threading
     GROUP BY ac, nw
 )
 GROUP BY nw
 ORDER BY nw ASC, R DESC
 LIMIT 10
 SETTINGS max_threads = 1;
+
+SET max_rows_to_read = 40000000;
 
 SELECT
     nw,
@@ -75,7 +79,7 @@ FROM
         AVG(wg) AS WR,
         ac,
         nw
-    FROM window_funtion_threading
+    FROM window_function_threading
     WHERE (ac % 4) = 0
     GROUP BY
         ac,
@@ -86,7 +90,7 @@ FROM
         AVG(wg) AS WR,
         ac,
         nw
-    FROM window_funtion_threading
+    FROM window_function_threading
     WHERE (ac % 4) = 1
     GROUP BY
         ac,
@@ -97,7 +101,7 @@ FROM
         AVG(wg) AS WR,
         ac,
         nw
-    FROM window_funtion_threading
+    FROM window_function_threading
     WHERE (ac % 4) = 2
     GROUP BY
         ac,
@@ -108,7 +112,7 @@ FROM
         AVG(wg) AS WR,
         ac,
         nw
-    FROM window_funtion_threading
+    FROM window_function_threading
     WHERE (ac % 4) = 3
     GROUP BY
         ac,

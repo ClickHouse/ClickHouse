@@ -31,6 +31,7 @@ struct UserDefinedExecutableFunctionConfiguration
     std::vector<UserDefinedExecutableFunctionParameter> parameters;
     DataTypePtr result_type;
     String result_name;
+    bool is_deterministic;
 };
 
 class UserDefinedExecutableFunction final : public IExternalLoadable
@@ -62,7 +63,7 @@ public:
         return true;
     }
 
-    std::shared_ptr<const IExternalLoadable> clone() const override
+    std::shared_ptr<IExternalLoadable> clone() const override
     {
         return std::make_shared<UserDefinedExecutableFunction>(configuration, coordinator, lifetime);
     }

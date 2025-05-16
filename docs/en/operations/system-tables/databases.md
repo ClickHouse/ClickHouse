@@ -1,7 +1,10 @@
 ---
-slug: /en/operations/system-tables/databases
+description: 'System table containing information about the databases that are available
+  to the current user.'
+keywords: ['system table', 'databases']
+slug: /operations/system-tables/databases
+title: 'system.databases'
 ---
-# databases
 
 Contains information about the databases that are available to the current user.
 
@@ -14,6 +17,7 @@ Columns:
 - `uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — Database UUID.
 - `comment` ([String](../../sql-reference/data-types/enum.md)) — Database comment.
 - `engine_full` ([String](../../sql-reference/data-types/enum.md)) — Parameters of the database engine.
+- `database` ([String](../../sql-reference/data-types/string.md)) – Alias for `name`.
 
 The `name` column from this system table is used for implementing the `SHOW DATABASES` query.
 
@@ -21,17 +25,17 @@ The `name` column from this system table is used for implementing the `SHOW DATA
 
 Create a database.
 
-``` sql
+```sql
 CREATE DATABASE test;
 ```
 
 Check all of the available databases to the user.
 
-``` sql
+```sql
 SELECT * FROM system.databases;
 ```
 
-``` text
+```text
 ┌─name────────────────┬─engine─────┬─data_path────────────────────┬─metadata_path─────────────────────────────────────────────────────────┬─uuid─────────────────────────────────┬─engine_full────────────────────────────────────────────┬─comment─┐
 │ INFORMATION_SCHEMA  │ Memory     │ /data/clickhouse_data/       │                                                                       │ 00000000-0000-0000-0000-000000000000 │ Memory                                                 │         │
 │ default             │ Atomic     │ /data/clickhouse_data/store/ │ /data/clickhouse_data/store/f97/f97a3ceb-2e8a-4912-a043-c536e826a4d4/ │ f97a3ceb-2e8a-4912-a043-c536e826a4d4 │ Atomic                                                 │         │

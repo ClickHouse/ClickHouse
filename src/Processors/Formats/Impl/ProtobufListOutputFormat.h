@@ -4,7 +4,8 @@
 
 #if USE_PROTOBUF
 #    include <Processors/Formats/IRowOutputFormat.h>
-#   include <Formats/FormatSchemaInfo.h>
+#    include <Formats/FormatSchemaInfo.h>
+#    include <Formats/ProtobufSchemas.h>
 
 namespace DB
 {
@@ -27,7 +28,8 @@ public:
         WriteBuffer & out_,
         const Block & header_,
         const ProtobufSchemaInfo & schema_info_,
-        bool defaults_for_nullable_google_wrappers_);
+        bool defaults_for_nullable_google_wrappers_,
+        const String & google_protos_path);
 
     String getName() const override { return "ProtobufListOutputFormat"; }
 
@@ -41,6 +43,7 @@ private:
     void resetFormatterImpl() override;
 
     std::unique_ptr<ProtobufWriter> writer;
+    ProtobufSchemas::DescriptorHolder descriptor_holder;
     std::unique_ptr<ProtobufSerializer> serializer;
 };
 

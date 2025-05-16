@@ -1,8 +1,8 @@
 #pragma once
 
 #include <tuple>
+#include <unordered_map>
 
-#include <IO/WriteHelpers.h>
 #include <base/types.h>
 #include <Common/PODArray.h>
 
@@ -18,25 +18,12 @@ struct MarkInCompressedFile
     size_t offset_in_compressed_file;
     size_t offset_in_decompressed_block;
 
-    bool operator==(const MarkInCompressedFile & rhs) const
-    {
-        return std::tie(offset_in_compressed_file, offset_in_decompressed_block)
-            == std::tie(rhs.offset_in_compressed_file, rhs.offset_in_decompressed_block);
-    }
-    bool operator!=(const MarkInCompressedFile & rhs) const { return !(*this == rhs); }
+    auto operator<=>(const MarkInCompressedFile &) const = default;
 
     auto asTuple() const { return std::make_tuple(offset_in_compressed_file, offset_in_decompressed_block); }
 
-    String toString() const
-    {
-        return "(" + DB::toString(offset_in_compressed_file) + "," + DB::toString(offset_in_decompressed_block) + ")";
-    }
-
-    String toStringWithRows(size_t rows_num) const
-    {
-        return "(" + DB::toString(offset_in_compressed_file) + "," + DB::toString(offset_in_decompressed_block) + ","
-            + DB::toString(rows_num) + ")";
-    }
+    String toString() const;
+    String toStringWithRows(size_t rows_num) const;
 };
 
 /**
@@ -57,7 +44,7 @@ class MarksInCompressedFile
 public:
     using PlainArray = PODArray<MarkInCompressedFile>;
 
-    MarksInCompressedFile(const PlainArray & marks);
+    explicit MarksInCompressedFile(const PlainArray & marks);
 
     MarkInCompressedFile get(size_t idx) const;
 
@@ -116,5 +103,7 @@ private:
     // Mark idx -> {block info, bit offset in `packed`}.
     std::tuple<const BlockInfo *, size_t> lookUpMark(size_t idx) const;
 };
+
+using PlainMarksByName = std::unordered_map<String, std::unique_ptr<MarksInCompressedFile::PlainArray>>;
 
 }

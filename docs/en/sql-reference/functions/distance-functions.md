@@ -1,12 +1,14 @@
 ---
-slug: /en/sql-reference/functions/distance-functions
+description: 'Documentation for Distance Functions'
+sidebar_label: 'Distance'
 sidebar_position: 55
-sidebar_label: Distance
+slug: /sql-reference/functions/distance-functions
+title: 'Distance Functions'
 ---
 
 # Distance Functions
 
-## L1Norm
+## L1Norm {#l1norm}
 
 Calculates the sum of absolute values of a vector.
 
@@ -20,13 +22,11 @@ Alias: `normL1`.
 
 **Arguments**
 
-- `vector` — [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+- `vector` — [Tuple](../data-types/tuple.md) or [Array](../data-types/array.md).
 
 **Returned value**
 
-- L1-norm or [taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry) distance.
-
-Type: [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- L1-norm or [taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry) distance. [UInt](../data-types/int-uint.md), [Float](../data-types/float.md) or [Decimal](../data-types/decimal.md).
 
 **Examples**
 
@@ -44,7 +44,7 @@ Result:
 └────────────────┘
 ```
 
-## L2Norm
+## L2Norm {#l2norm}
 
 Calculates the square root of the sum of the squares of the vector values.
 
@@ -58,13 +58,11 @@ Alias: `normL2`.
 
 **Arguments**
 
-- `vector` — [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+- `vector` — [Tuple](../data-types/tuple.md) or [Array](../data-types/array.md).
 
 **Returned value**
 
-- L2-norm or [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance).
-
-Type: [Float](../../sql-reference/data-types/float.md).
+- L2-norm or [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance). [Float](../data-types/float.md).
 
 **Example**
 
@@ -81,8 +79,43 @@ Result:
 │ 2.23606797749979 │
 └──────────────────┘
 ```
+## L2SquaredNorm {#l2squarednorm}
 
-## LinfNorm
+Calculates the square root of the sum of the squares of the vector values (the [L2Norm](#l2norm)) squared.
+
+**Syntax**
+
+```sql
+L2SquaredNorm(vector)
+```
+
+Alias: `normL2Squared`.
+
+***Arguments**
+
+- `vector` — [Tuple](../data-types/tuple.md) or [Array](../data-types/array.md).
+
+**Returned value**
+
+- L2-norm squared. [Float](../data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT L2SquaredNorm((1, 2));
+```
+
+Result:
+
+```text
+┌─L2SquaredNorm((1, 2))─┐
+│                     5 │
+└───────────────────────┘
+```
+
+## LinfNorm {#linfnorm}
 
 Calculates the maximum of absolute values of a vector.
 
@@ -96,13 +129,11 @@ Alias: `normLinf`.
 
 **Arguments**
 
-- `vector` — [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+- `vector` — [Tuple](../data-types/tuple.md) or [Array](../data-types/array.md).
 
 **Returned value**
 
-- Linf-norm or the maximum absolute value.
-
-Type: [Float](../../sql-reference/data-types/float.md).
+- Linf-norm or the maximum absolute value. [Float](../data-types/float.md).
 
 **Example**
 
@@ -120,7 +151,7 @@ Result:
 └───────────────────┘
 ```
 
-## LpNorm
+## LpNorm {#lpnorm}
 
 Calculates the root of `p`-th power of the sum of the absolute values of a vector in the power of `p`.
 
@@ -134,14 +165,12 @@ Alias: `normLp`.
 
 **Arguments**
 
-- `vector` — [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
-- `p` — The power. Possible values: real number in `[1; inf)`. [UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+- `vector` — [Tuple](../data-types/tuple.md) or [Array](../data-types/array.md).
+- `p` — The power. Possible values: real number in `[1; inf)`. [UInt](../data-types/int-uint.md) or [Float](../data-types/float.md).
 
 **Returned value**
 
-- [Lp-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm)
-
-Type: [Float](../../sql-reference/data-types/float.md).
+- [Lp-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm). [Float](../data-types/float.md).
 
 **Example**
 
@@ -159,7 +188,7 @@ Result:
 └────────────────────┘
 ```
 
-## L1Distance
+## L1Distance {#l1distance}
 
 Calculates the distance between two points (the values of the vectors are the coordinates) in `L1` space (1-norm ([taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry) distance)).
 
@@ -173,14 +202,12 @@ Alias: `distanceL1`.
 
 **Arguments**
 
-- `vector1` — First vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
-- `vector2` — Second vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+- `vector1` — First vector. [Tuple](../data-types/tuple.md) or [Array](../data-types/array.md).
+- `vector2` — Second vector. [Tuple](../data-types/tuple.md) or [Array](../data-types/array.md).
 
 **Returned value**
 
-- 1-norm distance.
-
-Type: [Float](../../sql-reference/data-types/float.md).
+- 1-norm distance. [Float](../data-types/float.md).
 
 **Example**
 
@@ -198,7 +225,7 @@ Result:
 └────────────────────────────┘
 ```
 
-## L2Distance
+## L2Distance {#l2distance}
 
 Calculates the distance between two points (the values of the vectors are the coordinates) in Euclidean space ([Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).
 
@@ -212,14 +239,12 @@ Alias: `distanceL2`.
 
 **Arguments**
 
-- `vector1` — First vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
-- `vector2` — Second vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+- `vector1` — First vector. [Tuple](../data-types/tuple.md) or [Array](../data-types/array.md).
+- `vector2` — Second vector. [Tuple](../data-types/tuple.md) or [Array](../data-types/array.md).
 
 **Returned value**
 
-- 2-norm distance.
-
-Type: [Float](../../sql-reference/data-types/float.md).
+- 2-norm distance. [Float](../data-types/float.md).
 
 **Example**
 
@@ -237,7 +262,7 @@ Result:
 └────────────────────────────┘
 ```
 
-## L2SquaredDistance
+## L2SquaredDistance {#l2squareddistance}
 
 Calculates the sum of the squares of the difference between the corresponding elements of two vectors.
 
@@ -251,12 +276,12 @@ Alias: `distanceL2Squared`.
 
 **Arguments**
 
-- `vector1` — First vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
-- `vector2` — Second vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+- `vector1` — First vector. [Tuple](../data-types/tuple.md) or [Array](../data-types/array.md).
+- `vector2` — Second vector. [Tuple](../data-types/tuple.md) or [Array](../data-types/array.md).
 
 **Returned value**
 
-Type: [Float](../../sql-reference/data-types/float.md).
+- Sum of the squares of the difference between the corresponding elements of two vectors. [Float](../data-types/float.md).
 
 **Example**
 
@@ -274,7 +299,7 @@ Result:
 └─────────────────────────────────────────┘
 ```
 
-## LinfDistance
+## LinfDistance {#linfdistance}
 
 Calculates the distance between two points (the values of the vectors are the coordinates) in `L_{inf}` space ([maximum norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#Maximum_norm_(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm))).
 
@@ -288,14 +313,12 @@ Alias: `distanceLinf`.
 
 **Arguments**
 
-- `vector1` — First vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
-- `vector1` — Second vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+- `vector1` — First vector. [Tuple](../data-types/tuple.md) or [Array](../data-types/array.md).
+- `vector1` — Second vector. [Tuple](../data-types/tuple.md) or [Array](../data-types/array.md).
 
 **Returned value**
 
-- Infinity-norm distance.
-
-Type: [Float](../../sql-reference/data-types/float.md).
+- Infinity-norm distance. [Float](../data-types/float.md).
 
 **Example**
 
@@ -313,7 +336,7 @@ Result:
 └──────────────────────────────┘
 ```
 
-## LpDistance
+## LpDistance {#lpdistance}
 
 Calculates the distance between two points (the values of the vectors are the coordinates) in `Lp` space ([p-norm distance](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm)).
 
@@ -327,15 +350,13 @@ Alias: `distanceLp`.
 
 **Arguments**
 
-- `vector1` — First vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
-- `vector2` — Second vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
-- `p` — The power. Possible values: real number from `[1; inf)`. [UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+- `vector1` — First vector. [Tuple](../data-types/tuple.md) or [Array](../data-types/array.md).
+- `vector2` — Second vector. [Tuple](../data-types/tuple.md) or [Array](../data-types/array.md).
+- `p` — The power. Possible values: real number from `[1; inf)`. [UInt](../data-types/int-uint.md) or [Float](../data-types/float.md).
 
 **Returned value**
 
-- p-norm distance.
-
-Type: [Float](../../sql-reference/data-types/float.md).
+- p-norm distance. [Float](../data-types/float.md).
 
 **Example**
 
@@ -354,7 +375,7 @@ Result:
 ```
 
 
-## L1Normalize
+## L1Normalize {#l1normalize}
 
 Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in `L1` space ([taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry)).
 
@@ -368,13 +389,11 @@ Alias: `normalizeL1`.
 
 **Arguments**
 
-- `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
+- `tuple` — [Tuple](../data-types/tuple.md).
 
 **Returned value**
 
-- Unit vector.
-
-Type: [Tuple](../../sql-reference/data-types/tuple.md) of [Float](../../sql-reference/data-types/float.md).
+- Unit vector. [Tuple](../data-types/tuple.md) of [Float](../data-types/float.md).
 
 **Example**
 
@@ -392,7 +411,7 @@ Result:
 └─────────────────────────────────────────┘
 ```
 
-## L2Normalize
+## L2Normalize {#l2normalize}
 
 Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in Euclidean space (using [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).
 
@@ -406,13 +425,11 @@ Alias: `normalizeL1`.
 
 **Arguments**
 
-- `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
+- `tuple` — [Tuple](../data-types/tuple.md).
 
 **Returned value**
 
-- Unit vector.
-
-Type: [Tuple](../../sql-reference/data-types/tuple.md) of [Float](../../sql-reference/data-types/float.md).
+- Unit vector. [Tuple](../data-types/tuple.md) of [Float](../data-types/float.md).
 
 **Example**
 
@@ -430,7 +447,7 @@ Result:
 └─────────────────────┘
 ```
 
-## LinfNormalize
+## LinfNormalize {#linfnormalize}
 
 Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in `L_{inf}` space (using [maximum norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#Maximum_norm_(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm))).
 
@@ -444,13 +461,11 @@ Alias: `normalizeLinf `.
 
 **Arguments**
 
-- `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
+- `tuple` — [Tuple](../data-types/tuple.md).
 
 **Returned value**
 
-- Unit vector.
-
-Type: [Tuple](../../sql-reference/data-types/tuple.md) of [Float](../../sql-reference/data-types/float.md).
+- Unit vector. [Tuple](../data-types/tuple.md) of [Float](../data-types/float.md).
 
 **Example**
 
@@ -468,7 +483,7 @@ Result:
 └───────────────────────┘
 ```
 
-## LpNormalize
+## LpNormalize {#lpnormalize}
 
 Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in `Lp` space (using [p-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm)).
 
@@ -482,14 +497,12 @@ Alias: `normalizeLp `.
 
 **Arguments**
 
-- `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
-- `p` — The power. Possible values: any number from [1;inf). [UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+- `tuple` — [Tuple](../data-types/tuple.md).
+- `p` — The power. Possible values: any number from [1;inf). [UInt](../data-types/int-uint.md) or [Float](../data-types/float.md).
 
 **Returned value**
 
-- Unit vector.
-
-Type: [Tuple](../../sql-reference/data-types/tuple.md) of [Float](../../sql-reference/data-types/float.md).
+- Unit vector. [Tuple](../data-types/tuple.md) of [Float](../data-types/float.md).
 
 **Example**
 
@@ -507,9 +520,9 @@ Result:
 └─────────────────────────────────────────┘
 ```
 
-## cosineDistance
+## cosineDistance {#cosinedistance}
 
-Calculates the cosine distance between two vectors (the values of the tuples are the coordinates). The less the returned value is, the more similar are the vectors.
+Calculates the cosine distance between two vectors (the values of the tuples are the coordinates). The smaller the returned value is, the more similar are the vectors.
 
 **Syntax**
 
@@ -519,14 +532,12 @@ cosineDistance(vector1, vector2)
 
 **Arguments**
 
-- `vector1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
-- `vector2` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+- `vector1` — First tuple. [Tuple](../data-types/tuple.md) or [Array](../data-types/array.md).
+- `vector2` — Second tuple. [Tuple](../data-types/tuple.md) or [Array](../data-types/array.md).
 
 **Returned value**
 
-- Cosine of the angle between two vectors subtracted from one.
-
-Type: [Float](../../sql-reference/data-types/float.md).
+- Cosine of the angle between two vectors subtracted from one. [Float](../data-types/float.md).
 
 **Examples**
 

@@ -1,0 +1,44 @@
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;
+
+
+CREATE TABLE t1 (
+    key UInt32,
+    a UInt32,
+    attr String
+) ENGINE = MergeTree ORDER BY key;
+
+CREATE TABLE t2 (
+    key UInt32,
+    a UInt32,
+    attr String
+) ENGINE = MergeTree ORDER BY key;
+
+INSERT INTO t1 (key, a, attr) VALUES (1, 10, 'alpha'), (2, 15, 'beta'), (3, 20, 'gamma');
+INSERT INTO t2 (key, a, attr) VALUES (1, 5, 'ALPHA'), (2, 10, 'beta'), (4, 25, 'delta');
+
+
+SET enable_analyzer=1;
+SET allow_experimental_join_condition=1;
+SET join_use_nulls=0;
+-- { echoOn }
+
+-- Support for query lower
+{% for join_type in ['LEFT', 'INNER', 'RIGHT', 'FULL'] -%}
+{% for algorithm in ['hash', 'grace_hash'] -%}
+SET join_algorithm='{{ algorithm }}';
+SELECT * FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND (t1.attr != t2.attr) ORDER BY ALL;
+{% endfor -%}
+{% endfor -%}
+
+
+-- Subquery JOIN
+{% for join_type in ['LEFT', 'INNER', 'RIGHT', 'FULL'] -%}
+{% for algorithm in ['hash', 'grace_hash'] -%}
+SET join_algorithm='{{ algorithm }}';
+SELECT * FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND (t1.attr != t2.attr) {{ join_type }} JOIN (SELECT * FROM VALUES('key UInt64, a UInt64', (0, 10), (1, 100), (2, 1000))) t3 ON t1.key=t3.key AND t2.key=t3.key AND t3.a!=t1.a AND t3.a!=t2.a ORDER BY ALL;
+{% endfor -%}
+{% endfor -%}
+
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;

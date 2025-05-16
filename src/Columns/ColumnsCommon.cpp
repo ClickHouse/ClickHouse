@@ -133,7 +133,7 @@ namespace
 
         void reserve(ssize_t result_size_hint, size_t src_size)
         {
-            res_offsets.reserve(result_size_hint > 0 ? result_size_hint : src_size);
+            res_offsets.reserve_exact(result_size_hint > 0 ? result_size_hint : src_size);
         }
 
         void insertOne(size_t array_size)
@@ -205,9 +205,9 @@ namespace
             result_offsets_builder.reserve(result_size_hint, size);
 
             if (result_size_hint < 0)
-                res_elems.reserve(src_elems.size());
+                res_elems.reserve_exact(src_elems.size());
             else if (result_size_hint < 1000000000 && src_elems.size() < 1000000000)    /// Avoid overflow.
-                res_elems.reserve((result_size_hint * src_elems.size() + size - 1) / size);
+                res_elems.reserve_exact((result_size_hint * src_elems.size() + size - 1) / size);
         }
 
         const UInt8 * filt_pos = filt.data();
@@ -328,6 +328,7 @@ INSTANTIATE(Int32)
 INSTANTIATE(Int64)
 INSTANTIATE(Int128)
 INSTANTIATE(Int256)
+INSTANTIATE(BFloat16)
 INSTANTIATE(Float32)
 INSTANTIATE(Float64)
 INSTANTIATE(Decimal32)

@@ -1,5 +1,7 @@
 {% for index_granularity in [999, 1000, 1001, 9999, 10000, 10001] %}
 
+SET optimize_trivial_insert_select = 1;
+
 DROP TABLE IF EXISTS url_na_log;
 
 CREATE TABLE url_na_log(SiteId UInt32, DateVisit Date, PRIMARY KEY (SiteId))

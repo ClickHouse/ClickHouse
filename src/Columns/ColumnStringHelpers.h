@@ -37,9 +37,9 @@ class WriteHelper
             column.resize(rows);
         else
         {
-            column.getOffsets().reserve(rows);
+            column.getOffsets().reserve_exact(rows);
             /// Using coefficient 2 for initial size is arbitrary.
-            column.getChars().resize(rows * 2);
+            column.getChars().reserve_exact(rows * 2);
         }
         return column;
     }
@@ -72,9 +72,12 @@ public:
                         "Too large string for FixedString column");
 
             // Pad with zeroes on the right to maintain FixedString invariant.
-            const auto excess_bytes = buffer.count() % col.getN();
-            const auto fill_bytes = col.getN() - excess_bytes;
-            writeChar(0, fill_bytes, buffer);
+            if (buffer.count() % col.getN() != 0 || buffer.count() == prev_row_buffer_size)
+            {
+                const auto excess_bytes = buffer.count() % col.getN();
+                const auto fill_bytes = col.getN() - excess_bytes;
+                writeChar(0, fill_bytes, buffer);
+            }
         }
         else
         {

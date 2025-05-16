@@ -1,25 +1,16 @@
 #include "SensitiveDataMasker.h"
 
-#include <mutex>
 #include <set>
 #include <string>
 #include <atomic>
 
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
-
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <Common/logger_useful.h>
+#include <Common/re2.h>
 
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/ProfileEvents.h>
 
 #ifndef NDEBUG
@@ -50,6 +41,8 @@ private:
     const std::string replacement_string;
     const std::string regexp_string;
 
+    const bool throw_on_match;
+
     const RE2 regexp;
     const std::string_view replacement;
 
@@ -61,15 +54,21 @@ public:
     //* TODO: option with hyperscan? https://software.intel.com/en-us/articles/why-and-how-to-replace-pcre-with-hyperscan
     // re2::set should also work quite fast, but it doesn't return the match position, only which regexp was matched
 
-    MaskingRule(const std::string & name_, const std::string & regexp_string_, const std::string & replacement_string_)
+    MaskingRule(
+        const std::string & name_,
+        const std::string & regexp_string_,
+        const std::string & replacement_string_,
+        bool throw_on_match_
+    )
         : name(name_)
         , replacement_string(replacement_string_)
         , regexp_string(regexp_string_)
+        , throw_on_match(throw_on_match_)
         , regexp(regexp_string, RE2::Quiet)
         , replacement(replacement_string)
     {
         if (!regexp.ok())
-            throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP,
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
                 "SensitiveDataMasker: cannot compile re2: {}, error: {}. "
                 "Look at https://github.com/google/re2/wiki/Syntax for reference.",
                 regexp_string_, regexp.error());
@@ -78,6 +77,12 @@ public:
     uint64_t apply(std::string & data) const
     {
         auto m = RE2::GlobalReplace(&data, regexp, replacement);
+
+        if (throw_on_match && m > 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "The rule {} was triggered on the log line {}",
+                            name, data);
+
 #ifndef NDEBUG
         matches_count += m;
 #endif
@@ -94,29 +99,26 @@ public:
 
 SensitiveDataMasker::~SensitiveDataMasker() = default;
 
-std::unique_ptr<SensitiveDataMasker> SensitiveDataMasker::sensitive_data_masker = nullptr;
-std::mutex SensitiveDataMasker::instance_mutex;
+SensitiveDataMasker::MaskerMultiVersion SensitiveDataMasker::sensitive_data_masker{};
 
-void SensitiveDataMasker::setInstance(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker_)
+void SensitiveDataMasker::setInstance(std::unique_ptr<SensitiveDataMasker>&& sensitive_data_masker_)
 {
 
     if (!sensitive_data_masker_)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: the 'sensitive_data_masker' is not set");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The 'sensitive_data_masker' is not set");
 
-    std::lock_guard lock(instance_mutex);
     if (sensitive_data_masker_->rulesCount() > 0)
     {
-        sensitive_data_masker = std::move(sensitive_data_masker_);
+        sensitive_data_masker.set(std::move(sensitive_data_masker_));
     }
     else
     {
-        sensitive_data_masker.reset();
+        sensitive_data_masker.set(nullptr);
     }
 }
 
-SensitiveDataMasker * SensitiveDataMasker::getInstance()
+SensitiveDataMasker::MaskerMultiVersion::Version SensitiveDataMasker::getInstance()
 {
-    std::lock_guard lock(instance_mutex);
     return sensitive_data_masker.get();
 }
 
@@ -124,7 +126,7 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
-    Poco::Logger * logger = &Poco::Logger::get("SensitiveDataMaskerConfigRead");
+    LoggerPtr logger = getLogger("SensitiveDataMaskerConfigRead");
 
     std::set<std::string> used_names;
 
@@ -152,10 +154,11 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
             }
 
             auto replace = config.getString(rule_config_prefix + ".replace", "******");
+            auto throw_on_match = config.getBool(rule_config_prefix + ".throw_on_match", false);
 
             try
             {
-                addMaskingRule(rule_name, regexp, replace);
+                addMaskingRule(rule_name, regexp, replace, throw_on_match);
             }
             catch (DB::Exception & e)
             {
@@ -175,9 +178,12 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
 }
 
 void SensitiveDataMasker::addMaskingRule(
-    const std::string & name, const std::string & regexp_string, const std::string & replacement_string)
+    const std::string & name,
+    const std::string & regexp_string,
+    const std::string & replacement_string,
+    bool throw_on_match)
 {
-    all_masking_rules.push_back(std::make_unique<MaskingRule>(name, regexp_string, replacement_string));
+    all_masking_rules.push_back(std::make_unique<MaskingRule>(name, regexp_string, replacement_string, throw_on_match));
 }
 
 
@@ -210,11 +216,11 @@ size_t SensitiveDataMasker::rulesCount() const
 }
 
 
-std::string wipeSensitiveDataAndCutToLength(const std::string & str, size_t max_length)
+std::string wipeSensitiveDataAndCutToLength(std::string str, size_t max_length)
 {
-    std::string res = str;
+    std::string res = std::move(str);
 
-    if (auto * masker = SensitiveDataMasker::getInstance())
+    if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(res);
 
     size_t length = res.length();

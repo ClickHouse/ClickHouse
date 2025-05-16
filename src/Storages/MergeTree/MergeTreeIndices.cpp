@@ -1,12 +1,12 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <IO/WriteHelpers.h>
+
+#include <Columns/IColumn.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Storages/MergeTree/IDataPartStorage.h>
+
 #include <numeric>
-
-#include <boost/algorithm/string.hpp>
-
 
 namespace DB
 {
@@ -15,6 +15,19 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+}
+
+Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
+{
+    return index.expression->getRequiredColumns();
+}
+
+MergeTreeIndexFormat
+IMergeTreeIndex::getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
+{
+    if (data_part_storage.existsFile(relative_path_prefix + ".idx"))
+        return {1, ".idx"};
+    return {0 /*unknown*/, ""};
 }
 
 void MergeTreeIndexFactory::registerCreator(const std::string & index_type, Creator creator)
@@ -43,8 +56,7 @@ MergeTreeIndexPtr MergeTreeIndexFactory::get(
                         {
                             if (left.empty())
                                 return right.first;
-                            else
-                                return left + ", " + right.first;
+                            return left + ", " + right.first;
                         })
                 );
     }
@@ -98,8 +110,7 @@ void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach
                     {
                         if (left.empty())
                             return right.first;
-                        else
-                            return left + ", " + right.first;
+                        return left + ", " + right.first;
                     })
             );
     }
@@ -115,31 +126,39 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerCreator("set", setIndexCreator);
     registerValidator("set", setIndexValidator);
 
-    registerCreator("ngrambf_v1", bloomFilterIndexCreator);
-    registerValidator("ngrambf_v1", bloomFilterIndexValidator);
+    registerCreator("ngrambf_v1", bloomFilterIndexTextCreator);
+    registerValidator("ngrambf_v1", bloomFilterIndexTextValidator);
 
-    registerCreator("tokenbf_v1", bloomFilterIndexCreator);
-    registerValidator("tokenbf_v1", bloomFilterIndexValidator);
+    registerCreator("tokenbf_v1", bloomFilterIndexTextCreator);
+    registerValidator("tokenbf_v1", bloomFilterIndexTextValidator);
 
-    registerCreator("bloom_filter", bloomFilterIndexCreatorNew);
-    registerValidator("bloom_filter", bloomFilterIndexValidatorNew);
+    registerCreator("bloom_filter", bloomFilterIndexCreator);
+    registerValidator("bloom_filter", bloomFilterIndexValidator);
 
     registerCreator("hypothesis", hypothesisIndexCreator);
+
     registerValidator("hypothesis", hypothesisIndexValidator);
 
-#ifdef ENABLE_ANNOY
-    registerCreator("annoy", annoyIndexCreator);
-    registerValidator("annoy", annoyIndexValidator);
+#if USE_USEARCH
+    registerCreator("vector_similarity", vectorSimilarityIndexCreator);
+    registerValidator("vector_similarity", vectorSimilarityIndexValidator);
 #endif
 
-#ifdef ENABLE_USEARCH
-    registerCreator("usearch", usearchIndexCreator);
-    registerValidator("usearch", usearchIndexValidator);
-#endif
+    registerCreator("gin", ginIndexCreator);
+    registerValidator("gin", ginIndexValidator);
 
-    registerCreator("inverted", invertedIndexCreator);
-    registerValidator("inverted", invertedIndexValidator);
-
+    /// ------
+    /// Index type 'inverted' was renamed to 'full_text' in May 2024.
+    /// Index type 'full_text' was renamed to 'gin' in April 2025.
+    ///
+    /// To support loading tables with old indexes during a transition period, register GIN indexes under their old names.
+    ///
+    /// TODO: remove this block one year after GIN indexes became GA.
+    registerCreator("full_text", ginIndexCreator);
+    registerValidator("full_text", ginIndexValidator);
+    registerCreator("inverted", ginIndexCreator);
+    registerValidator("inverted", ginIndexValidator);
+    /// ------
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()

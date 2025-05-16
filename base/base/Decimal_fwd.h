@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <base/extended_types.h>
 
 namespace wide
 {
@@ -26,6 +27,7 @@ using Decimal128 = Decimal<Int128>;
 using Decimal256 = Decimal<Int256>;
 
 class DateTime64;
+class Time64;
 
 template <class T>
 concept is_decimal =
@@ -33,7 +35,8 @@ concept is_decimal =
     || std::is_same_v<T, Decimal64>
     || std::is_same_v<T, Decimal128>
     || std::is_same_v<T, Decimal256>
-    || std::is_same_v<T, DateTime64>;
+    || std::is_same_v<T, DateTime64>
+    || std::is_same_v<T, Time64>;
 
 template <class T>
 concept is_over_big_int =
@@ -43,4 +46,13 @@ concept is_over_big_int =
     || std::is_same_v<T, UInt256>
     || std::is_same_v<T, Decimal128>
     || std::is_same_v<T, Decimal256>;
+
+template <class T>
+concept is_over_big_decimal = is_decimal<T> && is_over_big_int<typename T::NativeType>;
+
 }
+
+template <> struct is_signed<DB::Decimal32> { static constexpr bool value = true; };
+template <> struct is_signed<DB::Decimal64> { static constexpr bool value = true; };
+template <> struct is_signed<DB::Decimal128> { static constexpr bool value = true; };
+template <> struct is_signed<DB::Decimal256> { static constexpr bool value = true; };

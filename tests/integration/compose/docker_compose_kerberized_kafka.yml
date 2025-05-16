@@ -1,0 +1,59 @@
+services:
+  kafka_kerberized_zookeeper:
+    image: confluentinc/cp-zookeeper:5.2.0
+    # restart: always
+    hostname: kafka_kerberized_zookeeper
+    environment:
+      ZOOKEEPER_SERVER_ID: 1
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_SERVERS: "kafka_kerberized_zookeeper:2888:3888"
+      KAFKA_OPTS: "-Djava.security.auth.login.config=/etc/kafka/secrets/zookeeper_jaas.conf -Djava.security.krb5.conf=/etc/kafka/secrets/krb.conf -Dzookeeper.authProvider.1=org.apache.zookeeper.server.auth.SASLAuthenticationProvider -Dsun.security.krb5.debug=true"
+    volumes:
+      - ${KERBERIZED_KAFKA_DIR}/secrets:/etc/kafka/secrets
+      - /dev/urandom:/dev/random
+    depends_on:
+      - kafka_kerberos
+    security_opt:
+      - label:disable
+
+  kerberized_kafka1:
+    image: confluentinc/cp-kafka:5.2.0
+    # restart: always
+    hostname: kerberized_kafka1
+    ports:
+      - ${KERBERIZED_KAFKA_EXTERNAL_PORT:-19092}:${KERBERIZED_KAFKA_EXTERNAL_PORT:-19092}
+    environment:
+      KAFKA_LISTENERS: OUTSIDE://:19092,UNSECURED_OUTSIDE://:19093,UNSECURED_INSIDE://0.0.0.0:${KERBERIZED_KAFKA_EXTERNAL_PORT}
+      KAFKA_ADVERTISED_LISTENERS: OUTSIDE://kerberized_kafka1:19092,UNSECURED_OUTSIDE://kerberized_kafka1:19093,UNSECURED_INSIDE://localhost:${KERBERIZED_KAFKA_EXTERNAL_PORT}
+      # KAFKA_LISTENERS: INSIDE://kerberized_kafka1:9092,OUTSIDE://kerberized_kafka1:19092
+      # KAFKA_ADVERTISED_LISTENERS: INSIDE://localhost:9092,OUTSIDE://kerberized_kafka1:19092
+      KAFKA_ADVERTISED_HOST_NAME: kerberized_kafka1
+      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: GSSAPI
+      KAFKA_SASL_ENABLED_MECHANISMS: GSSAPI
+      KAFKA_SASL_KERBEROS_SERVICE_NAME: kafka
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: OUTSIDE:SASL_PLAINTEXT,UNSECURED_OUTSIDE:PLAINTEXT,UNSECURED_INSIDE:PLAINTEXT,
+      KAFKA_INTER_BROKER_LISTENER_NAME: OUTSIDE
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: "kafka_kerberized_zookeeper:2181"
+      KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_OPTS: "-Djava.security.auth.login.config=/etc/kafka/secrets/broker_jaas.conf -Djava.security.krb5.conf=/etc/kafka/secrets/krb.conf -Dsun.security.krb5.debug=true"
+    volumes:
+      - ${KERBERIZED_KAFKA_DIR:-}/secrets:/etc/kafka/secrets
+      - /dev/urandom:/dev/random
+    depends_on:
+      - kafka_kerberized_zookeeper
+      - kafka_kerberos
+    security_opt:
+      - label:disable
+    sysctls:
+      net.ipv4.ip_local_port_range: '55000 65535'
+
+  kafka_kerberos:
+    image: clickhouse/kerberos-kdc:${DOCKER_KERBEROS_KDC_TAG:-latest}
+    hostname: kafka_kerberos
+    volumes:
+      - ${KERBERIZED_KAFKA_DIR}/secrets:/tmp/keytab
+      - ${KERBERIZED_KAFKA_DIR}/../../kerberos_image_config.sh:/config.sh
+      - /dev/urandom:/dev/random
+    ports: [88, 749]

@@ -31,8 +31,8 @@ lotteryWin	Float64
 someRatio	Float32					
 temperature	Float32					
 randomBigNumber	Int64					
-measureUnits	Array(Tuple(unit String, coef Float32))					
-nestiness_a_b_c	Tuple(d UInt32, e Array(UInt32))					
+measureUnits	Array(Tuple(\n    unit String,\n    coef Float32))					
+nestiness_a_b_c	Tuple(\n    d UInt32,\n    e Array(UInt32))					
 
 location	Array(Int32)					
 pi	Float32					
@@ -78,8 +78,8 @@ lotteryWin	String
 someRatio	String					
 temperature	String					
 randomBigNumber	String					
-measureUnits	Tuple(unit Array(String), coef Array(String))					
-nestiness_a_b_c	Tuple(d String, e Array(String))					
+measureUnits	Tuple(\n    unit Array(String),\n    coef Array(String))					
+nestiness_a_b_c	Tuple(\n    d String,\n    e Array(String))					
 
 uuid	String					
 name	String					
@@ -101,14 +101,14 @@ lotteryWin	Float64
 someRatio	Float32					
 temperature	Float32					
 randomBigNumber	Int64					
-measureunits	Tuple(coef Array(Float32), unit Array(String))					
-nestiness_a_b_c	Tuple(d UInt32, e Array(UInt32))					
+measureunits	Tuple(\n    coef Array(Float32),\n    unit Array(String))					
+nestiness_a_b_c	Tuple(\n    d UInt32,\n    e Array(UInt32))					
 newFieldStr	String					
 newFieldInt	Int32					
 newBool	UInt8					
 
 identifier	String					
-modules	Array(Tuple(module_id UInt32, supply UInt32, temp UInt32, nodes Array(Tuple(node_id UInt32, opening_time UInt32, closing_time UInt32, current UInt32, coords_y Float32))))					
+modules	Array(Tuple(\n    module_id UInt32,\n    supply UInt32,\n    temp UInt32,\n    nodes Array(Tuple(\n        node_id UInt32,\n        opening_time UInt32,\n        closing_time UInt32,\n        current UInt32,\n        coords_y Float32))))					
 
 Capnproto
 
@@ -123,15 +123,15 @@ lc2	Nullable(String)
 lc3	Array(Nullable(String))					
 
 value	UInt64					
-nested	Tuple(a Tuple(b UInt64, c Array(Array(UInt64))), d Array(Tuple(e Array(Array(Tuple(f UInt64, g UInt64))), h Array(Tuple(k Array(UInt64))))))					
+nested	Tuple(\n    a Tuple(\n        b UInt64,\n        c Array(Array(UInt64))),\n    d Array(Tuple(\n        e Array(Array(Tuple(\n            f UInt64,\n            g UInt64))),\n        h Array(Tuple(\n            k Array(UInt64))))))					
 
-nested	Tuple(value Array(UInt64), array Array(Array(UInt64)), tuple Array(Tuple(one UInt64, two UInt64)))					
+nested	Tuple(\n    value Array(UInt64),\n    array Array(Array(UInt64)),\n    tuple Array(Tuple(\n        one UInt64,\n        two UInt64)))					
 
-a	Tuple(b UInt64, c Tuple(d UInt64, e Tuple(f UInt64)))					
+a	Tuple(\n    b UInt64,\n    c Tuple(\n        d UInt64,\n        e Tuple(\n            f UInt64)))					
 
 nullable	Nullable(UInt64)					
 array	Array(Nullable(UInt64))					
-tuple	Tuple(nullable Nullable(UInt64))					
+tuple	Tuple(\n    nullable Nullable(UInt64))					
 
 int8	Int8					
 uint8	UInt8					
@@ -151,8 +151,8 @@ datetime	UInt32
 datetime64	Int64					
 
 value	UInt64					
-tuple1	Tuple(one UInt64, two Tuple(three UInt64, four UInt64))					
-tuple2	Tuple(nested1 Tuple(nested2 Tuple(x UInt64)))					
+tuple1	Tuple(\n    one UInt64,\n    two Tuple(\n        three UInt64,\n        four UInt64))					
+tuple2	Tuple(\n    nested1 Tuple(\n        nested2 Tuple(\n            x UInt64)))					
 
 RawBLOB
 

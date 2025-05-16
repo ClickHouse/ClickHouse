@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 #include <utility>
 #include <atomic>
 #include <cassert>
@@ -17,14 +16,14 @@
   *  or just current value of some metric - for example, replica delay in seconds.
   *
   * CurrentMetrics are updated instantly and are correct for any point in time.
-  * For periodically (asynchronously) updated metrics, see AsynchronousMetrics.h
+  * For periodically (asynchronously) updated metrics, see .h
   */
 
 namespace CurrentMetrics
 {
     /// Metric identifier (index in array).
     using Metric = StrongTypedef<size_t, struct MetricTag>;
-    using Value = DB::Int64;
+    using Value = Int64;
 
     /// Get name of metric by identifier. Returns statically allocated string.
     const char * getName(Metric event);

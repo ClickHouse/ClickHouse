@@ -42,7 +42,7 @@ protected:
         String main_query;
     };
 
-    static bool makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & select_node, const uint32_t & max_depth);
+    static bool makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & select_node, uint32_t max_depth, uint32_t max_backtracks);
     static bool parseAggregationColumns(AggregationColumns & aggregation_columns, Pos & pos);
     static bool parseFromToStepClause(FromToStepClause & from_to_step, Pos & pos);
 

@@ -1,11 +1,16 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Core/NamesAndTypes.h>
+
+#include <map>
 
 
 namespace DB
 {
+
+class ColumnsDescription;
 
 namespace Nested
 {
@@ -20,13 +25,13 @@ namespace Nested
 
     /// Flat a column of nested type into columns
     /// 1) For named tuples，t Tuple(x .., y ..., ...), replace it with t.x ..., t.y ... , ...
-    /// 2) For an Array with named Tuple element column, a Array(Tuple(x ..., y ..., ...)), replace it with multiple Array Columns, a.x ..., a.y ..., ...
+    /// 2) For an Nested column, a Array(Tuple(x ..., y ..., ...)), replace it with multiple Array Columns, a.x ..., a.y ..., ...
     Block flatten(const Block & block);
 
-    /// Same as flatten but only for Array with named Tuple element column.
-    Block flattenArrayOfTuples(const Block & block);
+    /// Same as flatten but only for Nested column.
+    Block flattenNested(const Block & block);
 
-    /// Collect Array columns in a form of `column_name.element_name` to single Array(Tuple(...)) column.
+    /// Collect Array columns in a form of `column_name.element_name` to single Nested column.
     NamesAndTypesList collect(const NamesAndTypesList & names_and_types);
 
     /// Convert old-style nested (single arrays with same prefix, `n.a`, `n.b`...) to subcolumns of data type Nested.
@@ -40,6 +45,9 @@ namespace Nested
 
     /// Extract all column names that are nested for specifying table.
     Names getAllNestedColumnsForTable(const Block & block, const std::string & table_name);
+
+    /// Returns true if @column_name is a subcolumn (of Array type) of any Nested column in @columns.
+    bool isSubcolumnOfNested(const String & column_name, const ColumnsDescription & columns);
 }
 
 /// Use this class to extract element columns from columns of nested type in a block, e.g. named Tuple.

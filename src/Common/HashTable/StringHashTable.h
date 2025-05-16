@@ -5,11 +5,10 @@
 
 #include <bit>
 #include <new>
-#include <variant>
 
 
 using StringKey8 = UInt64;
-using StringKey16 = DB::UInt128;
+using StringKey16 = UInt128;
 struct StringKey24
 {
     UInt64 a;
@@ -19,32 +18,29 @@ struct StringKey24
     bool operator==(const StringKey24 rhs) const { return a == rhs.a && b == rhs.b && c == rhs.c; }
 };
 
-inline StringRef ALWAYS_INLINE toStringRef(const StringKey8 & n)
+inline StringRef ALWAYS_INLINE toStringView(const StringKey8 & n)
 {
     assert(n != 0);
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    return {reinterpret_cast<const char *>(&n), 8ul - (std::countr_zero(n) >> 3)};
-#else
-    return {reinterpret_cast<const char *>(&n), 8ul - (std::countl_zero(n) >> 3)};
-#endif
+    if constexpr (std::endian::native == std::endian::big)
+        return {reinterpret_cast<const char *>(&n), 8ul - (std::countr_zero(n) >> 3)};
+    else
+        return {reinterpret_cast<const char *>(&n), 8ul - (std::countl_zero(n) >> 3)};
 }
-inline StringRef ALWAYS_INLINE toStringRef(const StringKey16 & n)
+inline StringRef ALWAYS_INLINE toStringView(const StringKey16 & n)
 {
     assert(n.items[1] != 0);
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    return {reinterpret_cast<const char *>(&n), 16ul - (std::countr_zero(n.items[1]) >> 3)};
-#else
-    return {reinterpret_cast<const char *>(&n), 16ul - (std::countl_zero(n.items[1]) >> 3)};
-#endif
+    if constexpr (std::endian::native == std::endian::big)
+        return {reinterpret_cast<const char *>(&n), 16ul - (std::countr_zero(n.items[1]) >> 3)};
+    else
+        return {reinterpret_cast<const char *>(&n), 16ul - (std::countl_zero(n.items[1]) >> 3)};
 }
-inline StringRef ALWAYS_INLINE toStringRef(const StringKey24 & n)
+inline StringRef ALWAYS_INLINE toStringView(const StringKey24 & n)
 {
     assert(n.c != 0);
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    return {reinterpret_cast<const char *>(&n), 24ul - (std::countr_zero(n.c) >> 3)};
-#else
-    return {reinterpret_cast<const char *>(&n), 24ul - (std::countl_zero(n.c) >> 3)};
-#endif
+    if constexpr (std::endian::native == std::endian::big)
+        return {reinterpret_cast<const char *>(&n), 24ul - (std::countr_zero(n.c) >> 3)};
+    else
+        return {reinterpret_cast<const char *>(&n), 24ul - (std::countl_zero(n.c) >> 3)};
 }
 
 struct StringHashTableHash
@@ -69,6 +65,28 @@ struct StringHashTableHash
         res = _mm_crc32_u64(res, key.a);
         res = _mm_crc32_u64(res, key.b);
         res = _mm_crc32_u64(res, key.c);
+        return res;
+    }
+#elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+    size_t ALWAYS_INLINE operator()(StringKey8 key) const
+    {
+        size_t res = -1ULL;
+        res = __crc32cd(static_cast<UInt32>(res), key);
+        return res;
+    }
+    size_t ALWAYS_INLINE operator()(StringKey16 key) const
+    {
+        size_t res = -1ULL;
+        res = __crc32cd(static_cast<UInt32>(res), key.items[0]);
+        res = __crc32cd(static_cast<UInt32>(res), key.items[1]);
+        return res;
+    }
+    size_t ALWAYS_INLINE operator()(StringKey24 key) const
+    {
+        size_t res = -1ULL;
+        res = __crc32cd(static_cast<UInt32>(res), key.a);
+        res = __crc32cd(static_cast<UInt32>(res), key.b);
+        res = __crc32cd(static_cast<UInt32>(res), key.c);
         return res;
     }
 #elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
@@ -119,7 +137,7 @@ struct StringHashTableEmpty
     using Self = StringHashTableEmpty;
 
     bool has_zero = false;
-    std::aligned_storage_t<sizeof(Cell), alignof(Cell)> zero_value_storage; /// Storage of element with zero key.
+    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)]; /// Storage of element with zero key.
 
 public:
     bool hasZero() const { return has_zero; }
@@ -395,8 +413,7 @@ public:
             auto it = map.find(key, hash);
             if (!it)
                 return decltype(&it->getMapped()){};
-            else
-                return &it->getMapped();
+            return &it->getMapped();
         }
     };
 

@@ -1,21 +1,24 @@
 #include <Analyzer/Passes/SumIfToCountIfPass.h>
 
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNullable.h>
-
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-
-#include <Functions/FunctionFactory.h>
-
-#include <Interpreters/Context.h>
-
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/Utils.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Functions/FunctionFactory.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool aggregate_functions_null_for_empty;
+    extern const SettingsBool optimize_rewrite_sum_if_to_count_if;
+}
 
 namespace
 {
@@ -28,11 +31,11 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_rewrite_sum_if_to_count_if)
+        if (!getSettings()[Setting::optimize_rewrite_sum_if_to_count_if])
             return;
 
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || !function_node->isAggregateFunction())
+        if (!function_node || !function_node->isAggregateFunction() || !function_node->getResultType()->equals(DataTypeUInt64()))
             return;
 
         auto function_name = function_node->getFunctionName();
@@ -54,20 +57,21 @@ public:
             if (!constant_node)
                 return;
 
-            const auto & constant_value_literal = constant_node->getValue();
-            if (!isInt64OrUInt64FieldType(constant_value_literal.getType()))
+            if (auto constant_type = constant_node->getResultType(); !isNativeInteger(constant_type))
                 return;
 
-            if (getSettings().aggregate_functions_null_for_empty)
+            const auto & constant_value_literal = constant_node->getValue();
+            if (getSettings()[Setting::aggregate_functions_null_for_empty])
                 return;
 
             /// Rewrite `sumIf(1, cond)` into `countIf(cond)`
             auto multiplier_node = function_node_arguments_nodes[0];
             function_node_arguments_nodes[0] = std::move(function_node_arguments_nodes[1]);
             function_node_arguments_nodes.resize(1);
-            resolveAsCountIfAggregateFunction(*function_node, function_node_arguments_nodes[0]->getResultType());
 
-            if (constant_value_literal.get<UInt64>() != 1)
+            resolveAggregateFunctionNodeByName(*function_node, "countIf");
+
+            if (constant_value_literal.safeGet<UInt64>() != 1)
             {
                 /// Rewrite `sumIf(123, cond)` into `123 * countIf(cond)`
                 node = getMultiplyFunction(std::move(multiplier_node), node);
@@ -97,15 +101,17 @@ public:
         if (!if_true_condition_constant_node || !if_false_condition_constant_node)
             return;
 
+        if (auto constant_type = if_true_condition_constant_node->getResultType(); !isNativeInteger(constant_type))
+            return;
+
+        if (auto constant_type = if_false_condition_constant_node->getResultType(); !isNativeInteger(constant_type))
+            return;
+
         const auto & if_true_condition_constant_value_literal = if_true_condition_constant_node->getValue();
         const auto & if_false_condition_constant_value_literal = if_false_condition_constant_node->getValue();
 
-        if (!isInt64OrUInt64FieldType(if_true_condition_constant_value_literal.getType()) ||
-            !isInt64OrUInt64FieldType(if_false_condition_constant_value_literal.getType()))
-            return;
-
-        auto if_true_condition_value = if_true_condition_constant_value_literal.get<UInt64>();
-        auto if_false_condition_value = if_false_condition_constant_value_literal.get<UInt64>();
+        auto if_true_condition_value = if_true_condition_constant_value_literal.safeGet<UInt64>();
+        auto if_false_condition_value = if_false_condition_constant_value_literal.safeGet<UInt64>();
 
         if (if_false_condition_value == 0)
         {
@@ -113,7 +119,7 @@ public:
             function_node_arguments_nodes[0] = nested_if_function_arguments_nodes[0];
             function_node_arguments_nodes.resize(1);
 
-            resolveAsCountIfAggregateFunction(*function_node, function_node_arguments_nodes[0]->getResultType());
+            resolveAggregateFunctionNodeByName(*function_node, "countIf");
 
             if (if_true_condition_value != 1)
             {
@@ -142,7 +148,7 @@ public:
             function_node_arguments_nodes[0] = std::move(not_function);
             function_node_arguments_nodes.resize(1);
 
-            resolveAsCountIfAggregateFunction(*function_node, function_node_arguments_nodes[0]->getResultType());
+            resolveAggregateFunctionNodeByName(*function_node, "countIf");
 
             if (if_false_condition_value != 1)
             {
@@ -154,18 +160,7 @@ public:
     }
 
 private:
-    static inline void resolveAsCountIfAggregateFunction(FunctionNode & function_node, const DataTypePtr & argument_type)
-    {
-        AggregateFunctionProperties properties;
-        auto aggregate_function = AggregateFunctionFactory::instance().get("countIf",
-            {argument_type},
-            function_node.getAggregateFunction()->getParameters(),
-            properties);
-
-        function_node.resolveAsAggregateFunction(std::move(aggregate_function));
-    }
-
-    inline QueryTreeNodePtr getMultiplyFunction(QueryTreeNodePtr left, QueryTreeNodePtr right)
+    QueryTreeNodePtr getMultiplyFunction(QueryTreeNodePtr left, QueryTreeNodePtr right)
     {
         auto multiply_function_node = std::make_shared<FunctionNode>("multiply");
         auto & multiply_arguments_nodes = multiply_function_node->getArguments().getNodes();
@@ -180,7 +175,7 @@ private:
 
 }
 
-void SumIfToCountIfPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void SumIfToCountIfPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     SumIfToCountIfVisitor visitor(context);
     visitor.visit(query_tree_node);

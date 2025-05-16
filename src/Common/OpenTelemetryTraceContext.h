@@ -1,10 +1,14 @@
 #pragma once
 
+#include <Common/OpenTelemetryTracingContext.h>
 #include <Core/Field.h>
+
+#include <exception>
 
 namespace DB
 {
 
+class Exception;
 struct Settings;
 class OpenTelemetrySpanLog;
 class WriteBuffer;
@@ -15,7 +19,7 @@ namespace OpenTelemetry
 {
 
 /// See https://opentelemetry.io/docs/reference/specification/trace/api/#spankind
-enum SpanKind
+enum class SpanKind : uint8_t
 {
     /// Default value. Indicates that the span represents an internal operation within an application,
     /// as opposed to an operations with remote parents or children.
@@ -39,13 +43,13 @@ enum SpanKind
 
 struct Span
 {
-    UUID trace_id{};
+    UUID trace_id = {};
     UInt64 span_id = 0;
     UInt64 parent_span_id = 0;
     String operation_name;
     UInt64 start_time_us = 0;
     UInt64 finish_time_us = 0;
-    SpanKind kind = INTERNAL;
+    SpanKind kind = SpanKind::INTERNAL;
     Map attributes;
 
     /// Following methods are declared as noexcept to make sure they're exception safe.
@@ -69,35 +73,6 @@ private:
     bool addAttributeImpl(std::string_view name, std::string_view value) noexcept;
 };
 
-/// See https://www.w3.org/TR/trace-context/ for trace_flags definition
-enum TraceFlags : UInt8
-{
-    TRACE_FLAG_NONE = 0,
-    TRACE_FLAG_SAMPLED = 1,
-};
-
-/// The runtime info we need to create new OpenTelemetry spans.
-struct TracingContext
-{
-    UUID trace_id{};
-    UInt64 span_id = 0;
-    // The incoming tracestate header and the trace flags, we just pass them
-    // downstream. See https://www.w3.org/TR/trace-context/
-    String tracestate;
-    UInt8 trace_flags = TRACE_FLAG_NONE;
-
-    // Parse/compose OpenTelemetry traceparent header.
-    bool parseTraceparentHeader(std::string_view traceparent, String & error);
-    String composeTraceparentHeader() const;
-
-    bool isTraceEnabled() const
-    {
-        return trace_id != UUID();
-    }
-
-    void deserialize(ReadBuffer & buf);
-    void serialize(WriteBuffer & buf) const;
-};
 
 /// Tracing context kept on each thread
 struct TracingContextOnThread : TracingContext
@@ -178,15 +153,15 @@ private:
 using TracingContextHolderPtr = std::unique_ptr<TracingContextHolder>;
 
 /// A span holder that creates span automatically in a (function) scope if tracing is enabled.
-/// Once it's created or destructed, it automatically maitains the tracing context on the thread that it lives.
+/// Once it's created or destructed, it automatically maintains the tracing context on the thread that it lives.
 struct SpanHolder : public Span
 {
-    SpanHolder(std::string_view, SpanKind _kind = INTERNAL);
+    explicit SpanHolder(std::string_view, SpanKind _kind = SpanKind::INTERNAL);
     ~SpanHolder();
 
     /// Finish a span explicitly if needed.
     /// It's safe to call it multiple times
-    void finish() noexcept;
+    void finish(std::chrono::system_clock::time_point time) noexcept;
 };
 
 }

@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterMoveAccessEntityQuery.h>
 #include <Parsers/Access/ASTMoveAccessEntityQuery.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
@@ -50,14 +51,20 @@ AccessRightsElements InterpreterMoveAccessEntityQuery::getRequiredAccess() const
     {
         case AccessEntityType::USER:
         {
-            res.emplace_back(AccessType::DROP_USER);
-            res.emplace_back(AccessType::CREATE_USER);
+            for (const auto & name: query.names)
+            {
+                res.emplace_back(AccessType::DROP_USER, name);
+                res.emplace_back(AccessType::CREATE_USER, name);
+            }
             return res;
         }
         case AccessEntityType::ROLE:
         {
-            res.emplace_back(AccessType::DROP_ROLE);
-            res.emplace_back(AccessType::CREATE_ROLE);
+            for (const auto & name: query.names)
+            {
+                res.emplace_back(AccessType::DROP_ROLE, name);
+                res.emplace_back(AccessType::CREATE_ROLE, name);
+            }
             return res;
         }
         case AccessEntityType::SETTINGS_PROFILE:
@@ -88,6 +95,15 @@ AccessRightsElements InterpreterMoveAccessEntityQuery::getRequiredAccess() const
             break;
     }
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by DROP query", toString(query.type));
+}
+
+void registerInterpreterMoveAccessEntityQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterMoveAccessEntityQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterMoveAccessEntityQuery", create_fn);
 }
 
 }

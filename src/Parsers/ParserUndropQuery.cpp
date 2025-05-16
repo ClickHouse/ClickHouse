@@ -13,7 +13,7 @@ namespace
 
 bool parseUndropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_table("TABLE");
+    ParserKeyword s_table(Keyword::TABLE);
     ParserToken s_dot(TokenType::Dot);
     ParserIdentifier name_p(true);
 
@@ -35,15 +35,15 @@ bool parseUndropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
         if (!name_p.parse(pos, table, expected))
             return false;
     }
-    if (ParserKeyword("UUID").ignore(pos, expected))
+    if (ParserKeyword(Keyword::UUID).ignore(pos, expected))
     {
         ParserStringLiteral uuid_p;
         ASTPtr ast_uuid;
         if (!uuid_p.parse(pos, ast_uuid, expected))
             return false;
-        uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.get<String>());
+        uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.safeGet<String>());
     }
-    if (ParserKeyword{"ON"}.ignore(pos, expected))
+    if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
             return false;
@@ -58,7 +58,7 @@ bool parseUndropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     if (database)
         query->children.push_back(database);
 
-    assert (table);
+    chassert(table);
     query->children.push_back(table);
 
     query->cluster = cluster_str;
@@ -70,12 +70,11 @@ bool parseUndropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserUndropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_undrop("UNDROP");
+    ParserKeyword s_undrop(Keyword::UNDROP);
 
     if (s_undrop.ignore(pos, expected))
         return parseUndropQuery(pos, node, expected);
-    else
-        return false;
+    return false;
 }
 
 }

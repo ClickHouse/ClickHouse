@@ -2,16 +2,17 @@
 
 #if USE_EMBEDDED_COMPILER
 
-#include <llvm/IR/BasicBlock.h>
-#include <llvm/IR/Function.h>
-#include <llvm/IR/IRBuilder.h>
+#    include <AggregateFunctions/IAggregateFunction.h>
+#    include <Columns/ColumnNullable.h>
+#    include <DataTypes/DataTypeNullable.h>
+#    include <DataTypes/Native.h>
+#    include <Interpreters/JIT/CHJIT.h>
+#    include <Common/ProfileEvents.h>
+#    include <Common/Stopwatch.h>
 
-#include <Common/Stopwatch.h>
-#include <Common/ProfileEvents.h>
-#include <DataTypes/Native.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Columns/ColumnNullable.h>
-#include <Interpreters/JIT/CHJIT.h>
+#    include <llvm/IR/BasicBlock.h>
+#    include <llvm/IR/Function.h>
+#    include <llvm/IR/IRBuilder.h>
 
 namespace
 {
@@ -69,7 +70,7 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
 
     llvm::IRBuilder<> b(module.getContext());
     auto * size_type = b.getIntNTy(sizeof(size_t) * 8);
-    auto * data_type = llvm::StructType::get(b.getInt8PtrTy(), b.getInt8PtrTy());
+    auto * data_type = llvm::StructType::get(b.getInt8Ty()->getPointerTo(), b.getInt8Ty()->getPointerTo());
     auto * func_type = llvm::FunctionType::get(b.getVoidTy(), { size_type, data_type->getPointerTo() }, /*isVarArg=*/false);
 
     /// Create function in module
@@ -214,7 +215,7 @@ static void compileCreateAggregateStatesFunctions(llvm::Module & module, const s
     b.CreateRetVoid();
 }
 
-enum class AddIntoAggregateStatesPlacesArgumentType
+enum class AddIntoAggregateStatesPlacesArgumentType : uint8_t
 {
     SinglePlace,
     MultiplePlaces,
@@ -236,7 +237,7 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module,
     else
         places_type = b.getInt8Ty()->getPointerTo();
 
-    auto * column_type = llvm::StructType::get(b.getInt8PtrTy(), b.getInt8PtrTy());
+    auto * column_type = llvm::StructType::get(b.getInt8Ty()->getPointerTo(), b.getInt8Ty()->getPointerTo());
 
     auto * add_into_aggregate_states_func_declaration = llvm::FunctionType::get(b.getVoidTy(), { size_type, size_type, column_type->getPointerTo(), places_type }, false);
     auto * add_into_aggregate_states_func = llvm::Function::Create(add_into_aggregate_states_func_declaration, llvm::Function::ExternalLinkage, name, module);
@@ -421,7 +422,7 @@ static void compileInsertAggregatesIntoResultColumns(llvm::Module & module, cons
 
     auto * size_type = b.getIntNTy(sizeof(size_t) * 8);
 
-    auto * column_type = llvm::StructType::get(b.getInt8PtrTy(), b.getInt8PtrTy());
+    auto * column_type = llvm::StructType::get(b.getInt8Ty()->getPointerTo(), b.getInt8Ty()->getPointerTo());
     auto * aggregate_data_places_type = b.getInt8Ty()->getPointerTo()->getPointerTo();
     auto * insert_aggregates_into_result_func_declaration = llvm::FunctionType::get(b.getVoidTy(), { size_type, size_type, column_type->getPointerTo(), aggregate_data_places_type }, false);
     auto * insert_aggregates_into_result_func = llvm::Function::Create(insert_aggregates_into_result_func_declaration, llvm::Function::ExternalLinkage, name, module);
@@ -554,7 +555,7 @@ static void compileSortDescription(llvm::Module & module,
 
     auto * size_type = b.getIntNTy(sizeof(size_t) * 8);
 
-    auto * column_data_type = llvm::StructType::get(b.getInt8PtrTy(), b.getInt8PtrTy());
+    auto * column_data_type = llvm::StructType::get(b.getInt8Ty()->getPointerTo(), b.getInt8Ty()->getPointerTo());
 
     std::vector<llvm::Type *> function_argument_types = {size_type, size_type, column_data_type->getPointerTo(), column_data_type->getPointerTo()};
     auto * comparator_func_declaration = llvm::FunctionType::get(b.getInt8Ty(), function_argument_types, false);

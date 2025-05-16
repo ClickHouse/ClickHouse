@@ -3,10 +3,8 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/EnumValues.h>
 #include <Columns/ColumnVector.h>
-#include <Columns/ColumnConst.h>
 #include <Common/HashTable/HashMap.h>
 #include <vector>
-#include <unordered_map>
 
 
 namespace DB
@@ -54,6 +52,7 @@ public:
     const char * getFamilyName() const override;
 
     TypeIndex getTypeId() const override { return type_id; }
+    TypeIndex getColumnType() const override { return sizeof(FieldType) == 1 ? TypeIndex::Int8 : TypeIndex::Int16; }
 
     FieldType readValue(ReadBuffer & istr) const
     {

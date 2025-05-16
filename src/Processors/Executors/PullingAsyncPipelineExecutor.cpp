@@ -23,7 +23,6 @@ struct PullingAsyncPipelineExecutor::Data
     std::atomic_bool is_finished = false;
     std::atomic_bool has_exception = false;
     ThreadFromGlobalPool thread;
-    Poco::Event finish_event;
 
     ~Data()
     {
@@ -70,16 +69,9 @@ const Block & PullingAsyncPipelineExecutor::getHeader() const
 static void threadFunction(
     PullingAsyncPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads, bool concurrency_control)
 {
-    SCOPE_EXIT_SAFE(
-        if (thread_group)
-            CurrentThread::detachFromGroupIfNotDetached();
-    );
-    setThreadName("QueryPullPipeEx");
-
     try
     {
-        if (thread_group)
-            CurrentThread::attachToGroup(thread_group);
+        ThreadGroupSwitcher switcher(thread_group, "QueryPullPipeEx");
 
         data.executor->execute(num_threads, concurrency_control);
     }
@@ -89,12 +81,10 @@ static void threadFunction(
         data.has_exception = true;
 
         /// Finish lazy format in case of exception. Otherwise thread.join() may hung.
-        if (data.lazy_format)
-            data.lazy_format->finalize();
+        data.lazy_format->finalize();
     }
 
     data.is_finished = true;
-    data.finish_event.set();
 }
 
 
@@ -129,20 +119,8 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
         return false;
     }
 
-    if (lazy_format)
-    {
-        chunk = lazy_format->getChunk(milliseconds);
-        data->rethrowExceptionIfHas();
-        return true;
-    }
-
-    chunk.clear();
-
-    if (milliseconds)
-        data->finish_event.tryWait(milliseconds);
-    else
-        data->finish_event.wait();
-
+    chunk = lazy_format->getChunk(milliseconds);
+    data->rethrowExceptionIfHas();
     return true;
 }
 
@@ -162,13 +140,10 @@ bool PullingAsyncPipelineExecutor::pull(Block & block, uint64_t milliseconds)
 
     block = lazy_format->getPort(IOutputFormat::PortKind::Main).getHeader().cloneWithColumns(chunk.detachColumns());
 
-    if (auto chunk_info = chunk.getChunkInfo())
+    if (auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>())
     {
-        if (const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(chunk_info.get()))
-        {
-            block.info.bucket_num = agg_info->bucket_num;
-            block.info.is_overflows = agg_info->is_overflows;
-        }
+         block.info.bucket_num = agg_info->bucket_num;
+         block.info.is_overflows = agg_info->is_overflows;
     }
 
     return true;
@@ -230,14 +205,12 @@ void PullingAsyncPipelineExecutor::cancelWithExceptionHandling(CancelFunc && can
 
 Chunk PullingAsyncPipelineExecutor::getTotals()
 {
-    return lazy_format ? lazy_format->getTotals()
-                       : Chunk();
+    return lazy_format->getTotals();
 }
 
 Chunk PullingAsyncPipelineExecutor::getExtremes()
 {
-    return lazy_format ? lazy_format->getExtremes()
-                       : Chunk();
+    return lazy_format->getExtremes();
 }
 
 Block PullingAsyncPipelineExecutor::getTotalsBlock()
@@ -264,15 +237,7 @@ Block PullingAsyncPipelineExecutor::getExtremesBlock()
 
 ProfileInfo & PullingAsyncPipelineExecutor::getProfileInfo()
 {
-    if (lazy_format)
-        return lazy_format->getProfileInfo();
-
-    static ProfileInfo profile_info;
-    static std::once_flag flag;
-    /// Calculate rows before limit here to avoid race.
-    std::call_once(flag, []() { profile_info.getRowsBeforeLimit(); });
-
-    return profile_info;
+    return lazy_format->getProfileInfo();
 }
 
 }

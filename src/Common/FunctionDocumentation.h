@@ -1,6 +1,6 @@
 #pragma once
 
-#include <set>
+#include <Common/VersionNumber.h>
 #include <string>
 #include <vector>
 
@@ -31,7 +31,7 @@ namespace DB
   * The documentation can contain:
   * - description (the main text);
   * - examples (queries that can be referenced from the text by names);
-  * - categories - one or a few text strings like {"Mathematical", "Array Processing"};
+  * - a category (for example "Mathematical" or "Array Processing");
   *
   * The description should be represented in Markdown (or just plaintext).
   * Some extensions for Markdown are added:
@@ -63,21 +63,76 @@ struct FunctionDocumentation
     };
     using Examples = std::vector<Example>;
 
-    using Category = std::string;
-    using Categories = std::set<Category>;
+    using IntroducedIn = VersionNumber;
+    static constexpr VersionNumber VERSION_UNKNOWN;
 
-    using Related = std::string;
+    enum class Category : uint8_t
+    {
+        /// Default category
+        Unknown,
 
-    Description description;        /// E.g. "Returns the position (in bytes, starting at 1) of a substring needle in a string haystack."
-    Syntax syntax = {};             /// E.g. "position(haystack, needle)"
-    Arguments arguments {};         /// E.g. ["haystack — String in which the search is performed. String.", "needle — Substring to be searched. String."]
-    ReturnedValue returned_value {};/// E.g. "Starting position in bytes and counting from 1, if the substring was found."
-    Examples examples {};           ///
-    Categories categories {};       /// E.g. {"String Search"}
+        /// Regular functions
+        Arithmetic,
+        Array,
+        Bit,
+        Bitmap,
+        Comparison,
+        Conditional,
+        DateAndTime,
+        Dictionary,
+        Dynamic,
+        Distance,
+        EmbeddedDictionary,
+        Geo,
+        Encoding,
+        Encryption,
+        File,
+        Hash,
+        IPAddress,
+        Introspection,
+        JSON,
+        Logical,
+        MachineLearning,
+        Map,
+        Mathematical,
+        NLP,
+        Nullable,
+        Other,
+        RandomNumber,
+        Rounding,
+        StringReplacement,
+        StringSearch,
+        StringSplitting,
+        String,
+        TimeSeries,
+        TimeWindow,
+        Tuple,
+        TypeConversion,
+        ULID,
+        URL,
+        UUID,
+        UniqTheta,
+        Variant,
+
+        /// Table functions
+        TableFunction
+    };
+
+    using Related = std::vector<std::string>;
+
+    /// TODO Fields with {} initialization are optional. We should make all fields non-optional.
+    Description description;                      /// E.g. "Returns the position (in bytes, starting at 1) of a substring needle in a string haystack."
+    Syntax syntax {};                             /// E.g. "position(haystack, needle)"
+    Arguments arguments {};                       /// E.g. ["haystack — String in which the search is performed. String.", "needle — Substring to be searched. String."]
+    ReturnedValue returned_value {};              /// E.g. "Starting position in bytes and counting from 1, if the substring was found."
+    Examples examples {};                         ///
+    IntroducedIn introduced_in {VERSION_UNKNOWN}; /// E.g. {25, 5}
+    Category category;                            /// E.g. Category::DatesAndTimes
 
     std::string argumentsAsString() const;
     std::string examplesAsString() const;
-    std::string categoriesAsString() const;
+    std::string introducedInAsString() const;
+    std::string categoryAsString() const;
 };
 
 }

@@ -1,9 +1,8 @@
 #include <Interpreters/ComparisonGraph.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
-#include <Common/FieldVisitorToString.h>
 
 #include <gtest/gtest.h>
 
@@ -12,7 +11,7 @@ using namespace DB;
 static ComparisonGraph<ASTPtr> getGraph(const String & query)
 {
     ParserExpressionList parser(false);
-    ASTPtr ast = parseQuery(parser, query, 0, 0);
+    ASTPtr ast = parseQuery(parser, query, 0, 0, 0);
     return ComparisonGraph<ASTPtr>(ast->children);
 }
 
@@ -29,7 +28,7 @@ TEST(ComparisonGraph, Bounds)
 
         const auto & [lower, strict] = *res;
 
-        ASSERT_EQ(lower.get<UInt64>(), 3);
+        ASSERT_EQ(lower.safeGet<UInt64>(), 3);
         ASSERT_TRUE(strict);
     }
 
@@ -39,7 +38,7 @@ TEST(ComparisonGraph, Bounds)
 
         const auto & [upper, strict] = *res;
 
-        ASSERT_EQ(upper.get<UInt64>(), 7);
+        ASSERT_EQ(upper.safeGet<UInt64>(), 7);
         ASSERT_TRUE(strict);
     }
 

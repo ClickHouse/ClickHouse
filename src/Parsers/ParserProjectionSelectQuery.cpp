@@ -15,14 +15,14 @@ bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     auto select_query = std::make_shared<ASTProjectionSelectQuery>();
     node = select_query;
 
-    ParserKeyword s_with("WITH");
-    ParserKeyword s_select("SELECT");
-    ParserKeyword s_group_by("GROUP BY");
-    ParserKeyword s_order_by("ORDER BY");
+    ParserKeyword s_with(Keyword::WITH);
+    ParserKeyword s_select(Keyword::SELECT);
+    ParserKeyword s_group_by(Keyword::GROUP_BY);
+    ParserKeyword s_order_by(Keyword::ORDER_BY);
 
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
     ParserNotEmptyExpressionList exp_list_for_select_clause(true); /// Allows aliases without AS keyword.
-    ParserExpression order_expression_p;
+    ParserStorageOrderByExpressionList order_list_p(/*allow_order_*/ false);
 
     ASTPtr with_expression_list;
     ASTPtr select_expression_list;
@@ -59,7 +59,7 @@ bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     if (s_order_by.ignore(pos, expected))
     {
         ASTPtr expr_list;
-        if (!ParserList(std::make_unique<ParserExpression>(), std::make_unique<ParserToken>(TokenType::Comma)).parse(pos, expr_list, expected))
+        if (!order_list_p.parse(pos, expr_list, expected))
             return false;
 
         if (expr_list->children.size() == 1)

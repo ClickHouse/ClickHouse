@@ -11,15 +11,16 @@ namespace DB
 
 bool ParserAlterNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_alter("ALTER");
-    ParserKeyword s_collection("NAMED COLLECTION");
-    ParserKeyword s_if_exists("IF EXISTS");
-    ParserKeyword s_on("ON");
-    ParserKeyword s_delete("DELETE");
+    ParserKeyword s_alter(Keyword::ALTER);
+    ParserKeyword s_collection(Keyword::NAMED_COLLECTION);
+    ParserKeyword s_if_exists(Keyword::IF_EXISTS);
+    ParserKeyword s_on(Keyword::ON);
+    ParserKeyword s_delete(Keyword::DELETE);
+
     ParserIdentifier name_p;
-    ParserKeyword s_set("SET");
-    ParserKeyword s_overridable("OVERRIDABLE");
-    ParserKeyword s_not_overridable("NOT OVERRIDABLE");
+    ParserKeyword s_set(Keyword::SET);
+    ParserKeyword s_overridable(Keyword::OVERRIDABLE);
+    ParserKeyword s_not_overridable(Keyword::NOT_OVERRIDABLE);
     ParserToken s_comma(TokenType::Comma);
 
     String cluster_str;

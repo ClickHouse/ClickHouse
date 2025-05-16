@@ -25,39 +25,43 @@ ASTPtr ASTDropIndexQuery::clone() const
     return res;
 }
 
-void ASTDropIndexQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTDropIndexQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.need_parens = false;
 
     std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str;
+    ostr << (settings.hilite ? hilite_keyword : "") << indent_str;
 
-    settings.ostr << "DROP INDEX " << (if_exists ? "IF EXISTS " : "");
-    index_name->formatImpl(settings, state, frame);
-    settings.ostr << " ON ";
+    ostr << "DROP INDEX " << (if_exists ? "IF EXISTS " : "");
+    index_name->format(ostr, settings, state, frame);
+    ostr << " ON ";
 
-    settings.ostr << (settings.hilite ? hilite_none : "");
+    ostr << (settings.hilite ? hilite_none : "");
 
     if (table)
     {
         if (database)
         {
-            settings.ostr << indent_str << backQuoteIfNeed(getDatabase());
-            settings.ostr << ".";
+            database->format(ostr, settings, state, frame);
+            ostr << '.';
         }
-        settings.ostr << indent_str << backQuoteIfNeed(getTable());
+
+        chassert(table);
+        table->format(ostr, settings, state, frame);
     }
 
-    formatOnCluster(settings);
+    formatOnCluster(ostr, settings);
 }
 
 ASTPtr ASTDropIndexQuery::convertToASTAlterCommand() const
 {
     auto command = std::make_shared<ASTAlterCommand>();
+
     command->type = ASTAlterCommand::DROP_INDEX;
-    command->index = index_name->clone();
     command->if_exists = if_exists;
+
+    command->index = command->children.emplace_back(index_name).get();
 
     return command;
 }

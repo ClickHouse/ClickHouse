@@ -1,16 +1,11 @@
 #pragma once
 
-#include <array>
-
-#include <Common/SipHash.h>
-#include <Common/memcpySmall.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
 #include <base/StringRef.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnLowCardinality.h>
+#include <Interpreters/KeysNullMap.h>
 
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
 #include <tmmintrin.h>
@@ -42,23 +37,6 @@ using Sizes = std::vector<size_t>;
 /// 2,1,1
 ///
 
-template <typename T>
-constexpr auto getBitmapSize()
-{
-    return
-        (sizeof(T) == 32) ?
-            4 :
-        (sizeof(T) == 16) ?
-            2 :
-        ((sizeof(T) == 8) ?
-            1 :
-        ((sizeof(T) == 4) ?
-            1 :
-        ((sizeof(T) == 2) ?
-            1 :
-        0)));
-}
-
 template<typename T, size_t step>
 void fillFixedBatch(size_t num_rows, const T * source, T * dest)
 {
@@ -88,13 +66,10 @@ void fillFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const S
             out.resize_fill(num_rows);
 
             /// Note: here we violate strict aliasing.
-            /// It should be ok as log as we do not reffer to any value from `out` before filling.
-            const char * source = static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<sizeof(T)>();
-            size_t offset_to = offset;
-            if constexpr (std::endian::native == std::endian::big)
-                offset_to = sizeof(Key) - sizeof(T) - offset;
-            T * dest = reinterpret_cast<T *>(reinterpret_cast<char *>(out.data()) + offset_to);
-            fillFixedBatch<T, sizeof(Key) / sizeof(T)>(num_rows, reinterpret_cast<const T *>(source), dest);
+            /// It should be ok as long as we do not refer to any value from `out` before filling.
+            const char * source = static_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<sizeof(T)>();
+            T * dest = reinterpret_cast<T *>(reinterpret_cast<char *>(out.data()) + offset);
+            fillFixedBatch<T, sizeof(Key) / sizeof(T)>(num_rows, reinterpret_cast<const T *>(source), dest); /// NOLINT(bugprone-sizeof-expression)
             offset += sizeof(T);
         }
     }
@@ -112,9 +87,6 @@ void packFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const S
     fillFixedBatch<UInt16>(keys_size, key_columns, key_sizes, out, offset);
     fillFixedBatch<UInt8>(keys_size, key_columns, key_sizes, out, offset);
 }
-
-template <typename T>
-using KeysNullMap = std::array<UInt8, getBitmapSize<T>()>;
 
 /// Pack into a binary blob of type T a set of fixed-size keys. Granted that all the keys fit into the
 /// binary blob, they are disposed in it consecutively.
@@ -151,33 +123,33 @@ static inline T ALWAYS_INLINE packFixed(
         {
             case 1:
                 {
-                    memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<1>() + index, 1);
+                    memcpy(bytes + offset, static_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<1>() + index, 1);
                     offset += 1;
                 }
                 break;
             case 2:
                 if constexpr (sizeof(T) >= 2)   /// To avoid warning about memcpy exceeding object size.
                 {
-                    memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<2>() + index * 2, 2);
+                    memcpy(bytes + offset, static_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<2>() + index * 2, 2);
                     offset += 2;
                 }
                 break;
             case 4:
                 if constexpr (sizeof(T) >= 4)
                 {
-                    memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<4>() + index * 4, 4);
+                    memcpy(bytes + offset, static_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<4>() + index * 4, 4);
                     offset += 4;
                 }
                 break;
             case 8:
                 if constexpr (sizeof(T) >= 8)
                 {
-                    memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<8>() + index * 8, 8);
+                    memcpy(bytes + offset, static_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<8>() + index * 8, 8);
                     offset += 8;
                 }
                 break;
             default:
-                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<1>() + index * key_sizes[j], key_sizes[j]);
+                memcpy(bytes + offset, static_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<1>() + index * key_sizes[j], key_sizes[j]);
                 offset += key_sizes[j];
         }
     }
@@ -202,7 +174,7 @@ static inline T ALWAYS_INLINE packFixed(
     static constexpr auto bitmap_size = std::tuple_size<KeysNullMap<T>>::value;
     static constexpr bool has_bitmap = bitmap_size > 0;
 
-    if (has_bitmap)
+    if constexpr (has_bitmap)
     {
         memcpy(bytes + offset, bitmap.data(), bitmap_size * sizeof(UInt8));
         offset += bitmap_size;
@@ -227,40 +199,28 @@ static inline T ALWAYS_INLINE packFixed(
         switch (key_sizes[j])
         {
             case 1:
-                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(key_columns[j])->getRawDataBegin<1>() + i, 1);
+                memcpy(bytes + offset, static_cast<const ColumnFixedSizeHelper *>(key_columns[j])->getRawDataBegin<1>() + i, 1);
                 offset += 1;
                 break;
             case 2:
-                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(key_columns[j])->getRawDataBegin<2>() + i * 2, 2);
+                memcpy(bytes + offset, static_cast<const ColumnFixedSizeHelper *>(key_columns[j])->getRawDataBegin<2>() + i * 2, 2);
                 offset += 2;
                 break;
             case 4:
-                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(key_columns[j])->getRawDataBegin<4>() + i * 4, 4);
+                memcpy(bytes + offset, static_cast<const ColumnFixedSizeHelper *>(key_columns[j])->getRawDataBegin<4>() + i * 4, 4);
                 offset += 4;
                 break;
             case 8:
-                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(key_columns[j])->getRawDataBegin<8>() + i * 8, 8);
+                memcpy(bytes + offset, static_cast<const ColumnFixedSizeHelper *>(key_columns[j])->getRawDataBegin<8>() + i * 8, 8);
                 offset += 8;
                 break;
             default:
-                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(key_columns[j])->getRawDataBegin<1>() + i * key_sizes[j], key_sizes[j]);
+                memcpy(bytes + offset, static_cast<const ColumnFixedSizeHelper *>(key_columns[j])->getRawDataBegin<1>() + i * key_sizes[j], key_sizes[j]);
                 offset += key_sizes[j];
         }
     }
 
     return key;
-}
-
-
-/// Hash a set of keys into a UInt128 value.
-static inline UInt128 ALWAYS_INLINE hash128( /// NOLINT
-    size_t i, size_t keys_size, const ColumnRawPtrs & key_columns)
-{
-    SipHash hash;
-    for (size_t j = 0; j < keys_size; ++j)
-        key_columns[j]->updateHashWithValue(i, hash);
-
-    return hash.get128();
 }
 
 /** Serialize keys into a continuous chunk of memory.

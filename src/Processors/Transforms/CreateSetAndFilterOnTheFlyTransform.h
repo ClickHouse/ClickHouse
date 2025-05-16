@@ -1,44 +1,12 @@
 #pragma once
 
-#include <atomic>
-#include <mutex>
 #include <vector>
 #include <Processors/ISimpleTransform.h>
-#include <Poco/Logger.h>
-#include <Interpreters/Set.h>
 
 namespace DB
 {
 
-struct SetWithState : public Set
-{
-    using Set::Set;
-
-    /// Flow: Creating -> Finished or Suspended
-    enum class State
-    {
-        /// Set is not yet created,
-        /// Creating processor continues to build set.
-        /// Filtering bypasses data.
-        Creating,
-
-        /// Set is finished.
-        /// Creating processor is finished.
-        /// Filtering filter stream with this set.
-        Finished,
-
-        /// Set building is canceled (due to limit exceeded).
-        /// Creating and filtering processors bypass data.
-        Suspended,
-    };
-
-    std::atomic<State> state = State::Creating;
-
-    /// Track number of processors that are currently working on this set.
-    /// Last one finalizes set.
-    std::atomic_size_t finished_count = 0;
-};
-
+struct SetWithState;
 using SetWithStatePtr = std::shared_ptr<SetWithState>;
 
 /*
@@ -67,7 +35,7 @@ private:
     /// Set to fill
     SetWithStatePtr set;
 
-    Poco::Logger * log = &Poco::Logger::get("CreatingSetsOnTheFlyTransform");
+    LoggerPtr log = getLogger("CreatingSetsOnTheFlyTransform");
 };
 
 /*
@@ -108,7 +76,7 @@ private:
         size_t result_rows = 0;
     } stat;
 
-    Poco::Logger * log = &Poco::Logger::get("FilterBySetOnTheFlyTransform");
+    LoggerPtr log = getLogger("FilterBySetOnTheFlyTransform");
 };
 
 }

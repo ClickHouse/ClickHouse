@@ -1,9 +1,9 @@
-#include <cstddef>
 #include <Core/NamesAndTypes.h>
 
 #include <base/sort.h>
 #include <Common/HashTable/HashMap.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/IDataType.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -12,6 +12,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
+#include <boost/algorithm/string.hpp>
+#include <cstddef>
 
 namespace DB
 {
@@ -39,6 +41,16 @@ String NameAndTypePair::getNameInStorage() const
     return name.substr(0, *subcolumn_delimiter_position);
 }
 
+bool NameAndTypePair::operator<(const NameAndTypePair & rhs) const
+{
+    return std::forward_as_tuple(name, type->getName()) < std::forward_as_tuple(rhs.name, rhs.type->getName());
+}
+
+bool NameAndTypePair::operator==(const NameAndTypePair & rhs) const
+{
+    return name == rhs.name && type->equals(*rhs.type);
+}
+
 String NameAndTypePair::getSubcolumnName() const
 {
     if (!subcolumn_delimiter_position)
@@ -58,7 +70,7 @@ String NameAndTypePair::dump() const
     return out.str();
 }
 
-void NamesAndTypesList::readText(ReadBuffer & buf)
+void NamesAndTypesList::readText(ReadBuffer & buf, bool check_eof)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
@@ -79,7 +91,8 @@ void NamesAndTypesList::readText(ReadBuffer & buf)
         emplace_back(column_name, data_type_factory.get(type_name));
     }
 
-    assertEOF(buf);
+    if (check_eof)
+        assertEOF(buf);
 }
 
 void NamesAndTypesList::writeText(WriteBuffer & buf) const
@@ -150,6 +163,15 @@ Names NamesAndTypesList::getNames() const
     return res;
 }
 
+NameSet NamesAndTypesList::getNameSet() const
+{
+    NameSet res;
+    res.reserve(size());
+    for (const NameAndTypePair & column : *this)
+        res.insert(column.name);
+    return res;
+}
+
 DataTypes NamesAndTypesList::getTypes() const
 {
     DataTypes res;
@@ -187,6 +209,18 @@ NamesAndTypesList NamesAndTypesList::filter(const Names & names) const
     return filter(NameSet(names.begin(), names.end()));
 }
 
+NamesAndTypesList NamesAndTypesList::eraseNames(const NameSet & names) const
+{
+    NamesAndTypesList res;
+    for (const auto & column : *this)
+    {
+        if (!names.contains(column.name))
+            res.push_back(column);
+    }
+    return res;
+}
+
+
 NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
 {
     /// NOTE: It's better to make a map in `IStorage` than to create it here every time again.
@@ -213,6 +247,16 @@ bool NamesAndTypesList::contains(const String & name) const
     for (const NameAndTypePair & column : *this)
     {
         if (column.name == name)
+            return true;
+    }
+    return false;
+}
+
+bool NamesAndTypesList::containsCaseInsensitive(const String & name) const
+{
+    for (const NameAndTypePair & column : *this)
+    {
+        if (boost::iequals(column.name, name))
             return true;
     }
     return false;

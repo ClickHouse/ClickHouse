@@ -11,6 +11,9 @@ namespace CurrentMetrics
     extern const Metric BackupsIOThreads;
     extern const Metric BackupsIOThreadsActive;
     extern const Metric BackupsIOThreadsScheduled;
+    extern const Metric MergeTreeFetchPartitionThreads;
+    extern const Metric MergeTreeFetchPartitionThreadsActive;
+    extern const Metric MergeTreeFetchPartitionThreadsScheduled;
     extern const Metric MergeTreePartsLoaderThreads;
     extern const Metric MergeTreePartsLoaderThreadsActive;
     extern const Metric MergeTreePartsLoaderThreadsScheduled;
@@ -20,6 +23,18 @@ namespace CurrentMetrics
     extern const Metric MergeTreeOutdatedPartsLoaderThreads;
     extern const Metric MergeTreeOutdatedPartsLoaderThreadsActive;
     extern const Metric MergeTreeOutdatedPartsLoaderThreadsScheduled;
+    extern const Metric MergeTreeUnexpectedPartsLoaderThreads;
+    extern const Metric MergeTreeUnexpectedPartsLoaderThreadsActive;
+    extern const Metric MergeTreeUnexpectedPartsLoaderThreadsScheduled;
+    extern const Metric DatabaseCatalogThreads;
+    extern const Metric DatabaseCatalogThreadsActive;
+    extern const Metric DatabaseCatalogThreadsScheduled;
+    extern const Metric DatabaseReplicatedCreateTablesThreads;
+    extern const Metric DatabaseReplicatedCreateTablesThreadsActive;
+    extern const Metric DatabaseReplicatedCreateTablesThreadsScheduled;
+    extern const Metric MergeTreeSubcolumnsReaderThreads;
+    extern const Metric MergeTreeSubcolumnsReaderThreadsActive;
+    extern const Metric MergeTreeSubcolumnsReaderThreadsScheduled;
 }
 
 namespace DB
@@ -61,10 +76,17 @@ void StaticThreadPool::initialize(size_t max_threads, size_t max_free_threads, s
         /* shutdown_on_exception= */ false);
 }
 
+bool StaticThreadPool::isInitialized() const
+{
+    return instance.operator bool();
+}
+
 void StaticThreadPool::reloadConfiguration(size_t max_threads, size_t max_free_threads, size_t queue_size)
 {
     if (!instance)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The {} is not initialized", name);
+
+    std::lock_guard lock(mutex);
 
     instance->setMaxThreads(turbo_mode_enabled > 0 ? max_threads_turbo : max_threads);
     instance->setMaxFreeThreads(max_free_threads);
@@ -128,6 +150,12 @@ StaticThreadPool & getBackupsIOThreadPool()
     return instance;
 }
 
+StaticThreadPool & getFetchPartitionThreadPool()
+{
+    static StaticThreadPool instance("MergeTreeFetchPartitionThreadPool", CurrentMetrics::MergeTreeFetchPartitionThreads, CurrentMetrics::MergeTreeFetchPartitionThreadsActive, CurrentMetrics::MergeTreeFetchPartitionThreadsScheduled);
+    return instance;
+}
+
 StaticThreadPool & getActivePartsLoadingThreadPool()
 {
     static StaticThreadPool instance("MergeTreePartsLoaderThreadPool", CurrentMetrics::MergeTreePartsLoaderThreads, CurrentMetrics::MergeTreePartsLoaderThreadsActive, CurrentMetrics::MergeTreePartsLoaderThreadsScheduled);
@@ -143,6 +171,31 @@ StaticThreadPool & getPartsCleaningThreadPool()
 StaticThreadPool & getOutdatedPartsLoadingThreadPool()
 {
     static StaticThreadPool instance("MergeTreeOutdatedPartsLoaderThreadPool", CurrentMetrics::MergeTreeOutdatedPartsLoaderThreads, CurrentMetrics::MergeTreeOutdatedPartsLoaderThreadsActive, CurrentMetrics::MergeTreeOutdatedPartsLoaderThreadsScheduled);
+    return instance;
+}
+
+StaticThreadPool & getUnexpectedPartsLoadingThreadPool()
+{
+    static StaticThreadPool instance("MergeTreeUnexpectedPartsLoaderThreadPool", CurrentMetrics::MergeTreeUnexpectedPartsLoaderThreads, CurrentMetrics::MergeTreeUnexpectedPartsLoaderThreadsActive, CurrentMetrics::MergeTreeUnexpectedPartsLoaderThreadsScheduled);
+    return instance;
+}
+
+StaticThreadPool & getDatabaseReplicatedCreateTablesThreadPool()
+{
+    static StaticThreadPool instance("CreateTablesThreadPool", CurrentMetrics::DatabaseReplicatedCreateTablesThreads, CurrentMetrics::DatabaseReplicatedCreateTablesThreadsActive, CurrentMetrics::DatabaseReplicatedCreateTablesThreadsScheduled);
+    return instance;
+}
+
+/// ThreadPool used for dropping tables.
+StaticThreadPool & getDatabaseCatalogDropTablesThreadPool()
+{
+    static StaticThreadPool instance("DropTablesThreadPool", CurrentMetrics::DatabaseCatalogThreads, CurrentMetrics::DatabaseCatalogThreadsActive, CurrentMetrics::DatabaseCatalogThreadsScheduled);
+    return instance;
+}
+
+StaticThreadPool & getMergeTreePrefixesDeserializationThreadPool()
+{
+    static StaticThreadPool instance("MergeTreePrefixesDeserializationThreadPool", CurrentMetrics::MergeTreeSubcolumnsReaderThreads, CurrentMetrics::MergeTreeSubcolumnsReaderThreadsActive, CurrentMetrics::MergeTreeSubcolumnsReaderThreadsScheduled);
     return instance;
 }
 

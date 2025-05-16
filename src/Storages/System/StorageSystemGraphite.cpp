@@ -1,24 +1,31 @@
-#include <Storages/System/StorageSystemGraphite.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/System/StorageSystemGraphite.h>
 
 
 namespace DB
 {
 
-NamesAndTypesList StorageSystemGraphite::getNamesAndTypes()
+ColumnsDescription StorageSystemGraphite::getColumnsDescription()
 {
-    return {
-        {"config_name",     std::make_shared<DataTypeString>()},
-        {"rule_type",       std::make_shared<DataTypeString>()},
-        {"regexp",          std::make_shared<DataTypeString>()},
-        {"function",        std::make_shared<DataTypeString>()},
-        {"age",             std::make_shared<DataTypeUInt64>()},
-        {"precision",       std::make_shared<DataTypeUInt64>()},
-        {"priority",        std::make_shared<DataTypeUInt16>()},
-        {"is_default",      std::make_shared<DataTypeUInt8>()},
-        {"Tables.database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"Tables.table",    std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+    return ColumnsDescription
+    {
+        {"config_name",     std::make_shared<DataTypeString>(), "graphite_rollup parameter name."},
+        {"rule_type",       std::make_shared<DataTypeString>(),
+            "The rule type. Possible values: RuleTypeAll = 0 - default, with regex, compatible with old scheme; "
+            "RuleTypePlain = 1 - plain metrics, with regex, compatible with old scheme; "
+            "RuleTypeTagged = 2 - tagged metrics, with regex, compatible with old scheme; "
+            "RuleTypeTagList = 3 - tagged metrics, with regex (converted to  RuleTypeTagged from string like 'retention=10min ; env=(staging|prod)')"},
+        {"regexp",          std::make_shared<DataTypeString>(), "A pattern for the metric name."},
+        {"function",        std::make_shared<DataTypeString>(), "The name of the aggregating function."},
+        {"age",             std::make_shared<DataTypeUInt64>(), "The minimum age of the data in seconds."},
+        {"precision",       std::make_shared<DataTypeUInt64>(), "How precisely to define the age of the data in seconds."},
+        {"priority",        std::make_shared<DataTypeUInt16>(), "Pattern priority."},
+        {"is_default",      std::make_shared<DataTypeUInt8>(), "Whether the pattern is the default."},
+        {"Tables.database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Array of names of database tables that use the `config_name` parameter."},
+        {"Tables.table",    std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Array of table names that use the `config_name` parameter."},
     };
 }
 
@@ -74,7 +81,7 @@ static StorageSystemGraphite::Configs getConfigs(ContextPtr context)
     return graphite_configs;
 }
 
-void StorageSystemGraphite::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemGraphite::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     Configs graphite_configs = getConfigs(context);
 

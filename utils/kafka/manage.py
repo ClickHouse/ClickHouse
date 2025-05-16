@@ -1,10 +1,10 @@
 #! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import argparse
+
 # `pip install …`
 import kafka  # … kafka-python
-
-import argparse
 
 
 def main():

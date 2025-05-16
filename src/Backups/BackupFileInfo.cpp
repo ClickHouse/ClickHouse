@@ -1,5 +1,4 @@
 #include <Backups/BackupFileInfo.h>
-
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntry.h>
 #include <Common/CurrentThread.h>
@@ -7,7 +6,14 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
-#include <base/hex.h>
+#include <Common/threadPoolCallbackRunner.h>
+#include <Interpreters/ProcessList.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event BackupPreparingFileInfosMicroseconds;
+}
 
 
 namespace DB
@@ -25,7 +31,7 @@ namespace
         return std::nullopt;
     }
 
-    enum class CheckBackupResult
+    enum class CheckBackupResult : uint8_t
     {
         HasPrefix,
         HasFull,
@@ -57,7 +63,7 @@ namespace
 
     /// Calculate checksum for backup entry if it's empty.
     /// Also able to calculate additional checksum of some prefix.
-    ChecksumsForNewEntry calculateNewEntryChecksumsIfNeeded(const BackupEntryPtr & entry, size_t prefix_size, const ReadSettings & read_settings)
+    ChecksumsForNewEntry calculateNewEntryChecksumsIfNeeded(const BackupEntryPtr & entry, UInt64 prefix_size, const ReadSettings & read_settings)
     {
         ChecksumsForNewEntry res;
         /// The partial checksum should be calculated before the full checksum to enable optimization in BackupEntryWithChecksumCalculation.
@@ -83,6 +89,7 @@ String BackupFileInfo::describe() const
     String result;
     result += fmt::format("file_name: {};\n", file_name);
     result += fmt::format("size: {};\n", size);
+    result += fmt::format("object_key: {};\n", object_key);
     result += fmt::format("checksum: {};\n", getHexUIntLowercase(checksum));
     result += fmt::format("base_size: {};\n", base_size);
     result += fmt::format("base_checksum: {};\n", getHexUIntLowercase(checksum));
@@ -100,7 +107,7 @@ BackupFileInfo buildFileInfoForBackupEntry(
     const BackupEntryPtr & backup_entry,
     const BackupPtr & base_backup,
     const ReadSettings & read_settings,
-    Poco::Logger * log)
+    LoggerPtr log)
 {
     auto adjusted_path = removeLeadingSlash(file_name);
 
@@ -127,7 +134,7 @@ BackupFileInfo buildFileInfoForBackupEntry(
     }
 
     if (!log)
-        log = &Poco::Logger::get("FileInfoFromBackupEntry");
+        log = getLogger("FileInfoFromBackupEntry");
 
     std::optional<SizeAndChecksum> base_backup_file_info = getInfoAboutFileFromBaseBackupIfExists(base_backup, adjusted_path);
 
@@ -145,7 +152,8 @@ BackupFileInfo buildFileInfoForBackupEntry(
             info.checksum = checksums.full_checksum;
 
             /// We have prefix of this file in backup with the same checksum.
-            /// In ClickHouse this can happen for StorageLog for example.
+            /// In ClickHouse this can happen for StorageLog for example,
+            /// or for .sql files that store DDL if only last part of the query was changed.
             if (checksums.prefix_checksum == base_backup_file_info->second)
             {
                 LOG_TRACE(log, "Found prefix of file {} in the base backup, will write rest of the file to current backup", adjusted_path);
@@ -203,72 +211,46 @@ BackupFileInfo buildFileInfoForBackupEntry(
     return info;
 }
 
-BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool)
+BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool, QueryStatusPtr process_list_element)
 {
+    LoggerPtr log = getLogger("FileInfosFromBackupEntries");
+    LOG_TRACE(log, "Building file infos for backup entries");
+    auto timer = CurrentThread::getProfileEvents().timer(ProfileEvents::BackupPreparingFileInfosMicroseconds);
+
     BackupFileInfos infos;
     infos.resize(backup_entries.size());
 
-    size_t num_active_jobs = 0;
-    std::mutex mutex;
-    std::condition_variable event;
-    std::exception_ptr exception;
+    std::atomic_bool failed = false;
 
-    auto thread_group = CurrentThread::getGroup();
-    Poco::Logger * log = &Poco::Logger::get("FileInfosFromBackupEntries");
-
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "BackupWorker");
     for (size_t i = 0; i != backup_entries.size(); ++i)
     {
-        {
-            std::lock_guard lock{mutex};
-            if (exception)
-                break;
-            ++num_active_jobs;
-        }
+        if (failed)
+            break;
 
-        auto job = [&mutex, &num_active_jobs, &event, &exception, &infos, &backup_entries, &read_settings, &base_backup, &thread_group, i, log]()
+        runner([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, i, log, &failed]()
         {
-            SCOPE_EXIT_SAFE({
-                std::lock_guard lock{mutex};
-                if (!--num_active_jobs)
-                    event.notify_all();
-                CurrentThread::detachFromGroupIfNotDetached();
-            });
-
+            if (failed)
+                return;
             try
             {
                 const auto & name = backup_entries[i].first;
                 const auto & entry = backup_entries[i].second;
 
-                if (thread_group)
-                    CurrentThread::attachToGroup(thread_group);
-
-                setThreadName("BackupWorker");
-
-                {
-                    std::lock_guard lock{mutex};
-                    if (exception)
-                        return;
-                }
+                if (process_list_element)
+                    process_list_element->checkTimeLimit();
 
                 infos[i] = buildFileInfoForBackupEntry(name, entry, base_backup, read_settings, log);
             }
             catch (...)
             {
-                std::lock_guard lock{mutex};
-                if (!exception)
-                    exception = std::current_exception();
+                failed = true;
+                throw;
             }
-        };
-
-        thread_pool.scheduleOrThrowOnError(job);
+        });
     }
 
-    {
-        std::unique_lock lock{mutex};
-        event.wait(lock, [&] { return !num_active_jobs; });
-        if (exception)
-            std::rethrow_exception(exception);
-    }
+    runner.waitForAllToFinishAndRethrowFirstError();
 
     return infos;
 }

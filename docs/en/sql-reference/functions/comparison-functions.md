@@ -1,26 +1,29 @@
 ---
-slug: /en/sql-reference/functions/comparison-functions
+description: 'Documentation for Comparison Functions'
+sidebar_label: 'Comparison'
 sidebar_position: 35
-sidebar_label: Comparison
+slug: /sql-reference/functions/comparison-functions
+title: 'Comparison Functions'
 ---
 
 # Comparison Functions
 
-Below comparison functions return 0 or 1 as Uint8.
+The comparison functions below return `0` or `1` with type [UInt8](/sql-reference/data-types/int-uint). Only values within the same group can be compared (e.g. `UInt16` and `UInt64`) but not across groups (e.g. `UInt16` and `DateTime`). Comparison of numbers and strings are possible, as is comparison of strings with dates and dates with times. For tuples and arrays, the comparison is lexicographic meaning that the comparison is made for each corresponding element of the left side and right side tuple/array. 
 
 The following types can be compared:
-- numbers
+- numbers and decimals
 - strings and fixed strings
 - dates
 - dates with times
+- tuples (lexicographic comparison)
+- arrays (lexicographic comparison)
 
-Only values within the same group can be compared (e.g. UInt16 and UInt64) but not across groups (e.g. UInt16 and DateTime).
-
-Strings are compared byte-by-byte. Note that this may lead to unexpected results if one of the strings contains UTF-8 encoded multi-byte characters.
-
+:::note
+Strings are compared byte-by-byte. This may lead to unexpected results if one of the strings contains UTF-8 encoded multi-byte characters.
 A string S1 which has another string S2 as prefix is considered longer than S2.
+:::
 
-## equals, `=`, `==` operators
+## equals, `=`, `==` operators {#equals}
 
 **Syntax**
 
@@ -32,7 +35,7 @@ Alias:
 - `a = b` (operator)
 - `a == b` (operator)
 
-## notEquals, `!=`, `<>` operators
+## notEquals, `!=`, `<>` operators {#notequals}
 
 **Syntax**
 
@@ -44,7 +47,7 @@ Alias:
 - `a != b` (operator)
 - `a <> b` (operator)
 
-## less, `<` operator
+## less, `<` operator {#less}
 
 **Syntax**
 
@@ -55,7 +58,7 @@ less(a, b)
 Alias:
 - `a < b` (operator)
 
-## greater, `>` operator
+## greater, `>` operator {#greater}
 
 **Syntax**
 
@@ -66,7 +69,7 @@ greater(a, b)
 Alias:
 - `a > b` (operator)
 
-## lessOrEquals, `<=` operator
+## lessOrEquals, `<=` operator {#lessorequals}
 
 **Syntax**
 
@@ -77,7 +80,7 @@ lessOrEquals(a, b)
 Alias:
 - `a <= b` (operator)
 
-## greaterOrEquals, `>=` operator
+## greaterOrEquals, `>=` operator {#greaterorequals}
 
 **Syntax**
 

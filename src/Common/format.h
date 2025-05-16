@@ -3,7 +3,7 @@
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 namespace DB
 {
@@ -123,7 +123,7 @@ namespace Format
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot switch from automatic field numbering to manual field specification");
                     is_plain_numbering = true;
                     if (index_if_plain >= argument_number)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument is too big for formatting");
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not enough arguments to fill the placeholders in the format string");
                     index_positions.back() = index_if_plain++;
                 }
                 else

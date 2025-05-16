@@ -293,7 +293,7 @@ SELECT
 {'age':'31','last_key':'last_value','name':'neymar','nationality':'brazil','team':'psg'}
 -- { echoOn }
 
-SET extract_kvp_max_pairs_per_row = 2;
+SET extract_key_value_pairs_max_pairs_per_row = 2;
 -- Should be allowed because it no longer exceeds the max number of pairs
 -- expected output: {'key1':'value1','key2':'value2'}
 WITH
@@ -307,7 +307,7 @@ WITH
 SELECT
     x;
 {'key1':'value1','key2':'value2'}
-SET extract_kvp_max_pairs_per_row = 0;
+SET extract_key_value_pairs_max_pairs_per_row = 0;
 -- Should be allowed because max pairs per row is set to 0 (unlimited)
 -- expected output: {'key1':'value1','key2':'value2'}
 WITH

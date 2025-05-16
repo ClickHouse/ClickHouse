@@ -13,21 +13,26 @@ namespace DB::ErrorCodes
     extern const int SYSTEM_ERROR;
 }
 
-uint16_t getTerminalWidth()
+std::pair<uint16_t, uint16_t> getTerminalSize(int in_fd, int err_fd)
 {
     struct winsize terminal_size {};
-    if (isatty(STDIN_FILENO))
+    if (isatty(in_fd))
     {
-        if (ioctl(STDIN_FILENO, TIOCGWINSZ, &terminal_size))
-            DB::throwFromErrno("Cannot obtain terminal window size (ioctl TIOCGWINSZ)", DB::ErrorCodes::SYSTEM_ERROR);
+        if (ioctl(in_fd, TIOCGWINSZ, &terminal_size))
+            throw DB::ErrnoException(DB::ErrorCodes::SYSTEM_ERROR, "Cannot obtain terminal window size (ioctl TIOCGWINSZ)");
     }
-    else if (isatty(STDERR_FILENO))
+    else if (isatty(err_fd))
     {
-        if (ioctl(STDERR_FILENO, TIOCGWINSZ, &terminal_size))
-            DB::throwFromErrno("Cannot obtain terminal window size (ioctl TIOCGWINSZ)", DB::ErrorCodes::SYSTEM_ERROR);
+        if (ioctl(err_fd, TIOCGWINSZ, &terminal_size))
+            throw DB::ErrnoException(DB::ErrorCodes::SYSTEM_ERROR, "Cannot obtain terminal window size (ioctl TIOCGWINSZ)");
     }
     /// Default - 0.
-    return terminal_size.ws_col;
+    return {terminal_size.ws_col, terminal_size.ws_row};
+}
+
+uint16_t getTerminalWidth(int in_fd, int err_fd)
+{
+    return getTerminalSize(in_fd, err_fd).first;
 }
 
 po::options_description createOptionsDescription(const std::string & caption, uint16_t terminal_width)

@@ -1,17 +1,44 @@
 #include "LocalConnection.h"
+#include <memory>
+#include <Client/ClientBase.h>
+#include <Client/ClientApplicationBase.h>
+#include <Core/Protocol.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/Pipe.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Storages/IStorage.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentThread.h>
-#include <Core/Protocol.h>
-
+#include <Interpreters/InternalTextLogsQueue.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/PRQL/ParserPRQLQuery.h>
+#include <Parsers/Kusto/ParserKQLStatement.h>
+#include <Parsers/Kusto/parseKQLQuery.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsDialect dialect;
+    extern const SettingsBool input_format_defaults_for_omitted_fields;
+    extern const SettingsUInt64 interactive_delay;
+    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+    extern const SettingsBool implicit_select;
+    extern const SettingsLogsLevel send_logs_level;
+    extern const SettingsString send_logs_source_regexp;
+}
 
 namespace ErrorCodes
 {
@@ -21,16 +48,28 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-LocalConnection::LocalConnection(ContextPtr context_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
+LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
     : WithContext(context_)
-    , session(getContext(), ClientInfo::Interface::LOCAL)
+    , session(std::make_unique<Session>(getContext(), ClientInfo::Interface::LOCAL))
     , send_progress(send_progress_)
     , send_profile_events(send_profile_events_)
     , server_display_name(server_display_name_)
+    , in(in_)
 {
     /// Authenticate and create a context to execute queries.
-    session.authenticate("default", "", Poco::Net::SocketAddress{});
-    session.makeSessionContext();
+    session->authenticate("default", "", Poco::Net::SocketAddress{});
+    session->makeSessionContext();
+}
+
+LocalConnection::LocalConnection(
+    std::unique_ptr<Session> && session_, ReadBuffer * in_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
+    : WithContext(session_->sessionContext())
+    , session(std::move(session_))
+    , send_progress(send_progress_)
+    , send_profile_events(send_profile_events_)
+    , server_display_name(server_display_name_)
+    , in(in_)
+{
 }
 
 LocalConnection::~LocalConnection()
@@ -70,8 +109,7 @@ void LocalConnection::sendProfileEvents()
     Block profile_block;
     state->after_send_profile_events.restart();
     next_packet_type = Protocol::Server::ProfileEvents;
-    ProfileEvents::getProfileEvents(server_display_name, state->profile_queue, profile_block, last_sent_snapshots);
-    state->block.emplace(std::move(profile_block));
+    state->block.emplace(ProfileEvents::getProfileEvents(server_display_name, state->profile_queue, last_sent_snapshots));
 }
 
 void LocalConnection::sendQuery(
@@ -83,6 +121,7 @@ void LocalConnection::sendQuery(
     const Settings *,
     const ClientInfo * client_info,
     bool,
+    const std::vector<String> & /*external_roles*/,
     std::function<void(const Progress &)> process_progress_callback)
 {
     /// Last query may not have been finished or cancelled due to exception on client side.
@@ -91,9 +130,9 @@ void LocalConnection::sendQuery(
 
     /// Suggestion comes without client_info.
     if (client_info)
-        query_context = session.makeQueryContext(*client_info);
+        query_context = session->makeQueryContext(*client_info);
     else
-        query_context = session.makeQueryContext();
+        query_context = session->makeQueryContext();
     query_context->setCurrentQueryId(query_id);
 
     if (send_progress)
@@ -120,6 +159,11 @@ void LocalConnection::sendQuery(
     state->stage = QueryProcessingStage::Enum(stage);
     state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
     CurrentThread::attachInternalProfileEventsQueue(state->profile_queue);
+    state->logs_queue = std::make_shared<InternalTextLogsQueue>();
+    const auto client_logs_level = getContext()->getSettingsRef()[Setting::send_logs_level];
+    state->logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
+    state->logs_queue->setSourceRegexp(getContext()->getSettingsRef()[Setting::send_logs_source_regexp]);
+    CurrentThread::attachInternalTextLogsQueue(state->logs_queue, client_logs_level);
 
     if (send_progress)
         state->after_send_progress.restart();
@@ -129,8 +173,93 @@ void LocalConnection::sendQuery(
 
     next_packet_type.reset();
 
+    /// Prepare input() function
+    query_context->setInputInitializer([this] (ContextPtr context, const StoragePtr & input_storage)
+    {
+        if (context != query_context)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
+
+        auto metadata_snapshot = input_storage->getInMemoryMetadataPtr();
+        Block sample = metadata_snapshot->getSampleBlock();
+
+        next_packet_type = Protocol::Server::Data;
+        state->block = sample;
+
+        String current_format = "Values";
+
+        const auto & settings = context->getSettingsRef();
+        const char * begin = state->query.data();
+
+        const char * end = begin + state->query.size();
+        const Dialect & dialect = settings[Setting::dialect];
+
+        std::unique_ptr<IParserBase> parser;
+        if (dialect == Dialect::kusto)
+            parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
+        else if (dialect == Dialect::prql)
+            parser
+                = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        else
+            parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+
+        ASTPtr parsed_query;
+        if (dialect == Dialect::kusto)
+            parsed_query = parseKQLQueryAndMovePosition(
+                *parser,
+                begin,
+                end,
+                "",
+                /*allow_multi_statements*/ false,
+                settings[Setting::max_query_size],
+                settings[Setting::max_parser_depth],
+                settings[Setting::max_parser_backtracks]);
+        else
+            parsed_query = parseQueryAndMovePosition(
+                *parser,
+                begin,
+                end,
+                "",
+                /*allow_multi_statements*/ false,
+                settings[Setting::max_query_size],
+                settings[Setting::max_parser_depth],
+                settings[Setting::max_parser_backtracks]);
+
+        if (const auto * insert = parsed_query->as<ASTInsertQuery>())
+        {
+            if (!insert->format.empty())
+                current_format = insert->format;
+        }
+
+        chassert(in, "ReadBuffer should be initialized");
+        auto source = context->getInputFormat(current_format, *in, sample, context->getSettingsRef()[Setting::max_insert_block_size]);
+        Pipe pipe(source);
+
+        auto columns_description = metadata_snapshot->getColumns();
+        if (columns_description.hasDefaults())
+        {
+            pipe.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<AddingDefaultsTransform>(header, columns_description, *source, context);
+            });
+        }
+
+        state->input_pipeline = std::make_unique<QueryPipeline>(std::move(pipe));
+        state->input_pipeline_executor = std::make_unique<PullingAsyncPipelineExecutor>(*state->input_pipeline);
+
+    });
+    query_context->setInputBlocksReaderCallback([this] (ContextPtr context) -> Block
+    {
+        if (context != query_context)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in InputBlocksReader");
+
+        Block block;
+        state->input_pipeline_executor->pull(block);
+        return block;
+    });
+
     try
     {
+        query_context->setSetting("serialize_query_plan", false);
         state->io = executeQuery(state->query, query_context, QueryFlags{}, state->stage).second;
 
         if (state->io.pipeline.pushing())
@@ -150,7 +279,7 @@ void LocalConnection::sendQuery(
             }
 
             const auto & table_id = query_context->getInsertionTable();
-            if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
+            if (query_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields])
             {
                 if (!table_id.empty())
                 {
@@ -163,6 +292,7 @@ void LocalConnection::sendQuery(
         {
             state->block = state->io.pipeline.getHeader();
             state->executor = std::make_unique<PullingAsyncPipelineExecutor>(state->io.pipeline);
+            state->io.pipeline.setConcurrencyControl(false);
         }
         else if (state->io.pipeline.completed())
         {
@@ -178,7 +308,7 @@ void LocalConnection::sendQuery(
                     return false;
                 };
 
-                executor.setCancelCallback(callback, query_context->getSettingsRef().interactive_delay / 1000);
+                executor.setCancelCallback(callback, query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
             }
             executor.execute();
         }
@@ -201,8 +331,13 @@ void LocalConnection::sendQuery(
     catch (...)
     {
         state->io.onException();
-        state->exception = std::make_unique<Exception>(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception");
+        state->exception = std::make_unique<Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
     }
+}
+
+void LocalConnection::sendQueryPlan(const QueryPlan &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
 void LocalConnection::sendData(const Block & block, const String &, bool)
@@ -221,6 +356,11 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
         sendProfileEvents();
 }
 
+bool LocalConnection::isSendDataNeeded() const
+{
+    return !state || state->input_pipeline == nullptr;
+}
+
 void LocalConnection::sendCancel()
 {
     state->is_cancelled = true;
@@ -235,7 +375,7 @@ void LocalConnection::sendCancel()
 bool LocalConnection::pullBlock(Block & block)
 {
     if (state->executor)
-        return state->executor->pull(block, query_context->getSettingsRef().interactive_delay / 1000);
+        return state->executor->pull(block, query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
 
     return false;
 }
@@ -281,22 +421,24 @@ bool LocalConnection::poll(size_t)
 
     if (!state->is_finished)
     {
-        if (send_progress && (state->after_send_progress.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
-        {
-            state->after_send_progress.restart();
-            next_packet_type = Protocol::Server::Progress;
+        if (needSendProgressOrMetrics())
             return true;
-        }
 
-        if (send_profile_events && (state->after_send_profile_events.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
-        {
-            sendProfileEvents();
+        if (needSendLogs())
             return true;
-        }
 
         try
         {
-            pollImpl();
+            while (pollImpl())
+            {
+                LOG_TEST(&Poco::Logger::get("LocalConnection"), "Executor timeout encountered, will retry");
+
+                if (needSendProgressOrMetrics())
+                    return true;
+
+                if (needSendLogs())
+                    return true;
+            }
         }
         catch (const Exception & e)
         {
@@ -311,12 +453,15 @@ bool LocalConnection::poll(size_t)
         catch (...)
         {
             state->io.onException();
-            state->exception = std::make_unique<Exception>(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception");
+            state->exception = std::make_unique<Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
         }
     }
 
     if (state->exception)
     {
+        if (needSendLogs())
+            return true;
+
         next_packet_type = Protocol::Server::Exception;
         return true;
     }
@@ -378,6 +523,9 @@ bool LocalConnection::poll(size_t)
 
     if (state->is_finished)
     {
+        if (needSendLogs())
+            return true;
+
         finishQuery();
         return true;
     }
@@ -391,11 +539,69 @@ bool LocalConnection::poll(size_t)
     return false;
 }
 
+bool LocalConnection::needSendProgressOrMetrics()
+{
+    if (send_progress && (state->after_send_progress.elapsedMicroseconds() >= query_context->getSettingsRef()[Setting::interactive_delay]))
+    {
+        state->after_send_progress.restart();
+        next_packet_type = Protocol::Server::Progress;
+        return true;
+    }
+
+    if (send_profile_events
+        && (state->after_send_profile_events.elapsedMicroseconds() >= query_context->getSettingsRef()[Setting::interactive_delay]))
+    {
+        sendProfileEvents();
+        return true;
+    }
+
+    return false;
+}
+
+bool LocalConnection::needSendLogs()
+{
+    if (!state->logs_queue)
+        return false;
+
+    MutableColumns logs_columns;
+    MutableColumns curr_logs_columns;
+    size_t rows = 0;
+
+    for (; state->logs_queue->tryPop(curr_logs_columns); ++rows)
+    {
+        if (rows == 0)
+        {
+            logs_columns = std::move(curr_logs_columns);
+        }
+        else
+        {
+            for (size_t j = 0; j < logs_columns.size(); ++j)
+                logs_columns[j]->insertRangeFrom(*curr_logs_columns[j], 0, curr_logs_columns[j]->size());
+        }
+    }
+
+    if (rows > 0)
+    {
+        Block block = InternalTextLogsQueue::getSampleBlock();
+        block.setColumns(std::move(logs_columns));
+
+        next_packet_type = Protocol::Server::Log;
+        state->block = std::move(block);
+        return true;
+    }
+
+    return false;
+}
+
 bool LocalConnection::pollImpl()
 {
     Block block;
     auto next_read = pullBlock(block);
 
+    if (!block && next_read)
+    {
+        return true;
+    }
     if (block && !state->io.null_format)
     {
         state->block.emplace(block);
@@ -405,7 +611,12 @@ bool LocalConnection::pollImpl()
         state->is_finished = true;
     }
 
-    return true;
+    return false;
+}
+
+UInt64 LocalConnection::receivePacketType()
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "receivePacketType is not implemented for LocalConnection");
 }
 
 Packet LocalConnection::receivePacket()
@@ -536,11 +747,23 @@ void LocalConnection::sendMergeTreeReadTaskResponse(const ParallelReadResponse &
 ServerConnectionPtr LocalConnection::createConnection(
     const ConnectionParameters &,
     ContextPtr current_context,
+    ReadBuffer * in,
     bool send_progress,
     bool send_profile_events,
     const String & server_display_name)
 {
-    return std::make_unique<LocalConnection>(current_context, send_progress, send_profile_events, server_display_name);
+    return std::make_unique<LocalConnection>(current_context, in, send_progress, send_profile_events, server_display_name);
+}
+
+ServerConnectionPtr LocalConnection::createConnection(
+    const ConnectionParameters &,
+    std::unique_ptr<Session> && session,
+    ReadBuffer * in,
+    bool send_progress,
+    bool send_profile_events,
+    const String & server_display_name)
+{
+    return std::make_unique<LocalConnection>(std::move(session), in, send_progress, send_profile_events, server_display_name);
 }
 
 

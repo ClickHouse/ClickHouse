@@ -1,7 +1,12 @@
 ---
-slug: /en/operations/system-tables/settings_profile_elements
+description: 'System table which describes the content of the settings profile: constraints,
+  roles and users that the setting applies to, parent settings profiles.'
+keywords: ['system table', 'settings_profile_elements']
+slug: /operations/system-tables/settings_profile_elements
+title: 'system.settings_profile_elements'
 ---
-# settings_profile_elements
+
+# system.settings_profile_elements
 
 Describes the content of the settings profile:
 
@@ -26,6 +31,6 @@ Columns:
 
 - `max` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The maximum value of the setting. NULL if not set.
 
-- `readonly` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges))) — Profile that allows only read queries.
+- `writability` ([Nullable](../../sql-reference/data-types/nullable.md)([Enum8](../../sql-reference/data-types/enum.md)('WRITABLE' = 0, 'CONST' = 1, 'CHANGEABLE_IN_READONLY' = 2))) — Sets the settings constraint writability kind.
 
 - `inherit_profile` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — A parent profile for this setting profile. `NULL` if not set. Setting profile will inherit all the settings' values and constraints (`min`, `max`, `readonly`) from its parent profiles.

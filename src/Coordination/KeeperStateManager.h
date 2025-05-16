@@ -1,14 +1,14 @@
 #pragma once
 
-#include <Core/Types.h>
 #include <string>
 #include <Coordination/KeeperLogStore.h>
-#include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperSnapshotManager.h>
+#include <Core/Types.h>
 #include <libnuraft/nuraft.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include "Coordination/KeeperStateMachine.h"
 #include "Coordination/RaftServerConfig.h"
-#include <Coordination/KeeperSnapshotManager.h>
+#include <Access/AuthenticationData.h>
 
 namespace DB
 {
@@ -23,7 +23,6 @@ public:
         const std::string & config_prefix_,
         const std::string & server_state_file_name_,
         const Poco::Util::AbstractConfiguration & config,
-        const CoordinationSettingsPtr & coordination_settings,
         KeeperContextPtr keeper_context_);
 
     /// Constructor for tests
@@ -93,7 +92,9 @@ public:
     ClusterConfigPtr getLatestConfigFromLogStore() const;
 
     // TODO (myrrc) This should be removed once "reconfig" is stabilized
-    ClusterUpdateActions getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config, const CoordinationSettingsPtr & coordination_settings) const;
+    ClusterUpdateActions getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config, const CoordinationSettings & coordination_settings) const;
+
+    std::optional<AuthenticationData> getAuthenticationData() const;
 
 private:
     const String & getOldServerStatePath();
@@ -108,6 +109,8 @@ private:
         int port;
         /// Our config
         KeeperServerConfigPtr config;
+        /// Password to access keeper
+        std::optional<AuthenticationData> auth_data;
         /// Servers id's to start as followers
         std::unordered_set<int> servers_start_as_followers;
         /// Cluster config
@@ -121,13 +124,14 @@ private:
     mutable std::mutex configuration_wrapper_mutex;
     KeeperConfigurationWrapper configuration_wrapper TSA_GUARDED_BY(configuration_wrapper_mutex);
 
+    bool log_store_initialized = false;
     nuraft::ptr<KeeperLogStore> log_store;
 
     const String server_state_file_name;
 
     KeeperContextPtr keeper_context;
 
-    Poco::Logger * logger;
+    LoggerPtr logger;
 
 public:
     /// Parse configuration from xml config.

@@ -48,6 +48,8 @@ namespace Net
         HTTPFixedLengthStreamBuf(HTTPSession & session, ContentLength length, openmode mode);
         ~HTTPFixedLengthStreamBuf();
 
+        bool isComplete() const;
+
     protected:
         int readFromDevice(char * buffer, std::streamsize length);
         int writeToDevice(const char * buffer, std::streamsize length);
@@ -66,6 +68,8 @@ namespace Net
         HTTPFixedLengthIOS(HTTPSession & session, HTTPFixedLengthStreamBuf::ContentLength length, HTTPFixedLengthStreamBuf::openmode mode);
         ~HTTPFixedLengthIOS();
         HTTPFixedLengthStreamBuf * rdbuf();
+
+        bool isComplete() const { return _buf.isComplete(); }
 
     protected:
         HTTPFixedLengthStreamBuf _buf;

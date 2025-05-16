@@ -1,5 +1,3 @@
-set allow_experimental_map_type = 1;
-
 -- String type
 drop table if exists table_map;
 create table table_map (a Map(String, String)) engine = Memory;
@@ -77,4 +75,4 @@ SELECT sum(m['1']), sum(m['7']), sum(m['100']) FROM table_map;
 
 DROP TABLE IF EXISTS table_map;
 
-SELECT CAST(([2, 1, 1023], ['', '']), 'Map(UInt8, String)') AS map, map[10] -- { serverError 53}
+SELECT CAST(([2, 1, 1023], ['', '']), 'Map(UInt8, String)') AS map, map[10] -- { serverError TYPE_MISMATCH}

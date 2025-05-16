@@ -1,6 +1,9 @@
 #pragma once
 
-#include "LineReader.h"
+#include <span>
+
+#include <Client/LineReader.h>
+#include <base/strong_typedef.h>
 #include <replxx.hxx>
 
 namespace DB
@@ -9,14 +12,27 @@ namespace DB
 class ReplxxLineReader : public LineReader
 {
 public:
-    ReplxxLineReader(
-        Suggest & suggest,
-        const String & history_file_path,
-        bool multiline,
-        Patterns extenders_,
-        Patterns delimiters_,
-        const char word_break_characters_[],
-        replxx::Replxx::highlighter_callback_t highlighter_);
+
+    struct Options
+    {
+        Suggest & suggest;
+        String history_file_path;
+        UInt32 history_max_entries;
+        bool multiline = false;
+        bool ignore_shell_suspend = false;
+        bool embedded_mode = false;
+        Patterns extenders;
+        Patterns delimiters;
+        std::span<char> word_break_characters;
+        replxx::Replxx::highlighter_callback_t highlighter;
+        std::istream & input_stream = std::cin;
+        std::ostream & output_stream = std::cout;
+        int in_fd = STDIN_FILENO;
+        int out_fd = STDOUT_FILENO;
+        int err_fd = STDERR_FILENO;
+    };
+
+    explicit ReplxxLineReader(Options && options);
     ~ReplxxLineReader() override;
 
     void enableBracketedPaste() override;
@@ -41,6 +57,7 @@ private:
     bool bracketed_paste_enabled = false;
 
     std::string editor;
+    bool overwrite_mode = false;
 };
 
 }

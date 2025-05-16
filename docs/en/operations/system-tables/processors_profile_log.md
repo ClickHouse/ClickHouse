@@ -1,9 +1,22 @@
-# processors_profile_log
+---
+description: 'System table containing profiling information on the processors level
+  (which can be found in `EXPLAIN PIPELINE`)'
+keywords: ['system table', 'processors_profile_log', 'EXPLAIN PIPELINE']
+slug: /operations/system-tables/processors_profile_log
+title: 'system.processors_profile_log'
+---
+
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.processors_profile_log
+
+<SystemTableCloud/>
 
 This table contains profiling on processors level (that you can find in [`EXPLAIN PIPELINE`](../../sql-reference/statements/explain.md#explain-pipeline)).
 
 Columns:
 
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — The date when the event happened.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the event happened.
 - `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — The date and time with microseconds precision when the event happened.
@@ -25,7 +38,7 @@ Columns:
 
 Query:
 
-``` sql
+```sql
 EXPLAIN PIPELINE
 SELECT sleep(1)
 ┌─explain─────────────────────────┐
@@ -56,7 +69,7 @@ ORDER BY name ASC
 
 Result:
 
-``` text
+```text
 ┌─name────────────────────┬─elapsed_us─┬─input_wait_elapsed_us─┬─output_wait_elapsed_us─┐
 │ ExpressionTransform     │    1000497 │                  2823 │                    197 │
 │ LazyOutputFormat        │         36 │               1002188 │                      0 │

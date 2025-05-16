@@ -1,4 +1,5 @@
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -67,8 +68,8 @@ def test_rollback_unfinished_on_restart1(start_cluster):
     tx(1, "insert into mt values (5, 50)")
     tx(1, "alter table mt update m = m+n in partition id '1' where 1")
 
-    # check that uncommitted insert will be rolled back on restart
-    tx(3, "begin transaction")
+    # check that uncommitted insert will be rolled back on restart (using `START TRANSACTION` syntax)
+    tx(3, "start transaction")
     tid5 = tx(3, "select transactionID()").strip()
     tx(3, "insert into mt values (6, 70)")
 

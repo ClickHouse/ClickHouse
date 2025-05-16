@@ -1,17 +1,19 @@
 #pragma once
 
-#include <Core/SettingsEnums.h>
-#include <Interpreters/Context_fwd.h>
+#include <Core/LogsLevel.h>
 #include <IO/Progress.h>
+#include <Interpreters/Context_fwd.h>
+#include <base/StringRef.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
-#include <base/StringRef.h>
+#include <Common/Scheduler/ResourceLink.h>
+#include <Common/MemorySpillScheduler.h>
 
 #include <boost/noncopyable.hpp>
 
+#include <atomic>
 #include <functional>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <unordered_set>
@@ -66,7 +68,7 @@ class ThreadGroup
 public:
     ThreadGroup();
     using FatalErrorCallback = std::function<void()>;
-    ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
+    explicit ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -77,6 +79,7 @@ public:
 
     const FatalErrorCallback fatal_error_callback;
 
+    MemorySpillScheduler memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
@@ -89,6 +92,11 @@ public:
 
         String query_for_logs;
         UInt64 normalized_query_hash = 0;
+
+        // Since processors might be added on the fly within expand() function we use atomic_size_t.
+        // These two fields are used for EXPLAIN PLAN / PIPELINE.
+        std::shared_ptr<std::atomic_size_t> plan_step_index = std::make_shared<std::atomic_size_t>(0);
+        std::shared_ptr<std::atomic_size_t> pipeline_processor_index = std::make_shared<std::atomic_size_t>(0);
 
         QueryIsCanceledPredicate query_is_canceled_predicate = {};
     };
@@ -133,17 +141,31 @@ private:
 };
 
 /**
- * Since merge is executed with multiple threads, this class
- * switches the parent MemoryTracker as part of the thread group to account all the memory used.
+ * RAII wrapper around CurrentThread::attachToGroup/detachFromGroupIfNotDetached.
+ *
+ * Typically used for inheriting thread group when scheduling tasks on a thread pool:
+ *   pool->scheduleOrThrow([thread_group = CurrentThread::getGroup()]()
+ *       {
+ *           ThreadGroupSwitcher switcher(thread_group, "MyThread");
+ *           ...
+ *       });
  */
 class ThreadGroupSwitcher : private boost::noncopyable
 {
 public:
-    explicit ThreadGroupSwitcher(ThreadGroupPtr thread_group);
+    /// If thread_group_ is nullptr or equal to current thread group, does nothing.
+    /// allow_existing_group:
+    ///  * If false, asserts that the thread is not already attached to a different group.
+    ///    Use this when running a task in a thread pool.
+    ///  * If true, remembers the current group and restores it in destructor.
+    /// If thread_name is not empty, calls setThreadName along the way; should be at most 15 bytes long.
+    explicit ThreadGroupSwitcher(ThreadGroupPtr thread_group_, const char * thread_name, bool allow_existing_group = false) noexcept;
     ~ThreadGroupSwitcher();
 
 private:
+    ThreadStatus * prev_thread = nullptr;
     ThreadGroupPtr prev_thread_group;
+    ThreadGroupPtr thread_group;
 };
 
 
@@ -187,6 +209,10 @@ public:
     /// Statistics of read and write rows/bytes
     Progress progress_in;
     Progress progress_out;
+
+    /// IO scheduling
+    ResourceLink read_resource_link;
+    ResourceLink write_resource_link;
 
 private:
     /// Group of threads, to which this thread attached
@@ -236,7 +262,7 @@ private:
     using Deleter = std::function<void()>;
     Deleter deleter;
 
-    Poco::Logger * log = nullptr;
+    LoggerPtr log = nullptr;
 
     bool check_current_thread_on_destruction;
 
@@ -306,6 +332,11 @@ public:
     void logToQueryViewsLog(const ViewRuntimeData & vinfo);
 
     void flushUntrackedMemory();
+
+    void initGlobalProfiler(UInt64 global_profiler_real_time_period, UInt64 global_profiler_cpu_time_period);
+
+    size_t getNextPlanStepIndex() const;
+    size_t getNextPipelineProcessorIndex() const;
 
 private:
     void applyGlobalSettings();

@@ -11,6 +11,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
 
+#include <DataTypes/EnumValues.h>
+
 #include "IArraySource.h"
 #include "IValueSource.h"
 #include "Slices.h"
@@ -56,8 +58,8 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
     }
 
     explicit NumericArraySource(const ColumnArray & arr)
-            : column(typeid_cast<const ColVecType &>(arr.getData()))
-            , elements(typeid_cast<const ColVecType &>(arr.getData()).getData()), offsets(arr.getOffsets())
+        : column(typeid_cast<const ColVecType &>(arr.getData()))
+        , elements(typeid_cast<const ColVecType &>(arr.getData()).getData()), offsets(arr.getOffsets())
     {
     }
 
@@ -138,9 +140,11 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
 
 
 /// The methods can be virtual or not depending on the template parameter. See IStringSource.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsuggest-override"
-#pragma GCC diagnostic ignored "-Wsuggest-destructor-override"
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wsuggest-override"
+#pragma clang diagnostic ignored "-Wsuggest-destructor-override"
+
+/// NOLINTBEGIN(hicpp-use-override, modernize-use-override)
 
 template <typename Base>
 struct ConstSource : public Base
@@ -154,17 +158,22 @@ struct ConstSource : public Base
     size_t row_num = 0;
 
     explicit ConstSource(const ColumnConst & col_)
-            : Base(static_cast<const typename Base::Column &>(col_.getDataColumn())), total_rows(col_.size())
+        : Base(static_cast<const typename Base::Column &>(col_.getDataColumn()))
+        , total_rows(col_.size())
     {
     }
 
     template <typename ColumnType>
-    ConstSource(const ColumnType & col_, size_t total_rows_) : Base(col_), total_rows(total_rows_)
+    ConstSource(const ColumnType & col_, size_t total_rows_)
+        : Base(col_)
+        , total_rows(total_rows_)
     {
     }
 
     template <typename ColumnType>
-    ConstSource(const ColumnType & col_, const NullMap & null_map_, size_t total_rows_) : Base(col_, null_map_), total_rows(total_rows_)
+    ConstSource(const ColumnType & col_, const NullMap & null_map_, size_t total_rows_)
+        : Base(col_, null_map_)
+        , total_rows(total_rows_)
     {
     }
 
@@ -224,7 +233,9 @@ struct ConstSource : public Base
     }
 };
 
-#pragma GCC diagnostic pop
+/// NOLINTEND(hicpp-use-override, modernize-use-override)
+
+#pragma clang diagnostic pop
 
 struct StringSource
 {
@@ -240,7 +251,8 @@ struct StringSource
     ColumnString::Offset prev_offset = 0;
 
     explicit StringSource(const ColumnString & col)
-            : elements(col.getChars()), offsets(col.getOffsets())
+        : elements(col.getChars())
+        , offsets(col.getOffsets())
     {
     }
 
@@ -310,6 +322,98 @@ struct StringSource
         if (offset > elem_size)
             return {&elements[prev_offset], length + elem_size > offset ? std::min(elem_size, length + elem_size - offset) : 0};
         return {&elements[prev_offset + elem_size - offset], std::min(length, offset)};
+    }
+
+    const ColumnString::Chars & getElements() const { return elements; }
+};
+
+/// Treats Enum values as Strings, modeled after StringSource
+template <typename EnumDataType>
+struct EnumSource
+{
+    using Column = typename EnumDataType::ColumnType;
+    using Slice = NumericArraySlice<UInt8>;
+
+    using SinkType = StringSink;
+
+    const typename Column::Container & data;
+    const EnumDataType & data_type;
+
+    size_t row_num = 0;
+
+    EnumSource(const Column & col, const EnumDataType & data_type_)
+        : data(col.getData())
+        , data_type(data_type_)
+    {
+    }
+
+    void next()
+    {
+        ++row_num;
+    }
+
+    bool isEnd() const
+    {
+        return row_num == data.size();
+    }
+
+    size_t rowNum() const
+    {
+        return row_num;
+    }
+
+    size_t getSizeForReserve() const
+    {
+        return data.size();
+    }
+
+    size_t getElementSize() const
+    {
+        std::string_view name = data_type.getNameForValue(data[row_num]).toView();
+        return name.size();
+    }
+
+    size_t getColumnSize() const
+    {
+        return data.size();
+    }
+
+    Slice getWhole() const
+    {
+        std::string_view name = data_type.getNameForValue(data[row_num]).toView();
+        return {reinterpret_cast<const UInt8 *>(name.data()), name.size()};
+    }
+
+    Slice getSliceFromLeft(size_t offset) const
+    {
+        std::string_view name = data_type.getNameForValue(data[row_num]).toView();
+        if (offset >= name.size())
+            return {reinterpret_cast<const UInt8 *>(name.data()), 0};
+        return {reinterpret_cast<const UInt8 *>(name.data()) + offset, name.size() - offset};
+    }
+
+    Slice getSliceFromLeft(size_t offset, size_t length) const
+    {
+        std::string_view name = data_type.getNameForValue(data[row_num]).toView();
+        if (offset >= name.size())
+            return {reinterpret_cast<const UInt8 *>(name.data()), 0};
+        return {reinterpret_cast<const UInt8 *>(name.data()) + offset, std::min(length, name.size() - offset)};
+    }
+
+    Slice getSliceFromRight(size_t offset) const
+    {
+        std::string_view name = data_type.getNameForValue(data[row_num]).toView();
+        if (offset > name.size())
+            return {reinterpret_cast<const UInt8 *>(name.data()), name.size()};
+        return {reinterpret_cast<const UInt8 *>(name.data()) + name.size() - offset, offset};
+    }
+
+    Slice getSliceFromRight(size_t offset, size_t length) const
+    {
+        std::string_view name = data_type.getNameForValue(data[row_num]).toView();
+        if (offset > name.size())
+            return {reinterpret_cast<const UInt8 *>(name.data()), length + name.size() > offset ? std::min(name.size(), length + name.size() - offset) : 0};
+        return {reinterpret_cast<const UInt8 *>(name.data()) + name.size() - offset, std::min(length, offset)};
     }
 };
 
@@ -415,11 +519,12 @@ struct FixedStringSource
     const UInt8 * pos;
     const UInt8 * end;
     size_t string_size;
+    const typename ColumnString::Chars & elements;
+
     size_t row_num = 0;
     size_t column_size = 0;
 
-    explicit FixedStringSource(const ColumnFixedString & col)
-            : string_size(col.getN())
+    explicit FixedStringSource(const ColumnFixedString & col) : string_size(col.getN()), elements(col.getChars())
     {
         const auto & chars = col.getChars();
         pos = chars.data();
@@ -490,6 +595,8 @@ struct FixedStringSource
             return {pos, length + string_size > offset ? std::min(string_size, length + string_size - offset) : 0};
         return {pos + string_size - offset, std::min(length, offset)};
     }
+
+    const ColumnString::Chars & getElements() const { return elements; }
 };
 
 
@@ -553,7 +660,8 @@ struct GenericArraySource : public ArraySourceImpl<GenericArraySource>
     }
 
     explicit GenericArraySource(const ColumnArray & arr)
-            : elements(arr.getData()), offsets(arr.getOffsets())
+        : elements(arr.getData())
+        , offsets(arr.getOffsets())
     {
     }
 
@@ -813,7 +921,10 @@ struct NullableValueSource : public ValueSource
     const NullMap & null_map;
 
     template <typename Column>
-    explicit NullableValueSource(const Column & col, const NullMap & null_map_) : ValueSource(col), null_map(null_map_) {}
+    NullableValueSource(const Column & col, const NullMap & null_map_)
+        : ValueSource(col)
+        , null_map(null_map_)
+    {}
 
     void accept(ValueSourceVisitor & visitor) override { visitor.visit(*this); }
 

@@ -14,7 +14,7 @@ WHERE event in ('FailedQuery', 'FailedInsertQuery', 'FailedSelectQuery');
 CREATE TABLE to_insert (value UInt64) ENGINE = Memory();
 
 -- Failed insert before execution
-INSERT INTO table_that_do_not_exists VALUES (42); -- { serverError 60 }
+INSERT INTO table_that_do_not_exists VALUES (42); -- { serverError UNKNOWN_TABLE }
 
 SELECT current_value - previous_value
 FROM (
@@ -27,7 +27,7 @@ on previous.event = current.event;
 
 
 -- Failed insert in execution
-INSERT INTO to_insert SELECT throwIf(1); -- { serverError 395 }
+INSERT INTO to_insert SELECT throwIf(1); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
 SELECT current_value - previous_value
 FROM (
@@ -40,7 +40,7 @@ on previous.event = current.event;
 
 
 -- Failed select before execution
-SELECT * FROM table_that_do_not_exists; -- { serverError 60 }
+SELECT * FROM table_that_do_not_exists; -- { serverError UNKNOWN_TABLE }
 
 SELECT current_value - previous_value
 FROM (
@@ -52,7 +52,7 @@ ALL LEFT  JOIN (
 on previous.event = current.event;
 
 -- Failed select in execution
-SELECT throwIf(1); -- { serverError 395 }
+SELECT throwIf(1); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
 SELECT current_value - previous_value
 FROM (

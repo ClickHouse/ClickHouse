@@ -1,11 +1,15 @@
 #pragma once
 
-#include <Columns/IColumn.h>
-#include <Columns/ColumnsCommon.h>
-
+#include <Columns/IColumn_fwd.h>
+#include <Common/PODArray_fwd.h>
 
 namespace DB
 {
+
+template <class> class ColumnVector;
+using ColumnUInt64 = ColumnVector<UInt64>;
+
+using IColumnFilter = PaddedPODArray<UInt8>;
 
 /// Support methods for implementation of WHERE, PREWHERE and HAVING.
 
@@ -30,22 +34,22 @@ struct IFilterDescription
 /// Obtain a filter from non constant Column, that may have type: UInt8, Nullable(UInt8).
 struct FilterDescription final : public IFilterDescription
 {
-    const IColumn::Filter * data = nullptr; /// Pointer to filter when it is not always true or always false.
+    const IColumnFilter * data = nullptr; /// Pointer to filter when it is not always true or always false.
     ColumnPtr data_holder;                  /// If new column was generated, it will be owned by holder.
 
     explicit FilterDescription(const IColumn & column);
 
-    ColumnPtr filter(const IColumn & column, ssize_t result_size_hint) const override { return column.filter(*data, result_size_hint); }
-    size_t countBytesInFilter() const override { return DB::countBytesInFilter(*data); }
+    ColumnPtr filter(const IColumn & column, ssize_t result_size_hint) const override;
+    size_t countBytesInFilter() const override;
 };
 
 struct SparseFilterDescription final : public IFilterDescription
 {
-    const IColumn * filter_indices = nullptr;
+    const ColumnUInt64 * filter_indices = nullptr;
     explicit SparseFilterDescription(const IColumn & column);
 
-    ColumnPtr filter(const IColumn & column, ssize_t) const override { return column.index(*filter_indices, 0); }
-    size_t countBytesInFilter() const override { return filter_indices->size(); }
+    ColumnPtr filter(const IColumn & column, ssize_t) const override;
+    size_t countBytesInFilter() const override;
 };
 
 struct ColumnWithTypeAndName;

@@ -1,9 +1,11 @@
 #include "CassandraDictionarySource.h"
+#include <Columns/IColumn.h>
+#include <Interpreters/Context.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <Common/RemoteHostFilter.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
-#include <Interpreters/Context.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/Pipe.h>
 
 namespace DB
 {
@@ -16,7 +18,8 @@ namespace ErrorCodes
 
 void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=]([[maybe_unused]] const DictionaryStructure & dict_struct,
+    auto create_table_source = [=]([[maybe_unused]] const String & name,
+                                   [[maybe_unused]] const DictionaryStructure & dict_struct,
                                    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
                                    [[maybe_unused]] const std::string & config_prefix,
                                    [[maybe_unused]] Block & sample_block,
@@ -105,7 +108,7 @@ CassandraDictionarySource::CassandraDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Configuration & configuration_,
     const Block & sample_block_)
-    : log(&Poco::Logger::get("CassandraDictionarySource"))
+    : log(getLogger("CassandraDictionarySource"))
     , dict_struct(dict_struct_)
     , configuration(configuration_)
     , sample_block(sample_block_)

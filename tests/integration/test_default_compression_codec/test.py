@@ -1,8 +1,10 @@
+import logging
 import random
 import string
-import logging
-import pytest
 import time
+
+import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -25,15 +27,6 @@ node2 = cluster.add_instance(
     ],
     with_zookeeper=True,
 )
-node3 = cluster.add_instance(
-    "node3",
-    main_configs=["configs/default_compression.xml"],
-    image="yandex/clickhouse-server",
-    tag="19.16.9.37",
-    stay_alive=True,
-    with_installed_binary=True,
-    allow_analyzer=False,
-)
 node4 = cluster.add_instance("node4")
 
 
@@ -48,16 +41,18 @@ def start_cluster():
 
 
 def get_compression_codec_byte(node, table_name, part_name):
-    cmd = "tail -c +17 /var/lib/clickhouse/data/default/{}/{}/data1.bin | od -x -N 1 | head -n 1 | awk '{{print $2}}'".format(
-        table_name, part_name
-    )
+    data_path = node.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='{table_name}'"
+    ).strip()
+    cmd = f"tail -c +17 {data_path}/{part_name}/data1.bin | od -x -N 1 | head -n 1 | awk '{{print $2}}'"
     return node.exec_in_container(["bash", "-c", cmd]).strip()
 
 
 def get_second_multiple_codec_byte(node, table_name, part_name):
-    cmd = "tail -c +17 /var/lib/clickhouse/data/default/{}/{}/data1.bin | od -x -j 11 -N 1 | head -n 1 | awk '{{print $2}}'".format(
-        table_name, part_name
-    )
+    data_path = node.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='{table_name}'"
+    ).strip()
+    cmd = f"tail -c +17 {data_path}/{part_name}/data1.bin | od -x -j 11 -N 1 | head -n 1 | awk '{{print $2}}'"
     return node.exec_in_container(["bash", "-c", cmd]).strip()
 
 
@@ -413,88 +408,6 @@ def test_default_codec_multiple(start_cluster):
     node2.query("DROP TABLE compression_table_multiple SYNC")
 
 
-def test_default_codec_version_update(start_cluster):
-    node3.query(
-        """
-    CREATE TABLE compression_table (
-        key UInt64 CODEC(LZ4HC(7)),
-        data1 String
-    ) ENGINE = MergeTree ORDER BY tuple() PARTITION BY key;
-    """
-    )
-
-    node3.query("INSERT INTO compression_table VALUES (1, 'x')")
-    node3.query(
-        "INSERT INTO compression_table VALUES (2, '{}')".format(get_random_string(2048))
-    )
-    node3.query(
-        "INSERT INTO compression_table VALUES (3, '{}')".format(
-            get_random_string(22048)
-        )
-    )
-
-    old_version = node3.query("SELECT version()")
-    node3.restart_with_latest_version(fix_metadata=True)
-    new_version = node3.query("SELECT version()")
-    logging.debug(f"Updated from {old_version} to {new_version}")
-    assert (
-        node3.query(
-            "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '1_1_1_0'"
-        )
-        == "ZSTD(1)\n"
-    )
-    assert (
-        node3.query(
-            "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '2_2_2_0'"
-        )
-        == "ZSTD(1)\n"
-    )
-    assert (
-        node3.query(
-            "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '3_3_3_0'"
-        )
-        == "ZSTD(1)\n"
-    )
-
-    node3.query("OPTIMIZE TABLE compression_table FINAL")
-
-    assert (
-        node3.query(
-            "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '1_1_1_1'"
-        )
-        == "ZSTD(10)\n"
-    )
-    assert (
-        node3.query(
-            "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '2_2_2_1'"
-        )
-        == "LZ4HC(5)\n"
-    )
-    assert (
-        node3.query(
-            "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '3_3_3_1'"
-        )
-        == "LZ4\n"
-    )
-
-    node3.query("DROP TABLE compression_table SYNC")
-
-    def callback(n):
-        n.exec_in_container(
-            [
-                "bash",
-                "-c",
-                "rm -rf /var/lib/clickhouse/metadata/system /var/lib/clickhouse/data/system ",
-            ],
-            user="root",
-        )
-
-    node3.restart_with_original_version(callback_onstop=callback)
-
-    cur_version = node3.query("SELECT version()")
-    logging.debug(f"End with {cur_version}")
-
-
 def test_default_codec_for_compact_parts(start_cluster):
     node4.query(
         """
@@ -511,11 +424,14 @@ def test_default_codec_for_compact_parts(start_cluster):
 
     node4.query("ALTER TABLE compact_parts_table DETACH PART 'all_1_1_0'")
 
+    data_path = node4.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='compact_parts_table'"
+    ).strip()
     node4.exec_in_container(
         [
             "bash",
             "-c",
-            "rm /var/lib/clickhouse/data/default/compact_parts_table/detached/all_1_1_0/default_compression_codec.txt",
+            f"rm {data_path}detached/all_1_1_0/default_compression_codec.txt",
         ]
     )
 

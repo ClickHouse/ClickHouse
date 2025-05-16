@@ -46,7 +46,7 @@ public:
             return;
 
         const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
-        if (!storage->isVirtualColumn(column.name, storage_snapshot->getMetadataForQuery()))
+        if (!storage->isVirtualColumn(column.name, storage_snapshot->metadata))
             return;
 
         auto function_node = std::make_shared<FunctionNode>("shardNum");
@@ -58,7 +58,7 @@ public:
 
 }
 
-void ShardNumColumnToFunctionPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void ShardNumColumnToFunctionPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     ShardNumColumnToFunctionVisitor visitor(context);
     visitor.visit(query_tree_node);

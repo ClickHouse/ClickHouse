@@ -1,14 +1,15 @@
 #pragma once
 
-#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/SelectUnionMode.h>
 
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/ActionsDAG.h>
 
+#include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -16,29 +17,38 @@
 #include <QueryPipeline/StreamLocalLimits.h>
 
 #include <Planner/PlannerContext.h>
+#include <Planner/PlannerCorrelatedSubqueries.h>
 
 #include <Storages/SelectQueryInfo.h>
+
+#include <Interpreters/WindowDescription.h>
 
 namespace DB
 {
 
 /// Dump query plan
-String dumpQueryPlan(QueryPlan & query_plan);
+String dumpQueryPlan(const QueryPlan & query_plan);
 
 /// Dump query plan result pipeline
-String dumpQueryPipeline(QueryPlan & query_plan);
+String dumpQueryPipeline(const QueryPlan & query_plan);
 
 /// Build common header for UNION query
 Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode union_mode);
 
+/// Add converting to common header actions if needed for each plan
+void addConvertingToCommonHeaderActionsIfNeeded(
+    std::vector<std::unique_ptr<QueryPlan>> & query_plans,
+    const Block & union_common_header,
+    Blocks & query_plans_headers);
+
 /// Convert query node to ASTSelectQuery
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node);
 
+/// Convert query node to ASTSelectQuery for distributed processing
+ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node);
+
 /// Build context for subquery execution
 ContextPtr buildSubqueryContext(const ContextPtr & context);
-
-/// Update mutable context for subquery execution
-void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context);
 
 /// Build limits for storage
 StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptions & options);
@@ -47,9 +57,11 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
   * Inputs are not used for actions dag outputs.
   * Only root query tree expression node is used as actions dag output.
   */
-ActionsDAGPtr buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
+std::pair<ActionsDAG, CorrelatedSubtrees> buildActionsDAGFromExpressionNode(
+    const QueryTreeNodePtr & expression_node,
     const ColumnsWithTypeAndName & input_columns,
-    const PlannerContextPtr & planner_context);
+    const PlannerContextPtr & planner_context,
+    const ColumnNodePtrWithHashSet & correlated_columns_set);
 
 /// Returns true if prefix sort description is prefix of full sort descriptor, false otherwise
 bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescription & full);
@@ -67,14 +79,11 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
 
 /// Replace table expressions from query JOIN TREE with dummy tables
 using ResultReplacementMap = std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr>;
-QueryTreeNodePtr replaceTableExpressionsWithDummyTables(const QueryTreeNodePtr & query_node,
+QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
+    const QueryTreeNodePtr & query_node,
+    const QueryTreeNodes & table_nodes,
     const ContextPtr & context,
     ResultReplacementMap * result_replacement_map = nullptr);
-
-/// Build subquery to read specified columns from table expression
-QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
-    const ContextPtr & context);
 
 SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context);
 
@@ -84,6 +93,19 @@ FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
         PlannerContextPtr & planner_context,
         NameSet table_expression_required_names_without_filter = {});
 
+FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
+        const QueryTreeNodePtr & table_expression,
+        PlannerContextPtr & planner_context,
+        NameSet table_expression_required_names_without_filter = {});
+
 ASTPtr parseAdditionalResultFilter(const Settings & settings);
+
+using UsefulSets = std::unordered_set<FutureSetPtr>;
+void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
+
+/// If the window frame is not set in sql, try to use the default frame from window function
+/// if it have any one. Otherwise return empty.
+/// If the window frame is set in sql, use it anyway.
+std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node);
 
 }

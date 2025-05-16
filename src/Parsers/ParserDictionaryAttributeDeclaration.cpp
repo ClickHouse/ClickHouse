@@ -1,5 +1,6 @@
 #include <Parsers/ParserDictionaryAttributeDeclaration.h>
 
+#include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -12,12 +13,12 @@ bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, E
 {
     ParserIdentifier name_parser;
     ParserDataType type_parser;
-    ParserKeyword s_default{"DEFAULT"};
-    ParserKeyword s_expression{"EXPRESSION"};
-    ParserKeyword s_hierarchical{"HIERARCHICAL"};
-    ParserKeyword s_bidirectional{"BIDIRECTIONAL"};
-    ParserKeyword s_injective{"INJECTIVE"};
-    ParserKeyword s_is_object_id{"IS_OBJECT_ID"};
+    ParserKeyword s_default{Keyword::DEFAULT};
+    ParserKeyword s_expression{Keyword::EXPRESSION};
+    ParserKeyword s_hierarchical{Keyword::HIERARCHICAL};
+    ParserKeyword s_bidirectional{Keyword::BIDIRECTIONAL};
+    ParserKeyword s_injective{Keyword::INJECTIVE};
+    ParserKeyword s_is_object_id{Keyword::IS_OBJECT_ID};
     ParserLiteral default_parser;
     ParserArrayOfLiterals array_literals_parser;
     ParserExpression expression_parser;

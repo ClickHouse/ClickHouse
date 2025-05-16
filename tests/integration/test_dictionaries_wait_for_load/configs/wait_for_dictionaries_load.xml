@@ -1,3 +1,0 @@
-<clickhouse>
-    <wait_dictionaries_load_at_startup>1</wait_dictionaries_load_at_startup>
-</clickhouse>

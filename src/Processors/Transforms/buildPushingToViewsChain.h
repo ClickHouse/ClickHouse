@@ -33,6 +33,9 @@ struct ViewRuntimeData
     /// Info which is needed for query views log.
     std::unique_ptr<QueryViewsLogElement::ViewRuntimeStats> runtime_stats;
 
+    /// An overridden context bounded to this view with the correct SQL security grants.
+    ContextPtr context;
+
     void setException(std::exception_ptr e)
     {
         exception = e;
@@ -57,6 +60,7 @@ Chain buildPushingToViewsChain(
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
     const ASTPtr & query_ptr,
+    size_t view_level,
     /// It is true when we should not insert into table, but only to views.
     /// Used e.g. for kafka. We should try to remove it somehow.
     bool no_destination,

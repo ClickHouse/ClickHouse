@@ -36,24 +36,35 @@ String ISerialization::kindToString(Kind kind)
         case Kind::SPARSE:
             return "Sparse";
     }
-    UNREACHABLE();
 }
 
 ISerialization::Kind ISerialization::stringToKind(const String & str)
 {
     if (str == "Default")
         return Kind::DEFAULT;
-    else if (str == "Sparse")
+    if (str == "Sparse")
         return Kind::SPARSE;
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind '{}'", str);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind '{}'", str);
 }
+
+const std::set<SubstreamType> ISerialization::Substream::named_types
+{
+    TupleElement,
+    NamedOffsets,
+    NamedNullMap,
+    NamedVariantDiscriminators,
+};
 
 String ISerialization::Substream::toString() const
 {
-    if (type == TupleElement)
-        return fmt::format("TupleElement({}, escape_tuple_delimiter = {})",
-            tuple_element_name, escape_tuple_delimiter ? "true" : "false");
+    if (named_types.contains(type))
+        return fmt::format("{}({})", type, name_of_substream);
+
+    if (type == VariantElement)
+        return fmt::format("VariantElement({})", variant_element_name);
+
+    if (type == VariantElementNullMap)
+        return fmt::format("VariantElementNullMap({}.null)", variant_element_name);
 
     return String(magic_enum::enum_name(type));
 }
@@ -98,7 +109,7 @@ void ISerialization::serializeBinaryBulk(const IColumn & column, WriteBuffer &, 
     throw Exception(ErrorCodes::MULTIPLE_STREAMS_REQUIRED, "Column {} must be serialized with multiple streams", column.getName());
 }
 
-void ISerialization::deserializeBinaryBulk(IColumn & column, ReadBuffer &, size_t, double) const
+void ISerialization::deserializeBinaryBulk(IColumn & column, ReadBuffer &, size_t, size_t, double) const
 {
     throw Exception(ErrorCodes::MULTIPLE_STREAMS_REQUIRED, "Column {} must be deserialized with multiple streams", column.getName());
 }
@@ -110,17 +121,22 @@ void ISerialization::serializeBinaryBulkWithMultipleStreams(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & /* state */) const
 {
+    settings.path.push_back(Substream::Regular);
     if (WriteBuffer * stream = settings.getter(settings.path))
         serializeBinaryBulk(column, *stream, offset, limit);
+    settings.path.pop_back();
 }
 
 void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & /* state */,
     SubstreamsCache * cache) const
 {
+    settings.path.push_back(Substream::Regular);
+
     auto cached_column = getFromSubstreamsCache(cache, settings.path);
     if (cached_column)
     {
@@ -129,10 +145,12 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {
         auto mutable_column = column->assumeMutable();
-        deserializeBinaryBulk(*mutable_column, *stream, limit, settings.avg_value_size_hint);
+        deserializeBinaryBulk(*mutable_column, *stream, rows_offset, limit, settings.avg_value_size_hint);
         column = std::move(mutable_column);
         addToSubstreamsCache(cache, settings.path, column);
     }
+
+    settings.path.pop_back();
 }
 
 namespace
@@ -144,7 +162,7 @@ String getNameForSubstreamPath(
     String stream_name,
     SubstreamIterator begin,
     SubstreamIterator end,
-    bool escape_tuple_delimiter)
+    bool escape_for_file_name)
 {
     using Substream = ISerialization::Substream;
 
@@ -159,19 +177,41 @@ String getNameForSubstreamPath(
             ++array_level;
         else if (it->type == Substream::DictionaryKeys)
             stream_name += ".dict";
+        else if (it->type == Substream::DictionaryKeysPrefix)
+            stream_name += ".dict_prefix";
         else if (it->type == Substream::SparseOffsets)
             stream_name += ".sparse.idx";
-        else if (it->type == Substream::TupleElement)
+        else if (Substream::named_types.contains(it->type))
         {
+            auto substream_name = "." + it->name_of_substream;
+
             /// For compatibility reasons, we use %2E (escaped dot) instead of dot.
             /// Because nested data may be represented not by Array of Tuple,
-            ///  but by separate Array columns with names in a form of a.b,
-            ///  and name is encoded as a whole.
-            if (escape_tuple_delimiter && it->escape_tuple_delimiter)
-                stream_name += escapeForFileName("." + it->tuple_element_name);
+            /// but by separate Array columns with names in a form of a.b,
+            /// and name is encoded as a whole.
+            if (it->type == Substream::TupleElement && escape_for_file_name)
+                stream_name += escapeForFileName(substream_name);
             else
-                stream_name += "." + it->tuple_element_name;
+                stream_name += substream_name;
         }
+        else if (it->type == Substream::VariantDiscriminators)
+            stream_name += ".variant_discr";
+        else if (it->type == Substream::VariantDiscriminatorsPrefix)
+            stream_name += ".variant_discr_prefix";
+        else if (it->type == Substream::VariantOffsets)
+            stream_name += ".variant_offsets";
+        else if (it->type == Substream::VariantElement)
+            stream_name += "." + it->variant_element_name;
+        else if (it->type == Substream::VariantElementNullMap)
+            stream_name += "." + it->variant_element_name + ".null";
+        else if (it->type == SubstreamType::DynamicStructure)
+            stream_name += ".dynamic_structure";
+        else if (it->type == SubstreamType::ObjectStructure)
+            stream_name += ".object_structure";
+        else if (it->type == SubstreamType::ObjectSharedData)
+            stream_name += ".object_shared_data";
+        else if (it->type == SubstreamType::ObjectTypedPath || it->type == SubstreamType::ObjectDynamicPath)
+            stream_name += "." + (escape_for_file_name ? escapeForFileName(it->object_path_name) : it->object_path_name);
     }
 
     return stream_name;
@@ -184,23 +224,31 @@ String ISerialization::getFileNameForStream(const NameAndTypePair & column, cons
     return getFileNameForStream(column.getNameInStorage(), path);
 }
 
-bool isOffsetsOfNested(const ISerialization::SubstreamPath & path)
+static bool isPossibleOffsetsOfNested(const ISerialization::SubstreamPath & path)
 {
-    if (path.empty())
-        return false;
+    /// Arrays of Nested cannot be inside other types.
+    /// So it's ok to check only first element of path.
 
-    for (const auto & elem : path)
-        if (elem.type == ISerialization::Substream::ArrayElements)
-            return false;
+    /// Array offsets as a part of serialization of Array type.
+    if (path.size() == 1
+        && path[0].type == ISerialization::Substream::ArraySizes)
+        return true;
 
-    return path.back().type == ISerialization::Substream::ArraySizes;
+    /// Array offsets as a separate subcolumn.
+    if (path.size() == 2
+        && path[0].type == ISerialization::Substream::NamedOffsets
+        && path[1].type == ISerialization::Substream::Regular
+        && path[0].name_of_substream == "size0")
+        return true;
+
+    return false;
 }
 
 String ISerialization::getFileNameForStream(const String & name_in_storage, const SubstreamPath & path)
 {
     String stream_name;
     auto nested_storage_name = Nested::extractTableName(name_in_storage);
-    if (name_in_storage != nested_storage_name && isOffsetsOfNested(path))
+    if (name_in_storage != nested_storage_name && isPossibleOffsetsOfNested(path))
         stream_name = escapeForFileName(nested_storage_name);
     else
         stream_name = escapeForFileName(name_in_storage);
@@ -239,6 +287,23 @@ ColumnPtr ISerialization::getFromSubstreamsCache(SubstreamsCache * cache, const 
     return it == cache->end() ? nullptr : it->second;
 }
 
+void ISerialization::addToSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path, DeserializeBinaryBulkStatePtr state)
+{
+    if (!cache || path.empty())
+        return;
+
+    cache->emplace(getSubcolumnNameForStream(path), state);
+}
+
+ISerialization::DeserializeBinaryBulkStatePtr ISerialization::getFromSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path)
+{
+    if (!cache || path.empty())
+        return nullptr;
+
+    auto it = cache->find(getSubcolumnNameForStream(path));
+    return it == cache->end() ? nullptr : it->second;
+}
+
 bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
 {
     for (const auto & elem : path)
@@ -252,6 +317,53 @@ bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
     return true;
 }
 
+namespace
+{
+
+template <typename F>
+bool tryDeserializeText(const F deserialize, DB::IColumn & column)
+{
+    size_t prev_size = column.size();
+    try
+    {
+        deserialize(column);
+        return true;
+    }
+    catch (...)
+    {
+        if (column.size() > prev_size)
+            column.popBack(column.size() - prev_size);
+        return false;
+    }
+}
+
+}
+
+bool ISerialization::tryDeserializeTextCSV(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
+{
+    return tryDeserializeText([&](DB::IColumn & my_column) { deserializeTextCSV(my_column, istr, settings); }, column);
+}
+
+bool ISerialization::tryDeserializeTextEscaped(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
+{
+    return tryDeserializeText([&](DB::IColumn & my_column) { deserializeTextEscaped(my_column, istr, settings); }, column);
+}
+
+bool ISerialization::tryDeserializeTextJSON(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
+{
+    return tryDeserializeText([&](DB::IColumn & my_column) { deserializeTextJSON(my_column, istr, settings); }, column);
+}
+
+bool ISerialization::tryDeserializeTextQuoted(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
+{
+    return tryDeserializeText([&](DB::IColumn & my_column) { deserializeTextQuoted(my_column, istr, settings); }, column);
+}
+
+bool ISerialization::tryDeserializeWholeText(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
+{
+    return tryDeserializeText([&](DB::IColumn & my_column) { deserializeWholeText(my_column, istr, settings); }, column);
+}
+
 void ISerialization::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String field;
@@ -259,6 +371,15 @@ void ISerialization::deserializeTextRaw(IColumn & column, ReadBuffer & istr, con
     readString(field, istr);
     ReadBufferFromString buf(field);
     deserializeWholeText(column, buf, settings);
+}
+
+bool ISerialization::tryDeserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String field;
+    /// Read until \t or \n.
+    readString(field, istr);
+    ReadBufferFromString buf(field);
+    return tryDeserializeWholeText(column, buf, settings);
 }
 
 void ISerialization::serializeTextMarkdown(
@@ -288,7 +409,71 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
     size_t last_elem = prefix_len - 1;
     return path[last_elem].type == Substream::NullMap
             || path[last_elem].type == Substream::TupleElement
-            || path[last_elem].type == Substream::ArraySizes;
+            || path[last_elem].type == Substream::ArraySizes
+            || path[last_elem].type == Substream::VariantElement
+            || path[last_elem].type == Substream::VariantElementNullMap
+            || path[last_elem].type == Substream::ObjectTypedPath;
+}
+
+bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
+{
+    if (prefix_len == 0 || prefix_len > path.size())
+        return false;
+
+    size_t last_elem = prefix_len - 1;
+    return path[last_elem].type == Substream::VariantElementNullMap;
+}
+
+bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
+{
+    if (prefix_len == 0 || prefix_len > path.size())
+        return false;
+
+    for (size_t i = 0; i != prefix_len; ++i)
+    {
+        if (path[i].type == SubstreamType::DynamicData || path[i].type == SubstreamType::DynamicStructure
+            || path[i].type == SubstreamType::ObjectData || path[i].type == SubstreamType::ObjectStructure)
+            return true;
+    }
+
+    return false;
+}
+
+bool ISerialization::isLowCardinalityDictionarySubcolumn(const DB::ISerialization::SubstreamPath & path)
+{
+    if (path.empty())
+        return false;
+
+    return path[path.size() - 1].type == SubstreamType::DictionaryKeys;
+}
+
+bool ISerialization::isDynamicOrObjectStructureSubcolumn(const DB::ISerialization::SubstreamPath & path)
+{
+    if (path.empty())
+        return false;
+
+    return path[path.size() - 1].type == SubstreamType::DynamicStructure || path[path.size() - 1].type == SubstreamType::ObjectStructure;
+}
+
+bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path, bool use_specialized_prefixes_substreams)
+{
+    if (path.empty())
+        return false;
+
+    switch (path[path.size() - 1].type)
+    {
+        case SubstreamType::DynamicStructure: [[fallthrough]];
+        case SubstreamType::ObjectStructure: [[fallthrough]];
+        case SubstreamType::DeprecatedObjectStructure: [[fallthrough]];
+        case SubstreamType::DictionaryKeysPrefix: [[fallthrough]];
+        case SubstreamType::VariantDiscriminatorsPrefix:
+            return true;
+        case SubstreamType::DictionaryKeys: [[fallthrough]];
+        case SubstreamType::VariantDiscriminators:
+            return !use_specialized_prefixes_substreams;
+        default:
+            return false;
+    }
 }
 
 ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)
@@ -304,8 +489,8 @@ ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath
         const auto & creator = path[i].creator;
         if (creator)
         {
+            res.serialization = res.serialization ? creator->create(res.serialization, res.type) : res.serialization;
             res.type = res.type ? creator->create(res.type) : res.type;
-            res.serialization = res.serialization ? creator->create(res.serialization) : res.serialization;
             res.column = res.column ? creator->create(res.column) : res.column;
         }
     }
@@ -317,6 +502,8 @@ void ISerialization::throwUnexpectedDataAfterParsedValue(IColumn & column, ReadB
 {
     WriteBufferFromOwnString ostr;
     serializeText(column, column.size() - 1, ostr, settings);
+    /// Restore correct column size.
+    column.popBack(1);
     throw Exception(
         ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
         "Unexpected data '{}' after parsed {} value '{}'",
@@ -326,4 +513,3 @@ void ISerialization::throwUnexpectedDataAfterParsedValue(IColumn & column, ReadB
 }
 
 }
-

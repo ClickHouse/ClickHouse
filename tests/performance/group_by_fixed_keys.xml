@@ -11,7 +11,7 @@
 
     <create_query>create table group_by_fk(a UInt32, b UInt32, c LowCardinality(UInt32), d Nullable(UInt32), e UInt64, f UInt64, g UInt64, h LowCardinality(UInt64), i Nullable(UInt64)) engine=MergeTree order by tuple()</create_query>
 
-    <fill_query>insert into group_by_fk select number, number, number % 10000, number % 2 == 0 ? number : Null, number, number, number, number % 10000, number % 2 == 0 ? number : Null from numbers_mt(3e7)</fill_query>
+    <fill_query>insert into group_by_fk select number, number, number % 10000, number % 2 == 0 ? number : Null, number, number, number, number % 10000, number % 2 == 0 ? number : Null from numbers_mt(1e7) settings max_insert_threads=8</fill_query>
 
     <!-- keys64_two_level -->
     <query>select a, b from group_by_fk group by a, b format Null</query>

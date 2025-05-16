@@ -1,7 +1,8 @@
 #include <Interpreters/applyTableOverride.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/formatAST.h>
 
 #include <iostream>
 #include <gtest/gtest.h>
@@ -34,11 +35,11 @@ TEST_P(TableOverrideTest, applyOverrides)
     const auto & [database_query, table_query, expected_query] = GetParam();
     ParserCreateQuery parser;
     ASTPtr database_ast;
-    ASSERT_NO_THROW(database_ast = parseQuery(parser, database_query, 0, 0));
+    ASSERT_NO_THROW(database_ast = parseQuery(parser, database_query, 0, 0, 0));
     auto * database = database_ast->as<ASTCreateQuery>();
     ASSERT_NE(nullptr, database);
     ASTPtr table_ast;
-    ASSERT_NO_THROW(table_ast = parseQuery(parser, table_query, 0, 0));
+    ASSERT_NO_THROW(table_ast = parseQuery(parser, table_query, 0, 0, 0));
     auto * table = table_ast->as<ASTCreateQuery>();
     ASSERT_NE(nullptr, table);
     auto table_name = table->table->as<ASTIdentifier>()->name();
@@ -50,7 +51,7 @@ TEST_P(TableOverrideTest, applyOverrides)
         ASSERT_NE(nullptr, override_table_ast);
         applyTableOverrideToCreateQuery(*override_table_ast, table);
     }
-    EXPECT_EQ(expected_query, serializeAST(*table));
+    EXPECT_EQ(expected_query, table->formatWithSecretsOneLine());
 }
 
 INSTANTIATE_TEST_SUITE_P(ApplyTableOverrides, TableOverrideTest,

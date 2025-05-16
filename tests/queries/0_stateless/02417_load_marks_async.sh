@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -6,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test;"
-${CLICKHOUSE_CLIENT} -n -q "
+${CLICKHOUSE_CLIENT} -q "
 CREATE TABLE test
 (
 n0 UInt64,
@@ -32,7 +33,7 @@ function test
 
     ${CLICKHOUSE_CLIENT} -q "SYSTEM DROP MARK CACHE"
     ${CLICKHOUSE_CLIENT} --query_id "${QUERY_ID}" -q "SELECT * FROM test SETTINGS load_marks_asynchronously=$1 FORMAT Null"
-    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 
     result=$(${CLICKHOUSE_CLIENT} -q "SELECT ProfileEvents['BackgroundLoadingMarksTasks'] FROM system.query_log WHERE query_id = '${QUERY_ID}' AND type = 'QueryFinish' AND current_database = currentDatabase()")
     if [[ $result -ne 0 ]]; then

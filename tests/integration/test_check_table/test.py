@@ -1,8 +1,12 @@
-import pytest
-
 import concurrent
-from helpers.cluster import ClickHouseCluster
+import pytest
+import uuid
+import time
+
 from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
+from helpers.corrupt_part_data_on_disk import corrupt_part_data_on_disk
+from helpers.test_tools import assert_eq_with_retry, assert_logs_contain_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -19,22 +23,6 @@ def started_cluster():
 
     finally:
         cluster.shutdown()
-
-
-def corrupt_data_part_on_disk(node, database, table, part_name):
-    part_path = node.query(
-        f"SELECT path FROM system.parts WHERE database = '{database}' AND table = '{table}' AND name = '{part_name}'"
-    ).strip()
-    node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            "cd {p} && ls *.bin | head -n 1 | xargs -I{{}} sh -c 'echo \"1\" >> $1' -- {{}}".format(
-                p=part_path
-            ),
-        ],
-        privileged=True,
-    )
 
 
 def remove_checksums_on_disk(node, database, table, part_name):
@@ -59,14 +47,15 @@ def remove_part_from_disk(node, table, part_name):
     )
 
 
-def test_check_normal_table_corruption(started_cluster):
+@pytest.mark.parametrize("merge_tree_settings", [""])
+def test_check_normal_table_corruption(started_cluster, merge_tree_settings):
     node1.query("DROP TABLE IF EXISTS non_replicated_mt")
 
     node1.query(
-        """
+        f"""
         CREATE TABLE non_replicated_mt(date Date, id UInt32, value Int32)
         ENGINE = MergeTree() PARTITION BY toYYYYMM(date) ORDER BY id
-        SETTINGS min_bytes_for_wide_part=0;
+        {merge_tree_settings};
     """
     )
 
@@ -105,7 +94,9 @@ def test_check_normal_table_corruption(started_cluster):
 
     assert node1.query("SELECT COUNT() FROM non_replicated_mt") == "2\n"
 
-    corrupt_data_part_on_disk(node1, "default", "non_replicated_mt", "201902_1_1_0")
+    corrupt_part_data_on_disk(
+        node1, "non_replicated_mt", "201902_1_1_0", database="default"
+    )
 
     assert node1.query(
         "CHECK TABLE non_replicated_mt",
@@ -129,7 +120,9 @@ def test_check_normal_table_corruption(started_cluster):
         == "201901_2_2_0\t1\t\n"
     )
 
-    corrupt_data_part_on_disk(node1, "default", "non_replicated_mt", "201901_2_2_0")
+    corrupt_part_data_on_disk(
+        node1, "non_replicated_mt", "201901_2_2_0", database="default"
+    )
 
     remove_checksums_on_disk(node1, "default", "non_replicated_mt", "201901_2_2_0")
 
@@ -139,16 +132,24 @@ def test_check_normal_table_corruption(started_cluster):
     ).strip().split("\t")[0:2] == ["201901_2_2_0", "0"]
 
 
-def test_check_replicated_table_simple(started_cluster):
+@pytest.mark.parametrize("merge_tree_settings, zk_path_suffix", [("", "_0")])
+def test_check_replicated_table_simple(
+    started_cluster, merge_tree_settings, zk_path_suffix
+):
     for node in [node1, node2]:
-        node.query("DROP TABLE IF EXISTS replicated_mt")
+        node.query("DROP TABLE IF EXISTS replicated_mt SYNC")
 
+    for node in [node1, node2]:
         node.query(
             """
         CREATE TABLE replicated_mt(date Date, id UInt32, value Int32)
-        ENGINE = ReplicatedMergeTree('/clickhouse/tables/replicated_mt', '{replica}') PARTITION BY toYYYYMM(date) ORDER BY id;
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/replicated_mt_{zk_path_suffix}', '{replica}')
+        PARTITION BY toYYYYMM(date) ORDER BY id
+        {merge_tree_settings}
             """.format(
-                replica=node.name
+                replica=node.name,
+                zk_path_suffix=zk_path_suffix,
+                merge_tree_settings=merge_tree_settings,
             )
         )
 
@@ -220,16 +221,33 @@ def test_check_replicated_table_simple(started_cluster):
     )
 
 
-def test_check_replicated_table_corruption(started_cluster):
+@pytest.mark.parametrize(
+    "merge_tree_settings, zk_path_suffix, part_file_ext",
+    [
+        (
+            "",
+            "_0",
+            ".bin",
+        )
+    ],
+)
+def test_check_replicated_table_corruption(
+    started_cluster, merge_tree_settings, zk_path_suffix, part_file_ext
+):
     for node in [node1, node2]:
-        node.query_with_retry("DROP TABLE IF EXISTS replicated_mt_1")
+        node.query_with_retry("DROP TABLE IF EXISTS replicated_mt_1 SYNC")
 
+    for node in [node1, node2]:
         node.query_with_retry(
             """
         CREATE TABLE replicated_mt_1(date Date, id UInt32, value Int32)
-        ENGINE = ReplicatedMergeTree('/clickhouse/tables/replicated_mt_1', '{replica}') PARTITION BY toYYYYMM(date) ORDER BY id;
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/replicated_mt_1_{zk_path_suffix}', '{replica}')
+        PARTITION BY toYYYYMM(date) ORDER BY id
+        {merge_tree_settings}
             """.format(
-                replica=node.name
+                replica=node.name,
+                merge_tree_settings=merge_tree_settings,
+                zk_path_suffix=zk_path_suffix,
             )
         )
 
@@ -248,7 +266,10 @@ def test_check_replicated_table_corruption(started_cluster):
         "SELECT name from system.parts where table = 'replicated_mt_1' and partition_id = '201901' and active = 1"
     ).strip()
 
-    corrupt_data_part_on_disk(node1, "default", "replicated_mt_1", part_name)
+    corrupt_part_data_on_disk(
+        node1, "replicated_mt_1", part_name, part_file_ext, database="default"
+    )
+
     assert node1.query(
         "CHECK TABLE replicated_mt_1 PARTITION 201901",
         settings={"check_query_single_value_result": 0, "max_threads": 1},
@@ -345,3 +366,69 @@ def test_check_all_tables(started_cluster):
         else:
             assert flag == "1"
             assert message == ""
+
+    for database in ["db1", "db3"]:
+        node1.query(f"DROP DATABASE {database} SYNC")
+    node1.query("SYSTEM DISABLE FAILPOINT check_table_query_delay_for_part")
+
+
+@pytest.mark.parametrize("engine", ["ReplicatedMergeTree"])
+def test_check_replicated_does_not_block_shutdown(started_cluster, engine):
+    part_count = 100
+    table_name = f"replicated_check_{engine}"
+    node1.query(
+        f"""
+            CREATE TABLE {table_name}(id UInt32, value Int32)
+            ENGINE = {engine}('/clickhouse/tables/{{database}}/{table_name}', '{node1.name}')
+            PARTITION BY id
+            ORDER BY tuple()
+            AS SELECT number, number FROM numbers({part_count})
+        """
+    )
+
+    query_id = uuid.uuid4().hex
+
+    def wait_check_table_and_restart_keeper():
+        assert_eq_with_retry(
+            node1,
+            f"SELECT query_id FROM system.processes WHERE query_id = '{query_id}'",
+            query_id,
+        )
+
+        cluster.kill_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
+        err = node1.query_and_get_error(
+            f"INSERT INTO {table_name} SELECT number, number FROM numbers(10) SETTINGS insert_keeper_max_retries=0"
+        )
+        assert err != ""
+        cluster.start_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
+
+        # Wait for keeper reconnection
+        node1.query(
+            f"INSERT INTO {table_name} SELECT number, number FROM numbers(10) SETTINGS insert_keeper_max_retries=100"
+        )
+
+    node1.query("SYSTEM ENABLE FAILPOINT check_table_query_delay_for_part")
+
+    def run_check_table_and_measure_time():
+        start_time = time.time()
+        result = node1.query(
+            f"CHECK TABLE {table_name} SETTINGS max_threads=1", query_id=query_id
+        )
+        end_time = time.time()
+        assert result == "0\n"  # 0 means error
+        avg_sleep = 0.5
+        # The process should have stopped before checking all parts
+        assert end_time - start_time < (part_count * avg_sleep)
+        node1.contains_in_log("reason: DB::Exception: Table shutdown was called")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        futures = [
+            executor.submit(run_check_table_and_measure_time),
+            executor.submit(wait_check_table_and_restart_keeper),
+        ]
+
+        for future in concurrent.futures.as_completed(futures):
+            future.result()
+
+    node1.query("SYSTEM DISABLE FAILPOINT check_table_query_delay_for_part")
+    node1.query(f"DROP TABLE {table_name} SYNC")

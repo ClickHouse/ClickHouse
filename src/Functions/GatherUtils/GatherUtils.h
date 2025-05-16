@@ -30,7 +30,7 @@
 namespace DB::GatherUtils
 {
 
-enum class ArraySearchType
+enum class ArraySearchType : uint8_t
 {
     Any, // Corresponds to the hasAny array function
     All, // Corresponds to the hasAll array function
@@ -63,27 +63,7 @@ void sliceHasSubstr(IArraySource & first, IArraySource & second, ColumnUInt8 & r
 void sliceHasStartsWith(IArraySource & first, IArraySource & second, ColumnUInt8 & result);
 void sliceHasEndsWith(IArraySource & first, IArraySource & second, ColumnUInt8 & result);
 
-inline void sliceHas(IArraySource & first, IArraySource & second, ArraySearchType search_type, ColumnUInt8 & result)
-{
-    switch (search_type)
-    {
-        case ArraySearchType::All:
-            sliceHasAll(first, second, result);
-            break;
-        case ArraySearchType::Any:
-            sliceHasAny(first, second, result);
-            break;
-        case ArraySearchType::Substr:
-            sliceHasSubstr(first, second, result);
-            break;
-        case ArraySearchType::StartsWith:
-            sliceHasStartsWith(first, second, result);
-            break;
-        case ArraySearchType::EndsWith:
-            sliceHasEndsWith(first, second, result);
-            break;
-    }
-}
+void sliceHas(IArraySource & first, IArraySource & second, ArraySearchType search_type, ColumnUInt8 & result);
 
 void push(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, bool push_front);
 
@@ -91,4 +71,3 @@ void resizeDynamicSize(IArraySource & array_source, IValueSource & value_source,
 void resizeConstantSize(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, ssize_t size);
 
 }
-

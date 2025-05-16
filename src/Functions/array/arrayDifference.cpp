@@ -154,8 +154,7 @@ struct ArrayDifferenceImpl
             || executeType<Decimal128, Decimal128>(mapped, array, res) || executeType<Decimal256, Decimal256>(mapped, array, res)
             || executeType<DateTime64, Decimal64>(mapped, array, res))
             return res;
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arrayDifference: {}", mapped->getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arrayDifference: {}", mapped->getName());
     }
 };
 
@@ -167,6 +166,28 @@ using FunctionArrayDifference = FunctionArrayMapped<ArrayDifferenceImpl, NameArr
 
 REGISTER_FUNCTION(ArrayDifference)
 {
+    FunctionDocumentation::Description description = R"(
+Calculates an array of differences between adjacent array elements.
+The first element of the result array will be 0, the second `arr[1] - arr[0]`, the third `arr[2] - arr[1]`, etc.
+The type of elements in the result array are determined by the type inference rules for subtraction (e.g. `UInt8` - `UInt8` = `Int16`).
+    )";
+    FunctionDocumentation::Syntax syntax = "arrayDifference(arr)";
+    FunctionDocumentation::Arguments argument = {
+        {"arr", "Array for which to calculate differences between adjacent elements. [`Array(T)`](/sql-reference/data-types/array)."},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = "Returns an array of differences between adjacent array elements. [`UInt*`](/sql-reference/data-types/int-uint#integer-ranges), [`Int*`](/sql-reference/data-types/int-uint#integer-ranges), [`Float*`](/sql-reference/data-types/float).";
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT arrayDifference([1, 2, 3, 4]);", "[0,1,1,1]"},
+        {"Example of overflow due to result type Int64", "SELECT arrayDifference([0, 10000000000000000000]);", R"(
+┌─arrayDifference([0, 10000000000000000000])─┐
+│ [0,-8446744073709551616]                   │
+└────────────────────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, category};
+
     factory.registerFunction<FunctionArrayDifference>();
 }
 

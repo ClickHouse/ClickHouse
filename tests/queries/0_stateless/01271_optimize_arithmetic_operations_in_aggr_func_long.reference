@@ -1,8 +1,8 @@
 SELECT
-    sum(n + 1),
-    sum(1 + n),
-    sum(n - 1),
-    sum(1 - n)
+    sum(n) + (1 * count(n)),
+    (1 * count(n)) + sum(n),
+    sum(n) - (1 * count(n)),
+    (1 * count(n)) - sum(n)
 FROM
 (
     SELECT number AS n
@@ -59,10 +59,10 @@ FROM
     FROM numbers(10)
 )
 SELECT
-    sum(n + -1),
-    sum(-1 + n),
-    sum(n - -1),
-    sum(-1 - n)
+    sum(n) + (-1 * count(n)),
+    (-1 * count(n)) + sum(n),
+    sum(n) - (-1 * count(n)),
+    (-1 * count(n)) - sum(n)
 FROM
 (
     SELECT number AS n
@@ -418,7 +418,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT ((sum(n + 1) + sum(1 + n)) + sum(n - 1)) + sum(1 - n)
+SELECT (((sum(n) + (1 * count(n))) + ((1 * count(n)) + sum(n))) + (sum(n) - (1 * count(n)))) + ((1 * count(n)) - sum(n))
 FROM
 (
     SELECT number AS n

@@ -49,10 +49,43 @@ SELECT
     any(toDate(k))
 FROM columns_transformers AS a
 SELECT
-    sum(i + 1 AS i),
+    sum(i) + (1 * count(i)),
     sum(j),
     sum(k)
 FROM columns_transformers
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 2)
+   ExpressionList (children 1)
+    Asterisk (children 1)
+     ColumnsTransformerList (children 2)
+      ColumnsReplaceTransformer (children 1)
+       ColumnsReplaceTransformer::Replacement (children 1)
+        Function plus (children 1)
+         ExpressionList (children 2)
+          Identifier i
+          Literal UInt64_1
+      ColumnsApplyTransformer
+   TablesInSelectQuery (children 1)
+    TablesInSelectQueryElement (children 1)
+     TableExpression (children 1)
+      TableIdentifier columns_transformers
+SELECT sum(i) + (1 * count(i))
+FROM columns_transformers
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 2)
+   ExpressionList (children 1)
+    Function sum (children 1)
+     ExpressionList (children 1)
+      Function plus (alias m) (children 1)
+       ExpressionList (children 2)
+        Identifier i
+        Literal UInt64_1
+   TablesInSelectQuery (children 1)
+    TablesInSelectQueryElement (children 1)
+     TableExpression (children 1)
+      TableIdentifier columns_transformers
 SELECT
     avg(i) + 1,
     avg(j) + 2,

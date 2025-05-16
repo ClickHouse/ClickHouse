@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel, no-s3-storage, no-random-settings
+# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings
 
 # set -x
 
@@ -7,9 +7,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-for STORAGE_POLICY in 's3_cache' 'local_cache'; do
+for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     echo "Using storage policy: $STORAGE_POLICY"
-    ${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES"
     ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP FILESYSTEM CACHE"
     ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP MARK CACHE"
     ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.filesystem_cache"

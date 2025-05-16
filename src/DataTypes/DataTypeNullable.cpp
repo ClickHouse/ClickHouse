@@ -1,9 +1,12 @@
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnConst.h>
 #include <Core/Field.h>
 #include <Parsers/IAST.h>
 #include <Common/typeid_cast.h>
@@ -56,11 +59,62 @@ bool DataTypeNullable::equals(const IDataType & rhs) const
     return rhs.isNullable() && nested_data_type->equals(*static_cast<const DataTypeNullable &>(rhs).nested_data_type);
 }
 
+ColumnPtr DataTypeNullable::createColumnConst(size_t size, const Field & field) const
+{
+    if (onlyNull())
+    {
+        auto column = createColumn();
+        column->insert(field);
+        return ColumnConst::create(std::move(column), size);
+    }
+
+    auto column = nested_data_type->createColumn();
+    bool is_null = field.isNull();
+
+    if (is_null)
+        nested_data_type->insertDefaultInto(*column);
+    else
+        column->insert(field);
+
+    auto null_mask = ColumnUInt8::create();
+    null_mask->getData().push_back(is_null ? 1 : 0);
+
+    auto res = ColumnNullable::create(std::move(column), std::move(null_mask));
+    return ColumnConst::create(std::move(res), size);
+}
+
 SerializationPtr DataTypeNullable::doGetDefaultSerialization() const
 {
     return std::make_shared<SerializationNullable>(nested_data_type->getDefaultSerialization());
 }
 
+void DataTypeNullable::forEachChild(const ChildCallback & callback) const
+{
+    callback(*nested_data_type);
+    nested_data_type->forEachChild(callback);
+}
+
+
+std::unique_ptr<ISerialization::SubstreamData> DataTypeNullable::getDynamicSubcolumnData(std::string_view subcolumn_name, const DB::IDataType::SubstreamData & data, bool throw_if_null) const
+{
+    auto nested_type = assert_cast<const DataTypeNullable &>(*data.type).nested_data_type;
+    ISerialization::SubstreamData nested_data(nested_type->getDefaultSerialization());
+    nested_data.type = nested_type;
+    nested_data.column = data.column ? assert_cast<const ColumnNullable &>(*data.column).getNestedColumnPtr() : nullptr;
+
+    auto nested_subcolumn_data = DB::IDataType::getSubcolumnData(subcolumn_name, nested_data, throw_if_null);
+    if (!nested_subcolumn_data)
+        return nullptr;
+
+    auto creator = NullableSubcolumnCreator(data.column ? assert_cast<const ColumnNullable &>(*data.column).getNullMapColumnPtr() : nullptr);
+    auto res = std::make_unique<ISerialization::SubstreamData>();
+    res->serialization = creator.create(nested_subcolumn_data->serialization, nested_subcolumn_data->type);
+    res->type = creator.create(nested_subcolumn_data->type);
+    if (data.column)
+        res->column = creator.create(nested_subcolumn_data->column);
+
+    return res;
+}
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
@@ -114,5 +168,38 @@ DataTypePtr makeNullableOrLowCardinalityNullable(const DataTypePtr & type)
     return std::make_shared<DataTypeNullable>(type);
 }
 
+DataTypePtr makeNullableOrLowCardinalityNullableSafe(const DataTypePtr & type)
+{
+    if (isNullableOrLowCardinalityNullable(type))
+        return type;
+
+    if (type->lowCardinality())
+    {
+        const auto & dictionary_type = assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
+        return std::make_shared<DataTypeLowCardinality>(makeNullable(dictionary_type));
+    }
+
+    return makeNullableSafe(type);
+}
+
+DataTypePtr removeNullableOrLowCardinalityNullable(const DataTypePtr & type)
+{
+    if (type->isNullable())
+        return static_cast<const DataTypeNullable &>(*type).getNestedType();
+
+    if (type->isLowCardinalityNullable())
+    {
+        auto dict_type = removeNullable(static_cast<const DataTypeLowCardinality &>(*type).getDictionaryType());
+        return std::make_shared<DataTypeLowCardinality>(dict_type);
+    }
+
+    return type;
+
+}
+
+bool canContainNull(const IDataType & type)
+{
+    return type.isNullable() || type.isLowCardinalityNullable() || isDynamic(type) || isVariant(type);
+}
 
 }

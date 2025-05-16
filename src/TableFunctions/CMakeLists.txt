@@ -6,6 +6,8 @@ if (TARGET ch_contrib::hivemetastore)
     add_headers_and_sources(clickhouse_table_functions Hive)
 endif ()
 
+# TableFunctionFactory::instance(), TableFunctionFactory::get(), DB::ITableFunction::execute(), TableFunctionView::getSelectQuery()
+# Used by different storages and analyzer
 extract_into_parent_list(clickhouse_table_functions_sources dbms_sources
     ITableFunction.cpp
     TableFunctionView.cpp
@@ -27,4 +29,12 @@ endif ()
 
 if (TARGET ch_contrib::azure_sdk)
     target_link_libraries(clickhouse_table_functions PRIVATE ch_contrib::azure_sdk)
+endif ()
+
+if (TARGET ch_contrib::simdjson)
+    target_link_libraries(clickhouse_table_functions PRIVATE ch_contrib::simdjson)
+endif ()
+
+if (TARGET ch_contrib::rapidjson)
+    target_link_libraries(clickhouse_table_functions PRIVATE ch_contrib::rapidjson)
 endif ()

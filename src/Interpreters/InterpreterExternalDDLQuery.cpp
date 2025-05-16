@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include <Interpreters/InterpreterExternalDDLQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Context.h>
 
 #include <Parsers/IAST.h>
@@ -49,22 +50,31 @@ BlockIO InterpreterExternalDDLQuery::execute()
             return MySQLInterpreter::InterpreterMySQLDropQuery(
                 external_ddl_query.external_ddl, getContext(), getIdentifierName(arguments[0]),
                 getIdentifierName(arguments[1])).execute();
-        else if (external_ddl_query.external_ddl->as<ASTRenameQuery>())
+        if (external_ddl_query.external_ddl->as<ASTRenameQuery>())
             return MySQLInterpreter::InterpreterMySQLRenameQuery(
-                external_ddl_query.external_ddl, getContext(), getIdentifierName(arguments[0]),
-                getIdentifierName(arguments[1])).execute();
-        else if (external_ddl_query.external_ddl->as<MySQLParser::ASTAlterQuery>())
+                       external_ddl_query.external_ddl, getContext(), getIdentifierName(arguments[0]), getIdentifierName(arguments[1]))
+                .execute();
+        if (external_ddl_query.external_ddl->as<MySQLParser::ASTAlterQuery>())
             return MySQLInterpreter::InterpreterMySQLAlterQuery(
-                external_ddl_query.external_ddl, getContext(), getIdentifierName(arguments[0]),
-                getIdentifierName(arguments[1])).execute();
-        else if (external_ddl_query.external_ddl->as<MySQLParser::ASTCreateQuery>())
+                       external_ddl_query.external_ddl, getContext(), getIdentifierName(arguments[0]), getIdentifierName(arguments[1]))
+                .execute();
+        if (external_ddl_query.external_ddl->as<MySQLParser::ASTCreateQuery>())
             return MySQLInterpreter::InterpreterMySQLCreateQuery(
-                external_ddl_query.external_ddl, getContext(), getIdentifierName(arguments[0]),
-                getIdentifierName(arguments[1])).execute();
+                       external_ddl_query.external_ddl, getContext(), getIdentifierName(arguments[0]), getIdentifierName(arguments[1]))
+                .execute();
 #endif
     }
 
     return BlockIO();
+}
+
+void registerInterpreterExternalDDLQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterExternalDDLQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterExternalDDLQuery", create_fn);
 }
 
 }

@@ -4,8 +4,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
-#include <memory>
-
 
 namespace DB
 {
@@ -25,8 +23,10 @@ struct MergeTreeIndexGranuleMinMax final : public IMergeTreeIndexGranule
 
     bool empty() const override { return hyperrectangle.empty(); }
 
-    const String index_name;
-    const Block index_sample_block;
+    size_t memoryUsageBytes() const override { return hyperrectangle.capacity() * sizeof(Range); }
+
+    const String & index_name;
+    const Block & index_sample_block;
 
     std::vector<Range> hyperrectangle;
 };
@@ -52,7 +52,7 @@ class MergeTreeIndexConditionMinMax final : public IMergeTreeIndexCondition
 public:
     MergeTreeIndexConditionMinMax(
         const IndexDescription & index,
-        const SelectQueryInfo & query_info,
+        const ActionsDAGWithInversionPushDown & filter_dag,
         ContextPtr context);
 
     bool alwaysUnknownOrTrue() const override;
@@ -79,9 +79,7 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-        const SelectQueryInfo & query, ContextPtr context) const override;
-
-    bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
+        const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     const char* getSerializedFileExtension() const override { return ".idx2"; }
     MergeTreeIndexFormat getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & path_prefix) const override; /// NOLINT

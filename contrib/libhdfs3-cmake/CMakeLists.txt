@@ -1,4 +1,4 @@
-if(NOT OS_FREEBSD AND NOT APPLE AND NOT ARCH_PPC64LE)
+if(NOT OS_FREEBSD AND NOT ARCH_PPC64LE)
     option(ENABLE_HDFS "Enable HDFS" ${ENABLE_LIBRARIES})
 elseif(ENABLE_HDFS)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use HDFS3 with current configuration")
@@ -10,7 +10,6 @@ if(NOT ENABLE_HDFS)
 endif()
 
 if (TARGET ch_contrib::krb5)
-    message(STATUS "Enable kerberos for HDFS")
     SET(WITH_KERBEROS 1)
 else()
     SET(WITH_KERBEROS 0)
@@ -26,6 +25,11 @@ ADD_DEFINITIONS(-D__STDC_FORMAT_MACROS)
 ADD_DEFINITIONS(-D_GNU_SOURCE)
 ADD_DEFINITIONS(-D_GLIBCXX_USE_NANOSLEEP)
 ADD_DEFINITIONS(-DHAVE_NANOSLEEP)
+
+if (USE_MUSL OR APPLE)
+    ADD_DEFINITIONS(-DSTRERROR_R_RETURN_INT)
+endif ()
+
 set(HAVE_STEADY_CLOCK 1)
 set(HAVE_NESTED_EXCEPTION 1)
 SET(HAVE_BOOST_CHRONO 0)
@@ -134,7 +138,7 @@ set(SRCS
     ${PROTO_SOURCES}
 )
 
-if (ARCH_AMD64)
+if (ARCH_AMD64 AND NOT APPLE)
     find_program(YASM_PATH NAMES yasm)
     if (NOT YASM_PATH)
         message(FATAL_ERROR "Please install the Yasm assembler to build ClickHouse with Hadoop Distributed File System (HDFS) support")

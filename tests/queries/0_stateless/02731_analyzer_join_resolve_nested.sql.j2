@@ -1,0 +1,219 @@
+DROP TABLE IF EXISTS ta;
+DROP TABLE IF EXISTS tb;
+DROP TABLE IF EXISTS ttta;
+DROP TABLE IF EXISTS tttb;
+DROP TABLE IF EXISTS na;
+DROP TABLE IF EXISTS nb;
+DROP TABLE IF EXISTS nnna;
+DROP TABLE IF EXISTS nnnb;
+
+CREATE table ta (x Int32, t Tuple(t UInt32, s String)) ENGINE = MergeTree ORDER BY x;
+INSERT INTO ta VALUES (1, (1, 'a'));
+
+CREATE table tb (x Int32, t Tuple(s String, t Int32)) ENGINE = MergeTree ORDER BY x;
+INSERT INTO tb VALUES (1, ('a', 1));
+
+CREATE table ttta (x Int32, t Tuple(t Tuple(t Tuple(t Tuple(t UInt32, s String), s String), s String), s String)) ENGINE = MergeTree ORDER BY x;
+INSERT INTO ttta VALUES (1, ((((1, 's'), 's'), 's'), 's')), (2, ((((2, 's'), 's'), 's'), 's'));
+
+CREATE table tttb (x Int32, t Tuple(t Tuple(t Tuple(t Tuple(t Int32, s String), s String), s String), s String)) ENGINE = MergeTree ORDER BY x;
+INSERT INTO tttb VALUES (2, ((((2, 's'), 's'), 's'), 's')), (3, ((((3, 's'), 's'), 's'), 's'));
+
+CREATE table na (x Int32, t Nested(t UInt32, s String)) ENGINE = MergeTree ORDER BY x;
+INSERT INTO na VALUES (1, [1], ['a']);
+
+CREATE table nb (x Int32, t Nested(s String, t Int32)) ENGINE = MergeTree ORDER BY x;
+INSERT INTO nb VALUES (1, ['a'], [1]);
+
+CREATE TABLE nnna ( x UInt64, t Nested(t Nested(t Nested(t Nested(t Int32, s String), s String), s String), s String) ) ENGINE = MergeTree ORDER BY x;
+INSERT INTO nnna VALUES (1, [[([([(1,'d')],'d')], 's')]], ['s']);
+
+CREATE TABLE nnnb ( x UInt64, t Nested(t Nested(t Nested(t Nested(t UInt32, s String), s String), s String), s String) ) ENGINE = MergeTree ORDER BY x;
+INSERT INTO nnnb VALUES (1, [[([([(1,'d')],'d')], 's')]], ['s']);
+
+SET enable_analyzer = 1;
+
+{% for join_use_nulls in [0, 1] -%}
+
+SET join_use_nulls = {{ join_use_nulls }};
+
+SELECT t FROM (SELECT [(1, 'a')] :: Nested(t UInt32, s String) AS t) AS na, (SELECT [(1, 'a')] :: Nested(t Int32, s String) AS t) AS t;
+SELECT na.t.t FROM (SELECT [(1, 'a')] :: Nested(t UInt32, s String) AS t) AS na, (SELECT [(1, 'a')] :: Nested(t Int32, s String) AS t) AS t;
+SELECT * FROM (SELECT [(1, 'a')] :: Nested(t UInt32, s String) AS t) AS na, (SELECT [(1, 'a')] :: Nested(t Int32, s String) AS t) AS t;
+
+SELECT t FROM (SELECT [(1, 'a')] :: Nested(t UInt32, s String) AS t) AS na, (SELECT 1 AS t) AS t;
+SELECT na.t.t FROM (SELECT [(1, 'a')] :: Nested(t UInt32, s String) AS t) AS na, (SELECT 1 AS t) AS t;
+SELECT * FROM (SELECT [(1, 'a')] :: Nested(t UInt32, s String) AS t) AS na, (SELECT 1 AS t) AS t;
+
+SELECT * FROM (SELECT [(1, 'a')] :: Nested(t UInt32, s String) AS t) AS na FULL JOIN (SELECT [1] :: Array(Int32) AS t) AS nb ON nb.t = na.t.t;
+
+SELECT t FROM na FULL JOIN nb USING (t.t); -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT t.t FROM na FULL JOIN nb USING (t.t);
+SELECT na.t.t FROM na FULL JOIN nb USING (t.t);
+SELECT na.t FROM na FULL JOIN nb USING (t.t); -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT nb.t.t FROM na FULL JOIN nb USING (t.t);
+SELECT nb.t FROM na FULL JOIN nb USING (t.t); -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT * FROM na FULL JOIN nb USING (t.t);
+
+SELECT t FROM na FULL JOIN nb USING (x);
+SELECT t.t FROM na FULL JOIN nb USING (x);
+SELECT na.t.t FROM na FULL JOIN nb USING (x);
+SELECT na.t FROM na FULL JOIN nb USING (x);
+SELECT nb.t.t FROM na FULL JOIN nb USING (x);
+SELECT nb.t FROM na FULL JOIN nb USING (x);
+SELECT * FROM na FULL JOIN nb USING (x);
+
+SELECT t FROM na, nb;
+SELECT t.t FROM na, nb;
+SELECT na.t.t FROM na, nb;
+SELECT na.t FROM na, nb;
+SELECT nb.t.t FROM na, nb;
+SELECT nb.t FROM na, nb;
+SELECT * FROM na, nb;
+
+---
+
+SELECT * FROM (SELECT (1, 's') :: Tuple(t Int32, s String) as t ) as na FULL JOIN (SELECT (1, 's') :: Tuple(t UInt32, s String) as t ) as nb USING (t);
+SELECT * FROM (SELECT (1, 's') :: Tuple(t Int32, s String) as t ) as na, (SELECT 1 as t ) as t;
+
+SELECT t.t FROM (SELECT (1, 's') :: Tuple(t Int32, s String) as t ) as na, (SELECT 1 as t ) as t;
+
+SELECT t.t FROM (SELECT (1, 's') :: Tuple(t Int32, s String) as t ) as na FULL JOIN (SELECT (1, 's') :: Tuple(t UInt32, s String) as t ) as nb USING (t); -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT * FROM (SELECT (1, 's') :: Tuple(t Int32, s String) as t ) as na FULL JOIN (SELECT (1, 's') :: Tuple(t UInt32, s String) as t ) as nb USING (t.t); -- { serverError UNSUPPORTED_METHOD }
+
+SELECT t as e, toTypeName(e) FROM (
+    SELECT ((((1, 's'), 's'), 's'), 's') :: Tuple(t Tuple(t Tuple(t Tuple(t UInt32, s String), s String), s String), s String) as t
+) ttta FULL JOIN (
+    SELECT ((((2, 's'), 's'), 's'), 's') :: Tuple(t Tuple(t Tuple(t Tuple(t Int32, s String), s String), s String), s String) as t
+) tttb USING (t.t); -- { serverError UNSUPPORTED_METHOD }
+
+SELECT t.t as e, toTypeName(e) FROM (
+    SELECT ((((1, 's'), 's'), 's'), 's') :: Tuple(t Tuple(t Tuple(t Tuple(t UInt32, s String), s String), s String), s String) as t
+) ttta FULL JOIN (
+    SELECT ((((2, 's'), 's'), 's'), 's') :: Tuple(t Tuple(t Tuple(t Tuple(t Int32, s String), s String), s String), s String) as t
+) tttb USING (t.t);  -- { serverError UNSUPPORTED_METHOD }
+
+SELECT t.t.t as e, toTypeName(e) FROM (
+    SELECT ((((1, 's'), 's'), 's'), 's') :: Tuple(t Tuple(t Tuple(t Tuple(t UInt32, s String), s String), s String), s String) as t
+) ttta FULL JOIN (
+    SELECT ((((2, 's'), 's'), 's'), 's') :: Tuple(t Tuple(t Tuple(t Tuple(t Int32, s String), s String), s String), s String) as t
+) tttb USING (t.t); -- { serverError UNSUPPORTED_METHOD }
+
+SELECT t as e, toTypeName(e) FROM (
+    SELECT ((((1, 's'), 's'), 's'), 's') :: Tuple(t Tuple(t Tuple(t Tuple(t UInt32, s String), s String), s String), s String) as t
+) ttta FULL JOIN (
+    SELECT ((((2, 's'), 's'), 's'), 's') :: Tuple(t Tuple(t Tuple(t Tuple(t Int32, s String), s String), s String), s String) as t
+) tttb USING (t);
+
+SELECT t.t as e, toTypeName(e) FROM (
+    SELECT ((((1, 's'), 's'), 's'), 's') :: Tuple(t Tuple(t Tuple(t Tuple(t UInt32, s String), s String), s String), s String) as t
+) ttta FULL JOIN (
+    SELECT ((((2, 's'), 's'), 's'), 's') :: Tuple(t Tuple(t Tuple(t Tuple(t Int32, s String), s String), s String), s String) as t
+) tttb USING (t); -- { serverError AMBIGUOUS_IDENTIFIER }
+
+SELECT t FROM ta FULL JOIN tb USING (t.t);
+SELECT t.t FROM ta FULL JOIN tb USING (t.t);
+SELECT ta.t.t FROM ta FULL JOIN tb USING (t.t);
+SELECT ta.t FROM ta FULL JOIN tb USING (t.t);
+SELECT tb.t.t FROM ta FULL JOIN tb USING (t.t);
+SELECT tb.t FROM ta FULL JOIN tb USING (t.t);
+SELECT * FROM ta FULL JOIN tb USING (t.t);
+
+SELECT t FROM ta FULL JOIN tb USING (x);
+SELECT t.t FROM ta FULL JOIN tb USING (x);
+SELECT ta.t.t FROM ta FULL JOIN tb USING (x);
+SELECT ta.t FROM ta FULL JOIN tb USING (x);
+SELECT tb.t.t FROM ta FULL JOIN tb USING (x);
+SELECT tb.t FROM ta FULL JOIN tb USING (x);
+SELECT * FROM ta FULL JOIN tb USING (x);
+
+SELECT t FROM ta, tb;
+SELECT t.t FROM ta, tb;
+SELECT ta.t.t FROM ta, tb;
+SELECT ta.t FROM ta, tb;
+SELECT tb.t.t FROM ta, tb;
+SELECT tb.t FROM ta, tb;
+SELECT * FROM ta, tb;
+
+SELECT t FROM ttta, tttb;
+SELECT t.t.t FROM ttta, tttb;
+SELECT t.t.t.t.t FROM ttta, tttb;
+
+SELECT t as e, toTypeName(e) FROM ttta FULL JOIN tttb USING (t);
+SELECT t.t.t as e, toTypeName(e) FROM ttta FULL JOIN tttb USING (t);
+SELECT t.t.t.t.t as e, toTypeName(e) FROM ttta FULL JOIN tttb USING (t);
+
+SELECT t.*, t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t);
+SELECT t.t.*, t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t);
+SELECT t.t.t.*, t.t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t);
+SELECT t.t.t.t.*, t.t.t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t);
+
+SELECT t as e, toTypeName(e) FROM ttta FULL JOIN tttb USING (t.t);
+SELECT t.t.t as e, toTypeName(e) FROM ttta FULL JOIN tttb USING (t.t);
+SELECT t.t.t.t.t as e, toTypeName(e) FROM ttta FULL JOIN tttb USING (t.t);
+
+SELECT t.*, t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t.t);
+SELECT t.t.*, t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t.t);
+SELECT t.t.t.*, t.t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t.t);
+SELECT t.t.t.t.*, t.t.t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t.t);
+
+SELECT t as e, toTypeName(e) FROM ttta FULL JOIN tttb USING (t.t.t);
+SELECT t.t.t as e, toTypeName(e) FROM ttta FULL JOIN tttb USING (t.t.t);
+SELECT t.t.t.t.t as e, toTypeName(e) FROM ttta FULL JOIN tttb USING (t.t.t);
+
+SELECT t as e, toTypeName(e) FROM ttta FULL JOIN tttb USING (t.t.t.t.t);
+SELECT t.t.t as e, toTypeName(e) FROM ttta FULL JOIN tttb USING (t.t.t.t.t);
+SELECT t.t.t.t.t as e, toTypeName(e) FROM ttta FULL JOIN tttb USING (t.t.t.t.t);
+
+SELECT t.*, t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t.t.t.t.t);
+SELECT t.t.*, t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t.t.t.t.t);
+SELECT t.t.t.*, t.t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t.t.t.t.t);
+SELECT t.t.t.t.*, t.t.t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t.t.t.t.t);
+
+SELECT t FROM nnna, nnnb;
+SELECT t.t.t FROM nnna, nnnb;
+SELECT t.t.t.t.t FROM nnna, nnnb;
+
+SELECT t as e, toTypeName(e) FROM nnna FULL JOIN nnnb USING (t); -- { serverError UNSUPPORTED_METHOD }
+SELECT t.t as e, toTypeName(e) FROM nnna FULL JOIN nnnb USING (t); -- { serverError UNSUPPORTED_METHOD }
+SELECT t.t.t as e, toTypeName(e) FROM nnna FULL JOIN nnnb USING (t); -- { serverError UNSUPPORTED_METHOD }
+SELECT t.t.t.t.t as e, toTypeName(e) FROM nnna FULL JOIN nnnb USING (t); -- { serverError UNSUPPORTED_METHOD }
+
+SELECT t as e, toTypeName(e) FROM nnna FULL JOIN nnnb USING (t.t); -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT t.t as e, toTypeName(e) FROM nnna FULL JOIN nnnb USING (t.t);
+SELECT t.t.t as e, toTypeName(e) FROM nnna FULL JOIN nnnb USING (t.t);
+SELECT t.t.t.t.t as e, toTypeName(e) FROM nnna FULL JOIN nnnb USING (t.t);
+
+SELECT t.*, t.* APPLY toTypeName FROM nnna FULL JOIN nnnb USING (t.t); -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT t.t.*, t.t.* APPLY toTypeName FROM nnna FULL JOIN nnnb USING (t.t);
+SELECT t.t.t.*, t.t.t.* APPLY toTypeName FROM nnna FULL JOIN nnnb USING (t.t);
+SELECT t.t.t.t.*, t.t.t.t.* APPLY toTypeName FROM nnna FULL JOIN nnnb USING (t.t);
+
+SELECT t as e, toTypeName(e) FROM nnna FULL JOIN nnnb USING (t.t.t);
+SELECT t.t as e, toTypeName(e) FROM nnna FULL JOIN nnnb USING (t.t.t);
+SELECT t.t.t as e, toTypeName(e) FROM nnna FULL JOIN nnnb USING (t.t.t);
+SELECT t.t.t.t.t as e, toTypeName(e) FROM nnna FULL JOIN nnnb USING (t.t.t);
+
+SELECT t.*, t.* APPLY toTypeName FROM nnna FULL JOIN nnnb USING (t.t.t);
+SELECT t.t.*, t.t.* APPLY toTypeName FROM nnna FULL JOIN nnnb USING (t.t.t);
+SELECT t.t.t.*, t.t.t.* APPLY toTypeName FROM nnna FULL JOIN nnnb USING (t.t.t);
+SELECT t.t.t.t.*, t.t.t.t.* APPLY toTypeName FROM nnna FULL JOIN nnnb USING (t.t.t);
+
+SELECT t as e, toTypeName(e) FROM nnna FULL JOIN nnnb USING (t.t.t.t.t);
+SELECT t.t as e, toTypeName(e) FROM nnna FULL JOIN nnnb USING (t.t.t.t.t);
+SELECT t.t.t as e, toTypeName(e) FROM nnna FULL JOIN nnnb USING (t.t.t.t.t);
+SELECT t.t.t.t.t as e, toTypeName(e) FROM nnna FULL JOIN nnnb USING (t.t.t.t.t);
+SELECT t.t.t.t.*  FROM nnna FULL JOIN nnnb USING (t.t.t.t.t);
+
+SELECT 1 FROM na FULL JOIN nb USING (t); -- { serverError UNSUPPORTED_METHOD }
+
+{% endfor -%}
+
+DROP TABLE IF EXISTS ta;
+DROP TABLE IF EXISTS tb;
+DROP TABLE IF EXISTS ttta;
+DROP TABLE IF EXISTS tttb;
+DROP TABLE IF EXISTS na;
+DROP TABLE IF EXISTS nb;
+DROP TABLE IF EXISTS nnna;
+DROP TABLE IF EXISTS nnnb;

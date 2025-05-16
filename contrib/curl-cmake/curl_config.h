@@ -2,6 +2,7 @@
 #define CURL_DISABLE_FTP
 #define CURL_DISABLE_TFTP
 #define CURL_DISABLE_LDAP
+#define CURL_DISABLE_SMB
 #define CURL_EXTERN_SYMBOL __attribute__ ((__visibility__ ("default")))
 
 #define SIZEOF_SHORT 2
@@ -20,6 +21,7 @@
 #define HAVE_SIGSETJMP
 #define HAVE_SOCKET
 #define HAVE_STRUCT_TIMEVAL
+#define HAVE_POLL
 
 #define HAVE_RECV
 #define RECV_TYPE_ARG1 int
@@ -38,6 +40,7 @@
 
 #define HAVE_ARPA_INET_H
 #define HAVE_ERRNO_H
+#define HAVE_GETSOCKNAME
 #define HAVE_FCNTL_H
 #define HAVE_NETDB_H
 #define HAVE_NETINET_IN_H
@@ -50,3 +53,9 @@
 #define ENABLE_IPV6
 #define USE_OPENSSL
 #define USE_THREADS_POSIX
+#define USE_ARES
+
+#ifdef __illumos__
+#define HAVE_POSIX_STRERROR_R 1
+#define HAVE_STRERROR_R 1
+#endif

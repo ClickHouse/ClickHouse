@@ -1,15 +1,15 @@
 #pragma once
 
-#include <string>
 #include <optional>
-#include <vector>
-#include <boost/noncopyable.hpp>
+#include <string>
 #include <unordered_map>
+#include <vector>
 
+#include <boost/noncopyable.hpp>
 
 struct UCollator;
 
-/// Class represents available locales for collations.
+/// Represents available locales for collations.
 class AvailableCollationLocales : private boost::noncopyable
 {
 public:

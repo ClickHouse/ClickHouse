@@ -3,6 +3,7 @@
 #include <Disks/DiskLocal.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
+#include <Core/BackgroundSchedulePool.h>
 
 namespace DB
 {
@@ -13,7 +14,7 @@ DiskLocalCheckThread::DiskLocalCheckThread(DiskLocal * disk_, ContextPtr context
     : WithContext(context_)
     , disk(std::move(disk_))
     , check_period_ms(local_disk_check_period_ms)
-    , log(&Poco::Logger::get(fmt::format("DiskLocalCheckThread({})", disk->getName())))
+    , log(getLogger(fmt::format("DiskLocalCheckThread({})", disk->getName())))
 {
     task = getContext()->getSchedulePool().createTask(log->name(), [this] { run(); });
 }

@@ -9,10 +9,10 @@ namespace DB
 
 bool ParserDropNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_drop("DROP");
-    ParserKeyword s_collection("NAMED COLLECTION");
-    ParserKeyword s_if_exists("IF EXISTS");
-    ParserKeyword s_on("ON");
+    ParserKeyword s_drop(Keyword::DROP);
+    ParserKeyword s_collection(Keyword::NAMED_COLLECTION);
+    ParserKeyword s_if_exists(Keyword::IF_EXISTS);
+    ParserKeyword s_on(Keyword::ON);
     ParserIdentifier name_p;
 
     String cluster_str;

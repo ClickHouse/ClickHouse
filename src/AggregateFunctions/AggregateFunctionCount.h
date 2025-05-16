@@ -1,9 +1,15 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_EMBEDDED_COMPILER
+#    include <llvm/IR/IRBuilder.h>
+#    include <DataTypes/Native.h>
+#endif
+
 #include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
 
-#include <array>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Columns/ColumnNullable.h>
@@ -11,13 +17,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Common/assert_cast.h>
-
-#include "config.h"
-
-#if USE_EMBEDDED_COMPILER
-#    include <llvm/IR/IRBuilder.h>
-#    include <DataTypes/Native.h>
-#endif
 
 
 namespace DB
@@ -77,7 +76,7 @@ public:
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            data(place).count += countBytesInFilter(flags);
+            data(place).count += countBytesInFilter(flags.data(), row_begin, row_end);
         }
         else
         {
@@ -116,7 +115,7 @@ public:
         /// Return normalized state type: count()
         AggregateFunctionProperties properties;
         return std::make_shared<DataTypeAggregateFunction>(
-            AggregateFunctionFactory::instance().get(getName(), {}, {}, properties), DataTypes{}, Array{});
+            AggregateFunctionFactory::instance().get(getName(), NullsAction::EMPTY, {}, {}, properties), DataTypes{}, Array{});
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -219,7 +218,7 @@ public:
         : IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCountNotNullUnary>({argument}, params, createResultType())
     {
         if (!argument->isNullable())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: not Nullable data type passed to AggregateFunctionCountNotNullUnary");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not Nullable data type passed to AggregateFunctionCountNotNullUnary");
     }
 
     String getName() const override { return "count"; }
@@ -267,7 +266,7 @@ public:
         /// Return normalized state type: count()
         AggregateFunctionProperties properties;
         return std::make_shared<DataTypeAggregateFunction>(
-            AggregateFunctionFactory::instance().get(getName(), {}, {}, properties), DataTypes{}, Array{});
+            AggregateFunctionFactory::instance().get(getName(), NullsAction::EMPTY, {}, {}, properties), DataTypes{}, Array{});
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override

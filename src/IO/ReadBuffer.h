@@ -1,24 +1,14 @@
 #pragma once
 
-#include <cassert>
 #include <cstring>
-#include <algorithm>
 #include <memory>
 
-#include <Common/Exception.h>
 #include <Common/Priority.h>
 #include <IO/BufferBase.h>
-#include <IO/AsynchronousReader.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int ATTEMPT_TO_READ_AFTER_EOF;
-    extern const int CANNOT_READ_ALL_DATA;
-}
 
 static constexpr auto DEFAULT_PREFETCH_PRIORITY = Priority{0};
 
@@ -63,27 +53,29 @@ public:
       */
     bool next()
     {
-        assert(!hasPendingData());
-        assert(position() <= working_buffer.end());
+        chassert(!hasPendingData());
+        chassert(position() <= working_buffer.end());
 
         bytes += offset();
         bool res = nextImpl();
         if (!res)
+        {
             working_buffer = Buffer(pos, pos);
+        }
         else
         {
-            pos = working_buffer.begin() + nextimpl_working_buffer_offset;
-            assert(position() != working_buffer.end());
+            pos = working_buffer.begin() + std::min(nextimpl_working_buffer_offset, working_buffer.size());
+            chassert(position() < working_buffer.end());
         }
         nextimpl_working_buffer_offset = 0;
 
-        assert(position() <= working_buffer.end());
+        chassert(position() <= working_buffer.end());
 
         return res;
     }
 
 
-    inline void nextIfAtEnd()
+    void nextIfAtEnd()
     {
         if (!hasPendingData())
             next();
@@ -190,13 +182,7 @@ public:
     }
 
     /** Reads n bytes, if there are less - throws an exception. */
-    void readStrict(char * to, size_t n)
-    {
-        auto read_bytes = read(to, n);
-        if (n != read_bytes)
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                            "Cannot read all data. Bytes read: {}. Bytes expected: {}.", read_bytes, std::to_string(n));
-    }
+    void readStrict(char * to, size_t n);
 
     /** A method that can be more efficiently implemented in derived classes, in the case of reading large enough blocks.
       * The implementation can read data directly into `to`, without superfluous copying, if in `to` there is enough space for work.
@@ -225,11 +211,22 @@ public:
      *  - seek() to a position above the until position (even if you setReadUntilPosition() to a
      *    higher value right after the seek!),
      *
-     * Typical implementations discard any current buffers and connections, even if the position is
-     * adjusted only a little.
+     * Implementations are recommended to:
+     *  - Allow the read-until-position to go below current position, e.g.:
+     *      // Read block [300, 400)
+     *      setReadUntilPosition(400);
+     *      seek(300);
+     *      next();
+     *      // Read block [100, 200)
+     *      setReadUntilPosition(200); // oh oh, this is below the current position, but should be allowed
+     *      seek(100); // but now everything's fine again
+     *      next();
+     *      // (Swapping the order of seek and setReadUntilPosition doesn't help: then it breaks if the order of blocks is reversed.)
+     *  - Check if new read-until-position value is equal to the current value and do nothing in this case,
+     *    so that the caller doesn't have to.
      *
-     * Typical usage is to call it right after creating the ReadBuffer, before it started doing any
-     * work.
+     * Typical implementations discard any current buffers and connections when the
+     * read-until-position changes even by a small (nonzero) amount.
      */
     virtual void setReadUntilPosition(size_t /* position */) {}
 
@@ -242,16 +239,14 @@ protected:
     size_t nextimpl_working_buffer_offset = 0;
 
 private:
-    /** Read the next data and fill a buffer with it.
+    /** Read the next data and fill a buffer with it. It should also account for `nextimpl_working_buffer_offset` out parameter if set
+      * so that after this value is applied to `pos` (see next() method) buffer still contains available data.
       * Return `false` in case of the end, `true` otherwise.
       * Throw an exception if something is wrong.
       */
     virtual bool nextImpl() { return false; }
 
-    [[noreturn]] static void throwReadAfterEOF()
-    {
-        throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after eof");
-    }
+    [[noreturn]] static void throwReadAfterEOF();
 };
 
 

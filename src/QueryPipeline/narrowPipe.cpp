@@ -1,9 +1,10 @@
 #include <QueryPipeline/narrowPipe.h>
 
 #include <random>
-#include <Common/thread_local_rng.h>
 #include <Processors/ConcatProcessor.h>
+#include <Processors/Port.h>
 #include <QueryPipeline/Pipe.h>
+#include <Common/thread_local_rng.h>
 
 
 namespace DB

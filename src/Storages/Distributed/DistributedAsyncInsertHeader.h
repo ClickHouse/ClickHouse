@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <Core/Block.h>
 #include <Interpreters/ClientInfo.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <base/types.h>
 #include <string>
 
@@ -38,7 +39,7 @@ struct DistributedAsyncInsertHeader
     std::string block_header_string;
     Block block_header;
 
-    static DistributedAsyncInsertHeader read(ReadBufferFromFile & in, Poco::Logger * log);
+    static DistributedAsyncInsertHeader read(ReadBufferFromFile & in, LoggerPtr log);
     OpenTelemetry::TracingContextHolderPtr createTracingContextHolder(const char * function, std::shared_ptr<OpenTelemetrySpanLog> open_telemetry_span_log) const;
 };
 

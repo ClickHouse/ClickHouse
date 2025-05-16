@@ -1,7 +1,7 @@
 SELECT sumIf(1, 0);
 SELECT SumIf(1, 0);
 SELECT sUmIf(1, 0);
-SELECT sumIF(1, 0); -- { serverError 46 }
+SELECT sumIF(1, 0); -- { serverError UNKNOWN_FUNCTION }
 
 DROP TABLE IF EXISTS data;
 DROP TABLE IF EXISTS agg;
@@ -20,7 +20,7 @@ SELECT
     t,
     sumIF(n, 0)
 FROM data
-GROUP BY t; -- { serverError 46}
+GROUP BY t; -- { serverError UNKNOWN_FUNCTION}
 
 CREATE TABLE agg
 ENGINE = AggregatingMergeTree

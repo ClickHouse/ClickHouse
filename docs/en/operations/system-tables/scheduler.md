@@ -1,21 +1,30 @@
 ---
-slug: /en/operations/system-tables/scheduler
+description: 'System table containing information about and status of scheduling nodes
+  residing on the local server.'
+keywords: ['system table', 'scheduler']
+slug: /operations/system-tables/scheduler
+title: 'system.scheduler'
 ---
-# scheduler
 
-Contains information and status for [scheduling nodes](/docs/en/operations/workload-scheduling.md/#hierarchy) residing on the local server.
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.scheduler
+
+<SystemTableCloud/>
+
+Contains information about and status of [scheduling nodes](/operations/workload-scheduling.md/#hierarchy) residing on the local server.
 This table can be used for monitoring. The table contains a row for every scheduling node.
 
 Example:
 
-``` sql
+```sql
 SELECT *
 FROM system.scheduler
 WHERE resource = 'network_read' AND path = '/prio/fair/prod'
 FORMAT Vertical
 ```
 
-``` text
+```text
 Row 1:
 ──────
 resource:          network_read
@@ -26,7 +35,9 @@ priority:          0
 is_active:         0
 active_children:   0
 dequeued_requests: 67
+canceled_requests: 0
 dequeued_cost:     4692272
+canceled_cost:     0
 busy_periods:      63
 vruntime:          938454.1999999989
 system_vruntime:   ᴺᵁᴸᴸ
@@ -54,7 +65,9 @@ Columns:
 - `is_active` (`UInt8`) - Whether this node is currently active - has resource requests to be dequeued and constraints satisfied.
 - `active_children` (`UInt64`) - The number of children in active state.
 - `dequeued_requests` (`UInt64`) - The total number of resource requests dequeued from this node.
+- `canceled_requests` (`UInt64`) - The total number of resource requests canceled from this node.
 - `dequeued_cost` (`UInt64`) - The sum of costs (e.g. size in bytes) of all requests dequeued from this node.
+- `canceled_cost` (`UInt64`) - The sum of costs (e.g. size in bytes) of all requests canceled from this node.
 - `busy_periods` (`UInt64`) - The total number of deactivations of this node.
 - `vruntime` (`Nullable(Float64)`) - For children of `fair` nodes only. Virtual runtime of a node used by SFQ algorithm to select the next child to process in a max-min fair manner.
 - `system_vruntime` (`Nullable(Float64)`) - For `fair` nodes only. Virtual runtime showing `vruntime` of the last processed resource request. Used during child activation as the new value of `vruntime`.

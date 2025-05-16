@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <IO/ReadBuffer.h>
 #include <limits>
@@ -28,9 +27,6 @@ protected:
     virtual bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) = 0;
     virtual void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) = 0;
     virtual bool isGarbageAfterField(size_t after_input_pos_idx, ReadBuffer::Position pos) = 0;
-
-    /// For convenient diagnostics in case of an error.
-    size_t row_num = 0;
 
 private:
     /// How many bytes were read, not counting those still in the buffer.

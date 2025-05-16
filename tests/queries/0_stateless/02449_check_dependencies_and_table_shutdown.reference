@@ -1,5 +1,5 @@
 CREATE DICTIONARY default.dict\n(\n    `id` UInt32,\n    `value` String\n)\nPRIMARY KEY id\nSOURCE(CLICKHOUSE(HOST \'localhost\' PORT 9000 USER \'default\' DB \'default\' TABLE \'view\'))\nLIFETIME(MIN 600 MAX 600)\nLAYOUT(HASHED())
-CREATE TABLE default.table\n(\n    `col` String MATERIALIZED dictGet(\'default.dict\', \'value\', toUInt32(1))\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+CREATE TABLE default.`table`\n(\n    `col` String MATERIALIZED dictGet(\'default.dict\', \'value\', toUInt32(1))\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
 1	v
 1	v
 1	v

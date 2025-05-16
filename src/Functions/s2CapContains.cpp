@@ -82,6 +82,11 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeUInt8>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
@@ -131,16 +136,16 @@ public:
             const auto point = S2CellId(data_point[row]);
 
             if (isNaN(degrees))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Radius of the cap must not be nan");
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Radius of the cap must not be nan in function {}", getName());
 
             if (std::isinf(degrees))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Radius of the cap must not be infinite");
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Radius of the cap must not be infinite in function {}", getName());
 
             if (!center.is_valid())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Center is not valid");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Center (id {}) is not valid in function {}", data_center[row], getName());
 
             if (!point.is_valid())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Point is not valid");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Point (id {}) is not valid in function {}", data_point[row], getName());
 
             S1Angle angle = S1Angle::Degrees(degrees);
             S2Cap cap(center.ToPoint(), angle);

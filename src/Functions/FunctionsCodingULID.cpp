@@ -2,6 +2,8 @@
 
 #if USE_ULID
 
+#include <Common/intExp10.h>
+#include <Core/DecimalFunctions.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsDateTime.h>
@@ -45,7 +47,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -158,9 +160,8 @@ public:
         Int64 ms = 0;
         memcpy(reinterpret_cast<UInt8 *>(&ms) + 2, buffer, 6);
 
-#    if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-        ms = std::byteswap(ms);
-#    endif
+        if constexpr (std::endian::native == std::endian::little)
+            ms = std::byteswap(ms);
 
         return DecimalUtils::decimalFromComponents<DateTime64>(ms / intExp10(DATETIME_SCALE), ms % intExp10(DATETIME_SCALE), DATETIME_SCALE);
     }
@@ -178,10 +179,10 @@ An optional second argument can be passed to specify a timezone for the timestam
 )",
             .examples{
                 {"ulid", "SELECT ULIDStringToDateTime(generateULID())", ""},
-                {"timezone", "SELECT ULIDStringToDateTime(generateULID(), 'Asia/Istanbul')", ""}},
-            .categories{"ULID"}
-        },
-        FunctionFactory::CaseSensitive);
+                {"timezone", "SELECT ULIDStringToDateTime(generateULID(), 'Asia/Istanbul')", ""}
+            },
+            .category = FunctionDocumentation::Category::ULID
+        });
 }
 
 }

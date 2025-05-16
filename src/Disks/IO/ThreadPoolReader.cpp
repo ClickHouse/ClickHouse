@@ -1,20 +1,20 @@
 #include "ThreadPoolReader.h"
-#include <Common/VersionNumber.h>
-#include <Common/assert_cast.h>
+#include <future>
+#include <fcntl.h>
+#include <unistd.h>
+#include <base/MemorySanitizer.h>
+#include <base/errnoToString.h>
+#include <Poco/Environment.h>
+#include <Poco/Event.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
-#include <Common/setThreadName.h>
-#include <Common/MemorySanitizer.h>
-#include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
-#include <Poco/Environment.h>
-#include <base/errnoToString.h>
-#include <Poco/Event.h>
-#include <future>
-#include <unistd.h>
-#include <fcntl.h>
+#include <Common/VersionNumber.h>
+#include <Common/assert_cast.h>
+#include <Common/setThreadName.h>
 
 #if defined(OS_LINUX)
 
@@ -36,6 +36,8 @@
         #define SYS_preadv2 380
     #elif defined(__riscv)
         #define SYS_preadv2 286
+    #elif defined(__loongarch64)
+        #define SYS_preadv2 286
     #else
         #error "Unsupported architecture"
     #endif
@@ -52,6 +54,7 @@ namespace ProfileEvents
     extern const Event ThreadPoolReaderPageCacheMiss;
     extern const Event ThreadPoolReaderPageCacheMissBytes;
     extern const Event ThreadPoolReaderPageCacheMissElapsedMicroseconds;
+    extern const Event AsynchronousReaderIgnoredBytes;
 
     extern const Event ReadBufferFromFileDescriptorRead;
     extern const Event ReadBufferFromFileDescriptorReadFailed;
@@ -108,9 +111,9 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
     /// RWF_NOWAIT flag may return 0 even when not at end of file.
     /// It can't be distinguished from the real eof, so we have to
     /// disable pread with nowait.
-    static std::atomic<bool> has_pread_nowait_support = !hasBugInPreadV2();
+    static const bool has_pread_nowait_support = !hasBugInPreadV2();
 
-    if (has_pread_nowait_support.load(std::memory_order_relaxed))
+    if (has_pread_nowait_support)
     {
         /// It reports real time spent including the time spent while thread was preempted doing nothing.
         /// And it is Ok for the purpose of this watch (it is used to lower the number of threads to read from tables).
@@ -158,33 +161,29 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
                 if (errno == ENOSYS || errno == EOPNOTSUPP)
                 {
                     /// No support for the syscall or the flag in the Linux kernel.
-                    has_pread_nowait_support.store(false, std::memory_order_relaxed);
+                    /// It shouldn't happen because we check the kernel version but let's
+                    /// fallback to the thread pool.
                     break;
                 }
-                else if (errno == EAGAIN)
+                if (errno == EAGAIN)
                 {
                     /// Data is not available in page cache. Will hand off to thread pool.
                     break;
                 }
-                else if (errno == EINTR)
+                if (errno == EINTR)
                 {
                     /// Interrupted by a signal.
                     continue;
                 }
-                else
-                {
-                    ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-                    promise.set_exception(std::make_exception_ptr(ErrnoException(
-                        fmt::format("Cannot read from file {}, {}", fd, errnoToString()),
-                        ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, errno)));
-                    return future;
-                }
+
+                ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+                promise.set_exception(
+                    std::make_exception_ptr(ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd)));
+                return future;
             }
-            else
-            {
-                bytes_read += res;
-                __msan_unpoison(request.buf, res);
-            }
+
+            bytes_read += res;
+            __msan_unpoison(request.buf, res);
         }
 
         if (bytes_read)
@@ -193,6 +192,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
             ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheHit);
             ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheHitBytes, bytes_read);
             ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
+            ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
 
             promise.set_value({bytes_read, request.ignore, nullptr});
             return future;
@@ -202,7 +202,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
     ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMiss);
 
-    auto schedule = threadPoolCallbackRunner<Result>(*pool, "ThreadPoolRead");
+    auto schedule = threadPoolCallbackRunnerUnsafe<Result>(*pool, "ThreadPoolRead");
 
     return schedule([request, fd]() -> Result
     {
@@ -231,7 +231,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
             if (-1 == res && errno != EINTR)
             {
                 ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-                throwFromErrno(fmt::format("Cannot read from file {}", fd), ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+                throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd);
             }
 
             bytes_read += res;
@@ -241,6 +241,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
         ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMissBytes, bytes_read);
         ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
+        ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
 
         return Result{ .size = bytes_read, .offset = request.ignore };
     }, request.priority);

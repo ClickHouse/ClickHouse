@@ -1,5 +1,6 @@
 #include <cstring>
 
+#include <Common/SipHash.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
 #include <base/unaligned.h>
@@ -27,7 +28,7 @@ public:
     /// There're 2 compression variants:
     /// Byte - transpose bit matrix by bytes (only the last not full byte is transposed by bits). It's default.
     /// Bits - full bit-transpose of the bit matrix. It uses more resources and leads to better compression with ZSTD (but worse with LZ4).
-    enum class Variant
+    enum class Variant : uint8_t
     {
         Byte,
         Bit
@@ -91,6 +92,9 @@ enum class MagicNumber : uint8_t
     Decimal32   = 19,
     Decimal64   = 20,
     IPv4        = 21,
+    Date32      = 22,
+    Time        = 23,
+    Time64      = 24,
 };
 
 MagicNumber serializeTypeId(std::optional<TypeIndex> type_id)
@@ -109,6 +113,9 @@ MagicNumber serializeTypeId(std::optional<TypeIndex> type_id)
         case TypeIndex::Int32:      return MagicNumber::Int32;
         case TypeIndex::Int64:      return MagicNumber::Int64;
         case TypeIndex::Date:       return MagicNumber::Date;
+        case TypeIndex::Date32:     return MagicNumber::Date32;
+        case TypeIndex::Time:       return MagicNumber::Time;
+        case TypeIndex::Time64:     return MagicNumber::Time64;
         case TypeIndex::DateTime:   return MagicNumber::DateTime;
         case TypeIndex::DateTime64: return MagicNumber::DateTime64;
         case TypeIndex::Enum8:      return MagicNumber::Enum8;
@@ -137,8 +144,11 @@ TypeIndex deserializeTypeId(uint8_t serialized_type_id)
         case MagicNumber::Int32:        return TypeIndex::Int32;
         case MagicNumber::Int64:        return TypeIndex::Int64;
         case MagicNumber::Date:         return TypeIndex::Date;
+        case MagicNumber::Date32:       return TypeIndex::Date32;
         case MagicNumber::DateTime:     return TypeIndex::DateTime;
         case MagicNumber::DateTime64:   return TypeIndex::DateTime64;
+        case MagicNumber::Time:         return TypeIndex::Time;
+        case MagicNumber::Time64:       return TypeIndex::Time64;
         case MagicNumber::Enum8:        return TypeIndex::Enum8;
         case MagicNumber::Enum16:       return TypeIndex::Enum16;
         case MagicNumber::Decimal32:    return TypeIndex::Decimal32;
@@ -164,10 +174,13 @@ TypeIndex baseType(TypeIndex type_idx)
         case TypeIndex::Int16:
             return TypeIndex::Int16;
         case TypeIndex::Int32:
+        case TypeIndex::Time:
         case TypeIndex::Decimal32:
+        case TypeIndex::Date32:
             return TypeIndex::Int32;
         case TypeIndex::Int64:
         case TypeIndex::Decimal64:
+        case TypeIndex::Time64:
         case TypeIndex::DateTime64:
             return TypeIndex::Int64;
         case TypeIndex::UInt8:
@@ -205,9 +218,12 @@ TypeIndex typeIdx(const IDataType * data_type)
         case TypeIndex::UInt16:
         case TypeIndex::Enum16:
         case TypeIndex::Date:
+        case TypeIndex::Date32:
         case TypeIndex::Int32:
         case TypeIndex::UInt32:
         case TypeIndex::IPv4:
+        case TypeIndex::Time:
+        case TypeIndex::Time64:
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64:
         case TypeIndex::Decimal32:
@@ -446,11 +462,9 @@ UInt32 getValuableBitsNumber(Int64 min, Int64 max)
     {
         if (min + max >= 0)
             return getValuableBitsNumber(0ull, static_cast<UInt64>(max)) + 1;
-        else
-            return getValuableBitsNumber(0ull, static_cast<UInt64>(~min)) + 1;
+        return getValuableBitsNumber(0ull, static_cast<UInt64>(~min)) + 1;
     }
-    else
-        return getValuableBitsNumber(static_cast<UInt64>(min), static_cast<UInt64>(max));
+    return getValuableBitsNumber(static_cast<UInt64>(min), static_cast<UInt64>(max));
 }
 
 
@@ -490,7 +504,8 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
     UInt32 num_full = src_size / matrix_size;
     UInt32 tail = src_size % matrix_size;
 
-    T min, max;
+    T min;
+    T max;
     findMinMax<T>(src, bytes_size, min, max);
     MinMaxType min64 = min; // NOLINT
     MinMaxType max64 = max; // NOLINT
@@ -684,21 +699,29 @@ void CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, ch
     switch (baseType(saved_type_id))
     {
         case TypeIndex::Int8:
-            return decompressData<Int8>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<Int8>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::Int16:
-            return decompressData<Int16>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<Int16>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::Int32:
-            return decompressData<Int32>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<Int32>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::Int64:
-            return decompressData<Int64>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<Int64>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::UInt8:
-            return decompressData<UInt8>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<UInt8>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::UInt16:
-            return decompressData<UInt16>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<UInt16>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::UInt32:
-            return decompressData<UInt32>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<UInt32>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::UInt64:
-            return decompressData<UInt64>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<UInt64>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         default:
             break;
     }

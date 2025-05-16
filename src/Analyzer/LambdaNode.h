@@ -3,11 +3,13 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/IdentifierNode.h>
-
-#include <Parsers/ASTFunction.h>
+#include <Core/Names.h>
 
 namespace DB
 {
+
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
 
 /** Lambda node represents lambda expression in query tree.
   *
@@ -97,9 +99,9 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
-    void updateTreeHashImpl(HashState & state) const override;
+    void updateTreeHashImpl(HashState & state, CompareOptions) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 

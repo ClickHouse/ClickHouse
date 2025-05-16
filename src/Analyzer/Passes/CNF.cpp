@@ -10,6 +10,7 @@
 #include <IO/Operators.h>
 
 #include <Functions/FunctionFactory.h>
+#include <Functions/logical.h>
 
 #include <Common/checkStackSize.h>
 
@@ -79,7 +80,7 @@ public:
 
         if (name == "and" || name == "or")
         {
-            auto function_resolver = FunctionFactory::instance().get(name, current_context);
+            auto function_resolver = name == "and" ? createInternalFunctionAndOverloadResolver() : createInternalFunctionOrOverloadResolver();
 
             const auto & arguments = function_node->getArguments().getNodes();
             if (arguments.size() > 2)
@@ -110,10 +111,10 @@ private:
 class PushNotVisitor
 {
 public:
-    explicit PushNotVisitor(const ContextPtr & context)
-        : not_function_resolver(FunctionFactory::instance().get("not", context))
-        , or_function_resolver(FunctionFactory::instance().get("or", context))
-        , and_function_resolver(FunctionFactory::instance().get("and", context))
+    explicit PushNotVisitor()
+        : not_function_resolver(createInternalFunctionNotOverloadResolver())
+        , or_function_resolver(createInternalFunctionOrOverloadResolver())
+        , and_function_resolver(createInternalFunctionAndOverloadResolver())
     {}
 
     void visit(QueryTreeNodePtr & node, bool add_negation)
@@ -162,10 +163,10 @@ private:
 class PushOrVisitor
 {
 public:
-    PushOrVisitor(ContextPtr context, size_t max_atoms_)
+    explicit PushOrVisitor(size_t max_atoms_)
         : max_atoms(max_atoms_)
-        , and_resolver(FunctionFactory::instance().get("and", context))
-        , or_resolver(FunctionFactory::instance().get("or", context))
+        , and_resolver(createInternalFunctionAndOverloadResolver())
+        , or_resolver(createInternalFunctionOrOverloadResolver())
     {}
 
     bool visit(QueryTreeNodePtr & node, size_t num_atoms)
@@ -253,7 +254,7 @@ private:
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !isLogicalFunction(*function_node))
         {
-            or_group.insert(CNF::AtomicFormula{false, std::move(node)});
+            or_group.insert(CNFAtomicFormula{false, std::move(node)});
             return;
         }
 
@@ -280,13 +281,13 @@ private:
         {
             assert(name == "not");
             auto & arguments = function_node->getArguments().getNodes();
-            or_group.insert(CNF::AtomicFormula{true, std::move(arguments[0])});
+            or_group.insert(CNFAtomicFormula{true, std::move(arguments[0])});
         }
     }
 };
 
-std::optional<CNF::AtomicFormula> tryInvertFunction(
-    const CNF::AtomicFormula & atom, const ContextPtr & context, const std::unordered_map<std::string, std::string> & inverse_relations)
+std::optional<CNFAtomicFormula> tryInvertFunction(
+    const CNFAtomicFormula & atom, const ContextPtr & context, const std::unordered_map<std::string, std::string> & inverse_relations)
 {
     auto * function_node = atom.node_with_hash.node->as<FunctionNode>();
     if (!function_node)
@@ -296,24 +297,11 @@ std::optional<CNF::AtomicFormula> tryInvertFunction(
     {
         auto inverse_function_resolver = FunctionFactory::instance().get(it->second, context);
         function_node->resolveAsFunction(inverse_function_resolver);
-        return CNF::AtomicFormula{!atom.negative, atom.node_with_hash.node};
+        return CNFAtomicFormula{!atom.negative, atom.node_with_hash.node};
     }
 
     return std::nullopt;
 }
-}
-
-bool CNF::AtomicFormula::operator==(const AtomicFormula & rhs) const
-{
-    return negative == rhs.negative && node_with_hash == rhs.node_with_hash;
-}
-
-bool CNF::AtomicFormula::operator<(const AtomicFormula & rhs) const
-{
-    if (node_with_hash.hash > rhs.node_with_hash.hash)
-        return false;
-
-    return node_with_hash.hash < rhs.node_with_hash.hash || negative < rhs.negative;
 }
 
 std::string CNF::dump() const
@@ -357,7 +345,7 @@ CNF & CNF::transformGroups(std::function<OrGroup(const OrGroup &)> fn)
     return *this;
 }
 
-CNF & CNF::transformAtoms(std::function<AtomicFormula(const AtomicFormula &)> fn)
+CNF & CNF::transformAtoms(std::function<CNFAtomicFormula(const CNFAtomicFormula &)> fn)
 {
     transformGroups([fn](const OrGroup & group)
     {
@@ -377,7 +365,7 @@ CNF & CNF::transformAtoms(std::function<AtomicFormula(const AtomicFormula &)> fn
 
 CNF & CNF::pushNotIntoFunctions(const ContextPtr & context)
 {
-    transformAtoms([&](const AtomicFormula & atom)
+    transformAtoms([&](const CNFAtomicFormula & atom)
     {
         return pushNotIntoFunction(atom, context);
     });
@@ -385,7 +373,7 @@ CNF & CNF::pushNotIntoFunctions(const ContextPtr & context)
     return *this;
 }
 
-CNF::AtomicFormula CNF::pushNotIntoFunction(const AtomicFormula & atom, const ContextPtr & context)
+CNFAtomicFormula CNF::pushNotIntoFunction(const CNFAtomicFormula & atom, const ContextPtr & context)
 {
     if (!atom.negative)
         return atom;
@@ -414,7 +402,7 @@ CNF::AtomicFormula CNF::pushNotIntoFunction(const AtomicFormula & atom, const Co
 
 CNF & CNF::pullNotOutFunctions(const ContextPtr & context)
 {
-    transformAtoms([&](const AtomicFormula & atom)
+    transformAtoms([&](const CNFAtomicFormula & atom)
     {
         static const std::unordered_map<std::string, std::string> inverse_relations = {
             {"notEquals", "equals"},
@@ -448,7 +436,7 @@ CNF & CNF::filterAlwaysTrueGroups(std::function<bool(const OrGroup &)> predicate
     return *this;
 }
 
-CNF & CNF::filterAlwaysFalseAtoms(std::function<bool(const AtomicFormula &)> predicate)
+CNF & CNF::filterAlwaysFalseAtoms(std::function<bool(const CNFAtomicFormula &)> predicate)
 {
     AndGroup filtered;
     for (const auto & or_group : statements)
@@ -465,7 +453,7 @@ CNF & CNF::filterAlwaysFalseAtoms(std::function<bool(const AtomicFormula &)> pre
         else
         {
             filtered.clear();
-            filtered_group.insert(AtomicFormula{false, QueryTreeNodePtrWithHash{std::make_shared<ConstantNode>(static_cast<UInt8>(0))}});
+            filtered_group.insert(CNFAtomicFormula{false, QueryTreeNodePtrWithHash{std::make_shared<ConstantNode>(static_cast<UInt8>(0))}});
             filtered.insert(std::move(filtered_group));
             break;
         }
@@ -485,8 +473,7 @@ CNF & CNF::reduce()
             statements = filterCNFSubsets(statements);
             return *this;
         }
-        else
-            statements = new_statements;
+        statements = new_statements;
     }
 }
 
@@ -513,11 +500,11 @@ std::optional<CNF> CNF::tryBuildCNF(const QueryTreeNodePtr & node, ContextPtr co
     }
 
     {
-        PushNotVisitor visitor(context);
+        PushNotVisitor visitor;
         visitor.visit(node_cloned, false);
     }
 
-    if (PushOrVisitor visitor(context, max_atoms);
+    if (PushOrVisitor visitor(max_atoms);
         !visitor.visit(node_cloned, atom_count))
             return std::nullopt;
 
@@ -536,12 +523,13 @@ CNF CNF::toCNF(const QueryTreeNodePtr & node, ContextPtr context, size_t max_gro
     if (!cnf)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
             "Cannot convert expression '{}' to CNF, because it produces to many clauses."
-            "Size of boolean formula in CNF can be exponential of size of source formula.");
+            "Size of boolean formula in CNF can be exponential of size of source formula.",
+            node->formatConvertedASTForErrorMessage());
 
     return *cnf;
 }
 
-QueryTreeNodePtr CNF::toQueryTree(ContextPtr context) const
+QueryTreeNodePtr CNF::toQueryTree() const
 {
     if (statements.empty())
         return nullptr;
@@ -549,9 +537,9 @@ QueryTreeNodePtr CNF::toQueryTree(ContextPtr context) const
     QueryTreeNodes and_arguments;
     and_arguments.reserve(statements.size());
 
-    auto not_resolver = FunctionFactory::instance().get("not", context);
-    auto or_resolver = FunctionFactory::instance().get("or", context);
-    auto and_resolver = FunctionFactory::instance().get("and", context);
+    auto not_resolver = createInternalFunctionNotOverloadResolver();
+    auto or_resolver = createInternalFunctionOrOverloadResolver();
+    auto and_resolver = createInternalFunctionAndOverloadResolver();
 
     const auto function_node_from_atom = [&](const auto & atom) -> QueryTreeNodePtr
     {

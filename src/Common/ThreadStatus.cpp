@@ -4,6 +4,8 @@
 #include <Common/ThreadStatus.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
+#include <Common/memory.h>
+#include <base/getPageSize.h>
 #include <base/errnoToString.h>
 #include <Interpreters/Context.h>
 
@@ -15,12 +17,28 @@
 
 namespace DB
 {
-
 thread_local ThreadStatus constinit * current_thread = nullptr;
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_ALLOCATE_MEMORY;
+}
 
 #if !defined(SANITIZER)
 namespace
 {
+
+constexpr bool guardPagesEnabled()
+{
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    return true;
+#else
+    return false;
+#endif
+}
+
+/// For aarch64 16K is not enough (likely due to tons of registers)
+constexpr size_t UNWIND_MINSIGSTKSZ = 32 << 10;
 
 /// Alternative stack for signal handling.
 ///
@@ -37,24 +55,48 @@ namespace
 struct ThreadStack
 {
     ThreadStack()
-        : data(aligned_alloc(getPageSize(), getSize()))
     {
-        /// Add a guard page
-        /// (and since the stack grows downward, we need to protect the first page).
-        mprotect(data, getPageSize(), PROT_NONE);
+        auto page_size = getPageSize();
+        data = aligned_alloc(page_size, getSize());
+        if (!data)
+            throw ErrnoException(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate ThreadStack");
+
+        if constexpr (guardPagesEnabled())
+        {
+            try
+            {
+                /// Since the stack grows downward, we need to protect the first page
+                memoryGuardInstall(data, page_size);
+            }
+            catch (...)
+            {
+                free(data);
+                throw;
+            }
+        }
     }
     ~ThreadStack()
     {
-        mprotect(data, getPageSize(), PROT_WRITE|PROT_READ);
+        if constexpr (guardPagesEnabled())
+            memoryGuardRemove(data, getPageSize());
+
         free(data);
     }
 
-    static size_t getSize() { return std::max<size_t>(16 << 10, MINSIGSTKSZ); }
+    static size_t getSize()
+    {
+        auto size = std::max<size_t>(UNWIND_MINSIGSTKSZ, MINSIGSTKSZ);
+
+        if constexpr (guardPagesEnabled())
+            size += getPageSize();
+
+        return size;
+    }
     void * getData() const { return data; }
 
 private:
     /// 16 KiB - not too big but enough to handle error.
-    void * data;
+    void * data = nullptr;
 };
 
 }
@@ -65,6 +107,7 @@ static thread_local bool has_alt_stack = false;
 
 ThreadGroup::ThreadGroup()
     : master_thread_id(CurrentThread::get().thread_id)
+    , memory_spill_scheduler(false)
 {}
 
 ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
@@ -74,8 +117,8 @@ ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
 
     last_rusage = std::make_unique<RUsageCounters>();
 
-    memory_tracker.setDescription("(for thread)");
-    log = &Poco::Logger::get("ThreadStatus");
+    memory_tracker.setDescription("Thread");
+    log = getLogger("ThreadStatus");
 
     current_thread = this;
 
@@ -95,7 +138,7 @@ ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
         stack_t altstack_description{};
         altstack_description.ss_sp = alt_stack.getData();
         altstack_description.ss_flags = 0;
-        altstack_description.ss_size = alt_stack.getSize();
+        altstack_description.ss_size = ThreadStack::getSize();
 
         if (0 != sigaltstack(&altstack_description, nullptr))
         {
@@ -195,14 +238,23 @@ bool ThreadStatus::isQueryCanceled() const
     if (!thread_group)
         return false;
 
-    chassert(local_data.query_is_canceled_predicate);
-    return local_data.query_is_canceled_predicate();
+    if (local_data.query_is_canceled_predicate)
+        return local_data.query_is_canceled_predicate();
+    return false;
+}
+
+size_t ThreadStatus::getNextPlanStepIndex() const
+{
+    return local_data.plan_step_index->fetch_add(1);
+}
+
+size_t ThreadStatus::getNextPipelineProcessorIndex() const
+{
+    return local_data.pipeline_processor_index->fetch_add(1);
 }
 
 ThreadStatus::~ThreadStatus()
 {
-    flushUntrackedMemory();
-
     /// It may cause segfault if query_context was destroyed, but was not detached
     auto query_context_ptr = query_context.lock();
     assert((!query_context_ptr && getQueryId().empty()) || (query_context_ptr && getQueryId() == query_context_ptr->getCurrentQueryId()));
@@ -212,6 +264,9 @@ ThreadStatus::~ThreadStatus()
         deleter();
 
     chassert(!check_current_thread_on_destruction || current_thread == this);
+
+    /// Flush untracked_memory **right before** switching the current_thread to avoid losing untracked_memory in deleter (detachFromGroup)
+    flushUntrackedMemory();
 
     /// Only change current_thread if it's currently being used by this ThreadStatus
     /// For example, PushingToViews chain creates and deletes ThreadStatus instances while running in the main query thread

@@ -2,6 +2,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/DateLUTImpl.h>
 #include <Core/ProtocolDefines.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -20,8 +21,7 @@ MergeTreePartInfo MergeTreePartInfo::fromPartName(const String & part_name, Merg
 {
     if (auto part_opt = tryParsePartName(part_name, format_version))
         return *part_opt;
-    else
-        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {} for format version: {}", part_name, format_version);
+    throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {} for format version: {}", part_name, format_version.toUnderType());
 }
 
 void MergeTreePartInfo::validatePartitionID(const ASTPtr & partition_id_ast, MergeTreeDataFormatVersion format_version)
@@ -121,7 +121,7 @@ std::optional<MergeTreePartInfo> MergeTreePartInfo::tryParsePartName(
 
     MergeTreePartInfo part_info;
 
-    part_info.partition_id = std::move(partition_id);
+    part_info.setPartitionId(partition_id);
     part_info.min_block = min_block_num;
     part_info.max_block = max_block_num;
 
@@ -131,7 +131,7 @@ std::optional<MergeTreePartInfo> MergeTreePartInfo::tryParsePartName(
         /// "Part 20170601_20170630_0_2_999999999 intersects 201706_0_1_4294967295".
         /// So we replace unexpected max level to make contains(...) method and comparison operators work
         /// correctly with such virtual parts. On part name serialization we will use legacy max level to keep the name unchanged.
-        part_info.use_leagcy_max_level = true;
+        part_info.use_legacy_max_level = true;
         level = MAX_LEVEL;
     }
 
@@ -183,7 +183,11 @@ String MergeTreePartInfo::getPartNameAndCheckFormat(MergeTreeDataFormatVersion f
         return getPartNameV1();
 
     /// We cannot just call getPartNameV0 because it requires extra arguments, but at least we can warn about it.
-    chassert(false);  /// Catch it in CI. Feel free to remove this line.
+    /// It is tempting to add chassert(false) here to catch it in CI.
+    /// But it turns out that in stress tests a common database could be used by multiple tests, and there are tests that create
+    /// tables with V0 format using `allow_deprecated_syntax_for_merge_tree` and tests that do BACKUP are RESOURCE of a db containing
+    /// such tables. Current implementation of RESTORE do not support V0 in MergeTreeData::restorePartFromBackup().
+    /// So this creates flaky combination of tests.
     throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Trying to get part name in new format for old format version. "
                     "Either some new feature is incompatible with deprecated *MergeTree definition syntax or it's a bug.");
 }
@@ -205,7 +209,7 @@ String MergeTreePartInfo::getPartNameV1() const
     writeChar('_', wb);
     writeIntText(max_block, wb);
     writeChar('_', wb);
-    if (use_leagcy_max_level)
+    if (use_legacy_max_level)
     {
         assert(level == MAX_LEVEL);
         writeIntText(LEGACY_MAX_LEVEL, wb);
@@ -244,7 +248,7 @@ String MergeTreePartInfo::getPartNameV0(DayNum left_date, DayNum right_date) con
     writeChar('_', wb);
     writeIntText(max_block, wb);
     writeChar('_', wb);
-    if (use_leagcy_max_level)
+    if (use_legacy_max_level)
     {
         assert(level == MAX_LEVEL);
         writeIntText(LEGACY_MAX_LEVEL, wb);
@@ -274,7 +278,7 @@ void MergeTreePartInfo::serialize(WriteBuffer & out) const
     writeIntBinary(max_block, out);
     writeIntBinary(level, out);
     writeIntBinary(mutation, out);
-    writeBoolText(use_leagcy_max_level, out);
+    writeBoolText(use_legacy_max_level, out);
 }
 
 
@@ -297,7 +301,7 @@ void MergeTreePartInfo::deserialize(ReadBuffer & in)
     readIntBinary(max_block, in);
     readIntBinary(level, in);
     readIntBinary(mutation, in);
-    readBoolText(use_leagcy_max_level, in);
+    readBoolText(use_legacy_max_level, in);
 }
 
 bool MergeTreePartInfo::areAllBlockNumbersCovered(const MergeTreePartInfo & blocks_range, std::vector<MergeTreePartInfo> candidates)

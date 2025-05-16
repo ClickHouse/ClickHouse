@@ -1,11 +1,12 @@
 #pragma once
 
 #include <Interpreters/Context.h>
-#include <Poco/Logger.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/Net/HTTPRequest.h>
 #include <Common/ShellCommand.h>
 
+#include <Poco/Logger.h>
+#include <Poco/Net/HTTPRequest.h>
+#include <Poco/URI.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -16,9 +17,9 @@ class IBridgeHelper: protected WithContext
 {
 
 public:
-    static constexpr inline auto DEFAULT_HOST = "127.0.0.1";
-    static constexpr inline auto DEFAULT_FORMAT = "RowBinary";
-    static constexpr inline auto PING_OK_ANSWER = "Ok.";
+    static constexpr auto DEFAULT_HOST = "127.0.0.1";
+    static constexpr auto DEFAULT_FORMAT = "RowBinary";
+    static constexpr auto PING_OK_ANSWER = "Ok.";
 
     static const inline std::string PING_METHOD = Poco::Net::HTTPRequest::HTTP_GET;
     static const inline std::string MAIN_METHOD = Poco::Net::HTTPRequest::HTTP_POST;
@@ -51,7 +52,7 @@ protected:
 
     virtual const Poco::Util::AbstractConfiguration & getConfig() const = 0;
 
-    virtual Poco::Logger * getLog() const = 0;
+    virtual LoggerPtr getLog() const = 0;
 
     virtual Poco::Timespan getHTTPTimeout() const = 0;
 

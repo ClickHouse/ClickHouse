@@ -22,10 +22,8 @@
 #include <linux/taskstats.h>
 #include <linux/capability.h>
 
-#if defined(__clang__)
-    #pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
-    #pragma clang diagnostic ignored "-Wnested-anon-types"
-#endif
+#pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
+#pragma clang diagnostic ignored "-Wnested-anon-types"
 
 /// Basic idea is motivated by "iotop" tool.
 /// More info: https://www.kernel.org/doc/Documentation/accounting/taskstats.txt
@@ -114,10 +112,9 @@ struct NetlinkMessage
 
             if (bytes_sent <= 0)
             {
-                if (errno == EAGAIN)
+                if (bytes_sent < 0 && errno == EAGAIN)
                     continue;
-                else
-                    throwFromErrno("Can't send a Netlink command", ErrorCodes::NETLINK_ERROR);
+                throw ErrnoException(ErrorCodes::NETLINK_ERROR, "Can't send a Netlink command");
             }
 
             if (bytes_sent > request_size)
@@ -216,7 +213,7 @@ bool checkPermissionsImpl()
         {
             /// This error happens all the time when running inside Docker - consider it ok,
             /// don't create noise with this error.
-            LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
+            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
         }
         else
         {
@@ -255,7 +252,7 @@ NetlinkMetricsProvider::NetlinkMetricsProvider()
 {
     netlink_socket_fd = ::socket(PF_NETLINK, SOCK_RAW, NETLINK_GENERIC);
     if (netlink_socket_fd < 0)
-        throwFromErrno("Can't create PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
+        throw ErrnoException(ErrorCodes::NETLINK_ERROR, "Can't create PF_NETLINK socket");
 
     try
     {
@@ -267,7 +264,7 @@ NetlinkMetricsProvider::NetlinkMetricsProvider()
         tv.tv_usec = 50000;
 
         if (0 != ::setsockopt(netlink_socket_fd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&tv), sizeof(tv)))
-            throwFromErrno("Can't set timeout on PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
+            throw ErrnoException(ErrorCodes::NETLINK_ERROR, "Can't set timeout on PF_NETLINK socket");
 
         union
         {
@@ -277,7 +274,7 @@ NetlinkMetricsProvider::NetlinkMetricsProvider()
         addr.nl_family = AF_NETLINK;
 
         if (::bind(netlink_socket_fd, &sockaddr, sizeof(addr)) < 0)
-            throwFromErrno("Can't bind PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
+            throw ErrnoException(ErrorCodes::NETLINK_ERROR, "Can't bind PF_NETLINK socket");
 
         taskstats_family_id = getFamilyId(netlink_socket_fd);
     }
@@ -285,7 +282,7 @@ NetlinkMetricsProvider::NetlinkMetricsProvider()
     {
         if (netlink_socket_fd >= 0)
         {
-            int err = close(netlink_socket_fd);
+            [[maybe_unused]] int err = close(netlink_socket_fd);
             chassert(!err || errno == EINTR);
         }
         throw;
@@ -322,7 +319,7 @@ NetlinkMetricsProvider::~NetlinkMetricsProvider()
 {
     if (netlink_socket_fd >= 0)
     {
-        int err = close(netlink_socket_fd);
+        [[maybe_unused]] int err = close(netlink_socket_fd);
         chassert(!err || errno == EINTR);
     }
 }

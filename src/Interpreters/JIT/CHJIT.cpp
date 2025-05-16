@@ -6,7 +6,10 @@
 
 #include <boost/noncopyable.hpp>
 
+#include <llvm/Analysis/CGSCCPassManager.h>
+#include <llvm/Analysis/LoopAnalysisManager.h>
 #include <llvm/Analysis/TargetTransformInfo.h>
+#include <llvm/Passes/PassBuilder.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/DataLayout.h>
 #include <llvm/IR/DerivedTypes.h>
@@ -18,12 +21,11 @@
 #include <llvm/ExecutionEngine/JITSymbol.h>
 #include <llvm/ExecutionEngine/SectionMemoryManager.h>
 #include <llvm/ExecutionEngine/JITEventListener.h>
-#include <llvm/MC/SubtargetFeature.h>
+#include <llvm/TargetParser/SubtargetFeature.h>
 #include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/DynamicLibrary.h>
-#include <llvm/Support/Host.h>
+#include <llvm/TargetParser/Host.h>
 #include <llvm/Support/TargetSelect.h>
-#include <llvm/Transforms/IPO/PassManagerBuilder.h>
 #include <llvm/Support/SmallVectorMemoryBuffer.h>
 
 #include <base/getPageSize.h>
@@ -119,9 +121,9 @@ public:
         return result;
     }
 
-    inline size_t getAllocatedSize() const { return allocated_size; }
+    size_t getAllocatedSize() const { return allocated_size; }
 
-    inline size_t getPageSize() const { return page_size; }
+    size_t getPageSize() const { return page_size; }
 
     ~PageArena()
     {
@@ -153,7 +155,7 @@ public:
             {
                 int res = mprotect(block.base(), block.blockSize(), protection_flags | PROT_READ);
                 if (res != 0)
-                    throwFromErrno("Cannot mprotect memory region", ErrorCodes::CANNOT_MPROTECT);
+                    throw ErrnoException(ErrorCodes::CANNOT_MPROTECT, "Cannot mprotect memory region");
 
                 llvm::sys::Memory::InvalidateInstructionCache(block.base(), block.blockSize());
                 invalidate_cache = false;
@@ -161,7 +163,7 @@ public:
 #    endif
             int res = mprotect(block.base(), block.blockSize(), protection_flags);
             if (res != 0)
-                throwFromErrno("Cannot mprotect memory region", ErrorCodes::CANNOT_MPROTECT);
+                throw ErrnoException(ErrorCodes::CANNOT_MPROTECT, "Cannot mprotect memory region");
 
             if (invalidate_cache)
                 llvm::sys::Memory::InvalidateInstructionCache(block.base(), block.blockSize());
@@ -177,10 +179,10 @@ private:
         {
         }
 
-        inline void * base() const { return pages_base; }
-        inline size_t pagesSize() const { return pages_size; }
-        inline size_t pageSize() const { return page_size; }
-        inline size_t blockSize() const { return pages_size * page_size; }
+        void * base() const { return pages_base; }
+        size_t pagesSize() const { return pages_size; }
+        size_t pageSize() const { return page_size; }
+        size_t blockSize() const { return pages_size * page_size; }
 
     private:
         void * pages_base;
@@ -217,10 +219,8 @@ private:
 
             return static_cast<char *>(result);
         }
-        else
-        {
-            return nullptr;
-        }
+
+        return nullptr;
     }
 
     void allocateNextPageBlock(size_t size)
@@ -232,10 +232,12 @@ private:
         int res = posix_memalign(&buf, page_size, allocate_size);
 
         if (res != 0)
-            throwFromErrno(
-                fmt::format("Cannot allocate memory (posix_memalign) alignment {} size {}.", page_size, ReadableSize(allocate_size)),
+            ErrnoException::throwWithErrno(
                 ErrorCodes::CANNOT_ALLOCATE_MEMORY,
-                res);
+                res,
+                "Cannot allocate memory (posix_memalign) alignment {} size {}",
+                page_size,
+                ReadableSize(allocate_size));
 
         page_blocks.emplace_back(buf, pages_to_allocate_size, page_size);
         page_blocks_allocated_size.emplace_back(0);
@@ -243,6 +245,31 @@ private:
         allocated_size += allocate_size;
     }
 };
+
+#ifdef PRINT_ASSEMBLY
+
+class AssemblyPrinter
+{
+public:
+    explicit AssemblyPrinter(llvm::TargetMachine &target_machine_)
+    : target_machine(target_machine_)
+    {
+    }
+
+    void print(llvm::Module & module)
+    {
+        llvm::legacy::PassManager pass_manager;
+        target_machine.Options.MCOptions.AsmVerbose = true;
+        if (target_machine.addPassesToEmitFile(pass_manager, llvm::errs(), nullptr, llvm::CodeGenFileType::CGFT_AssemblyFile))
+            throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "MachineCode cannot be printed");
+
+        pass_manager.run(module);
+    }
+private:
+    llvm::TargetMachine & target_machine;
+};
+
+#endif
 
 /** MemoryManager for module.
   * Keep total allocated size during RuntimeDyld linker execution.
@@ -260,8 +287,7 @@ public:
     {
         if (is_read_only)
             return reinterpret_cast<uint8_t *>(ro_page_arena.allocate(size, alignment));
-        else
-            return reinterpret_cast<uint8_t *>(rw_page_arena.allocate(size, alignment));
+        return reinterpret_cast<uint8_t *>(rw_page_arena.allocate(size, alignment));
     }
 
     bool finalizeMemory(std::string *) override
@@ -271,7 +297,7 @@ public:
         return true;
     }
 
-    inline size_t allocatedSize() const
+    size_t allocatedSize() const
     {
         size_t data_size = rw_page_arena.getAllocatedSize() + ro_page_arena.getAllocatedSize();
         size_t code_size = ex_page_arena.getAllocatedSize();
@@ -375,6 +401,11 @@ CHJIT::CompiledModule CHJIT::compileModule(std::unique_ptr<llvm::Module> module)
 {
     runOptimizationPassesOnModule(*module);
 
+#ifdef PRINT_ASSEMBLY
+    AssemblyPrinter assembly_printer(*machine);
+    assembly_printer.print(*module);
+#endif
+
     auto buffer = compiler->compile(*module);
 
     llvm::Expected<std::unique_ptr<llvm::object::ObjectFile>> object = llvm::object::ObjectFile::createObjectFile(*buffer);
@@ -454,29 +485,27 @@ std::string CHJIT::getMangledName(const std::string & name_to_mangle) const
 
 void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
 {
-    llvm::PassManagerBuilder pass_manager_builder;
-    llvm::legacy::PassManager mpm;
-    llvm::legacy::FunctionPassManager fpm(&module);
-    pass_manager_builder.OptLevel = 3;
-    pass_manager_builder.SLPVectorize = true;
-    pass_manager_builder.LoopVectorize = true;
-    pass_manager_builder.RerollLoops = true;
-    pass_manager_builder.VerifyInput = true;
-    pass_manager_builder.VerifyOutput = true;
-    machine->adjustPassManager(pass_manager_builder);
+    llvm::LoopAnalysisManager lam;
+    llvm::FunctionAnalysisManager fam;
+    llvm::CGSCCAnalysisManager cgam;
+    llvm::ModuleAnalysisManager mam;
 
-    fpm.add(llvm::createTargetTransformInfoWrapperPass(machine->getTargetIRAnalysis()));
-    mpm.add(llvm::createTargetTransformInfoWrapperPass(machine->getTargetIRAnalysis()));
+    auto target_analysis = machine->getTargetIRAnalysis();
+    fam.registerPass([&] { return target_analysis; });
 
-    pass_manager_builder.populateFunctionPassManager(fpm);
-    pass_manager_builder.populateModulePassManager(mpm);
+    llvm::PipelineTuningOptions pto;
+    pto.SLPVectorization = true;
 
-    fpm.doInitialization();
-    for (auto & function : module)
-        fpm.run(function);
-    fpm.doFinalization();
+    llvm::PassBuilder pb(nullptr, pto);
 
-    mpm.run(module);
+    pb.registerModuleAnalyses(mam);
+    pb.registerCGSCCAnalyses(cgam);
+    pb.registerFunctionAnalyses(fam);
+    pb.registerLoopAnalyses(lam);
+    pb.crossRegisterProxies(lam, fam, cgam, mam);
+
+    llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
+    mpm.run(module, mam);
 }
 
 std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
@@ -497,10 +526,8 @@ std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
         throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot find target triple {} error: {}", triple, error);
 
     llvm::SubtargetFeatures features;
-    llvm::StringMap<bool> feature_map;
-    if (llvm::sys::getHostCPUFeatures(feature_map))
-        for (auto & f : feature_map)
-            features.AddFeature(f.first(), f.second);
+    for (const auto & f : llvm::sys::getHostCPUFeatures())
+        features.AddFeature(f.first(), f.second);
 
     llvm::TargetOptions options;
 
@@ -509,9 +536,9 @@ std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
         cpu,
         features.getString(),
         options,
-        llvm::None,
-        llvm::None,
-        llvm::CodeGenOpt::Aggressive,
+        std::nullopt,
+        std::nullopt,
+        llvm::CodeGenOptLevel::Aggressive,
         jit);
 
     if (!target_machine)

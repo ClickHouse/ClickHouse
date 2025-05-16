@@ -4,8 +4,8 @@
 #include <Storages/MergeTree/MergeProgress.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
+#include <Storages/MergeTree/PartitionActionBlocker.h>
 #include <Storages/MutationCommands.h>
-#include <Interpreters/MutationsInterpreter.h>
 
 
 namespace DB
@@ -35,10 +35,13 @@ public:
         const MergeTreeTransactionPtr & txn,
         MergeTreeData & data_,
         MergeTreeDataMergerMutator & mutator_,
-        ActionBlocker & merges_blocker_,
+        PartitionActionBlocker & merges_blocker_,
         bool need_prefix_);
 
     bool execute();
+    void cancel() noexcept;
+
+    void updateProfileEvents() const;
 
     std::future<MergeTreeData::MutableDataPartPtr> getFuture()
     {
@@ -51,7 +54,7 @@ private:
 
     bool prepare();
 
-    enum class State
+    enum class State : uint8_t
     {
         NEED_PREPARE,
         NEED_EXECUTE

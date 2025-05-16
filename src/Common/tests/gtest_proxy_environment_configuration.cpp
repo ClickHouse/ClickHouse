@@ -2,81 +2,38 @@
 
 #include <Common/EnvironmentProxyConfigurationResolver.h>
 #include <Common/tests/gtest_helper_functions.h>
+#include <Common/proxyConfigurationToPocoProxyConfig.h>
 #include <Poco/URI.h>
 
 namespace DB
 {
 
-namespace
+TEST(EnvironmentProxyConfigurationResolver, TestHTTPandHTTPS)
 {
-    auto http_proxy_server = Poco::URI("http://proxy_server:3128");
-    auto https_proxy_server = Poco::URI("https://proxy_server:3128");
-}
+    const auto http_proxy_server = Poco::URI(EnvironmentProxySetter::HTTP_PROXY);
+    const auto https_proxy_server = Poco::URI(EnvironmentProxySetter::HTTPS_PROXY);
 
-TEST(EnvironmentProxyConfigurationResolver, TestHTTP)
-{
-    EnvironmentProxySetter setter(http_proxy_server, {});
+    std::string poco_no_proxy_regex = buildPocoNonProxyHosts(EnvironmentProxySetter::NO_PROXY);
 
-    EnvironmentProxyConfigurationResolver resolver(ProxyConfiguration::Protocol::HTTP);
+    EnvironmentProxySetter setter;
 
-    auto configuration = resolver.resolve();
+    EnvironmentProxyConfigurationResolver http_resolver(ProxyConfiguration::Protocol::HTTP);
 
-    ASSERT_EQ(configuration.host, http_proxy_server.getHost());
-    ASSERT_EQ(configuration.port, http_proxy_server.getPort());
-    ASSERT_EQ(configuration.protocol, ProxyConfiguration::protocolFromString(http_proxy_server.getScheme()));
-}
+    auto http_configuration = http_resolver.resolve();
 
-TEST(EnvironmentProxyConfigurationResolver, TestHTTPNoEnv)
-{
-    EnvironmentProxyConfigurationResolver resolver(ProxyConfiguration::Protocol::HTTP);
+    ASSERT_EQ(http_configuration.host, http_proxy_server.getHost());
+    ASSERT_EQ(http_configuration.port, http_proxy_server.getPort());
+    ASSERT_EQ(http_configuration.protocol, ProxyConfiguration::protocolFromString(http_proxy_server.getScheme()));
+    ASSERT_EQ(http_configuration.no_proxy_hosts, poco_no_proxy_regex);
 
-    auto configuration = resolver.resolve();
+    EnvironmentProxyConfigurationResolver https_resolver(ProxyConfiguration::Protocol::HTTPS);
 
-    ASSERT_EQ(configuration.host, "");
-    ASSERT_EQ(configuration.protocol, ProxyConfiguration::Protocol::HTTP);
-    ASSERT_EQ(configuration.port, 0u);
-}
+    auto https_configuration = https_resolver.resolve();
 
-TEST(EnvironmentProxyConfigurationResolver, TestHTTPs)
-{
-    EnvironmentProxySetter setter({}, https_proxy_server);
-
-    EnvironmentProxyConfigurationResolver resolver(ProxyConfiguration::Protocol::HTTPS);
-
-    auto configuration = resolver.resolve();
-
-    ASSERT_EQ(configuration.host, https_proxy_server.getHost());
-    ASSERT_EQ(configuration.port, https_proxy_server.getPort());
-    ASSERT_EQ(configuration.protocol, ProxyConfiguration::protocolFromString(https_proxy_server.getScheme()));
-}
-
-TEST(EnvironmentProxyConfigurationResolver, TestHTTPsNoEnv)
-{
-    EnvironmentProxyConfigurationResolver resolver(ProxyConfiguration::Protocol::HTTPS);
-
-    auto configuration = resolver.resolve();
-
-    ASSERT_EQ(configuration.host, "");
-    ASSERT_EQ(configuration.protocol, ProxyConfiguration::Protocol::HTTP);
-    ASSERT_EQ(configuration.port, 0u);
-}
-
-TEST(EnvironmentProxyConfigurationResolver, TestHTTPsOverHTTPTunnelingDisabled)
-{
-    // use http proxy for https, this would use connect protocol by default
-    EnvironmentProxySetter setter({}, http_proxy_server);
-
-    bool disable_tunneling_for_https_requests_over_http_proxy = true;
-
-    EnvironmentProxyConfigurationResolver resolver(
-        ProxyConfiguration::Protocol::HTTPS, disable_tunneling_for_https_requests_over_http_proxy);
-
-    auto configuration = resolver.resolve();
-
-    ASSERT_EQ(configuration.host, http_proxy_server.getHost());
-    ASSERT_EQ(configuration.port, http_proxy_server.getPort());
-    ASSERT_EQ(configuration.protocol, ProxyConfiguration::protocolFromString(http_proxy_server.getScheme()));
-    ASSERT_EQ(configuration.tunneling, false);
+    ASSERT_EQ(https_configuration.host, https_proxy_server.getHost());
+    ASSERT_EQ(https_configuration.port, https_proxy_server.getPort());
+    ASSERT_EQ(https_configuration.protocol, ProxyConfiguration::protocolFromString(https_proxy_server.getScheme()));
+    ASSERT_EQ(https_configuration.no_proxy_hosts, poco_no_proxy_regex);
 }
 
 }

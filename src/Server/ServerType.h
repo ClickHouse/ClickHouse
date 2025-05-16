@@ -11,9 +11,10 @@ class ServerType
 public:
     enum Type
     {
-        TCP,
         TCP_WITH_PROXY,
         TCP_SECURE,
+        TCP_SSH,
+        TCP,
         HTTP,
         HTTPS,
         MYSQL,
@@ -26,6 +27,7 @@ public:
         QUERIES_ALL,
         QUERIES_DEFAULT,
         QUERIES_CUSTOM,
+        CLOUD,
         END
     };
 

@@ -1,5 +1,10 @@
+#include <base/defines.h>
 #if defined(__ELF__) && !defined(OS_FREEBSD)
 
+#include <base/MemorySanitizer.h>
+#include <base/hex.h>
+#include <base/sort.h>
+#include <Common/MemoryTrackerDebugBlockerInThread.h>
 #include <Common/SymbolIndex.h>
 
 #include <algorithm>
@@ -9,8 +14,6 @@
 #include <link.h>
 
 #include <filesystem>
-
-#include <base/sort.h>
 
 /**
 
@@ -54,21 +57,6 @@ Otherwise you will get only symbol names. If your binary contains symbol table i
 Otherwise you will get only exported symbols from program headers.
 
 */
-
-#if defined(__clang__)
-#   pragma clang diagnostic ignored "-Wreserved-id-macro"
-#   pragma clang diagnostic ignored "-Wunused-macros"
-#endif
-
-#define __msan_unpoison_string(X) // NOLINT
-#define __msan_unpoison(X, Y) // NOLINT
-#if defined(ch_has_feature)
-#    if ch_has_feature(memory_sanitizer)
-#        undef __msan_unpoison_string
-#        undef __msan_unpoison
-#        include <sanitizer/msan_interface.h>
-#    endif
-#endif
 
 
 namespace DB
@@ -155,8 +143,7 @@ void collectSymbolsFromProgramHeaders(
                     __msan_unpoison(buckets, hash[0] * sizeof(buckets[0]));
 
                     for (ElfW(Word) i = 0; i < hash[0]; ++i)
-                        if (buckets[i] > sym_cnt)
-                            sym_cnt = buckets[i];
+                        sym_cnt = std::max<size_t>(sym_cnt, buckets[i]);
 
                     if (sym_cnt)
                     {
@@ -475,13 +462,11 @@ const T * find(const void * address, const std::vector<T> & vec)
 
     if (it == vec.begin())
         return nullptr;
-    else
-        --it; /// Last range that has left boundary less or equals than address.
+    --it; /// Last range that has left boundary less or equals than address.
 
     if (address >= it->address_begin && address < it->address_end)
         return &*it;
-    else
-        return nullptr;
+    return nullptr;
 }
 
 }
@@ -513,12 +498,11 @@ const SymbolIndex::Object * SymbolIndex::findObject(const void * address) const
 
 String SymbolIndex::getBuildIDHex() const
 {
-    String build_id_binary = getBuildID();
     String build_id_hex;
-    build_id_hex.resize(build_id_binary.size() * 2);
+    build_id_hex.resize(data.build_id.size() * 2);
 
     char * pos = build_id_hex.data();
-    for (auto c : build_id_binary)
+    for (auto c : data.build_id)
     {
         writeHexByteUppercase(c, pos);
         pos += 2;
@@ -529,6 +513,21 @@ String SymbolIndex::getBuildIDHex() const
 
 const SymbolIndex & SymbolIndex::instance()
 {
+    /// To avoid recursive initialization of SymbolIndex we need to block debug
+    /// checks in MemoryTracker.
+    ///
+    /// Those debug checks capture the stacktrace for the log if big enough
+    /// allocation is done (big enough > 16MiB), while SymbolIndex will do
+    /// ~25MiB, and so if exception will be thrown before SymbolIndex
+    /// initialized (this is the case for client/local, and no, we do not want
+    /// to initialize it explicitly, since this will increase startup time for
+    /// the client) and later during SymbolIndex initialization it will try to
+    /// initialize it one more time, and in debug build you will get pretty
+    /// nice error:
+    ///
+    ///   __cxa_guard_acquire detected recursive initialization: do you have a function-local static variable whose initialization depends on that function
+    ///
+    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
     static SymbolIndex instance;
     return instance;
 }

@@ -23,12 +23,14 @@ public:
         const Block & header,
         const SortDescription & description_,
         size_t max_merged_block_size_,
+        size_t max_block_bytes,
         UInt64 limit_,
         bool increase_sort_description_compile_attempts,
         size_t max_bytes_before_remerge_,
         double remerge_lowered_memory_bytes_ratio_,
+        size_t min_external_sort_block_bytes_,
         size_t max_bytes_before_external_sort_,
-        TemporaryDataOnDiskPtr tmp_data_,
+        TemporaryDataOnDiskScopePtr tmp_data_,
         size_t min_free_disk_space_);
 
     String getName() const override { return "MergeSortingTransform"; }
@@ -43,14 +45,17 @@ protected:
 private:
     size_t max_bytes_before_remerge;
     double remerge_lowered_memory_bytes_ratio;
+    size_t min_external_sort_block_bytes;
     size_t max_bytes_before_external_sort;
-    TemporaryDataOnDiskPtr tmp_data;
+    TemporaryDataOnDiskScopePtr tmp_data;
+    size_t temporary_files_num = 0;
     size_t min_free_disk_space;
+    size_t max_block_bytes;
 
     size_t sum_rows_in_blocks = 0;
     size_t sum_bytes_in_blocks = 0;
 
-    Poco::Logger * log = &Poco::Logger::get("MergeSortingTransform");
+    LoggerPtr log = getLogger("MergeSortingTransform");
 
     /// If remerge doesn't save memory at least several times, mark it as useless and don't do it anymore.
     bool remerge_is_useful = true;

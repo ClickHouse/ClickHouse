@@ -1,0 +1,33 @@
+a	Nullable(Int64)					
+obj	Tuple(\n    f1 Nullable(Int64),\n    f2 Nullable(String),\n    f3 Nullable(Int64))					
+b	Nullable(Int64)					
+c	Nullable(String)					
+{"a":"1","obj":{"f1":"1","f2":"2020-01-01","f3":null},"b":null,"c":null}
+{"a":null,"obj":{"f1":null,"f2":"Some string","f3":"2"},"b":"2","c":null}
+{"a":null,"obj":{"f1":null,"f2":null,"f3":null},"b":null,"c":"hello"}
+UNION	data1.jsonl	a Nullable(Int64), obj Tuple(f1 Nullable(Int64), f2 Nullable(Date))
+UNION	data2.jsonl	b Nullable(Int64), obj Tuple(f2 Nullable(String), f3 Nullable(Int64))
+UNION	data3.jsonl	c Nullable(String)
+c	Nullable(String)					
+a	Nullable(Int64)					
+obj	Tuple(\n    f1 Nullable(Int64),\n    f2 Nullable(String),\n    f3 Nullable(Int64))					
+b	Nullable(Int64)					
+c	Nullable(String)					
+a	Nullable(Int64)					
+obj	Tuple(\n    f1 Nullable(Int64),\n    f2 Nullable(String),\n    f3 Nullable(Int64))					
+b	Nullable(Int64)					
+c	Nullable(String)					
+{"a":"1","obj":{"f1":"1","f2":"2020-01-01","f3":null},"b":null,"c":null}
+{"a":null,"obj":{"f1":null,"f2":"Some string","f3":"2"},"b":"2","c":null}
+{"a":null,"obj":{"f1":null,"f2":null,"f3":null},"b":null,"c":"hello"}
+UNION	archive.tar::data1.jsonl	a Nullable(Int64), obj Tuple(f1 Nullable(Int64), f2 Nullable(Date))
+UNION	archive.tar::data2.jsonl	b Nullable(Int64), obj Tuple(f2 Nullable(String), f3 Nullable(Int64))
+UNION	archive.tar::data3.jsonl	c Nullable(String)
+c	Nullable(String)					
+a	Nullable(Int64)					
+obj	Tuple(\n    f1 Nullable(Int64),\n    f2 Nullable(String),\n    f3 Nullable(Int64))					
+b	Nullable(Int64)					
+c	Nullable(String)					
+1
+1
+1

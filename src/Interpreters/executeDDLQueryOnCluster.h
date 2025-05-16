@@ -5,7 +5,7 @@
 #include <Processors/ISource.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/MergeTree/ZooKeeperRetries.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 
 
 namespace zkutil
@@ -37,13 +37,16 @@ struct DDLQueryOnClusterParams
 
     /// Privileges which the current user should have to execute a query.
     AccessRightsElements access_to_check;
+
+    /// Use retries when creating nodes "query-0000000000", "query-0000000001", "query-0000000002" in ZooKeeper.
+    ZooKeeperRetriesInfo retries_info;
 };
 
 /// Pushes distributed DDL query to the queue.
 /// Returns DDLQueryStatusSource, which reads results of query execution on each host in the cluster.
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, ContextPtr context, const DDLQueryOnClusterParams & params = {});
 
-BlockIO getDistributedDDLStatus(const String & node_path, const DDLLogEntry & entry, ContextPtr context, const Strings * hosts_to_wait);
+BlockIO getDDLOnClusterStatus(const String & node_path, const String & replicas_path, const DDLLogEntry & entry, ContextPtr context);
 
 bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context);
 

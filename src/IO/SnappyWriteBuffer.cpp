@@ -16,13 +16,14 @@ namespace ErrorCodes
 }
 
 SnappyWriteBuffer::SnappyWriteBuffer(std::unique_ptr<WriteBuffer> out_, size_t buf_size, char * existing_memory, size_t alignment)
-    : BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory, alignment), out(std::move(out_))
+    : SnappyWriteBuffer(*out_, buf_size, existing_memory, alignment)
 {
+    out_holder = std::move(out_);
 }
 
-SnappyWriteBuffer::~SnappyWriteBuffer()
+SnappyWriteBuffer::SnappyWriteBuffer(WriteBuffer & out_, size_t buf_size, char * existing_memory, size_t alignment)
+    : BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory, alignment), out(&out_)
 {
-    finish();
 }
 
 void SnappyWriteBuffer::nextImpl()
@@ -39,28 +40,12 @@ void SnappyWriteBuffer::nextImpl()
 
 void SnappyWriteBuffer::finish()
 {
-    if (finished)
-        return;
-
-    try
-    {
-        finishImpl();
-        out->finalize();
-        finished = true;
-    }
-    catch (...)
-    {
-        /// Do not try to flush next time after exception.
-        out->position() = out->buffer().begin();
-        finished = true;
-        throw;
-    }
+    finishImpl();
+    out->finalize();
 }
 
 void SnappyWriteBuffer::finishImpl()
 {
-    next();
-
     bool success = snappy::Compress(uncompress_buffer.data(), uncompress_buffer.size(), &compress_buffer);
     if (!success)
     {
@@ -86,7 +71,18 @@ void SnappyWriteBuffer::finishImpl()
     }
 }
 
+void SnappyWriteBuffer::cancelImpl() noexcept
+{
+    Base::cancelImpl();
+    out->cancel();
+}
+
+void SnappyWriteBuffer::finalizeImpl()
+{
+    Base::finalizeImpl();
+    finish();
+}
+
 }
 
 #endif
-

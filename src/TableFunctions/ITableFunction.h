@@ -39,7 +39,7 @@ class Context;
 class ITableFunction : public std::enable_shared_from_this<ITableFunction>
 {
 public:
-    static inline std::string getDatabaseName() { return "_table_function"; }
+    static std::string getDatabaseName() { return "_table_function"; }
 
     /// Get the main function name.
     virtual std::string getName() const = 0;
@@ -78,9 +78,11 @@ public:
 
     virtual bool supportsReadingSubsetOfColumns(const ContextPtr &) { return true; }
 
+    virtual bool canBeUsedToCreateTable() const { return true; }
+
     /// Create storage according to the query.
     StoragePtr
-    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert = false) const;
+    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert_query = false) const;
 
     virtual ~ITableFunction() = default;
 

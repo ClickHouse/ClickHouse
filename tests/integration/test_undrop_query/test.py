@@ -1,8 +1,8 @@
-import pytest
-import uuid
-import random
 import logging
 import time
+import uuid
+
+import pytest
 
 from helpers.cluster import ClickHouseCluster
 
@@ -22,38 +22,28 @@ def started_cluster():
 
 
 def test_undrop_drop_and_undrop_loop(started_cluster):
-    count = 0
-    node.query("set allow_experimental_undrop_table_query = 1;")
-    while count < 10:
-        random_sec = random.randint(0, 10)
+    uuid_list = []
+
+    for i in range(4):
         table_uuid = uuid.uuid1().__str__()
-        logging.info(
-            "random_sec: " + random_sec.__str__() + ", table_uuid: " + table_uuid
-        )
+        uuid_list.append(table_uuid)
+        logging.info(f"table_uuid: {table_uuid}")
+
         node.query(
-            "create table test_undrop_loop"
-            + count.__str__()
-            + " UUID '"
-            + table_uuid
-            + "' (id Int32) Engine=MergeTree() order by id;"
+            f"CREATE TABLE test_undrop_{i} UUID '{table_uuid}' (id Int32) ENGINE = MergeTree() ORDER BY id;"
         )
-        node.query("drop table test_undrop_loop" + count.__str__() + ";")
-        time.sleep(random_sec)
-        if random_sec >= 5:
+
+        node.query(f"DROP TABLE test_undrop_{i};")
+
+    for i in range(4):
+        if (
+            i >= 3
+        ):  # First 3 tables are undropped after 0, 5 and 10 seconds. Fourth is undropped after 21 seconds
+            time.sleep(6)
             error = node.query_and_get_error(
-                "undrop table test_undrop_loop"
-                + count.__str__()
-                + " uuid '"
-                + table_uuid
-                + "' settings allow_experimental_undrop_table_query = 1;"
+                f"UNDROP TABLE test_undrop_loop_{i} UUID '{uuid_list[i]}';"
             )
             assert "UNKNOWN_TABLE" in error
         else:
-            node.query(
-                "undrop table test_undrop_loop"
-                + count.__str__()
-                + " uuid '"
-                + table_uuid
-                + "' settings allow_experimental_undrop_table_query = 1;"
-            )
-            count = count + 1
+            node.query(f"UNDROP TABLE test_undrop_loop_{i} UUID '{uuid_list[i]}';")
+            time.sleep(5)

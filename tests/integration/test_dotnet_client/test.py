@@ -1,14 +1,15 @@
 # coding: utf-8
 
 import datetime
+import logging
 import math
 import os
 import time
 
-import logging
 import docker
 import pytest
 from docker.models.containers import Container
+
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -37,19 +38,16 @@ def dotnet_container():
         DOCKER_COMPOSE_PATH, "docker_compose_dotnet_client.yml"
     )
     run_and_check(
-        [
-            "docker-compose",
-            "-p",
-            cluster.project_name,
+        cluster.compose_cmd(
             "-f",
             docker_compose,
             "up",
             "--force-recreate",
             "-d",
             "--no-build",
-        ]
+        )
     )
-    yield docker.from_env().containers.get(cluster.project_name + "_dotnet1_1")
+    yield docker.from_env().containers.get(cluster.get_instance_docker_id("dotnet1"))
 
 
 def test_dotnet_client(started_cluster, dotnet_container):

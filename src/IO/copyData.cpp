@@ -35,7 +35,7 @@ void copyDataImpl(ReadBuffer & from, WriteBuffer & to, bool check_bytes, size_t 
     }
 
     if (check_bytes && bytes > 0)
-        throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after EOF.");
+        throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after EOF, left to copy {} bytes.", bytes);
 }
 
 void copyDataImpl(ReadBuffer & from, WriteBuffer & to, bool check_bytes, size_t bytes, std::function<void()> cancellation_hook, ThrottlerPtr throttler)
@@ -107,6 +107,11 @@ void copyDataWithThrottler(ReadBuffer & from, WriteBuffer & to, const std::atomi
 void copyDataWithThrottler(ReadBuffer & from, WriteBuffer & to, size_t bytes, const std::atomic<int> & is_cancelled, ThrottlerPtr throttler)
 {
     copyDataImpl(from, to, true, bytes, &is_cancelled, throttler);
+}
+
+void copyDataWithThrottler(ReadBuffer & from, WriteBuffer & to, std::function<void()> cancellation_hook, ThrottlerPtr throttler)
+{
+    copyDataImpl(from, to, false, std::numeric_limits<size_t>::max(), cancellation_hook, throttler);
 }
 
 }

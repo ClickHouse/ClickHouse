@@ -1,3 +1,5 @@
+#include <Columns/IColumn.h>
+
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 
@@ -25,7 +27,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
@@ -75,12 +77,12 @@ void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const
             const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(value_type_ptr.get());
             if (!type_tuple)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Table function VALUES requires all but first argument (rows specification) to be either tuples or single values");
+                    "Table function VALUES requires all but the first argument (rows specification) to be either tuples or single values");
 
             const Tuple & value_tuple = value_field.safeGet<Tuple>();
 
             if (value_tuple.size() != sample_block.columns())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Values size should match with number of columns");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Values size should match with the number of columns");
 
             const DataTypes & value_types_tuple = type_tuple->getElements();
             for (size_t j = 0; j < value_tuple.size(); ++j)
@@ -112,7 +114,7 @@ void TableFunctionValues::parseArguments(const ASTPtr & ast_function, ContextPtr
     ASTs & args = args_func.at(0)->children;
 
     if (args.empty())
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires at least 1 argument", getName());
+        throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Table function '{}' requires at least 1 argument", getName());
 
     const auto & literal = args[0]->as<const ASTLiteral>();
     String value;
@@ -131,7 +133,7 @@ void TableFunctionValues::parseArguments(const ASTPtr & ast_function, ContextPtr
         if (data_types.size() != arg_types.size())
             throw Exception(
                 ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                "Cannot determine common structure for {} function arguments: the amount of columns is differ for different arguments",
+                "Cannot determine a common structure for {} function arguments: the amount of columns is different for different arguments",
                 getName());
         for (size_t j = 0; j != arg_types.size(); ++j)
             data_types[j] = getLeastSupertype(DataTypes{data_types[j], arg_types[j]});
@@ -174,7 +176,7 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, Context
 
 void registerTableFunctionValues(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionValues>({.documentation = {}, .allow_readonly = true}, TableFunctionFactory::CaseInsensitive);
+    factory.registerFunction<TableFunctionValues>({.documentation = {}, .allow_readonly = true}, TableFunctionFactory::Case::Insensitive);
 }
 
 }

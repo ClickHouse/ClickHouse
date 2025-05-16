@@ -1,42 +1,44 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/simplelinearregression
-sidebar_position: 220
+description: 'Performs simple (unidimensional) linear regression.'
+sidebar_position: 183
+slug: /sql-reference/aggregate-functions/reference/simplelinearregression
+title: 'simpleLinearRegression'
 ---
 
 # simpleLinearRegression
 
 Performs simple (unidimensional) linear regression.
 
-``` sql
+```sql
 simpleLinearRegression(x, y)
 ```
 
 Parameters:
 
-- `x` — Column with dependent variable values.
-- `y` — Column with explanatory variable values.
+- `x` — Column with explanatory variable values.
+- `y` — Column with dependent variable values.
 
 Returned values:
 
-Constants `(a, b)` of the resulting line `y = a*x + b`.
+Constants `(k, b)` of the resulting line `y = k*x + b`.
 
 **Examples**
 
-``` sql
+```sql
 SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3])
 ```
 
-``` text
+```text
 ┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3])─┐
 │ (1,0)                                                             │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-``` sql
+```sql
 SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])
 ```
 
-``` text
+```text
 ┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])─┐
 │ (1,3)                                                             │
 └───────────────────────────────────────────────────────────────────┘

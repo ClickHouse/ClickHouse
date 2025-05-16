@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 0;
+SET enable_analyzer = 0;
 
 SELECT count() > 3 FROM (EXPLAIN PIPELINE header = 1 SELECT * FROM system.numbers ORDER BY number DESC) WHERE explain LIKE '%Header: number UInt64%';
 SELECT count() > 0 FROM (EXPLAIN PLAN SELECT * FROM system.numbers ORDER BY number DESC) WHERE explain ILIKE '%Sort%';
@@ -32,9 +32,9 @@ SELECT count() == 1 FROM (EXPLAIN ESTIMATE SELECT sum(a) FROM t1);
 
 DROP TABLE t1;
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
-SELECT count() > 3 FROM (EXPLAIN PIPELINE header = 1 SELECT * FROM system.numbers ORDER BY number DESC) WHERE explain LIKE '%Header: number__ UInt64%';
+SELECT count() > 3 FROM (EXPLAIN PIPELINE header = 1 SELECT * FROM system.numbers ORDER BY number DESC) WHERE explain LIKE '%Header: \_\_table1.number UInt64%';
 SELECT count() > 0 FROM (EXPLAIN PLAN SELECT * FROM system.numbers ORDER BY number DESC) WHERE explain ILIKE '%Sort%';
 SELECT count() > 0 FROM (EXPLAIN SELECT * FROM system.numbers ORDER BY number DESC) WHERE explain ILIKE '%Sort%';
 SELECT count() > 0 FROM (EXPLAIN CURRENT TRANSACTION);

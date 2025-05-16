@@ -1,9 +1,7 @@
 #pragma once
 
-#include <Core/Names.h>
 #include <Core/Block.h>
-#include <Interpreters/Context_fwd.h>
-
+#include <Core/Names.h>
 
 namespace DB
 {
@@ -33,14 +31,14 @@ public:
 
     /// For unaligned [LEFT] ARRAY JOIN
     FunctionOverloadResolverPtr function_length;
-    FunctionOverloadResolverPtr function_greatest;
     FunctionOverloadResolverPtr function_array_resize;
 
     /// For LEFT ARRAY JOIN.
     FunctionOverloadResolverPtr function_builder;
 
-    ArrayJoinAction(const NameSet & array_joined_columns_, bool array_join_is_left, ContextPtr context);
-    void prepare(ColumnsWithTypeAndName & sample) const;
+    ArrayJoinAction(const Names & columns_, bool is_left_, bool is_unaligned_, size_t max_block_size_);
+    static void prepare(const NameSet & columns, ColumnsWithTypeAndName & sample);
+    static void prepare(const Names & columns, ColumnsWithTypeAndName & sample);
 
     ArrayJoinResultIteratorPtr execute(Block block);
 };

@@ -1,0 +1,54 @@
+Flat dictionary
+('zero','zero')
+('zero','zero')
+\N
+\N
+1
+\N
+Hashed dictionary
+('zero','zero')
+('zero','zero')
+\N
+\N
+1
+\N
+\N
+\N
+Hashed array dictionary
+('zero','zero')
+('zero','zero')
+\N
+\N
+1
+\N
+Range hashed dictionary
+\N
+\N
+Cache dictionary
+('zero','zero')
+('zero','zero')
+\N
+\N
+1
+\N
+Direct dictionary
+('zero','zero')
+('zero','zero')
+\N
+\N
+1
+\N
+IP TRIE dictionary
+NP
+NP
+NP
+(13238,'RU')
+(13238,'RU')
+(13238,'RU')
+POLYGON dictionary
+(0.5,0)	East
+(-0.5,0)	West
+(10,10)	0
+Regular Expression Tree dictionary
+Android
+Android

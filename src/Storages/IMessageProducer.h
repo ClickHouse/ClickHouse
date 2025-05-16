@@ -4,7 +4,7 @@
 
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Interpreters/Context.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 
 namespace Poco { class Logger; }
 
@@ -16,7 +16,7 @@ namespace DB
 class IMessageProducer
 {
 public:
-    explicit IMessageProducer(Poco::Logger * log_);
+    explicit IMessageProducer(LoggerPtr log_);
 
     /// Do some preparations.
     virtual void start(const ContextPtr & context) = 0;
@@ -27,17 +27,20 @@ public:
     /// Finalize producer.
     virtual void finish() = 0;
 
+    /// Cancel producer.
+    virtual void cancel() noexcept = 0;
+
     virtual ~IMessageProducer() = default;
 
 protected:
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 /// Implements interface for concurrent message producing.
 class AsynchronousMessageProducer : public IMessageProducer
 {
 public:
-    explicit AsynchronousMessageProducer(Poco::Logger * log_) : IMessageProducer(log_) {}
+    explicit AsynchronousMessageProducer(LoggerPtr log_) : IMessageProducer(log_) {}
 
     /// Create and schedule task in BackgroundSchedulePool that will produce messages.
     void start(const ContextPtr & context) override;
@@ -66,7 +69,7 @@ private:
     /// It's used to prevent doing finish logic more than once.
     std::atomic<bool> finished = false;
 
-    BackgroundSchedulePool::TaskHolder producing_task;
+    BackgroundSchedulePoolTaskHolder producing_task;
 
     std::atomic<bool> scheduled;
 };

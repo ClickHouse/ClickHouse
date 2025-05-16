@@ -6,6 +6,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/Settings.h>
 #include <Access/AccessControl.h>
 #include <Access/Role.h>
 #include <Access/User.h>
@@ -13,6 +14,7 @@
 #include <Interpreters/Context.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
 #include <Common/SettingConstraintWritability.h>
+#include <base/range.h>
 
 
 namespace DB
@@ -30,25 +32,28 @@ const std::vector<std::pair<String, Int8>> & getSettingConstraintWritabilityEnum
     return values;
 }
 
-NamesAndTypesList StorageSystemSettingsProfileElements::getNamesAndTypes()
+ColumnsDescription StorageSystemSettingsProfileElements::getColumnsDescription()
 {
-    NamesAndTypesList names_and_types{
-        {"profile_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"user_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"role_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"index", std::make_shared<DataTypeUInt64>()},
-        {"setting_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"value", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"min", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"max", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"writability", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum8>(getSettingConstraintWritabilityEnumValues()))},
-        {"inherit_profile", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+    return ColumnsDescription
+    {
+        {"profile_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Setting profile name."},
+        {"user_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "User name."},
+        {"role_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Role name."},
+        {"index", std::make_shared<DataTypeUInt64>(), "Sequential number of the settings profile element."},
+        {"setting_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Setting name."},
+        {"value", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Setting value."},
+        {"min", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "The minimum value of the setting. NULL if not set."},
+        {"max", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "The maximum value of the setting. NULL if not set."},
+        {"writability", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum8>(getSettingConstraintWritabilityEnumValues())), "The property which shows whether a setting can be changed or not."},
+        {"inherit_profile", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()),
+            "A parent profile for this setting profile. NULL if not set. "
+            "Setting profile will inherit all the settings' values and constraints (min, max, readonly) from its parent profiles."
+        },
     };
-    return names_and_types;
 }
 
 
-void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();

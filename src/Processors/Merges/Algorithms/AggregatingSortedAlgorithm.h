@@ -1,12 +1,14 @@
 #pragma once
 
-#include <Columns/ColumnAggregateFunction.h>
-#include <Common/AlignedBuffer.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
+#include <Common/AlignedBuffer.h>
 
 namespace DB
 {
+
+class ColumnAggregateFunction;
 
 /** Merges several sorted inputs to one.
   * During this for each group of consecutive identical values of the primary key (the columns by which the data is sorted),
@@ -29,6 +31,8 @@ public:
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
 
+    MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
+
     /// Stores information for aggregation of SimpleAggregateFunction columns
     struct SimpleAggregateDescription
     {
@@ -47,7 +51,7 @@ public:
         bool created = false;
 
         SimpleAggregateDescription(
-            AggregateFunctionPtr function_, const size_t column_number_,
+            AggregateFunctionPtr function_, size_t column_number_,
             DataTypePtr nested_type_, DataTypePtr real_type_);
 
         void createState();
@@ -82,6 +86,11 @@ public:
         ColumnsDefinition(ColumnsDefinition &&) noexcept; /// Is needed because destructor is defined.
         ~ColumnsDefinition(); /// Is needed because otherwise std::vector's destructor uses incomplete types.
 
+        /// Memory pool for SimpleAggregateFunction
+        /// (only when allocates_memory_in_arena == true).
+        std::unique_ptr<Arena> arena;
+        size_t arena_size = 0;
+
         /// Columns with which numbers should not be aggregated.
         ColumnNumbers column_numbers_not_to_aggregate;
         std::vector<AggregateDescription> columns_to_aggregate;
@@ -101,10 +110,11 @@ private:
 
     public:
         AggregatingMergedData(
-            MutableColumns columns_,
             UInt64 max_block_size_rows_,
             UInt64 max_block_size_bytes_,
             ColumnsDefinition & def_);
+
+        void initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs) override;
 
         /// Group is a group of rows with the same sorting key. It represents single row in result.
         /// Algorithm is: start group, add several rows, finish group.
@@ -119,11 +129,6 @@ private:
 
     private:
         ColumnsDefinition & def;
-
-        /// Memory pool for SimpleAggregateFunction
-        /// (only when allocates_memory_in_arena == true).
-        std::unique_ptr<Arena> arena;
-        size_t arena_size = 0;
 
         bool is_group_started = false;
 

@@ -1,10 +1,16 @@
 #pragma once
-#include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/VirtualColumnsDescription.h>
 
 namespace DB
 {
 
 class IStorage;
+class ICompressionCodec;
+
+using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
+
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /// Snapshot of storage that fixes set columns that can be read in query.
 /// There are 3 sources of columns: regular columns from metadata,
@@ -13,6 +19,7 @@ struct StorageSnapshot
 {
     const IStorage & storage;
     const StorageMetadataPtr metadata;
+    const VirtualsDescriptionPtr virtual_columns;
     const ColumnsDescription object_columns;
 
     /// Additional data, on which set of columns may depend.
@@ -25,42 +32,30 @@ struct StorageSnapshot
     using DataPtr = std::unique_ptr<Data>;
     DataPtr data;
 
-    /// Projection that is used in query.
-    mutable const ProjectionDescription * projection = nullptr;
-
     StorageSnapshot(
         const IStorage & storage_,
-        StorageMetadataPtr metadata_)
-        : storage(storage_), metadata(std::move(metadata_))
-    {
-        init();
-    }
+        StorageMetadataPtr metadata_);
 
     StorageSnapshot(
         const IStorage & storage_,
         StorageMetadataPtr metadata_,
-        ColumnsDescription object_columns_)
-        : storage(storage_)
-        , metadata(std::move(metadata_))
-        , object_columns(std::move(object_columns_))
-    {
-        init();
-    }
+        VirtualsDescriptionPtr virtual_columns_);
+
+    StorageSnapshot(
+        const IStorage & storage_,
+        StorageMetadataPtr metadata_,
+        ColumnsDescription object_columns_);
 
     StorageSnapshot(
         const IStorage & storage_,
         StorageMetadataPtr metadata_,
         ColumnsDescription object_columns_,
-        DataPtr data_)
-        : storage(storage_)
-        , metadata(std::move(metadata_))
-        , object_columns(std::move(object_columns_))
-        , data(std::move(data_))
-    {
-        init();
-    }
+        DataPtr data_);
 
     std::shared_ptr<StorageSnapshot> clone(DataPtr data_) const;
+
+    /// Get columns description
+    ColumnsDescription getAllColumnsDescription() const;
 
     /// Get all available columns with types according to options.
     NamesAndTypesList getColumns(const GetColumnsOptions & options) const;
@@ -82,20 +77,6 @@ struct StorageSnapshot
     void check(const Names & column_names) const;
 
     DataTypePtr getConcreteType(const String & column_name) const;
-
-    void addProjection(const ProjectionDescription * projection_) const { projection = projection_; }
-
-    /// If we have a projection then we should use its metadata.
-    StorageMetadataPtr getMetadataForQuery() const { return projection ? projection->metadata : metadata; }
-
-private:
-    void init();
-
-    std::unordered_map<String, DataTypePtr> virtual_columns;
-
-    /// System columns are not visible in the schema but might be persisted in the data.
-    /// One example of such column is lightweight delete mask '_row_exists'.
-    std::unordered_map<String, DataTypePtr> system_columns;
 };
 
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;

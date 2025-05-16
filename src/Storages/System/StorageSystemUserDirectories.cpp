@@ -9,19 +9,19 @@
 
 namespace DB
 {
-NamesAndTypesList StorageSystemUserDirectories::getNamesAndTypes()
+ColumnsDescription StorageSystemUserDirectories::getColumnsDescription()
 {
-    NamesAndTypesList names_and_types{
-        {"name", std::make_shared<DataTypeString>()},
-        {"type", std::make_shared<DataTypeString>()},
-        {"params", std::make_shared<DataTypeString>()},
-        {"precedence", std::make_shared<DataTypeUInt64>()},
+    return ColumnsDescription
+    {
+        {"name", std::make_shared<DataTypeString>(), "The name of the directory."},
+        {"type", std::make_shared<DataTypeString>(), "The type of the access storage e.g. users.xml or replicated or memory etc."},
+        {"params", std::make_shared<DataTypeString>(), "JSON with the parameters of the access storage."},
+        {"precedence", std::make_shared<DataTypeUInt64>(), "The order in which this directory is declared in the config. The same order is used when ClickHouse tries to find a user or role."},
     };
-    return names_and_types;
 }
 
 
-void StorageSystemUserDirectories::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemUserDirectories::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto & access_control = context->getAccessControl();
     auto storages = access_control.getStorages();

@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterCreateRowPolicyQuery.h>
 
 #include <Access/AccessControl.h>
@@ -10,7 +11,6 @@
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
-#include <Parsers/formatAST.h>
 #include <boost/range/algorithm/sort.hpp>
 
 
@@ -41,7 +41,7 @@ namespace
             policy.setRestrictive(*query.is_restrictive);
 
         for (const auto & [filter_type, filter] : query.filters)
-            policy.filters[static_cast<size_t>(filter_type)] = filter ? serializeAST(*filter) : String{};
+            policy.filters[static_cast<size_t>(filter_type)] = filter ? filter->formatWithSecretsOneLine() : String{};
 
         if (override_to_roles)
             policy.to_roles = *override_to_roles;
@@ -87,7 +87,7 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     Strings names = query.names->toStrings();
     if (query.alter)
     {
-        auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
+        auto update_func = [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
         {
             auto updated_policy = typeid_cast<std::shared_ptr<RowPolicy>>(entity->clone());
             updateRowPolicyFromQueryImpl(*updated_policy, query, {}, roles_from_query);
@@ -146,6 +146,15 @@ AccessRightsElements InterpreterCreateRowPolicyQuery::getRequiredAccess() const
     for (const auto & row_policy_name : query.names->full_names)
         res.emplace_back(access_type, row_policy_name.database, row_policy_name.table_name);
     return res;
+}
+
+void registerInterpreterCreateRowPolicyQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterCreateRowPolicyQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterCreateRowPolicyQuery", create_fn);
 }
 
 }

@@ -3,10 +3,10 @@
 #include <Parsers/Kusto/Utilities.h>
 #include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
 #include <boost/lexical_cast.hpp>
-#include <magic_enum.hpp>
+#include <base/EnumReflection.h>
 #include <pcg_random.hpp>
 #include <Poco/String.h>
-#include <format>
+
 #include <numeric>
 #include <stack>
 
@@ -24,9 +24,9 @@ constexpr DB::TokenType determineClosingPair(const DB::TokenType token_type)
 {
     if (token_type == DB::TokenType::OpeningCurlyBrace)
         return DB::TokenType::ClosingCurlyBrace;
-    else if (token_type == DB::TokenType::OpeningRoundBracket)
+    if (token_type == DB::TokenType::OpeningRoundBracket)
         return DB::TokenType::ClosingRoundBracket;
-    else if (token_type == DB::TokenType::OpeningSquareBracket)
+    if (token_type == DB::TokenType::OpeningSquareBracket)
         return DB::TokenType::ClosingSquareBracket;
 
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unhandled token: {}", magic_enum::enum_name(token_type));
@@ -73,7 +73,7 @@ bool IParserKQLFunction::directMapping(
 
     int argument_count = 0;
     const auto begin = pos;
-    while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+    while (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
         if (pos != begin)
             out.append(", ");
@@ -144,15 +144,16 @@ std::vector<std::string> IParserKQLFunction::getArguments(
 
 String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser::Pos & pos)
 {
-    int32_t round_bracket_count = 0, square_bracket_count = 0;
+    int32_t round_bracket_count = 0;
+    int32_t square_bracket_count = 0;
     if (pos->type == TokenType::ClosingRoundBracket || pos->type == TokenType::ClosingSquareBracket)
         return {};
 
-    if (pos->isEnd() || pos->type == TokenType::PipeMark || pos->type == TokenType::Semicolon)
+    if (!isValidKQLPos(pos) || pos->type == TokenType::PipeMark || pos->type == TokenType::Semicolon)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Need more argument(s) in function: {}", fn_name);
 
     std::vector<String> tokens;
-    while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+    while (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
         if (pos->type == TokenType::OpeningRoundBracket)
             ++round_bracket_count;
@@ -191,12 +192,12 @@ String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser:
                 {
                     ++pos;
                     String array_index;
-                    while (!pos->isEnd() && pos->type != TokenType::ClosingSquareBracket)
+                    while (isValidKQLPos(pos) && pos->type != TokenType::ClosingSquareBracket)
                     {
                         array_index += getExpression(pos);
                         ++pos;
                     }
-                    token = std::format("[ {0} >=0 ? {0} + 1 : {0}]", array_index);
+                    token = fmt::format("[ {0} >=0 ? {0} + 1 : {0}]", array_index);
                 }
                 else
                     token = String(pos->begin, pos->end);
@@ -246,7 +247,7 @@ IParserKQLFunction::getOptionalArgument(const String & function_name, DB::IParse
 
     const auto * begin = pos->begin;
     std::stack<DB::TokenType> scopes;
-    while (!pos->isEnd() && (!scopes.empty() || (pos->type != DB::TokenType::Comma && pos->type != DB::TokenType::ClosingRoundBracket)))
+    while (isValidKQLPos(pos) && (!scopes.empty() || (pos->type != DB::TokenType::Comma && pos->type != DB::TokenType::ClosingRoundBracket)))
     {
         const auto token_type = pos->type;
         if (isOpeningBracket(token_type))
@@ -279,13 +280,13 @@ String IParserKQLFunction::getKQLFunctionName(IParser::Pos & pos)
 }
 
 String IParserKQLFunction::kqlCallToExpression(
-    const std::string_view function_name, const std::initializer_list<const std::string_view> params, const uint32_t max_depth)
+    const std::string_view function_name, const std::initializer_list<const std::string_view> params, uint32_t max_depth, uint32_t max_backtracks)
 {
-    return kqlCallToExpression(function_name, std::span(params), max_depth);
+    return kqlCallToExpression(function_name, std::span(params), max_depth, max_backtracks);
 }
 
 String IParserKQLFunction::kqlCallToExpression(
-    const std::string_view function_name, const std::span<const std::string_view> params, const uint32_t max_depth)
+    const std::string_view function_name, const std::span<const std::string_view> params, uint32_t max_depth, uint32_t max_backtracks)
 {
     const auto params_str = std::accumulate(
         std::cbegin(params),
@@ -300,9 +301,9 @@ String IParserKQLFunction::kqlCallToExpression(
             return acc;
         });
 
-    const auto kql_call = std::format("{}({})", function_name, params_str);
-    DB::Tokens call_tokens(kql_call.c_str(), kql_call.c_str() + kql_call.length());
-    DB::IParser::Pos tokens_pos(call_tokens, max_depth);
+    const auto kql_call = fmt::format("{}({})", function_name, params_str);
+    Tokens call_tokens(kql_call.data(), kql_call.data() + kql_call.length(), 0, true);
+    IParser::Pos tokens_pos(call_tokens, max_depth, max_backtracks);
     return DB::IParserKQLFunction::getExpression(tokens_pos);
 }
 
@@ -357,12 +358,12 @@ String IParserKQLFunction::getExpression(IParser::Pos & pos)
     {
         ++pos;
         String array_index;
-        while (!pos->isEnd() && pos->type != TokenType::ClosingSquareBracket)
+        while (isValidKQLPos(pos) && pos->type != TokenType::ClosingSquareBracket)
         {
             array_index += getExpression(pos);
             ++pos;
         }
-        arg = std::format("[ {0} >=0 ? {0} + 1 : {0}]", array_index);
+        arg = fmt::format("[ {0} >=0 ? {0} + 1 : {0}]", array_index);
     }
 
     return arg;

@@ -22,7 +22,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 namespace
@@ -34,12 +35,12 @@ namespace
         const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
     {
         if (parameters.size() > 4)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
                 "Aggregate function {} requires at most four parameters: "
                 "learning_rate, l2_regularization_coef, mini-batch size and weights_updater method", name);
 
         if (argument_types.size() < 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
                 "Aggregate function {} requires at least two arguments: target and model's parameters", name);
 
         for (size_t i = 0; i < argument_types.size(); ++i)

@@ -2,8 +2,8 @@
 import time
 
 import pytest
-from helpers.cluster import ClickHouseCluster
 
+from helpers.cluster import ClickHouseCluster
 
 single_node_cluster = ClickHouseCluster(__file__)
 small_node = single_node_cluster.add_instance(

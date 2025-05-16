@@ -2,6 +2,8 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -10,7 +12,9 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeCustomGeo.h>
 #include <Common/typeid_cast.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -18,6 +22,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_TYPE;
+}
+
+ExternalResultDescription::ExternalResultDescription(const Block & sample_block_)
+{
+    init(sample_block_);
 }
 
 void ExternalResultDescription::init(const Block & sample_block_)
@@ -35,6 +44,12 @@ void ExternalResultDescription::init(const Block & sample_block_)
         bool is_nullable = elem.type->isNullable();
         DataTypePtr type_not_nullable = removeNullable(elem.type);
         const IDataType * type = type_not_nullable.get();
+
+        if (dynamic_cast<const DataTypePointName *>(type->getCustomName()))
+        {
+            types.emplace_back(ValueType::vtPoint, is_nullable);
+            continue;
+        }
 
         WhichDataType which(type);
 
@@ -74,6 +89,10 @@ void ExternalResultDescription::init(const Block & sample_block_)
             types.emplace_back(ValueType::vtEnum16, is_nullable);
         else if (which.isDateTime64())
             types.emplace_back(ValueType::vtDateTime64, is_nullable);
+        else if (which.isTime())
+            types.emplace_back(ValueType::vtTime, is_nullable);
+        else if (which.isTime64())
+            types.emplace_back(ValueType::vtTime64, is_nullable);
         else if (which.isDecimal32())
             types.emplace_back(ValueType::vtDecimal32, is_nullable);
         else if (which.isDecimal64())

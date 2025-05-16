@@ -1,5 +1,6 @@
 #pragma once
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Common/ThreadPool_fwd.h>
 #include <IO/AsyncReadCounters.h>
 #include <boost/heap/priority_queue.hpp>
@@ -13,18 +14,20 @@ using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 /// A class which is responsible for creating read tasks
 /// which are later taken by readers via getTask method.
 /// Does prefetching for the read tasks it creates.
-class MergeTreePrefetchedReadPool : public MergeTreeReadPoolBase, private WithContext
+class MergeTreePrefetchedReadPool : public MergeTreeReadPoolBase
 {
 public:
     MergeTreePrefetchedReadPool(
         RangesInDataParts && parts_,
+        MutationsSnapshotPtr mutations_snapshot_,
+        VirtualFields shared_virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
-        const Names & virtual_column_names_,
         const PoolSettings & settings_,
+        const MergeTreeReadTask::BlockSizeParams & params_,
         const ContextPtr & context_);
 
     String getName() const override { return "PrefetchedReadPool"; }
@@ -51,23 +54,23 @@ private:
     class PrefetchedReaders
     {
     public:
-        PrefetchedReaders() = default;
-        PrefetchedReaders(MergeTreeReadTask::Readers readers_, Priority priority_, MergeTreePrefetchedReadPool & pool_);
+        PrefetchedReaders(
+            ThreadPool & pool, MergeTreeReadTask::Readers readers_, Priority priority_, MergeTreePrefetchedReadPool & read_prefetch);
 
         void wait();
         MergeTreeReadTask::Readers get();
         bool valid() const { return is_valid; }
-        ~PrefetchedReaders();
 
     private:
         bool is_valid = false;
         MergeTreeReadTask::Readers readers;
-        std::vector<std::future<void>> prefetch_futures;
+
+        ThreadPoolCallbackRunnerLocal<void> prefetch_runner;
     };
 
     struct ThreadTask
     {
-        using InfoPtr = MergeTreeReadTask::InfoPtr;
+        using InfoPtr = MergeTreeReadTaskInfoPtr;
 
         ThreadTask(InfoPtr read_info_, MarkRanges ranges_, Priority priority_)
             : read_info(std::move(read_info_)), ranges(std::move(ranges_)), priority(priority_)
@@ -108,7 +111,7 @@ private:
 
     void startPrefetches();
     void createPrefetchedReadersForTask(ThreadTask & task);
-    std::future<void> createPrefetchedFuture(IMergeTreeReader * reader, Priority priority);
+    std::function<void()> createPrefetchedTask(IMergeTreeReader * reader, Priority priority);
 
     MergeTreeReadTaskPtr stealTask(size_t thread, MergeTreeReadTask * previous_task);
     MergeTreeReadTaskPtr createTask(ThreadTask & thread_task, MergeTreeReadTask * previous_task);
@@ -122,7 +125,7 @@ private:
     TasksPerThread per_thread_tasks;
     std::priority_queue<TaskHolder> prefetch_queue; /// the smallest on top
     bool started_prefetches = false;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// A struct which allows to track max number of tasks which were in the
     /// threadpool simultaneously (similar to CurrentMetrics, but the result

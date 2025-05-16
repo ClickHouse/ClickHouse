@@ -84,6 +84,10 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_in_untyped = arguments[0].column;
+
+        if (input_rows_count == 0)
+            return col_in_untyped;
+
         const double inverse_probability = assert_cast<const ColumnConst &>(*arguments[1].column).getValue<double>();
 
         if (inverse_probability < 0.0 || 1.0 < inverse_probability)
@@ -140,7 +144,7 @@ public:
 
             return col_to;
         }
-        else if (const ColumnFixedString * col_in_fixed = checkAndGetColumn<ColumnFixedString>(col_in_untyped.get()))
+        if (const ColumnFixedString * col_in_fixed = checkAndGetColumn<ColumnFixedString>(col_in_untyped.get()))
         {
             const auto n = col_in_fixed->getN();
             const auto col_in_rows = col_in_fixed->size();
@@ -159,20 +163,16 @@ public:
             if (col_in_rows >= input_rows_count)
                 fuzzBits(ptr_in, ptr_to, chars_to.size(), inverse_probability);
             else if (col_in_rows != 1)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "1 != col_in_rows {} < input_rows_count {}", col_in_rows, input_rows_count);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "1 != col_in_rows {} < input_rows_count {}", col_in_rows, input_rows_count);
             else
                 for (size_t i = 0; i < input_rows_count; ++i)
                     fuzzBits(ptr_in, ptr_to + i * n, n, inverse_probability);
 
             return col_to;
         }
-        else
-        {
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                arguments[0].column->getName(), getName());
-        }
+
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 };
 

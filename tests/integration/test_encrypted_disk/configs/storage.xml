@@ -5,7 +5,7 @@
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </disk_s3>
             <disk_local>
                 <type>local</type>
@@ -23,6 +23,7 @@
                 <key>1234567812345678</key>
             </disk_s3_encrypted_default_path>
             <s3_cache>
+                <type>cache</type>
                 <disk>disk_s3</disk>
                 <path>s3_cache/</path>
                 <max_size>1Gi</max_size>
@@ -95,7 +96,7 @@
                         <disk>disk_s3_encrypted_default_path</disk>
                     </main>
                 </volumes>
-            </s3_encrypted_default_path>_
+            </s3_encrypted_default_path>
             <s3_encrypted_cache_policy>
                 <volumes>
                     <main>
@@ -105,5 +106,7 @@
             </s3_encrypted_cache_policy>
          </policies>
     </storage_configuration>
+
+    <temporary_data_in_cache>s3_cache</temporary_data_in_cache>
     <allow_remove_stale_moving_parts>true</allow_remove_stale_moving_parts>
 </clickhouse>

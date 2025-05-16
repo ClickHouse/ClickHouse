@@ -31,7 +31,7 @@ struct IArraySource
 };
 
 template <typename Derived>
-class ArraySourceImpl : public Visitable<Derived, IArraySource, ArraySourceVisitor> {};
+class ArraySourceImpl : public Visitable<Derived, IArraySource, ArraySourceVisitor> {};  /// NOLINT(bugprone-crtp-constructor-accessibility)
 
 }
 

@@ -35,7 +35,7 @@ struct ArrayCountImpl
             const auto * column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of filter column");
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of filter column: {}; The result is expected to be a UInt8", mapped->getDataType());
 
             if (column_filter_const->getValue<UInt8>())
             {
@@ -52,8 +52,7 @@ struct ArrayCountImpl
 
                 return out_column;
             }
-            else
-                return DataTypeUInt32().createColumnConst(array.size(), 0u);
+            return DataTypeUInt32().createColumnConst(array.size(), 0u);
         }
 
         const IColumn::Filter & filter = column_filter->getData();
@@ -82,6 +81,23 @@ using FunctionArrayCount = FunctionArrayMapped<ArrayCountImpl, NameArrayCount>;
 
 REGISTER_FUNCTION(ArrayCount)
 {
+    FunctionDocumentation::Description description = R"(
+Returns the number of elements for which `func(arr1[i], ..., arrN[i])` returns something other than `0`.
+If `func` is not specified, it returns the number of non-zero elements in the array.
+
+`arrayCount` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions).
+    )";
+    FunctionDocumentation::Syntax syntax = "arrayCount([func, ] arr1, ...)";
+    FunctionDocumentation::Arguments arguments = {
+        {"func", "Function to apply to each element of the array(s). Optional. [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)"},
+        {"arr1, ..., arrN", "N arrays. [Array(T)](/sql-reference/data-types/array)."},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = "Returns the number of elements for which `func` returns something other than `0`. Otherwise, returns the number of non-zero elements in the array.";
+    FunctionDocumentation::Examples example = {{"Usage example", "SELECT arrayCount(x -> (x % 2), groupArray(number) FROM numbers(10)", "5"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+
     factory.registerFunction<FunctionArrayCount>();
 }
 

@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
@@ -46,8 +47,8 @@ public:
 
 REGISTER_FUNCTION(FQDN)
 {
-    factory.registerFunction<FunctionFQDN>({}, FunctionFactory::CaseInsensitive);
-    factory.registerFunction<FunctionFQDN>("fullHostName");
+    factory.registerFunction<FunctionFQDN>({}, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("fullHostName", "FQDN");
 }
 
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/BlockNameMap.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -25,7 +26,7 @@ private:
 
     String table_name;
     DataTypes types;
-    Block::NameMap column_indexes_by_names;
+    BlockNameMap column_indexes_by_names;
     const FormatSettings format_settings;
 };
 
@@ -37,6 +38,7 @@ public:
 private:
     NamesAndTypesList readSchema() override;
     std::optional<DataTypes> readRowAndGetDataTypes() override;
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
     String table_name;
 };

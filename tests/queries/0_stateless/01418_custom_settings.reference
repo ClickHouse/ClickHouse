@@ -30,10 +30,10 @@ custom_f	\'word\'
 --- compound identifier ---
 test	String
 custom_compound.identifier.v1	\'test\'
-CREATE SETTINGS PROFILE s1_01418 SETTINGS custom_compound.identifier.v2 = 100
+CREATE SETTINGS PROFILE `s1_01418` SETTINGS custom_compound.identifier.v2 = 100
 --- null type ---
 \N	Nullable(Nothing)
 custom_null	NULL
 \N	Nullable(Nothing)
 custom_null	NULL
-CREATE SETTINGS PROFILE s2_01418 SETTINGS custom_null = NULL
+CREATE SETTINGS PROFILE `s2_01418` SETTINGS custom_null = NULL

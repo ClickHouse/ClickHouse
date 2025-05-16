@@ -5,9 +5,9 @@
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -16,6 +16,7 @@
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/DictionarySourceFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Common/isLocalAddress.h>
 #include <Interpreters/Context.h>
@@ -55,7 +56,7 @@ String getAttributeExpression(const ASTDictionaryAttributeDeclaration * dict_att
     if (const auto * literal = dict_attr->expression->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
         expression_str = convertFieldToString(literal->value);
     else
-        expression_str = queryToString(dict_attr->expression);
+        expression_str = dict_attr->expression->formatWithSecretsOneLine();
 
     return expression_str;
 }
@@ -79,6 +80,14 @@ void buildLifetimeConfiguration(
 {
     if (!lifetime)
         return;
+
+    if (lifetime->min_sec > lifetime->max_sec)
+    {
+        throw DB::Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "{} parameter 'MIN' must be less than or equal to 'MAX'",
+            lifetime->getID(0));
+    }
 
     AutoPtr<Element> lifetime_element(doc->createElement("lifetime"));
     AutoPtr<Element> min_element(doc->createElement("min"));
@@ -135,6 +144,8 @@ void buildLayoutConfiguration(
         }
     }
 
+    const auto is_ssd_cache_layout = layout->layout_type.ends_with("ssd_cache");
+
     for (const auto & param : layout->parameters->children)
     {
         const ASTPair * pair = param->as<ASTPair>();
@@ -163,6 +174,17 @@ void buildLayoutConfiguration(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Dictionary layout parameter value must be an UInt64, Float64 or String, got '{}' instead",
                 value_field.getTypeName());
+        }
+
+        if (is_ssd_cache_layout)
+        {
+            if (value_field.getType() == Field::Types::UInt64 && value_field.safeGet<::UInt64>() == 0)
+            {
+                throw DB::Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "{} parameter value should be positive number",
+                    layout->getID(0));
+            }
         }
 
         AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair->first));
@@ -274,7 +296,7 @@ void buildSingleAttribute(
     attribute_element->appendChild(name_element);
 
     AutoPtr<Element> type_element(doc->createElement("type"));
-    AutoPtr<Text> type(doc->createTextNode(queryToString(dict_attr->type)));
+    AutoPtr<Text> type(doc->createTextNode(dict_attr->type->formatWithSecretsOneLine()));
     type_element->appendChild(type);
     attribute_element->appendChild(type_element);
 
@@ -381,6 +403,15 @@ void buildPrimaryKeyConfiguration(
         name_element->appendChild(name);
 
         buildAttributeExpressionIfNeeded(doc, id_element, dict_attr);
+
+        if (!dict_attr->type)
+            return;
+
+        AutoPtr<Element> type_element(doc->createElement("type"));
+        id_element->appendChild(type_element);
+
+        AutoPtr<Text> type(doc->createTextNode(dict_attr->type->formatWithSecretsOneLine()));
+        type_element->appendChild(type);
     }
     else
     {
@@ -429,7 +460,7 @@ AttributeNameToConfiguration buildDictionaryAttributesConfiguration(
         if (!dict_attr->type)
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Dictionary attribute must has type");
 
-        AttributeConfiguration attribute_configuration {queryToString(dict_attr->type), getAttributeExpression(dict_attr)};
+        AttributeConfiguration attribute_configuration {dict_attr->type->formatWithSecretsOneLine(), getAttributeExpression(dict_attr)};
         attributes_name_to_configuration.emplace(dict_attr->name, std::move(attribute_configuration));
 
         if (std::find(key_columns.begin(), key_columns.end(), dict_attr->name) == key_columns.end())
@@ -474,8 +505,13 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
             /// It's not possible to have a function in a dictionary definition since 22.10,
             /// because query must be normalized on dictionary creation. It's possible only when we load old metadata.
             /// For debug builds allow it only during server startup to avoid crash in BC check in Stress Tests.
-            assert(Context::getGlobalContextInstance()->getApplicationType() != Context::ApplicationType::SERVER
-                   || !Context::getGlobalContextInstance()->isServerCompletelyStarted());
+            if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER &&
+                Context::getGlobalContextInstance()->isServerCompletelyStarted())
+            {
+                throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
+                    "The dictionary definition contains unsupported elements. "
+                    "Please update the dictionary definition to remove function usage");
+            }
             auto builder = FunctionFactory::instance().tryGet(func->name, context);
             auto function = builder->build({});
             function->prepare({});
@@ -483,7 +519,7 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
             /// We assume that function will not take arguments and will return constant value like tcpPort or hostName
             /// Such functions will return column with size equal to input_rows_count.
             size_t input_rows_count = 1;
-            auto result = function->execute({}, function->getResultType(), input_rows_count);
+            auto result = function->execute({}, function->getResultType(), input_rows_count, /* dry_run = */ false);
 
             Field value;
             result->get(0, value);
@@ -518,8 +554,11 @@ void buildSourceConfiguration(
     AutoPtr<Element> root,
     const ASTFunctionWithKeyValueArguments * source,
     const ASTDictionarySettings * settings,
+    const String & dictionary_name,
     ContextPtr context)
 {
+    DictionarySourceFactory::instance().checkSourceAvailable(source->name, dictionary_name, context);
+
     AutoPtr<Element> outer_element(doc->createElement("source"));
     root->appendChild(outer_element);
     AutoPtr<Element> source_element(doc->createElement(source->name));
@@ -591,6 +630,10 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
     checkAST(query);
     checkLifetime(query);
 
+    String dictionary_name = query.getTable();
+    String db_name = !database_.empty() ? database_ : query.getDatabase();
+    String full_dictionary_name = (!db_name.empty() ? (db_name + ".") : "") + dictionary_name;
+
     AutoPtr<Poco::XML::Document> xml_document(new Poco::XML::Document());
     AutoPtr<Poco::XML::Element> document_root(xml_document->createElement("dictionaries"));
     xml_document->appendChild(document_root);
@@ -600,12 +643,12 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
 
     AutoPtr<Poco::XML::Element> name_element(xml_document->createElement("name"));
     current_dictionary->appendChild(name_element);
-    AutoPtr<Text> name(xml_document->createTextNode(query.getTable()));
+    AutoPtr<Text> name(xml_document->createTextNode(dictionary_name));
     name_element->appendChild(name);
 
     AutoPtr<Poco::XML::Element> database_element(xml_document->createElement("database"));
     current_dictionary->appendChild(database_element);
-    AutoPtr<Text> database(xml_document->createTextNode(!database_.empty() ? database_ : query.getDatabase()));
+    AutoPtr<Text> database(xml_document->createTextNode(db_name));
     database_element->appendChild(database);
 
     if (query.uuid != UUIDHelpers::Nil)
@@ -641,7 +684,7 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
     buildPrimaryKeyConfiguration(xml_document, structure_element, complex, pk_attrs, query.dictionary_attributes_list);
 
     buildLayoutConfiguration(xml_document, current_dictionary, query.dictionary->dict_settings, dictionary_layout);
-    buildSourceConfiguration(xml_document, current_dictionary, query.dictionary->source, query.dictionary->dict_settings, context);
+    buildSourceConfiguration(xml_document, current_dictionary, query.dictionary->source, query.dictionary->dict_settings, full_dictionary_name, context);
     buildLifetimeConfiguration(xml_document, current_dictionary, query.dictionary->lifetime);
 
     if (query.dictionary->range)

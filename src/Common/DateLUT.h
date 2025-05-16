@@ -1,16 +1,23 @@
 #pragma once
 
-#include "DateLUTImpl.h"
-
+#include <base/DayNum.h>
 #include <base/defines.h>
+#include <base/types.h>
 
 #include <boost/noncopyable.hpp>
-#include "Common/CurrentThread.h"
 
 #include <atomic>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+
+namespace DB
+{
+class Context;
+using ContextPtr = std::shared_ptr<const Context>;
+}
+
+class DateLUTImpl;
 
 
 /// This class provides lazy initialization and lookup of singleton DateLUTImpl objects for a given timezone.
@@ -20,38 +27,7 @@ public:
     /// Return DateLUTImpl instance for session timezone.
     /// session_timezone is a session-level setting.
     /// If setting is not set, returns the server timezone.
-    static ALWAYS_INLINE const DateLUTImpl & instance()
-    {
-        const auto & date_lut = getInstance();
-
-        if (DB::CurrentThread::isInitialized())
-        {
-            std::string timezone_from_context;
-            const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
-
-            if (query_context)
-            {
-                timezone_from_context = extractTimezoneFromContext(query_context);
-
-                if (!timezone_from_context.empty())
-                    return date_lut.getImplementation(timezone_from_context);
-            }
-
-            /// On the server side, timezone is passed in query_context,
-            /// but on CH-client side we have no query context,
-            /// and each time we modify client's global context
-            const DB::ContextPtr global_context = DB::CurrentThread::get().getGlobalContext();
-            if (global_context)
-            {
-                timezone_from_context = extractTimezoneFromContext(global_context);
-
-                if (!timezone_from_context.empty())
-                    return date_lut.getImplementation(timezone_from_context);
-            }
-
-        }
-        return serverTimezoneInstance();
-    }
+    static const DateLUTImpl & instance();
 
     static ALWAYS_INLINE const DateLUTImpl & instance(const std::string & time_zone)
     {
@@ -83,8 +59,6 @@ protected:
 private:
     static DateLUT & getInstance();
 
-    static std::string extractTimezoneFromContext(DB::ContextPtr query_context);
-
     const DateLUTImpl & getImplementation(const std::string & time_zone) const;
 
     using DateLUTImplPtr = std::unique_ptr<DateLUTImpl>;
@@ -115,3 +89,13 @@ inline UInt64 timeInNanoseconds(std::chrono::time_point<std::chrono::system_cloc
 {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(timepoint.time_since_epoch()).count();
 }
+
+/// A few helper functions to avoid having to include DateLUTImpl.h in some heavy headers
+
+ExtendedDayNum makeDayNum(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month, Int32 default_error_day_num = 0);
+
+Int64 makeDate(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month);
+Int64 makeDateTime(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month, UInt8 hour, UInt8 minute, UInt8 second);
+
+const std::string & getDateLUTTimeZone(const DateLUTImpl & date_lut);
+UInt32 getDayNumOffsetEpoch();

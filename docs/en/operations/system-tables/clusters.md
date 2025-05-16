@@ -1,14 +1,18 @@
 ---
-slug: /en/operations/system-tables/clusters
+description: 'System table containing information about clusters available in the
+  config file and the servers defined in them.'
+keywords: ['system table', 'clusters']
+slug: /operations/system-tables/clusters
+title: 'system.clusters'
 ---
-# clusters
 
 Contains information about clusters available in the config file and the servers in them.
 
 Columns:
 
 - `cluster` ([String](../../sql-reference/data-types/string.md)) — The cluster name.
-- `shard_num` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The shard number in the cluster, starting from 1.
+- `shard_num` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The shard number in the cluster, starting from 1. May change due to cluster modification.
+- `shard_name` ([String](../../sql-reference/data-types/string.md)) — The name of the shard in the cluster.
 - `shard_weight` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The relative weight of the shard when writing data.
 - `replica_num` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The replica number in the shard, starting from 1.
 - `host_name` ([String](../../sql-reference/data-types/string.md)) — The host name, as specified in the config.
@@ -19,7 +23,7 @@ Columns:
 - `default_database` ([String](../../sql-reference/data-types/string.md)) — The default database name.
 - `errors_count` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The number of times this host failed to reach replica.
 - `slowdowns_count` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The number of slowdowns that led to changing replica when establishing a connection with hedged requests.
-- `estimated_recovery_time` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Seconds remaining until the replica error count is zeroed and it is considered to be back to normal.
+- `estimated_recovery_time` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Seconds remaining until the replica error count is zeroed, and it is considered to be back to normal.
 - `database_shard_name` ([String](../../sql-reference/data-types/string.md)) — The name of the `Replicated` database shard (for clusters that belong to a `Replicated` database).
 - `database_replica_name` ([String](../../sql-reference/data-types/string.md)) — The name of the `Replicated` database replica (for clusters that belong to a `Replicated` database).
 - `is_active` ([Nullable(UInt8)](../../sql-reference/data-types/int-uint.md)) — The status of the `Replicated` database replica (for clusters that belong to a `Replicated` database): 1 means "replica is online", 0 means "replica is offline", `NULL` means "unknown".
@@ -40,6 +44,7 @@ Row 1:
 ──────
 cluster:                 test_cluster_two_shards
 shard_num:               1
+shard_name:              shard_01
 shard_weight:            1
 replica_num:             1
 host_name:               127.0.0.1
@@ -59,6 +64,7 @@ Row 2:
 ──────
 cluster:                 test_cluster_two_shards
 shard_num:               2
+shard_name:              shard_02
 shard_weight:            1
 replica_num:             1
 host_name:               127.0.0.2
@@ -78,5 +84,5 @@ is_active:               NULL
 **See Also**
 
 - [Table engine Distributed](../../engines/table-engines/special/distributed.md)
-- [distributed_replica_error_cap setting](../../operations/settings/settings.md#settings-distributed_replica_error_cap)
-- [distributed_replica_error_half_life setting](../../operations/settings/settings.md#settings-distributed_replica_error_half_life)
+- [distributed_replica_error_cap setting](../../operations/settings/settings.md#distributed_replica_error_cap)
+- [distributed_replica_error_half_life setting](../../operations/settings/settings.md#distributed_replica_error_half_life)

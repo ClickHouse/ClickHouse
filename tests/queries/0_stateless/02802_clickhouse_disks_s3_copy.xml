@@ -8,6 +8,13 @@
                <secret_access_key>clickhouse</secret_access_key>
                <s3_allow_native_copy>true</s3_allow_native_copy>
            </s3_plain_native_copy>
+           <s3_plain_another>
+               <type>s3_plain</type>
+               <endpoint>http://localhost:11111/test/clickhouse-disks/</endpoint>
+               <access_key_id>clickhouse</access_key_id>
+               <secret_access_key>clickhouse</secret_access_key>
+               <s3_allow_native_copy>true</s3_allow_native_copy>
+           </s3_plain_another>
 
            <s3_plain_no_native_copy>
                <type>s3_plain</type>

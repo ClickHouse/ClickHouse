@@ -1,9 +1,10 @@
 #pragma once
 
 #include <Poco/Net/TCPServerConnection.h>
-#include <Poco/SharedPtr.h>
-#include <Common/Exception.h>
 #include <Server/TCPProtocolStackData.h>
+#include <Poco/Util/LayeredConfiguration.h>
+
+#include "config.h"
 
 #if USE_SSL
 #   include <Poco/Net/Context.h>
@@ -14,11 +15,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int SUPPORT_IS_DISABLED;
-}
-
 class TLSHandler : public Poco::Net::TCPServerConnection
 {
 #if USE_SSL
@@ -27,30 +23,22 @@ class TLSHandler : public Poco::Net::TCPServerConnection
     using Context = Poco::Net::Context;
 #endif
     using StreamSocket = Poco::Net::StreamSocket;
+    using LayeredConfiguration = Poco::Util::LayeredConfiguration;
 public:
-    explicit TLSHandler(const StreamSocket & socket, const std::string & key_, const std::string & certificate_, TCPProtocolStackData & stack_data_)
-        : Poco::Net::TCPServerConnection(socket)
-        , key(key_)
-        , certificate(certificate_)
-        , stack_data(stack_data_)
-    {}
+    explicit TLSHandler(const StreamSocket & socket, const LayeredConfiguration & config_, const std::string & prefix_, TCPProtocolStackData & stack_data_);
 
-    void run() override
-    {
-#if USE_SSL
-        auto ctx = SSLManager::instance().defaultServerContext();
-        if (!key.empty() && !certificate.empty())
-            ctx = new Context(Context::Usage::SERVER_USE, key, certificate, ctx->getCAPaths().caLocation);
-        socket() = SecureStreamSocket::attach(socket(), ctx);
-        stack_data.socket = socket();
-        stack_data.certificate = certificate;
-#else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
-#endif
-    }
+    void run() override;
+
 private:
-    std::string key [[maybe_unused]];
-    std::string certificate [[maybe_unused]];
+#if USE_SSL
+    Context::Params params [[maybe_unused]];
+    Context::Usage usage [[maybe_unused]];
+    int disabled_protocols = 0;
+    bool extended_verification = false;
+    bool prefer_server_ciphers = false;
+    const LayeredConfiguration & config [[maybe_unused]];
+    std::string prefix [[maybe_unused]];
+#endif
     TCPProtocolStackData & stack_data [[maybe_unused]];
 };
 

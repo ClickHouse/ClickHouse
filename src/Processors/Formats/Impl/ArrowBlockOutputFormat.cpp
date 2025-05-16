@@ -3,11 +3,14 @@
 #if USE_ARROW
 
 #include <Formats/FormatFactory.h>
+#include <Processors/Port.h>
+
+#include "ArrowBufferedStreams.h"
+#include "CHColumnToArrowColumn.h"
+
 #include <arrow/ipc/writer.h>
 #include <arrow/table.h>
 #include <arrow/result.h>
-#include "ArrowBufferedStreams.h"
-#include "CHColumnToArrowColumn.h"
 
 
 namespace DB
@@ -53,9 +56,14 @@ void ArrowBlockOutputFormat::consume(Chunk chunk)
         ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(
             header,
             "Arrow",
-            format_settings.arrow.low_cardinality_as_dictionary,
-            format_settings.arrow.output_string_as_string,
-            format_settings.arrow.output_fixed_string_as_fixed_byte_array);
+            CHColumnToArrowColumn::Settings
+            {
+                format_settings.arrow.output_string_as_string,
+                format_settings.arrow.output_fixed_string_as_fixed_byte_array,
+                format_settings.arrow.low_cardinality_as_dictionary,
+                format_settings.arrow.use_signed_indexes_for_dictionary,
+                format_settings.arrow.use_64_bit_indexes_for_dictionary
+            });
     }
 
     auto chunks = std::vector<Chunk>();
@@ -126,6 +134,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, false, format_settings);
         });
     factory.markFormatHasNoAppendSupport("Arrow");
+    factory.markOutputFormatNotTTYFriendly("Arrow");
 
     factory.registerOutputFormat(
         "ArrowStream",
@@ -137,6 +146,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
         });
     factory.markFormatHasNoAppendSupport("ArrowStream");
     factory.markOutputFormatPrefersLargeBlocks("ArrowStream");
+    factory.markOutputFormatNotTTYFriendly("ArrowStream");
 }
 
 }

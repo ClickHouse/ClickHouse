@@ -20,33 +20,6 @@ PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_
     checkStateCorrect();
 }
 
-void PeekableReadBuffer::reset()
-{
-    checkStateCorrect();
-}
-
-void PeekableReadBuffer::setSubBuffer(ReadBuffer & sub_buf_)
-{
-    sub_buf = &sub_buf_;
-    resetImpl();
-}
-
-void PeekableReadBuffer::resetImpl()
-{
-    peeked_size = 0;
-    checkpoint = std::nullopt;
-    checkpoint_in_own_memory = false;
-    use_stack_memory = true;
-
-    if (!currentlyReadFromOwnMemory())
-        sub_buf->position() = pos;
-
-    Buffer & sub_working = sub_buf->buffer();
-    BufferBase::set(sub_working.begin(), sub_working.size(), sub_buf->offset());
-
-    checkStateCorrect();
-}
-
 bool PeekableReadBuffer::peekNext()
 {
     checkStateCorrect();
@@ -310,9 +283,7 @@ void PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
         {
             size_t pos_offset = pos - memory.data();
 
-            size_t new_size_amortized = memory.size() * 2;
-            if (new_size_amortized < new_size)
-                new_size_amortized = new_size;
+            size_t new_size_amortized = std::max(memory.size() * 2, new_size);
             memory.resize(new_size_amortized);
 
             if (need_update_checkpoint)

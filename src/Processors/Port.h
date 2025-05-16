@@ -1,10 +1,9 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <vector>
-#include <variant>
-#include <cstdint>
 
 #include <Core/Block.h>
 #include <Core/Defines.h>
@@ -110,7 +109,7 @@ protected:
                 return result;
             }
 
-            uintptr_t ALWAYS_INLINE swap(std::atomic<Data *> & value, std::uintptr_t flags, std::uintptr_t mask)
+            uintptr_t ALWAYS_INLINE swap(std::atomic<Data *> & value, std::uintptr_t flags, std::uintptr_t mask) /// NOLINT
             {
                 Data * expected = nullptr;
                 Data * desired = getPtr(flags | getUInt(data));

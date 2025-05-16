@@ -1,0 +1,24 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <hdd_blob>
+                <type>local_blob_storage</type>
+                <path>/</path>
+            </hdd_blob>
+            <cache1>
+                <type>cache</type>
+                <disk>hdd_blob</disk>
+                <path>/cache1/</path>
+                <max_size>1Mi</max_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+            </cache1>
+            <cache2>
+                <type>cache</type>
+                <disk>hdd_blob</disk>
+                <path>/cache1/</path>
+                <max_size>1Mi</max_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+            </cache2>
+        </disks>
+    </storage_configuration>
+</clickhouse>

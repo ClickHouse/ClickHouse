@@ -16,11 +16,11 @@ QUERY id: 0
           LIST id: 7, nodes: 1
             COLUMN id: 8, column_name: value, result_type: String, source_id: 5
   JOIN TREE
-    TABLE id: 5, table_name: default.test_table
+    TABLE id: 5, alias: __table1, table_name: default.test_table
   GROUP BY
     LIST id: 9, nodes: 2
-      COLUMN id: 4, column_name: id, result_type: UInt64, source_id: 5
-      COLUMN id: 8, column_name: value, result_type: String, source_id: 5
+      COLUMN id: 10, column_name: id, result_type: UInt64, source_id: 5
+      COLUMN id: 11, column_name: value, result_type: String, source_id: 5
 SELECT grouping(id) AS grouping_id, grouping(value) AS grouping_value, id, value FROM test_table
 GROUP BY id, value ORDER BY grouping_id, grouping_value;
 0	0	0	Value
@@ -42,11 +42,11 @@ QUERY id: 0, group_by_type: rollup
             COLUMN id: 9, column_name: __grouping_set, result_type: UInt64
             COLUMN id: 10, column_name: value, result_type: String, source_id: 6
   JOIN TREE
-    TABLE id: 6, table_name: default.test_table
+    TABLE id: 6, alias: __table1, table_name: default.test_table
   GROUP BY
     LIST id: 11, nodes: 2
-      COLUMN id: 5, column_name: id, result_type: UInt64, source_id: 6
-      COLUMN id: 10, column_name: value, result_type: String, source_id: 6
+      COLUMN id: 12, column_name: id, result_type: UInt64, source_id: 6
+      COLUMN id: 13, column_name: value, result_type: String, source_id: 6
 SELECT grouping(id) AS grouping_id, grouping(value) AS grouping_value, id, value FROM test_table
 GROUP BY ROLLUP (id, value) ORDER BY grouping_id, grouping_value;
 0	0	0	Value
@@ -70,11 +70,11 @@ QUERY id: 0, group_by_type: cube
             COLUMN id: 9, column_name: __grouping_set, result_type: UInt64
             COLUMN id: 10, column_name: value, result_type: String, source_id: 6
   JOIN TREE
-    TABLE id: 6, table_name: default.test_table
+    TABLE id: 6, alias: __table1, table_name: default.test_table
   GROUP BY
     LIST id: 11, nodes: 2
-      COLUMN id: 5, column_name: id, result_type: UInt64, source_id: 6
-      COLUMN id: 10, column_name: value, result_type: String, source_id: 6
+      COLUMN id: 12, column_name: id, result_type: UInt64, source_id: 6
+      COLUMN id: 13, column_name: value, result_type: String, source_id: 6
 SELECT grouping(id) AS grouping_id, grouping(value) AS grouping_value, id, value FROM test_table
 GROUP BY CUBE (id, value) ORDER BY grouping_id, grouping_value;
 0	0	0	Value
@@ -99,13 +99,13 @@ QUERY id: 0, group_by_type: grouping_sets
             COLUMN id: 9, column_name: __grouping_set, result_type: UInt64
             COLUMN id: 10, column_name: value, result_type: String, source_id: 6
   JOIN TREE
-    TABLE id: 6, table_name: default.test_table
+    TABLE id: 6, alias: __table1, table_name: default.test_table
   GROUP BY
     LIST id: 11, nodes: 2
       LIST id: 12, nodes: 1
-        COLUMN id: 5, column_name: id, result_type: UInt64, source_id: 6
-      LIST id: 13, nodes: 1
-        COLUMN id: 10, column_name: value, result_type: String, source_id: 6
+        COLUMN id: 13, column_name: id, result_type: UInt64, source_id: 6
+      LIST id: 14, nodes: 1
+        COLUMN id: 15, column_name: value, result_type: String, source_id: 6
 SELECT grouping(id) AS grouping_id, grouping(value) AS grouping_value, id, value FROM test_table
 GROUP BY GROUPING SETS (id, value) ORDER BY grouping_id, grouping_value;
 0	1	0	
@@ -128,13 +128,13 @@ QUERY id: 0, group_by_type: grouping_sets
             COLUMN id: 9, column_name: __grouping_set, result_type: UInt64
             COLUMN id: 10, column_name: value, result_type: String, source_id: 6
   JOIN TREE
-    TABLE id: 6, table_name: default.test_table
+    TABLE id: 6, alias: __table1, table_name: default.test_table
   GROUP BY
     LIST id: 11, nodes: 2
       LIST id: 12, nodes: 1
-        COLUMN id: 5, column_name: id, result_type: UInt64, source_id: 6
-      LIST id: 13, nodes: 1
-        COLUMN id: 10, column_name: value, result_type: String, source_id: 6
+        COLUMN id: 13, column_name: id, result_type: UInt64, source_id: 6
+      LIST id: 14, nodes: 1
+        COLUMN id: 15, column_name: value, result_type: String, source_id: 6
 SELECT grouping(id) AS grouping_id, grouping(value) AS grouping_value, id, value FROM test_table
 GROUP BY GROUPING SETS ((id), (value)) ORDER BY grouping_id, grouping_value;
 0	1	0	

@@ -1,13 +1,24 @@
 ---
-slug: /en/operations/system-tables/backup_log
+description: 'System table containing logging entries with information about `BACKUP`
+  and `RESTORE` operations.'
+keywords: ['system table', 'backup_log']
+slug: /operations/system-tables/backup_log
+title: 'system.backup_log'
 ---
-# backup_log
 
-Contains logging entries with the information about `BACKUP` and `RESTORE` operations.
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.backup_log
+
+<SystemTableCloud/>
+
+Contains logging entries with information about `BACKUP` and `RESTORE` operations.
 
 Columns:
 
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — Date of the entry.
+- `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time of the entry.
 - `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Time of the entry with microseconds precision.
 - `id` ([String](../../sql-reference/data-types/string.md)) — Identifier of the backup or restore operation.
 - `name` ([String](../../sql-reference/data-types/string.md)) — Name of the backup storage (the contents of the `FROM` or `TO` clause).
@@ -21,13 +32,13 @@ Columns:
 - `error` ([String](../../sql-reference/data-types/string.md)) — Error message of the failed operation (empty string for successful operations).
 - `start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time of the operation.
 - `end_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — End time of the operation.
-- `num_files` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of files stored in the backup.
-- `total_size` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Total size of files stored in the backup.
-- `num_entries` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of entries in the backup, i.e. the number of files inside the folder if the backup is stored as a folder, or the number of files inside the archive if the backup is stored as an archive. It is not the same as `num_files` if it's an incremental backup or if it contains empty files or duplicates. The following is always true: `num_entries <= num_files`.
-- `uncompressed_size` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Uncompressed size of the backup.
-- `compressed_size` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Compressed size of the backup. If the backup is not stored as an archive it equals to `uncompressed_size`.
-- `files_read` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of files read during the restore operation.
-- `bytes_read` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Total size of files read during the restore operation.
+- `num_files` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of files stored in the backup.
+- `total_size` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Total size of files stored in the backup.
+- `num_entries` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of entries in the backup, i.e. the number of files inside the folder if the backup is stored as a folder, or the number of files inside the archive if the backup is stored as an archive. It is not the same as `num_files` if it's an incremental backup or if it contains empty files or duplicates. The following is always true: `num_entries <= num_files`.
+- `uncompressed_size` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Uncompressed size of the backup.
+- `compressed_size` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Compressed size of the backup. If the backup is not stored as an archive it equals to `uncompressed_size`.
+- `files_read` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of files read during the restore operation.
+- `bytes_read` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Total size of files read during the restore operation.
 
 **Example**
 
@@ -45,6 +56,7 @@ SELECT * FROM system.backup_log WHERE id = 'e5b74ecb-f6f1-426a-80be-872f90043885
 ```response
 Row 1:
 ──────
+hostname:                clickhouse.eu-central1.internal
 event_date:              2023-08-19
 event_time_microseconds: 2023-08-19 11:05:21.998566
 id:                      e5b74ecb-f6f1-426a-80be-872f90043885
@@ -63,7 +75,9 @@ bytes_read:              0
 
 Row 2:
 ──────
+hostname:                clickhouse.eu-central1.internal
 event_date:              2023-08-19
+event_time:              2023-08-19 11:08:56
 event_time_microseconds: 2023-08-19 11:08:56.916192
 id:                      e5b74ecb-f6f1-426a-80be-872f90043885
 name:                    Disk('backups_disk', '1.zip')
@@ -93,6 +107,7 @@ SELECT * FROM system.backup_log WHERE id = 'cdf1f731-52ef-42da-bc65-2e1bfcd4ce90
 ```response
 Row 1:
 ──────
+hostname:                clickhouse.eu-central1.internal
 event_date:              2023-08-19
 event_time_microseconds: 2023-08-19 11:09:19.718077
 id:                      cdf1f731-52ef-42da-bc65-2e1bfcd4ce90
@@ -111,6 +126,7 @@ bytes_read:              0
 
 Row 2:
 ──────
+hostname:                clickhouse.eu-central1.internal
 event_date:              2023-08-19
 event_time_microseconds: 2023-08-19 11:09:29.334234
 id:                      cdf1f731-52ef-42da-bc65-2e1bfcd4ce90

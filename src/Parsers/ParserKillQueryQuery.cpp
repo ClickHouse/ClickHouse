@@ -14,16 +14,16 @@ bool ParserKillQueryQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     String cluster_str;
     auto query = std::make_shared<ASTKillQueryQuery>();
 
-    ParserKeyword p_kill{"KILL"};
-    ParserKeyword p_query{"QUERY"};
-    ParserKeyword p_mutation{"MUTATION"};
-    ParserKeyword p_part_move_to_shard{"PART_MOVE_TO_SHARD"};
-    ParserKeyword p_transaction{"TRANSACTION"};
-    ParserKeyword p_on{"ON"};
-    ParserKeyword p_test{"TEST"};
-    ParserKeyword p_sync{"SYNC"};
-    ParserKeyword p_async{"ASYNC"};
-    ParserKeyword p_where{"WHERE"};
+    ParserKeyword p_kill{Keyword::KILL};
+    ParserKeyword p_query{Keyword::QUERY};
+    ParserKeyword p_mutation{Keyword::MUTATION};
+    ParserKeyword p_part_move_to_shard{Keyword::PART_MOVE_TO_SHARD};
+    ParserKeyword p_transaction{Keyword::TRANSACTION};
+    ParserKeyword p_on{Keyword::ON};
+    ParserKeyword p_test{Keyword::TEST};
+    ParserKeyword p_sync{Keyword::SYNC};
+    ParserKeyword p_async{Keyword::ASYNC};
+    ParserKeyword p_where{Keyword::WHERE};
     ParserExpression p_where_expression;
 
     if (!p_kill.ignore(pos, expected))

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <pcg_random.hpp>
-
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MutateTask.h>
 #include <Storages/MergeTree/ReplicatedMergeMutateTaskBase.h>
@@ -9,7 +7,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ZeroCopyLock.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/randomSeed.h>
 
 namespace DB
 {
@@ -23,15 +20,20 @@ public:
         StorageReplicatedMergeTree & storage_,
         Callback && task_result_callback_)
         : ReplicatedMergeMutateTaskBase(
-            &Poco::Logger::get(storage_.getStorageID().getShortName() + "::" + selected_entry_->log_entry->new_part_name + " (MutateFromLogEntryTask)"),
+            getLogger(storage_.getStorageID().getShortName() + "::" + selected_entry_->log_entry->new_part_name + " (MutateFromLogEntryTask)"),
             storage_,
             selected_entry_,
             task_result_callback_)
-        , rng(randomSeed())
         {}
 
 
     Priority getPriority() const override { return priority; }
+
+    void cancel() noexcept override
+    {
+        if (mutate_task)
+            mutate_task->cancel();
+    }
 
 private:
 
@@ -60,7 +62,6 @@ private:
     FutureMergedMutatedPartPtr future_mutated_part{nullptr};
 
     MutateTaskPtr mutate_task;
-    pcg64 rng;
 };
 
 

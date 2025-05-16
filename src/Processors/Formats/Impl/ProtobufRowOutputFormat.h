@@ -4,11 +4,11 @@
 
 #if USE_PROTOBUF
 #    include <Processors/Formats/IRowOutputFormat.h>
-#   include <Formats/FormatSchemaInfo.h>
+#    include <Formats/FormatSchemaInfo.h>
+#    include <Formats/ProtobufSchemas.h>
 
 namespace DB
 {
-class DB;
 class ProtobufSerializer;
 class ProtobufWriter;
 class WriteBuffer;
@@ -43,6 +43,7 @@ private:
     void writeField(const IColumn &, const ISerialization &, size_t) override {}
 
     std::unique_ptr<ProtobufWriter> writer;
+    ProtobufSchemas::DescriptorHolder descriptor_holder;
     std::unique_ptr<ProtobufSerializer> serializer;
     const bool allow_multiple_rows;
 };

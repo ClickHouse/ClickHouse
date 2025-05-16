@@ -1,5 +1,9 @@
+#include <Access/Common/SQLSecurityDefs.h>
+#include <Common/Exception.h>
 #include <Core/SettingsEnums.h>
-#include <magic_enum.hpp>
+#include <base/EnumReflection.h>
+
+#include <boost/range/adaptor/map.hpp>
 
 
 namespace DB
@@ -15,6 +19,16 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL;
     extern const int UNKNOWN_UNION;
+}
+
+template <typename Type>
+constexpr auto getEnumValues()
+{
+    std::array<std::pair<std::string_view, Type>, magic_enum::enum_count<Type>()> enum_values{};
+    size_t index = 0;
+    for (auto value : magic_enum::enum_values<Type>())
+        enum_values[index++] = std::pair{magic_enum::enum_name(value), value};
+    return enum_values;
 }
 
 IMPLEMENT_SETTING_ENUM(LoadBalancing, ErrorCodes::UNKNOWN_LOAD_BALANCING,
@@ -55,6 +69,14 @@ IMPLEMENT_SETTING_ENUM(OverflowMode, ErrorCodes::UNKNOWN_OVERFLOW_MODE,
     {{"throw", OverflowMode::THROW},
      {"break", OverflowMode::BREAK}})
 
+IMPLEMENT_SETTING_ENUM(DistributedCacheLogMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"nothing", DistributedCacheLogMode::LOG_NOTHING},
+     {"on_error", DistributedCacheLogMode::LOG_ON_ERROR},
+     {"all", DistributedCacheLogMode::LOG_ALL}})
+
+IMPLEMENT_SETTING_ENUM(DistributedCachePoolBehaviourOnLimit, ErrorCodes::BAD_ARGUMENTS,
+    {{"wait", DistributedCachePoolBehaviourOnLimit::WAIT},
+     {"allocate_bypassing_pool", DistributedCachePoolBehaviourOnLimit::ALLOCATE_NEW_BYPASSING_POOL}});
 
 IMPLEMENT_SETTING_ENUM(OverflowModeGroupBy, ErrorCodes::UNKNOWN_OVERFLOW_MODE,
     {{"throw", OverflowMode::THROW},
@@ -69,11 +91,15 @@ IMPLEMENT_SETTING_ENUM(DistributedProductMode, ErrorCodes::UNKNOWN_DISTRIBUTED_P
      {"allow",  DistributedProductMode::ALLOW}})
 
 
-IMPLEMENT_SETTING_ENUM(QueryCacheNondeterministicFunctionHandling, ErrorCodes::BAD_ARGUMENTS,
-    {{"throw",  QueryCacheNondeterministicFunctionHandling::Throw},
-     {"save",   QueryCacheNondeterministicFunctionHandling::Save},
-     {"ignore", QueryCacheNondeterministicFunctionHandling::Ignore}})
+IMPLEMENT_SETTING_ENUM(QueryResultCacheNondeterministicFunctionHandling, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw",  QueryResultCacheNondeterministicFunctionHandling::Throw},
+     {"save",   QueryResultCacheNondeterministicFunctionHandling::Save},
+     {"ignore", QueryResultCacheNondeterministicFunctionHandling::Ignore}})
 
+IMPLEMENT_SETTING_ENUM(QueryResultCacheSystemTableHandling, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw",  QueryResultCacheSystemTableHandling::Throw},
+     {"save",   QueryResultCacheSystemTableHandling::Save},
+     {"ignore", QueryResultCacheSystemTableHandling::Ignore}})
 
 IMPLEMENT_SETTING_ENUM(DateTimeInputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"basic",       FormatSettings::DateTimeInputFormat::Basic},
@@ -115,6 +141,9 @@ IMPLEMENT_SETTING_ENUM(DistributedDDLOutputMode, ErrorCodes::BAD_ARGUMENTS,
     {{"none",         DistributedDDLOutputMode::NONE},
      {"throw",    DistributedDDLOutputMode::THROW},
      {"null_status_on_timeout", DistributedDDLOutputMode::NULL_STATUS_ON_TIMEOUT},
+     {"throw_only_active", DistributedDDLOutputMode::THROW_ONLY_ACTIVE},
+     {"null_status_on_timeout_only_active", DistributedDDLOutputMode::NULL_STATUS_ON_TIMEOUT_ONLY_ACTIVE},
+     {"none_only_active", DistributedDDLOutputMode::NONE_ONLY_ACTIVE},
      {"never_throw", DistributedDDLOutputMode::NEVER_THROW}})
 
 IMPLEMENT_SETTING_ENUM(StreamingHandleErrorMode, ErrorCodes::BAD_ARGUMENTS,
@@ -148,10 +177,42 @@ IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
      {"kusto", Dialect::kusto},
      {"prql", Dialect::prql}})
 
-
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
     {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},
      {"range", ParallelReplicasCustomKeyFilterType::RANGE}})
+
+IMPLEMENT_SETTING_ENUM(AlterUpdateMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"heavy", AlterUpdateMode::HEAVY},
+     {"lightweight", AlterUpdateMode::LIGHTWEIGHT},
+     {"lightweight_force", AlterUpdateMode::LIGHTWEIGHT_FORCE}})
+
+IMPLEMENT_SETTING_ENUM(UpdateParallelMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"sync", UpdateParallelMode::SYNC},
+     {"async", UpdateParallelMode::ASYNC},
+     {"auto", UpdateParallelMode::AUTO}})
+
+IMPLEMENT_SETTING_ENUM(LightweightDeleteMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"alter_update", LightweightDeleteMode::ALTER_UPDATE},
+     {"lightweight_update", LightweightDeleteMode::LIGHTWEIGHT_UPDATE},
+     {"lightweight_update_force", LightweightDeleteMode::LIGHTWEIGHT_UPDATE_FORCE}})
+
+IMPLEMENT_SETTING_ENUM(LightweightMutationProjectionMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw", LightweightMutationProjectionMode::THROW},
+     {"drop", LightweightMutationProjectionMode::DROP},
+     {"rebuild", LightweightMutationProjectionMode::REBUILD}})
+
+IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"ignore", DeduplicateMergeProjectionMode::IGNORE},
+     {"throw", DeduplicateMergeProjectionMode::THROW},
+     {"drop", DeduplicateMergeProjectionMode::DROP},
+     {"rebuild", DeduplicateMergeProjectionMode::REBUILD}})
+
+IMPLEMENT_SETTING_ENUM(ParallelReplicasMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"auto", ParallelReplicasMode::AUTO},
+     {"read_tasks", ParallelReplicasMode::READ_TASKS},
+     {"custom_key_sampling", ParallelReplicasMode::CUSTOM_KEY_SAMPLING},
+     {"custom_key_range", ParallelReplicasMode::CUSTOM_KEY_RANGE},
+     {"sampling_key", ParallelReplicasMode::SAMPLING_KEY}})
 
 IMPLEMENT_SETTING_AUTO_ENUM(LocalFSReadMethod, ErrorCodes::BAD_ARGUMENTS)
 
@@ -181,13 +242,13 @@ IMPLEMENT_SETTING_ENUM(ORCCompression, ErrorCodes::BAD_ARGUMENTS,
      {"zlib", FormatSettings::ORCCompression::ZLIB},
      {"lz4", FormatSettings::ORCCompression::LZ4}})
 
-IMPLEMENT_SETTING_ENUM(S3QueueMode, ErrorCodes::BAD_ARGUMENTS,
-                       {{"ordered", S3QueueMode::ORDERED},
-                        {"unordered", S3QueueMode::UNORDERED}})
+IMPLEMENT_SETTING_ENUM(ObjectStorageQueueMode, ErrorCodes::BAD_ARGUMENTS,
+                       {{"ordered", ObjectStorageQueueMode::ORDERED},
+                        {"unordered", ObjectStorageQueueMode::UNORDERED}})
 
-IMPLEMENT_SETTING_ENUM(S3QueueAction, ErrorCodes::BAD_ARGUMENTS,
-                       {{"keep", S3QueueAction::KEEP},
-                        {"delete", S3QueueAction::DELETE}})
+IMPLEMENT_SETTING_ENUM(ObjectStorageQueueAction, ErrorCodes::BAD_ARGUMENTS,
+                       {{"keep", ObjectStorageQueueAction::KEEP},
+                        {"delete", ObjectStorageQueueAction::DELETE}})
 
 IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
     {{"none", ExternalCommandStderrReaction::NONE},
@@ -196,9 +257,59 @@ IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
      {"log_last", ExternalCommandStderrReaction::LOG_LAST},
      {"throw", ExternalCommandStderrReaction::THROW}})
 
+IMPLEMENT_SETTING_ENUM(SchemaInferenceMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"default", SchemaInferenceMode::DEFAULT},
+     {"union", SchemaInferenceMode::UNION}})
+
 IMPLEMENT_SETTING_ENUM(DateTimeOverflowBehavior, ErrorCodes::BAD_ARGUMENTS,
-                       {{"throw", FormatSettings::DateTimeOverflowBehavior::Throw},
-                        {"ignore", FormatSettings::DateTimeOverflowBehavior::Ignore},
-                        {"saturate", FormatSettings::DateTimeOverflowBehavior::Saturate}})
+    {{"throw", FormatSettings::DateTimeOverflowBehavior::Throw},
+     {"ignore", FormatSettings::DateTimeOverflowBehavior::Ignore},
+     {"saturate", FormatSettings::DateTimeOverflowBehavior::Saturate}})
+
+IMPLEMENT_SETTING_ENUM(SQLSecurityType, ErrorCodes::BAD_ARGUMENTS,
+    {{"DEFINER", SQLSecurityType::DEFINER},
+     {"INVOKER", SQLSecurityType::INVOKER},
+     {"NONE", SQLSecurityType::NONE}})
+
+IMPLEMENT_SETTING_ENUM(
+    GroupArrayActionWhenLimitReached,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"throw", GroupArrayActionWhenLimitReached::THROW}, {"discard", GroupArrayActionWhenLimitReached::DISCARD}})
+
+IMPLEMENT_SETTING_ENUM(
+    IdentifierQuotingStyle,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"Backticks", IdentifierQuotingStyle::Backticks},
+     {"DoubleQuotes", IdentifierQuotingStyle::DoubleQuotes},
+     {"BackticksMySQL", IdentifierQuotingStyle::BackticksMySQL}})
+
+IMPLEMENT_SETTING_ENUM(
+    IdentifierQuotingRule,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"user_display", IdentifierQuotingRule::UserDisplay},
+     {"when_necessary", IdentifierQuotingRule::WhenNecessary},
+     {"always", IdentifierQuotingRule::Always}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeSelectorAlgorithm,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"Simple", MergeSelectorAlgorithm::SIMPLE},
+     {"StochasticSimple", MergeSelectorAlgorithm::STOCHASTIC_SIMPLE},
+     {"Trivial", MergeSelectorAlgorithm::TRIVIAL}})
+
+IMPLEMENT_SETTING_ENUM(
+    DatabaseDataLakeCatalogType,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"rest", DatabaseDataLakeCatalogType::ICEBERG_REST},
+     {"unity", DatabaseDataLakeCatalogType::UNITY},
+     {"glue", DatabaseDataLakeCatalogType::GLUE},
+     {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE}})
+
+IMPLEMENT_SETTING_ENUM(
+    VectorSearchFilterStrategy,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"auto", VectorSearchFilterStrategy::AUTO},
+     {"prefilter", VectorSearchFilterStrategy::PREFILTER},
+     {"postfilter", VectorSearchFilterStrategy::POSTFILTER}})
 
 }

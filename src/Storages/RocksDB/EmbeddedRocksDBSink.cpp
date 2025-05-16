@@ -29,7 +29,7 @@ EmbeddedRocksDBSink::EmbeddedRocksDBSink(
     serializations = getHeader().getSerializations();
 }
 
-void EmbeddedRocksDBSink::consume(Chunk chunk)
+void EmbeddedRocksDBSink::consume(Chunk & chunk)
 {
     auto rows = chunk.getNumRows();
     const auto & columns = chunk.getColumns();

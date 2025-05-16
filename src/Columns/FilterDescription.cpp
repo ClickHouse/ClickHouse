@@ -1,6 +1,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Columns/FilterDescription.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
@@ -32,7 +33,7 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
 
         if (!typeid_cast<const ColumnUInt8 *>(column_nested.get()))
         {
-            const ColumnNullable * column_nested_nullable = checkAndGetColumn<ColumnNullable>(*column_nested);
+            const ColumnNullable * column_nested_nullable = checkAndGetColumn<ColumnNullable>(&*column_nested);
             if (!column_nested_nullable || !typeid_cast<const ColumnUInt8 *>(&column_nested_nullable->getNestedColumn()))
             {
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
@@ -66,7 +67,7 @@ FilterDescription::FilterDescription(const IColumn & column_)
         return;
     }
 
-    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(column))
+    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&column))
     {
         ColumnPtr nested_column = nullable_column->getNestedColumnPtr();
         MutableColumnPtr mutable_holder = IColumn::mutate(std::move(nested_column));
@@ -99,6 +100,27 @@ FilterDescription::FilterDescription(const IColumn & column_)
         column.getName());
 }
 
+ColumnPtr FilterDescription::filter(const IColumn & column, ssize_t result_size_hint) const
+{
+    return column.filter(*data, result_size_hint);
+}
+
+size_t FilterDescription::countBytesInFilter() const
+{
+    return DB::countBytesInFilter(*data);
+}
+
+ColumnPtr SparseFilterDescription::filter(const IColumn & column, ssize_t) const
+{
+    return column.index(*filter_indices, 0);
+}
+
+size_t SparseFilterDescription::countBytesInFilter() const
+{
+    return filter_indices->size();
+}
+
+
 SparseFilterDescription::SparseFilterDescription(const IColumn & column)
 {
     const auto * column_sparse = typeid_cast<const ColumnSparse *>(&column);
@@ -106,7 +128,7 @@ SparseFilterDescription::SparseFilterDescription(const IColumn & column)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
             "Illegal type {} of column for sparse filter. Must be Sparse(UInt8)", column.getName());
 
-    filter_indices = &column_sparse->getOffsetsColumn();
+    filter_indices = &assert_cast<const ColumnUInt64 &>(column_sparse->getOffsetsColumn());
 }
 
 }

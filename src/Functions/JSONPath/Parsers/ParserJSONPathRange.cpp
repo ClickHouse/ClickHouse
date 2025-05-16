@@ -46,7 +46,7 @@ bool ParserJSONPathRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         {
             return false;
         }
-        range_indices.first = static_cast<UInt32>(number_ptr->as<ASTLiteral>()->value.get<UInt32>());
+        range_indices.first = static_cast<UInt32>(number_ptr->as<ASTLiteral>()->value.safeGet<UInt32>());
 
         if (pos->type == TokenType::Comma || pos->type == TokenType::ClosingSquareBracket)
         {
@@ -55,7 +55,7 @@ bool ParserJSONPathRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         }
         else if (pos->type == TokenType::BareWord)
         {
-            if (!ParserKeyword("TO").ignore(pos, expected))
+            if (!ParserKeyword(Keyword::TO).ignore(pos, expected))
             {
                 return false;
             }
@@ -63,7 +63,7 @@ bool ParserJSONPathRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
             {
                 return false;
             }
-            range_indices.second = static_cast<UInt32>(number_ptr->as<ASTLiteral>()->value.get<UInt32>());
+            range_indices.second = static_cast<UInt32>(number_ptr->as<ASTLiteral>()->value.safeGet<UInt32>());
         }
         else
         {

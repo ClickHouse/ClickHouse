@@ -1,25 +1,27 @@
 #include "Interpreters/Context_fwd.h"
 
-#include <Storages/StorageURLCluster.h>
-
+#include <Common/HTTPHeaderFilter.h>
 #include <Core/QueryProcessingStage.h>
-#include <DataTypes/DataTypeString.h>
-#include <Interpreters/getHeaderForProcessingStage.h>
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/TranslateQualifiedNamesVisitor.h>
-#include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <QueryPipeline/RemoteQueryExecutor.h>
+#include <Core/Settings.h>
 
-#include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
+
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/TranslateQualifiedNamesVisitor.h>
+#include <Interpreters/getHeaderForProcessingStage.h>
 
 #include <Processors/Sources/RemoteSource.h>
-#include <Parsers/queryToString.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageURL.h>
-#include <Storages/extractTableFunctionArgumentsFromSelectQuery.h>
+#include <Storages/StorageURLCluster.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/extractTableFunctionFromSelectQuery.h>
 
 #include <TableFunctions/TableFunctionURLCluster.h>
 
@@ -34,57 +36,89 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace Setting
+{
+    extern const SettingsUInt64 glob_expansion_max_elements;
+}
+
 StorageURLCluster::StorageURLCluster(
-    ContextPtr context_,
+    const ContextPtr & context,
     const String & cluster_name_,
     const String & uri_,
     const String & format_,
-    const String & compression_method_,
+    const String & compression_method,
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const StorageURL::Configuration & configuration_,
-    bool structure_argument_was_provided_)
-    : IStorageCluster(cluster_name_, table_id_, &Poco::Logger::get("StorageURLCluster (" + table_id_.table_name + ")"), structure_argument_was_provided_)
-    , uri(uri_)
+    const StorageURL::Configuration & configuration_)
+    : IStorageCluster(cluster_name_, table_id_, getLogger("StorageURLCluster (" + table_id_.getFullTableName() + ")"))
+    , uri(uri_), format_name(format_)
 {
-    context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
-    context_->getHTTPHeaderFilter().checkHeaders(configuration_.headers);
+    context->getRemoteHostFilter().checkURL(Poco::URI(uri));
+    context->getHTTPHeaderFilter().checkHeaders(configuration_.headers);
 
     StorageInMemoryMetadata storage_metadata;
 
     if (columns_.empty())
     {
-        auto columns = StorageURL::getTableStructureFromData(format_,
-            uri,
-            chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method_),
-            configuration_.headers,
-            std::nullopt,
-            context_);
+        ColumnsDescription columns;
+        if (format_name == "auto")
+            std::tie(columns, format_name) = StorageURL::getTableStructureAndFormatFromData(
+                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), configuration_.headers, std::nullopt, context);
+        else
+            columns = StorageURL::getTableStructureFromData(
+                format_, uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), configuration_.headers, std::nullopt, context);
+
         storage_metadata.setColumns(columns);
     }
     else
+    {
+        if (format_name == "auto")
+            format_name = StorageURL::getTableStructureAndFormatFromData(
+                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), configuration_.headers, std::nullopt, context).second;
+
         storage_metadata.setColumns(columns_);
+    }
+
+    auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context, getSampleURI(uri, context));
+    if (!storage_metadata.getColumns().has("_headers"))
+    {
+        virtual_columns_desc.addEphemeral(
+            "_headers",
+            std::make_shared<DataTypeMap>(
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
+            "");
+    }
 
     storage_metadata.setConstraints(constraints_);
+    setVirtuals(virtual_columns_desc);
     setInMemoryMetadata(storage_metadata);
-
-    virtual_columns = VirtualColumnUtils::getPathAndFileVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
-void StorageURLCluster::addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context)
+void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context)
 {
-    ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(query);
+    auto * table_function = extractTableFunctionFromSelectQuery(query);
+    if (!table_function)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", query->formatForErrorMessage());
+
+    auto * expression_list = table_function->arguments->as<ASTExpressionList>();
     if (!expression_list)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", queryToString(query));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", query->formatForErrorMessage());
 
-    TableFunctionURLCluster::addColumnsStructureToArguments(expression_list->children, structure, context);
+    TableFunctionURLCluster::updateStructureAndFormatArgumentsIfNeeded(
+        table_function,
+        storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(),
+        format_name,
+        context
+    );
 }
 
-RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(ASTPtr query, const ContextPtr & context) const
+RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context, size_t) const
 {
-    auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(uri, context->getSettingsRef().glob_expansion_max_elements, query, virtual_columns, context);
-    auto callback = std::make_shared<TaskIterator>([iter = std::move(iterator)]() mutable -> String { return iter->next(); });
+    auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(
+        uri, context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, getVirtualsList(), context);
+    auto callback = std::make_shared<TaskIterator>([iter = std::move(iterator)](size_t) mutable -> String { return iter->next(); });
     return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
 }
 

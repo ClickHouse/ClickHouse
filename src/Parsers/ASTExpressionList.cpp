@@ -12,66 +12,65 @@ ASTPtr ASTExpressionList::clone() const
     return clone;
 }
 
-void ASTExpressionList::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTExpressionList::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     if (frame.expression_list_prepend_whitespace)
-        settings.ostr << ' ';
+        ostr << ' ';
 
-    for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
+    for (size_t i = 0, size = children.size(); i < size; ++i)
     {
-        if (it != children.begin())
+        if (i)
         {
             if (separator)
-                settings.ostr << separator;
-            settings.ostr << ' ';
+                ostr << separator;
+            ostr << ' ';
         }
-
-        if (frame.surround_each_list_element_with_parens)
-            settings.ostr << "(";
 
         FormatStateStacked frame_nested = frame;
         frame_nested.surround_each_list_element_with_parens = false;
-        (*it)->formatImpl(settings, state, frame_nested);
+        frame_nested.list_element_index = i;
 
         if (frame.surround_each_list_element_with_parens)
-            settings.ostr << ")";
+            ostr << "(";
+
+        children[i]->format(ostr, settings, state, frame_nested);
+
+        if (frame.surround_each_list_element_with_parens)
+            ostr << ")";
     }
 }
 
-void ASTExpressionList::formatImplMultiline(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTExpressionList::formatImplMultiline(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    std::string indent_str = "\n" + std::string(4 * (frame.indent + 1), ' ');
+    ++frame.indent;
+    std::string indent_str = "\n" + std::string(4 * frame.indent, ' ');
 
     if (frame.expression_list_prepend_whitespace)
     {
         if (!(children.size() > 1 || frame.expression_list_always_start_on_new_line))
-            settings.ostr << ' ';
+            ostr << ' ';
     }
 
-    ++frame.indent;
-
-    for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
+    for (size_t i = 0, size = children.size(); i < size; ++i)
     {
-        if (it != children.begin())
-        {
-            if (separator)
-                settings.ostr << separator;
-        }
+        if (i && separator)
+            ostr << separator;
 
-        if (children.size() > 1 || frame.expression_list_always_start_on_new_line)
-            settings.ostr << indent_str;
+        if (size > 1 || frame.expression_list_always_start_on_new_line)
+            ostr << indent_str;
 
         FormatStateStacked frame_nested = frame;
         frame_nested.expression_list_always_start_on_new_line = false;
         frame_nested.surround_each_list_element_with_parens = false;
+        frame_nested.list_element_index = i;
 
         if (frame.surround_each_list_element_with_parens)
-            settings.ostr << "(";
+            ostr << "(";
 
-        (*it)->formatImpl(settings, state, frame_nested);
+        children[i]->format(ostr, settings, state, frame_nested);
 
         if (frame.surround_each_list_element_with_parens)
-            settings.ostr << ")";
+            ostr << ")";
     }
 }
 

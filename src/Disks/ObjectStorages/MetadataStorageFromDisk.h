@@ -5,8 +5,11 @@
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
-#include <Disks/ObjectStorages/MetadataFromDiskTransactionState.h>
+#include <Disks/ObjectStorages/MetadataOperationsHolder.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
+#include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
+
+#include <shared_mutex>
 
 namespace DB
 {
@@ -14,7 +17,7 @@ namespace DB
 struct UnlinkMetadataFileOperationOutcome;
 using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
 
-/// Store metadata on a separate disk
+/// Stores metadata on a separate disk
 /// (used for object storages, like S3 and related).
 class MetadataStorageFromDisk final : public IMetadataStorage
 {
@@ -32,11 +35,14 @@ public:
 
     const std::string & getPath() const override;
 
-    bool exists(const std::string & path) const override;
+    MetadataStorageType getType() const override { return MetadataStorageType::Local; }
 
-    bool isFile(const std::string & path) const override;
+    /// Metadata on disk for an empty file can store empty list of blobs and size=0
+    bool supportsEmptyFilesWithoutBlobs() const override { return true; }
 
-    bool isDirectory(const std::string & path) const override;
+    bool existsFile(const std::string & path) const override;
+    bool existsDirectory(const std::string & path) const override;
+    bool existsFileOrDirectory(const std::string & path) const override;
 
     uint64_t getFileSize(const String & path) const override;
 
@@ -47,6 +53,8 @@ public:
     bool supportsChmod() const override { return disk->supportsChmod(); }
 
     bool supportsStat() const override { return disk->supportsStat(); }
+
+    bool supportsPartitionCommand(const PartitionCommand & command) const override;
 
     struct stat stat(const String & path) const override { return disk->stat(path); }
 
@@ -72,17 +80,10 @@ public:
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<SharedMutex> & lock) const;
 };
 
-class MetadataStorageFromDiskTransaction final : public IMetadataTransaction
+class MetadataStorageFromDiskTransaction final : public IMetadataTransaction, private MetadataOperationsHolder
 {
 private:
     const MetadataStorageFromDisk & metadata_storage;
-
-    std::vector<MetadataOperationPtr> operations;
-    MetadataFromDiskTransactionState state{MetadataFromDiskTransactionState::PREPARING};
-
-    void addOperation(MetadataOperationPtr && operation);
-
-    void rollback(size_t until_pos);
 
 public:
     explicit MetadataStorageFromDiskTransaction(const MetadataStorageFromDisk & metadata_storage_)
@@ -133,6 +134,7 @@ public:
 
     UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
+    TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t target_size) override;
 
 };
 

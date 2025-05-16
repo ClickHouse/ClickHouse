@@ -26,7 +26,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-SET max_insert_threads = 0;
+SET max_insert_threads = 0, output_format_pretty_row_numbers = 0;
 
 DROP TABLE IF EXISTS test;
 

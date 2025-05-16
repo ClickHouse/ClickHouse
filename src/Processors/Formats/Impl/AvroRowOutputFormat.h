@@ -1,9 +1,8 @@
 #pragma once
 #include "config.h"
 #if USE_AVRO
-#include <unordered_map>
 
-#include <Core/Block.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBuffer.h>
@@ -16,6 +15,7 @@
 
 namespace DB
 {
+class Block;
 class WriteBuffer;
 
 class AvroSerializerTraits;
@@ -48,16 +48,16 @@ class AvroRowOutputFormat final : public IRowOutputFormat
 {
 public:
     AvroRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_);
-    virtual ~AvroRowOutputFormat() override;
+    ~AvroRowOutputFormat() override;
 
     String getName() const override { return "AvroRowOutputFormat"; }
 
 private:
     void write(const Columns & columns, size_t row_num) override;
     void writeField(const IColumn &, const ISerialization &, size_t) override {}
-    virtual void writePrefix() override;
-    virtual void finalizeImpl() override;
-    virtual void resetFormatterImpl() override;
+    void writePrefix() override;
+    void finalizeImpl() override;
+    void resetFormatterImpl() override;
 
     void createFileWriter();
 

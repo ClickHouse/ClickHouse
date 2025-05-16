@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <IO/ReadBuffer.h>
 #include <Storages/FileLog/StorageFileLog.h>
 
@@ -33,7 +33,7 @@ public:
     const String & getCurrentRecord() const { return current[-1].data; }
 
 private:
-    enum class BufferStatus
+    enum class BufferStatus : uint8_t
     {
         INIT,
         NO_RECORD_RETURNED,
@@ -42,7 +42,7 @@ private:
 
     BufferStatus buffer_status = BufferStatus::INIT;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     StorageFileLog & storage;
 
@@ -69,7 +69,7 @@ private:
     Records records;
     Records::const_iterator current;
 
-    using TaskThread = BackgroundSchedulePool::TaskHolder;
+    using TaskThread = BackgroundSchedulePoolTaskHolder;
 
     Records pollBatch(size_t batch_size_);
 

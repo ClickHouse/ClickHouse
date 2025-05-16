@@ -1,4 +1,5 @@
--- Tags: long, zookeeper
+-- Tags: long, zookeeper, no-shared-merge-tree
+-- Tag no-shared-merge-tree: no-shared-merge-tree: No quorum
 
 SET send_logs_level = 'fatal';
 
@@ -20,7 +21,6 @@ SYSTEM SYNC REPLICA quorum3;
 SET select_sequential_consistency=0;
 SET optimize_trivial_count_query=1;
 SET insert_quorum=2, insert_quorum_parallel=0;
-SET insert_keeper_fault_injection_probability=0;
 
 SYSTEM STOP FETCHES quorum1;
 

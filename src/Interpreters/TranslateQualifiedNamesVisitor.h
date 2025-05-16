@@ -35,7 +35,7 @@ public:
             , has_columns(has_columns_)
         {}
 
-        bool hasColumn(const String & name) const { return source_columns.count(name); }
+        bool hasColumn(const String & name) const { return source_columns.contains(name); }
         bool hasTable() const { return !tables.empty(); }
         bool processAsterisks() const { return hasTable() && has_columns; }
         bool unknownColumn(size_t table_pos, const ASTIdentifier & identifier) const;

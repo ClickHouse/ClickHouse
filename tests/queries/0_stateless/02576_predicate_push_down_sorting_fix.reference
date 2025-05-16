@@ -1,22 +1,23 @@
 Expression ((Project names + (Projection + )))
 Header: number UInt64
-Actions: INPUT : 0 -> number_1 UInt64 : 0
-         ALIAS number_1 :: 0 -> number UInt64 : 1
-         ALIAS number :: 1 -> number_0 UInt64 : 0
-         ALIAS number_0 :: 0 -> number UInt64 : 1
-Positions: 1
+Actions: INPUT : 0 -> __table2.number UInt64 : 0
+         INPUT :: 1 -> ignore(2_UInt8) UInt8 : 1
+         ALIAS __table2.number :: 0 -> number UInt64 : 2
+         ALIAS number :: 2 -> __table1.number UInt64 : 0
+         ALIAS __table1.number :: 0 -> number UInt64 : 2
+Positions: 2
   Sorting (Sorting for ORDER BY)
   Header: ignore(2_UInt8) UInt8
-          number_1 UInt64
+          __table2.number UInt64
   Sort description: ignore(2_UInt8) ASC
     Filter (( + (Before ORDER BY + (Projection + Change column names to column identifiers))))
     Header: ignore(2_UInt8) UInt8
-            number_1 UInt64
+            __table2.number UInt64
     Filter column: ignore(2_UInt8)
     Actions: INPUT : 0 -> number UInt64 : 0
              COLUMN Const(UInt8) -> 2_UInt8 UInt8 : 1
-             ALIAS number :: 0 -> number_1 UInt64 : 2
+             ALIAS number :: 0 -> __table2.number UInt64 : 2
              FUNCTION ignore(2_UInt8 :: 1) -> ignore(2_UInt8) UInt8 : 0
     Positions: 0 2
-      ReadFromStorage (SystemNumbers)
+      ReadFromSystemNumbers
       Header: number UInt64

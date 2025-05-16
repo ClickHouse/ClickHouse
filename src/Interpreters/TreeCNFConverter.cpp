@@ -190,11 +190,11 @@ void traverseCNF(const ASTPtr & node, CNFQuery::AndGroup & and_group, CNFQuery::
     {
         if (func->arguments->children.size() != 1)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Bad NOT function. Expected 1 argument");
-        or_group.insert(CNFQuery::AtomicFormula{true, func->arguments->children.front()});
+        or_group.insert(CNFQueryAtomicFormula{true, func->arguments->children.front()});
     }
     else
     {
-        or_group.insert(CNFQuery::AtomicFormula{false, node});
+        or_group.insert(CNFQueryAtomicFormula{false, node});
     }
 }
 
@@ -239,7 +239,8 @@ CNFQuery TreeCNFConverter::toCNF(
     if (!cnf)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
             "Cannot convert expression '{}' to CNF, because it produces to many clauses."
-            "Size of boolean formula in CNF can be exponential of size of source formula.");
+            "Size of boolean formula in CNF can be exponential of size of source formula.",
+            query->formatForErrorMessage());
 
     return *cnf;
 }
@@ -285,7 +286,7 @@ ASTPtr TreeCNFConverter::fromCNF(const CNFQuery & cnf)
     return res;
 }
 
-static void pushPullNotInAtom(CNFQuery::AtomicFormula & atom, const std::unordered_map<std::string, std::string> & inverse_relations)
+static void pushPullNotInAtom(CNFQueryAtomicFormula & atom, const std::unordered_map<std::string, std::string> & inverse_relations)
 {
     auto * func = atom.ast->as<ASTFunction>();
     if (!func)
@@ -301,7 +302,7 @@ static void pushPullNotInAtom(CNFQuery::AtomicFormula & atom, const std::unorder
     }
 }
 
-static void pullNotOut(CNFQuery::AtomicFormula & atom)
+static void pullNotOut(CNFQueryAtomicFormula & atom)
 {
     static const std::unordered_map<std::string, std::string> inverse_relations = {
         {"notEquals", "equals"},
@@ -315,7 +316,7 @@ static void pullNotOut(CNFQuery::AtomicFormula & atom)
     pushPullNotInAtom(atom, inverse_relations);
 }
 
-void pushNotIn(CNFQuery::AtomicFormula & atom)
+void pushNotIn(CNFQueryAtomicFormula & atom)
 {
     if (!atom.negative)
         return;
@@ -340,9 +341,9 @@ void pushNotIn(CNFQuery::AtomicFormula & atom)
 
 CNFQuery & CNFQuery::pullNotOutFunctions()
 {
-    transformAtoms([](const AtomicFormula & atom) -> AtomicFormula
+    transformAtoms([](const CNFQueryAtomicFormula & atom) -> CNFQueryAtomicFormula
                     {
-                        AtomicFormula result{atom.negative, atom.ast->clone()};
+                        CNFQueryAtomicFormula result{atom.negative, atom.ast->clone()};
                         pullNotOut(result);
                         return result;
                     });
@@ -351,9 +352,9 @@ CNFQuery & CNFQuery::pullNotOutFunctions()
 
 CNFQuery & CNFQuery::pushNotInFunctions()
 {
-    transformAtoms([](const AtomicFormula & atom) -> AtomicFormula
+    transformAtoms([](const CNFQueryAtomicFormula & atom) -> CNFQueryAtomicFormula
                    {
-                       AtomicFormula result{atom.negative, atom.ast->clone()};
+                       CNFQueryAtomicFormula result{atom.negative, atom.ast->clone()};
                        pushNotIn(result);
                        return result;
                    });
@@ -370,8 +371,7 @@ CNFQuery & CNFQuery::reduce()
             statements = filterCNFSubsets(statements);
             return *this;
         }
-        else
-            statements = new_statements;
+        statements = new_statements;
     }
 }
 

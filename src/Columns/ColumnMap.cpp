@@ -1,7 +1,9 @@
+#include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/DataTypeArray.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnCompressed.h>
-#include <Columns/IColumnImpl.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/typeid_cast.h>
@@ -20,6 +22,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+ColumnMap::Ptr ColumnMap::create(const ColumnPtr & keys, const ColumnPtr & values, const ColumnPtr & offsets)
+{
+    auto nested_column = ColumnArray::create(ColumnTuple::create(Columns{keys, values}), offsets);
+    return ColumnMap::create(nested_column);
+}
 
 std::string ColumnMap::getName() const
 {
@@ -74,11 +81,34 @@ void ColumnMap::get(size_t n, Field & res) const
     size_t size = offsets[n] - offsets[n - 1];
 
     res = Map();
-    auto & map = res.get<Map &>();
+    auto & map = res.safeGet<Map>();
     map.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
         map.push_back(getNestedData()[offset + i]);
+}
+
+std::pair<String, DataTypePtr> ColumnMap::getValueNameAndType(size_t n) const
+{
+    const auto & offsets = getNestedColumn().getOffsets();
+    size_t offset = offsets[n - 1];
+    size_t size = offsets[n] - offsets[n - 1];
+
+    String value_name {"["};
+    DataTypes element_types;
+    element_types.reserve(size);
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        const auto & [value, type] = getNestedData().getValueNameAndType(offset + i);
+        element_types.push_back(type);
+        if (i > 0)
+            value_name += ", ";
+        value_name += value;
+    }
+    value_name += "]";
+
+    return {value_name, std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types))};
 }
 
 bool ColumnMap::isDefaultAt(size_t n) const
@@ -98,8 +128,17 @@ void ColumnMap::insertData(const char *, size_t)
 
 void ColumnMap::insert(const Field & x)
 {
-    const auto & map = x.get<const Map &>();
+    const auto & map = x.safeGet<Map>();
     nested->insert(Array(map.begin(), map.end()));
+}
+
+bool ColumnMap::tryInsert(const Field & x)
+{
+    if (x.getType() != Field::Types::Which::Map)
+        return false;
+
+    const auto & map = x.safeGet<Map>();
+    return nested->tryInsert(Array(map.begin(), map.end()));
 }
 
 void ColumnMap::insertDefault()
@@ -111,9 +150,14 @@ void ColumnMap::popBack(size_t n)
     nested->popBack(n);
 }
 
-StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
+StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     return nested->serializeValueIntoArena(n, arena, begin);
+}
+
+char * ColumnMap::serializeValueIntoMemory(size_t n, char * memory) const
+{
+    return nested->serializeValueIntoMemory(n, memory);
 }
 
 const char * ColumnMap::deserializeAndInsertFromArena(const char * pos)
@@ -131,9 +175,9 @@ void ColumnMap::updateHashWithValue(size_t n, SipHash & hash) const
     nested->updateHashWithValue(n, hash);
 }
 
-void ColumnMap::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnMap::getWeakHash32() const
 {
-    nested->updateWeakHash32(hash);
+    return nested->getWeakHash32();
 }
 
 void ColumnMap::updateHashFast(SipHash & hash) const
@@ -141,7 +185,29 @@ void ColumnMap::updateHashFast(SipHash & hash) const
     nested->updateHashFast(hash);
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+void ColumnMap::insertFrom(const IColumn & src, size_t n)
+#else
+void ColumnMap::doInsertFrom(const IColumn & src, size_t n)
+#endif
+{
+    nested->insertFrom(assert_cast<const ColumnMap &>(src).getNestedColumn(), n);
+}
+
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+void ColumnMap::insertManyFrom(const IColumn & src, size_t position, size_t length)
+#else
+void ColumnMap::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
+#endif
+{
+    assert_cast<ColumnArray &>(*nested).insertManyFrom(assert_cast<const ColumnMap &>(src).getNestedColumn(), position, length);
+}
+
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnMap::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
+void ColumnMap::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     nested->insertRangeFrom(
         assert_cast<const ColumnMap &>(src).getNestedColumn(),
@@ -188,23 +254,14 @@ MutableColumns ColumnMap::scatter(ColumnIndex num_columns, const Selector & sele
     return res;
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnMap::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+#else
+int ColumnMap::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+#endif
 {
     const auto & rhs_map = assert_cast<const ColumnMap &>(rhs);
     return nested->compareAt(n, m, rhs_map.getNestedColumn(), nan_direction_hint);
-}
-
-void ColumnMap::compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                                PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                                int direction, int nan_direction_hint) const
-{
-    return doCompareColumn<ColumnMap>(assert_cast<const ColumnMap &>(rhs), rhs_row_num, row_indexes,
-                                        compare_results, direction, nan_direction_hint);
-}
-
-bool ColumnMap::hasEqualValues() const
-{
-    return hasEqualValuesImpl<ColumnMap>();
 }
 
 void ColumnMap::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -219,14 +276,28 @@ void ColumnMap::updatePermutation(IColumn::PermutationSortDirection direction, I
     nested->updatePermutation(direction, stability, limit, nan_direction_hint, res, equal_ranges);
 }
 
-void ColumnMap::gather(ColumnGathererStream & gatherer)
-{
-    gatherer.gather(*this);
-}
-
 void ColumnMap::reserve(size_t n)
 {
     nested->reserve(n);
+}
+
+size_t ColumnMap::capacity() const
+{
+    return nested->capacity();
+}
+
+void ColumnMap::prepareForSquashing(const Columns & source_columns, size_t factor)
+{
+    Columns nested_source_columns;
+    nested_source_columns.reserve(source_columns.size());
+    for (const auto & source_column : source_columns)
+        nested_source_columns.push_back(assert_cast<const ColumnMap &>(*source_column).getNestedColumnPtr());
+    nested->prepareForSquashing(nested_source_columns, factor);
+}
+
+void ColumnMap::shrinkToFit()
+{
+    nested->shrinkToFit();
 }
 
 void ColumnMap::ensureOwnership()
@@ -263,8 +334,8 @@ void ColumnMap::getExtremes(Field & min, Field & max) const
 
     /// Convert result Array fields to Map fields because client expect min and max field to have type Map
 
-    Array nested_min_value = nested_min.get<Array>();
-    Array nested_max_value = nested_max.get<Array>();
+    Array nested_min_value = nested_min.safeGet<Array>();
+    Array nested_max_value = nested_max.safeGet<Array>();
 
     Map map_min_value(nested_min_value.begin(), nested_min_value.end());
     Map map_max_value(nested_max_value.begin(), nested_max_value.end());
@@ -273,12 +344,38 @@ void ColumnMap::getExtremes(Field & min, Field & max) const
     max = std::move(map_max_value);
 }
 
-void ColumnMap::forEachSubcolumn(MutableColumnCallback callback)
+ColumnCheckpointPtr ColumnMap::getCheckpoint() const
+{
+    return nested->getCheckpoint();
+}
+
+void ColumnMap::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    nested->updateCheckpoint(checkpoint);
+}
+
+void ColumnMap::rollback(const ColumnCheckpoint & checkpoint)
+{
+    nested->rollback(checkpoint);
+}
+
+void ColumnMap::forEachMutableSubcolumn(MutableColumnCallback callback)
 {
     callback(nested);
 }
 
-void ColumnMap::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+void ColumnMap::forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+{
+    callback(*nested);
+    nested->forEachMutableSubcolumnRecursively(callback);
+}
+
+void ColumnMap::forEachSubcolumn(ColumnCallback callback) const
+{
+    callback(nested);
+}
+
+void ColumnMap::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
 {
     callback(*nested);
     nested->forEachSubcolumnRecursively(callback);
@@ -291,24 +388,36 @@ bool ColumnMap::structureEquals(const IColumn & rhs) const
     return false;
 }
 
-double ColumnMap::getRatioOfDefaultRows(double sample_ratio) const
+bool ColumnMap::dynamicStructureEquals(const IColumn & rhs) const
 {
-    return getRatioOfDefaultRowsImpl<ColumnMap>(sample_ratio);
+    if (const auto * rhs_map = typeid_cast<const ColumnMap *>(&rhs))
+        return nested->dynamicStructureEquals(*rhs_map->nested);
+    return false;
 }
 
-UInt64 ColumnMap::getNumberOfDefaultRows() const
+const ColumnArray & ColumnMap::getNestedColumn() const
 {
-    return getNumberOfDefaultRowsImpl<ColumnMap>();
+    return assert_cast<const ColumnArray &>(*nested);
 }
 
-void ColumnMap::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
+ColumnArray & ColumnMap::getNestedColumn()
 {
-    return getIndicesOfNonDefaultRowsImpl<ColumnMap>(indices, from, limit);
+    return assert_cast<ColumnArray &>(*nested);
 }
 
-ColumnPtr ColumnMap::compress() const
+const ColumnTuple & ColumnMap::getNestedData() const
 {
-    auto compressed = nested->compress();
+    return assert_cast<const ColumnTuple &>(getNestedColumn().getData());
+}
+
+ColumnTuple & ColumnMap::getNestedData()
+{
+    return assert_cast<ColumnTuple &>(getNestedColumn().getData());
+}
+
+ColumnPtr ColumnMap::compress(bool force_compression) const
+{
+    auto compressed = nested->compress(force_compression);
     const auto byte_size = compressed->byteSize();
     /// The order of evaluation of function arguments is unspecified
     /// and could cause interacting with object in moved-from state
@@ -316,6 +425,15 @@ ColumnPtr ColumnMap::compress() const
     {
         return ColumnMap::create(my_compressed->decompress());
     });
+}
+
+void ColumnMap::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
+{
+    Columns nested_source_columns;
+    nested_source_columns.reserve(source_columns.size());
+    for (const auto & source_column : source_columns)
+        nested_source_columns.push_back(assert_cast<const ColumnMap &>(*source_column).getNestedColumnPtr());
+    nested->takeDynamicStructureFromSourceColumns(nested_source_columns);
 }
 
 }

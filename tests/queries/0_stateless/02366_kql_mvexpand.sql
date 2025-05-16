@@ -11,6 +11,7 @@ CREATE TABLE mv_expand_test_table
    d Array(Int8)
 ) ENGINE = Memory;
 INSERT INTO mv_expand_test_table VALUES (1, ['Salmon', 'Steak','Chicken'],[1,2,3,4],[5,6,7,8]);
+set allow_experimental_kusto_dialect=1;
 set dialect='kusto';
 print '-- mv-expand --';
 print '-- mv_expand_test_table | mv-expand c --';
@@ -33,3 +34,7 @@ print '-- mv_expand_test_table | mv-expand with_itemindex=index c,d to typeof(bo
 mv_expand_test_table | mv-expand with_itemindex=index c,d to typeof(bool);
 print '-- mv_expand_test_table | mv-expand c to typeof(bool) --';
 mv_expand_test_table | mv-expand c to typeof(bool);
+SET max_query_size = 28;
+SET dialect='kusto';
+mv_expand_test_table | mv-expand c, d; -- { serverError SYNTAX_ERROR }
+SET max_query_size=262144;

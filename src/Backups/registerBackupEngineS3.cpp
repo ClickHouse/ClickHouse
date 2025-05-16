@@ -15,8 +15,6 @@
 
 namespace DB
 {
-namespace fs = std::filesystem;
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -50,7 +48,9 @@ void registerBackupEngineS3(BackupFactory & factory)
         const String & id_arg = params.backup_info.id_arg;
         const auto & args = params.backup_info.args;
 
-        String s3_uri, access_key_id, secret_access_key;
+        String s3_uri;
+        String access_key_id;
+        String secret_access_key;
 
         if (!id_arg.empty())
         {
@@ -65,13 +65,13 @@ void registerBackupEngineS3(BackupFactory & factory)
             secret_access_key = config.getString(config_prefix + ".secret_access_key", "");
 
             if (config.has(config_prefix + ".filename"))
-                s3_uri = fs::path(s3_uri) / config.getString(config_prefix + ".filename");
+                s3_uri = std::filesystem::path(s3_uri) / config.getString(config_prefix + ".filename");
 
             if (args.size() > 1)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup S3 requires 1 or 2 arguments: named_collection, [filename]");
 
             if (args.size() == 1)
-                s3_uri = fs::path(s3_uri) / args[0].safeGet<String>();
+                s3_uri = std::filesystem::path(s3_uri) / args[0].safeGet<String>();
         }
         else
         {
@@ -106,45 +106,32 @@ void registerBackupEngineS3(BackupFactory & factory)
 
         if (params.open_mode == IBackup::OpenMode::READ)
         {
-            auto reader = std::make_shared<BackupReaderS3>(S3::URI{s3_uri},
-                                                           access_key_id,
-                                                           secret_access_key,
-                                                           params.allow_s3_native_copy,
-                                                           params.read_settings,
-                                                           params.write_settings,
-                                                           params.context);
-
-            return std::make_unique<BackupImpl>(
-                params.backup_info,
-                archive_params,
-                params.base_backup_info,
-                reader,
+            auto reader = std::make_shared<BackupReaderS3>(
+                S3::URI{s3_uri},
+                access_key_id,
+                secret_access_key,
+                params.allow_s3_native_copy,
+                params.read_settings,
+                params.write_settings,
                 params.context,
-                params.use_same_s3_credentials_for_base_backup);
-        }
-        else
-        {
-            auto writer = std::make_shared<BackupWriterS3>(S3::URI{s3_uri},
-                                                           access_key_id,
-                                                           secret_access_key,
-                                                           params.allow_s3_native_copy,
-                                                           params.s3_storage_class,
-                                                           params.read_settings,
-                                                           params.write_settings,
-                                                           params.context);
+                params.is_internal_backup);
 
-            return std::make_unique<BackupImpl>(
-                params.backup_info,
-                archive_params,
-                params.base_backup_info,
-                writer,
-                params.context,
-                params.is_internal_backup,
-                params.backup_coordination,
-                params.backup_uuid,
-                params.deduplicate_files,
-                params.use_same_s3_credentials_for_base_backup);
+            return std::make_unique<BackupImpl>(params, archive_params, reader);
         }
+
+        auto writer = std::make_shared<BackupWriterS3>(
+            S3::URI{s3_uri},
+            access_key_id,
+            secret_access_key,
+            params.allow_s3_native_copy,
+            params.s3_storage_class,
+            params.read_settings,
+            params.write_settings,
+            params.context,
+            params.is_internal_backup);
+
+        return std::make_unique<BackupImpl>(params, archive_params, writer);
+
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "S3 support is disabled");
 #endif

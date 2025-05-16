@@ -2,9 +2,11 @@
 
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/Settings.h>
 #include <Databases/IDatabase.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/interpretSubquery.h>
@@ -27,11 +29,18 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool parallel_replicas_allow_in_with_subquery;
+    extern const SettingsBool prefer_global_in_and_join;
+}
 
 namespace ErrorCodes
 {
     extern const int WRONG_GLOBAL_SUBQUERY;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 class GlobalSubqueriesMatcher
@@ -171,7 +180,7 @@ public:
                 std::unique_ptr<QueryPlan> source = std::make_unique<QueryPlan>();
                 interpreter->buildQueryPlan(*source);
 
-                auto future_set = prepared_sets->addFromSubquery(set_key, std::move(source), std::move(external_storage), nullptr, getContext()->getSettingsRef());
+                auto future_set = prepared_sets->addFromSubquery(set_key, ast, std::move(source), std::move(external_storage), nullptr, getContext()->getSettingsRef());
                 external_storage_holder->future_set = std::move(future_set);
             }
             else
@@ -200,23 +209,33 @@ public:
     }
 
 private:
-    static bool shouldBeExecutedGlobally(const Data & data)
-    {
-        const Settings & settings = data.getContext()->getSettingsRef();
-        /// For parallel replicas we reinterpret JOIN as GLOBAL JOIN as a way to broadcast data
-        const bool enable_parallel_processing_of_joins = data.getContext()->canUseParallelReplicasOnInitiator();
-        return settings.prefer_global_in_and_join || enable_parallel_processing_of_joins;
-    }
-
-
     /// GLOBAL IN
     static void visit(ASTFunction & func, ASTPtr &, Data & data)
     {
-        if ((shouldBeExecutedGlobally(data)
+        const Settings & settings = data.getContext()->getSettingsRef();
+        const bool prefer_global = settings[Setting::prefer_global_in_and_join];
+        const bool enable_parallel_processing_of_joins = data.getContext()->canUseParallelReplicasOnInitiator();
+
+        if (((prefer_global || enable_parallel_processing_of_joins)
              && (func.name == "in" || func.name == "notIn" || func.name == "nullIn" || func.name == "notNullIn"))
             || func.name == "globalIn" || func.name == "globalNotIn" || func.name == "globalNullIn" || func.name == "globalNotNullIn")
         {
             ASTPtr & ast = func.arguments->children[1];
+            if (enable_parallel_processing_of_joins)
+            {
+                /// We don't enable parallel replicas for IN (subquery)
+                if (!settings[Setting::parallel_replicas_allow_in_with_subquery] && ast->as<ASTSubquery>())
+                {
+                    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] == 1)
+                    {
+                        LOG_DEBUG(getLogger("GlobalSubqueriesMatcher"), "IN with subquery is not supported with parallel replicas");
+                        data.getContext()->getQueryContext()->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                        return;
+                    }
+                    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
+                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "IN with subquery is not supported with parallel replicas");
+                }
+            }
 
             /// Literal or function can use regular IN.
             /// NOTE: We don't support passing table functions to IN.
@@ -241,18 +260,50 @@ private:
     /// GLOBAL JOIN
     static void visit(ASTTablesInSelectQueryElement & table_elem, ASTPtr &, Data & data)
     {
+        const Settings & settings = data.getContext()->getSettingsRef();
+        const bool prefer_global = settings[Setting::prefer_global_in_and_join];
+        const bool enable_parallel_processing_of_joins = data.getContext()->canUseParallelReplicasOnInitiator();
+
         if (table_elem.table_join
-            && (table_elem.table_join->as<ASTTableJoin &>().locality == JoinLocality::Global || shouldBeExecutedGlobally(data)))
+            && (table_elem.table_join->as<ASTTableJoin &>().locality == JoinLocality::Global || prefer_global
+                || enable_parallel_processing_of_joins))
         {
+            if (enable_parallel_processing_of_joins)
+            {
+                /// For parallel replicas we currently only support JOIN with subqueries
+                /// Note that tableA join tableB is previously converted into tableA JOIN (Select * FROM tableB) so that's ok
+                /// We don't support WITH cte as (subquery) Select table JOIN cte because we don't do conversion in AST
+                bool is_subquery = false;
+                if (const auto * ast_table_expr = table_elem.table_expression->as<ASTTableExpression>())
+                {
+                    is_subquery = ast_table_expr->subquery && ast_table_expr->subquery->as<ASTSubquery>() != nullptr
+                        && ast_table_expr->subquery->as<ASTSubquery>()->cte_name.empty();
+                }
+                else if (table_elem.table_expression->as<ASTSubquery>())
+                    is_subquery = true;
+
+                if (!is_subquery)
+                {
+                    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] == 1)
+                    {
+                        LOG_DEBUG(getLogger("GlobalSubqueriesMatcher"), "JOIN with parallel replicas is only supported with subqueries");
+                        data.getContext()->getQueryContext()->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                        return;
+                    }
+                    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
+                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOIN with parallel replicas is only supported with subqueries");
+                }
+            }
+
             Names required_columns;
 
             /// Fill required columns for GLOBAL JOIN.
             /// This code is partial copy-paste from ExpressionAnalyzer.
             if (data.table_join)
             {
-                auto joined_block_actions = data.table_join->createJoinedBlockActions(data.getContext());
+                auto joined_block_actions = data.table_join->createJoinedBlockActions(data.getContext(), data.prepared_sets);
                 NamesWithAliases required_columns_with_aliases = data.table_join->getRequiredColumns(
-                    Block(joined_block_actions->getResultColumns()), joined_block_actions->getRequiredColumns().getNames());
+                    Block(joined_block_actions.getResultColumns()), joined_block_actions.getRequiredColumns().getNames());
 
                 for (auto & pr : required_columns_with_aliases)
                     required_columns.push_back(pr.first);

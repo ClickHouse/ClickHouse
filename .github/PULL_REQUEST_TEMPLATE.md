@@ -6,12 +6,15 @@ tests/ci/cancel_and_rerun_workflow_lambda/app.py
 -->
 ### Changelog category (leave one):
 - New Feature
+- Experimental Feature
 - Improvement
 - Performance Improvement
 - Backward Incompatible Change
 - Build/Testing/Packaging Improvement
 - Documentation (changelog entry is not required)
+- Critical Bug Fix (crash, data loss, RBAC) or LOGICAL_ERROR
 - Bug Fix (user-visible misbehavior in an official stable release)
+- CI Fix or Improvement (changelog entry is not required)
 - Not for changelog (changelog entry is not required)
 
 
@@ -36,6 +39,3 @@ At a minimum, the following information should be added (but add more as needed)
 
 - Example use: A query or command.
 -->
-
-
-> Information about CI checks: https://clickhouse.com/docs/en/development/continuous-integration/

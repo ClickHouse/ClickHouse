@@ -16,6 +16,7 @@ struct HTTPAuthClientParams
     size_t max_tries;
     size_t retry_initial_backoff_ms;
     size_t retry_max_backoff_ms;
+    std::vector<String> forward_headers;
 };
 
 template <typename TResponseParser>
@@ -24,11 +25,12 @@ class HTTPAuthClient
 public:
     using Result = TResponseParser::Result;
 
-    HTTPAuthClient(const HTTPAuthClientParams & params, const TResponseParser & parser_ = TResponseParser{})
+    explicit HTTPAuthClient(const HTTPAuthClientParams & params, const TResponseParser & parser_ = TResponseParser{})
         : timeouts{params.timeouts}
         , max_tries{params.max_tries}
         , retry_initial_backoff_ms{params.retry_initial_backoff_ms}
         , retry_max_backoff_ms{params.retry_max_backoff_ms}
+        , forward_headers{params.forward_headers}
         , uri{params.uri}
         , parser{parser_}
     {
@@ -36,7 +38,7 @@ public:
 
     Result authenticateRequest(Poco::Net::HTTPRequest & request) const
     {
-        auto session = makeHTTPSession(uri, timeouts);
+        auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, uri, timeouts);
         Poco::Net::HTTPResponse response;
 
         auto milliseconds_to_wait = retry_initial_backoff_ms;
@@ -62,12 +64,14 @@ public:
     }
 
     const Poco::URI & getURI() const { return uri; }
+    const std::vector<String> & getForwardHeaders() const { return forward_headers; }
 
 private:
     const ConnectionTimeouts timeouts;
     const size_t max_tries;
     const size_t retry_initial_backoff_ms;
     const size_t retry_max_backoff_ms;
+    const std::vector<String> forward_headers;
     const Poco::URI uri;
     TResponseParser parser;
 };
@@ -80,9 +84,18 @@ public:
     using HTTPAuthClient<TResponseParser>::HTTPAuthClient;
     using Result = HTTPAuthClient<TResponseParser>::Result;
 
-    Result authenticate(const String & user_name, const String & password) const
+    Result authenticate(const String & user_name, const String & password, const std::unordered_map<String, String> & headers) const
     {
-        Poco::Net::HTTPRequest request{Poco::Net::HTTPRequest::HTTP_GET, this->getURI().getPathAndQuery()};
+        Poco::Net::HTTPRequest request{
+            Poco::Net::HTTPRequest::HTTP_GET, this->getURI().getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1};
+
+        for (const auto & k : this->getForwardHeaders())
+        {
+            auto it = headers.find(k);
+            if (it != headers.end())
+                request.add(k, it->second);
+        }
+
         Poco::Net::HTTPBasicCredentials basic_credentials{user_name, password};
         basic_credentials.authenticate(request);
 

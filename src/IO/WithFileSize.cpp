@@ -5,6 +5,7 @@
 #include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/PeekableReadBuffer.h>
 
+
 namespace DB
 {
 
@@ -13,41 +14,47 @@ namespace ErrorCodes
     extern const int UNKNOWN_FILE_SIZE;
 }
 
-template <typename T>
-static size_t getFileSize(T & in)
+size_t WithFileSize::getFileSize()
 {
-    if (auto * with_file_size = dynamic_cast<WithFileSize *>(&in))
-    {
-        return with_file_size->getFileSize();
-    }
+    if (auto maybe_size = tryGetFileSize())
+        return *maybe_size;
 
     throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size");
 }
 
-size_t getFileSizeFromReadBuffer(ReadBuffer & in)
+template <typename T>
+static std::optional<size_t> tryGetFileSize(T & in)
 {
-    if (auto * delegate = dynamic_cast<ReadBufferFromFileDecorator *>(&in))
-    {
-        return getFileSize(delegate->getWrappedReadBuffer());
-    }
-    else if (auto * compressed = dynamic_cast<CompressedReadBufferWrapper *>(&in))
-    {
-        return getFileSize(compressed->getWrappedReadBuffer());
-    }
+    if (auto * with_file_size = dynamic_cast<WithFileSize *>(&in))
+        return with_file_size->tryGetFileSize();
 
-    return getFileSize(in);
+    return std::nullopt;
+}
+
+template <typename T>
+static size_t getFileSize(T & in)
+{
+    if (auto maybe_size = tryGetFileSize(in))
+        return *maybe_size;
+
+    throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size");
 }
 
 std::optional<size_t> tryGetFileSizeFromReadBuffer(ReadBuffer & in)
 {
-    try
-    {
-        return getFileSizeFromReadBuffer(in);
-    }
-    catch (...)
-    {
-        return std::nullopt;
-    }
+    if (auto * delegate = dynamic_cast<ReadBufferFromFileDecorator *>(&in))
+        return tryGetFileSize(delegate->getWrappedReadBuffer());
+    if (auto * compressed = dynamic_cast<CompressedReadBufferWrapper *>(&in))
+        return tryGetFileSize(compressed->getWrappedReadBuffer());
+    return tryGetFileSize(in);
+}
+
+size_t getFileSizeFromReadBuffer(ReadBuffer & in)
+{
+    if (auto maybe_size = tryGetFileSizeFromReadBuffer(in))
+        return *maybe_size;
+
+    throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size");
 }
 
 bool isBufferWithFileSize(const ReadBuffer & in)
@@ -56,7 +63,7 @@ bool isBufferWithFileSize(const ReadBuffer & in)
     {
         return delegate->isWithFileSize();
     }
-    else if (const auto * compressed = dynamic_cast<const CompressedReadBufferWrapper *>(&in))
+    if (const auto * compressed = dynamic_cast<const CompressedReadBufferWrapper *>(&in))
     {
         return isBufferWithFileSize(compressed->getWrappedReadBuffer());
     }
@@ -70,17 +77,16 @@ size_t getDataOffsetMaybeCompressed(const ReadBuffer & in)
     {
         return getDataOffsetMaybeCompressed(delegate->getWrappedReadBuffer());
     }
-    else if (const auto * compressed = dynamic_cast<const CompressedReadBufferWrapper *>(&in))
+    if (const auto * compressed = dynamic_cast<const CompressedReadBufferWrapper *>(&in))
     {
         return getDataOffsetMaybeCompressed(compressed->getWrappedReadBuffer());
     }
-    else if (const auto * peekable = dynamic_cast<const PeekableReadBuffer *>(&in))
+    if (const auto * peekable = dynamic_cast<const PeekableReadBuffer *>(&in))
     {
         return getDataOffsetMaybeCompressed(peekable->getSubBuffer());
     }
 
     return in.count();
 }
-
 
 }

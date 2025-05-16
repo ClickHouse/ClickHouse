@@ -1,0 +1,13 @@
+<test>
+    <create_query>
+        CREATE TABLE bigint ( u128 UInt128, i128 Int128, u256 UInt256, i256 Int256) ENGINE = Memory
+        AS
+        SELECT * FROM generateRandom('u128 UInt128, i128 Int128, u256 UInt256, i256 Int256', 42) LIMIT 50000;
+    </create_query>
+    <drop_query>DROP TABLE IF EXISTS bigint</drop_query>
+
+    <query>SELECT * FROM bigint WHERE NOT ignore(toString(u128)) SETTINGS max_threads = 1</query>
+    <query>SELECT * FROM bigint WHERE NOT ignore(toString(i128)) SETTINGS max_threads = 1</query>
+    <query>SELECT * FROM bigint WHERE NOT ignore(toString(u256)) SETTINGS max_threads = 1</query>
+    <query>SELECT * FROM bigint WHERE NOT ignore(toString(i256)) SETTINGS max_threads = 1</query>
+</test>

@@ -30,7 +30,6 @@ public:
     bool hasEvenlyDistributedRead() const override { return getNested()->hasEvenlyDistributedRead(); }
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
-    NamesAndTypesList getVirtuals() const override { return getNested()->getVirtuals(); }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr context,
@@ -38,8 +37,6 @@ public:
         const StorageSnapshotPtr &,
         SelectQueryInfo & info) const override
     {
-        /// TODO: Find a way to support projections for StorageProxy
-        info.ignore_projections = true;
         const auto & nested_metadata = getNested()->getInMemoryMetadataPtr();
         return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getStorageSnapshot(nested_metadata, context), info);
     }
@@ -65,7 +62,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override
     {
-        return getNested()->read(query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+        getNested()->read(query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override
@@ -143,12 +140,6 @@ public:
 
     ActionLock getActionLock(StorageActionBlockType action_type) override { return getNested()->getActionLock(action_type); }
 
-    bool supportsIndexForIn() const override { return getNested()->supportsIndexForIn(); }
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot) const override
-    {
-        return getNested()->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
-    }
-
     DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override
     {
         return getNested()->getCheckTaskList(check_task_filter, context);
@@ -164,8 +155,8 @@ public:
     bool storesDataOnDisk() const override { return getNested()->storesDataOnDisk(); }
     Strings getDataPaths() const override { return getNested()->getDataPaths(); }
     StoragePolicyPtr getStoragePolicy() const override { return getNested()->getStoragePolicy(); }
-    std::optional<UInt64> totalRows(const Settings & settings) const override { return getNested()->totalRows(settings); }
-    std::optional<UInt64> totalBytes(const Settings & settings) const override { return getNested()->totalBytes(settings); }
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override { return getNested()->totalRows(query_context); }
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override { return getNested()->totalBytes(query_context); }
     std::optional<UInt64> lifetimeRows() const override { return getNested()->lifetimeRows(); }
     std::optional<UInt64> lifetimeBytes() const override { return getNested()->lifetimeBytes(); }
 

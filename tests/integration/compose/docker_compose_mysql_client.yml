@@ -1,0 +1,12 @@
+services:
+  mysql_client:
+    image: mysql:8.0
+    restart: always
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: 1
+    command: --federated --socket /var/run/mysqld/mysqld.sock
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 1s
+      timeout: 2s
+      retries: 100

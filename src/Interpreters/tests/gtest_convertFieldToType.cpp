@@ -2,7 +2,6 @@
 #include <limits>
 #include <ostream>
 #include <Core/Field.h>
-#include <Core/iostream_debug_helpers.h>
 #include <Interpreters/convertFieldToType.h>
 #include <DataTypes/DataTypeFactory.h>
 
@@ -24,9 +23,7 @@ std::ostream & operator << (std::ostream & ostr, const ConvertFieldToTypeTestPar
 {
     return ostr << "{"
             << "\n\tfrom_type  : " << params.from_type
-            << "\n\tfrom_value : " << params.from_value
             << "\n\tto_type    : " << params.to_type
-            << "\n\texpected   : " << (params.expected_value ? *params.expected_value : Field())
             << "\n}";
 }
 
@@ -74,9 +71,9 @@ INSTANTIATE_TEST_SUITE_P(
         // Max value of Date
         {
             "Date",
-            Field(std::numeric_limits<DB::UInt16>::max()),
+            Field(std::numeric_limits<UInt16>::max()),
             "DateTime64(0, 'UTC')",
-            DecimalField(DateTime64(std::numeric_limits<DB::UInt16>::max() * Day), 0)
+            DecimalField(DateTime64(std::numeric_limits<UInt16>::max() * Day), 0)
         },
         // check that scale is respected
         {
@@ -150,7 +147,7 @@ INSTANTIATE_TEST_SUITE_P(
             DecimalField(DateTime64(123 * Day * 1'000'000), 6)
         }
     })
-    );
+);
 
 INSTANTIATE_TEST_SUITE_P(
     DateTimeToDateTime64,
@@ -179,6 +176,87 @@ INSTANTIATE_TEST_SUITE_P(
             Field(123),
             "DateTime64(6, 'UTC')",
             DecimalField(DateTime64(123'000'000), 6)
+        },
+    })
+);
+
+INSTANTIATE_TEST_SUITE_P(
+    StringToNumber,
+    ConvertFieldToTypeTest,
+    ::testing::ValuesIn(std::initializer_list<ConvertFieldToTypeTestParams>{
+        {
+            "String",
+            Field("1"),
+            "Int8",
+            Field(1)
+        },
+        {
+            "String",
+            Field("256"),
+            "Int8",
+            Field()
+        },
+        {
+            "String",
+            Field("not a number"),
+            "Int8",
+            {}
+        },
+        {
+            "String",
+            Field("1.1"),
+            "Int8",
+            {} /// we can not convert '1.1' to Int8
+        },
+        {
+            "String",
+            Field("1.1"),
+            "Float64",
+            Field(1.1)
+        },
+    })
+);
+
+INSTANTIATE_TEST_SUITE_P(
+    NumberToString,
+    ConvertFieldToTypeTest,
+    ::testing::ValuesIn(std::initializer_list<ConvertFieldToTypeTestParams>{
+        {
+            "Int8",
+            Field(1),
+            "String",
+            Field("1")
+        },
+        {
+            "Int8",
+            Field(-1),
+            "String",
+            Field("-1")
+        },
+        {
+            "Float64",
+            Field(1.1),
+            "String",
+            Field("1.1")
+        },
+    })
+);
+
+INSTANTIATE_TEST_SUITE_P(
+    StringToDate,
+    ConvertFieldToTypeTest,
+    ::testing::ValuesIn(std::initializer_list<ConvertFieldToTypeTestParams>{
+        {
+            "String",
+            Field("2024-07-12"),
+            "Date",
+            Field(static_cast<UInt16>(19916))
+        },
+        {
+            "String",
+            Field("not a date"),
+            "Date",
+            {}
         },
     })
 );

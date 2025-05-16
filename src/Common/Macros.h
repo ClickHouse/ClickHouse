@@ -9,16 +9,18 @@
 
 namespace Poco
 {
-    namespace Util
-    {
-        class AbstractConfiguration;
-    }
-    class Logger;
+namespace Util
+{
+    class AbstractConfiguration;
+}
+class Logger;
 }
 
 
 namespace DB
 {
+
+using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
 /** Apply substitutions from the macros in config to the string.
   */
@@ -26,6 +28,7 @@ class Macros
 {
 public:
     Macros() = default;
+    Macros(const Poco::Util::AbstractConfiguration & config, const String & key, LoggerPtr log = nullptr);
     Macros(const Poco::Util::AbstractConfiguration & config, const String & key, Poco::Logger * log = nullptr);
     explicit Macros(std::map<String, String> map);
 
@@ -55,8 +58,6 @@ public:
                   MacroExpansionInfo & info) const;
 
     String expand(const String & s) const;
-
-    String expand(const String & s, const StorageID & table_id, bool allow_uuid) const;
 
 
     /** Apply expand for the list.

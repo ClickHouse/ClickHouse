@@ -2,6 +2,8 @@
 
 #include <Parsers/ASTLiteral.h>
 
+#include <Access/Common/AccessFlags.h>
+
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -72,7 +74,7 @@ ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextPtr c
 
     /// otherwise, we get table structure by dictionary structure.
     auto dictionary_structure = external_loader.getDictionaryStructure(dictionary_name, context);
-    return ColumnsDescription(StorageDictionary::getNamesAndTypes(dictionary_structure));
+    return ColumnsDescription(StorageDictionary::getNamesAndTypes(dictionary_structure, false));
 }
 
 StoragePtr TableFunctionDictionary::executeImpl(

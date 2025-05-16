@@ -1,13 +1,13 @@
 import json
 import logging
-import pytest
 import os
 import sys
 
-
-from .http_auth_server import GOOD_PASSWORD, USER_RESPONSES
+import pytest
 
 from helpers.cluster import ClickHouseCluster
+
+from .http_auth_server import GOOD_PASSWORD, USER_RESPONSES
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -59,7 +59,7 @@ def started_cluster():
 def test_user_from_config_basic_auth_pass(started_cluster):
     assert (
         instance.query("SHOW CREATE USER good_user")
-        == "CREATE USER good_user IDENTIFIED WITH http SERVER \\'basic_server\\' SCHEME \\'BASIC\\' SETTINGS PROFILE default\n"
+        == "CREATE USER good_user IDENTIFIED WITH http SERVER \\'basic_server\\' SCHEME \\'BASIC\\' SETTINGS PROFILE `default`\n"
     )
     assert (
         instance.query(
@@ -93,6 +93,12 @@ def test_basic_auth_failed(started_cluster):
         "SELECT currentUser()", user="good_user", password="bad_password"
     )
 
+def test_header_failed(started_cluster):
+    ping_response = instance.exec_in_container(
+        ["curl", "-s", "-u", "good_user:bad_password", "-H", "Custom-Header: ok",  "--data", f"SELECT 2+2", f"http://localhost:8123"],
+        nothrow=True,
+    )
+    assert ping_response == "4\n"
 
 def test_session_settings_from_auth_response(started_cluster):
     for user, response in USER_RESPONSES.items():

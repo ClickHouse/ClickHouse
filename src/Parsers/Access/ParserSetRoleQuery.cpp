@@ -29,7 +29,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"TO"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::TO}.ignore(pos, expected))
                 return false;
 
             ASTPtr ast;
@@ -50,11 +50,11 @@ bool ParserSetRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 {
     using Kind = ASTSetRoleQuery::Kind;
     Kind kind;
-    if (ParserKeyword{"SET ROLE DEFAULT"}.ignore(pos, expected))
+    if (ParserKeyword{Keyword::SET_ROLE_DEFAULT}.ignore(pos, expected))
         kind = Kind::SET_ROLE_DEFAULT;
-    else if (ParserKeyword{"SET ROLE"}.ignore(pos, expected))
+    else if (ParserKeyword{Keyword::SET_ROLE}.ignore(pos, expected))
         kind = Kind::SET_ROLE;
-    else if (ParserKeyword{"SET DEFAULT ROLE"}.ignore(pos, expected))
+    else if (ParserKeyword{Keyword::SET_DEFAULT_ROLE}.ignore(pos, expected))
         kind = Kind::SET_DEFAULT_ROLE;
     else
         return false;
