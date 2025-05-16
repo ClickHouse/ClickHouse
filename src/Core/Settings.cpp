@@ -431,6 +431,11 @@ Maximum number of files that could be returned in batch by ListObject request
 When set to `true` than for all s3 requests first two attempts are made with low send and receive timeouts.
 When set to `false` than all attempts are made with identical timeouts.
 )", 0) \
+    DECLARE(Bool, s3_slow_all_threads_after_network_error, true, R"(
+When set to `true` than all threads executing s3 requests to the same endpoint get slow down for a while
+after one s3 request fails with a retryable network error.
+When set to `false` than each thread executing s3 request uses an independent set of backoffs on network errors.
+)", 0) \
     DECLARE(UInt64, azure_list_object_keys_size, 1000, R"(
 Maximum number of files that could be returned in batch by ListObject request
 )", 0) \
@@ -5036,10 +5041,10 @@ Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
 - 1 — `SELECT` returns empty result for empty file.
 )", 0) \
-    DECLARE(Bool, enable_url_encoding, true, R"(
+    DECLARE(Bool, enable_url_encoding, false, R"(
 Allows to enable/disable decoding/encoding path in uri in [URL](../../engines/table-engines/special/url.md) engine tables.
 
-Enabled by default.
+Disabled by default.
 )", 0) \
     DECLARE(UInt64, database_replicated_initial_query_timeout_sec, 300, R"(
 Sets how long initial DDL query should wait for Replicated database to process previous DDL queue entries in seconds.
