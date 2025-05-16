@@ -16,11 +16,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 GinFilterParameters::GinFilterParameters(String tokenizer_, UInt64 max_rows_per_postings_list_)
     : tokenizer(std::move(tokenizer_))
     , max_rows_per_postings_list(max_rows_per_postings_list_)

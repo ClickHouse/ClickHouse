@@ -840,7 +840,8 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
             "GIN index '{}' argument supports only 'default', 'ngram', and 'noop', but got {}",
-            GIN_INDEX_ARGUMENT_TOKENIZER, tokenizer.value());
+            GIN_INDEX_ARGUMENT_TOKENIZER,
+            tokenizer.value());
 
     if (boost::iequals(tokenizer.value(), NgramTokenExtractor::getExternalName()))
     {
