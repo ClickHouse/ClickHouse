@@ -3247,8 +3247,9 @@ BackupsWorker & Context::getBackupsWorker() const
 {
     callOnce(shared->backups_worker_initialized, [&] {
         const auto & config = getConfigRef();
-        UInt64 backup_threads = std::max(UInt64{1}, config.getUInt64("backup_threads", 16));
-        UInt64 restore_threads = std::max(UInt64{1}, config.getUInt64("restore_threads", 16));
+        Poco::UInt64 max_threads_max_value = 256 * getNumberOfCPUCoresToUse(); /// Limit to something unreasonable
+        size_t backup_threads = std::min(max_threads_max_value, std::max(Poco::UInt64{1}, config.getUInt64("backup_threads", 16)));
+        size_t restore_threads = std::min(max_threads_max_value, std::max(Poco::UInt64{1}, config.getUInt64("restore_threads", 16)));
 
         shared->backups_worker.emplace(getGlobalContext(), backup_threads, restore_threads);
     });
