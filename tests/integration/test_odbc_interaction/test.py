@@ -326,6 +326,37 @@ CREATE TABLE {table_name}(id UInt32, name String, age UInt32, money UInt32, colu
     conn.close()
 
 
+def test_mysql_with_named_collection(started_cluster):
+    skip_test_sanitizers(node1)
+
+    mysql_setup = node1.odbc_drivers["MySQL"]
+
+    table_name = "test_mysql_with_named_collection"
+    conn = get_mysql_conn()
+    create_mysql_table(conn, table_name)
+
+    # Check that NULL-values are handled correctly by the ODBC-bridge
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO clickhouse.{} VALUES(50, 'name1', 127, 255, 512), (100, 'name2', 127, 255, 511);".format(
+                table_name
+            )
+        )
+        conn.commit()
+
+    node1.query(f"""
+    DROP NAMED COLLECTION IF EXISTS odbc_collection;
+    CREATE NAMED COLLECTION odbc_collection AS
+    connection_string = 'DSN={mysql_setup["DSN"]}',
+    table = '{table_name}';
+    """)
+    assert node1.query("SELECT name FROM odbc(odbc_collection)") == "name1\nname2\n"
+
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
 def test_mysql_insert(started_cluster):
     skip_test_sanitizers(node1)
 

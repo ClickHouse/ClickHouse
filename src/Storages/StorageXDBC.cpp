@@ -3,6 +3,7 @@
 #include <Storages/StorageURL.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/NamedCollectionsHelpers.h>
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -184,22 +185,40 @@ namespace
         {
             ASTs & engine_args = args.engine_args;
 
-            if (engine_args.size() != 3)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Storage {} requires exactly 3 parameters: {}('DSN', database or schema, table)", name, name);
+            StorageXDBC::Configuration configuration;
 
-            for (size_t i = 0; i < 3; ++i)
-                engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.getLocalContext());
+            if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.getLocalContext()))
+            {
+                configuration.connection_string = named_collection->get<String>("connection_string");
+                configuration.database_or_schema = named_collection->get<String>("database_or_schema");
+                configuration.table = named_collection->get<String>("table_name");
+            }
+            else
+            {
+                if (engine_args.size() != 3)
+                    throw Exception(
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Storage {} requires exactly 3 parameters: {}('DSN', database or schema, table)",
+                        name,
+                        name);
+
+                for (size_t i = 0; i < 3; ++i)
+                    engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.getLocalContext());
+
+                configuration.connection_string = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string");
+                configuration.database_or_schema = checkAndGetLiteralArgument<String>(engine_args[1], "database_name");
+                configuration.table = checkAndGetLiteralArgument<String>(engine_args[2], "table_name");
+            }
 
             BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(
                 args.getContext(),
                 args.getContext()->getSettingsRef()[Setting::http_receive_timeout].value,
-                checkAndGetLiteralArgument<String>(engine_args[0], "connection_string"),
+                configuration.connection_string,
                 args.getContext()->getSettingsRef()[Setting::odbc_bridge_use_connection_pooling].value);
             return std::make_shared<StorageXDBC>(
                 args.table_id,
-                checkAndGetLiteralArgument<String>(engine_args[1], "database_name"),
-                checkAndGetLiteralArgument<String>(engine_args[2], "table_name"),
+                configuration.database_or_schema,
+                configuration.table,
                 args.columns,
                 args.constraints,
                 args.comment,
