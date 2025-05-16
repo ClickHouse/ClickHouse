@@ -136,3 +136,36 @@ multiIf strings not expected to work
 13	\N	Nullable(String)
 14	\N	Nullable(String)
 15	FizzBuzz	Nullable(String)
+transform with default - should become LowCardinality
+100	US	United States	LowCardinality(String)
+101	GB	United Kingdom	LowCardinality(String)
+102	DE	Germany	LowCardinality(String)
+103	FR	Unknown	LowCardinality(String)
+104	IT	Unknown	LowCardinality(String)
+105	US	United States	LowCardinality(String)
+106	GB	United Kingdom	LowCardinality(String)
+107	DE	Germany	LowCardinality(String)
+108	FR	Unknown	LowCardinality(String)
+109	IT	Unknown	LowCardinality(String)
+transform with default and NULLs- should become LowCardinality(Nullable(String))
+100	US	United States	LowCardinality(Nullable(String))
+101	GB	United Kingdom	LowCardinality(Nullable(String))
+102	DE	Germany	LowCardinality(Nullable(String))
+103	FR	Unknown	LowCardinality(Nullable(String))
+104	IT	Unknown	LowCardinality(Nullable(String))
+105	US	United States	LowCardinality(Nullable(String))
+106	GB	United Kingdom	LowCardinality(Nullable(String))
+107	DE	Germany	LowCardinality(Nullable(String))
+108	FR	Unknown	LowCardinality(Nullable(String))
+109	IT	Unknown	LowCardinality(Nullable(String))
+transform without default
+100	US	United States	String
+101	GB	United Kingdom	String
+102	DE	Germany	String
+103	FR	FR	String
+104	IT	IT	String
+105	US	United States	String
+106	GB	United Kingdom	String
+107	DE	Germany	String
+108	FR	FR	String
+109	IT	IT	String
