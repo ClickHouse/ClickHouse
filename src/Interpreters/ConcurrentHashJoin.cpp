@@ -44,9 +44,9 @@ using namespace DB;
     case HashJoin::Type::TYPE:         \
         return f(*(maps).TYPE);
 
-// #define INVOKE_WITH_MAPS(TYPE, lhs_maps, rhs_maps, f) \
-//     case HashJoin::Type::TYPE:                        \
-//         return f(*(lhs_maps).TYPE, *(rhs_maps).TYPE);
+#define INVOKE_WITH_MAPS(TYPE, lhs_maps, rhs_maps, f) \
+    case HashJoin::Type::TYPE:                        \
+        return f(*(lhs_maps).TYPE, *(rhs_maps).TYPE);
 
 #define APPLY_TO_MAP(M, type, ...)                        \
     switch (type)                                         \
