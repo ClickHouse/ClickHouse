@@ -48,14 +48,15 @@ private:
     Block sample_block;
     std::unordered_map<size_t, std::pair<size_t, std::pair<DataTypePtr, Field>>> arrays_info;
     const UInt64 max_block_size;
+    bool all_read = false;
 
-    JSONBuilder::FormatSettings json_format_settings{
+    const JSONBuilder::FormatSettings json_format_settings
+    {
             {.json = {.quote_64bit_integers = false, .max_depth = 0}},
             0,
             true,
             true,
     };
-    bool all_read = false;
 };
 
 }
