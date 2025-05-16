@@ -143,8 +143,6 @@ arraySimilarity
 arraySplit
 arrayStringConcat
 arraySum
-arrayZip
-arrayZipUnaligned
 ascii
 asin
 asinh
