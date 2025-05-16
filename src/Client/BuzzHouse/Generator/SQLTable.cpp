@@ -1639,23 +1639,24 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     this->ids.clear();
 }
 
-static const std::vector<TableEngineValues> likeEngs = {/* Deterministic engines */
-                                                        TableEngineValues::MergeTree,
-                                                        TableEngineValues::ReplacingMergeTree,
-                                                        TableEngineValues::SummingMergeTree,
-                                                        TableEngineValues::AggregatingMergeTree,
-                                                        TableEngineValues::File,
-                                                        TableEngineValues::Null,
-                                                        TableEngineValues::Set,
-                                                        TableEngineValues::Join,
-                                                        TableEngineValues::Memory,
-                                                        TableEngineValues::StripeLog,
-                                                        TableEngineValues::Log,
-                                                        TableEngineValues::TinyLog,
-                                                        TableEngineValues::EmbeddedRocksDB,
-                                                        /* Not deterministic engines */
-                                                        TableEngineValues::Merge,
-                                                        TableEngineValues::GenerateRandom};
+static const std::vector<TableEngineValues> likeEngs
+    = {/* Deterministic engines */
+       TableEngineValues::MergeTree,
+       TableEngineValues::ReplacingMergeTree,
+       TableEngineValues::SummingMergeTree,
+       TableEngineValues::AggregatingMergeTree,
+       TableEngineValues::File,
+       TableEngineValues::Null,
+       TableEngineValues::Set,
+       TableEngineValues::Join,
+       TableEngineValues::Memory,
+       TableEngineValues::StripeLog,
+       TableEngineValues::Log,
+       TableEngineValues::TinyLog,
+       TableEngineValues::EmbeddedRocksDB,
+       /* Not deterministic engines */
+       TableEngineValues::Merge,
+       TableEngineValues::GenerateRandom};
 
 void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const bool in_parallel, CreateTable * ct)
 {
@@ -2044,8 +2045,9 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
         sv->set_property("SIZE_IN_CELLS");
-        sv->set_value(std::to_string(
-            rg.thresholdGenerator<uint32_t>(0.25, 0.25, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))));
+        sv->set_value(
+            std::to_string(
+                rg.thresholdGenerator<uint32_t>(0.25, 0.25, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))));
     }
 
     /// Add Primary Key

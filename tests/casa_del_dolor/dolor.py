@@ -39,7 +39,11 @@ parser.add_argument("--server-config", type = pathlib.Path, help = 'Path to conf
 parser.add_argument("-s", "--seed", type = int, default = 0, help = 'Server fuzzer seed')
 parser.add_argument("-u", "--user-config", type = pathlib.Path, help = 'Path to users.xml file')
 parser.add_argument("--kill-server-prob", type = int, default = 50, choices=range(0, 101), help = 'Probability to kill the server instead of shutting it down')
-parser.add_argument('--time-between-shutdowns', type=ordered_pair, default=(20, 30), help="In seconds. Two ordered integers separated by comma (e.g., 30,60)")
+parser.add_argument('--time-between-shutdowns', type = ordered_pair, default=(20, 30), help="In seconds. Two ordered integers separated by comma (e.g., 30,60)")
+parser.add_argument("--with-postgresql", type = bool, default = False, help = 'With PostgreSQL integration')
+parser.add_argument("--with-mysql", type = bool, default = False, help = 'With MySQL integration')
+parser.add_argument("--with-minio", type = bool, default = True, help = 'With MinIO integration')
+parser.add_argument("--with-sqlite", type = bool, default = True, help = 'With SQLite integration')
 args = parser.parse_args()
 
 if len(args.replica_values) != len(args.shard_values):
@@ -56,11 +60,6 @@ if seed == 0:
     seed = secrets.randbits(64) #64 - bit random integer
 random.seed(seed)
 logger.info(f"Using seed: {seed}")
-
-# Set generator, at the moment only BuzzHouse is available
-generator = None
-if args.generator == 'buzzhouse':
-    generator = BuzzHouseGenerator(args.client_binary, args.client_config)
 
 # Use random server settings sometimes
 server_settings = args.server_config
@@ -83,11 +82,13 @@ cluster = ClickHouseCluster(__file__)
 servers = []
 for i in range(0, len(args.replica_values)):
     servers.append(cluster.add_instance(f"node{i}",
-                                        with_zookeeper = True,
-                                        with_minio = True,
-                                        stay_alive = True,
                                         with_dolor = True,
+                                        with_zookeeper = True,
+                                        stay_alive = True,
                                         keeper_required_feature_flags=["multi_read"],
+                                        with_minio = args.with_minio,
+                                        with_postgres = args.with_postgresql,
+                                        with_mysql8 = args.with_mysql,
                                         main_configs = [server_settings] if server_settings is not None else [],
                                         user_configs = [args.user_config] if args.user_config is not None else [],
                                         macros={"replica": args.replica_values[i], "shard": args.shard_values[i]}))
@@ -96,10 +97,16 @@ logger.info(f"Starting cluster with {len(servers)} server(s)")
 servers[len(servers) - 1].wait_start(8)
 logger.info(f"First server running on host {servers[0].ip_address}, port 9000")
 
-# Start the load generator
+# Start the load generator, at the moment only BuzzHouse is available
+generator = None
+if args.generator == 'buzzhouse':
+    generator = BuzzHouseGenerator(args, cluster)
 logger.info("Start load generator")
 client = generator.run_generator(servers[0])
+
 def dolor_cleanup():
+    global generator, client, modified_server_settings, server_settings, server_path
+
     if client.process.poll() is None:
         client.process.kill()
     if modified_server_settings:
@@ -109,6 +116,10 @@ def dolor_cleanup():
             pass
     try:
         os.unlink(server_path)
+    except FileNotFoundError:
+        pass
+    try:
+        os.unlink(generator.temp.name)
     except FileNotFoundError:
         pass
 atexit.register(dolor_cleanup)

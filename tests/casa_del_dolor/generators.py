@@ -7,28 +7,62 @@ import tempfile
 
 from integration.helpers.client import CommandRequest
 from integration.helpers.cluster import ClickHouseInstance
+from integration.helpers.config_cluster import minio_secret_key, pg_pass, mysql_pass
 
 class Generator():
     def __init__(self, binary : pathlib.Path, config : pathlib.Path):
         self.binary : pathlib.Path = binary
         self.config : pathlib.Path = config
+        self.temp = tempfile.NamedTemporaryFile()
 
     @abstractmethod
     def run_generator(self) -> CommandRequest:
         pass
 
 class BuzzHouseGenerator(Generator):
-    def __init__(self, binary : pathlib.Path, config : pathlib.Path):
-        super().__init__(binary, config)
+    def __init__(self, args, cluster):
+        super().__init__(args.client_binary, args.client_config)
 
         # Load configuration
         buzz_config = {}
-        self.temp = tempfile.NamedTemporaryFile()
-        if config is not None:
-            with open(config, 'r') as file1:
+        if args.client_config is not None:
+            with open(args.client_config, 'r') as file1:
                 buzz_config  = json.load(file1)
 
         buzz_config['seed'] = random.randint(1, 18446744073709551615)
+
+        # Add external integrations credentials
+        if args.with_minio:
+            buzz_config['minio'] = {
+                "database": cluster.minio_bucket,
+                "hostname": cluster.minio_host,
+                "port": cluster.minio_port,
+                "user": "minio",
+                "password": minio_secret_key
+            }
+        if args.with_postgresql:
+            buzz_config['postgresql'] = {
+                "query_log_file": "/tmp/postgresql.sql",
+                "database": "default",
+                "hostname": cluster.postgres_ip,
+                "port": cluster.postgres_port,
+                "user": "postgres",
+                "password": pg_pass
+            }
+        if args.with_mysql:
+            buzz_config['mysql'] = {
+                "query_log_file": "/tmp/mysql.sql",
+                "database": "test",
+                "hostname": cluster.mysql8_ip,
+                "port": cluster.mysql8_port,
+                "user": "root",
+                "password": mysql_pass
+            }
+        if args.with_sqlite:
+            buzz_config['sqlite'] = {
+                "query_log_file": "/tmp/sqlite.sql"
+            }
+
         with open(self.temp.name, "w") as file2:
             file2.write(json.dumps(buzz_config))
 
