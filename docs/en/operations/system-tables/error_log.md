@@ -18,16 +18,8 @@ Columns:
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
 - `code` ([Int32](../../sql-reference/data-types/int-uint.md)) — Code number of the error.
 - `error` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) - Name of the error.
-- `last_error_time` ([DateTime](../../sql-reference/data-types/datetime.md))  — The time when the last error happened.
-- `last_error_message` ([String](../../sql-reference/data-types/string.md)) — Message for the last error.
 - `value` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The number of times this error happened.
 - `remote` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Remote exception (i.e. received during one of the distributed queries).
-- `last_error_query_id` ([String](../../sql-reference/data-types/string.md)) — Id of a query that caused the last error (if available).
-- `last_error_trace` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — A stack trace that represents a list of physical addresses where the called methods are stored.
-- `last_error_symbols` ([Array(LowCardinality(String))](../../sql-reference/data-types/array.md)), If the symbolization is enabled, contains demangled symbol names, corresponding to the `last_error_trace`.
-- `last_error_lines` ([Array(LowCardinality(String))](../../sql-reference/data-types/array.md)), If the symbolization is enabled, contains strings with file names with line numbers, corresponding to the `last_error_trace`.
-
-The symbolization can be enabled or disabled in the `symbolize` under `error_log` in the server's configuration file.
 
 **Example**
 
