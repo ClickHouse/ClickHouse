@@ -125,7 +125,46 @@ using FunctionArrayLastIndex = FunctionArrayMapped<ArrayLastIndexImpl, NameArray
 
 REGISTER_FUNCTION(ArrayFirstIndex)
 {
-    factory.registerFunction<FunctionArrayFirstIndex>();
+    FunctionDocumentation::Description description_first = R"(
+Returns the index of the first element in the source array for which `λ(x [, y1, y2, ... yN])` returns something other than 0, otherwise it returns '0'.
+`arrayFirst` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
+)";
+    FunctionDocumentation::Syntax syntax_first = "arrayFirstIndex(λ(x [, y1, ..., yN]), source, [, cond1, ... , condN])";
+    FunctionDocumentation::Arguments arguments_first = {
+        {"λ(x [, y1, ..., yN])", "A lambda function `λ(x [, y1, y2, ... yN]) → F(x [, y1, y2, ... yN])` which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"source", "The source array to process. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_first = "Returns the index of the first element of the source array for which `λ` is not `0`, otherwise returns `0`. [`UInt32`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::Examples examples_first = {
+        {"Usage example", "SELECT arrayFirstIndex(x, y -> x=y, ['a', 'b', 'c'], ['c', 'b', 'a'])", "2"},
+        {"No match", "SELECT arrayFirstIndex(x, y -> x=y, ['a', 'b', 'c'], ['d', 'e', 'f']) ", "0"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_first = {1, 1};
+    FunctionDocumentation::Category category_first = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_first = {description_first, syntax_first, arguments_first, returned_value_first, examples_first, introduced_in_first, category_first};
+
+    factory.registerFunction<FunctionArrayFirstIndex>(documentation_first);
+
+    FunctionDocumentation::Description description_last = R"(
+Returns the index of the last element in the source array for which `λ(x [, y1, y2, ... yN])` returns something other than 0, otherwise it returns '0'.
+`arrayFirst` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
+)";
+    FunctionDocumentation::Syntax syntax_last = "arrayLastIndex(λ(x [, y1, ..., yN]), source, [, cond1, ... , condN])";
+    FunctionDocumentation::Arguments arguments_last = {
+        {"λ(x [, y1, ..., yN])", "A lambda function `λ(x [, y1, y2, ... yN]) → F(x [, y1, y2, ... yN])` which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"source", "The source array to process. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_last = "Returns the index of the last element of the source array for which `λ` is not `0`, otherwise returns `0`. [`UInt32`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::Examples examples_last = {
+        {"Usage example", "SELECT arrayLastIndex(x, y -> x=y, ['a', 'b', 'c'], ['a', 'b', 'c']);", "3"},
+        {"No match", "SELECT arrayLastIndex(x, y -> x=y, ['a', 'b', 'c'], ['d', 'e', 'f']);", "0"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_last = {1, 1};
+    FunctionDocumentation::Category category_last = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_last = {description_last, syntax_last, arguments_last, returned_value_last, examples_last, introduced_in_last, category_last};
+
     factory.registerFunction<FunctionArrayLastIndex>();
 }
 

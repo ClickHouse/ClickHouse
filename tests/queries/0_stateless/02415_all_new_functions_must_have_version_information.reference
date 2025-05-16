@@ -120,12 +120,6 @@ arrayEnumerateDenseRanked
 arrayEnumerateUniq
 arrayFill
 arrayFilter
-arrayFirst
-arrayFirstIndex
-arrayFirstOrNull
-arrayLast
-arrayLastIndex
-arrayLastOrNull
 arrayLevenshteinDistance
 arrayLevenshteinDistanceWeighted
 arrayMap

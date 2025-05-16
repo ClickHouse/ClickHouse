@@ -102,8 +102,6 @@ arrayEnumerateDenseRanked
 arrayEnumerateUniq
 arrayFill
 arrayFilter
-arrayFirstIndex
-arrayLastIndex
 arrayMap
 arrayMax
 arrayMin
