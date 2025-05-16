@@ -5307,9 +5307,11 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             if (settings[Setting::analyzer_compatibility_join_using_top_level_identifier])
                 result_left_table_expression = try_resolve_identifier_from_query_projection(identifier_full_name, join_node_typed.getLeftTableExpression(), scope);
 
-            IdentifierLookup identifier_lookup{identifier_node->getIdentifier(), IdentifierLookupContext::EXPRESSION};
             if (!result_left_table_expression)
+            {
+                IdentifierLookup identifier_lookup{identifier_node->getIdentifier(), IdentifierLookupContext::EXPRESSION};
                 result_left_table_expression = identifier_resolver.tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getLeftTableExpression(), scope).resolved_identifier;
+            }
 
             /** Here we may try to resolve identifier from projection in case it's not resolved from left table expression
               * and analyzer_compatibility_join_using_top_level_identifier is disabled.
@@ -5353,19 +5355,23 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                     identifier_full_name,
                     scope.scope_node->formatASTForErrorMessage());
 
+            /// Here we allow syntax 'USING (a AS b)' which means that 'a' is taken from left and 'b' is taken from right.
+            /// See 03449_join_using_allow_alias.sql and the comment in JoinNode.cpp
+            const auto & right_name = identifier_node->hasAlias() ? identifier_node->getAlias() : identifier_full_name;
+            IdentifierLookup identifier_lookup{Identifier(right_name), IdentifierLookupContext::EXPRESSION};
             auto result_right_table_expression = identifier_resolver.tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getRightTableExpression(), scope).resolved_identifier;
             if (!result_right_table_expression)
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                     "JOIN {} using identifier '{}' cannot be resolved from right table expression. In scope {}",
                     join_node_typed.formatASTForErrorMessage(),
-                    identifier_full_name,
+                    right_name,
                     scope.scope_node->formatASTForErrorMessage());
 
             if (result_right_table_expression->getNodeType() != QueryTreeNodeType::COLUMN)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                     "JOIN {} using identifier '{}' must be resolved into column node from right table expression. In scope {}",
                     join_node_typed.formatASTForErrorMessage(),
-                    identifier_full_name,
+                    right_name,
                     scope.scope_node->formatASTForErrorMessage());
 
             auto expression_types = DataTypes{result_left_table_expression->getResultType(), result_right_table_expression->getResultType()};
@@ -5377,7 +5383,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                     join_node_typed.formatASTForErrorMessage(),
                     result_left_table_expression->getResultType()->getName(),
                     result_right_table_expression->getResultType()->getName(),
-                    identifier_full_name,
+                    right_name,
                     scope.scope_node->formatASTForErrorMessage());
 
             NameAndTypePair join_using_column(identifier_full_name, common_type);

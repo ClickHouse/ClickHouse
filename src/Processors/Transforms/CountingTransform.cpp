@@ -18,23 +18,15 @@ namespace DB
 
 void CountingTransform::onConsume(Chunk chunk)
 {
+    auto written_bytes = chunk.bytes();
+
     if (quota)
-        quota->used(QuotaType::WRITTEN_BYTES, chunk.bytes());
+        quota->used(QuotaType::WRITTEN_BYTES, written_bytes);
 
-    Progress local_progress{WriteProgress(chunk.getNumRows(), chunk.bytes())};
-    progress.incrementPiecewiseAtomically(local_progress);
+    Progress local_progress{WriteProgress(chunk.getNumRows(), written_bytes)};
 
-    if (thread_status)
-    {
-        thread_status->performance_counters.increment(ProfileEvents::InsertedRows, local_progress.written_rows);
-        thread_status->performance_counters.increment(ProfileEvents::InsertedBytes, local_progress.written_bytes);
-        thread_status->progress_out.incrementPiecewiseAtomically(local_progress);
-    }
-    else
-    {
-        ProfileEvents::increment(ProfileEvents::InsertedRows, local_progress.written_rows);
-        ProfileEvents::increment(ProfileEvents::InsertedBytes, local_progress.written_bytes);
-    }
+    ProfileEvents::increment(ProfileEvents::InsertedRows, local_progress.written_rows);
+    ProfileEvents::increment(ProfileEvents::InsertedBytes, written_bytes);
 
     if (process_elem)
         process_elem->updateProgressOut(local_progress);
