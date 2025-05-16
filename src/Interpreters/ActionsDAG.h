@@ -275,6 +275,16 @@ public:
 
     static ActionsDAG cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases);
 
+    /// Clone the DAG while preserving only the subgraph that can be computed
+    /// using the specified available input columns.
+    ///
+    /// Special handling for logical functions:
+    /// - For 'and', children that can't be computed are replaced with constant 1
+    /// - For 'or', children that can't be computed are replaced with constant 0
+    ///
+    /// This is useful for evaluating boolean filter in projection indices where some inputs are missing.
+    ActionsDAG restrictFilterDAGToInputs(const ActionsDAG::Node * filter_node, const NameSet & available_inputs) const;
+
     /// Execute actions for header. Input block must have empty columns.
     /// Result should be equal to the execution of ExpressionActions built from this DAG.
     /// Actions are not changed, no expressions are compiled.
