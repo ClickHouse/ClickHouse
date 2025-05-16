@@ -1,5 +1,6 @@
 #include <memory>
 #include <Databases/IDatabase.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/TableNameHints.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -215,5 +216,8 @@ ASTPtr IDatabase::getCreateTableQueryImpl(const String & /*name*/, ContextPtr /*
     return nullptr;
 }
 
-
+DiskPtr IDatabase::getDisk() const
+{
+    return Context::getGlobalContextInstance()->getDatabaseDisk();
+}
 }

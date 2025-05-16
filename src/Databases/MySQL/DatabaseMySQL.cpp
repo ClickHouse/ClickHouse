@@ -87,7 +87,6 @@ DatabaseMySQL::DatabaseMySQL(
     , database_name_in_mysql(database_name_in_mysql_)
     , mysql_settings(std::move(settings_))
     , mysql_pool(std::move(pool)) /// NOLINT
-    , db_disk(getContext()->getDatabaseDisk())
 {
     try
     {
@@ -101,6 +100,7 @@ DatabaseMySQL::DatabaseMySQL(
         else
             throw;
     }
+    auto db_disk = getDisk();
     db_disk->createDirectories(metadata_path);
 
     thread = ThreadFromGlobalPool{&DatabaseMySQL::cleanOutdatedTables, this};
@@ -356,8 +356,9 @@ void DatabaseMySQL::shutdown()
     local_tables_cache.clear();
 }
 
-void DatabaseMySQL::drop(ContextPtr /*context*/)
+void DatabaseMySQL::drop(ContextPtr)
 {
+    auto db_disk = getDisk();
     db_disk->removeRecursive(getMetadataPath());
 }
 
@@ -406,6 +407,7 @@ void DatabaseMySQL::attachTable(ContextPtr /* context_ */, const String & table_
     remove_or_detach_tables.erase(table_name);
     fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
 
+    auto db_disk = getDisk();
     db_disk->removeFileIfExists(remove_flag);
 }
 
@@ -437,6 +439,7 @@ String DatabaseMySQL::getMetadataPath() const
 
 void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/)
 {
+    auto db_disk = getDisk();
     std::lock_guard lock{mutex};
     for (const auto it = db_disk->iterateDirectory(metadata_path); it->isValid(); it->next())
     {
@@ -455,6 +458,8 @@ void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel 
 
 void DatabaseMySQL::detachTablePermanently(ContextPtr, const String & table_name)
 {
+    auto db_disk = getDisk();
+
     std::lock_guard lock{mutex};
 
     fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
