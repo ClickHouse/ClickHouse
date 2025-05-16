@@ -167,9 +167,6 @@ Block executeMonoBlock(QueryPipeline & pipeline)
             break;
     }
 
-    if (blocks.size() == 1)
-        return blocks[0];
-
     return concatenateBlocks(blocks);
 }
 
