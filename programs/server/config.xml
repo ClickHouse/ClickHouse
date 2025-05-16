@@ -935,6 +935,8 @@
                     <!-- <priority>1</priority> -->
                     <!-- Use SSL? Default: no -->
                     <!-- <secure>0</secure> -->
+                    <!-- Optional. Bind to specific host before connecting to use a specific network. -->
+                    <!-- <bind_host>10.0.0.1</bind_host> -->
                 </replica>
             </shard>
         </default>
@@ -1688,17 +1690,14 @@
     -->
 
     <send_crash_reports>
-        <!-- Changing <enabled> to true allows sending crash reports to -->
+        <!-- Setting <enabled> to true allows sending crash reports to -->
         <!-- the ClickHouse core developers team via Sentry https://sentry.io -->
         <!-- Doing so at least in pre-production environments is highly appreciated -->
-        <enabled>false</enabled>
-        <!-- Change <anonymize> to true if you don't feel comfortable attaching the server hostname to the crash report -->
-        <anonymize>false</anonymize>
-        <!-- Default endpoint should be changed to different Sentry DSN only if you have -->
-        <!-- some in-house engineers or hired consultants who're going to debug ClickHouse issues for you -->
+        <enabled>true</enabled>
+        <send_logical_errors>true</send_logical_errors>
+        <!-- The reports are anonymized by default -->
+        <anonymize>true</anonymize>
         <endpoint>https://6f33034cfe684dd7a3ab9875e57b1c8d@o388870.ingest.sentry.io/5226277</endpoint>
-        <!-- Send LOGICAL_ERRORs as well (default: false) -->
-        <send_logical_errors>false</send_logical_errors>
     </send_crash_reports>
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->

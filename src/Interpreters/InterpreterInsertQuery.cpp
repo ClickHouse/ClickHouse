@@ -72,7 +72,7 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_insert_threads;
     extern const SettingsUInt64 min_insert_block_size_rows;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 preferred_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsString insert_deduplication_token;
@@ -638,6 +638,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
         });
     }
 
+
     /// Number of streams works like this:
     ///  * For the SELECT, use `max_threads`, or `max_insert_threads`, or whatever
     ///    InterpreterSelectQuery ends up with.
@@ -645,7 +646,6 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     ///    materializing and squashing (too slow to do in one thread). That's `presink_chains`.
     ///  * If the table supports parallel inserts, use max_insert_threads for writing to IStorage.
     ///    Otherwise ResizeProcessor them down to 1 stream.
-
     size_t presink_streams_size = std::max<size_t>(settings[Setting::max_insert_threads], pipeline.getNumStreams());
     if (settings[Setting::max_insert_threads].changed)
         presink_streams_size = std::max<size_t>(1, settings[Setting::max_insert_threads]);
@@ -834,7 +834,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, getContext(), no_destination, allow_materialized);
 
     Chain chain;
-
     {
         auto [presink_chains, sink_chains] = buildPreAndSinkChains(
             /* presink_streams */1, /* sink_streams */1,
