@@ -19,6 +19,7 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, String) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, Double) \
+    M(CLASS_NAME, FileCachePolicy) \
     M(CLASS_NAME, UInt64)
 
 FILE_CACHE_SETTINGS_SUPPORTED_TYPES(FileCacheSettings, DECLARE_SETTING_TRAIT)
