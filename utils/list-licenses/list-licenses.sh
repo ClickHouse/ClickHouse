@@ -76,7 +76,7 @@ do
          ${GREP_CMD} -q -i -F 'distribution of the software without specific, written prior permission' "$LIB_LICENSE" &&
          ${GREP_CMD} -q -i -F 'makes no representations about the suitability of this software' "$LIB_LICENSE" &&
          echo "HPND") ||
-        (${GREP_CMD} -q -F 'Permission is hereby granted to use, copy, modify, and distribute this software' "$LIB_LICENSE" &&
+        (${GREP_CMD} -q -F 'Permission is hereby granted to use, copy, modify, and distribute' "$LIB_LICENSE" &&
          ${GREP_CMD} -q -F 'The origin of this software must not be misrepresented' "$LIB_LICENSE" &&
          ${GREP_CMD} -q -F 'This Copyright notice may not be removed or altered' "$LIB_LICENSE" &&
          ${GREP_CMD} -q -F 'PNG Reference Library Authors' "$LIB_LICENSE" &&
