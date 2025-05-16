@@ -180,11 +180,11 @@ class PortPoolManager:
 
         if self.all_ports is None:
             worker_ports = os.getenv("WORKER_FREE_PORTS")
-            if worker_ports is not None:
-                ports = [int(p) for p in worker_ports.split(" ")]
-                # Static vars
-                PortPoolManager.all_ports = ports
-                PortPoolManager.free_ports = ports
+            ports = [int(p) for p in worker_ports.split(" ")]
+
+            # Static vars
+            PortPoolManager.all_ports = ports
+            PortPoolManager.free_ports = ports
 
     def get_port(self):
         for port in self.free_ports:

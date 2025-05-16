@@ -9,6 +9,7 @@ import time
 import sys
 
 sys.path.append('..')
+os.environ["WORKER_FREE_PORTS"] = '9000'
 from integration.helpers.cluster import ClickHouseCluster
 from integration.helpers.postgres_utility import get_postgres_conn
 from generators import BuzzHouseGenerator
@@ -168,6 +169,7 @@ while True:
             pass
         os.symlink(current_server, new_temp_server_path)
         os.rename(new_temp_server_path, server_path)
+    time.sleep(15) # Let the zookeeper session expire
     next_pick.start_clickhouse(start_wait_sec = 10, retry_start = False)
 
 cluster.shutdown()
