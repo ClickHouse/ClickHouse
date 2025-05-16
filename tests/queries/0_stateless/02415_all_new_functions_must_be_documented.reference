@@ -101,7 +101,6 @@ arrayEnumerateDense
 arrayEnumerateDenseRanked
 arrayEnumerateUniq
 arrayExists
-arrayFill
 arrayFilter
 arrayFirst
 arrayFirstIndex
@@ -109,13 +108,10 @@ arrayFirstOrNull
 arrayLast
 arrayLastIndex
 arrayLastOrNull
-arrayMap
 arrayMax
 arrayMin
 arrayProduct
-arrayROCAUC
 arrayRandomSample
-arrayReverseFill
 arrayReverseSplit
 arraySplit
 arrayStringConcat
