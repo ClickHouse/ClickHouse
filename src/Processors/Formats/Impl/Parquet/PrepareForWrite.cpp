@@ -422,7 +422,8 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             }
             break;
         }
-        case TypeIndex::Object: {
+        case TypeIndex::Object:
+        {
             parq::LogicalType t;
             t.__set_JSON({});
             types(T::BYTE_ARRAY, C::JSON, t);
