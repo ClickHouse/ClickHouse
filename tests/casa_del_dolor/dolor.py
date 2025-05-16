@@ -10,6 +10,7 @@ import sys
 
 sys.path.append('..')
 from integration.helpers.cluster import ClickHouseCluster
+from integration.helpers.postgres_utility import get_postgres_conn
 from generators import BuzzHouseGenerator
 from properties import modify_server_settings_with_random_properties
 
@@ -39,11 +40,11 @@ parser.add_argument("--server-config", type = pathlib.Path, help = 'Path to conf
 parser.add_argument("-s", "--seed", type = int, default = 0, help = 'Server fuzzer seed')
 parser.add_argument("-u", "--user-config", type = pathlib.Path, help = 'Path to users.xml file')
 parser.add_argument("--kill-server-prob", type = int, default = 50, choices=range(0, 101), help = 'Probability to kill the server instead of shutting it down')
-parser.add_argument('--time-between-shutdowns', type = ordered_pair, default=(20, 30), help="In seconds. Two ordered integers separated by comma (e.g., 30,60)")
+parser.add_argument('--time-between-shutdowns', type = ordered_pair, default=(20, 30), help='In seconds. Two ordered integers separated by comma (e.g., 30,60)')
 parser.add_argument("--with-postgresql", type = bool, default = False, help = 'With PostgreSQL integration')
 parser.add_argument("--with-mysql", type = bool, default = False, help = 'With MySQL integration')
 parser.add_argument("--with-minio", type = bool, default = True, help = 'With MinIO integration')
-parser.add_argument("--with-sqlite", type = bool, default = True, help = 'With SQLite integration')
+parser.add_argument("--with-sqlite", type = bool, default = False, help = 'With SQLite integration')
 args = parser.parse_args()
 
 if len(args.replica_values) != len(args.shard_values):
@@ -96,6 +97,13 @@ cluster.start()
 logger.info(f"Starting cluster with {len(servers)} server(s)")
 servers[len(servers) - 1].wait_start(8)
 logger.info(f"First server running on host {servers[0].ip_address}, port 9000")
+
+if args.with_postgresql:
+    postgres_conn = get_postgres_conn(ip=cluster.postgres_ip, port=cluster.postgres_port)
+    cursor = postgres_conn.cursor()
+    cursor.execute(f"CREATE DATABASE test")
+    cursor.close()
+    postgres_conn.close()
 
 # Start the load generator, at the moment only BuzzHouse is available
 generator = None

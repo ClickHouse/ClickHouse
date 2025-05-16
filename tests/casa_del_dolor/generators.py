@@ -43,7 +43,7 @@ class BuzzHouseGenerator(Generator):
         if args.with_postgresql:
             buzz_config['postgresql'] = {
                 "query_log_file": "/tmp/postgresql.sql",
-                "database": "default",
+                "database": "test",
                 "hostname": cluster.postgres_ip,
                 "port": cluster.postgres_port,
                 "user": "postgres",
