@@ -184,6 +184,46 @@ TEST(ColumnUniqueCompressed, RangeInsertWithOverflowFCBlockDF)
     }
 }
 
+TEST(ColumnUniqueCompressed, RangeInsertWithOverflowDuplicatesFCBlockDF)
+{
+    const std::vector<std::string> data = {
+        "string",
+        "string",
+        "string",
+        "string",
+        "string",
+        "string",
+        "string",
+        "string",
+        "string",
+        "actually real new value",
+    };
+
+    auto strings_column = ColumnString::create();
+    for (const auto & str : data)
+    {
+        strings_column->insert(str);
+    }
+
+    auto unique_compressed_column = getNotEmptyColumnUniqueCompressedFCBlockDF();
+    const size_t max_dict_size = unique_compressed_column->size();
+    const auto res_with_overflow = unique_compressed_column->uniqueInsertRangeWithOverflow(*strings_column, 0, strings_column->size(), max_dict_size);
+
+    /// duplicate value
+    for (size_t i = 0; i < data.size() - 1; ++i)
+    {
+        const auto index = unique_compressed_column->getOrFindValueIndex(data[i]);
+        EXPECT_FALSE(index.has_value());
+        EXPECT_EQ((*res_with_overflow.indexes)[i].safeGet<size_t>(), unique_compressed_column->size());
+    }
+
+    /// unique value
+    const size_t pos = data.size() - 1;
+    const auto index = unique_compressed_column->getOrFindValueIndex(data[pos]);
+    EXPECT_FALSE(index.has_value());
+    EXPECT_EQ((*res_with_overflow.indexes)[pos].safeGet<size_t>(), unique_compressed_column->size() + 1);
+}
+
 TEST(ColumnUniqueCompressed, SerializationFCBlockDF)
 {
     const auto column_unique_compressed = getNotEmptyColumnUniqueCompressedFCBlockDF();
