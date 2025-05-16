@@ -62,6 +62,7 @@ StoragePtr TableFunctionPredict::executeImpl(
 
             for (const auto& column: block.getColumnsWithTypeAndName())
             {
+                // TODO
                 const Feature value = column.column->getFloat64(row);
                 if (column.name == "target")
                 {
