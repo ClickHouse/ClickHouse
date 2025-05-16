@@ -85,3 +85,39 @@ SELECT
     AS txt,
     toTypeName(txt)
 FROM numbers(15);
+
+SELECT 'transform with default - should become LowCardinality';
+SELECT 
+    user_id,
+    country_code,
+    transform(country_code, ['US', 'GB', 'DE'], ['United States', 'United Kingdom', 'Germany'], 'Unknown') AS country_name, toTypeName(country_name)
+FROM (
+    SELECT 
+        number + 100 AS user_id,
+        ['US', 'GB', 'DE', 'FR', 'IT'][number % 5 + 1] AS country_code
+    FROM numbers(10)
+);
+
+SELECT 'transform with default and NULLs- should become LowCardinality(Nullable(String))';
+SELECT 
+    user_id,
+    country_code,
+    transform(country_code, ['US', 'GB', 'DE', NULL], ['United States', 'United Kingdom', 'Germany', NULL], 'Unknown') AS country_name, toTypeName(country_name)
+FROM (
+    SELECT 
+        number + 100 AS user_id,
+        ['US', 'GB', 'DE', 'FR', 'IT', NULL][number % 5 + 1] AS country_code
+    FROM numbers(10)
+);
+
+SELECT 'transform without default';
+SELECT 
+    user_id,
+    country_code,
+    transform(country_code, ['US', 'GB', 'DE'], ['United States', 'United Kingdom', 'Germany']) AS country_name, toTypeName(country_name)
+FROM (
+    SELECT 
+        number + 100 AS user_id,
+        ['US', 'GB', 'DE', 'FR', 'IT'][number % 5 + 1] AS country_code
+    FROM numbers(10)
+);
