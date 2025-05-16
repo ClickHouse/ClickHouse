@@ -688,6 +688,7 @@ bool QueryOracle::findTablesWithPeersAndReplace(
 
         if (torfunc.has_est())
         {
+            bool res = false;
             const ExprSchemaTable & est = torfunc.est();
 
             if ((!est.has_database() || est.database().database() != "system") && est.table().table().at(0) == 't')
@@ -696,6 +697,7 @@ bool QueryOracle::findTablesWithPeersAndReplace(
 
                 if (gen.tables.find(tname) != gen.tables.end())
                 {
+
                     const SQLTable & t = gen.tables.at(tname);
 
                     if (t.hasDatabasePeer())
@@ -703,13 +705,14 @@ bool QueryOracle::findTablesWithPeersAndReplace(
                         if (replace)
                         {
                             insertOnTableOrCluster(rg, gen, t, true, &torfunc);
-                            return !t.hasClickHousePeer();
                         }
                         found_tables.insert(tname);
+                        res = !t.hasClickHousePeer();
                         can_test_query_success &= t.hasClickHousePeer();
                     }
                 }
             }
+            return res;
         }
         else if (torfunc.has_tfunc())
         {
