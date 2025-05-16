@@ -83,7 +83,7 @@ REGISTER_FUNCTION(ArrayConcat)
     FunctionDocumentation::Description description = "Combines arrays passed as arguments.";
     FunctionDocumentation::Syntax syntax = "arrayConcat(arr1 [, arr2, ... , arrN])";
     FunctionDocumentation::Arguments arguments = {
-        {"arr1 [, arr2, ... , arrN]", "N number of arrays to concatinate. [`Array(T)`](/sql-reference/data-types/array)."}
+        {"arr1 [, arr2, ... , arrN]", "N number of arrays to concatenate. [`Array(T)`](/sql-reference/data-types/array)."}
     };
     FunctionDocumentation::ReturnedValue returned_value = "Returns a single combined array from the provided array arguments.";
     FunctionDocumentation::Examples example = {{"Usage example", "SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res", "[1,2,3,4,5,6]"}};
