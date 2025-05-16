@@ -2,6 +2,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
@@ -71,7 +72,7 @@ public:
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}. Expected Point, Ring, Polygon, or MultiPolygon",
+                "Illegal type {} of argument of function {}. Expected Point (Tuple), Ring (Array(Point)), Polygon (Array(Ring)), or MultiPolygon (Array(Polygon))",
                 arg.type->getName(),
                 getName());
         }
@@ -94,9 +95,23 @@ private:
         if (tuple_columns.size() != 2)
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Function {} expects a Point with exactly 2 coordinates, got {}",
+                "Function {} expects all Tuple elements to have exactly 2 values (x, y), but found a Tuple with {} elements",
                 getName(),
                 tuple_columns.size());
+
+        for (size_t i = 0; i < 2; ++i)
+        {
+            const auto * float_col = checkAndGetColumn<ColumnFloat64>(tuple_columns[i].get());
+            const auto * const_float_col = checkAndGetColumnConstData<ColumnFloat64>(tuple_columns[i].get());
+
+            if (!float_col && !const_float_col)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function {} expects tuple elements to be Float64, but element {} has type {}",
+                    getName(),
+                    i + 1,
+                    tuple_columns[i]->getName());
+        }
 
         Columns new_columns = {tuple_columns[1], tuple_columns[0]};
         return ColumnTuple::create(new_columns);
@@ -138,7 +153,7 @@ private:
 
 REGISTER_FUNCTION(FlipCoordinates)
 {
-    FunctionDocumentation::Description description = "Flips the coordinates of a Point, Ring, Polygon, or MultiPolygon. For a Point, it swaps the x and y coordinates. For arrays, it recursively applies the same transformation.";
+    FunctionDocumentation::Description description = "Flips the coordinates of a Point, Ring, Polygon, or MultiPolygon. For a Point, it swaps the coordinates. For arrays, it recursively applies the same transformation for each coordinate pair.";
     FunctionDocumentation::Syntax syntax = "flipCoordinates(geometry);";
     FunctionDocumentation::Arguments arguments = {
         {"geometry", "The geometry to transform. Supported types: Point (Tuple(Float64, Float64)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon))."}
