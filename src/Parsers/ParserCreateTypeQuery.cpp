@@ -24,7 +24,8 @@ bool ParserCreateTypeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     ParserIdentifier name_p;
     ParserDataType type_p;
-    ParserExpression expression_p;
+    ParserIdentifier function_name_p;
+    ParserExpression default_expression_p;
     ParserExpressionList params_p(false);
 
     ASTPtr name;
@@ -66,19 +67,19 @@ bool ParserCreateTypeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     if (s_input.ignore(pos, expected))
     {
-        if (!expression_p.parse(pos, input_expression, expected))
+        if (!function_name_p.parse(pos, input_expression, expected))
             return false;
     }
 
     if (s_output.ignore(pos, expected))
     {
-        if (!expression_p.parse(pos, output_expression, expected))
+        if (!function_name_p.parse(pos, output_expression, expected))
             return false;
     }
 
     if (s_default.ignore(pos, expected))
     {
-        if (!expression_p.parse(pos, default_expression, expected))
+        if (!default_expression_p.parse(pos, default_expression, expected))
             return false;
     }
 

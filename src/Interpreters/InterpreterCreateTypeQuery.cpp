@@ -213,36 +213,49 @@ BlockIO InterpreterCreateTypeQuery::execute()
         type_parameters = create.type_parameters;
     }
 
-    String input_expression;
-    String output_expression;
-    String default_expression;
+    String input_function_name;
+    String output_function_name;
+    String default_value_str;
     
     if (create.input_expression)
     {
-        LOG_DEBUG(log, "Input expression provided");
-        input_expression = create.input_expression->as<ASTLiteral &>().value.safeGet<String>();
+        LOG_DEBUG(log, "Input function AST provided");
+        const auto * input_ident = create.input_expression->as<ASTIdentifier>();
+        if (!input_ident)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "INPUT clause for CREATE TYPE expects a function name (identifier)");
+        input_function_name = input_ident->name();
+        LOG_DEBUG(log, "Input function name: {}", input_function_name);
     }
     
     if (create.output_expression)
     {
-        LOG_DEBUG(log, "Output expression provided");
-        output_expression = create.output_expression->as<ASTLiteral &>().value.safeGet<String>();
+        LOG_DEBUG(log, "Output function AST provided");
+        const auto * output_ident = create.output_expression->as<ASTIdentifier>();
+        if (!output_ident)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "OUTPUT clause for CREATE TYPE expects a function name (identifier)");
+        output_function_name = output_ident->name();
+        LOG_DEBUG(log, "Output function name: {}", output_function_name);
     }
     
     if (create.default_expression)
     {
         LOG_DEBUG(log, "Default expression provided");
-        default_expression = create.default_expression->as<ASTLiteral &>().value.safeGet<String>();
+        const auto* default_literal = create.default_expression->as<ASTLiteral>();
+        if (!default_literal)
+             throw Exception(ErrorCodes::BAD_ARGUMENTS, "DEFAULT clause for CREATE TYPE expects a literal value");
+        default_value_str = default_literal->value.dump();
+        LOG_DEBUG(log, "Default value string: {}", default_value_str);
     }
     
-    LOG_DEBUG(log, "Registering type {} with provided base type AST", type_name);
+    LOG_DEBUG(log, "Registering type {} with base type AST, input func: '{}', output func: '{}', default: '{}'", 
+        type_name, input_function_name, output_function_name, default_value_str);
     UserDefinedTypeFactory::instance().registerType(
         type_name,
         create.base_type,
         type_parameters,
-        input_expression,
-        output_expression,
-        default_expression);
+        input_function_name, 
+        output_function_name,
+        default_value_str);
     
     LOG_DEBUG(log, "Type {} successfully registered", type_name);
     return {};
