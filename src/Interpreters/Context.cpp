@@ -112,7 +112,6 @@
 #include <Common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
-#include <Interpreters/StorageID.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -2173,12 +2172,6 @@ bool Context::hasScalar(const String & name) const
     return scalars.contains(name);
 }
 
-void Context::addQueryAccessInfo(
-    const StorageID & table_id,
-    const Names & column_names)
-{
-    addQueryAccessInfo(backQuoteIfNeed(table_id.getDatabaseName()), table_id.getFullTableName(), column_names);
-}
 
 void Context::addQueryAccessInfo(
     const String & quoted_database_name,
@@ -4662,7 +4655,7 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
     std::lock_guard lock(shared->clusters_mutex);
     if (ConfigHelper::getBool(*config, "allow_experimental_cluster_discovery") && enable_discovery && !shared->cluster_discovery)
     {
-        shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext());
+        shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext(), getMacros());
     }
 
     /// Do not update clusters if this part of config wasn't changed.
@@ -5529,10 +5522,10 @@ void Context::setGoogleProtosPath(const String & path)
     shared->google_protos_path = path;
 }
 
-Context::SampleBlockCache & Context::getSampleBlockCache() const
+std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> Context::getSampleBlockCache() const
 {
     assert(hasQueryContext());
-    return getQueryContext()->sample_block_cache;
+    return std::make_pair(&getQueryContext()->sample_block_cache, std::unique_lock(getQueryContext()->sample_block_cache_mutex));
 }
 
 

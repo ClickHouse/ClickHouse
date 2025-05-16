@@ -38,7 +38,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 min_joined_block_size_bytes;
 }
 

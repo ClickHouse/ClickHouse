@@ -647,6 +647,10 @@ public:
 
     void addCorrelatedColumn(const QueryTreeNodePtr & correlated_column);
 
+    /// Returns result type of projection expression if query is correlated
+    /// or throws an exception otherwise.
+    DataTypePtr getResultType() const override;
+
     QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::QUERY;
