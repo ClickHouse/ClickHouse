@@ -33,7 +33,9 @@ void DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(const Aggreg
     /// TODO Make it sane.
     static const std::vector<String> supported_functions{
         "any",
+        "any_respect_nulls",
         "anyLast",
+        "anyLast_respect_nulls",
         "min",
         "max",
         "sum",
