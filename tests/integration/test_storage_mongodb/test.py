@@ -1239,7 +1239,7 @@ def test_json_serialization(started_cluster):
 
     date = datetime.datetime.strptime("2025-05-17 13:14:15", "%Y-%m-%d %H:%M:%S")
 
-    def create_dataset(mongo, root) -> dict:
+    def create_dataset(mongo, level) -> dict:
         return {
             "type_string": "Type string",
             "type_oid": bson.ObjectId("60f7e65e16b1c1d1c8a2b6b3") if mongo else "60f7e65e16b1c1d1c8a2b6b3",
@@ -1250,13 +1250,13 @@ def test_json_serialization(started_cluster):
             "type_double": float(3.141592653589793238),
             "type_date": date if mongo else date.strftime("%Y-%m-%d %H:%M:%S"),
             "type_timestamp": bson.timestamp.Timestamp(date, 1) if mongo else date.strftime("%Y-%m-%d %H:%M:%S"),
-            "type_document": {"nested_doc": create_dataset(mongo, False)} if root else {},
-            "type_array": [create_dataset(mongo, False)] if root else [],
+            "type_document": {"nested_doc": create_dataset(mongo, level - 1)} if level > 0 else {},
+            "type_array": [create_dataset(mongo, level - 1)] if level > 0 else [],
             "type_regex": bson.regex.Regex(r"^pattern.*$", "i") if mongo else {"^pattern.*$": "i"},
             "type_null": None,
         }
 
-    json_serialization_table.insert_one({"dataset": create_dataset(True, True)})
+    json_serialization_table.insert_one({"dataset": create_dataset(True, 10)})
     node = started_cluster.instances["node"]
     node.query(
         f"""
@@ -1268,7 +1268,7 @@ def test_json_serialization(started_cluster):
 
     assert node.query(f"SELECT COUNT() FROM json_serialization_table") == "1\n"
     assert (node.query(f"SELECT dataset FROM json_serialization_table")[:-1]
-            == json.dumps(create_dataset(False, True), separators=(',', ':')))
+            == json.dumps(create_dataset(False, 10), separators=(',', ':')))
 
     node.query("DROP TABLE json_serialization_table")
     json_serialization_table.drop()
