@@ -68,11 +68,11 @@ namespace
 std::pair<Int32, Poco::JSON::Object::Ptr>
 parseTableSchemaFromManifestFile(const AvroForIcebergDeserializer & deserializer, const String & manifest_file_name)
 {
-    auto schema_json_string = deserializer.tryGetAvroMetadataValue("schema");
+    auto schema_json_string = deserializer.tryGetAvroMetadataValue(f_schema);
     if (!schema_json_string.has_value())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Cannot read Iceberg table: manifest file '{}' doesn't have table schema in its metadata",
+            "Cannot read Iceberg table: manifest file '{}' doesn't have field schema in its metadata",
             manifest_file_name);
     Poco::JSON::Parser parser;
     Poco::Dynamic::Var json = parser.parse(*schema_json_string);
@@ -147,7 +147,7 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::J
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: 'schemas' field is missing in metadata");
     auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
     if (schemas->size() == 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: schemas field is empty");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: 'schemas' field is empty");
     for (uint32_t i = 0; i != schemas->size(); ++i)
     {
         auto current_schema = schemas->getObject(i);
@@ -171,10 +171,10 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::J
 
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object)
 {
-    if (!metadata_object->has("schema"))
+    if (!metadata_object->has(f_schema))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: 'schema' field is missing in metadata");
     Poco::JSON::Object::Ptr schema = metadata_object->getObject("schema");
-    if (!metadata_object->has("schema"))
+    if (!metadata_object->has(f_schema_id))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: 'schema-id' field is missing in schema");
     auto current_schema_id = schema->getValue<int>(f_schema_id);
     return {schema, current_schema_id};
