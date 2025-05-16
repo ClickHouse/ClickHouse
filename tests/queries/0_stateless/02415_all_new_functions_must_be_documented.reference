@@ -90,7 +90,6 @@ and
 appendTrailingCharIfAbsent
 array
 arrayAUCPR
-arrayAvg
 arrayConcat
 arrayCount
 arrayCumSum
@@ -103,14 +102,10 @@ arrayEnumerateUniq
 arrayFill
 arrayFilter
 arrayMap
-arrayMax
-arrayMin
-arrayProduct
 arrayROCAUC
 arrayRandomSample
 arrayReverseFill
 arrayStringConcat
-arraySum
 arrayWithConstant
 asinh
 assumeNotNull

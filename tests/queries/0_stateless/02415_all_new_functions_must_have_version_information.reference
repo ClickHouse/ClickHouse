@@ -106,7 +106,6 @@ and
 appendTrailingCharIfAbsent
 array
 arrayAUCPR
-arrayAvg
 arrayConcat
 arrayCount
 arrayCumSum
@@ -123,9 +122,6 @@ arrayFilter
 arrayLevenshteinDistance
 arrayLevenshteinDistanceWeighted
 arrayMap
-arrayMax
-arrayMin
-arrayProduct
 arrayROCAUC
 arrayRandomSample
 arrayReverseFill
@@ -135,7 +131,6 @@ arrayShiftLeft
 arrayShiftRight
 arraySimilarity
 arrayStringConcat
-arraySum
 arrayWithConstant
 ascii
 asin
