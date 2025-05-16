@@ -87,6 +87,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
+    extern const SettingsUInt64 max_gap_to_merge_adjacent_ranges;
 }
 
 namespace MergeTreeSetting
@@ -913,7 +914,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         size_t granules_dropped = 0;
     };
 
-    auto drop_mark_ranges =[&](const ActionsDAG::Node * dag)
+    auto drop_mark_ranges = [&](const ActionsDAG::Node * dag)
     {
         size_t condition_hash = dag->getHash();
         Stats stats;
@@ -933,22 +934,54 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
             auto & matching_marks = *matching_marks_opt;
             MarkRanges ranges;
+            const size_t max_gap_to_merge = settings[Setting::max_gap_to_merge_adjacent_ranges];
             for (const auto & mark_range : part_with_ranges.ranges)
             {
                 size_t begin = mark_range.begin;
-                for (size_t mark_it = begin; mark_it < mark_range.end; ++mark_it)
+                for (size_t mark_it = begin; mark_it < mark_range.end; )
                 {
                     if (!matching_marks[mark_it])
                     {
-                        ++stats.granules_dropped;
                         if (mark_it == begin)
+                        {
+                            /// mark_range.begin -> 0 0 0 1 x x x x. Need to skip starting zeros.
+                            ++stats.granules_dropped;
                             ++begin;
+                            ++mark_it;
+                        }
                         else
                         {
-                            ranges.emplace_back(begin, mark_it);
-                            begin = mark_it + 1;
+                            size_t end = mark_it;
+                            for (; end < mark_range.end && !matching_marks[end]; ++end)
+                                ;
+
+                            if (end == mark_range.end && !matching_marks[end])
+                            {
+                                /// x x x 1 1 1 0 0 0 0 -> mark_range.end. Do not merge
+                                stats.granules_dropped += end - mark_it + 1;
+                                ranges.emplace_back(begin, mark_it - 1);
+                                begin = mark_range.end;
+                                break;
+                            }
+                            else if (max_gap_to_merge && end - mark_it <= max_gap_to_merge)
+                            {
+                                /// x x x 1 1 1 0 0 1 x x x. And gap is small enough to merge.
+
+                                /// Skip gap.
+                                mark_it = end + 1;
+                            }
+                            else
+                            {
+                                /// x x x 1 1 1 0 0 1 x x x. And gap is too big to merge.
+                                stats.granules_dropped += end - mark_it;
+                                ranges.emplace_back(begin, mark_it - 1);
+                                begin = end;
+                                mark_it = end + 1;
+                            }
                         }
                     }
+                    else
+                        ++mark_it;
                 }
 
                 if (begin != mark_range.begin && begin != mark_range.end)
@@ -961,7 +994,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
                 it = parts_with_ranges.erase(it);
             else
             {
-                part_with_ranges.ranges = ranges;
+                part_with_ranges.ranges = std::move(ranges);
                 ++it;
             }
         }
