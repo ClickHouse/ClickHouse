@@ -651,7 +651,7 @@ protected:
 
     mutable std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
-    void removeIfNeeded() noexcept;
+    void removeIfNeeded();
 
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
