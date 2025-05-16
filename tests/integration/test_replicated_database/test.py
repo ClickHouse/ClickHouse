@@ -1595,7 +1595,8 @@ def test_alter_rename(started_cluster):
     assert "PROJECTION" in res
 
 
-def test_create_alter_sleeping(started_cluster):
+@pytest.mark.parametrize("engine", ["ReplicatedMergeTree"])
+def test_create_alter_sleeping(started_cluster, engine):
     main_node.query("DROP DATABASE IF EXISTS create_alter_sleeping")
     dummy_node.query("DROP DATABASE IF EXISTS create_alter_sleeping")
 
@@ -1608,8 +1609,8 @@ def test_create_alter_sleeping(started_cluster):
 
     dummy_node.stop_clickhouse()
     main_node.query(
-        """
-        CREATE TABLE create_alter_sleeping.t (n int) ENGINE=ReplicatedMergeTree ORDER BY n;
+        f"""
+        CREATE TABLE create_alter_sleeping.t (n int) ENGINE={engine} ORDER BY n;
         ALTER TABLE create_alter_sleeping.t ADD INDEX n_idx n TYPE minmax GRANULARITY 10;
         """,
         settings={"distributed_ddl_task_timeout": 0},
