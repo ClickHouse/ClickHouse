@@ -127,7 +127,7 @@ def dolor_cleanup():
     except FileNotFoundError:
         pass
     try:
-        os.unlink(generator.temp.name)
+        os.unlink(generator.temp)
     except FileNotFoundError:
         pass
 atexit.register(dolor_cleanup)

@@ -130,11 +130,11 @@ def modify_server_settings_with_random_properties(input_config_path: str) -> str
             new_element = ET.SubElement(root, setting)
             new_element.text = str(generator())
 
+    temp_path = None
     # Create a temporary file
     with tempfile.NamedTemporaryFile(suffix='.xml', delete=False) as temp_file:
         temp_path = temp_file.name
-
-    # Write the modified XML to the temporary file
-    tree.write(temp_path, encoding='utf-8', xml_declaration=True)
+        # Write the modified XML to the temporary file
+        tree.write(temp_path, encoding='utf-8', xml_declaration=True)
 
     return temp_path
