@@ -166,9 +166,14 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
             query.dag->removeUnusedActions();
     }
 
-    /// Skip normal projection analysis if the query has no filter condition
-    if (!query.dag || !query.filter_node)
-        return {};
+    bool force_optimize_projection = context->getSettingsRef()[Setting::force_optimize_projection];
+
+    if (!force_optimize_projection)
+    {
+        /// /// Skip normal projection analysis if the query has no filter condition
+        if (!query.dag || !query.filter_node)
+            return {};
+    }
 
     std::list<NormalProjectionCandidate> candidates;
     NormalProjectionCandidate * best_candidate = nullptr;
@@ -180,9 +185,12 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     if (!parent_reading_select_result)
         parent_reading_select_result = reading->selectRangesToRead();
 
-    /// Nothing to read. Ignore projections.
-    if (parent_reading_select_result->parts_with_ranges.empty())
-        return {};
+    if (!force_optimize_projection)
+    {
+        /// /// Nothing to read. Ignore projections.
+        if (parent_reading_select_result->parts_with_ranges.empty())
+            return {};
+    }
 
     PartitionIdToMaxBlockPtr max_added_blocks = getMaxAddedBlocks(reading);
 
@@ -202,7 +210,8 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
 
     auto projection_query_info = query_info;
     projection_query_info.prewhere_info = nullptr;
-    projection_query_info.filter_actions_dag = std::make_unique<ActionsDAG>(query.dag->clone());
+    if (query.dag)
+        projection_query_info.filter_actions_dag = std::make_unique<ActionsDAG>(query.dag->clone());
     auto empty_mutations_snapshot = reading->getMutationsSnapshot()->cloneEmpty();
     for (const auto * projection : normal_projections)
     {
@@ -253,8 +262,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         /// - `force_optimize_projection` is enabled, or
         /// - the parent reading's `selected_marks` becomes zero
         if (candidate.sum_marks > parent_reading_marks
-            || (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0
-                && !context->getSettingsRef()[Setting::force_optimize_projection]))
+            || (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !force_optimize_projection))
         {
             stat.description = fmt::format(
                 "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
@@ -306,11 +314,14 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     auto storage_snapshot = reading->getStorageSnapshot();
     auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, best_candidate->projection->metadata);
     auto query_info_copy = query_info;
-    query_info_copy.prewhere_info = std::make_shared<PrewhereInfo>();
-    query_info_copy.prewhere_info->need_filter = true;
-    query_info_copy.prewhere_info->remove_prewhere_column = true;
-    query_info_copy.prewhere_info->prewhere_actions = std::move(*query.dag);
-    query_info_copy.prewhere_info->prewhere_column_name = query.filter_node->result_name;
+    if (query.dag && query.filter_node)
+    {
+        query_info_copy.prewhere_info = std::make_shared<PrewhereInfo>();
+        query_info_copy.prewhere_info->need_filter = true;
+        query_info_copy.prewhere_info->remove_prewhere_column = true;
+        query_info_copy.prewhere_info->prewhere_actions = std::move(*query.dag);
+        query_info_copy.prewhere_info->prewhere_column_name = query.filter_node->result_name;
+    }
 
     auto projection_reading = reader.readFromParts(
         /*parts=*/{},
@@ -328,16 +339,19 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     if (!projection_reading)
     {
         Pipe pipe(std::make_shared<NullSource>(proj_snapshot->getSampleBlockForColumns(required_columns)));
-        auto filter_actions = std::make_shared<ExpressionActions>(std::move(query_info_copy.prewhere_info->prewhere_actions));
-        pipe.addSimpleTransform(
-            [&](const Block & header)
-            {
-                return std::make_shared<FilterTransform>(
-                    header,
-                    filter_actions,
-                    query_info_copy.prewhere_info->prewhere_column_name,
-                    query_info_copy.prewhere_info->remove_prewhere_column);
-            });
+        if (query_info_copy.prewhere_info)
+        {
+            auto filter_actions = std::make_shared<ExpressionActions>(std::move(query_info_copy.prewhere_info->prewhere_actions));
+            pipe.addSimpleTransform(
+                [&](const Block & header)
+                {
+                    return std::make_shared<FilterTransform>(
+                        header,
+                        filter_actions,
+                        query_info_copy.prewhere_info->prewhere_column_name,
+                        query_info_copy.prewhere_info->remove_prewhere_column);
+                });
+        }
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
     }
 
@@ -357,6 +371,16 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
 
     auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
     auto * next_node = &projection_reading_node;
+
+    /// If there's a DAG to execute but no filter node, run the DAG via an ExpressionStep.
+    /// If a filter exists, the DAG has already been handled as part of the PREWHERE step.
+    if (query.dag && !query.filter_node)
+    {
+        auto & expr_or_filter_node = nodes.emplace_back();
+        expr_or_filter_node.step = std::make_unique<ExpressionStep>(projection_reading_node.step->getOutputHeader(), std::move(*query.dag));
+        expr_or_filter_node.children.push_back(&projection_reading_node);
+        next_node = &expr_or_filter_node;
+    }
 
     if (parent_reading_select_result->parts_with_ranges.empty())
     {
