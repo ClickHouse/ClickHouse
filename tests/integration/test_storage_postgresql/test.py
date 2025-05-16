@@ -885,6 +885,12 @@ def test_postgres_datetime(started_cluster):
     result = node1.query("SELECT ts FROM test_datetime WHERE ts > '2025-01-01'::DateTime64")
     assert result == "2025-01-02 03:04:05.678900\n"
 
+    result = node1.query("SELECT ts FROM test_datetime WHERE ts > '2025-01-01'::Nullable(DateTime)")
+    assert result == "2025-01-02 03:04:05.678900\n"
+
+    result = node1.query("SELECT ts FROM test_datetime WHERE ts > '2025-01-01'::Nullable(DateTime64)")
+    assert result == "2025-01-02 03:04:05.678900\n"
+
 
 if __name__ == "__main__":
     cluster.start()

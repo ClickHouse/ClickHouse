@@ -199,15 +199,11 @@ QueryTreeNodePtr ConstantNode::cloneImpl() const
 
 ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 {
+    if (!options.add_cast_for_constants)
+        return std::make_shared<ASTLiteral>(getFieldFromColumnForASTLiteral(constant_value.getColumn(), 0, constant_value.getType()));
+
     const auto & constant_value_type = constant_value.getType();
     auto constant_value_ast = std::make_shared<ASTLiteral>(getValue());
-
-    if (!options.add_cast_for_constants)
-    {
-        if (WhichDataType(constant_value_type->getTypeId()).isDateTimeOrDateTime64())
-            return std::make_shared<ASTLiteral>(getFieldFromColumnForASTLiteral(constant_value.getColumn(), 0, constant_value.getType()));
-        return constant_value_ast;
-    }
 
     // Add cast if constant was created as a result of constant folding.
     // Constant folding may lead to type transformation and literal on shard
