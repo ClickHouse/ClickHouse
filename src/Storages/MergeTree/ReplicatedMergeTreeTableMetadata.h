@@ -79,7 +79,7 @@ struct ReplicatedMergeTreeTableMetadata
         StorageInMemoryMetadata getNewMetadata(const ColumnsDescription & new_columns, ContextPtr context, const StorageInMemoryMetadata & old_metadata) const;
     };
 
-    void checkEquals(
+    bool checkEquals(
         const ReplicatedMergeTreeTableMetadata & from_zk,
         const ColumnsDescription & columns,
         const std::string & table_name_for_error_message,

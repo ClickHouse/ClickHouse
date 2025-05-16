@@ -1610,16 +1610,15 @@ def test_create_alter_sleeping(started_cluster):
     main_node.query(
         """
         CREATE TABLE create_alter_sleeping.t (n int) ENGINE=ReplicatedMergeTree ORDER BY n;
-        ALTER TABLE create_alter_sleeping.t ADD COLUMN m int;
         ALTER TABLE create_alter_sleeping.t ADD INDEX n_idx n TYPE minmax GRANULARITY 10;
         """,
         settings={"distributed_ddl_task_timeout": 0},
     )
 
     dummy_node.start_clickhouse()
-    assert "1\n" == dummy_node.query(
+    assert "n_idx" in dummy_node.query(
         """
         SYSTEM SYNC DATABASE REPLICA create_alter_sleeping;
-        SELECT count() FROM system.tables WHERE database='create_alter_sleeping' AND name='t';
+        SHOW CREATE TABLE create_alter_sleeping.t;
         """, timeout=10
     )
