@@ -2115,6 +2115,8 @@ void ReadFromMergeTree::updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_re
         lazily_read_info,
         prewhere_info);
 
+    /// if analysis has already been done (like in optimization for projections),
+    /// then update columns to read in analysis result
     if (analyzed_result_ptr)
         analyzed_result_ptr->column_names_to_read = all_column_names;
 }

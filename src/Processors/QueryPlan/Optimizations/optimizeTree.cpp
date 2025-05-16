@@ -245,6 +245,8 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
         stack.pop_back();
     }
 
+    /// projection optimizations can introduce additional reading step
+    /// so, applying lazy materialization after it, since it's dependent on reading step
     if (optimization_settings.optimize_lazy_materialization)
     {
         chassert(stack.empty());
