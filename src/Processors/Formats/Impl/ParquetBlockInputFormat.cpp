@@ -866,6 +866,7 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
             format_settings.parquet.allow_missing_columns,
             format_settings.null_as_default,
             format_settings.date_time_overflow_behavior,
+            format_settings.parquet.allow_geoparquet_parser,
             format_settings.parquet.case_insensitive_column_matching);
     }
 }
@@ -1184,7 +1185,8 @@ NamesAndTypesList ParquetSchemaReader::readSchema()
         "Parquet",
         format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference,
         format_settings.schema_inference_make_columns_nullable != 0,
-        format_settings.parquet.case_insensitive_column_matching);
+        format_settings.parquet.case_insensitive_column_matching,
+        format_settings.parquet.allow_geoparquet_parser);
     if (format_settings.schema_inference_make_columns_nullable == 1)
         return getNamesAndRecursivelyNullableTypes(header, format_settings);
     return header.getNamesAndTypesList();
