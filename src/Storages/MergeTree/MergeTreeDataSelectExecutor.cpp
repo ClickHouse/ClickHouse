@@ -955,27 +955,22 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
                             for (; end < mark_range.end && !matching_marks[end]; ++end)
                                 ;
 
-                            if (end == mark_range.end && !matching_marks[end])
+                            if (max_gap_to_merge && end != mark_range.end && end - mark_it <= max_gap_to_merge)
                             {
-                                /// x x x 1 1 1 0 0 0 0 -> mark_range.end. Do not merge
-                                stats.granules_dropped += end - mark_it + 1;
-                                ranges.emplace_back(begin, mark_it - 1);
-                                begin = mark_range.end;
-                                break;
-                            }
-                            else if (max_gap_to_merge && end - mark_it <= max_gap_to_merge)
-                            {
-                                /// x x x 1 1 1 0 0 1 x x x. And gap is small enough to merge.
-
-                                /// Skip gap.
+                                /// x x x 1 1 1 0 0 1 x x x. And gap is small enough to merge, skip gap.
                                 mark_it = end + 1;
                             }
                             else
                             {
-                                /// x x x 1 1 1 0 0 1 x x x. And gap is too big to merge.
+                                /// Case1: x x x 1 1 1 0 0 1 x x x. Gap is too big to merge, do not merge
+                                /// Case2: x x x 1 1 1 0 0 0 0 mark_range.end. Reach the end of range, do not merge
                                 stats.granules_dropped += end - mark_it;
-                                ranges.emplace_back(begin, mark_it - 1);
+                                ranges.emplace_back(begin, mark_it);
                                 begin = end;
+
+                                if (end == mark_range.end)
+                                    break;
+
                                 mark_it = end + 1;
                             }
                         }
