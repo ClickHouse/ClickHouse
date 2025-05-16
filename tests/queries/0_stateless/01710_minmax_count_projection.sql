@@ -71,7 +71,7 @@ drop table d;
 -- count variant optimization
 
 drop table if exists test;
-create table test (id Int64, d Int64, projection dummy(select * order by id)) engine MergeTree order by id;
+create table test (id Int64, d Int64) engine MergeTree order by id;
 insert into test select number, number from numbers(1e3);
 
 select count(if(d=4, d, 1)) from test settings force_optimize_projection = 1;
