@@ -406,10 +406,12 @@ struct ConverterJSON
     DataTypePtr data_type;
     PODArray<parquet::ByteArray> buf;
     std::vector<String> stash;
+    const FormatSettings & format_settings;
 
-    explicit ConverterJSON(const ColumnPtr & c, const DataTypePtr & data_type_)
+    explicit ConverterJSON(const ColumnPtr & c, const DataTypePtr & data_type_, const FormatSettings & format_settings_)
         : column(assert_cast<const ColumnObject &>(*c))
         , data_type(data_type_)
+        , format_settings(format_settings_)
     {
     }
 
@@ -421,12 +423,11 @@ struct ConverterJSON
 
         auto internal_type = data_type ? data_type : std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
         auto serialization = internal_type->getDefaultSerialization();
-        FormatSettings fmt;
 
         for (size_t i = 0; i < count; ++i)
         {
             WriteBufferFromOwnString wb;
-            serialization->serializeTextJSON(column, offset + i, wb, fmt);
+            serialization->serializeTextJSON(column, offset + i, wb, format_settings);
 
             stash.emplace_back(std::move(wb.str()));
             const String & s = stash.back();
@@ -961,7 +962,8 @@ void writeColumnImpl(
 
 }
 
-void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & options, WriteBuffer & out)
+void writeColumnChunkBody(
+    ColumnChunkWriteState & s, const WriteOptions & options, const FormatSettings & format_settings, WriteBuffer & out)
 {
     s.column_chunk.meta_data.__set_num_values(s.max_def > 0 ? s.def.size() : s.primitive_column->size());
 
@@ -1051,7 +1053,7 @@ void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & option
                 s, options, out, ConverterFixedStringAsString(s.primitive_column));
             break;
         case TypeIndex::Object:
-            writeColumnImpl<parquet::ByteArrayType>(s, options, out, ConverterJSON(s.primitive_column, s.type));
+            writeColumnImpl<parquet::ByteArrayType>(s, options, out, ConverterJSON(s.primitive_column, s.type, format_settings));
             break;
 
         #define F(source_type) \

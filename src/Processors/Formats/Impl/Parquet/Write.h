@@ -166,7 +166,8 @@ void writeFileHeader(FileWriteState & file, WriteBuffer & out);
 
 /// Encodes a column chunk, without the footer.
 /// Can be called in parallel for multiple column chunks (with different WriteBuffer-s).
-void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & options, WriteBuffer & out);
+void writeColumnChunkBody(
+    ColumnChunkWriteState & s, const WriteOptions & options, const FormatSettings & format_settings, WriteBuffer & out);
 
 /// Unlike most of the column chunk data, the footer (`ColumnMetaData`) needs to know its absolute
 /// offset in the file. So we encode it separately, in one thread, after all previous row groups
