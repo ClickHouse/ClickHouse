@@ -166,6 +166,7 @@ MongoDBSource::MongoDBSource(
     , cursor{collection.find(query, options)}
     , sample_block{sample_block_}
     , max_block_size{max_block_size_}
+    , json_format_settings{createJSONFormatSettings()}
 {
     for (const auto & idx : collections::range(0, sample_block.columns()))
     {
