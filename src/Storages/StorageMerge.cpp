@@ -41,6 +41,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -1803,7 +1804,12 @@ SinkToStoragePtr StorageMerge::write(
 
     auto database = DatabaseCatalog::instance().getDatabase(table_to_write->database);
     auto table = database->getTable(table_to_write->table, context_);
-    return table->write(query, metadata_snapshot, context_, async_insert);
+    auto table_lock = table->lockForShare(
+        context_->getInitialQueryId(),
+        context_->getSettingsRef()[Setting::lock_acquire_timeout]);
+    auto sink = table->write(query, metadata_snapshot, context_, async_insert);
+    sink->addTableLock(table_lock);
+    return sink;
 }
 
 void registerStorageMerge(StorageFactory & factory)
