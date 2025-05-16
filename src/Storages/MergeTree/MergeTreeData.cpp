@@ -197,6 +197,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsBool allow_suspicious_indices;
     extern const MergeTreeSettingsBool allow_summing_columns_in_partition_or_order_key;
+    extern const MergeTreeSettingsBool allow_coalescing_columns_in_partition_or_order_key;
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsBool async_insert;
     extern const MergeTreeSettingsBool check_sample_column_is_correct;
@@ -1307,10 +1308,12 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
                     column_to_sum);
         }
 
-        auto allow_summing_columns_in_partition_or_order_key = settings[MergeTreeSetting::allow_summing_columns_in_partition_or_order_key];
+        auto allow_columns_in_partition_or_order_key = mode == MergingParams::Summing 
+            ? settings[MergeTreeSetting::allow_summing_columns_in_partition_or_order_key]
+            : settings[MergeTreeSetting::allow_coalescing_columns_in_partition_or_order_key];
 
         /// Check that summing columns are not in partition key.
-        if (!allow_summing_columns_in_partition_or_order_key && metadata.isPartitionKeyDefined())
+        if (!allow_columns_in_partition_or_order_key && metadata.isPartitionKeyDefined())
         {
             auto partition_key_columns = metadata.getPartitionKey().expression->getRequiredColumns();
             std::sort(partition_key_columns.begin(), partition_key_columns.end());
@@ -1326,7 +1329,7 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
         }
 
         /// Check that summing columns are not in sorting key.
-        if (!allow_summing_columns_in_partition_or_order_key && metadata.isSortingKeyDefined())
+        if (!allow_columns_in_partition_or_order_key && metadata.isSortingKeyDefined())
         {
             auto sorting_key_columns = metadata.getSortingKey().expression->getRequiredColumns();
             std::sort(sorting_key_columns.begin(), sorting_key_columns.end());

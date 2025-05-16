@@ -747,6 +747,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"apply_patches_on_merge", true, true, "New setting"},
             {"remove_unused_patch_parts", true, true, "New setting"},
             {"write_marks_for_substreams_in_compact_parts", false, true, "New setting"},
+            {"allow_coleascing_columns_in_partition_or_order_key", true, false, "New setting to allow coalescing of partition or sorting key columns"},
+
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",
         {

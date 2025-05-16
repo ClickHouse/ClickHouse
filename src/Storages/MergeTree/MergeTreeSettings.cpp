@@ -1594,6 +1594,10 @@ namespace ErrorCodes
     When enabled, allows summing columns in a SummingMergeTree table to be used in
     the partition or sorting key.
     )", 0) \
+    DECLARE(Bool, allow_coalescing_columns_in_partition_or_order_key, false, R"(
+    When enabled, allows coalescing columns in a CoalescingMergeTree table to be used in
+    the partition or sorting key.
+    )", 0) \
     \
     /** Experimental/work in progress feature. Unsafe for production. */ \
     DECLARE(UInt64, part_moves_between_shards_enable, 0, R"(
