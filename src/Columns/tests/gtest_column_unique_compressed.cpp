@@ -13,18 +13,37 @@ TEST(ColumnUniqueCompressed, EmptyFCBlockDF)
     const ColumnPtr strings = ColumnString::create();
     const size_t block_size = 4;
 
-    auto unique_compressed_column = ColumnUniqueFCBlockDF::create(strings, block_size, false);
-    EXPECT_EQ(unique_compressed_column->size(), 1);
+    /// not nullable, containts empty string as first element
+    {
+        auto unique_compressed_column = ColumnUniqueFCBlockDF::create(strings, block_size, false);
+        EXPECT_EQ(unique_compressed_column->size(), 1);
 
-    const auto default_index = unique_compressed_column->getOrFindValueIndex("");
-    EXPECT_TRUE(default_index.has_value());
-    EXPECT_EQ(default_index.value(), 0);
+        const auto default_index = unique_compressed_column->getOrFindValueIndex("");
+        EXPECT_TRUE(default_index.has_value());
+        EXPECT_EQ(default_index.value(), 0);
 
-    const auto field = (*unique_compressed_column)[0];
-    EXPECT_EQ(field.safeGet<String>(), "");
+        const auto field = (*unique_compressed_column)[0];
+        EXPECT_EQ(field.safeGet<String>(), "");
 
-    const auto no_index = unique_compressed_column->getOrFindValueIndex("whatever");
-    EXPECT_FALSE(no_index.has_value());
+        const auto no_index = unique_compressed_column->getOrFindValueIndex("whatever");
+        EXPECT_FALSE(no_index.has_value());
+    }
+
+    /// nullable, constains null and empty string as first two elements
+    {
+        auto unique_compressed_column = ColumnUniqueFCBlockDF::create(strings, block_size, true);
+        EXPECT_EQ(unique_compressed_column->size(), 2);
+
+        const auto empty_str_index = unique_compressed_column->getOrFindValueIndex("");
+        EXPECT_TRUE(empty_str_index.has_value());
+        EXPECT_EQ(empty_str_index.value(), 1);
+
+        const auto field = (*unique_compressed_column)[0];
+        EXPECT_TRUE(field.isNull());
+
+        const auto no_index = unique_compressed_column->getOrFindValueIndex("whatever");
+        EXPECT_FALSE(no_index.has_value());
+    }
 }
 
 TEST(ColumnUniqueCompressed, SingleInsertsFCBlockDF)
@@ -83,6 +102,19 @@ static auto getNotEmptyColumnUniqueCompressedFCBlockDF(bool is_nullable = false)
     }
 
     return ColumnUniqueFCBlockDF::create(std::move(strings_column), block_size, is_nullable);
+}
+
+TEST(ColumnUniqueCompressed, NestedColumnFCBlockDF)
+{
+    const auto unique_compressed_column = getNotEmptyColumnUniqueCompressedFCBlockDF();
+    const auto nested_column = unique_compressed_column->getNestedColumn();
+
+    for (size_t i = 0; i < nested_column->size(); ++i)
+    {
+        const Field f_unique_compressed = (*unique_compressed_column)[i];
+        const Field f_nested = (*nested_column)[i];
+        EXPECT_EQ(f_unique_compressed, f_nested);
+    }
 }
 
 TEST(ColumnUniqueCompressed, RangeInsertFCBlockDF)
