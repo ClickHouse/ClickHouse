@@ -1308,7 +1308,7 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
                     column_to_sum);
         }
 
-        auto allow_columns_in_partition_or_order_key = mode == MergingParams::Summing 
+        auto allow_columns_in_partition_or_order_key = mode == MergingParams::Summing
             ? settings[MergeTreeSetting::allow_summing_columns_in_partition_or_order_key]
             : settings[MergeTreeSetting::allow_coalescing_columns_in_partition_or_order_key];
 
