@@ -90,6 +90,22 @@ public:
     };
 
     using IndexStats = std::vector<IndexStat>;
+
+    /// Information about used projections.
+    struct ProjectionStat
+    {
+        std::string name = {};
+        std::string description = {};
+        std::string condition = {};
+        UInt64 selected_parts = 0;
+        UInt64 selected_ranges = 0;
+        UInt64 selected_marks = 0;
+        UInt64 selected_rows = 0;
+        UInt64 filtered_parts = 0;
+    };
+
+    using ProjectionStats = std::vector<ProjectionStat>;
+
     using ReadType = MergeTreeReadType;
 
     struct AnalysisResult
@@ -98,6 +114,7 @@ public:
         SplitPartsByRanges split_parts;
         MergeTreeDataSelectSamplingData sampling;
         IndexStats index_stats;
+        ProjectionStats projection_stats;
         Names column_names_to_read;
         ReadType read_type = ReadType::Default;
         UInt64 total_parts = 0;
@@ -152,9 +169,11 @@ public:
 
     void describeActions(FormatSettings & format_settings) const override;
     void describeIndexes(FormatSettings & format_settings) const override;
+    void describeProjections(FormatSettings & format_settings) const override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeIndexes(JSONBuilder::JSONMap & map) const override;
+    void describeProjections(JSONBuilder::JSONMap & map) const override;
 
     const Names & getAllColumnNames() const { return all_column_names; }
 
@@ -195,8 +214,6 @@ public:
         std::optional<Indexes> & indexes,
         bool find_exact_ranges);
 
-    AnalysisResultPtr selectRangesToRead(RangesInDataParts parts, bool find_exact_ranges = false) const;
-
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
@@ -219,7 +236,7 @@ public:
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
-    const RangesInDataParts & getParts() const { return prepared_parts; }
+    const RangesInDataParts & getParts() const { return analyzed_result_ptr ? analyzed_result_ptr->parts_with_ranges : prepared_parts; }
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot() const { return mutations_snapshot; }
 
     const MergeTreeData & getMergeTreeData() const { return data; }
@@ -292,7 +309,9 @@ private:
     Pipe spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts, size_t num_streams, const Names & origin_column_names, const Names & column_names, std::optional<ActionsDAG> & out_projection);
 
-    ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
+    ReadFromMergeTree::AnalysisResult & getAnalysisResultImpl() const;
+    const ReadFromMergeTree::AnalysisResult & getAnalysisResult() const { return getAnalysisResultImpl(); }
+    ReadFromMergeTree::AnalysisResult & getAnalysisResult() { return getAnalysisResultImpl(); }
 
     int getSortDirection() const;
     void updateSortDescription();
