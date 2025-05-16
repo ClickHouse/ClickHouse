@@ -1,4 +1,6 @@
 -- Tags: no-random-merge-tree-settings
+SET query_plan_optimize_lazy_materialization = 1;
+SET query_plan_max_limit_for_lazy_materialization = 10;
 
 DROP TABLE IF EXISTS tt0;
 CREATE TABLE tt0 (k UInt64, v String, blob String, PROJECTION proj_v (select * order by v)) ENGINE=MergeTree() ORDER BY tuple();

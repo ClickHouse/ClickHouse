@@ -4,7 +4,6 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Columns/ColumnLazy.h>
 #include <Columns/FilterDescription.h>
-#include "Common/Logger.h"
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
@@ -286,8 +285,6 @@ void MergeTreeSelectProcessor::injectLazilyReadColumns(
 {
     if (!lazily_read_info)
         return;
-
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Input block: {}\n{}", block.dumpStructure(), StackTrace().toString());
 
     ColumnPtr row_num_column;
     ColumnPtr part_num_column;
