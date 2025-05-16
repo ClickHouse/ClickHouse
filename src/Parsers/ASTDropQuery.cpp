@@ -116,9 +116,9 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
             << (case_insensitive_like ? " ILIKE " : " LIKE")
             << (settings.hilite ? hilite_none : "");
         if (settings.hilite)
-            highlightStringWithMetacharacters(like, ostr, "%_");
+            highlightStringWithMetacharacters(quoteString(like), ostr, "%_");
         else
-            ostr << DB::quote << like;
+            ostr << quoteString(like);
     }
 
     formatOnCluster(ostr, settings);

@@ -1,5 +1,6 @@
 #include <Parsers/ASTShowFunctionsQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -22,9 +23,9 @@ void ASTShowFunctionsQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSett
         ostr << (settings.hilite ? hilite_keyword : "") << (case_insensitive_like ? " ILIKE " : " LIKE ")
             << (settings.hilite ? hilite_none : "");
         if (settings.hilite)
-            highlightStringWithMetacharacters(like, ostr, "%_");
+            highlightStringWithMetacharacters(quoteString(like), ostr, "%_");
         else
-            ostr << DB::quote << like;
+            ostr << quoteString(like);
     }
 }
 

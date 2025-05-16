@@ -37,9 +37,9 @@ void ASTShowTablesQuery::formatLike(WriteBuffer & ostr, const FormatSettings & s
             << (settings.hilite ? hilite_none : "");
 
         if (settings.hilite)
-            highlightStringWithMetacharacters(like, ostr, "%_");
+            highlightStringWithMetacharacters(quoteString(like), ostr, "%_");
         else
-            ostr << DB::quote << like;
+            ostr << quoteString(like);
     }
 }
 

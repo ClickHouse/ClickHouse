@@ -38,9 +38,9 @@ void ASTShowColumnsQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettin
             << (case_insensitive_like ? " ILIKE " : " LIKE")
             << (settings.hilite ? hilite_none : "");
         if (settings.hilite)
-            highlightStringWithMetacharacters(like, ostr, "%_");
+            highlightStringWithMetacharacters(quoteString(like), ostr, "%_");
         else
-            ostr << DB::quote << like;
+            ostr << quoteString(like);
     }
 
     if (where_expression)
