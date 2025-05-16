@@ -88,7 +88,6 @@ age
 alphaTokens
 and
 appendTrailingCharIfAbsent
-array
 arrayAUCPR
 arrayAll
 arrayAvg
@@ -121,7 +120,6 @@ arrayReverseSplit
 arraySplit
 arrayStringConcat
 arraySum
-arrayWithConstant
 asinh
 assumeNotNull
 atan
@@ -222,21 +220,6 @@ divideOrNull
 dotProduct
 dumpColumnStructure
 e
-empty
-emptyArrayDate
-emptyArrayDateTime
-emptyArrayFloat32
-emptyArrayFloat64
-emptyArrayInt16
-emptyArrayInt32
-emptyArrayInt64
-emptyArrayInt8
-emptyArrayString
-emptyArrayToSingle
-emptyArrayUInt16
-emptyArrayUInt32
-emptyArrayUInt64
-emptyArrayUInt8
 enabledProfiles
 enabledRoles
 encodeURLComponent
@@ -456,7 +439,6 @@ normalizeQueryKeepNames
 normalizedQueryHash
 normalizedQueryHashKeepNames
 not
-notEmpty
 notEquals
 notILike
 notIn
@@ -539,7 +521,6 @@ randomFixedString
 randomPrintableASCII
 randomString
 randomStringUTF8
-range
 readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
