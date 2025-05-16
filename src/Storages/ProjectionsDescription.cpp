@@ -27,6 +27,9 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <base/range.h>
 #include <Common/iota.h>
+#include <DataTypes/NestedUtils.h>
+#include <Common/logger_useful.h>
+#include <boost/algorithm/string/join.hpp>
 
 
 namespace DB
@@ -306,13 +309,25 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     auto block = result.sample_block;
     for (const auto & [name, type] : metadata.sorting_key.expression->getRequiredColumnsWithTypes())
         block.insertUnique({nullptr, type, name});
+    NamesAndTypesList metadata_columns;
     for (const auto & column_with_type_name : block)
     {
         if (column_with_type_name.column && isColumnConst(*column_with_type_name.column))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections cannot contain constant columns: {}", column_with_type_name.name);
+
+        /// Subcolumns can be used in projection only when the original column is used.
+        if (columns.hasSubcolumn(column_with_type_name.name))
+        {
+            if (!block.has(Nested::splitName(column_with_type_name.name).first))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections cannot contain individual subcolumns: {}", column_with_type_name.name);
+        }
+        else
+        {
+            metadata_columns.emplace_back(column_with_type_name.name, column_with_type_name.type);
+        }
     }
 
-    metadata.setColumns(ColumnsDescription(block.getNamesAndTypesList()));
+    metadata.setColumns(ColumnsDescription(metadata_columns));
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
     return result;
 }
