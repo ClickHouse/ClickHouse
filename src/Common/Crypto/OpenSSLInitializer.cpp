@@ -16,7 +16,8 @@ namespace DB
 {
 
 #if USE_SSL
-std::atomic<uint8_t> DB::OpenSSLInitializer::ref_count{0};
+std::atomic<uint8_t> DB::OpenSSLInitializer::initialize_ref_count{0};
+std::atomic<uint8_t> DB::OpenSSLInitializer::cleanup_ref_count{0};
 OSSL_PROVIDER * DB::OpenSSLInitializer::default_provider = nullptr;
 OSSL_PROVIDER * DB::OpenSSLInitializer::legacy_provider = nullptr;
 #endif
@@ -29,7 +30,7 @@ OpenSSLInitializer::OpenSSLInitializer()
 void OpenSSLInitializer::initialize()
 {
 #if USE_SSL
-    if (ref_count++ == 0)
+    if (initialize_ref_count++ == 0)
     {
         // Disable OpenSSL atexit hook.
         // It may cause issues on shutdown, when some OpenSSL objects are still in use.
@@ -63,10 +64,10 @@ void OpenSSLInitializer::initialize()
 #endif
 }
 
-OpenSSLInitializer::~OpenSSLInitializer()
+void OpenSSLInitializer::cleanup()
 {
 #if USE_SSL
-    if (--ref_count == 0)
+    if (cleanup_ref_count++ == 0)
     {
         if (legacy_provider)
         {
@@ -83,6 +84,11 @@ OpenSSLInitializer::~OpenSSLInitializer()
         OPENSSL_cleanup();
     }
 #endif
+}
+
+OpenSSLInitializer::~OpenSSLInitializer()
+{
+    cleanup();
 }
 
 }
