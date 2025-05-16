@@ -147,6 +147,7 @@ arrayReverseFill
 arrayReverseSplit
 arrayRotateLeft
 arrayRotateRight
+arrayScan
 arrayShiftLeft
 arrayShiftRight
 arraySimilarity
