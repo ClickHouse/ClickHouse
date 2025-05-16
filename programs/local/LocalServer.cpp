@@ -948,14 +948,14 @@ void LocalServer::processConfig()
                 DatabaseCatalog::instance().startupBackgroundTasks();
             }
 
-            /// For ClickHouse local if path is not set the loader will be disabled.
-            global_context->getUserDefinedSQLObjectsStorage().loadObjects();
-
             LOG_DEBUG(log, "Loaded metadata.");
         }
 
         if (!attached_system_database)
             attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
+
+        if (fs::exists(fs::path(path) / "user_defined"))
+            global_context->getUserDefinedSQLObjectsStorage().loadObjects();
     }
     else if (!getClientConfiguration().has("no-system-tables"))
     {
