@@ -192,8 +192,8 @@ namespace
             if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.getLocalContext()))
             {
                 connection_string = named_collection->get<String>("connection_string");
+                table = named_collection->get<String>("table");
                 database_or_schema = named_collection->get<String>("database_or_schema");
-                table = named_collection->get<String>("table_name");
             }
             else
             {

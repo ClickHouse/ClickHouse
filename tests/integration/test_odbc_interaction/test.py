@@ -174,6 +174,15 @@ def started_cluster():
             [
                 "sqlite3",
                 sqlite_db,
+                "CREATE TABLE t5(id INTEGER PRIMARY KEY ASC, X INTEGER, Y, Z);",
+            ],
+            privileged=True,
+            user="root",
+        )
+        node1.exec_in_container(
+            [
+                "sqlite3",
+                sqlite_db,
                 "CREATE TABLE tf1(id INTEGER PRIMARY KEY ASC, x INTEGER, y, z);",
             ],
             privileged=True,
@@ -326,7 +335,7 @@ CREATE TABLE {table_name}(id UInt32, name String, age UInt32, money UInt32, colu
     conn.close()
 
 
-def test_mysql_with_named_collection(started_cluster):
+def test_table_function_odbc_with_named_collection(started_cluster):
     skip_test_sanitizers(node1)
 
     mysql_setup = node1.odbc_drivers["MySQL"]
@@ -524,6 +533,37 @@ def test_sqlite_simple_select_storage_works(started_cluster):
 
     node1.exec_in_container(
         ["sqlite3", sqlite_db, "DELETE FROM t4;"],
+        privileged=True,
+        user="root",
+    )
+
+
+def test_table_engine_odbc_named_collection(started_cluster):
+    skip_test_sanitizers(node1)
+
+    sqlite_setup = node1.odbc_drivers["SQLite3"]
+    sqlite_db = sqlite_setup["Database"]
+
+    node1.exec_in_container(
+        ["sqlite3", sqlite_db, "INSERT INTO t5 values(1, 1, 2, 3);"],
+        privileged=True,
+        user="root",
+    )
+
+    node1.query(f"""
+    DROP NAMED COLLECTION IF EXISTS engine_odbc_collection;
+    CREATE NAMED COLLECTION engine_odbc_collection AS
+    connection_string = 'DSN={sqlite_setup["DSN"]}',
+    database_or_schema = '',
+    table = 't5';
+    """)
+    node1.query("CREATE TABLE SqliteODBCNamedCol (x Int32, y String, z String) ENGINE = ODBC(engine_odbc_collection)")
+
+    assert node1.query("SELECT * FROM SqliteODBCNamedCol") == "1\t2\t3\n"
+    node1.query("DROP TABLE IF EXISTS SqliteODBCNamedCol")
+
+    node1.exec_in_container(
+        ["sqlite3", sqlite_db, "DELETE FROM t5;"],
         privileged=True,
         user="root",
     )
