@@ -1312,7 +1312,7 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
             ? settings[MergeTreeSetting::allow_summing_columns_in_partition_or_order_key]
             : settings[MergeTreeSetting::allow_coalescing_columns_in_partition_or_order_key];
 
-        /// Check that summing columns are not in partition key.
+        /// Check that summing columns are not in partition key
         if (!allow_columns_in_partition_or_order_key && metadata.isPartitionKeyDefined())
         {
             auto partition_key_columns = metadata.getPartitionKey().expression->getRequiredColumns();
