@@ -32,7 +32,7 @@ target_link_libraries(_libpng PRIVATE ch_contrib::zlib)
 
 target_include_directories(_libpng SYSTEM BEFORE PUBLIC
     "${LIBRARY_DIR}"
-    "${CMAKE_CURRENT_BINARY_DIR}" 
+    "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
 add_library(ch_contrib::libpng ALIAS _libpng)
