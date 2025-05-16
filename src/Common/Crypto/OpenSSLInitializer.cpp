@@ -79,6 +79,8 @@ OpenSSLInitializer::~OpenSSLInitializer()
             chassert(OSSL_PROVIDER_unload(default_provider));
             default_provider = nullptr;
         }
+
+        OPENSSL_cleanup();
     }
 #endif
 }
