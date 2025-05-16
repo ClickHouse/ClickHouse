@@ -234,7 +234,7 @@ public:
 
         /// Resets must be take into account for `rate` function because it expects counter timeseries that only increase.
         /// But `delta` function expects gauge timeseries that can decrease and it is not considered to be a reset.
-        const bool adjust_to_resets = is_rate;
+        constexpr bool adjust_to_resets = is_rate;
 
         /// Fill the data for missing buckets
         for (UInt32 i = 0; i < Base::bucket_count; ++i)

@@ -90,4 +90,8 @@ WITH [
 (1600000270, 20),
 (1600000330, 10)
 ]::Array(Tuple(UInt32, Float64)) AS data
-SELECT timeSeriesDeltaToGrid(1600000010, 1600000320, 10, 300)(data.1, data.2);
+SELECT * FROM (
+    SELECT 'delta' as name, timeSeriesDeltaToGrid(1600000010, 1600000320, 10, 300)(data.1, data.2)
+    UNION ALL
+    SELECT 'idelta' as name, timeSeriesIdeltaToGrid(1600000010, 1600000320, 10, 300)(data.1, data.2)
+) ORDER BY name;

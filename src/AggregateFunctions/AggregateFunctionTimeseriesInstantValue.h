@@ -108,7 +108,11 @@ public:
             return;
         }
 
-        ValueType value_difference = value >= previous_value ? (value - previous_value) : value;
+        /// Resets must be take into account for `irate` function because it expects counter timeseries that only increase.
+        /// But `idelta` function expects gauge timeseries that can decrease and it is not considered to be a reset.
+        constexpr bool adjust_to_resets = is_rate;
+
+        ValueType value_difference = (adjust_to_resets && value < previous_value) ? value : (value - previous_value);
         result = value_difference;
         if constexpr (is_rate)
             result = result * Base::timestamp_scale_multiplier / time_difference;
