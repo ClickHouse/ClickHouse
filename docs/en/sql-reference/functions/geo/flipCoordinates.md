@@ -3,12 +3,12 @@ description: 'Documentation for flipCoordinates'
 sidebar_label: 'Flip Coordinates'
 sidebar_position: 63
 slug: /sql-reference/functions/geo/flipCoordinates
-title: 'Function for Flipping Coordinates'
+title: 'Flipping Coordinates'
 ---
 
 ## flipCoordinates {#flipcoordinates}
 
-The `flipCoordinates` function swaps the order of coordinates in a point, ring, polygon, or multipolygon. This is useful for converting between coordinate systems where the order of latitude and longitude differs.
+The `flipCoordinates` function swaps the coordinates of a point, ring, polygon, or multipolygon. This is useful, for example, when converting between coordinate systems where the order of latitude and longitude differs.
 
 ```sql
 flipCoordinates(coordinates)
@@ -17,10 +17,10 @@ flipCoordinates(coordinates)
 ### Input Parameters {#input-parameters}
 
 - `coordinates` — A tuple representing a point `(x, y)`, or an array of such tuples representing a ring, polygon, or multipolygon. Supported input types include:
-  - **Point**: A tuple `(x, y)` where `x` and `y` are numeric values.
-  - **Ring**: An array of points `[(x1, y1), (x2, y2), ...]`.
-  - **Polygon**: An array of rings `[ring1, ring2, ...]`, where each ring is an array of points.
-  - **Multipolygon**: An array of polygons `[polygon1, polygon2, ...]`.
+  - [**Point**](../../data-types/geo.md#point): A tuple `(x, y)` where `x` and `y` are [Float64](../../data-types/float.md) values.
+  - [**Ring**](../../data-types/geo.md#ring): An array of points `[(x1, y1), (x2, y2), ...]`.
+  - [**Polygon**](../../data-types/geo.md#polygon): An array of rings `[ring1, ring2, ...]`, where each ring is an array of points.
+  - [**Multipolygon**](../../data-types/geo.md#multipolygon): An array of polygons `[polygon1, polygon2, ...]`.
 
 ### Returned Value {#returned-value}
 
