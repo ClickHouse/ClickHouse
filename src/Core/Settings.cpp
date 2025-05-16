@@ -6579,10 +6579,11 @@ Possible values:
 - "" — The dictionaries are not compressed.
 - "fcblockdf" — The dictionaries are compressed using the Front Coding Block Difference to First algorithm.
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, low_cardinality_compression_fc_block_parameter, 4, R"(
+    DECLARE(UInt64, low_cardinality_compression_fc_block_parameter, 5, R"(
 Applies only if "low_cardinality_experimental_compression" = "fcblockdf".
 Sets number of values per compressed block in Front Coding. It's used to fine-tune performance of this compression.
-Values < 2 are senseless. Large values make compression rate worse.  
+Values < 2 are senseless, 5 is the best overall option for default block size of 65000 rows.
+It's recommended to increase this value by 1 each time the block size increases by 10 times. 
 )", EXPERIMENTAL) \
     \
     /** Experimental tsToGrid aggregate function. */ \

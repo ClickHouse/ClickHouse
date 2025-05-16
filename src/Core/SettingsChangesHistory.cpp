@@ -77,7 +77,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_shared_set_join", 0, 1, "A setting for ClickHouse Cloud to enable SharedSet and SharedJoin"},
             {"distributed_cache_read_request_max_tries", 20, 20, "New setting"},
             {"low_cardinality_experimental_compression", "", "", "New setting to allow experimental compression inside of LowCardinality"},
-            {"low_cardinality_compression_fc_block_parameter", 0, 4, "New setting to set a parameter for experimental compression inside of LowCardinality"},
+            {"low_cardinality_compression_fc_block_parameter", 0, 5, "New setting to set a parameter for experimental compression inside of LowCardinality"},
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {
