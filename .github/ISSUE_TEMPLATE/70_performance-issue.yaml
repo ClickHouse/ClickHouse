@@ -20,9 +20,15 @@ body:
       required: true
   - type: textarea
     attributes:
+      label: |
+        * Which ClickHouse version did you use?
+        * Does it reproduce in the latest stable release or master?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
       label: How to reproduce
       description: |
-        * Which ClickHouse server version to use
         * Which interface to use, if matters
         * Non-default settings, if any
         * `CREATE TABLE` statements for all tables involved
