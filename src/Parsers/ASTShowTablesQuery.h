@@ -3,7 +3,6 @@
 #include <iomanip>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOutput.h>
-#include <Common/quoteString.h>
 
 
 namespace DB
