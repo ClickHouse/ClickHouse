@@ -69,7 +69,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.6",
         {
-
+            {"cast_string_to_date_time_mode", "basic", "basic", "Allow to use different DateTime parsing mode in String to DateTime cast"},
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {
