@@ -39,9 +39,6 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_race_condition_landing"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE test_race_condition_target (number Int64) Engine=MergeTree ORDER BY number"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE test_race_condition_landing (number Int64, n String, n2 String) Engine=MergeTree ORDER BY number"
 
-export -f drop_mv;
-export -f insert;
-
 for i in {1..4}
 do
     drop_mv $i &
