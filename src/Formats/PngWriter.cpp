@@ -77,17 +77,6 @@ PngWriter::PngWriter(WriteBuffer & out_, const FormatSettings & settings_)
 
     if (compression_level < -1 || compression_level > 9)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid compression level ({}). Must be between -1 and 9", compression_level);
-
-    switch (color_type)
-    {
-        case PNG_COLOR_TYPE_GRAY:
-        case PNG_COLOR_TYPE_RGB:
-        case PNG_COLOR_TYPE_RGBA:
-            break;
-
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported PNG color type ({}) requested", color_type);
-    }
 }
 
 template <typename Func>
@@ -102,8 +91,8 @@ void PngWriter::executePngOperation(Func && func, const char * error_context)
     {
         /// TODO:
         /// If we are here it means longjmp occurred.
-        /// Libpng erroCcallback should have already thrown a C++ exception with libpng error message
-        /// If errorCallback couldnt't throw or something else went wrong we throw a generic error here
+        /// Libpng errorCallback should have already thrown a C++ exception with libpng error message
+        /// If cb couldnt't throw or something else went wrong we throw a generic error here
         /// This path might not even be reachable, but we have a fallback:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Setjmp triggered an error during {}", error_context);
     }

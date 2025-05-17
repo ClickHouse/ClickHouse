@@ -54,7 +54,7 @@ struct InputModeExplicit
 {
     static constexpr PngPixelInputMode Mode = PngPixelInputMode::EXPLICIT_COORDINATES;
     static constexpr bool ExplicitCoords = true;
-    static constexpr auto CoordinateColumns = 2;
+    static constexpr auto CoordinateColumns = 2ULL;
 };
 
 class PngWriter;
