@@ -272,6 +272,13 @@ public:
         return false;
     }
 
+    /// Returns true if storage relies that filters will be available for analysis before getQueryProcessingStage method will be called.
+    virtual bool supportsFiltersAnalysis() const { return false; }
+
+    /// Returns true if the storage can perform distributed queries
+    /// that are affected by the distributed_product_mode setting.
+    virtual bool supportsDistributedProduct() const { return false; }
+
     /// Returns hints for serialization of columns accorsing to statistics accumulated by storage.
     virtual SerializationInfoByName getSerializationHints() const { return {}; }
 
