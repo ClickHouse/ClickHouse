@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 # Tags: race
 
-# This test is disabled because it triggers internal assert in Thread Sanitizer.
-# Thread Sanitizer does not support for more than 64 mutexes to be locked in a single thread.
-# https://github.com/google/sanitizers/issues/950
-
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
