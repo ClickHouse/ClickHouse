@@ -143,6 +143,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_replicas_insert_select_local_pipeline", false, false, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"},
             {"parallel_hash_join_threshold", 0, 0, "New setting"},
             /// Release closed. Please use 25.5
+            {"output_format_parquet_max_dictionary_size", 1024 * 1024, 1024 * 1024, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {
@@ -179,6 +180,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"restore_replicated_merge_tree_to_shared_merge_tree", false, false, "New setting."},
             {"parallel_replicas_only_with_analyzer", true, true, "Parallel replicas is supported only with analyzer enabled"},
             {"s3_allow_multipart_copy", true, true, "New setting."},
+            {"input_format_parquet_use_native_reader_v2", false, false, "A new parquet reader support full filter push down"},
+            /// Release closed. Please use 25.3
         });
         addSettingsChanges(settings_changes_history, "25.1",
         {

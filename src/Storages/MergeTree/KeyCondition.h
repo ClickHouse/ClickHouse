@@ -14,6 +14,8 @@
 #include <Storages/MergeTree/BoolMask.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
+#include <Processors/Formats/Impl/Parquet/ColumnFilterHelper.h>
+
 
 namespace DB
 {
@@ -160,6 +162,8 @@ public:
         const MonotonicFunctionsChain & functions,
         DataTypePtr current_type,
         bool single_point = false);
+
+    const std::shared_ptr<ColumnFilterHelper> & getColumnFilterHelper() const { return column_filter_helper; }
 
     bool matchesExactContinuousRange() const;
 
@@ -384,6 +388,7 @@ private:
     /// This flag identify whether there are filters.
     bool has_filter;
 
+    std::shared_ptr<ColumnFilterHelper> column_filter_helper;
     ColumnIndices key_columns;
     std::vector<size_t> key_indices;
 

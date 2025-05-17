@@ -31,8 +31,6 @@ namespace DB::ErrorCodes
 namespace DB::Parquet
 {
 
-namespace parq = parquet::format;
-
 namespace
 {
 
@@ -541,7 +539,7 @@ void writePage(const parq::PageHeader & header, const PODArray<char> & compresse
 
     if (add_to_offset_index)
     {
-        parquet::format::PageLocation location;
+        parq::PageLocation location;
         /// Offset relative to column chunk. finalizeColumnChunkAndWriteFooter later adjusts it to global offset.
         location.__set_offset(s.column_chunk.meta_data.total_compressed_size);
         location.__set_compressed_page_size(static_cast<int32_t>(compressed_page_size));
@@ -566,7 +564,8 @@ void makeBloomFilter(const HashSet<UInt64, TrivialHash> & hashes, ColumnChunkInd
     /// There appear to be undocumented requirements:
     ///  * number of blocks must be a power of two,
     ///  * bloom filter size must be at most 128 MiB.
-    /// At least parquet::BlockSplitBloomFilter::Init (which we use to read bloom filters) requires this.
+    /// At least arrow's parquet::BlockSplitBloomFilter::Init (which we use to read bloom filters)
+    /// requires this.
     double requested_num_blocks = hashes.size() * options.bloom_filter_bits_per_value / 256;
     size_t num_blocks = 1;
     while (num_blocks < requested_num_blocks)
@@ -783,7 +782,7 @@ void writeColumnImpl(
     auto is_dict_too_big = [&] {
         auto * dict_encoder = dynamic_cast<parquet::DictEncoder<ParquetDType> *>(encoder.get());
         int dict_size = dict_encoder->dict_encoded_size();
-        return static_cast<size_t>(dict_size) >= options.dictionary_size_limit;
+        return static_cast<size_t>(dict_size) >= options.max_dictionary_size;
     };
 
     while (def_offset < num_values)

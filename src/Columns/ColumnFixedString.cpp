@@ -446,4 +446,11 @@ ColumnPtr ColumnFixedString::compress(bool force_compression) const
         });
 }
 
+std::span<char> ColumnFixedString::insertRawUninitialized(size_t count)
+{
+    size_t start = chars.size();
+    chars.resize(start + count * n);
+    return {reinterpret_cast<char *>(chars.data() + start), count * n};
+}
+
 }

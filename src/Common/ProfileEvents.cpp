@@ -1018,11 +1018,19 @@ The server successfully detected this situation and will download merged part fr
     M(MemoryWorkerRun, "Number of runs done by MemoryWorker in background", ValueType::Number) \
     M(MemoryWorkerRunElapsedMicroseconds, "Total time spent by MemoryWorker for background work", ValueType::Microseconds) \
     \
-    M(ParquetFetchWaitTimeMicroseconds, "Time of waiting fetching parquet data", ValueType::Microseconds) \
     M(ParquetReadRowGroups, "The total number of row groups read from parquet data", ValueType::Number) \
     M(ParquetPrunedRowGroups, "The total number of row groups pruned from parquet data", ValueType::Number) \
     M(FilterTransformPassedRows, "Number of rows that passed the filter in the query", ValueType::Number) \
     M(FilterTransformPassedBytes, "Number of bytes that passed the filter in the query", ValueType::Bytes) \
+    \
+    M(ParquetFetchWaitTimeMicroseconds, "Time of waiting fetching parquet data", ValueType::Microseconds) \
+    M(ParquetDecompressionTimeMicroseconds, "Time spent decompressing Parquet page data", ValueType::Microseconds) \
+    M(ParquetDeserializingMetaTimeMicroseconds, "Time spent deserializing Parquet page headers and other metadata", ValueType::Microseconds) \
+    M(ParquetFilteredRows, "Rows considered by push down filters, including skipped rows", ValueType::Number) \
+    M(ParquetSkippedRows, "Rows skipped by push down filters", ValueType::Number) \
+    M(ParquetOutputRows, "Parquet output rows", ValueType::Number) \
+    M(ParquetSkipPageNum, "Parquet pages skipped", ValueType::Number) \
+    \
     M(QueryPreempted, "How many times tasks are paused and waiting due to 'priority' setting", ValueType::Number) \
 
 

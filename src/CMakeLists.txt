@@ -501,7 +501,7 @@ if (TARGET ch_contrib::capnp)
 endif ()
 
 if (TARGET ch_contrib::parquet)
-    dbms_target_link_libraries (PRIVATE ch_contrib::parquet)
+    dbms_target_link_libraries (PRIVATE ch_contrib::parquet ch_contrib::xsimd)
 endif ()
 
 if (TARGET ch_contrib::avrocpp)
@@ -726,5 +726,6 @@ if (ENABLE_TESTS)
 
     if (TARGET ch_contrib::parquet)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::xsimd)
     endif()
 endif ()

@@ -79,4 +79,7 @@ StaticThreadPool & getDatabaseCatalogDropTablesThreadPool();
 /// ThreadPool used for parallel prefixes deserialization of subcolumns in Wide MergeTree parts.
 StaticThreadPool & getMergeTreePrefixesDeserializationThreadPool();
 
+/// TODO: Maybe use it in ParallelParsingInputFormat, DWARFBlockInputFormat, and ParquetBlockInputFormat.
+StaticThreadPool & getFormatParsingThreadPool();
+
 }

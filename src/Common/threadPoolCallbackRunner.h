@@ -224,4 +224,148 @@ public:
 
 };
 
+//TODO: move implementations to .cpp
+class ThreadPoolCallbackRunnerFast
+{
+public:
+    enum class Mode
+    {
+        /// Normal mode, tasks are queued and ran by a thread pool.
+        ThreadPool,
+        /// Tasks can be enqueued, but there's no thread pool to pick them up.
+        /// You have to call runTaskInline() to run them.
+        Manual,
+        /// operator() will throw.
+        Disabled,
+    };
+
+    /// TODO: Add metric for queue size and maybe event for task count.
+
+    ThreadPoolCallbackRunnerFast() = default;
+
+    void initManual()
+    {
+        mode = Mode::Manual;
+    }
+
+    void initThreadPool(ThreadPool & pool_, size_t max_threads_, std::string thread_name_, ThreadGroupPtr thread_group_)
+    {
+        chassert(!pool);
+        mode = Mode::ThreadPool;
+        pool = &pool_;
+        max_threads = max_threads_;
+        thread_name = thread_name_;
+        thread_group = thread_group_;
+
+        //TODO: Start threads dynamically based on queue size, stop after a timeout.
+        threads = max_threads;
+        for (size_t i = 0; i < max_threads; ++i)
+            pool->scheduleOrThrowOnError([this] { threadFunction(); });
+    }
+
+    /// Manual or Disabled.
+    explicit ThreadPoolCallbackRunnerFast(Mode mode_) : mode(mode_)
+    {
+        chassert(mode != Mode::ThreadPool);
+    }
+
+    ~ThreadPoolCallbackRunnerFast()
+    {
+        shutdown();
+    }
+
+    void shutdown()
+    {
+        /// May be called twice.
+        std::unique_lock lock(mutex);
+        shutdown_requested = true;
+        queue_cv.notify_all();
+        shutdown_cv.wait(lock, [&] { return threads == 0; });
+    }
+
+    void operator()(std::function<void()> f)
+    {
+        if (mode == Mode::Disabled)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread pool runner is not initialized");
+
+        {
+            std::unique_lock lock(mutex);
+            queue.push_back(std::move(f));
+        }
+        queue_cv.notify_one();
+    }
+
+    /// Returns true if a task was run, false if queue is empty.
+    bool runTaskInline()
+    {
+        std::function<void()> f;
+        {
+            std::unique_lock lock(mutex);
+            if (queue.empty())
+                return false;
+            f = std::move(queue.front());
+            queue.pop_front();
+        }
+        f();
+        return true;
+    }
+
+    Mode getMode() const { return mode; }
+    bool isDisabled() const { return mode == Mode::Disabled; }
+    bool isManual() const { return mode == Mode::Manual; }
+
+private:
+    Mode mode = Mode::Disabled;
+    ThreadPool * pool = nullptr;
+    size_t max_threads = 0;
+    std::string thread_name;
+    ThreadGroupPtr thread_group;
+
+    std::mutex mutex;
+    size_t threads = 0;
+    bool shutdown_requested = false;
+    std::condition_variable shutdown_cv;
+
+    std::deque<std::function<void()>> queue;
+    std::condition_variable queue_cv;
+
+    void threadFunction()
+    {
+        ThreadGroupSwitcher switcher(thread_group, thread_name.c_str());
+
+        while (true)
+        {
+            std::function<void()> f;
+            {
+                std::unique_lock lock(mutex);
+                queue_cv.wait(lock, [&] {return shutdown_requested || !queue.empty();});
+
+                if (shutdown_requested)
+                {
+                    threads -= 1;
+                    if (threads == 0)
+                        shutdown_cv.notify_all();
+                    return;
+                }
+
+                f = std::move(queue.front());
+                queue.pop_front();
+            }
+
+            try
+            {
+                f();
+
+                CurrentThread::updatePerformanceCountersIfNeeded();
+            }
+            catch (...)
+            {
+                //TODO: consider propagating the exception somehow
+                tryLogCurrentException("FastThreadPool");
+                chassert(false);
+            }
+        }
+    }
+};
+
 }

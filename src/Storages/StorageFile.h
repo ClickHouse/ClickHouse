@@ -24,6 +24,9 @@ using InputFormatPtr = std::shared_ptr<IInputFormat>;
 
 class PullingPipelineExecutor;
 
+struct PrewhereInfo;
+using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
+
 class StorageFile final : public IStorage
 {
 public:
@@ -89,6 +92,13 @@ public:
     /// So we can create a header of only required columns in read method and ask
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
+
+    /// Things required for PREWHERE.
+    //TODO: Do the same in StorageURL and StorageObjectStorage.
+    bool supportsPrewhere() const override;
+    bool canMoveConditionsToPrewhere() const override;
+    std::optional<NameSet> supportedPrewhereColumns() const override;
+    ColumnSizeByName getColumnSizes() const override;
 
     bool supportsSubcolumns() const override { return true; }
     bool supportsOptimizationToSubcolumns() const override { return false; }
@@ -179,6 +189,8 @@ private:
     bool is_db_table = true;        /// Table is stored in real database, not user's file
     bool use_table_fd = false;      /// Use table_fd instead of path
 
+    bool supports_prewhere = false;
+
     mutable std::shared_timed_mutex rwlock;
 
     LoggerPtr log = getLogger("StorageFile");
@@ -251,6 +263,7 @@ private:
         const ReadFromFormatInfo & info,
         std::shared_ptr<StorageFile> storage_,
         const ContextPtr & context_,
+        PrewhereInfoPtr prewhere_info_,
         UInt64 max_block_size_,
         FilesIteratorPtr files_iterator_,
         std::unique_ptr<ReadBuffer> read_buf_,
@@ -281,6 +294,7 @@ private:
     std::optional<size_t> tryGetNumRowsFromCache(const String & path, time_t last_mod_time) const;
 
     std::shared_ptr<StorageFile> storage;
+    PrewhereInfoPtr prewhere_info;
     FilesIteratorPtr files_iterator;
     String current_path;
     std::optional<size_t> current_file_size;
