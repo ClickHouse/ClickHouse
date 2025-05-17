@@ -22,13 +22,16 @@ public:
     }
 
     static void initialize();
+    static void cleanup();
 
 private:
     OpenSSLInitializer();
     ~OpenSSLInitializer();
 
 #if USE_SSL
-    static std::atomic<uint8_t> ref_count;
+    static std::atomic<uint8_t> initialize_ref_count;
+    static std::atomic<uint8_t> cleanup_ref_count;
+
     static OSSL_PROVIDER * legacy_provider;
     static OSSL_PROVIDER * default_provider;
 #endif
