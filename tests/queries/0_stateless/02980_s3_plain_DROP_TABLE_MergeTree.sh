@@ -21,7 +21,7 @@ CLICKHOUSE_DATABASE="$new_database"
 
 $CLICKHOUSE_CLIENT -m -q "
     drop table if exists data;
-    create table data (key Int) engine=MergeTree() order by key;
+    create table data (key Int) engine=MergeTree() order by key settings storage_policy='nonencrypted';
     insert into data values (1);
     select 'data after INSERT', count() from data;
 "

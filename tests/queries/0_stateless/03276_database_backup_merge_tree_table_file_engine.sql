@@ -4,7 +4,7 @@
 DROP DATABASE IF EXISTS 03276_test_database;
 CREATE DATABASE 03276_test_database;
 
-CREATE TABLE 03276_test_database.test_table (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE 03276_test_database.test_table (id UInt64, value String) ENGINE = MergeTree ORDER BY id SETTINGS storage_policy='nonencrypted';
 INSERT INTO 03276_test_database.test_table SELECT number, number FROM numbers(15000);
 
 SELECT (id % 10) AS key, count() FROM 03276_test_database.test_table GROUP BY key ORDER BY key;
