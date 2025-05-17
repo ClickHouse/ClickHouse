@@ -174,6 +174,9 @@ struct CredentialsConfiguration
     bool use_insecure_imds_request = false;
     uint64_t expiration_window_seconds = DEFAULT_EXPIRATION_WINDOW_SECONDS;
     bool no_sign_request = false;
+    String role_arn = ""; // NOLINT(*-redundant-string-init)
+    String role_session_name = ""; // NOLINT(*-redundant-string-init)
+    String sts_endpoint_override = ""; // NOLINT(*-redundant-string-init)
 };
 
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
