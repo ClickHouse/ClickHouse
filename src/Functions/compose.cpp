@@ -34,6 +34,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
     String getName() const override { return "compose"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
