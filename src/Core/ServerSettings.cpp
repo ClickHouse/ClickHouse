@@ -139,9 +139,9 @@ namespace DB
     A value of `0` (default) means unlimited.
     :::
     )", 0) \
-    DECLARE(UInt64, backup_threads, 16, R"(The maximum number of threads to execute `BACKUP` requests.)", 0) \
+    DECLARE(NonZeroUInt64, backup_threads, 16, R"(The maximum number of threads to execute `BACKUP` requests.)", 0) \
     DECLARE(UInt64, max_backup_bandwidth_for_server, 0, R"(The maximum read speed in bytes per second for all backups on server. Zero means unlimited.)", 0) \
-    DECLARE(UInt64, restore_threads, 16, R"(The maximum number of threads to execute RESTORE requests.)", 0) \
+    DECLARE(NonZeroUInt64, restore_threads, 16, R"(The maximum number of threads to execute RESTORE requests.)", 0) \
     DECLARE(Bool, shutdown_wait_backups_and_restores, true, R"(If set to true ClickHouse will wait for running backups and restores to finish before shutdown.)", 0) \
     DECLARE(Double, cannot_allocate_thread_fault_injection_probability, 0, R"(For testing purposes.)", 0) \
     DECLARE(Int32, max_connections, 4096, R"(Max server connections.)", 0) \

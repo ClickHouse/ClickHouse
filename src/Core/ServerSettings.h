@@ -21,6 +21,7 @@ struct ServerSettingsImpl;
     M(CLASS_NAME, Double) \
     M(CLASS_NAME, GroupArrayActionWhenLimitReached) \
     M(CLASS_NAME, Float) \
+    M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, Int32) \
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, String) \
