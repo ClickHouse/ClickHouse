@@ -173,6 +173,10 @@ public:
     void setBcryptWorkfactor(int workfactor_);
     int getBcryptWorkfactor() const;
 
+    /// Compatibility setting
+    void setEnableUserNameAccessType(bool enable_user_name_access_type_);
+    bool isEnabledUserNameAccessType() const;
+
     /// Enables logic that users without permissive row policies can still read rows using a SELECT query.
     /// For example, if there are two users A, B and a row policy is defined only for A, then
     /// if this setting is true the user B will see all rows, and if this setting is false the user B will see no rows.
@@ -284,6 +288,7 @@ private:
     std::atomic<AuthenticationType> default_password_type = AuthenticationType::SHA256_PASSWORD;
     std::atomic_bool allow_experimental_tier_settings = true;
     std::atomic_bool allow_beta_tier_settings = true;
+    std::atomic_bool enable_user_name_access_type = true;
 };
 
 }
