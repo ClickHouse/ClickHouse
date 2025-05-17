@@ -11,7 +11,7 @@
 namespace
 {
 
-/* Max length of Bech32 or Bech32m encoding is 90 chars, this includes:
+/** Max length of Bech32 or Bech32m encoding is 90 chars, this includes:
  *
  *      HRP: 1 - 83 human readable characters, 'bc' or 'tb' for a SegWit address
  *      separator: always '1'
@@ -26,7 +26,19 @@ constexpr size_t max_hrp_len = 83; // Note: if we only support segwit addresses,
 
 using bech32_data = std::vector<uint8_t>;
 
-/** Convert from one power-of-2 number base to another. */
+/** Convert from one power-of-2 number base to another. 
+ *  
+ *  Function will convert a input vector of <frombits>-bit data to an output vector of <tobit>-bit data,
+ *  padding the result if <pad> is true.
+ *
+ *  Example:
+ *  Input:  10010110 11001011 (8-bit numbers)
+ *  Output: 10010 11011 00101 10000 (5-bit numbers)
+ *
+ *  The last 4 "extra" 0s in the output are padding, they will only be added if <pad> is true.
+ *  If <pad> is false, no padding will be added and the function will return false if there are bits
+ *  left over 
+ */
 template <int frombits, int tobits, bool pad>
 bool convertbits(bech32_data & out, const bech32_data & in)
 {
@@ -46,9 +58,10 @@ bool convertbits(bech32_data & out, const bech32_data & in)
     }
     if (pad)
     {
-        if (bits)
+        if (bits) // pad leftover bits with 0s and push to 'out'
             out.push_back((acc << (tobits - bits)) & maxv);
     }
+    // if pad == false: sanity check, then check if there are significant (non-0) leftover bits
     else if (bits >= frombits || ((acc << (tobits - bits)) & maxv))
     {
         return false;
