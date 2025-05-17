@@ -51,7 +51,7 @@ private:
         Method & method,
         const ColumnRawPtrs & columns,
         IColumnFilter & filter,
-        const size_t rows,
+        size_t rows,
         SetVariants & variants,
         size_t &  passed_bf) const;
 
@@ -68,7 +68,7 @@ private:
         Method & method,
         const ColumnRawPtrs & columns,
         IColumnFilter & filter,
-        const size_t rows,
+        size_t rows,
         SetVariants & variants,
         size_t &  passed_bf) const;
 
@@ -77,7 +77,7 @@ private:
         Method & method,
         const ColumnRawPtrs & columns,
         IColumnFilter & filter,
-        const size_t rows,
+        size_t rows,
         SetVariants & variants,
         ThreadPool & thread_pool) const;
 };
