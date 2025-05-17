@@ -801,7 +801,7 @@ void StatementGenerator::generateMergeTreeEngineDetails(RandomGenerator & rg, co
     }
 }
 
-void StatementGenerator::setClusterInfo(RandomGenerator & rg, SQLBase & b)
+void StatementGenerator::setClusterInfo(RandomGenerator & rg, SQLBase & b) const
 {
     /// Shared and Replicated MergeTree are to be used with cluster
     if (!fc.clusters.empty() && rg.nextSmallNumber() < (b.toption.has_value() ? 9 : 5))
@@ -1137,7 +1137,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
                     sv2->set_value(rg.nextBool() ? "'ordered'" : "'unordered'");
                 }
             }
-            else if (b.toption.has_value() && b.toption.value() == TableEngineOption::TShared)
+            else if (b.toption.has_value() && b.toption.value() == TableEngineOption::TShared && !fc.storage_policies.empty())
             {
                 /// Requires keeper storage
                 bool found = false;
@@ -1148,7 +1148,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
                     if (it->property() == "storage_policy")
                     {
                         auto & prop = const_cast<SetValue &>(*it);
-                        prop.set_value("'s3_with_keeper'");
+                        prop.set_value("'" + rg.pickRandomly(fc.storage_policies) + "'");
                         found = true;
                     }
                 }
@@ -1157,7 +1157,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
                     SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
                     sv->set_property("storage_policy");
-                    sv->set_value("'s3_with_keeper'");
+                    sv->set_value("'" + rg.pickRandomly(fc.storage_policies) + "'");
                 }
             }
         }
@@ -1583,7 +1583,10 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     this->ids.emplace_back(Null);
     this->ids.emplace_back(Set);
     this->ids.emplace_back(Join);
-    this->ids.emplace_back(Memory);
+    if (fc.allow_memory_tables)
+    {
+        this->ids.emplace_back(Memory);
+    }
     this->ids.emplace_back(StripeLog);
     this->ids.emplace_back(Log);
     this->ids.emplace_back(TinyLog);
@@ -1636,23 +1639,24 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     this->ids.clear();
 }
 
-static const std::vector<TableEngineValues> likeEngs = {/* Deterministic engines */
-                                                        TableEngineValues::MergeTree,
-                                                        TableEngineValues::ReplacingMergeTree,
-                                                        TableEngineValues::SummingMergeTree,
-                                                        TableEngineValues::AggregatingMergeTree,
-                                                        TableEngineValues::File,
-                                                        TableEngineValues::Null,
-                                                        TableEngineValues::Set,
-                                                        TableEngineValues::Join,
-                                                        TableEngineValues::Memory,
-                                                        TableEngineValues::StripeLog,
-                                                        TableEngineValues::Log,
-                                                        TableEngineValues::TinyLog,
-                                                        TableEngineValues::EmbeddedRocksDB,
-                                                        /* Not deterministic engines */
-                                                        TableEngineValues::Merge,
-                                                        TableEngineValues::GenerateRandom};
+static const std::vector<TableEngineValues> likeEngs
+    = {/* Deterministic engines */
+       TableEngineValues::MergeTree,
+       TableEngineValues::ReplacingMergeTree,
+       TableEngineValues::SummingMergeTree,
+       TableEngineValues::AggregatingMergeTree,
+       TableEngineValues::File,
+       TableEngineValues::Null,
+       TableEngineValues::Set,
+       TableEngineValues::Join,
+       TableEngineValues::Memory,
+       TableEngineValues::StripeLog,
+       TableEngineValues::Log,
+       TableEngineValues::TinyLog,
+       TableEngineValues::EmbeddedRocksDB,
+       /* Not deterministic engines */
+       TableEngineValues::Merge,
+       TableEngineValues::GenerateRandom};
 
 void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const bool in_parallel, CreateTable * ct)
 {
@@ -1666,7 +1670,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     SQLBase::setDeterministic(rg, next);
     this->allow_not_deterministic = !next.is_deterministic;
     this->enforce_final = next.is_deterministic;
-    next.is_temp = rg.nextMediumNumber() < 11;
+    next.is_temp = fc.allow_memory_tables && rg.nextMediumNumber() < 11;
     ct->set_is_temp(next.is_temp);
 
     const auto tableLikeLambda
@@ -2029,7 +2033,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         svs = svs ? svs : layout->mutable_setting_values();
         SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
         const String ncache = "cache" + std::to_string(this->cache_counter++);
-        const std::filesystem::path & nfile = fc.db_file_path / ncache;
+        const std::filesystem::path & nfile = fc.server_file_path / ncache;
 
         sv->set_property("PATH");
         sv->set_value("'" + nfile.generic_string() + "'");
@@ -2041,8 +2045,9 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
         sv->set_property("SIZE_IN_CELLS");
-        sv->set_value(std::to_string(
-            rg.thresholdGenerator<uint32_t>(0.25, 0.25, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))));
+        sv->set_value(
+            std::to_string(
+                rg.thresholdGenerator<uint32_t>(0.25, 0.25, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))));
     }
 
     /// Add Primary Key

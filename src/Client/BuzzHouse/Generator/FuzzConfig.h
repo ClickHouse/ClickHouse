@@ -133,6 +133,7 @@ private:
 
 public:
     LoggerPtr log;
+    std::ofstream outf;
     DB::Strings collations, storage_policies, timezones, disks, clusters;
     std::optional<ServerCredentials> clickhouse_server, mysql_server, postgresql_server, sqlite_server, mongodb_server, redis_server,
         minio_server;
@@ -140,12 +141,15 @@ public:
     String host = "localhost";
     bool read_log = false, fuzz_floating_points = true, test_with_fill = true, dump_table_oracle_compare_content = true,
          compare_success_results = false, measure_performance = false, allow_infinite_tables = false, compare_explains = false,
-         fail_on_timeout = false;
+         fail_on_timeout = false, allow_memory_tables = true, allow_client_restarts = false;
     uint64_t seed = 0, min_insert_rows = 1, max_insert_rows = 1000, min_nested_rows = 0, max_nested_rows = 10, flush_log_wait_time = 1000;
     uint32_t max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5, max_dictionaries = 5,
-             max_columns = 5, time_to_run = 0, type_mask = std::numeric_limits<uint32_t>::max(), port = 9000, secure_port = 9440;
+             max_columns = 5, time_to_run = 0, type_mask = std::numeric_limits<uint32_t>::max(), port = 9000, secure_port = 9440,
+             max_reconnection_attempts = 3, time_to_sleep_between_reconnects = 3000;
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
-                          db_file_path = std::filesystem::temp_directory_path() / "db", fuzz_out = db_file_path / "fuzz.data";
+                          client_file_path = std::filesystem::temp_directory_path() / "db",
+                          server_file_path = std::filesystem::temp_directory_path() / "db",
+                          fuzz_client_out = client_file_path / "fuzz.data", fuzz_server_out = server_file_path / "fuzz.data";
 
     FuzzConfig()
         : cb(nullptr)
@@ -155,21 +159,21 @@ public:
 
     FuzzConfig(DB::ClientBase * c, const String & path);
 
-    bool processServerQuery(const String & input) const;
+    bool processServerQuery(bool outlog, const String & query);
 
 private:
-    void loadServerSettings(DB::Strings & out, bool distinct, const String & table, const String & col) const;
+    void loadServerSettings(DB::Strings & out, bool distinct, const String & table, const String & col);
 
 public:
     void loadServerConfigurations();
 
     String getConnectionHostAndPort(bool secure) const;
 
-    void loadSystemTables(std::unordered_map<String, DB::Strings> & tables) const;
+    void loadSystemTables(std::unordered_map<String, DB::Strings> & tables);
 
-    bool tableHasPartitions(bool detached, const String & database, const String & table) const;
+    bool tableHasPartitions(bool detached, const String & database, const String & table);
 
-    String tableGetRandomPartitionOrPart(bool detached, bool partition, const String & database, const String & table) const;
+    String tableGetRandomPartitionOrPart(bool detached, bool partition, const String & database, const String & table);
 
     void comparePerformanceResults(const String & oracle_name, PerformanceResult & server, PerformanceResult & peer) const;
 };
