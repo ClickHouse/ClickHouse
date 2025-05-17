@@ -36,7 +36,7 @@ namespace DB
         const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context,
         bool supports_subset_of_columns,
-        const NamesAndTypesList & file_columns = {},
+        const NamesAndTypesList & file_columns,
         const NamesAndTypesList & columns_to_read_from_file_path = {});
 
     /// Returns the serialization hints from the insertion table (if it's set in the Context).
