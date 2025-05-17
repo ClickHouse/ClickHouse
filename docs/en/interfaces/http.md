@@ -45,7 +45,7 @@ ClickHouse includes a web user interface, which can be accessed from the followi
 http://localhost:8123/play`
 ```
 
-The web UI supports displaying progress during query runtime, query cancellation, and result straming.
+The web UI supports displaying progress during query runtime, query cancellation, and result streaming.
 It has a secret feature for displaying charts and graphs for query pipelines.
 
 The web UI is designed for professionals like you.
