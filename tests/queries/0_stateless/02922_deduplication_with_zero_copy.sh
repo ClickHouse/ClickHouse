@@ -80,7 +80,8 @@ function loop()
 
   table_shared_id="$1"
 
-  while :
+  local TIMELIMIT=$((SECONDS+TIMEOUT))
+  while [ $SECONDS -lt "$TIMELIMIT" ]
   do
     while ! insert_duplicates
     do
@@ -109,12 +110,12 @@ export -f query_with_retry
 export -f filter_temporary_locks
 export -f insert_duplicates
 export -f get_shared_locks
-export -f loop
 
 table_shared_id="$($CLICKHOUSE_KEEPER_CLIENT -q "get '/test/02922/${CLICKHOUSE_DATABASE}/table/table_shared_id'")"
 
 exit_code=0
-timeout 40 bash -c "loop '${table_shared_id}'" || exit_code="${?}"
+TIMEOUT=40
+loop "${table_shared_id}" || exit_code="${?}"
 
 if [[ "${exit_code}" -ne "124" ]]
 then
