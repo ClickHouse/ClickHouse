@@ -104,7 +104,8 @@ public:
         UInt64 filtered_parts = 0;
     };
 
-    using ProjectionStats = std::vector<ProjectionStat>;
+    /// `deque` is used to ensure stable addresses during projection analysis stats building.
+    using ProjectionStats = std::deque<ProjectionStat>;
 
     using ReadType = MergeTreeReadType;
 
