@@ -34,7 +34,9 @@ namespace Setting
 static bool isUserDefinedFunctionQuery(const ASTPtr & query)
 {
     return query->as<ASTCreateFunctionQuery>()
-        || query->as<ASTDropFunctionQuery>();
+        || query->as<ASTDropFunctionQuery>()
+        || query->as<ASTCreateAggregateFunctionQuery>()
+        || query->as<ASTDropAggregateFunctionQuery>();
 }
 
 static bool isAccessControlQuery(const ASTPtr & query)
