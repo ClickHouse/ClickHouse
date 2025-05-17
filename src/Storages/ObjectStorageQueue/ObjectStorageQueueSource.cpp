@@ -195,7 +195,7 @@ ObjectStorageQueueSource::FileIterator::next()
                     paths.push_back(Source::getUniqueStoragePathIdentifier(*configuration, *object_info, false));
 
                 VirtualColumnUtils::filterByPathOrFile(
-                    new_batch, paths, filter_expr, virtual_columns, getContext());
+                    new_batch, paths, filter_expr, virtual_columns, /* todo arthur */{}, getContext());
 
                 LOG_TEST(log, "Filtered files: {} -> {} by path or filename", paths.size(), new_batch.size());
             }
