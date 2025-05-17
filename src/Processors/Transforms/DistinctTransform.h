@@ -5,6 +5,7 @@
 #include <Interpreters/SetVariants.h>
 #include <Interpreters/BloomFilter.h>
 #include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadPool.h>
 
 namespace DB
 {
@@ -61,6 +62,15 @@ private:
         IColumn::Filter & filter,
         size_t rows,
         SetVariants & variants) const;
+
+    template <typename Method>
+    void checkSetFilter(
+        Method & method,
+        const ColumnRawPtrs & columns,
+        IColumnFilter & filter,
+        const size_t rows,
+        SetVariants & variants,
+        size_t &  passed_bf) const;
 
     template <typename Method>
     void buildSetParallelFilter(

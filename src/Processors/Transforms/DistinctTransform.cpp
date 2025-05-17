@@ -1,4 +1,8 @@
 #include <Processors/Transforms/DistinctTransform.h>
+#include <Common/HashTable/TwoLevelHashTable.h>
+#include <Common/CurrentThread.h>
+#include <Common/setThreadName.h>
+#include <Common/ThreadPool.h>
 
 static inline size_t intHash32(UInt64 x)
 {
@@ -36,8 +40,8 @@ DistinctTransform::DistinctTransform(
     size_t max_threads_)
     : ISimpleTransform(header_, header_, true)
     , limit_hint(limit_hint_)
-    , set_size_limits(set_size_limits_),
     , is_pre_distinct(is_pre_distinct_)
+    , set_size_limits(set_size_limits_)
 {
     const size_t num_columns = columns_.empty() ? header_.columns() : columns_.size();
     key_columns_pos.reserve(num_columns);
@@ -52,7 +56,7 @@ DistinctTransform::DistinctTransform(
     if (is_pre_distinct_)
     {
         pool = nullptr;
-        try_init_bf = !(limit_hint_ && limit_hint_ < 1_000_000);
+        try_init_bf = !(limit_hint_ && limit_hint_ < 1000000);
     } else
     {
         pool = std::make_unique<ThreadPool>(
@@ -75,11 +79,13 @@ void DistinctTransform::buildCombinedFilter(
     size_t &  passed_bf) const
 {
     typename Method::State state(columns, key_sizes, nullptr);
+    typename std::remove_reference_t<decltype(method.data)>::LookupResult it;
 
     for (size_t i = 0; i < rows; ++i)
     {
 
-        auto hash = state.getHash(method.data, i, variants.string_pool);
+        auto key_holder = state.getKeyHolder(i, variants.string_pool);
+        auto hash = method.data.hash(keyHolderGetKey(key_holder));
 
         auto hash1 = hash;
         auto hash2 = intHash32(hash);
@@ -88,15 +94,18 @@ void DistinctTransform::buildCombinedFilter(
 
         if (has_element)
         {
-            auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+            bool inserted;
+            method.data.emplace(key_holder, it, inserted, hash);
+            //auto emplace_result = state.emplaceImpl(key_holder, method.data);
             /// Emit the record if there is no such key in the current set yet.
             /// Skip it otherwise.
-            filter[i] = emplace_result.isInserted();
+            filter[i] = inserted;
         } else
         {
             bloom_filter->addRawHash(hash1/*, SEED_GEN_A*/);
             bloom_filter->addRawHash(hash2/*, SEED_GEN_A*/);
             passed_bf++;
+            filter[i] = true;
         }
     }
 }
@@ -123,6 +132,27 @@ void DistinctTransform::buildSetFilter(
 }
 
 template <typename Method>
+void DistinctTransform::checkSetFilter(
+    Method & method,
+    const ColumnRawPtrs & columns,
+    IColumnFilter & filter,
+    const size_t rows,
+    SetVariants & variants,
+    size_t &  passed_bf) const
+{
+    typename Method::State state(columns, key_sizes, nullptr);
+
+    for (size_t i = 0; i < rows; ++i)
+    {
+        auto find_result = state.findKey(method.data, i, variants.string_pool);
+        /// Emit the record if there is no such key in the current set yet.
+        /// Skip it otherwise.
+        filter[i] = !find_result.isFound();
+        passed_bf+= !find_result.isFound();
+    }
+}
+
+template <typename Method>
 void DistinctTransform::buildSetParallelFilter(
     Method & method,
     const ColumnRawPtrs & columns,
@@ -133,25 +163,31 @@ void DistinctTransform::buildSetParallelFilter(
 {
     typename Method::State state(columns, key_sizes, nullptr);
     auto thread_group = CurrentThread::getGroup();
+    using KeyHolder = decltype(state.getKeyHolder(std::declval<size_t>(), std::declval<Arena &>()));
 
     const size_t num_coarse_buckets = thread_pool.getMaxThreads();
 
     /// 1. Allocate index buffer and per-row bucket ids
     PODArray<size_t> all_indices(rows);
     PODArray<UInt8> coarse_bucket_ids(rows); /// UInt8 is sufficient for ≤ 256 buckets
-    std::vector<size_t> bucket_sizes(num_coarse_buckets, 0);
+    PODArray<size_t> bucket_sizes(num_coarse_buckets, 0);
+    PODArray<KeyHolder> keys(rows);
+    PODArray<size_t> hashes(rows);
 
     /// 2. First pass: hash each row once, assign to coarse bucket, count per-bucket size
     for (size_t i = 0; i < rows; ++i)
     {
-        auto hash = state.getHash(method.data, i, variants.string_pool);
-        auto fine_bucket = method.data.getBucketFromHash(hash);  // 0..255
+        auto key_holder = state.getKeyHolder(i, variants.string_pool);
+        auto hash = method.data.hash(keyHolderGetKey(key_holder));
+        auto fine_bucket = method.data.getBucketFromHash(hash);        // 0..255
 
         if (fine_bucket >= 256)
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Bucket index {} out of range", fine_bucket);
 
         size_t coarse_bucket = fine_bucket % num_coarse_buckets;
         coarse_bucket_ids[i] = static_cast<UInt8>(coarse_bucket);
+        keys[i] = key_holder;
+        hashes[i] = hash;
         ++bucket_sizes[coarse_bucket];
     }
 
@@ -164,11 +200,8 @@ void DistinctTransform::buildSetParallelFilter(
     std::vector<size_t> write_positions = bucket_offsets;
     for (size_t i = 0; i < rows; ++i)
     {
-        if (filter[i])
-        {
-            size_t b = coarse_bucket_ids[i];
-            all_indices[write_positions[b]++] = i;
-        }
+        size_t b = coarse_bucket_ids[i];
+        all_indices[write_positions[b]++] = i;
     }
 
     /// 5. Parallel processing by bucket
@@ -176,9 +209,10 @@ void DistinctTransform::buildSetParallelFilter(
     for (size_t thread_id = 0; thread_id < num_coarse_buckets; ++thread_id)
     {
         thread_pool.scheduleOrThrowOnError(
-            [next_bucket, &bucket_offsets, &all_indices, &state, &method, &variants, &filter, thread_group]()
+            [next_bucket, &bucket_offsets, &all_indices, &hashes, &keys, &method, &filter, thread_group]()
         {
             ThreadGroupSwitcher switcher(thread_group, "DistinctFinal", true);
+            typename std::remove_reference_t<decltype(method.data)>::LookupResult it;
 
             while (true)
             {
@@ -195,8 +229,10 @@ void DistinctTransform::buildSetParallelFilter(
                 for (size_t j = begin; j < end; ++j)
                 {
                     size_t i = all_indices[j];
-                    auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
-                    filter[i] = emplace_result.isInserted();
+                    bool inserted;
+                    method.data.emplace(keys[i], it, inserted, hashes[i]);
+                    //auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+                    filter[i] = inserted;
                 }
             }
         });
@@ -233,9 +269,9 @@ void DistinctTransform::transform(Chunk & chunk)
         column_ptrs.emplace_back(columns[pos].get());
 
     const auto old_set_size = data.getTotalRowCount();
-    const auto old_bf_size =  total_passed_bf;
+    const auto old_bf_size = total_passed_bf;
 
-    if (try_init_bf && old_set_size > 1_000_000)
+    if (try_init_bf && old_set_size > 1000000)
     {
         bloom_filter = std::make_unique<BloomFilter>(BloomFilterParameters(6553600, 1, 0));
         try_init_bf = false;
@@ -243,9 +279,17 @@ void DistinctTransform::transform(Chunk & chunk)
     }
 
     if (data.empty())
-        data.init(SetVariants::chooseMethod(column_ptrs, key_sizes));
+    {
+        auto type = SetVariants::chooseMethod(column_ptrs, key_sizes);
 
-    const auto old_set_size = data.getTotalRowCount();
+        if (!is_pre_distinct && !(limit_hint && limit_hint < 1000000) && type == SetVariants::Type::hashed)
+            data.init(SetVariants::Type::hashed_two_level);
+        else
+            data.init(type);
+    }
+
+    auto check_only = data.getTotalRowCount() > 3000000;
+
     IColumn::Filter filter(num_rows);
 
     switch (data.type)
@@ -254,7 +298,15 @@ void DistinctTransform::transform(Chunk & chunk)
             break;
 #define M(NAME) \
             case SetVariants::Type::NAME: \
-                buildFilter(*data.NAME, column_ptrs, filter, num_rows, data); \
+                if constexpr (SetVariants::Type::NAME == SetVariants::Type::hashed_two_level) \
+                { \
+                    data.getTotalRowCount() > 1000000 ? buildSetParallelFilter(*data.NAME, column_ptrs, filter, num_rows, data, *pool): buildSetFilter(*data.NAME, column_ptrs, filter, num_rows, data); \
+                } else \
+                { \
+                    is_pre_distinct \
+                    ? check_only ? checkSetFilter(*data.NAME, column_ptrs, filter, num_rows, data, total_passed_bf): use_bf ? buildCombinedFilter(*data.NAME, column_ptrs, filter, num_rows, data, total_passed_bf): buildSetFilter(*data.NAME, column_ptrs, filter, num_rows, data) \
+                    : buildSetFilter(*data.NAME, column_ptrs, filter, num_rows, data); \
+                } \
                 break;
         APPLY_FOR_SET_VARIANTS(M)
 #undef M
@@ -272,10 +324,9 @@ void DistinctTransform::transform(Chunk & chunk)
         return;
 
     for (auto & column : columns)
-        column = column->filter(filter, -1);
+        column = column->filter(filter, new_passes);
 
-    use_bf = use_bf && (new_passes * 10) > num_rows ? true: false;
-
+    use_bf = use_bf && (new_passes * 2) > num_rows ? true: false;
 
     chunk.setColumns(std::move(columns), new_passes);
 
