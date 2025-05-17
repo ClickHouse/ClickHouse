@@ -102,7 +102,6 @@ system sync replica r2;
       break
     fi
   done
-
 }
 
 

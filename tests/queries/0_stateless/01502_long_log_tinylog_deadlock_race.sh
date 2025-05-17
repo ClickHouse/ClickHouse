@@ -65,7 +65,7 @@ function thread_insert_select {
 }
 
 # Do randomized queries and expect nothing extraordinary happens.
-TIMEOUT 10
+TIMEOUT=10
 
 function test_with_engine {
     echo "Testing $1"
