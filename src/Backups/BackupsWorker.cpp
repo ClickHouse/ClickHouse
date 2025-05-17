@@ -305,8 +305,8 @@ private:
 
 BackupsWorker::BackupsWorker(ContextMutablePtr global_context, size_t num_backup_threads, size_t num_restore_threads)
     : thread_pools(std::make_unique<ThreadPools>(num_backup_threads, num_restore_threads))
-    , allow_concurrent_backups(global_context->getConfigRef().getBool("backups.allow_concurrent_backups", true))
-    , allow_concurrent_restores(global_context->getConfigRef().getBool("backups.allow_concurrent_restores", true))
+    , allow_concurrent_backups(global_context->getConfigRef().getBool("backups.allow_concurrent_backups", false))
+    , allow_concurrent_restores(global_context->getConfigRef().getBool("backups.allow_concurrent_restores", false))
     , remove_backup_files_after_failure(global_context->getConfigRef().getBool("backups.remove_backup_files_after_failure", true))
     , test_randomize_order(global_context->getConfigRef().getBool("backups.test_randomize_order", false))
     , test_inject_sleep(global_context->getConfigRef().getBool("backups.test_inject_sleep", false))
