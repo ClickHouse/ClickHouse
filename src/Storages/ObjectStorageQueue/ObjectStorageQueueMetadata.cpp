@@ -173,6 +173,8 @@ void ObjectStorageQueueMetadata::startup()
             generateRescheduleInterval(
                 cleanup_interval_min_ms, cleanup_interval_max_ms));
     }
+
+    std::unique_lock lock(update_registry_mutex);
     if (!update_registry_thread)
         update_registry_thread = std::make_unique<ThreadFromGlobalPool>([this](){ updateRegistryFunc(); });
 }
@@ -182,8 +184,18 @@ void ObjectStorageQueueMetadata::shutdown()
     shutdown_called = true;
     if (task)
         task->deactivate();
-    if (update_registry_thread && update_registry_thread->joinable())
-        update_registry_thread->join();
+
+    /// Avoid a potential race where a a thread is checking or setting update_registry while another
+    /// thread is doing the same in the shutdown method. Hold a lock to create a local copy and move
+    /// update_registry_thread into it so that the other threads can see that it's gone. Then continue
+    /// with the join operation, since join can take a long while and we don't want block other threads.
+    std::unique_ptr<ThreadFromGlobalPool> thread_to_join;
+    {
+        std::lock_guard lock(update_registry_mutex);
+        thread_to_join = std::move(update_registry_thread);
+    }
+    if (thread_to_join && thread_to_join->joinable())
+        thread_to_join->join();
 }
 
 ObjectStorageQueueMetadata::FileStatuses ObjectStorageQueueMetadata::getFileStatuses() const
