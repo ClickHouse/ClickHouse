@@ -54,9 +54,6 @@ bool BackgroundSchedulePoolTaskInfo::scheduleAfter(size_t milliseconds, bool ove
  *   - the destruction of the pool.
  *
  * In both cases, it is guaranteed that the pool still exists when `deactivate()` is invoked.
- *
- * Note: It's only necessary to cancel delayed tasks if the pool is not being destroyed,
- * because pool destruction will handle cancellation anyway.
  */
 void BackgroundSchedulePoolTaskInfo::deactivate()
 {
@@ -69,7 +66,9 @@ void BackgroundSchedulePoolTaskInfo::deactivate()
     deactivated = true;
     scheduled = false;
 
-    /// Only necessary to cancel the task before the pool is being destroyed
+    /// Since TaskInfo holds a direct reference to its pool (not a pointer),
+    /// and the pool guarantees it will deactivate all tasks before destruction completes,
+    /// it is safe to assume `pool` is always valid (non-dangling) in this method.
     if (delayed)
         pool.cancelDelayedTask(*this, lock_schedule);
 }
