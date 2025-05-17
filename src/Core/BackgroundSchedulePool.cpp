@@ -227,6 +227,20 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
             std::lock_guard lock_delayed_tasks(delayed_tasks_mutex);
 
             shutdown = true;
+
+            // Deactivate all tasks in immediate queue
+            for (auto & task_ptr : tasks)
+            {
+                if (task_ptr)
+                    task_ptr->deactivate();
+            }
+
+            // Deactivate all delayed tasks
+            for (auto & delayed : delayed_tasks)
+            {
+                if (delayed.second)
+                    delayed.second->deactivate();
+            }
         }
 
         tasks_cond_var.notify_all();
