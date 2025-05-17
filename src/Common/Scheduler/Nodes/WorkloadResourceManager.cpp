@@ -38,16 +38,16 @@ namespace
         return "unknown-workload-entity";
     }
 
-    WorkloadSettings::Unit getResourceUnit(const ASTPtr & ast)
+    CostUnit getResourceUnit(const ASTPtr & ast)
     {
         // CPU resource must have exactly one access mode specified
         if (auto * create = typeid_cast<ASTCreateResourceQuery *>(ast.get()))
             return create->unit;
-        return WorkloadSettings::Unit::IOByte;
+        return CostUnit::IOByte;
     }
 }
 
-WorkloadResourceManager::NodeInfo::NodeInfo(WorkloadSettings::Unit unit, const ASTPtr & ast, const String & resource_name)
+WorkloadResourceManager::NodeInfo::NodeInfo(CostUnit unit, const ASTPtr & ast, const String & resource_name)
 {
     auto * create = assert_cast<ASTCreateWorkloadQuery *>(ast.get());
     name = create->getWorkloadName();
