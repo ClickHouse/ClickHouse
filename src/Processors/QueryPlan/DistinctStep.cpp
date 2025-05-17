@@ -132,13 +132,15 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
         }
     }
 
+    size_t threads = pipeline.getNumThreads();
+
     pipeline.addSimpleTransform(
         [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
 
-            return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, columns);
+            return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, columns, pre_distinct, threads);
         });
 }
 
