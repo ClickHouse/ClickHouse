@@ -251,12 +251,6 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                     new_values[fmt::format("DiskUnreserved_{}", name)] = { *unreserved,
                         "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information." };
             }
-            auto readonly = disk->isReadOnly();
-            auto broken = disk->isBroken();
-            new_values[fmt::format("DiskReadonly_{}", name)] = { readonly,
-                                                                "Whether or not the disk is marked as readonly by disk checker(if enabled)" };
-            new_values[fmt::format("DiskBroken_{}", name)] = { broken,
-                                                              "Whether or not the disk is marked as broken by disk checker(if enabled)" };
 
 #if USE_AWS_S3
             if (auto s3_client = disk->tryGetS3StorageClient())
