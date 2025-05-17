@@ -5,6 +5,7 @@ import random
 import string
 import time
 import uuid
+from datetime import datetime
 from multiprocessing.dummy import Pool
 
 import pytest
@@ -616,3 +617,46 @@ def test_multiple_tables_meta_mismatch(started_cluster):
             "keeper_path": keeper_path,
         },
     )
+
+
+def test_virtual_columns(started_cluster):
+    start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    node = started_cluster.instances["instance"]
+    table_name = f"test_s3queue_virtual_columns_{generate_random_string()}"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+
+    total_values = generate_random_files(started_cluster, files_path, 1)
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+    )
+    create_mv(node, table_name, dst_table_name, virtual_columns="_path String, _file String, _size UInt64, _time DateTime")
+    expected_values = set([tuple(i) for i in total_values])
+    for i in range(20):
+        selected_values = {
+            tuple(map(int, l.split()))
+            for l in node.query(
+                f"SELECT column1, column2, column3 FROM {dst_table_name}"
+            ).splitlines()
+        }
+        if selected_values == expected_values:
+            break
+        time.sleep(1)
+    assert selected_values == expected_values
+    virtual_values = node.query(
+        f"SELECT count(), _path, _file, _size, _time FROM {dst_table_name} GROUP BY _path, _file, _size, _time"
+        ).splitlines()
+    assert len(virtual_values) > 0
+    (_, res_path, res_file, res_size, res_time) = virtual_values[0].split("\t")
+    finish_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    assert f"{files_path}/{res_file}" == res_path
+    assert int(res_size) > 0
+    assert start_time <= res_time
+    assert res_time <= finish_time
