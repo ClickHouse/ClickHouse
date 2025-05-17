@@ -44,8 +44,6 @@ public:
     String window_name;
     ASTPtr window_definition;
 
-    size_t placeholder_count = 0;
-
     NullsAction nulls_action = NullsAction::EMPTY;
 
     /// do not print empty parentheses if there are no args - compatibility with engine names.
@@ -91,7 +89,7 @@ private:
 };
 
 
-/// Renumerates placeholder arguments in function for future conversion to lambda
+/// If there are any placeholder arguments (_1, _2, _) in function, renumerate them and create lambda
 void renumeratePlaceholders(ASTFunction & ast);
 
 template <typename... Args>

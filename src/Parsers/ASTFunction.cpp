@@ -866,11 +866,11 @@ void renumeratePlaceholders(ASTFunction & ast)
                 named_placeholders.erase(free_placeholder++);
             if (placeholders_in_list[i] == 0)
             {
-                args_expr_list->children[i] = std::make_shared<ASTIdentifier>("_" + std::to_string(free_placeholder++));
+                args_expr_list->children[i] = std::make_shared<ASTIdentifier>("__p" + std::to_string(free_placeholder++));
             }
             else if (placeholders_in_list[i] > 0)
             {
-                args_expr_list->children[i] = std::make_shared<ASTIdentifier>("_" + std::to_string(placeholders_in_list[i]));
+                args_expr_list->children[i] = std::make_shared<ASTIdentifier>("__p" + std::to_string(placeholders_in_list[i]));
             }
         }
         while (!named_placeholders.empty() && named_placeholders.contains(free_placeholder))
@@ -885,7 +885,20 @@ void renumeratePlaceholders(ASTFunction & ast)
             );
         }
 
-        ast.placeholder_count = free_placeholder - 1;
+        if (free_placeholder == 1)
+            return;
+
+        auto lambda_args_tuple = makeASTFunction("tuple");
+
+        for (size_t i = 1; i < free_placeholder; ++i)
+        {
+            lambda_args_tuple->arguments->children.push_back(std::make_shared<ASTIdentifier>("__p" + std::to_string(i)));
+        }
+
+        auto lambda_return = makeASTFunction("lambda", lambda_args_tuple, ast.clone());
+        lambda_return->is_lambda_function = true;
+
+        ast = *lambda_return;
     }
 }
 
