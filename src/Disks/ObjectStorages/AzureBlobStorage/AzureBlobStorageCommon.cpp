@@ -85,6 +85,13 @@ static bool isConnectionString(const std::string & candidate)
     return !candidate.starts_with("http");
 }
 
+static std::shared_ptr<Azure::Identity::ManagedIdentityCredential> getManagedIdentityCredential()
+{
+    static std::shared_ptr<Azure::Identity::ManagedIdentityCredential> credential
+        = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
+    return credential;
+}
+
 ContainerClientWrapper::ContainerClientWrapper(RawContainerClient client_, String blob_prefix_)
     : client(std::move(client_)), blob_prefix(std::move(blob_prefix_))
 {
@@ -304,7 +311,7 @@ void processURL(const String & url, const String & container_name, Endpoint & en
     {
         endpoint.storage_account_url = url.substr(0, pos);
         endpoint.sas_auth = url.substr(pos + 1);
-        auth_method = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
+        auth_method = getManagedIdentityCredential();
     }
 }
 
@@ -381,7 +388,7 @@ AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const
     if (config.getBool(config_prefix + ".use_workload_identity", false))
         return std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
 
-    return std::make_shared<Azure::Identity::ManagedIdentityCredential>();
+    return getManagedIdentityCredential();
 }
 
 BlobClientOptions getClientOptions(const RequestSettings & settings, bool for_disk)
