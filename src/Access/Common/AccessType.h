@@ -256,6 +256,8 @@ enum class AccessType : uint8_t
     M(KAFKA, "", GLOBAL, SOURCES) \
     M(NATS, "", GLOBAL, SOURCES) \
     M(RABBITMQ, "", GLOBAL, SOURCES) \
+    M(SQS, "", GLOBAL, SOURCES) \
+    M(KINESIS, "", GLOBAL, SOURCES) \
     M(SOURCES, "", GROUP, ALL) \
     \
     M(CLUSTER, "", GLOBAL, ALL) /* ON CLUSTER queries */ \

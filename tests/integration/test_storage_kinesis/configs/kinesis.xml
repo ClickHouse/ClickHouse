@@ -1,0 +1,10 @@
+<clickhouse>
+    <aws_access_key_id>minioadmin</aws_access_key_id>
+    <aws_secret_access_key>minioadmin</aws_secret_access_key>
+    <aws_region>us-east-1</aws_region>
+    
+    <!-- Using local Kinesis emulator instead of real AWS Kinesis -->
+    <kinesis>
+        <endpoint>http://localhost:4567</endpoint>
+    </kinesis>
+</clickhouse> 
