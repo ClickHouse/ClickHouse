@@ -90,15 +90,13 @@ void TableFunctionSQLite::parseArguments(const ASTPtr & ast_function, ContextPtr
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Table function 'sqlite' requires 2 arguments: database path, table name (or select query)");
 
-    bool is_query_syntax = false;
+    std::optional<String> maybe_query;
     if (auto * subquery_ast = args[1]->as<ASTSubquery>())
     {
-        is_query_syntax = true;
-        args[1] = std::make_shared<ASTLiteral>(subquery_ast->children[0]->formatWithSecretsOneLine());
+        maybe_query = subquery_ast->children[0]->formatWithSecretsOneLine();
     }
     else if (auto * function_ast = args[1]->as<ASTFunction>(); function_ast && function_ast->name == "query")
     {
-        is_query_syntax = true;
         if (function_ast->arguments->children.size() != 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'sqlite' expects exactly one argument in query() function");
 
@@ -107,16 +105,21 @@ void TableFunctionSQLite::parseArguments(const ASTPtr & ast_function, ContextPtr
 
         if (!query_lit || query_lit->value.getType() != Field::Types::String)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'sqlite' expects string literal inside query()");
-        args[1] = evaluated_query_arg;
+        maybe_query = query_lit->value.safeGet<String>();
     }
 
-    for (auto & arg : args)
+    for (size_t i = 0; i < args.size(); ++i)
+    {
+        auto & arg = args[i];
+        if (i == 1 && maybe_query)
+            continue;
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
+    }
 
     database_path = checkAndGetLiteralArgument<String>(args[0], "database_path");
 
-    if (is_query_syntax)
-        external_table_or_query = TableNameOrQuery(TableNameOrQuery::Type::QUERY, checkAndGetLiteralArgument<String>(args[1], "query"));
+    if (maybe_query)
+        external_table_or_query = TableNameOrQuery(TableNameOrQuery::Type::QUERY, *maybe_query);
     else
         external_table_or_query = TableNameOrQuery(TableNameOrQuery::Type::TABLE, checkAndGetLiteralArgument<String>(args[1], "table_name"));
 

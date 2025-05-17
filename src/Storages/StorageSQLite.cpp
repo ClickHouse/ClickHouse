@@ -251,15 +251,13 @@ void registerStorageSQLite(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Storage SQLite requires 2 arguments: database path, table name (or SELECT query)");
 
-        bool is_query_syntax = false;
+        std::optional<String> maybe_query;
         if (auto * subquery_ast = engine_args[1]->as<ASTSubquery>())
         {
-            is_query_syntax = true;
-            engine_args[1] = std::make_shared<ASTLiteral>(subquery_ast->children[0]->formatWithSecretsOneLine());
+            maybe_query = subquery_ast->children[0]->formatWithSecretsOneLine();
         }
         else if (auto * function_ast = engine_args[1]->as<ASTFunction>(); function_ast && function_ast->name == "query")
         {
-            is_query_syntax = true;
             if (function_ast->arguments->children.size() != 1)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage SQLite expects exactly one argument in query() function");
 
@@ -269,7 +267,7 @@ void registerStorageSQLite(StorageFactory & factory)
 
             if (!query_lit || query_lit->value.getType() != Field::Types::String)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage SQLite expects string literal inside query()");
-            engine_args[1] = evaluated_query_arg;
+            maybe_query = query_lit->value.safeGet<String>();
         }
 
         for (auto & engine_arg : engine_args)
@@ -277,26 +275,19 @@ void registerStorageSQLite(StorageFactory & factory)
 
         const auto database_path = checkAndGetLiteralArgument<String>(engine_args[0], "database_path");
         auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */ args.mode <= LoadingStrictnessLevel::CREATE);
-        if (is_query_syntax)
-        {
-            auto query = checkAndGetLiteralArgument<String>(engine_args[1], "query");
-            return std::make_shared<StorageSQLite>(
-                args.table_id,
-                sqlite_db,
-                database_path,
-                TableNameOrQuery(TableNameOrQuery::Type::QUERY, query),
-                args.columns,
-                args.constraints,
-                args.comment,
-                args.getContext());
-        }
-        const auto table_name = checkAndGetLiteralArgument<String>(engine_args[1], "table_name");
+
+        TableNameOrQuery table_or_query;
+        if (maybe_query)
+            table_or_query = TableNameOrQuery(TableNameOrQuery::Type::QUERY, *maybe_query);
+        else
+            table_or_query
+                = TableNameOrQuery(TableNameOrQuery::Type::TABLE, checkAndGetLiteralArgument<String>(engine_args[1], "table_name"));
 
         return std::make_shared<StorageSQLite>(
             args.table_id,
             sqlite_db,
             database_path,
-            TableNameOrQuery(TableNameOrQuery::Type::TABLE, table_name),
+            table_or_query,
             args.columns,
             args.constraints,
             args.comment,
