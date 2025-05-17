@@ -32,7 +32,7 @@ ReplicasStatusHandler::ReplicasStatusHandler(IServer & server) : WithContext(ser
 {
 }
 
-void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response, const ProfileEvents::Event & /*write_event*/)
 {
     try
     {
@@ -97,7 +97,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             }
         }
 
-        setResponseDefaultHeaders(response);
+        response.setResponseDefaultHeaders();
 
         if (!ok)
         {
@@ -107,11 +107,17 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         }
 
         if (verbose)
-            *response.send() << message.str();
+        {
+            /// Maybe also use sendBufferAndFinalize here?
+            auto wb = response.makeStream();
+            *wb << message.str();
+            wb->finalize();
+        }
         else
         {
             const char * data = "Ok.\n";
-            response.sendBuffer(data, strlen(data));
+            auto wb = response.makeStream();
+            wb->sendBufferAndFinalize(data, strlen(data));
         }
     }
     catch (...)
@@ -122,10 +128,12 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         {
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
 
-            if (!response.sent())
+            if (!response.sendStarted())
             {
                 /// We have not sent anything yet and we don't even know if we need to compress response.
-                *response.send() << getCurrentExceptionMessage(false) << '\n';
+                auto wb = response.makeStream();
+                *wb << getCurrentExceptionMessage(false) << '\n';
+                wb->finalize();
             }
         }
         catch (...)
