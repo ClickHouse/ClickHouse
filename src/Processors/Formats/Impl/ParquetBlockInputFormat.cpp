@@ -1261,10 +1261,15 @@ void registerParquetSchemaReader(FormatFactory & factory)
         }
         );
 
-    factory.registerAdditionalInfoForSchemaCacheGetter("Parquet", [](const FormatSettings & settings)
-    {
-        return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable);
-    });
+    factory.registerAdditionalInfoForSchemaCacheGetter(
+        "Parquet",
+        [](const FormatSettings & settings)
+        {
+            return fmt::format(
+                "schema_inference_make_columns_nullable={};enable_json_parsing={}",
+                settings.schema_inference_make_columns_nullable,
+                settings.parquet.enable_json_parsing);
+        });
 }
 
 }
