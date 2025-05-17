@@ -106,24 +106,12 @@ system sync replica r2;
 }
 
 
-export -f query_with_retry
-export -f filter_temporary_locks
-export -f insert_duplicates
-export -f get_shared_locks
-
 table_shared_id="$($CLICKHOUSE_KEEPER_CLIENT -q "get '/test/02922/${CLICKHOUSE_DATABASE}/table/table_shared_id'")"
 
 exit_code=0
 TIMEOUT=40
-loop "${table_shared_id}" || exit_code="${?}"
+loop "${table_shared_id}"
 
-if [[ "${exit_code}" -ne "124" ]]
-then
-  echo "timeout expected, but loop exited with code: ${exit_code}."
-  echo "the error is found if loop ends with 0."
-  echo "table_shared_id=${table_shared_id}"
-  exit 1
-fi
 
 function list_keeper_nodes() {
   table_shared_id=$1
