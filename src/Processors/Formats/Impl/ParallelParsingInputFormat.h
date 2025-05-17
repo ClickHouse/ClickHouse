@@ -10,7 +10,6 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/IRowInputFormat.h>
-#include <Interpreters/Context.h>
 #include <Poco/Event.h>
 
 

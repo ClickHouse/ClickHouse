@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Interpreters/Context.h>
 #include <Core/BackgroundSchedulePool.h>
 
 namespace CurrentMetrics

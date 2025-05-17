@@ -46,6 +46,7 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
+#include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include "config.h"

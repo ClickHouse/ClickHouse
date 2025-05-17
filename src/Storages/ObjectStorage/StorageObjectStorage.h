@@ -10,6 +10,8 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Formats/FormatSettings.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <memory>
 namespace DB
