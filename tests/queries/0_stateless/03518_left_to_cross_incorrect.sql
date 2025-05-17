@@ -1,3 +1,5 @@
+SET enable_analyzer = 1;
+
 WITH table AS
     (
         SELECT 1 AS key
