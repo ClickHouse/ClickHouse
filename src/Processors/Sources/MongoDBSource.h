@@ -50,13 +50,8 @@ private:
     const UInt64 max_block_size;
     bool all_read = false;
 
-    const JSONBuilder::FormatSettings json_format_settings
-    {
-            {.json = {.max_depth = 0, .quote_64bit_integers = false}},
-            0,
-            true,
-            true,
-    };
+    const DB::FormatSettings db_json_format_settings;
+    const JSONBuilder::FormatSettings json_format_settings;
 };
 
 }
