@@ -57,8 +57,8 @@ services:
     entrypoint: >
       /bin/sh -c "
       until (/usr/bin/mc config host add minio http://minio:9000 minio ClickHouse_Minio_P@ssw0rd) do echo '...waiting...' && sleep 1; done;
-      /usr/bin/mc rm -r --force minio/warehouse;
-      /usr/bin/mc mb minio/warehouse --ignore-existing;
-      /usr/bin/mc policy set public minio/warehouse;
+      /usr/bin/mc rm -r --force minio/warehouse_rest;
+      /usr/bin/mc mb minio/warehouse_rest --ignore-existing;
+      /usr/bin/mc policy set public minio/warehouse_rest;
       tail -f /dev/null
       "
