@@ -288,7 +288,7 @@ void DistinctTransform::transform(Chunk & chunk)
             data.init(type);
     }
 
-    auto check_only = data.getTotalRowCount() > 3000000;
+    auto check_only = data.getTotalRowCount() > 2000000;
 
     IColumn::Filter filter(num_rows);
 
