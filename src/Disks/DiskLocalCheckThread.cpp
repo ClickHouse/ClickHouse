@@ -4,6 +4,8 @@
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Common/formatReadable.h>
+#include <Poco/DirectoryIterator.h>
 
 namespace DB
 {
@@ -24,6 +26,11 @@ void DiskLocalCheckThread::startup()
     need_stop = false;
     retry = 0;
     task->activateAndSchedule();
+    LOG_INFO(
+        log,
+        "Disk check started for disk [{}] with period {}",
+        disk->getName(),
+        formatReadableTime(static_cast<double>(check_period_ms) * 1e6 /* ns */));
 }
 
 void DiskLocalCheckThread::run()
@@ -33,8 +40,26 @@ void DiskLocalCheckThread::run()
 
     bool can_read = disk->canRead();
     bool can_write = disk->canWrite();
+    LOG_INFO(log, "Disk {} seems to be readable: {} . writable: {}", disk->getName(), can_read, can_write);
     if (can_read)
     {
+        if (disk->getName() == "test1")
+        {
+            std::string disk_path =  "/var/lib/clickhouse/path1/";
+            try
+            {
+                Poco::DirectoryIterator end;
+                for (Poco::DirectoryIterator it(disk_path); it != end; ++it)
+                {
+                    LOG_INFO(log, "DiskLocalCheckThread found file in path {}: {}", disk_path, it.name());
+                }
+            }
+            catch (const std::exception & e)
+            {
+                LOG_WARNING(log, "Failed to list {}: {}", disk_path, e.what());
+            }
+        }
+
         if (disk->broken)
             LOG_INFO(log, "Disk {0} seems to be fine. It can be recovered using `SYSTEM RESTART DISK {0}`", disk->getName());
         retry = 0;
@@ -49,6 +74,7 @@ void DiskLocalCheckThread::run()
     }
     else if (!disk->broken && retry < DISK_CHECK_ERROR_RETRY_TIME)
     {
+        LOG_INFO(log, "Disk {} becomes broken. not reached DISK_CHECK_ERROR_RETRY_TIME", disk->getName());
         ++retry;
         task->scheduleAfter(DISK_CHECK_ERROR_SLEEP_MS);
     }
