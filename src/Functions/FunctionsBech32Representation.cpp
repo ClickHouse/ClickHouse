@@ -100,8 +100,8 @@ class EncodeToBech32Representation : public IFunction
 public:
     static constexpr auto name = "bech32Encode";
 
-    // corresponds to the bech32 algo, not the newer bech32m. It seems that the original is the most widely used.
-    static constexpr int default_witver = 0;
+    // Default to the new and improved Bech32m algorithm
+    static constexpr int default_witver = 1;
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<EncodeToBech32Representation>(); }
 

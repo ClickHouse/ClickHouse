@@ -975,14 +975,14 @@ Encodes a binary data string, along with a human-readable part (HRP), using the 
 **Syntax**
 
 ```sql
-Bech32Encode(hrp, data, witver(optional))
+Bech32Encode(hrp, data[, witver])
 ```
 
 **Parameters**
 
 - `hrp` — String of 1 - 83 lowercase characters specifying the "human-readable part" of the code. Usually 'bc' or 'tb'. [String](../data-types/string.md), [FixedString](../data-types/fixedstring.md).
 - `data` — String of binary data to encode. [String](../data-types/string.md), [FixedString](../data-types/fixedstring.md).
-- `witver` (optional, default = 0): An [unsigned integer](../../sql-reference/data-types/int-uint.md) specifying the version of the algorithm to run. 0 for Bech32 and 1 or greater for Bech32m.
+- `witver` (optional, default = 1): An [unsigned integer](../../sql-reference/data-types/int-uint.md) specifying the version of the algorithm to run. 0 for Bech32 and 1 or greater for Bech32m.
 
 :::note
 When using the [FixedString](../data-types/fixedstring.md) data type, if a value does not fully fill the row it is padded with null characters. While the `Bech32Encode` function will handle this automatically for the hrp argument, for the data argument the values must not be padded. For this reason it is not recommended to use the [FixedString](../data-types/fixedstring.md) data type for your data values unless you are certain that they are all the same length and ensure that your [FixedString](../data-types/fixedstring.md) column is set to that length as well.
@@ -996,7 +996,7 @@ Type: [String](../data-types/string.md).
 
 **Example**
 
-When no witness version is supplied, the default is 0, the original Bech32 algorithm.
+When no witness version is supplied, the default is 1, the updated Bech32m algorithm.
 
 Query:
 
@@ -1006,22 +1006,22 @@ SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'));
 Result:
 
 ```response
-bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z
+bc1w508d6qejxtdg4y5r3zarvary0c5xw7k8zcwmq
 ```
 
 **Example**
 
-A witness version of 1 will result in a different address string.
+A witness version of 0 will result in a different address string.
 
 Query:
 
 ```sql
-SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 1);
+SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0);
 ```
 Result:
 
 ```response
-bc1w508d6qejxtdg4y5r3zarvary0c5xw7k8zcwmq
+bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z
 ```
 
 **Example**
