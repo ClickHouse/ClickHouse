@@ -15,6 +15,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTPredictQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserUnionQueryElement.h>
@@ -1517,6 +1518,58 @@ protected:
     }
 };
 
+class PredictLayer : public Layer
+{
+public:
+    PredictLayer() : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
+
+    bool parse(IParser::Pos & pos, Expected & expected, Action &) override
+    {
+        /// PREDICT(MODEL model_name, TABLE table_name)
+        /// Parse whole function here, no state-machine based-parsing
+
+        ParserKeyword s_model(Keyword::MODEL);
+        ParserKeyword s_table(Keyword::TABLE);
+
+        ParserCompoundIdentifier model_p;
+        ParserCompoundIdentifier table_p;
+
+        if (!s_model.ignore(pos, expected)) {
+            return false;
+        }
+
+        ASTPtr model_name;
+        if (!model_p.parse(pos, model_name, expected)) {
+            return false;
+        }
+
+        if (!ParserToken(TokenType::Comma).ignore(pos, expected)) {
+            return false;
+        }
+
+        if (!s_table.ignore(pos, expected)) {
+            return false;
+        }
+
+        ASTPtr table_name;
+        if (!table_p.parse(pos, table_name, expected)) {
+            return false;
+        }
+
+        if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+            return false;
+
+        auto predict = std::make_shared<ASTPredictQuery>();
+        predict->model_name = model_name;
+        predict->table_name = table_name;
+
+        elements = {makeASTFunction("predict", predict)};
+
+        finished = true;
+        return true;
+    }
+};
+
 class PositionLayer : public Layer
 {
 public:
@@ -2220,6 +2273,7 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_functio
     /// TRIM(BOTH|LEADING|TRAILING x FROM y)
     /// SUBSTRING(x FROM a)
     /// SUBSTRING(x FROM a FOR b)
+    /// PREDICT (MODEL model, TABLE table)
 
     String function_name = getIdentifierName(identifier);
     String function_name_lowercase = Poco::toLower(function_name);
@@ -2245,6 +2299,8 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_functio
         return std::make_unique<SubstringLayer>();
     if (function_name_lowercase == "position")
         return std::make_unique<PositionLayer>();
+    if (function_name_lowercase == "predict")
+        return std::make_unique<PredictLayer>();
     if (function_name_lowercase == "exists")
         return std::make_unique<ExistsLayer>();
     if (function_name_lowercase == "trim")
