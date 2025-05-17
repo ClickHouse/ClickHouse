@@ -72,5 +72,5 @@ class BuzzHouseGenerator(Generator):
                               timeout = None,
                               ignore_error = True,
                               parse = False,
-                              stdout = sys.stdout,
-                              stderr = sys.stderr)
+                              stdout_file_path = sys.stdout,
+                              stderr_file_path = sys.stderr)

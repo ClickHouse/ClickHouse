@@ -178,14 +178,14 @@ class QueryRuntimeException(Exception):
 
 class CommandRequest:
     def __init__(
-        self, command, stdin=None, timeout=None, ignore_error=False, parse=False, stdout=tempfile.TemporaryFile(), stderr=tempfile.TemporaryFile()
+        self, command, stdin=None, timeout=None, ignore_error=False, parse=False, stdout_file_path=tempfile.TemporaryFile(), stderr_file_path=tempfile.TemporaryFile()
     ):
         # Write data to tmp file to avoid PIPEs and execution blocking
         stdin_file = tempfile.TemporaryFile(mode="w+")
         stdin_file.write(stdin)
         stdin_file.seek(0)
-        self.stdout_file = stdout
-        self.stderr_file = stderr
+        self.stdout_file = stdout_file_path
+        self.stderr_file = stderr_file_path
         self.ignore_error = ignore_error
         self.parse = parse
         # print " ".join(command)

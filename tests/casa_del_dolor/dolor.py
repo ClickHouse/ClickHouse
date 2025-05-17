@@ -8,10 +8,23 @@ import tempfile
 import time
 import sys
 
+# Needs to get free ports before importing ClickHouseCluster
+def get_unique_free_ports(total):
+    ports = []
+    for port in range(30000, 55000):
+        if is_port_free(port) and port not in ports:
+            ports.append(port)
+
+        if len(ports) == total:
+            return ports
+
+    raise Exception(f"Can't collect {total} ports. Collected: {len(ports)}")
+os.environ["WORKER_FREE_PORTS"] = " ".join([str(p) for p in get_unique_free_ports(50)])
+
 sys.path.append('..')
-os.environ["WORKER_FREE_PORTS"] = '9000'
 from integration.helpers.cluster import ClickHouseCluster
 from integration.helpers.postgres_utility import get_postgres_conn
+from integration.helpers.cluster import is_port_free
 from generators import BuzzHouseGenerator
 from properties import modify_server_settings_with_random_properties
 
