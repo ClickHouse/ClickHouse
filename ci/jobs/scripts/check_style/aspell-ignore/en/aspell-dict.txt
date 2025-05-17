@@ -2347,6 +2347,7 @@ namespaces
 natively
 nats
 ncat
+netcat
 ness
 nestjs
 netloc
