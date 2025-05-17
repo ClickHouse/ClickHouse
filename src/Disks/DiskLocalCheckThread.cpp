@@ -4,6 +4,14 @@
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Common/formatReadable.h>
+#include <Common/CurrentMetrics.h>
+
+namespace CurrentMetrics
+{
+extern const Metric ReadonlyDisks;
+extern const Metric BrokenDisks;
+}
 
 namespace DB
 {
@@ -24,26 +32,36 @@ void DiskLocalCheckThread::startup()
     need_stop = false;
     retry = 0;
     task->activateAndSchedule();
+    LOG_INFO(
+        log,
+        "Disk check started with period {}",
+        formatReadableTime(static_cast<double>(check_period_ms) * 1e6 /* ns */));
+}
+
+int diskStatusChange(bool old_val, bool new_val)
+{
+    return static_cast<int>(new_val) - static_cast<int>(old_val);
 }
 
 void DiskLocalCheckThread::run()
 {
     if (need_stop)
         return;
-
+    bool readonly = disk->isReadOnly();
+    bool broken = disk->isBroken();
     bool can_read = disk->canRead();
     bool can_write = disk->canWrite();
     if (can_read)
     {
         if (disk->broken)
-            LOG_INFO(log, "Disk {0} seems to be fine. It can be recovered using `SYSTEM RESTART DISK {0}`", disk->getName());
+            LOG_INFO(log, "Disk seems to be fine. It can be recovered using `SYSTEM RESTART DISK {0}`", disk->getName());
         retry = 0;
         if (can_write)
             disk->readonly = false;
         else
         {
             disk->readonly = true;
-            LOG_INFO(log, "Disk {} is readonly", disk->getName());
+            LOG_INFO(log, "Disk is readonly");
         }
         task->scheduleAfter(check_period_ms);
     }
@@ -56,12 +74,14 @@ void DiskLocalCheckThread::run()
     {
         retry = 0;
         if (!disk->broken)
-            LOG_ERROR(log, "Disk {} marked as broken", disk->getName());
+            LOG_ERROR(log, "Disk marked as broken");
         else
-            LOG_INFO(log, "Disk {} is still broken", disk->getName());
+            LOG_INFO(log, "Disk is still broken");
         disk->broken = true;
         task->scheduleAfter(check_period_ms);
     }
+    CurrentMetrics::add(CurrentMetrics::ReadonlyDisks, diskStatusChange(readonly, disk->isReadOnly()));
+    CurrentMetrics::add(CurrentMetrics::BrokenDisks, diskStatusChange(broken, disk->isBroken()));
 }
 
 void DiskLocalCheckThread::shutdown()

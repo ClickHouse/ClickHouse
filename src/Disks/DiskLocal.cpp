@@ -534,7 +534,7 @@ DiskLocal::DiskLocal(const String & name_, const String & path_, UInt64 keep_fre
     : IDisk(name_, config, config_prefix)
     , disk_path(path_)
     , keep_free_space_bytes(keep_free_space_bytes_)
-    , logger(getLogger("DiskLocal"))
+    , logger(getLogger(fmt::format("DiskLocal({})", name_)))
     , data_source_description(getLocalDataSourceDescription(disk_path))
 {
 }
