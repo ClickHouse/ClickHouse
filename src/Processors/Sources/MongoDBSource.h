@@ -52,7 +52,7 @@ private:
 
     const JSONBuilder::FormatSettings json_format_settings
     {
-            {.json = {.quote_64bit_integers = false, .max_depth = 0}},
+            {.json = {.max_depth = 0, .quote_64bit_integers = false}},
             0,
             true,
             true,
