@@ -28,6 +28,9 @@ INSERT INTO test_simple_projection VALUES (3, '2023-01-02', 106, 'https://exampl
 INSERT INTO test_simple_projection VALUES (4, '2023-01-02', 107, 'https://example.com/page4', 'us_west');
 INSERT INTO test_simple_projection VALUES (5, '2023-01-03', 104, 'https://example.com/page5', 'asia');
 
+SET enable_analyzer = 1;
+SET enable_parallel_replicas = 0;
+
 -- region projection is enough effective for filtering
 EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region = 'europe' AND user_id = 101;
 

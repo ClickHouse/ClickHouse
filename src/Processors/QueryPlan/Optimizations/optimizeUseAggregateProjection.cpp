@@ -32,6 +32,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool force_optimize_projection;
     extern const SettingsString preferred_optimize_projection_name;
 }
 }
@@ -514,9 +515,14 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
         if (!parent_reading_select_result || (!parent_reading_select_result->has_exact_ranges && find_exact_ranges))
             parent_reading_select_result = reading->selectRangesToRead(find_exact_ranges);
 
-        /// Nothing to read. Ignore projections.
-        if (parent_reading_select_result->parts_with_ranges.empty())
-            return {};
+        bool force_optimize_projection = context->getSettingsRef()[Setting::force_optimize_projection];
+
+        if (!force_optimize_projection)
+        {
+            /// /// Nothing to read. Ignore projections.
+            if (parent_reading_select_result->parts_with_ranges.empty())
+                return {};
+        }
 
         /// Try to identify ranges that can be exactly counted using primary key analysis.
         if (!candidates.only_count_column.empty())
@@ -608,7 +614,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
         auto empty_mutations_snapshot = reading->getMutationsSnapshot()->cloneEmpty();
 
         /// If there are remaining parts to read, attempt to select the best candidate.
-        if (!parent_reading_select_result->parts_with_ranges.empty())
+        if (!parent_reading_select_result->parts_with_ranges.empty() || force_optimize_projection)
         {
             for (auto & candidate : candidates.real)
             {
@@ -645,7 +651,12 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
                 candidate.stat = &stat;
 
                 size_t parent_reading_marks = parent_reading_select_result->selected_marks;
-                if (candidate.sum_marks > parent_reading_marks)
+
+                /// Consider projections with equal read cost only if:
+                /// - `force_optimize_projection` is enabled, or
+                /// - the parent reading's `selected_marks` becomes zero
+                if (candidate.sum_marks > parent_reading_marks
+                    || (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !force_optimize_projection))
                 {
                     stat.description = fmt::format(
                         "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
