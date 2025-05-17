@@ -181,9 +181,6 @@ void DistinctTransform::buildSetParallelFilter(
         auto hash = method.data.hash(keyHolderGetKey(key_holder));
         auto fine_bucket = method.data.getBucketFromHash(hash);        // 0..255
 
-        if (fine_bucket >= 256)
-            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Bucket index {} out of range", fine_bucket);
-
         size_t coarse_bucket = fine_bucket % num_coarse_buckets;
         coarse_bucket_ids[i] = static_cast<UInt8>(coarse_bucket);
         keys[i] = key_holder;
