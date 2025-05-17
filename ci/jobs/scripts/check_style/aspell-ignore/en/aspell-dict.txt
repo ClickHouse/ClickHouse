@@ -3073,6 +3073,7 @@ toYear
 toYearWeek
 tokenbf
 tokenization
+tokenize
 tokenized
 tokenizer
 toml
