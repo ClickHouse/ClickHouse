@@ -234,12 +234,12 @@ def check(
 ):
     if expect_broken_part == "proj1":
         assert expected_error in node.query_and_get_error(
-            f"SELECT c FROM '{table}' WHERE d == 12 ORDER BY c SETTINGS force_optimize_projection_name = 'proj1'"
+            f"SELECT c FROM '{table}' WHERE d == 12 ORDER BY c SETTINGS force_optimize_projection = 1, force_optimize_projection_name = 'proj1'"
         )
     else:
         query_id = uuid.uuid4().hex
         node.query(
-            f"SELECT c FROM '{table}' WHERE d == 12 ORDER BY c SETTINGS force_optimize_projection_name = 'proj1'",
+            f"SELECT c FROM '{table}' WHERE d == 12 ORDER BY c SETTINGS force_optimize_projection = 1, force_optimize_projection_name = 'proj1'",
             query_id=query_id,
         ).strip()
         node.query("SYSTEM FLUSH LOGS")
@@ -254,12 +254,12 @@ def check(
 
     if expect_broken_part == "proj2":
         assert expected_error in node.query_and_get_error(
-            f"SELECT d FROM '{table}' WHERE c == 12 ORDER BY d SETTINGS force_optimize_projection_name = 'proj2'"
+            f"SELECT d FROM '{table}' WHERE c == 12 ORDER BY d SETTINGS force_optimize_projection = 1, force_optimize_projection_name = 'proj2'"
         )
     else:
         query_id = uuid.uuid4().hex
         node.query(
-            f"SELECT queryID() FROM (SELECT d FROM '{table}' WHERE c == 12 ORDER BY d SETTINGS force_optimize_projection_name = 'proj2')",
+            f"SELECT queryID() FROM (SELECT d FROM '{table}' WHERE c == 12 ORDER BY d SETTINGS force_optimize_projection = 1, force_optimize_projection_name = 'proj2')",
             query_id=query_id,
         ).strip()
         node.query("SYSTEM FLUSH LOGS")
