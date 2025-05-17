@@ -494,12 +494,19 @@ struct FormatSettings
         RGBA
     };
 
+    enum class PngPixelInputMode : uint8_t
+    {
+        SCANLINE, ///< Row-per-pixel 
+        EXPLICIT_COORDINATES
+    };
+
     struct
     {
         UInt64 max_height;
         UInt64 max_width;
         Int32 bit_depth;
         String pixel_output_format;
+        String pixel_input_mode;
         Int64 compression_level;
     } png_image{};
 

@@ -1315,23 +1315,45 @@ Set the quoting style for identifiers in SHOW CREATE query
     DECLARE(String, output_png_image_pixel_format, "RGB", R"(
 Set pixel format for output png image
 )", 0) \
+    DECLARE(String, output_png_image_pixel_input_mode, "SCANLINE", R"(
+Defines the input format for pixel data when generating PNG images
+
+Possible values:
+
+- 'SCANLINE' — Row-per-pixel approach where only pixel data is provided in scanline order (left to right, top to bottom)
+- 'EXPLICIT_COORDINATES' — Each pixel is specified with explicit coordinates (x, y)
+
+Default value: `SCANLINE`
+)", 0) \
     DECLARE(UInt64, output_png_image_max_height, 4096, R"(
-Set png image max height
+Defines the maximum height (in pixels) for generated PNG images
+
+Default value: 4096
 )", 0) \
     DECLARE(UInt64, output_png_image_max_width, 4096, R"(
-Set png image max width
+Defines the maximum width (in pixels) for generated PNG images
+
+Default value: 4096
 )", 0) \
     DECLARE(UInt64, output_png_image_bit_depth, 8, R"(
-Set png image color depth
+Defines the color depth (in bits) for generated PNG images
+
+Possible values:
+- 8: 8-bit 
+- 16: 16-bit
+
+Default value: 8
 )", 0) \
     DECLARE(Int64, output_png_image_compression_level, -1, R"(
-values: {
-    -1: default (usually level 6),
-    0: no compression,
-    1: fastest/least compression,
-    9: slowest/best compression
-  },
-valid_range: [-1, 9]
+Controls the compression level for generated PNG images
+
+Possible values:
+- -1: default compression (usually equivalent to level 6)
+- 0: no compression (fastest)
+- 1: fastest compression (least effective)
+- 9: best compression (slowest)
+
+Default value: -1.
 )", 0) \
     DECLARE(UInt64, input_format_max_block_size_bytes, 0, R"(
 Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.

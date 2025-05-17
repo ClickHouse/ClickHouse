@@ -28,16 +28,13 @@ private:
     void writeSuffix() override;
     void consume(Chunk) override;
 
-    size_t max_width;
-    size_t max_height;
-
     LoggerPtr log = nullptr;
 
     FormatSettings format_settings;
     Serializations serializations;
     std::unique_ptr<PngWriter> writer;
     std::unique_ptr<PngSerializer> png_serializer;
-    PngPixelFormat output_format;
+    /// PngPixelFormat output_format;
 };
 
 }

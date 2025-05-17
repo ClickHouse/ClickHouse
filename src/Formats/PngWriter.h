@@ -1,9 +1,12 @@
 #pragma once
 
+#include <map>
 #include <png.h>
 #include <boost/noncopyable.hpp>
-#include "Common/Logger.h"
+
+#include <Formats/FormatSettings.h>
 #include <Common/Exception.h>
+#include <Common/Logger.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -39,13 +42,13 @@ public:
 class PngWriter : private boost::noncopyable
 {
 public:
-    PngWriter(WriteBuffer & out, int bit_depth, int color_type, int compression_level);
+    PngWriter(WriteBuffer & out, const FormatSettings & settings);
 
     /// RAII ensures libpng resources are freed, but the WriteBuffer is not flushed
     ~PngWriter() = default;
 
     /// Initialize the png stream and writes IHDR chunk
-    void startImage(size_t width_, size_t height_);
+    void startImage();
 
     void finishImage();
 
@@ -73,6 +76,7 @@ private:
     void executePngOperation(Func && func, const char * error_context);
 
     WriteBuffer & out;
+    const FormatSettings & settings;
 
     int bit_depth;
     int color_type;
@@ -84,6 +88,8 @@ private:
     std::unique_ptr<PngResourceWrapper> handle_;
 
     LoggerPtr log = nullptr;
+
+    static std::map<String, int> color_type_mapping;
 };
 
 }

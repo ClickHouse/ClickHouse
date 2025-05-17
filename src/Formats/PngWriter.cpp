@@ -1,6 +1,6 @@
 #include <png.h>
-#include <Formats/PngWriter.h>
 
+#include <Formats/PngWriter.h>
 #include <IO/WriteBuffer.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
@@ -51,13 +51,25 @@ PngResourceWrapper & PngResourceWrapper::operator=(PngResourceWrapper && other) 
     return *this;
 }
 
-PngWriter::PngWriter(WriteBuffer & out_, int bit_depth_, int color_type_, int compression_level_)
+std::map<String, int> PngWriter::color_type_mapping = {
+    {"BINARY", PNG_COLOR_TYPE_GRAY},
+    {"GRAYSCALE", PNG_COLOR_TYPE_GRAY},
+    {"RGB", PNG_COLOR_TYPE_RGB},
+    {"RGBA", PNG_COLOR_TYPE_RGBA},
+};
+   
+PngWriter::PngWriter(WriteBuffer & out_, const FormatSettings & settings_)
     : out(out_)
-    , bit_depth(bit_depth_)
-    , color_type(color_type_)
-    , compression_level(compression_level_)
+    , settings(settings_)
     , log(::getLogger("PngWriter"))
 {
+    bit_depth = settings.png_image.bit_depth;
+    compression_level = settings.png_image.compression_level;
+    color_type = color_type_mapping[settings.png_image.pixel_output_format];
+
+    width = settings.png_image.max_width;
+    height = settings.png_image.max_height;
+
     if (bit_depth != 16 && bit_depth != 8)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid bit depth provided ({}). Only 8 or 16 is supported", bit_depth);
@@ -150,12 +162,9 @@ void PngWriter::warningCallback(png_struct_def * png_ptr, png_const_charp warnin
     LOG_WARNING(writer->getLogger(), "Libpng warning: {}", std::string(warning_msg ? warning_msg : "Unknown libpng warning"));
 }
 
-void PngWriter::startImage(size_t width_, size_t height_)
+void PngWriter::startImage()
 {
-    LOG_INFO(log, "Starting new png image with resolution {}x{}", width_, height_);
-
-    width = width_;
-    height = height_;
+    LOG_INFO(log, "Starting new png image with resolution {}x{}", width, height);
 
     png_structp png_ptr = nullptr;
     png_infop info_ptr = nullptr;
@@ -184,8 +193,8 @@ void PngWriter::startImage(size_t width_, size_t height_)
             png_set_IHDR(
                 handle_->getPngPtr(),
                 handle_->getInfoPtr(),
-                static_cast<png_uint_32>(width_),
-                static_cast<png_uint_32>(height_),
+                static_cast<png_uint_32>(width),
+                static_cast<png_uint_32>(height),
                 bit_depth,
                 color_type,
                 PNG_INTERLACE_NONE,
