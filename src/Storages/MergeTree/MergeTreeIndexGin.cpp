@@ -841,9 +841,9 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (!tokenizer.has_value())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "GIN index must include the '{}' argument", GIN_INDEX_ARGUMENT_TOKENIZER);
 
-    if (!std::unordered_set<String>{
-            SplitTokenExtractor::getExternalName(), NoOpTokenExtractor::getExternalName(), NgramTokenExtractor::getExternalName()}
-             .contains(tokenizer.value()))
+    const bool is_supported_tokenizer = tokenizer.value() == SplitTokenExtractor::getExternalName()
+        || tokenizer.value() == NoOpTokenExtractor::getExternalName() || tokenizer.value() == NgramTokenExtractor::getExternalName();
+    if (!is_supported_tokenizer)
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
             "GIN index '{}' argument supports only 'default', 'ngram', and 'noop', but got {}",
