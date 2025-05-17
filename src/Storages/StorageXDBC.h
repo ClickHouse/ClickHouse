@@ -19,6 +19,13 @@ namespace DB
 class StorageXDBC : public IStorageURLBase
 {
 public:
+    struct Configuration : public StatelessTableEngineConfiguration
+    {
+        std::string connection_string;
+        std::string table;
+        std::string database_or_schema;
+    };
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
