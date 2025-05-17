@@ -45,6 +45,7 @@
 01849_geoToS2
 02504_regexp_dictionary_table_source
 02833_tuple_concat
+02378_analyzer_projection_names
 
     https://github.com/ClickHouse/ClickHouse/issues/74367
     Cannot find column in source stream
@@ -83,6 +84,7 @@
 01594_storage_join_uuid
     Unsupported JOIN keys of type keys256 in StorageJoin: While executing Join. (UNSUPPORTED_JOIN_KEYS) (query: SELECT * FROM t1 ALL INNER JOIN tj USING (key1, key2, key3) ORDER BY key1;)
 02498_storage_join_key_positions.gen
+03447_storage_join_unsupported_keys
 
     https://github.com/ClickHouse/ClickHouse/pull/73609
     Cannot parse string
