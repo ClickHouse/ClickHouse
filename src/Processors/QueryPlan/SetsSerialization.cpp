@@ -16,6 +16,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
 #include <Storages/StorageSet.h>
+#include <Common/SetType.h>
+#include "Interpreters/PreparedSets.h"
 
 namespace DB
 {
@@ -51,7 +53,8 @@ QueryPlanAndSets::QueryPlanAndSets(QueryPlanAndSets &&) noexcept = default;
 
 struct QueryPlanAndSets::Set
 {
-    CityHash_v1_0_2::uint128 hash;
+    PreparedSets::Hash hash;
+    SetType set_type;
     std::list<ColumnSet *> columns;
 };
 struct QueryPlanAndSets::SetFromStorage : public QueryPlanAndSets::Set
@@ -75,6 +78,7 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
     for (const auto & [hash, set] : registry.sets)
     {
         writeBinary(hash, out);
+        writeBinary(static_cast<UInt32>(set->getSetType()), out);
 
         if (auto * from_storage = typeid_cast<FutureSetFromStorage *>(set.get()))
         {
@@ -151,6 +155,13 @@ QueryPlanAndSets QueryPlan::deserializeSets(
         PreparedSets::Hash hash;
         readBinary(hash, in);
 
+        SetType set_type;
+        {
+            UInt32 tmp;
+            readBinary(tmp, in);
+            set_type = static_cast<SetType>(tmp);
+        }
+
         auto it = registry.sets.find(hash);
         if (it == registry.sets.end())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} is not registered", hash.low64, hash.high64);
@@ -165,7 +176,7 @@ QueryPlanAndSets QueryPlan::deserializeSets(
         {
             String storage_name;
             readStringBinary(storage_name, in);
-            res.sets_from_storage.emplace_back(QueryPlanAndSets::SetFromStorage{{hash, std::move(columns)}, std::move(storage_name)});
+            res.sets_from_storage.emplace_back(QueryPlanAndSets::SetFromStorage{{hash, set_type, std::move(columns)}, std::move(storage_name)});
         }
         else if (kind == UInt8(SetSerializationKind::TupleValues))
         {
@@ -187,14 +198,14 @@ QueryPlanAndSets QueryPlan::deserializeSets(
                 set_columns.emplace_back(std::move(column), std::move(type), String{});
             }
 
-            res.sets_from_tuple.emplace_back(QueryPlanAndSets::SetFromTuple{{hash, std::move(columns)}, std::move(set_columns)});
+            res.sets_from_tuple.emplace_back(QueryPlanAndSets::SetFromTuple{{hash, set_type, std::move(columns)}, std::move(set_columns)});
         }
         else if (kind == UInt8(SetSerializationKind::SubqueryPlan))
         {
             auto plan_for_set = QueryPlan::deserialize(in, context, flags);
 
             res.sets_from_subquery.emplace_back(QueryPlanAndSets::SetFromSubquery{
-                {hash, std::move(columns)},
+                {hash, set_type, std::move(columns)},
                 std::move(plan_for_set)});
         }
         else
@@ -229,7 +240,7 @@ static void makeSetsFromTuple(std::list<QueryPlanAndSets::SetFromTuple> sets, co
         SizeLimits size_limits = PreparedSets::getSizeLimitsForSet(settings);
         bool transform_null_in = settings[Setting::transform_null_in];
 
-        auto future_set = std::make_shared<FutureSetFromTuple>(set.hash, nullptr, std::move(set.set_columns), transform_null_in, size_limits);
+        auto future_set = std::make_shared<FutureSetFromTuple>(set.hash, nullptr, std::move(set.set_columns), set.set_type, transform_null_in, size_limits);
         for (auto * column : set.columns)
             column->setData(future_set);
     }
@@ -254,7 +265,7 @@ static void makeSetsFromSubqueries(QueryPlan & plan, std::list<QueryPlanAndSets:
 
         auto future_set = std::make_shared<FutureSetFromSubquery>(
             set.hash, nullptr, std::make_unique<QueryPlan>(std::move(subquery_plan)),
-            nullptr, nullptr,
+            nullptr, nullptr, set.set_type,
             transform_null_in, size_limits, max_size_for_index);
 
         for (auto * column : set.columns)

@@ -504,6 +504,11 @@ struct MurmurHash3Impl128
         return *reinterpret_cast<UInt128 *>(bytes);
     }
 
+    static void apply(const char * data, const size_t size, char* dst)
+    {
+        MurmurHash3_x64_128(data, size, 0, dst);
+    }
+
     static UInt128 combineHashes(UInt128 h1, UInt128 h2) { return combineHashesFunc<UInt128, MurmurHash3Impl128>(h1, h2); }
 
     static constexpr bool use_int_hash_for_pods = false;
