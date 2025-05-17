@@ -153,8 +153,9 @@ public:
             , fd(fd_)
         {}
 
-        explicit ReadResult(Type type_)
+        explicit ReadResult(Type type_, bool read_completed_ = false)
             : type(type_)
+            , read_completed(read_completed_)
         {
             assert(type != Type::Data && type != Type::FileDescriptor);
         }
@@ -173,9 +174,10 @@ public:
             return fd;
         }
 
-        Type type;
+        const Type type;
         Block block;
-        int fd{-1};
+        const int fd{-1};
+        const bool read_completed = false;
     };
 
     /// Read next block of data. Returns empty block if query is finished.
@@ -225,6 +227,8 @@ public:
 
     /// return true if parallel replica packet was processed
     bool processParallelReplicaPacketIfAny();
+
+    bool isReadingCompleted() const;
 
 private:
     RemoteQueryExecutor(
@@ -332,7 +336,7 @@ private:
 
     void processReadTaskRequest();
 
-    void processMergeTreeReadTaskRequest(ParallelReadRequest request);
+    bool processMergeTreeReadTaskRequest(ParallelReadRequest request);
     void processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement);
 
     /// Cancel query and restart it with info about duplicate UUIDs

@@ -104,7 +104,7 @@ public:
 
 private:
     Pipes addPipes(ASTPtr ast, const Header & out_header);
-    void addPipeForSingeReplica(Pipes & pipes, const ConnectionPoolPtr & pool, ASTPtr ast, IConnections::ReplicaInfo replica_info, const Header & out_header);
+    Pipe createPipeForSingeReplica(const ConnectionPoolPtr & pool, ASTPtr ast, IConnections::ReplicaInfo replica_info, const Header & out_header);
 
     ClusterPtr cluster;
     ASTPtr query_ast;
