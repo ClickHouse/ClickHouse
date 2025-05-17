@@ -47,14 +47,6 @@ bool BackgroundSchedulePoolTaskInfo::scheduleAfter(size_t milliseconds, bool ove
     return true;
 }
 
-/**
- * Invariant: The lifetime of a TaskInfo instance is strictly bounded by the lifetime of its owning pool.
- * This means `deactivate()` will only be called during:
- *   - the destruction of the task, or
- *   - the destruction of the pool.
- *
- * In both cases, it is guaranteed that the pool still exists when `deactivate()` is invoked.
- */
 void BackgroundSchedulePoolTaskInfo::deactivate()
 {
     std::lock_guard lock_exec(exec_mutex);
