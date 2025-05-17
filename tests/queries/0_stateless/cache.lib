@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+function drop_filesystem_cache()
+{
+    while [ $($CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SELECT count() FROM system.filesystem_cache") -gt 0 ]; do
+        $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SYSTEM DROP FILESYSTEM CACHE"
+        sleep 1
+    done
+}
