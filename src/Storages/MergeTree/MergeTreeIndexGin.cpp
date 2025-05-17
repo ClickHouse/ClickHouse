@@ -16,9 +16,12 @@
 #include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <boost/algorithm/string/predicate.hpp>
 #include <Common/OptimizedRegularExpression.h>
+#include <Core/Field.h>
+#include <Interpreters/ITokenExtractor.h>
+#include <base/types.h>
 #include <algorithm>
-
 
 namespace DB
 {
@@ -29,6 +32,10 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
 }
+
+static inline const String GIN_INDEX_ARGUMENT_TOKENIZER = "tokenizer";
+static inline const String GIN_INDEX_ARGUMENT_NGRAM_SIZE = "ngram_size";
+static inline const String GIN_INDEX_ARGUMENT_MAX_ROWS = "max_rows_per_postings_list";
 
 MergeTreeIndexGranuleGin::MergeTreeIndexGranuleGin(
     const String & index_name_,
@@ -758,44 +765,105 @@ MergeTreeIndexConditionPtr MergeTreeIndexGin::createIndexCondition(const Actions
     return std::make_shared<MergeTreeIndexConditionGin>(predicate, context, index.sample_block, gin_filter_params, token_extractor.get());
 }
 
+namespace
+{
+std::unordered_map<String, Field> convertArgumentsToOptionsMap(const FieldVector & arguments)
+{
+    std::unordered_map<String, Field> options;
+    for (const Field & argument : arguments)
+    {
+        if (argument.getType() != Field::Types::Tuple)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Arguments of GIN index must be key-value pair (identifier = literal)");
+        Tuple tuple = argument.template safeGet<Tuple>();
+        String key = tuple[0].safeGet<String>();
+        if (options.contains(key))
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "GIN index '{}' argument is specified more than once", key);
+        options[key] = tuple[1];
+    }
+    return options;
+}
+
+template <typename Type>
+std::optional<Type> getOption(const std::unordered_map<String, Field> & options, const String & option)
+{
+    if (auto it = options.find(option); it != options.end())
+    {
+        const Field & value = it->second;
+        Field::Types::Which expected_type = Field::TypeToEnum<Type>::value;
+        if (value.getType() != expected_type)
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "GIN index argument '{}' expected to be {}, but got {}",
+                option,
+                fieldTypeToString(expected_type),
+                value.getTypeName());
+        return value.safeGet<Type>();
+    }
+    return std::nullopt;
+}
+}
+
 MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index)
 {
-    size_t ngram_length = index.arguments.empty() ? 0 : index.arguments[0].safeGet<size_t>();
-    UInt64 max_rows = index.arguments.size() < 2 ? DEFAULT_MAX_ROWS_PER_POSTINGS_LIST : index.arguments[1].safeGet<UInt64>();
-    GinFilterParameters gin_filter_params(ngram_length, max_rows);
+    const FieldVector & arguments = index.arguments;
+    auto options = convertArgumentsToOptionsMap(arguments);
 
-    if (ngram_length == 0)
+    String tokenizer = getOption<String>(options, GIN_INDEX_ARGUMENT_TOKENIZER).value();
+    UInt64 max_rows_per_postings_list
+        = getOption<UInt64>(options, GIN_INDEX_ARGUMENT_MAX_ROWS).value_or(DEFAULT_MAX_ROWS_PER_POSTINGS_LIST);
+
+    std::unique_ptr<ITokenExtractor> token_extractor;
+    if (tokenizer == SplitTokenExtractor::getExternalName())
+        token_extractor = std::make_unique<SplitTokenExtractor>();
+    else if (tokenizer == NoOpTokenExtractor::getExternalName())
+        token_extractor = std::make_unique<NoOpTokenExtractor>();
+    else if (tokenizer == NgramTokenExtractor::getExternalName())
     {
-        auto tokenizer = std::make_unique<SplitTokenExtractor>();
-        return std::make_shared<MergeTreeIndexGin>(index, gin_filter_params, std::move(tokenizer));
+        const UInt64 ngram_size = getOption<UInt64>(options, GIN_INDEX_ARGUMENT_NGRAM_SIZE).value_or(3);
+        token_extractor = std::make_unique<NgramTokenExtractor>(ngram_size);
     }
-    else
-    {
-        auto tokenizer = std::make_unique<NgramTokenExtractor>(ngram_length);
-        return std::make_shared<MergeTreeIndexGin>(index, gin_filter_params, std::move(tokenizer));
-    }
+
+    GinFilterParameters params(tokenizer, max_rows_per_postings_list);
+    return std::make_shared<MergeTreeIndexGin>(index, params, std::move(token_extractor));
 }
 
 void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
-    /// Check number and type of arguments
-    if (index.arguments.size() > 2)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "GIN index must have less than two arguments");
+    const FieldVector& arguments = index.arguments;
 
-    if (!index.arguments.empty() && index.arguments[0].getType() != Field::Types::UInt64)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "First argument of GIN index (tokenizer) must be of type UInt64");
+    if (arguments.empty())
+        throw Exception(
+            ErrorCodes::INCORRECT_QUERY, "GIN index should have at least '{}' argument, but empty arguments are provided", GIN_INDEX_ARGUMENT_TOKENIZER);
 
-    if (index.arguments.size() == 2)
+    auto options = convertArgumentsToOptionsMap(arguments);
+
+    std::optional<String> tokenizer = getOption<String>(options, GIN_INDEX_ARGUMENT_TOKENIZER);
+    if (!tokenizer.has_value())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "GIN index must include the '{}' argument", GIN_INDEX_ARGUMENT_TOKENIZER);
+
+    const bool is_supported_tokenizer = tokenizer.value() == SplitTokenExtractor::getExternalName()
+        || tokenizer.value() == NoOpTokenExtractor::getExternalName() || tokenizer.value() == NgramTokenExtractor::getExternalName();
+    if (!is_supported_tokenizer)
+        throw Exception(
+            ErrorCodes::INCORRECT_QUERY,
+            "GIN index '{}' argument supports only 'default', 'ngram', and 'noop', but got {}",
+            GIN_INDEX_ARGUMENT_TOKENIZER,
+            tokenizer.value());
+
+    if (tokenizer.value() == NgramTokenExtractor::getExternalName())
     {
-        if (index.arguments[1].getType() != Field::Types::UInt64)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Second argument of GIN index (max_rows_per_postings_list) must be of type UInt64");
-        if (index.arguments[1].safeGet<UInt64>() != UNLIMITED_ROWS_PER_POSTINGS_LIST && index.arguments[1].safeGet<UInt64>() < MIN_ROWS_PER_POSTINGS_LIST)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Second argument of GIN index (max_rows_per_postings_list) must not be less than {}", MIN_ROWS_PER_POSTINGS_LIST);
+        const UInt64 ngram_size = getOption<UInt64>(options, GIN_INDEX_ARGUMENT_NGRAM_SIZE).value_or(3);
+        if (ngram_size < 2 || ngram_size > 8)
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY, "GIN index '{}' argument must be between 2 and 8, but got {}", GIN_INDEX_ARGUMENT_NGRAM_SIZE, ngram_size);
     }
 
-    size_t ngram_length = index.arguments.empty() ? 0 : index.arguments[0].safeGet<size_t>();
-    UInt64 max_rows_per_postings_list = index.arguments.size() < 2 ? DEFAULT_MAX_ROWS_PER_POSTINGS_LIST : index.arguments[1].safeGet<UInt64>();
-    GinFilterParameters gin_filter_params(ngram_length, max_rows_per_postings_list); /// Just validate
+    UInt64 max_rows_per_postings_list = getOption<UInt64>(options, GIN_INDEX_ARGUMENT_MAX_ROWS).value_or(DEFAULT_MAX_ROWS_PER_POSTINGS_LIST);
+    if (max_rows_per_postings_list < MIN_ROWS_PER_POSTINGS_LIST)
+        throw Exception(
+            ErrorCodes::INCORRECT_QUERY, "GIN index '{}' should not be less than {}", GIN_INDEX_ARGUMENT_MAX_ROWS, MIN_ROWS_PER_POSTINGS_LIST);
+
+    GinFilterParameters gin_filter_params(tokenizer.value(), max_rows_per_postings_list); /// Just validate
 
     /// Check that the index is created on a single column
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
