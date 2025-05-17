@@ -152,6 +152,7 @@ CapContains
 CapUnion
 CapnProto
 CapnProtoEnumComparingMode
+CardSecondary
 CatBoost
 CellAreaM
 CellAreaRads
@@ -2208,9 +2209,13 @@ mapAll
 mapApply
 mapConcat
 mapContains
+mapContainsKey
 mapContainsKeyLike
+mapContainsValue
+mapContainsValueLike
 mapExists
 mapExtractKeyLike
+mapExtractValueLike
 mapFilter
 mapFromArrays
 mapKeys
