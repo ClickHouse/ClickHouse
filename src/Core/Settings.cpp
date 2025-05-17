@@ -7168,8 +7168,9 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
 
         Field min;
         Field max;
+        std::vector<Field> disallowed_values;
         SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
-        params.constraints.get(*this, setting_name, min, max, writability);
+        params.constraints.get(*this, setting_name, min, max, disallowed_values, writability);
 
         /// These two columns can accept strings only.
         if (!min.isNull())
@@ -7177,13 +7178,18 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
         if (!max.isNull())
             max = Settings::valueToStringUtil(setting_name, max);
 
+        Array disallowed_array;
+        for (const auto & value : disallowed_values)
+            disallowed_array.emplace_back(Settings::valueToStringUtil(setting_name, value));
+
         res_columns[4]->insert(min);
         res_columns[5]->insert(max);
-        res_columns[6]->insert(writability == SettingConstraintWritability::CONST);
-        res_columns[7]->insert(setting.getTypeName());
-        res_columns[8]->insert(setting.getDefaultValueString());
-        res_columns[10]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
-        res_columns[11]->insert(setting.getTier());
+        res_columns[6]->insert(disallowed_array);
+        res_columns[7]->insert(writability == SettingConstraintWritability::CONST);
+        res_columns[8]->insert(setting.getTypeName());
+        res_columns[9]->insert(setting.getDefaultValueString());
+        res_columns[11]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
+        res_columns[12]->insert(setting.getTier());
     };
 
     const auto & settings_to_aliases = SettingsImpl::Traits::settingsToAliases();
@@ -7193,7 +7199,7 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
         res_columns[0]->insert(setting_name);
 
         fill_data_for_setting(setting_name, setting);
-        res_columns[9]->insert("");
+        res_columns[10]->insert("");
 
         if (auto it = settings_to_aliases.find(setting_name); it != settings_to_aliases.end())
         {
@@ -7201,7 +7207,7 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
             {
                 res_columns[0]->insert(alias);
                 fill_data_for_setting(alias, setting);
-                res_columns[9]->insert(setting_name);
+                res_columns[10]->insert(setting_name);
             }
         }
     }
