@@ -32,8 +32,8 @@ using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMat
 
 Tuple parseGinIndexArgumentFromAST(const auto & arguments)
 {
-    const auto & idenfitier = arguments->children[0]->template as<ASTIdentifier>();
-    if (idenfitier == nullptr)
+    const auto & identifier = arguments->children[0]->template as<ASTIdentifier>();
+    if (identifier == nullptr)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Expected identifier");
 
     const auto & literal = arguments->children[1]->template as<ASTLiteral>();
@@ -41,7 +41,7 @@ Tuple parseGinIndexArgumentFromAST(const auto & arguments)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Expected literal");
 
     Tuple key_value_pair{};
-    key_value_pair.emplace_back(idenfitier->name());
+    key_value_pair.emplace_back(identifier->name());
     key_value_pair.emplace_back(literal->value);
     return key_value_pair;
 }
