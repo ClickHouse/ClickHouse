@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 SELECT arrayMap(multiply(_1, _2) | plus(_, 2), [1, 2, 3], [4, 5, 6]);
 SELECT arrayMap(compose(multiply(_1, _2), plus(_, 2)), [1, 2, 3], [4, 5, 6]);
 SELECT arrayMap((x -> x * 2) | toString(_), [1, 2, 3]);
