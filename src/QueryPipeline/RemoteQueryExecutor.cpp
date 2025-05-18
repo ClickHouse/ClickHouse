@@ -4,7 +4,6 @@
 
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
-#include <Common/FailPoint.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
@@ -59,11 +58,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int DUPLICATED_PART_UUIDS;
     extern const int SYSTEM_ERROR;
-}
-
-namespace FailPoints
-{
-    extern const char parallel_replicas_connection_timeout[];
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
@@ -125,11 +119,6 @@ RemoteQueryExecutor::RemoteQueryExecutor(
             ConnectionEstablisher connection_establisher(pool, &timeouts, settings, log, nullptr);
             connection_establisher.run(result, fail_message, /*force_connected=*/true);
         }
-
-        fiu_do_on(FailPoints::parallel_replicas_connection_timeout, {
-            sleepForMilliseconds(settings[Setting::parallel_replicas_connect_timeout_ms].totalMilliseconds());
-            result.reset();
-        });
 
         std::vector<IConnectionPool::Entry> connection_entries;
         if (!result.entry.isNull() && result.is_usable)
