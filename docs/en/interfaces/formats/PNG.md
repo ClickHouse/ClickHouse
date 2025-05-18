@@ -66,8 +66,8 @@ FORMAT PNG
 SETTINGS 
     output_format_png_image_pixel_format = 'Grayscale', 
     output_format_png_pixel_coordinates_format='EXPLICIT'
-    output_format_png_max_width=1512,
-    output_png_max_height=1512
+    output_format_png_max_width=14014,
+    output_format_png_max_height=6659
 ```
 
 ## Format Settings {#format-settings}
