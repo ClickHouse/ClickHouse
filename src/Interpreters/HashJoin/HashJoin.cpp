@@ -32,7 +32,6 @@
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/HashJoin/HashJoinMethods.h>
-#include <Interpreters/HashJoin/JoinUsedFlags.h>
 
 namespace DB
 {
@@ -1328,11 +1327,13 @@ private:
             for (auto & it = *used_position; it != end && rows_added < max_block_size; ++it)
             {
                 const auto & mapped_block = *it;
+                JoinStuff::JoinUsedFlags::UsedFlagsHolder used_flags_holder
+                    = parent.getUsedFlagsForBlock(&mapped_block.getSourceBlock);
 
                 for (size_t i = 0; i < mapped_block.rows(); ++i)
                 {
                     size_t row = mapped_block.getRowIdx(i);
-                    if (!parent.isUsed(&mapped_block.getSourceBlock(), row))
+                    if (!used_flags_holder.getUsedSafe(row))
                     {
                         for (size_t colnum = 0; colnum < columns_keys_and_right.size(); ++colnum)
                         {
@@ -1356,13 +1357,15 @@ private:
             Iterator & it = std::any_cast<Iterator &>(position);
             auto end = map.end();
 
+            auto used_flags_holder = parent.getUsedFlagsHolder();
             for (; it != end; ++it)
             {
                 const Mapped & mapped = it->getMapped();
 
                 size_t offset = map.offsetInternal(it.getPtr());
-                if (parent.isUsed(offset))
+                if (used_flags_holder.getUsedSafe(offset))
                     continue;
+
                 AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
 
                 if (rows_added >= max_block_size)

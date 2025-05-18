@@ -14,6 +14,7 @@
 #include <Core/Block_fwd.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
@@ -421,6 +422,13 @@ public:
 
     bool isUsed(size_t off) const;
     bool isUsed(const Block * block_ptr, size_t row_idx) const;
+
+    JoinStuff::JoinUsedFlags::UsedFlagsHolder getUsedFlagsHolder(const Block * block_ptr) const
+    {
+        return used_flags->getUsedFlagsHolder(block_ptr);
+    }
+
+    JoinStuff::JoinUsedFlags::UsedFlagsHolder getUsedFlagsHolder() const { return used_flags->getUsedFlagsHolder(); }
 
     void debugKeys() const;
 
